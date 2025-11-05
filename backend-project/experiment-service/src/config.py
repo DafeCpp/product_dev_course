@@ -32,6 +32,10 @@ class Settings:
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
+    # Development
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    ENV: str = os.getenv("ENV", "development")
+
 
 settings = Settings()
 

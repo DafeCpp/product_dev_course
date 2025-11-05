@@ -12,6 +12,21 @@
 - ✅ Метаданные в формате JSON
 - ✅ Интеграция с RabbitMQ для событий
 
+## ⚠️ Важно: Аутентификация
+
+В текущей версии аутентификация находится в **режиме разработки**. Для использования сервиса:
+
+1. **Development режим:** Установите переменную окружения `DEBUG=true` или `ENV=development`
+   - В этом режиме токен может быть любым UUID (или будет использован дефолтный тестовый user_id)
+   - Пример: `Authorization: Bearer 550e8400-e29b-41d4-a716-446655440000`
+
+2. **Production режим:** Для production необходимо:
+   - Реализовать интеграцию с Auth Service
+   - Настроить валидацию JWT токенов
+   - Обновить middleware в `src/middleware.py`
+
+**Текущая реализация:** В development режиме токен используется как user_id (если это валидный UUID), иначе используется дефолтный тестовый ID.
+
 ## Запуск
 
 ### Быстрый запуск с Docker Compose (рекомендуется)
@@ -60,8 +75,10 @@ pip install -r requirements.txt
 cp env.example .env
 
 # Настройка переменных окружения (или редактировать .env)
+# Отредактируйте .env файл или установите переменные окружения:
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/experiment_db"
 export PORT=8002
+export DEBUG=true  # Для development режима
 
 # Запуск сервиса
 python main.py
