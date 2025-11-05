@@ -17,9 +17,24 @@ from src.events import publish_event
 logger = logging.getLogger(__name__)
 
 
+def parse_uuid(value: str, param_name: str = "ID") -> UUID:
+    """Парсинг UUID с обработкой ошибок."""
+    try:
+        return UUID(value)
+    except ValueError:
+        raise web.HTTPBadRequest(text=f"Invalid {param_name} format. Expected UUID.")
+
+
+def validate_pagination(page: int, page_size: int) -> tuple[int, int]:
+    """Валидация параметров пагинации."""
+    page = max(1, page or 1)
+    page_size = max(1, min(page_size or 50, 100))
+    return page, page_size
+
+
 async def create_run(request: Request) -> web.Response:
     """Создание run."""
-    experiment_id = UUID(request.match_info['experiment_id'])
+    experiment_id = parse_uuid(request.match_info['experiment_id'], "experiment_id")
 
     # Проверка существования эксперимента
     experiment = await experiment_queries.get_experiment_by_id(experiment_id)
@@ -52,7 +67,7 @@ async def create_run(request: Request) -> web.Response:
 
 async def get_run(request: Request) -> web.Response:
     """Получение run по ID."""
-    run_id = UUID(request.match_info['run_id'])
+    run_id = parse_uuid(request.match_info['run_id'], "run_id")
 
     run = await run_queries.get_run_by_id(run_id)
 
@@ -64,15 +79,17 @@ async def get_run(request: Request) -> web.Response:
 
 async def list_runs(request: Request) -> web.Response:
     """Список runs для эксперимента."""
-    experiment_id = UUID(request.match_info['experiment_id'])
+    experiment_id = parse_uuid(request.match_info['experiment_id'], "experiment_id")
     status = request.query.get('status')
-    page = int(request.query.get('page', 1))
-    page_size = int(request.query.get('page_size', 50))
 
-    if page_size > 100:
-        page_size = 100
-    if page_size < 1:
-        page_size = 50
+    try:
+        page = int(request.query.get('page', 1))
+        page_size = int(request.query.get('page_size', 50))
+    except (ValueError, TypeError):
+        raise web.HTTPBadRequest(text="Invalid pagination parameters. 'page' and 'page_size' must be integers.")
+
+    # Валидация пагинации
+    page, page_size = validate_pagination(page, page_size)
 
     offset = (page - 1) * page_size
 
@@ -95,7 +112,7 @@ async def list_runs(request: Request) -> web.Response:
 
 async def update_run(request: Request) -> web.Response:
     """Обновление run."""
-    run_id = UUID(request.match_info['run_id'])
+    run_id = parse_uuid(request.match_info['run_id'], "run_id")
 
     # Проверка существования
     existing = await run_queries.get_run_by_id(run_id)
@@ -134,7 +151,7 @@ async def update_run(request: Request) -> web.Response:
 
 async def complete_run(request: Request) -> web.Response:
     """Завершение run."""
-    run_id = UUID(request.match_info['run_id'])
+    run_id = parse_uuid(request.match_info['run_id'], "run_id")
 
     # Проверка существования
     existing = await run_queries.get_run_by_id(run_id)
@@ -158,7 +175,7 @@ async def complete_run(request: Request) -> web.Response:
 
 async def fail_run(request: Request) -> web.Response:
     """Пометить run как failed."""
-    run_id = UUID(request.match_info['run_id'])
+    run_id = parse_uuid(request.match_info['run_id'], "run_id")
 
     # Проверка существования
     existing = await run_queries.get_run_by_id(run_id)
