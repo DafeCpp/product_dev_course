@@ -106,6 +106,8 @@ pip install -r requirements.txt
 
 **Техническое задание:** полное описание требований, архитектуры и критериев приемки доступно в `docs/experiment-tracking-ts.md`. Рекомендовано ознакомиться перед началом работы над итоговым проектом.
 
+**Roadmap Experiment Service:** см. `docs/experiment-service-roadmap.md`.
+
 ## Система оценивания
 
 ### Семестр 1 (50%)
