@@ -35,7 +35,7 @@
 |-----------|-----------------|-----------------|
 | Auth Service | Регистрация пользователей, проекты, токены доступа (JWT). | PostgreSQL |
 | Telemetry Ingest Service | Регистрация датчиков, прием потоков данных, конвертация raw→physical значений, буферизация и маршрутизация в Metrics Service. | Kafka/Redis stream + PostgreSQL метаданные |
-| Experiment Service | CRUD экспериментов и запусков, статусы, связи с метриками/артефактами. | PostgreSQL |
+| Experiment Service | CRUD экспериментов и запусков, статусы, связи с метриками/артефактами (доступ через asyncpg, без ORM). | PostgreSQL |
 | Metrics Service | Прием батчей/стримов метрик, хранение исторических серий, агрегации. | PostgreSQL/Timescale |
 | Artifact Service | Загрузка артефактов (файлы/ссылки), версияция. | S3-совместимый сторадж + метаданные в PostgreSQL |
 | Comparison Service | Построение сравнений по метрикам/артефактам, расчёт дельт. | Временные таблицы/PostgreSQL |
