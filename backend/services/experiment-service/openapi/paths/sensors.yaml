@@ -1,0 +1,97 @@
+collection:
+  get:
+    tags: [sensors]
+    summary: List sensors
+    operationId: listSensors
+    parameters:
+      - name: project_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+    responses:
+      200:
+        description: Sensors
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: ../components/schemas.yaml#/Sensor
+  post:
+    tags: [sensors]
+    summary: Register sensor
+    operationId: registerSensor
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/SensorCreate
+    responses:
+      201:
+        description: Sensor registered
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Sensor
+
+rotateToken:
+  post:
+    tags: [sensors]
+    summary: Rotate sensor token
+    operationId: rotateSensorToken
+    parameters:
+      - $ref: ../components/parameters.yaml#/SensorId
+    responses:
+      200:
+        description: Token rotated
+
+conversionProfiles:
+  get:
+    tags: [conversion_profiles]
+    summary: List conversion profiles
+    operationId: listConversionProfiles
+    parameters:
+      - $ref: ../components/parameters.yaml#/SensorId
+    responses:
+      200:
+        description: Conversion profiles
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: ../components/schemas.yaml#/ConversionProfile
+  post:
+    tags: [conversion_profiles]
+    summary: Create conversion profile
+    operationId: createConversionProfile
+    parameters:
+      - $ref: ../components/parameters.yaml#/SensorId
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ConversionProfileCreate
+    responses:
+      201:
+        description: Conversion profile created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ConversionProfile
+
+conversionProfilePublish:
+  post:
+    tags: [conversion_profiles]
+    summary: Publish conversion profile
+    operationId: publishConversionProfile
+    parameters:
+      - $ref: ../components/parameters.yaml#/SensorId
+      - $ref: ../components/parameters.yaml#/ProfileId
+    responses:
+      202:
+        description: Publish initiated
+

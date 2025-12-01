@@ -1,2 +1,0 @@
-"""Тесты для experiment-service."""
-

@@ -1,0 +1,117 @@
+openapi: 3.1.0
+info:
+  title: Experiment Service API
+  version: 0.1.0
+  description: Programmatic contract for Experiment Tracking Platform backend (aiohttp
+    skeleton)
+servers:
+- url: http://localhost:8002
+tags:
+- name: experiments
+- name: runs
+- name: capture_sessions
+- name: metrics
+- name: artifacts
+- name: sensors
+- name: conversion_profiles
+- name: telemetry
+paths:
+  /health:
+    $ref: ./paths/health.yaml
+  /api/v1/experiments:
+    $ref: ./paths/experiments.yaml#/collection
+  /api/v1/experiments/{experiment_id}:
+    $ref: ./paths/experiments.yaml#/item
+  /api/v1/experiments/{experiment_id}/archive:
+    $ref: ./paths/experiments.yaml#/archive
+  /api/v1/experiments/{experiment_id}/runs:
+    $ref: ./paths/experiments.yaml#/runs
+  /api/v1/runs/{run_id}:
+    $ref: ./paths/runs.yaml#/run
+  /api/v1/runs:batch-status:
+    $ref: ./paths/runs.yaml#/batchStatus
+  /api/v1/runs/{run_id}/capture-sessions:
+    $ref: ./paths/runs.yaml#/captureSessions
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}/stop:
+    $ref: ./paths/runs.yaml#/captureSessionStop
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}:
+    $ref: ./paths/runs.yaml#/captureSessionDelete
+  /api/v1/runs/{run_id}/metrics:
+    $ref: ./paths/runs.yaml#/metrics
+  /api/v1/runs/{run_id}/artifacts:
+    $ref: ./paths/runs.yaml#/artifacts
+  /api/v1/runs/{run_id}/artifacts/{artifact_id}/approve:
+    $ref: ./paths/runs.yaml#/artifactApprove
+  /api/v1/sensors:
+    $ref: ./paths/sensors.yaml#/collection
+  /api/v1/sensors/{sensor_id}/rotate-token:
+    $ref: ./paths/sensors.yaml#/rotateToken
+  /api/v1/sensors/{sensor_id}/conversion-profiles:
+    $ref: ./paths/sensors.yaml#/conversionProfiles
+  /api/v1/sensors/{sensor_id}/conversion-profiles/{profile_id}/publish:
+    $ref: ./paths/sensors.yaml#/conversionProfilePublish
+  /api/v1/telemetry:
+    $ref: ./paths/telemetry.yaml#/ingest
+  /api/v1/telemetry/stream:
+    $ref: ./paths/telemetry.yaml#/stream
+components:
+  parameters:
+    ExperimentId:
+      $ref: ./components/parameters.yaml#/ExperimentId
+    RunId:
+      $ref: ./components/parameters.yaml#/RunId
+    SessionId:
+      $ref: ./components/parameters.yaml#/SessionId
+    SensorId:
+      $ref: ./components/parameters.yaml#/SensorId
+    ProfileId:
+      $ref: ./components/parameters.yaml#/ProfileId
+    ArtifactId:
+      $ref: ./components/parameters.yaml#/ArtifactId
+  schemas:
+    ExperimentStatus:
+      $ref: ./components/schemas.yaml#/ExperimentStatus
+    RunStatus:
+      $ref: ./components/schemas.yaml#/RunStatus
+    CaptureSessionStatus:
+      $ref: ./components/schemas.yaml#/CaptureSessionStatus
+    Experiment:
+      $ref: ./components/schemas.yaml#/Experiment
+    ExperimentCreate:
+      $ref: ./components/schemas.yaml#/ExperimentCreate
+    ExperimentUpdate:
+      $ref: ./components/schemas.yaml#/ExperimentUpdate
+    ExperimentListResponse:
+      $ref: ./components/schemas.yaml#/ExperimentListResponse
+    Run:
+      $ref: ./components/schemas.yaml#/Run
+    RunCreate:
+      $ref: ./components/schemas.yaml#/RunCreate
+    RunUpdate:
+      $ref: ./components/schemas.yaml#/RunUpdate
+    RunListResponse:
+      $ref: ./components/schemas.yaml#/RunListResponse
+    RunBatchStatusRequest:
+      $ref: ./components/schemas.yaml#/RunBatchStatusRequest
+    CaptureSession:
+      $ref: ./components/schemas.yaml#/CaptureSession
+    CaptureSessionCreate:
+      $ref: ./components/schemas.yaml#/CaptureSessionCreate
+    MetricIngestRequest:
+      $ref: ./components/schemas.yaml#/MetricIngestRequest
+    MetricQueryResponse:
+      $ref: ./components/schemas.yaml#/MetricQueryResponse
+    Artifact:
+      $ref: ./components/schemas.yaml#/Artifact
+    ArtifactCreate:
+      $ref: ./components/schemas.yaml#/ArtifactCreate
+    Sensor:
+      $ref: ./components/schemas.yaml#/Sensor
+    SensorCreate:
+      $ref: ./components/schemas.yaml#/SensorCreate
+    ConversionProfile:
+      $ref: ./components/schemas.yaml#/ConversionProfile
+    ConversionProfileCreate:
+      $ref: ./components/schemas.yaml#/ConversionProfileCreate
+    TelemetryIngestRequest:
+      $ref: ./components/schemas.yaml#/TelemetryIngestRequest

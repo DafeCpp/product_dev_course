@@ -41,24 +41,21 @@
 
 ```
 product_dev_course/
-├── course-materials/          # Материалы курса
-│   ├── semester-1/           # Семестр 1
-│   │   ├── module-1-web-api/
-│   │   ├── module-2-testing/
-│   │   ├── module-3-performance/
-│   │   └── module-4-typescript/
-│   └── semester-2/           # Семестр 2
-│       ├── module-5-docker/
-│       ├── module-6-microservices/
-│       ├── module-7-advanced/
-│       └── module-8-final-project/
-├── backend-project/           # Общий проект для PR
-├── examples/                  # Примеры кода с занятий
-├── docs/                      # Документация
-│   ├── setup-guide.md
-│   ├── code-style-guide.md
-│   ├── pr-guidelines.md
-│   └── grading-system.md
+├── course-materials/           # Материалы курса
+│   ├── semester-1/
+│   └── semester-2/
+├── backend/
+│   ├── common/                 # Общие компоненты и DTO
+│   ├── libs/                   # Внутренние библиотеки/SDK
+│   └── services/               # Микросервисы платформы
+│       └── experiment-service/
+├── frontend/
+│   ├── common/                 # Общие UI-компоненты и токены
+│   ├── libs/                   # Фронтенд библиотеки
+│   └── apps/                   # SPA/виджеты
+│       └── experiment-portal/
+├── docs/                       # Документация
+├── examples/                   # Примеры кода с занятий
 └── README.md
 ```
 

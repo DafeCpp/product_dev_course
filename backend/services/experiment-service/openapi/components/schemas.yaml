@@ -1,0 +1,466 @@
+ExperimentStatus:
+  type: string
+  enum:
+  - draft
+  - running
+  - failed
+  - succeeded
+  - archived
+RunStatus:
+  type: string
+  enum:
+  - draft
+  - running
+  - failed
+  - succeeded
+  - archived
+CaptureSessionStatus:
+  type: string
+  enum:
+  - draft
+  - running
+  - failed
+  - succeeded
+  - archived
+  - backfilling
+Experiment:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    description:
+      type: string
+    tags:
+      type: array
+      items:
+        type: string
+    status:
+      $ref: '#/components/schemas/ExperimentStatus'
+    owner_id:
+      type: string
+      format: uuid
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+    archived_at:
+      type: string
+      format: date-time
+      nullable: true
+ExperimentCreate:
+  type: object
+  required:
+  - project_id
+  - name
+  properties:
+    project_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    description:
+      type: string
+    experiment_type:
+      type: string
+    tags:
+      type: array
+      items:
+        type: string
+    metadata:
+      type: object
+      additionalProperties: true
+ExperimentUpdate:
+  type: object
+  properties:
+    name:
+      type: string
+    description:
+      type: string
+    experiment_type:
+      type: string
+    tags:
+      type: array
+      items:
+        type: string
+    metadata:
+      type: object
+      additionalProperties: true
+    status:
+      $ref: '#/components/schemas/ExperimentStatus'
+ExperimentListResponse:
+  type: object
+  properties:
+    experiments:
+      type: array
+      items:
+        $ref: '#/components/schemas/Experiment'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+Run:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    experiment_id:
+      type: string
+      format: uuid
+    params:
+      type: object
+      additionalProperties: true
+    git_sha:
+      type: string
+    env:
+      type: string
+    status:
+      $ref: '#/components/schemas/RunStatus'
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+    duration_seconds:
+      type: integer
+      nullable: true
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+RunCreate:
+  type: object
+  required:
+  - name
+  - parameters
+  properties:
+    name:
+      type: string
+    parameters:
+      type: object
+      additionalProperties: true
+    notes:
+      type: string
+    metadata:
+      type: object
+      additionalProperties: true
+    git_sha:
+      type: string
+    env:
+      type: string
+RunUpdate:
+  type: object
+  properties:
+    name:
+      type: string
+    parameters:
+      type: object
+      additionalProperties: true
+    notes:
+      type: string
+    metadata:
+      type: object
+      additionalProperties: true
+    status:
+      $ref: '#/components/schemas/RunStatus'
+RunListResponse:
+  type: object
+  properties:
+    runs:
+      type: array
+      items:
+        $ref: '#/components/schemas/Run'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+RunBatchStatusRequest:
+  type: object
+  required:
+  - run_ids
+  - status
+  properties:
+    run_ids:
+      type: array
+      items:
+        type: string
+        format: uuid
+    status:
+      $ref: '#/components/schemas/RunStatus'
+CaptureSession:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    run_id:
+      type: string
+      format: uuid
+    ordinal_number:
+      type: integer
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+    stopped_at:
+      type: string
+      format: date-time
+      nullable: true
+    status:
+      $ref: '#/components/schemas/CaptureSessionStatus'
+    initiated_by:
+      type: string
+      format: uuid
+      nullable: true
+    notes:
+      type: string
+CaptureSessionCreate:
+  type: object
+  properties:
+    notes:
+      type: string
+MetricIngestRequest:
+  type: object
+  required:
+  - metrics
+  properties:
+    metrics:
+      type: array
+      items:
+        type: object
+        required:
+        - name
+        - step
+        - value
+        - timestamp
+        properties:
+          name:
+            type: string
+          step:
+            type: integer
+          value:
+            type: number
+          timestamp:
+            type: string
+            format: date-time
+MetricQueryResponse:
+  type: object
+  properties:
+    run_id:
+      type: string
+      format: uuid
+    series:
+      type: array
+      items:
+        type: object
+        properties:
+          name:
+            type: string
+          points:
+            type: array
+            items:
+              type: object
+              properties:
+                step:
+                  type: integer
+                value:
+                  type: number
+                timestamp:
+                  type: string
+                  format: date-time
+Artifact:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    run_id:
+      type: string
+      format: uuid
+    type:
+      type: string
+    uri:
+      type: string
+    checksum:
+      type: string
+    size:
+      type: integer
+    created_by:
+      type: string
+      format: uuid
+    approved_by:
+      type: string
+      format: uuid
+      nullable: true
+    approval_note:
+      type: string
+ArtifactCreate:
+  type: object
+  required:
+  - type
+  - uri
+  properties:
+    type:
+      type: string
+    uri:
+      type: string
+    checksum:
+      type: string
+    size:
+      type: integer
+    metadata:
+      type: object
+      additionalProperties: true
+Sensor:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    type:
+      type: string
+    input_unit:
+      type: string
+    display_unit:
+      type: string
+    status:
+      type: string
+    last_heartbeat:
+      type: string
+      format: date-time
+      nullable: true
+    active_profile_id:
+      type: string
+      format: uuid
+      nullable: true
+SensorCreate:
+  type: object
+  required:
+  - project_id
+  - name
+  - type
+  - input_unit
+  - display_unit
+  properties:
+    project_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    type:
+      type: string
+    input_unit:
+      type: string
+    display_unit:
+      type: string
+    conversion_profile:
+      type: object
+      additionalProperties: true
+ConversionProfile:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    sensor_id:
+      type: string
+      format: uuid
+    version:
+      type: string
+    kind:
+      type: string
+    payload:
+      type: object
+      additionalProperties: true
+    status:
+      type: string
+      enum:
+      - draft
+      - active
+      - scheduled
+      - deprecated
+    valid_from:
+      type: string
+      format: date-time
+      nullable: true
+    valid_to:
+      type: string
+      format: date-time
+      nullable: true
+ConversionProfileCreate:
+  type: object
+  required:
+  - version
+  - kind
+  - payload
+  properties:
+    version:
+      type: string
+    kind:
+      type: string
+    payload:
+      type: object
+      additionalProperties: true
+    status:
+      type: string
+      enum:
+      - draft
+      - active
+      - scheduled
+      - deprecated
+      default: draft
+TelemetryIngestRequest:
+  type: object
+  required:
+  - sensor_id
+  - records
+  properties:
+    sensor_id:
+      type: string
+      format: uuid
+    run_id:
+      type: string
+      format: uuid
+      nullable: true
+    capture_session_id:
+      type: string
+      format: uuid
+      nullable: true
+    records:
+      type: array
+      items:
+        type: object
+        required:
+        - timestamp
+        - raw_value
+        properties:
+          timestamp:
+            type: string
+            format: date-time
+          raw_value:
+            type: number
+          metadata:
+            type: object
+            additionalProperties: true

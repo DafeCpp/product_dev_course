@@ -1,0 +1,17 @@
+get:
+  summary: Health check
+  operationId: healthcheck
+  responses:
+    200:
+      description: Service is running
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              service:
+                type: string
+              env:
+                type: string

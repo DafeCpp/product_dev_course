@@ -1,0 +1,42 @@
+ExperimentId:
+  name: experiment_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+RunId:
+  name: run_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+SessionId:
+  name: session_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+SensorId:
+  name: sensor_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+ProfileId:
+  name: profile_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+ArtifactId:
+  name: artifact_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
