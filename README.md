@@ -49,8 +49,11 @@ product_dev_course/
 │   ├── libs/                   # Внутренние библиотеки/SDK
 │   └── services/               # Микросервисы платформы
 │       └── experiment-service/
-├── backend-project/
-│   └── frontend/               # Учебный фронтенд (React)
+├── frontend/
+│   ├── common/                 # Общие UI-компоненты и токены
+│   ├── libs/                   # Фронтенд библиотеки
+│   └── apps/                   # SPA/виджеты
+│       └── experiment-portal/
 ├── docs/                       # Документация
 ├── examples/                   # Примеры кода с занятий
 └── README.md
