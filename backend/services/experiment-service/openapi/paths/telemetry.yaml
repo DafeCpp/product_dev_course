@@ -1,0 +1,26 @@
+ingest:
+  post:
+    tags: [telemetry]
+    summary: Ingest telemetry
+    operationId: ingestTelemetry
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/TelemetryIngestRequest
+    responses:
+      202:
+        description: Accepted
+
+stream:
+  get:
+    tags: [telemetry]
+    summary: Telemetry WebSocket
+    operationId: telemetryStream
+    responses:
+      101:
+        description: Switching to WebSocket
+      501:
+        description: Not implemented
+

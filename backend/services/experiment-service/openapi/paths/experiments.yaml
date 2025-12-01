@@ -1,0 +1,151 @@
+collection:
+  get:
+    tags:
+    - experiments
+    summary: List experiments
+    operationId: listExperiments
+    parameters:
+    - name: project_id
+      in: query
+      schema:
+        type: string
+        format: uuid
+    - name: status
+      in: query
+      schema:
+        $ref: ../components/schemas.yaml#/ExperimentStatus
+    - name: tags
+      in: query
+      schema:
+        type: string
+        description: Comma separated tags
+    - name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    - name: page_size
+      in: query
+      schema:
+        type: integer
+        default: 50
+    responses:
+      200:
+        description: Experiment collection
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ExperimentListResponse
+  post:
+    tags:
+    - experiments
+    summary: Create experiment
+    operationId: createExperiment
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ExperimentCreate
+    responses:
+      201:
+        description: Experiment created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Experiment
+item:
+  get:
+    tags:
+    - experiments
+    summary: Get experiment
+    operationId: getExperiment
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    responses:
+      200:
+        description: Experiment
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Experiment
+  patch:
+    tags:
+    - experiments
+    summary: Update experiment
+    operationId: updateExperiment
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ExperimentUpdate
+    responses:
+      200:
+        description: Updated experiment
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Experiment
+  delete:
+    tags:
+    - experiments
+    summary: Delete experiment
+    operationId: deleteExperiment
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    responses:
+      200:
+        description: Deleted
+archive:
+  post:
+    tags:
+    - experiments
+    summary: Archive experiment
+    operationId: archiveExperiment
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    responses:
+      200:
+        description: Archived
+runs:
+  get:
+    tags:
+    - runs
+    summary: List runs
+    operationId: listRuns
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    - name: status
+      in: query
+      schema:
+        $ref: ../components/schemas.yaml#/RunStatus
+    responses:
+      200:
+        description: Runs
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/RunListResponse
+  post:
+    tags:
+    - runs
+    summary: Create run
+    operationId: createRun
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/RunCreate
+    responses:
+      201:
+        description: Run created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Run
