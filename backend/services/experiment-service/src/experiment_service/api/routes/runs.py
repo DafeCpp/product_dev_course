@@ -49,12 +49,15 @@ async def list_runs(request: web.Request):
     await _ensure_experiment(request, project_id, experiment_id)
     service = await get_run_service(request)
     limit, offset = pagination_params(request)
-    runs = await service.list_runs_for_experiment(project_id, experiment_id, limit=limit, offset=offset)
+    runs, total = await service.list_runs_for_experiment(
+        project_id, experiment_id, limit=limit, offset=offset
+    )
     payload = paginated_response(
         [_run_response(item) for item in runs],
         limit=limit,
         offset=offset,
         key="runs",
+        total=total,
     )
     return web.json_response(payload)
 
@@ -62,8 +65,9 @@ async def list_runs(request: web.Request):
 @routes.post("/api/v1/experiments/{experiment_id}/runs")
 async def create_run(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    project_id = resolve_project_id(
+        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
+    )
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     await _ensure_experiment(request, project_id, experiment_id)
     body = await read_json(request)
@@ -100,8 +104,9 @@ async def get_run(request: web.Request):
 @routes.patch("/api/v1/runs/{run_id}")
 async def update_run(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    project_id = resolve_project_id(
+        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
+    )
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     body = await read_json(request)
     try:
@@ -119,8 +124,9 @@ async def update_run(request: web.Request):
 @routes.post("/api/v1/runs:batch-status")
 async def batch_update_status(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    project_id = resolve_project_id(
+        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
+    )
     body = await read_json(request)
     run_ids_raw = body.get("run_ids")
     status_value = body.get("status")
@@ -134,13 +140,9 @@ async def batch_update_status(request: web.Request):
         raise web.HTTPBadRequest(text="Invalid status value") from exc
     run_ids = [parse_uuid(value, "run_id") for value in run_ids_raw]
     service = await get_run_service(request)
-    updated_runs = []
-    for run_id in run_ids:
-        try:
-            run = await service.update_run(
-                project_id, run_id, RunUpdateDTO(status=status)
-            )
-        except NotFoundError as exc:
-            raise web.HTTPNotFound(text=str(exc)) from exc
-        updated_runs.append(_run_response(run))
-    return web.json_response({"runs": updated_runs})
+    try:
+        updated_runs = await service.batch_update_status(project_id, run_ids, status)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    response_runs = [_run_response(run) for run in updated_runs]
+    return web.json_response({"runs": response_runs})

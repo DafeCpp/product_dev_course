@@ -26,7 +26,7 @@ class ExperimentService:
 
     async def list_experiments(
         self, project_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[Experiment]:
+    ) -> tuple[List[Experiment], int]:
         return await self._repository.list_by_project(project_id, limit=limit, offset=offset)
 
     async def update_experiment(

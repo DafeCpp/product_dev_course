@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import json
-from typing import Any, List
+from typing import Any, List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
@@ -72,7 +72,7 @@ class ExperimentRepository(BaseRepository):
 
     async def list_by_project(
         self, project_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> tuple[List[Experiment], int]:
+    ) -> Tuple[List[Experiment], int]:
         records = await self._fetch(
             """
             SELECT *,
@@ -90,19 +90,24 @@ class ExperimentRepository(BaseRepository):
         total: int | None = None
         for rec in records:
             rec_dict = dict(rec)
-            if total is None:
-                total_value = rec_dict.pop("total_count", 0)
+            total_value = rec_dict.pop("total_count", None)
+            if total_value is not None:
                 total = int(total_value)
-            else:
-                rec_dict.pop("total_count", None)
+            for column in self.JSONB_COLUMNS:
+                value = rec_dict.get(column)
+                if isinstance(value, str):
+                    rec_dict[column] = json.loads(value)
             items.append(Experiment.model_validate(rec_dict))
         if total is None:
-            count_record = await self._fetchrow(
-                "SELECT COUNT(*) AS total FROM experiments WHERE project_id = $1",
-                project_id,
-            )
-            total = int(count_record["total"]) if count_record else 0
+            total = await self._count_by_project(project_id)
         return items, total
+
+    async def _count_by_project(self, project_id: UUID) -> int:
+        record = await self._fetchrow(
+            "SELECT COUNT(*) AS total FROM experiments WHERE project_id = $1",
+            project_id,
+        )
+        return int(record["total"]) if record else 0
 
     async def update(
         self,

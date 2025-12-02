@@ -43,12 +43,15 @@ async def list_capture_sessions(request: web.Request):
     await _ensure_run(request, project_id, run_id)
     service = await get_capture_session_service(request)
     limit, offset = pagination_params(request)
-    sessions = await service.list_sessions_for_run(project_id, run_id, limit=limit, offset=offset)
+    sessions, total = await service.list_sessions_for_run(
+        project_id, run_id, limit=limit, offset=offset
+    )
     payload = paginated_response(
         [_session_response(item) for item in sessions],
         limit=limit,
         offset=offset,
         key="capture_sessions",
+        total=total,
     )
     return web.json_response(payload)
 

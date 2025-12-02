@@ -75,14 +75,20 @@ def ensure_project_access(
         raise web.HTTPForbidden(reason="Insufficient project role")
 
 
-def resolve_project_id(user: UserContext, project_id_str: str | None) -> UUID:
+def resolve_project_id(
+    user: UserContext,
+    project_id_str: str | None,
+    *,
+    require_role: tuple[str, ...] | None = None,
+) -> UUID:
     if project_id_str is None:
+        ensure_project_access(user, user.active_project_id, require_role=require_role)
         return user.active_project_id
     try:
         project_id = UUID(project_id_str)
     except ValueError as exc:
         raise web.HTTPBadRequest(text="Invalid project_id") from exc
-    ensure_project_access(user, project_id)
+    ensure_project_access(user, project_id, require_role=require_role)
     return project_id
 
 

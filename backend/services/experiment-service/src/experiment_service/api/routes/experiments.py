@@ -37,12 +37,13 @@ async def list_experiments(request: web.Request):
     service = await get_experiment_service(request)
     limit, offset = pagination_params(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    experiments = await service.list_experiments(project_id, limit=limit, offset=offset)
+    experiments, total = await service.list_experiments(project_id, limit=limit, offset=offset)
     payload = paginated_response(
         [_experiment_response(item) for item in experiments],
         limit=limit,
         offset=offset,
         key="experiments",
+        total=total,
     )
     return web.json_response(payload)
 
@@ -50,10 +51,11 @@ async def list_experiments(request: web.Request):
 @routes.post("/api/v1/experiments")
 async def create_experiment(request: web.Request):
     user = await require_current_user(request)
-    ensure_project_access(user, user.active_project_id, require_role=("owner", "editor"))
     service = await get_experiment_service(request)
     body = await read_json(request)
-    project_id = resolve_project_id(user, body.get("project_id"))
+    project_id = resolve_project_id(
+        user, body.get("project_id"), require_role=("owner", "editor")
+    )
     body["project_id"] = project_id
     body["owner_id"] = user.user_id
     try:
@@ -82,8 +84,9 @@ async def get_experiment(request: web.Request):
 async def update_experiment(request: web.Request):
     user = await require_current_user(request)
     service = await get_experiment_service(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    project_id = resolve_project_id(
+        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
+    )
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     body = await read_json(request)
     try:
@@ -101,8 +104,9 @@ async def update_experiment(request: web.Request):
 async def archive_experiment(request: web.Request):
     user = await require_current_user(request)
     service = await get_experiment_service(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    project_id = resolve_project_id(
+        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
+    )
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     dto = ExperimentUpdateDTO(
         status=ExperimentStatus.ARCHIVED,
@@ -119,8 +123,9 @@ async def archive_experiment(request: web.Request):
 async def delete_experiment(request: web.Request):
     user = await require_current_user(request)
     service = await get_experiment_service(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    project_id = resolve_project_id(
+        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
+    )
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     try:
         await service.delete_experiment(project_id, experiment_id)

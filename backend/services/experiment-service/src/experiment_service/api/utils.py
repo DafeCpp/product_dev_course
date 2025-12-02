@@ -10,8 +10,9 @@ from aiohttp import web
 
 def parse_uuid(value: str, label: str) -> UUID:
     try:
-        return UUID(value)
-    except ValueError as exc:
+        uuid_str = value if isinstance(value, str) else str(value)
+        return UUID(uuid_str)
+    except (ValueError, TypeError) as exc:
         raise web.HTTPBadRequest(text=f"Invalid {label}") from exc
 
 

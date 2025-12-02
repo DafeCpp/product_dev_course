@@ -34,13 +34,15 @@ class CaptureSessionService:
 
     async def list_sessions(
         self, project_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[CaptureSession]:
+    ) -> tuple[List[CaptureSession], int]:
         return await self._repository.list_by_project(project_id, limit=limit, offset=offset)
 
     async def list_sessions_for_run(
         self, project_id: UUID, run_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[CaptureSession]:
-        return await self._repository.list_by_run(project_id, run_id, limit=limit, offset=offset)
+    ) -> tuple[List[CaptureSession], int]:
+        return await self._repository.list_by_run(
+            project_id, run_id, limit=limit, offset=offset
+        )
 
     async def update_session(
         self,

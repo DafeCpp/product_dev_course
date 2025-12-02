@@ -67,8 +67,9 @@ async def test_storage_layer_crud(db_pool):
     fetched = await experiments_service.get_experiment(project_id, exp.id)
     assert fetched.id == exp.id
 
-    listed = await experiments_service.list_experiments(project_id)
+    listed, total = await experiments_service.list_experiments(project_id)
     assert len(listed) == 1
+    assert total == 1
 
     exp = await experiments_service.update_experiment(
         project_id,
@@ -94,8 +95,9 @@ async def test_storage_layer_crud(db_pool):
     )
     assert run.name == "Run A"
 
-    runs = await runs_service.list_runs_for_experiment(project_id, exp.id)
+    runs, runs_total = await runs_service.list_runs_for_experiment(project_id, exp.id)
     assert len(runs) == 1
+    assert runs_total == 1
 
     run = await runs_service.update_run(
         project_id,
@@ -117,8 +119,11 @@ async def test_storage_layer_crud(db_pool):
     )
     assert session.ordinal_number == 1
 
-    sessions = await sessions_service.list_sessions_for_run(project_id, run.id)
+    sessions, sessions_total = await sessions_service.list_sessions_for_run(
+        project_id, run.id
+    )
     assert len(sessions) == 1
+    assert sessions_total == 1
 
     session = await sessions_service.update_session(
         project_id,

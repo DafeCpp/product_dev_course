@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any, List
+from typing import Any, List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import RunCreateDTO, RunUpdateDTO
+from experiment_service.domain.enums import RunStatus
 from experiment_service.domain.models import Run
 from experiment_service.repositories.base import BaseRepository
 
@@ -95,10 +96,11 @@ class RunRepository(BaseRepository):
 
     async def list_by_project(
         self, project_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[Run]:
+    ) -> Tuple[List[Run], int]:
         records = await self._fetch(
             """
-            SELECT *
+            SELECT *,
+                   COUNT(*) OVER() AS total_count
             FROM runs
             WHERE project_id = $1
             ORDER BY created_at DESC
@@ -108,14 +110,29 @@ class RunRepository(BaseRepository):
             limit,
             offset,
         )
-        return [self._to_model(rec) for rec in records]
+        items: List[Run] = []
+        total: int | None = None
+        for rec in records:
+            rec_dict = dict(rec)
+            total_value = rec_dict.pop("total_count", None)
+            if total_value is not None:
+                total = int(total_value)
+            for column in self.JSONB_COLUMNS:
+                value = rec_dict.get(column)
+                if isinstance(value, str):
+                    rec_dict[column] = json.loads(value)
+            items.append(Run.model_validate(rec_dict))
+        if total is None:
+            total = await self._count_by_project(project_id)
+        return items, total
 
     async def list_by_experiment(
         self, project_id: UUID, experiment_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[Run]:
+    ) -> Tuple[List[Run], int]:
         records = await self._fetch(
             """
-            SELECT *
+            SELECT *,
+                   COUNT(*) OVER() AS total_count
             FROM runs
             WHERE project_id = $1 AND experiment_id = $2
             ORDER BY created_at DESC
@@ -126,7 +143,36 @@ class RunRepository(BaseRepository):
             limit,
             offset,
         )
-        return [self._to_model(rec) for rec in records]
+        items: List[Run] = []
+        total: int | None = None
+        for rec in records:
+            rec_dict = dict(rec)
+            total_value = rec_dict.pop("total_count", None)
+            if total_value is not None:
+                total = int(total_value)
+            for column in self.JSONB_COLUMNS:
+                value = rec_dict.get(column)
+                if isinstance(value, str):
+                    rec_dict[column] = json.loads(value)
+            items.append(Run.model_validate(rec_dict))
+        if total is None:
+            total = await self._count_by_experiment(project_id, experiment_id)
+        return items, total
+
+    async def _count_by_project(self, project_id: UUID) -> int:
+        record = await self._fetchrow(
+            "SELECT COUNT(*) AS total FROM runs WHERE project_id = $1",
+            project_id,
+        )
+        return int(record["total"]) if record else 0
+
+    async def _count_by_experiment(self, project_id: UUID, experiment_id: UUID) -> int:
+        record = await self._fetchrow(
+            "SELECT COUNT(*) AS total FROM runs WHERE project_id = $1 AND experiment_id = $2",
+            project_id,
+            experiment_id,
+        )
+        return int(record["total"]) if record else 0
 
     async def update(
         self,
@@ -172,4 +218,28 @@ class RunRepository(BaseRepository):
         )
         if record is None:
             raise NotFoundError("Run not found")
+
+    async def update_status_batch(
+        self,
+        project_id: UUID,
+        run_ids: list[UUID],
+        status: RunStatus,
+    ) -> List[Run]:
+        if not run_ids:
+            return []
+        async with self._pool.acquire() as conn, conn.transaction():
+            records = await conn.fetch(
+                """
+                UPDATE runs
+                SET status = $3, updated_at = now()
+                WHERE project_id = $1 AND id = ANY($2::uuid[])
+                RETURNING *
+                """,
+                project_id,
+                run_ids,
+                status.value,
+            )
+            if len(records) != len(run_ids):
+                raise NotFoundError("One or more runs not found")
+            return [self._to_model(record) for record in records]
 

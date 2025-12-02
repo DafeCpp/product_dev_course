@@ -129,3 +129,31 @@ async def test_experiment_run_capture_flow(service_client):
     )
     assert resp.status == 404
 
+
+@pytest.mark.asyncio
+async def test_batch_update_invalid_run_ids(service_client):
+    project_id = uuid.uuid4()
+    headers = _headers(project_id)
+
+    resp = await service_client.post(
+        "/api/v1/experiments",
+        json={"project_id": str(project_id), "name": "Experiment C"},
+        headers=headers,
+    )
+    assert resp.status == 201
+    experiment_id = (await resp.json())["id"]
+
+    resp = await service_client.post(
+        f"/api/v1/experiments/{experiment_id}/runs",
+        json={"name": "run"},
+        headers=headers,
+    )
+    assert resp.status == 201
+
+    resp = await service_client.post(
+        "/api/v1/runs:batch-status",
+        json={"run_ids": [123], "status": "running"},
+        headers=headers,
+    )
+    assert resp.status == 400
+

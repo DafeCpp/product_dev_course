@@ -6,6 +6,7 @@ from uuid import UUID
 
 from experiment_service.core.exceptions import ScopeMismatchError
 from experiment_service.domain.dto import RunCreateDTO, RunUpdateDTO
+from experiment_service.domain.enums import RunStatus
 from experiment_service.domain.models import Run
 from experiment_service.repositories.experiments import ExperimentRepository
 from experiment_service.repositories.runs import RunRepository
@@ -29,12 +30,12 @@ class RunService:
 
     async def list_runs(
         self, project_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[Run]:
+    ) -> tuple[List[Run], int]:
         return await self._repository.list_by_project(project_id, limit=limit, offset=offset)
 
     async def list_runs_for_experiment(
         self, project_id: UUID, experiment_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[Run]:
+    ) -> tuple[List[Run], int]:
         return await self._repository.list_by_experiment(
             project_id, experiment_id, limit=limit, offset=offset
         )
@@ -49,4 +50,9 @@ class RunService:
 
     async def delete_run(self, project_id: UUID, run_id: UUID) -> None:
         await self._repository.delete(project_id, run_id)
+
+    async def batch_update_status(
+        self, project_id: UUID, run_ids: list[UUID], status: RunStatus
+    ) -> List[Run]:
+        return await self._repository.update_status_batch(project_id, run_ids, status)
 

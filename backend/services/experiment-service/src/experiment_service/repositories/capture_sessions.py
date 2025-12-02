@@ -1,7 +1,7 @@
 """Capture session repository."""
 from __future__ import annotations
 
-from typing import List
+from typing import List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
@@ -70,10 +70,11 @@ class CaptureSessionRepository(BaseRepository):
 
     async def list_by_project(
         self, project_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[CaptureSession]:
+    ) -> Tuple[List[CaptureSession], int]:
         records = await self._fetch(
             """
-            SELECT *
+            SELECT *,
+                   COUNT(*) OVER() AS total_count
             FROM capture_sessions
             WHERE project_id = $1
             ORDER BY created_at DESC
@@ -83,14 +84,25 @@ class CaptureSessionRepository(BaseRepository):
             limit,
             offset,
         )
-        return [self._to_model(rec) for rec in records]
+        items: List[CaptureSession] = []
+        total: int | None = None
+        for rec in records:
+            rec_dict = dict(rec)
+            total_value = rec_dict.pop("total_count", None)
+            if total_value is not None:
+                total = int(total_value)
+            items.append(CaptureSession.model_validate(rec_dict))
+        if total is None:
+            total = await self._count_by_project(project_id)
+        return items, total
 
     async def list_by_run(
         self, project_id: UUID, run_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[CaptureSession]:
+    ) -> Tuple[List[CaptureSession], int]:
         records = await self._fetch(
             """
-            SELECT *
+            SELECT *,
+                   COUNT(*) OVER() AS total_count
             FROM capture_sessions
             WHERE project_id = $1 AND run_id = $2
             ORDER BY ordinal_number ASC
@@ -101,7 +113,32 @@ class CaptureSessionRepository(BaseRepository):
             limit,
             offset,
         )
-        return [self._to_model(rec) for rec in records]
+        items: List[CaptureSession] = []
+        total: int | None = None
+        for rec in records:
+            rec_dict = dict(rec)
+            total_value = rec_dict.pop("total_count", None)
+            if total_value is not None:
+                total = int(total_value)
+            items.append(CaptureSession.model_validate(rec_dict))
+        if total is None:
+            total = await self._count_by_run(project_id, run_id)
+        return items, total
+
+    async def _count_by_project(self, project_id: UUID) -> int:
+        record = await self._fetchrow(
+            "SELECT COUNT(*) AS total FROM capture_sessions WHERE project_id = $1",
+            project_id,
+        )
+        return int(record["total"]) if record else 0
+
+    async def _count_by_run(self, project_id: UUID, run_id: UUID) -> int:
+        record = await self._fetchrow(
+            "SELECT COUNT(*) AS total FROM capture_sessions WHERE project_id = $1 AND run_id = $2",
+            project_id,
+            run_id,
+        )
+        return int(record["total"]) if record else 0
 
     async def update(
         self,
