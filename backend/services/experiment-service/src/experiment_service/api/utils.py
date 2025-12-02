@@ -41,11 +41,12 @@ def paginated_response(
     limit: int,
     offset: int,
     key: str,
+    total: int,
 ) -> dict[str, Any]:
     page = offset // limit + 1 if limit else 1
     return {
         key: items,
-        "total": len(items),
+        "total": total,
         "page": page,
         "page_size": limit,
     }

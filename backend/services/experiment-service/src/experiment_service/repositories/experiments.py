@@ -72,10 +72,11 @@ class ExperimentRepository(BaseRepository):
 
     async def list_by_project(
         self, project_id: UUID, *, limit: int = 50, offset: int = 0
-    ) -> List[Experiment]:
+    ) -> tuple[List[Experiment], int]:
         records = await self._fetch(
             """
-            SELECT *
+            SELECT *,
+                   COUNT(*) OVER() AS total_count
             FROM experiments
             WHERE project_id = $1
             ORDER BY created_at DESC
@@ -85,7 +86,23 @@ class ExperimentRepository(BaseRepository):
             limit,
             offset,
         )
-        return [self._to_model(rec) for rec in records]
+        items: List[Experiment] = []
+        total: int | None = None
+        for rec in records:
+            rec_dict = dict(rec)
+            if total is None:
+                total_value = rec_dict.pop("total_count", 0)
+                total = int(total_value)
+            else:
+                rec_dict.pop("total_count", None)
+            items.append(Experiment.model_validate(rec_dict))
+        if total is None:
+            count_record = await self._fetchrow(
+                "SELECT COUNT(*) AS total FROM experiments WHERE project_id = $1",
+                project_id,
+            )
+            total = int(count_record["total"]) if count_record else 0
+        return items, total
 
     async def update(
         self,
