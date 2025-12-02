@@ -1,27 +1,7 @@
--- Auto-generated from migrations.
--- Run `poetry run python bin/export_schema.py` after editing migrations.
-
-BEGIN;
-DROP TABLE IF EXISTS request_idempotency CASCADE;
-DROP TABLE IF EXISTS artifacts CASCADE;
-DROP TABLE IF EXISTS capture_session_events CASCADE;
-DROP TABLE IF EXISTS capture_sessions CASCADE;
-DROP TABLE IF EXISTS run_sensors CASCADE;
-DROP TABLE IF EXISTS conversion_profiles CASCADE;
-DROP TABLE IF EXISTS sensors CASCADE;
-DROP TABLE IF EXISTS runs CASCADE;
-DROP TABLE IF EXISTS experiments CASCADE;
-DROP TYPE IF EXISTS conversion_profile_status CASCADE;
-DROP TYPE IF EXISTS sensor_status CASCADE;
-DROP TYPE IF EXISTS capture_session_status CASCADE;
-DROP TYPE IF EXISTS run_status CASCADE;
-DROP TYPE IF EXISTS experiment_status CASCADE;
-DROP FUNCTION IF EXISTS set_updated_at() CASCADE;
-
--- Migration: 001_initial_schema.sql
 -- 001_initial_schema.sql
 -- Initial Experiment Service schema (Foundation scope).
 
+BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -238,4 +218,6 @@ CREATE TABLE request_idempotency (
 );
 
 CREATE INDEX request_idempotency_user_idx ON request_idempotency (user_id, created_at DESC);
+
 COMMIT;
+

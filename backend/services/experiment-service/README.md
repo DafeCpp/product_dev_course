@@ -20,12 +20,30 @@ cp .env.example .env
 poetry run python -m experiment_service.main
 ```
 
+## SQL-миграции
+- Все изменения схемы описываются в каталоге `migrations/` нумерованными `.sql` файлами (`001_initial_schema.sql` и т.д.).
+- Таблица `schema_migrations` хранит список применённых версий и checksum файла.
+- Применить (или проверить) миграции можно утилитой `bin/migrate.py`:
+
+```bash
+poetry run python bin/migrate.py --database-url postgres://user:pass@localhost:5432/experiment_service
+# посмотреть список, не применяя
+poetry run python bin/migrate.py --dry-run
+```
+
+Тестовый стенд (`tests/schemas/postgresql/experiment_service.sql`) генерируется автоматически из миграций:
+
+```bash
+poetry run python bin/export_schema.py
+```
+
+Этот файл использует testsuite при создании локального PostgreSQL-инстанса и всегда должен быть синхронизирован с последними миграциями.
+
 ## Следующие шаги
-1. **Доменные миграции:** выбрать инструмент для миграций (SQL‑скрипты/генератор) и описать структуры таблиц (experiments, runs, capture_sessions, sensors, metrics и т.д.).
-2. **Persisted storage layer:** реализовать репозитории поверх `asyncpg`, покрывающие доменные сценарии и используемые API.
-3. **Интеграции:** реализовать ingest `/telemetry`, `/metrics`, webhook-потоки и очереди событий.
-4. **RBAC и аутентификация:** заменить заглушки зависимостей на реальный вызов Auth Service + аудит.
-5. **Тесты и документация:** добавить unit/integration тесты и сформировать OpenAPI/AsyncAPI контракт.
+1. **Persisted storage layer:** реализовать репозитории поверх `asyncpg`, покрывающие доменные сценарии и используемые API.
+2. **Интеграции:** реализовать ingest `/telemetry`, `/metrics`, webhook-потоки и очереди событий.
+3. **RBAC и аутентификация:** заменить заглушки зависимостей на реальный вызов Auth Service + аудит.
+4. **Тесты и документация:** добавить unit/integration тесты и сформировать OpenAPI/AsyncAPI контракт.
 
 Скелет поддерживает поэтапное развитие без переезда архитектуры в середине работы. Каждый модуль содержит TODO-комментарии с ссылкой на соответствующий раздел требований.
 

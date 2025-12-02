@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncpg
 
-from typing import Any
+from typing import Any, AsyncIterator
 
 from experiment_service.settings import settings
 
@@ -28,10 +28,18 @@ async def close_pool(_app: Any = None) -> None:
         pool = None
 
 
-async def get_connection():
-    """Yield a connection from the global pool."""
+async def get_pool() -> asyncpg.Pool:
+    """Return the initialized asyncpg pool, creating it if needed."""
+    global pool
     if pool is None:
         await init_pool()
-    async with pool.acquire() as conn:  # type: ignore[attr-defined]
+    assert pool is not None  # for type checkers
+    return pool
+
+
+async def get_connection() -> AsyncIterator[asyncpg.Connection]:
+    """Yield a connection from the global pool."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         yield conn
 
