@@ -1,7 +1,7 @@
 """Asyncpg connection pool helpers."""
 from __future__ import annotations
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 
 from typing import Any, AsyncIterator
 

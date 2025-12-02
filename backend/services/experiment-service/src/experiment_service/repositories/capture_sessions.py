@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import List
 from uuid import UUID
 
-from asyncpg import Pool, Record
+from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import (

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import AnyHttpUrl, Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,11 +19,13 @@ class Settings(BaseSettings):
     port: int = 8002
 
     database_url: PostgresDsn = Field(
-        default="postgresql://postgres:postgres@localhost:5432/experiment_db"
+        default=cast(PostgresDsn, "postgresql://postgres:postgres@localhost:5432/experiment_db")
     )
     db_pool_size: int = 20
 
-    auth_service_url: AnyHttpUrl = Field(default="http://localhost:8001/api/v1")
+    auth_service_url: AnyHttpUrl = Field(
+        default=cast(AnyHttpUrl, "http://localhost:8001/api/v1")
+    )
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     telemetry_broker_url: str = "redis://localhost:6379/0"
 

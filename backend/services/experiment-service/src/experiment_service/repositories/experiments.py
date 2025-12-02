@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 import json
-from typing import List
+from typing import Any, List
 from uuid import UUID
 
-from asyncpg import Pool, Record
+from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateDTO
@@ -98,7 +98,7 @@ class ExperimentRepository(BaseRepository):
             raise ValueError("No fields provided for update")
 
         assignments = []
-        values = []
+        values: list[Any] = []
         idx = 1
         for column, value in payload.items():
             column_expr = f"{column} = ${idx}"
