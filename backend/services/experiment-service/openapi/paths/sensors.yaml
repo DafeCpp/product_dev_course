@@ -4,37 +4,37 @@ collection:
     summary: List sensors
     operationId: listSensors
     parameters:
-      - name: project_id
-        in: query
-        schema:
-          type: string
-          format: uuid
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
-        description: Sensors
+        description: Paginated sensors
         content:
           application/json:
             schema:
-              type: array
-              items:
-                $ref: ../components/schemas.yaml#/Sensor
+              $ref: ../components/schemas.yaml#/SensorListResponse
   post:
     tags: [sensors]
     summary: Register sensor
     operationId: registerSensor
+    parameters:
+      - $ref: ../components/parameters.yaml#/IdempotencyKey
     requestBody:
       required: true
       content:
         application/json:
           schema:
-            $ref: ../components/schemas.yaml#/SensorCreate
+            $ref: ../components/schemas.yaml#/SensorRegisterRequest
     responses:
       201:
-        description: Sensor registered
+        description: Sensor registered (token included)
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/Sensor
+              $ref: ../components/schemas.yaml#/SensorTokenResponse
+      400:
+        description: Validation error
+      409:
+        description: Idempotency key conflicts with another payload
 
 rotateToken:
   post:
@@ -46,6 +46,10 @@ rotateToken:
     responses:
       200:
         description: Token rotated
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorTokenResponse
 
 conversionProfiles:
   get:
@@ -54,21 +58,21 @@ conversionProfiles:
     operationId: listConversionProfiles
     parameters:
       - $ref: ../components/parameters.yaml#/SensorId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
-        description: Conversion profiles
+        description: Paginated conversion profiles
         content:
           application/json:
             schema:
-              type: array
-              items:
-                $ref: ../components/schemas.yaml#/ConversionProfile
+              $ref: ../components/schemas.yaml#/ConversionProfileListResponse
   post:
     tags: [conversion_profiles]
     summary: Create conversion profile
     operationId: createConversionProfile
     parameters:
       - $ref: ../components/parameters.yaml#/SensorId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
@@ -91,7 +95,12 @@ conversionProfilePublish:
     parameters:
       - $ref: ../components/parameters.yaml#/SensorId
       - $ref: ../components/parameters.yaml#/ProfileId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
-      202:
-        description: Publish initiated
+      200:
+        description: Conversion profile published
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ConversionProfile
 

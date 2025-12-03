@@ -375,9 +375,13 @@ SensorCreate:
       type: string
     display_unit:
       type: string
-    conversion_profile:
-      type: object
-      additionalProperties: true
+SensorRegisterRequest:
+  allOf:
+    - $ref: '#/components/schemas/SensorCreate'
+    - type: object
+      properties:
+        conversion_profile:
+          $ref: '#/components/schemas/ConversionProfileInput'
 ConversionProfile:
   type: object
   properties:
@@ -409,7 +413,7 @@ ConversionProfile:
       type: string
       format: date-time
       nullable: true
-ConversionProfileCreate:
+ConversionProfileInput:
   type: object
   required:
   - version
@@ -427,10 +431,53 @@ ConversionProfileCreate:
       type: string
       enum:
       - draft
-      - active
       - scheduled
+      - active
       - deprecated
       default: draft
+    valid_from:
+      type: string
+      format: date-time
+      nullable: true
+    valid_to:
+      type: string
+      format: date-time
+      nullable: true
+ConversionProfileCreate:
+  $ref: '#/components/schemas/ConversionProfileInput'
+SensorTokenResponse:
+  type: object
+  properties:
+    sensor:
+      $ref: '#/components/schemas/Sensor'
+    token:
+      type: string
+SensorListResponse:
+  type: object
+  properties:
+    sensors:
+      type: array
+      items:
+        $ref: '#/components/schemas/Sensor'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+ConversionProfileListResponse:
+  type: object
+  properties:
+    conversion_profiles:
+      type: array
+      items:
+        $ref: '#/components/schemas/ConversionProfile'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
 TelemetryIngestRequest:
   type: object
   required:

@@ -1,12 +1,12 @@
 # Experiment Service (vNext Skeleton)
 
-Новый каркас сервиса построен вокруг требований из `docs/experiment-tracking-ts.md` и дорожной карты `docs/experiment-service-roadmap.md`. Он ещё не реализует бизнес-логику, но задаёт архитектурные контуры, чтобы команда могла итеративно добавлять функциональность, не нарушая спецификацию.
+Новый каркас сервиса построен вокруг требований из `docs/experiment-tracking-ts.md` и дорожной карты `docs/experiment-service-roadmap.md`. Он уже реализует базовый CRUD-слой для `Experiment`, `Run`, `CaptureSession`, а также добавленную в этой итерации поддержку `Sensor` + `ConversionProfile` с проверкой статусов и идемпотентностью на write-операциях.
 
 ## Что входит
 - aiohttp приложение (`src/experiment_service/main.py`).
 - Модульная структура по доменам (experiments, runs, capture sessions, sensors, metrics, artifacts, conversion profiles).
 - Pydantic-модели домена со статусами, указанными в ТЗ.
-- Заготовки REST-роутов с описанием ожидаемых контрактов (пока возвращают `501`).
+- REST-роуты для `experiments`, `runs`, `capture-sessions`, `sensors` и `conversion-profiles`, включая статусные проверки и идемпотентность на POST.
 - Конфигурация через `Settings` (Pydantic Settings) с подготовленными переменными окружения.
 - Асинхронный доступ к PostgreSQL через `asyncpg` (без SQLAlchemy).
 - Список зависимостей для логирования, тестирования и интеграций собран в `pyproject.toml`.
@@ -38,6 +38,40 @@ poetry run python bin/export_schema.py
 ```
 
 Этот файл использует testsuite при создании локального PostgreSQL-инстанса и всегда должен быть синхронизирован с последними миграциями.
+
+## Sensors & Conversion Profiles
+
+- `POST /api/v1/sensors` и `POST /api/v1/sensors/{sensor_id}/conversion-profiles` поддерживают идемпотентность через заголовок `Idempotency-Key`. Повторный запрос с тем же телом вернёт закэшированный ответ, конфликтующие payload'ы получают `409`.
+- Регистрация датчика принимает базовые поля (`project_id`, `name`, `type`, единицы измерений) и опциональный блок `conversion_profile`:
+
+```json
+{
+  "project_id": "11111111-2222-3333-4444-555555555555",
+  "name": "thermo-1",
+  "type": "thermocouple",
+  "input_unit": "mV",
+  "display_unit": "C",
+  "conversion_profile": {
+    "version": "v1",
+    "kind": "linear",
+    "payload": {"a": 1.4, "b": 0.22},
+    "status": "draft"
+  }
+}
+```
+
+- Успешный ответ содержит сам объект и последний сгенерированный токен:
+
+```json
+{
+  "sensor": { "...": "..." },
+  "token": "ZyYv2..."
+}
+```
+
+- `GET /api/v1/sensors` и `/conversion-profiles` возвращают пагинированный ответ (`sensors[]`, `total`, `page`, `page_size`), совпадающий с `paginated_response` из API-утилит.
+
+OpenAPI (`openapi/openapi.yaml`) синхронизирован с текущими DTO и позволяет генерировать клиент/SDK.
 
 ## Следующие шаги
 1. **Persisted storage layer:** реализовать репозитории поверх `asyncpg`, покрывающие доменные сценарии и используемые API.

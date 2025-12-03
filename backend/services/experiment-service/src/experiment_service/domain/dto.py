@@ -9,8 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from experiment_service.domain.enums import (
     CaptureSessionStatus,
+    ConversionProfileStatus,
     ExperimentStatus,
     RunStatus,
+    SensorStatus,
 )
 
 
@@ -94,4 +96,55 @@ class CaptureSessionUpdateDTO(BaseModel):
     started_at: datetime | None = None
     stopped_at: datetime | None = None
     archived: bool | None = None
+
+
+class SensorCreateDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: UUID
+    name: str
+    type: str
+    input_unit: str
+    display_unit: str
+    status: SensorStatus = SensorStatus.REGISTERING
+    calibration_notes: str | None = None
+
+
+class SensorUpdateDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    type: str | None = None
+    input_unit: str | None = None
+    display_unit: str | None = None
+    status: SensorStatus | None = None
+    calibration_notes: str | None = None
+    last_heartbeat: datetime | None = None
+    active_profile_id: UUID | None = None
+
+
+class ConversionProfileInputDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    kind: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    status: ConversionProfileStatus = ConversionProfileStatus.DRAFT
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+
+
+class ConversionProfileCreateDTO(ConversionProfileInputDTO):
+    sensor_id: UUID
+    project_id: UUID
+    created_by: UUID
+
+
+class ConversionProfilePublishDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sensor_id: UUID
+    project_id: UUID
+    profile_id: UUID
+    published_by: UUID
 

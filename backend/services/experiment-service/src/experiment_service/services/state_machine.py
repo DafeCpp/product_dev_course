@@ -4,6 +4,7 @@ from __future__ import annotations
 from experiment_service.core.exceptions import InvalidStatusTransitionError
 from experiment_service.domain.enums import (
     CaptureSessionStatus,
+    ConversionProfileStatus,
     ExperimentStatus,
     RunStatus,
 )
@@ -39,6 +40,22 @@ CAPTURE_TRANSITIONS: dict[CaptureSessionStatus, set[CaptureSessionStatus]] = {
     CaptureSessionStatus.FAILED: {CaptureSessionStatus.ARCHIVED},
 }
 
+CONVERSION_PROFILE_TRANSITIONS: dict[
+    ConversionProfileStatus, set[ConversionProfileStatus]
+] = {
+    ConversionProfileStatus.DRAFT: {
+        ConversionProfileStatus.SCHEDULED,
+        ConversionProfileStatus.ACTIVE,
+        ConversionProfileStatus.DEPRECATED,
+    },
+    ConversionProfileStatus.SCHEDULED: {
+        ConversionProfileStatus.ACTIVE,
+        ConversionProfileStatus.DEPRECATED,
+    },
+    ConversionProfileStatus.ACTIVE: {ConversionProfileStatus.DEPRECATED},
+    ConversionProfileStatus.DEPRECATED: set(),
+}
+
 
 def _validate_transition(entity: str, current, new, transitions: dict) -> None:
     if current == new:
@@ -62,6 +79,12 @@ def validate_capture_transition(
     current: CaptureSessionStatus, new: CaptureSessionStatus
 ) -> None:
     _validate_transition("capture session", current, new, CAPTURE_TRANSITIONS)
+
+
+def validate_conversion_profile_transition(
+    current: ConversionProfileStatus, new: ConversionProfileStatus
+) -> None:
+    _validate_transition("conversion profile", current, new, CONVERSION_PROFILE_TRANSITIONS)
 
 
 

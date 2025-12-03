@@ -40,3 +40,18 @@ ArtifactId:
   schema:
     type: string
     format: uuid
+ProjectIdQuery:
+  name: project_id
+  in: query
+  required: false
+  schema:
+    type: string
+    format: uuid
+  description: Override active project scope (requires owner/editor role).
+IdempotencyKey:
+  name: Idempotency-Key
+  in: header
+  required: false
+  schema:
+    type: string
+  description: Provides idempotency on POST requests. When supplied, repeats must include the same body.

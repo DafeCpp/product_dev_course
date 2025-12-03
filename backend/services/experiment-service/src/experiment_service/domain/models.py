@@ -12,6 +12,7 @@ from experiment_service.domain.enums import (
     ConversionProfileStatus,
     ExperimentStatus,
     RunStatus,
+    SensorStatus,
 )
 
 
@@ -71,10 +72,11 @@ class Sensor(BaseModel):
     type: str
     input_unit: str
     display_unit: str
-    status: str
+    status: SensorStatus = SensorStatus.REGISTERING
     token_preview: str | None = None
     last_heartbeat: datetime | None = None
     active_profile_id: UUID | None = None
+    calibration_notes: str | None = None
     created_at: datetime
     updated_at: datetime
 

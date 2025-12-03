@@ -44,3 +44,12 @@ class ConversionProfileStatus(str, Enum):
     DEPRECATED = "deprecated"
 
 
+class SensorStatus(str, Enum):
+    """Sensor lifecycle states."""
+
+    REGISTERING = "registering"
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DECOMMISSIONED = "decommissioned"
+
+
