@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from uuid import UUID
 
-from asyncpg import Record
+from asyncpg import Record  # type: ignore[import-untyped]
 
 from experiment_service.repositories.base import BaseRepository
 
