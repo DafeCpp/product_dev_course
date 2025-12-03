@@ -4,6 +4,8 @@ import uuid
 
 import pytest
 
+from experiment_service.services.idempotency import IDEMPOTENCY_HEADER
+
 
 def _headers(project_id: uuid.UUID, role: str = "owner") -> dict[str, str]:
     return {
@@ -65,7 +67,13 @@ async def test_experiment_run_capture_flow(service_client):
     run = await resp.json()
     run_id = run["id"]
 
-    # Update run status
+    # Update run status to running then succeeded
+    resp = await service_client.patch(
+        f"/api/v1/runs/{run_id}",
+        json={"status": "running"},
+        headers=headers,
+    )
+    assert resp.status == 200
     resp = await service_client.patch(
         f"/api/v1/runs/{run_id}",
         json={"status": "succeeded", "duration_seconds": 42},
@@ -156,4 +164,30 @@ async def test_batch_update_invalid_run_ids(service_client):
         headers=headers,
     )
     assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_experiment_idempotency(service_client):
+    project_id = uuid.uuid4()
+    headers = _headers(project_id)
+    idem_headers = {**headers, IDEMPOTENCY_HEADER: "idem-key-1"}
+
+    payload = {"project_id": str(project_id), "name": "Idempotent Experiment"}
+
+    resp1 = await service_client.post("/api/v1/experiments", json=payload, headers=idem_headers)
+    assert resp1.status == 201
+    first = await resp1.json()
+
+    resp2 = await service_client.post("/api/v1/experiments", json=payload, headers=idem_headers)
+    assert resp2.status == 201
+    second = await resp2.json()
+    assert first == second
+
+    # Different payload with same key should yield 409
+    resp3 = await service_client.post(
+        "/api/v1/experiments",
+        json={**payload, "description": "changed"},
+        headers=idem_headers,
+    )
+    assert resp3.status == 409
 

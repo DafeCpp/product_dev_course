@@ -5,7 +5,7 @@ import uuid
 import asyncpg
 import pytest
 
-from experiment_service.core.exceptions import NotFoundError
+from experiment_service.core.exceptions import InvalidStatusTransitionError, NotFoundError
 from experiment_service.domain.dto import (
     CaptureSessionCreateDTO,
     CaptureSessionUpdateDTO,
@@ -139,4 +139,45 @@ async def test_storage_layer_crud(db_pool):
 
     with pytest.raises(NotFoundError):
         await experiments_service.get_experiment(project_id, exp.id)
+
+    # Invalid transitions
+    exp2 = await experiments_service.create_experiment(
+        ExperimentCreateDTO(
+            project_id=project_id,
+            owner_id=owner_id,
+            name="Invalid Status Experiment",
+        )
+    )
+    with pytest.raises(InvalidStatusTransitionError):
+        await experiments_service.update_experiment(
+            project_id,
+            exp2.id,
+            ExperimentUpdateDTO(status=ExperimentStatus.SUCCEEDED),
+        )
+
+    run2 = await runs_service.create_run(
+        RunCreateDTO(
+            experiment_id=exp2.id,
+            project_id=project_id,
+            created_by=owner_id,
+        )
+    )
+    with pytest.raises(InvalidStatusTransitionError):
+        await runs_service.update_run(
+            project_id, run2.id, RunUpdateDTO(status=RunStatus.SUCCEEDED)
+        )
+
+    session2 = await sessions_service.create_session(
+        CaptureSessionCreateDTO(
+            run_id=run2.id,
+            project_id=project_id,
+            ordinal_number=1,
+        )
+    )
+    with pytest.raises(InvalidStatusTransitionError):
+        await sessions_service.update_session(
+            project_id,
+            session2.id,
+            CaptureSessionUpdateDTO(status=CaptureSessionStatus.SUCCEEDED),
+        )
 
