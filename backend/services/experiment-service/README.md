@@ -73,6 +73,17 @@ poetry run python bin/export_schema.py
 
 OpenAPI (`openapi/openapi.yaml`) синхронизирован с текущими DTO и позволяет генерировать клиент/SDK.
 
+## Генерация SDK
+
+- Для генерации клиентов используется [OpenAPI Generator CLI](https://openapi-generator.tech/) (dev-зависимость `openapi-generator-cli`).
+- Требуется установленная Java 17+ (например, `openjdk-17-jre-headless`), так как CLI запускает JAR-файл.
+- Конфигурации для целевых языков лежат в `openapi/clients/`:
+  - `typescript-fetch-config.yaml` — npm-пакет с fetch-клиентом и разделёнными моделями/API.
+  - `cpp-restsdk-config.yaml` — C++ клиент на базе cpprestsdk с кастомными namespace'ами.
+- Все артефакты пишутся в `clients/` (игнорируется Git'ом). Перед генерацией директории очищаются.
+- Запуск: `make generate-sdk` (или из каталога сервиса `poetry run openapi-generator-cli generate ...`).
+- Полученные пакеты можно дальше упаковывать/публиковать согласно потребностям (npm, conan/vcpkg и т.д.).
+
 ## Следующие шаги
 1. **Persisted storage layer:** реализовать репозитории поверх `asyncpg`, покрывающие доменные сценарии и используемые API.
 2. **Интеграции:** реализовать ingest `/telemetry`, `/metrics`, webhook-потоки и очереди событий.
