@@ -3,6 +3,13 @@ ingest:
     tags: [telemetry]
     summary: Ingest telemetry
     operationId: ingestTelemetry
+    parameters:
+      - name: Authorization
+        in: header
+        required: true
+        description: Bearer sensor token issued on registration
+        schema:
+          type: string
     requestBody:
       required: true
       content:
@@ -12,6 +19,12 @@ ingest:
     responses:
       202:
         description: Accepted
+      400:
+        description: Validation or scope error
+      401:
+        description: Invalid sensor token
+      404:
+        description: Related entity not found
 
 stream:
   get:

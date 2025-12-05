@@ -5,11 +5,19 @@ collection:
     summary: List experiments
     operationId: listExperiments
     parameters:
-    - name: project_id
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: limit
       in: query
       schema:
-        type: string
-        format: uuid
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    - name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
     - name: status
       in: query
       schema:
@@ -41,6 +49,13 @@ collection:
     - experiments
     summary: Create experiment
     operationId: createExperiment
+    parameters:
+    - name: Idempotency-Key
+      in: header
+      required: false
+      description: Used to make POST experiments idempotent
+      schema:
+        type: string
     requestBody:
       required: true
       content:

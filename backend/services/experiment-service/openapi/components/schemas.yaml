@@ -1,3 +1,23 @@
+SensorListResponse:
+  type: object
+  properties:
+    sensors:
+      type: array
+      items:
+        $ref: '#/Sensor'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+SensorTokenResponse:
+  type: object
+  properties:
+    sensor:
+      $ref: '#/Sensor'
+    token:
+      type: string
 ExperimentStatus:
   type: string
   enum:
@@ -59,9 +79,13 @@ ExperimentCreate:
   type: object
   required:
   - project_id
+  - owner_id
   - name
   properties:
     project_id:
+      type: string
+      format: uuid
+    owner_id:
       type: string
       format: uuid
     name:
@@ -143,15 +167,28 @@ Run:
     updated_at:
       type: string
       format: date-time
+    project_id:
+      type: string
+      format: uuid
 RunCreate:
   type: object
   required:
-  - name
-  - parameters
+  - experiment_id
+  - project_id
+  - created_by
   properties:
+    experiment_id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    created_by:
+      type: string
+      format: uuid
     name:
       type: string
-    parameters:
+    params:
       type: object
       additionalProperties: true
     notes:
@@ -168,7 +205,7 @@ RunUpdate:
   properties:
     name:
       type: string
-    parameters:
+    params:
       type: object
       additionalProperties: true
     notes:
@@ -213,6 +250,9 @@ CaptureSession:
     run_id:
       type: string
       format: uuid
+    project_id:
+      type: string
+      format: uuid
     ordinal_number:
       type: integer
     started_at:
@@ -231,11 +271,45 @@ CaptureSession:
       nullable: true
     notes:
       type: string
+    archived:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
 CaptureSessionCreate:
   type: object
+  required:
+  - project_id
+  - run_id
+  - ordinal_number
   properties:
+    project_id:
+      type: string
+      format: uuid
+    run_id:
+      type: string
+      format: uuid
+    ordinal_number:
+      type: integer
+    status:
+      $ref: '#/CaptureSessionStatus'
+      default: draft
+    initiated_by:
+      type: string
+      format: uuid
     notes:
       type: string
+    started_at:
+      type: string
+      format: date-time
+    stopped_at:
+      type: string
+      format: date-time
+    archived:
+      type: boolean
 MetricIngestRequest:
   type: object
   required:
@@ -382,6 +456,26 @@ SensorRegisterRequest:
       properties:
         conversion_profile:
           $ref: '#/ConversionProfileInput'
+SensorListResponse:
+  type: object
+  properties:
+    sensors:
+      type: array
+      items:
+        $ref: '#/Sensor'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+SensorTokenResponse:
+  type: object
+  properties:
+    sensor:
+      $ref: '#/Sensor'
+    token:
+      type: string
 ConversionProfile:
   type: object
   properties:
@@ -482,7 +576,7 @@ TelemetryIngestRequest:
   type: object
   required:
   - sensor_id
-  - records
+  - readings
   properties:
     sensor_id:
       type: string
@@ -495,7 +589,7 @@ TelemetryIngestRequest:
       type: string
       format: uuid
       nullable: true
-    records:
+    readings:
       type: array
       items:
         type: object
@@ -508,6 +602,9 @@ TelemetryIngestRequest:
             format: date-time
           raw_value:
             type: number
-          metadata:
+          physical_value:
+            type: number
+            nullable: true
+          meta:
             type: object
             additionalProperties: true

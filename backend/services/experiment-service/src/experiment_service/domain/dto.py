@@ -5,7 +5,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+# pyright: reportMissingImports=false
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from experiment_service.domain.enums import (
     CaptureSessionStatus,
@@ -148,3 +150,27 @@ class ConversionProfilePublishDTO(BaseModel):
     profile_id: UUID
     published_by: UUID
 
+
+class TelemetryReadingDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timestamp: datetime
+    raw_value: float
+    physical_value: float | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class TelemetryIngestDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sensor_id: UUID
+    run_id: UUID | None = None
+    capture_session_id: UUID | None = None
+    readings: list[TelemetryReadingDTO] = Field(default_factory=list)
+
+    @field_validator("readings")
+    @classmethod
+    def _validate_readings(cls, value: list[TelemetryReadingDTO]) -> list[TelemetryReadingDTO]:
+        if not value:
+            raise ValueError("readings must not be empty")
+        return value

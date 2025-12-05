@@ -30,6 +30,7 @@ httpx = "^0.27.0"
 ruff = "^0.5.0"
 mypy = "^1.10.0"
 yandex-taxi-testsuite = {extras = ["postgresql"], version = "^0.3.9"}
+openapi-generator-cli = "^7.17.0"
 
 [tool.ruff]
 line-length = 100

@@ -22,6 +22,7 @@ from experiment_service.services import (
     ConversionProfileService,
     ExperimentService,
     RunService,
+    TelemetryService,
     SensorService,
 )
 from experiment_service.services.idempotency import (
@@ -37,6 +38,7 @@ _CAPTURE_SERVICE_KEY = "capture_session_service"
 _IDEMPOTENCY_SERVICE_KEY = "idempotency_service"
 _SENSOR_SERVICE_KEY = "sensor_service"
 _PROFILE_SERVICE_KEY = "conversion_profile_service"
+_TELEMETRY_SERVICE_KEY = "telemetry_service"
 
 USER_ID_HEADER = "X-User-Id"
 PROJECT_ID_HEADER = "X-Project-Id"
@@ -172,3 +174,14 @@ async def get_conversion_profile_service(request: web.Request) -> ConversionProf
         return ConversionProfileService(profile_repo, sensor_repo)
 
     return await _get_or_create_service(request, _PROFILE_SERVICE_KEY, builder)
+
+
+async def get_telemetry_service(request: web.Request) -> TelemetryService:
+    async def builder(_: web.Request) -> TelemetryService:
+        pool = await get_pool()
+        sensor_repo = SensorRepository(pool)
+        run_repo = RunRepository(pool)
+        capture_repo = CaptureSessionRepository(pool)
+        return TelemetryService(sensor_repo, run_repo, capture_repo)
+
+    return await _get_or_create_service(request, _TELEMETRY_SERVICE_KEY, builder)

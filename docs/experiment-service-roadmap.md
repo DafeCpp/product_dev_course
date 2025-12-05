@@ -14,6 +14,12 @@
 - ≥ 95% критичных операций покрыто интеграционными тестами.
 - Zero-downtime миграции для всех новых схем.
 
+## Текущее состояние (декабрь 2025)
+- **Завершено:** блок Foundation полностью (миграции, CRUD для `Experiment/Run/CaptureSession`, idempotency, пагинация, OpenAPI). Добавлены домены `Sensor` и `ConversionProfile`, статусные машины и покрытие тестами (`tests/test_api_*`).
+- **В процессе:** этап Runs & Capture Management — реализованы batch-операции, проверки инвариантов, заглушки webhook/ingest, но ещё отсутствуют `run_sensors`, `capture_session_events` в API и артефактный контур.
+- **Не реализовано:** Telemetry ingest (REST + WS/SSE), `/runs/{id}/metrics`, артефакты, webhooks/Kafka события, интеграция с Auth Service. Эти задачи остаются в очереди этапов 2‑4.
+- **Зависимости:** сервис собран на `aiohttp 3.10`, `asyncpg 0.29`, `pydantic-settings 2.4`, `structlog`, тестируется через `pytest`, `pytest-aiohttp`, `yandex-taxi-testsuite[postgresql]`, кодоген осуществляется `openapi-generator-cli 7.17`.
+
 ## Дорожная карта
 
 ### 1. Foundation (итерации 1‑2)

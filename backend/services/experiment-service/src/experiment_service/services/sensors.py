@@ -19,6 +19,14 @@ from experiment_service.repositories.sensors import SensorRepository
 from experiment_service.services.state_machine import validate_conversion_profile_transition
 
 
+def generate_sensor_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_sensor_token(token: str) -> bytes:
+    return hashlib.sha256(token.encode("utf-8")).digest()
+
+
 class SensorService:
     """Business logic for sensors and their tokens."""
 
@@ -37,8 +45,8 @@ class SensorService:
         created_by: UUID,
         initial_profile: ConversionProfileInputDTO | None = None,
     ) -> tuple[Sensor, str]:
-        token = self._generate_token()
-        token_hash = self._hash_token(token)
+        token = generate_sensor_token()
+        token_hash = hash_sensor_token(token)
         token_preview = token[-4:]
         sensor = await self._sensor_repository.create(
             data,
@@ -105,8 +113,8 @@ class SensorService:
         project_id: UUID,
         sensor_id: UUID,
     ) -> tuple[Sensor, str]:
-        token = self._generate_token()
-        token_hash = self._hash_token(token)
+        token = generate_sensor_token()
+        token_hash = hash_sensor_token(token)
         token_preview = token[-4:]
         sensor = await self._sensor_repository.rotate_token(
             project_id,
@@ -115,14 +123,6 @@ class SensorService:
             token_preview=token_preview,
         )
         return sensor, token
-
-    @staticmethod
-    def _generate_token() -> str:
-        return secrets.token_urlsafe(32)
-
-    @staticmethod
-    def _hash_token(token: str) -> bytes:
-        return hashlib.sha256(token.encode("utf-8")).digest()
 
 
 class ConversionProfileService:

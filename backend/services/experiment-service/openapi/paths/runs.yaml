@@ -44,8 +44,17 @@ batchStatus:
           schema:
             $ref: ../components/schemas.yaml#/RunBatchStatusRequest
     responses:
-      202:
-        description: Batch accepted
+      200:
+        description: Updated runs
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                runs:
+                  type: array
+                  items:
+                    $ref: ../components/schemas.yaml#/Run
 
 captureSessions:
   get:
@@ -54,6 +63,7 @@ captureSessions:
     operationId: listCaptureSessions
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Capture session list
@@ -69,6 +79,7 @@ captureSessions:
     operationId: createCaptureSession
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
@@ -91,6 +102,7 @@ captureSessionStop:
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
       - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Stopped
@@ -103,6 +115,7 @@ captureSessionDelete:
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
       - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Deleted
@@ -114,6 +127,7 @@ metrics:
     operationId: ingestMetrics
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
@@ -129,6 +143,7 @@ metrics:
     operationId: queryMetrics
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
       - name: name
         in: query
         schema:

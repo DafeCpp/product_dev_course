@@ -25,3 +25,7 @@ class InvalidStatusTransitionError(ExperimentServiceError):
 class IdempotencyConflictError(ExperimentServiceError):
     """Raised when the same idempotency key is reused with a different payload."""
 
+
+class UnauthorizedError(ExperimentServiceError):
+    """Raised when credentials or tokens are invalid."""
+

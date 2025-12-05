@@ -1,24 +1,19 @@
 from __future__ import annotations
 
+# pyright: reportMissingImports=false
+
 import uuid
 
 import pytest
 
 from experiment_service.services.idempotency import IDEMPOTENCY_HEADER
-
-
-def _headers(project_id: uuid.UUID, role: str = "owner") -> dict[str, str]:
-    return {
-        "X-User-Id": str(uuid.uuid4()),
-        "X-Project-Id": str(project_id),
-        "X-Project-Role": role,
-    }
+from tests.utils import make_headers
 
 
 @pytest.mark.asyncio
 async def test_sensor_and_profiles_flow(service_client):
     project_id = uuid.uuid4()
-    headers = _headers(project_id)
+    headers = make_headers(project_id)
 
     resp = await service_client.post(
         "/api/v1/sensors",
@@ -104,4 +99,49 @@ async def test_sensor_and_profiles_flow(service_client):
     assert resp.status == 200
     profiles = await resp.json()
     assert profiles["total"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_rotate_token_unknown_sensor_returns_404(service_client):
+    project_id = uuid.uuid4()
+    headers = make_headers(project_id)
+
+    resp = await service_client.post(
+        f"/api/v1/sensors/{uuid.uuid4()}/rotate-token",
+        headers=headers,
+    )
+    assert resp.status == 404
+
+
+@pytest.mark.asyncio
+async def test_sensor_register_idempotency_conflict(service_client):
+    project_id = uuid.uuid4()
+    headers = make_headers(project_id)
+    idem_headers = {**headers, IDEMPOTENCY_HEADER: "sensor-idem-conflict"}
+    payload = {
+        "project_id": str(project_id),
+        "name": "idem-sensor",
+        "type": "thermocouple",
+        "input_unit": "mV",
+        "display_unit": "C",
+    }
+
+    first = await service_client.post("/api/v1/sensors", json=payload, headers=idem_headers)
+    assert first.status == 201
+
+    conflict = await service_client.post(
+        "/api/v1/sensors",
+        json={**payload, "type": "strain"},
+        headers=idem_headers,
+    )
+    assert conflict.status == 409
+
+
+@pytest.mark.asyncio
+async def test_delete_sensor_missing_returns_404(service_client):
+    project_id = uuid.uuid4()
+    headers = make_headers(project_id)
+
+    resp = await service_client.delete(f"/api/v1/sensors/{uuid.uuid4()}", headers=headers)
+    assert resp.status == 404
 

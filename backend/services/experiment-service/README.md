@@ -1,50 +1,60 @@
-# Experiment Service (vNext Skeleton)
+# Experiment Service
 
-Новый каркас сервиса построен вокруг требований из `docs/experiment-tracking-ts.md` и дорожной карты `docs/experiment-service-roadmap.md`. Он уже реализует базовый CRUD-слой для `Experiment`, `Run`, `CaptureSession`, а также добавленную в этой итерации поддержку `Sensor` + `ConversionProfile` с проверкой статусов и идемпотентностью на write-операциях.
+Сервис реализует доменную часть Experiment Tracking Platform и соответствует требованиям из `docs/experiment-tracking-ts.md` и дорожной карте `docs/experiment-service-roadmap.md`. На текущей итерации доступны CRUD-операции для экспериментов, запусков и capture session, управление датчиками и профилями преобразования, а также вспомогательные механизмы (идемпотентность, пагинация, status machine).
 
-## Что входит
-- aiohttp приложение (`src/experiment_service/main.py`).
-- Модульная структура по доменам (experiments, runs, capture sessions, sensors, metrics, artifacts, conversion profiles).
-- Pydantic-модели домена со статусами, указанными в ТЗ.
-- REST-роуты для `experiments`, `runs`, `capture-sessions`, `sensors` и `conversion-profiles`, включая статусные проверки и идемпотентность на POST.
-- Конфигурация через `Settings` (Pydantic Settings) с подготовленными переменными окружения.
-- Асинхронный доступ к PostgreSQL через `asyncpg` (без SQLAlchemy).
-- Список зависимостей для логирования, тестирования и интеграций собран в `pyproject.toml`.
-- OpenAPI 3.1 спецификация лежит в `openapi/openapi.yaml` и доступна по `GET /openapi.yaml`.
+## Возможности
+
+- **REST API (aiohttp):**
+  - `/api/v1/experiments`, `/runs`, `/capture-sessions` — полные CRUD + статусные переходы, batch-обновления и кнопка `archive`.
+  - `/api/v1/sensors`, `/conversion-profiles` — регистрация датчиков, ротация токенов, просмотр и публикация версий профилей.
+  - Идемпотентные POST-запросы через заголовок `Idempotency-Key` (повторы → кешированный ответ, конфликт → `409`).
+  - Пагинация и валидация UUID/ролей на всех ручках.
+- **Доменная модель:** Pydantic DTO/модели с проверкой переходов (см. `services/state_machine.py`) и строгим `extra="forbid"`.
+- **Хранилище:** PostgreSQL 15+ с миграциями из `migrations/`, доступ через `asyncpg` и тонкие репозитории (`repositories/*.py`).
+- **Безопасность и доступ:** временная интеграция с Auth через дебаг-заголовки `X-User-Id/X-Project-Id/X-Project-Role`; права `owner/editor/viewer` уже проверяются на уровне middleware/dependency.
+- **Документация и SDK:** OpenAPI 3.1 в `openapi/openapi.yaml`, конфиги генераторов для TypeScript Fetch и cpprestsdk; `make generate-sdk` обновляет клиентов.
+- **Тесты:** интеграционные сценарии на testsuite (см. `tests/test_api_*.py`) покрывают позитивные флоу, ошибки/конфликты, базовый RBAC и заглушки ingest.
+
+## Зависимости
+
+| Категория        | Пакеты / версии                                         | Назначение                        |
+|------------------|--------------------------------------------------------|----------------------------------|
+| Runtime          | `python 3.11+`, `aiohttp 3.10`, `asyncpg 0.29`, `pydantic-settings 2.4`, `orjson`, `structlog` | HTTP API, PostgreSQL, конфигурация и логирование |
+| Dev/Test         | `pytest 8`, `pytest-asyncio`, `pytest-aiohttp`, `yandex-taxi-testsuite[postgresql]`, `ruff`, `mypy` | автотесты, статический анализ    |
+| Tooling / SDK    | `openapi-generator-cli 7.17`, `httpx`                   | генерация клиентов и smoke-тесты |
+
+Полный список находится в `pyproject.toml`. Для SDK требуется Java 17+.
 
 ## Быстрый старт
+
 ```bash
 cd backend/services/experiment-service
 poetry install
 cp .env.example .env
+# локальный запуск (ожидает PostgreSQL по settings.database_url)
 poetry run python -m experiment_service.main
+
+# тесты + встроенный PostgreSQL через testsuite
+poetry run pytest
 ```
 
-## SQL-миграции
-- Все изменения схемы описываются в каталоге `migrations/` нумерованными `.sql` файлами (`001_initial_schema.sql` и т.д.).
-- Таблица `schema_migrations` хранит список применённых версий и checksum файла.
-- Применить (или проверить) миграции можно утилитой `bin/migrate.py`:
+## Работа с миграциями
+
+Все изменения схемы находятся в `migrations/*.sql`. Применение/проверка:
 
 ```bash
 poetry run python bin/migrate.py --database-url postgres://user:pass@localhost:5432/experiment_service
-# посмотреть список, не применяя
-poetry run python bin/migrate.py --dry-run
+poetry run python bin/migrate.py --dry-run  # список доступных миграций
 ```
 
-Тестовый стенд (`tests/schemas/postgresql/experiment_service.sql`) генерируется автоматически из миграций:
+Файл `tests/schemas/postgresql/experiment_service.sql` генерируется из миграций (`poetry run python bin/export_schema.py`) и используется testsuite для подъёма временной БД.
 
-```bash
-poetry run python bin/export_schema.py
-```
+## Sensors & Conversion Profiles (пример)
 
-Этот файл использует testsuite при создании локального PostgreSQL-инстанса и всегда должен быть синхронизирован с последними миграциями.
+```http
+POST /api/v1/sensors
+Idempotency-Key: sensor-1
 
-## Sensors & Conversion Profiles
-
-- `POST /api/v1/sensors` и `POST /api/v1/sensors/{sensor_id}/conversion-profiles` поддерживают идемпотентность через заголовок `Idempotency-Key`. Повторный запрос с тем же телом вернёт закэшированный ответ, конфликтующие payload'ы получают `409`.
-- Регистрация датчика принимает базовые поля (`project_id`, `name`, `type`, единицы измерений) и опциональный блок `conversion_profile`:
-
-```json
 {
   "project_id": "11111111-2222-3333-4444-555555555555",
   "name": "thermo-1",
@@ -54,37 +64,18 @@ poetry run python bin/export_schema.py
   "conversion_profile": {
     "version": "v1",
     "kind": "linear",
-    "payload": {"a": 1.4, "b": 0.22},
-    "status": "draft"
+    "payload": {"a": 1.4, "b": 0.22}
   }
 }
 ```
 
-- Успешный ответ содержит сам объект и последний сгенерированный токен:
-
-```json
-{
-  "sensor": { "...": "..." },
-  "token": "ZyYv2..."
-}
-```
-
-- `GET /api/v1/sensors` и `/conversion-profiles` возвращают пагинированный ответ (`sensors[]`, `total`, `page`, `page_size`), совпадающий с `paginated_response` из API-утилит.
-
-OpenAPI (`openapi/openapi.yaml`) синхронизирован с текущими DTO и позволяет генерировать клиент/SDK.
+Ответ содержит объект датчика и одноразовый токен (`token_preview` хранится в БД, полный токен возвращается только при создании/ротации).
 
 ## Генерация SDK
 
-- Для генерации клиентов используется [OpenAPI Generator CLI](https://openapi-generator.tech/) (dev-зависимость `openapi-generator-cli`).
-- Требуется установленная Java 17+ (например, `openjdk-17-jre-headless`), так как CLI запускает JAR-файл.
-- Конфигурации для целевых языков лежат в `openapi/clients/`:
-  - `typescript-fetch-config.yaml` — npm-пакет с fetch-клиентом и разделёнными моделями/API.
-  - `cpp-restsdk-config.yaml` — C++ клиент на базе cpprestsdk с кастомными namespace'ами.
-- Все артефакты пишутся в `clients/` (игнорируется Git'ом). Перед генерацией директории очищаются.
-- Запуск: `make generate-sdk` (или из каталога сервиса `poetry run openapi-generator-cli generate ...`).
-
 ```bash
-cd backend/services/experiment-service
+make generate-sdk  # агрегирует команды openapi-generator-cli
+# или вручную:
 poetry run openapi-generator-cli generate \
   -i openapi/openapi.yaml \
   -g typescript-fetch \
@@ -92,22 +83,21 @@ poetry run openapi-generator-cli generate \
   -c openapi/clients/typescript-fetch-config.yaml
 ```
 
-- Полученные пакеты можно дальше упаковывать/публиковать согласно потребностям (npm, conan/vcpkg и т.д.).
+Каталоги `clients/*` очищаются перед генерацией и игнорируются Git.
+
+## Текущее состояние и ограничения
+
+- Завершён блок **Foundation** + большая часть **Runs & Capture Management** из roadmap: репозитории, state machine, batch-операции, аудит событий через таблицы `capture_session_events`.
+- **Ещё не реализовано:** ingestion `/api/v1/telemetry`, `/api/v1/runs/{id}/metrics`, артефакты, привязка датчиков к запускам (`run_sensors`), вебхуки и интеграции с Auth Service. В API на эти ручки возвращается `501` либо заглушка WebSocket.
+- RBAC пока завязан на заголовки; переход на реальный Auth Service и audit trail планируется следующим этапом (см. ниже).
 
 ## Следующие шаги
-1. **Persisted storage layer:** реализовать репозитории поверх `asyncpg`, покрывающие доменные сценарии и используемые API.
-2. **Интеграции:** реализовать ingest `/telemetry`, `/metrics`, webhook-потоки и очереди событий.
-3. **RBAC и аутентификация:** заменить заглушки зависимостей на реальный вызов Auth Service + аудит.
-4. **Тесты и документация:** добавить unit/integration тесты и сформировать OpenAPI/AsyncAPI контракт.
 
-Скелет поддерживает поэтапное развитие без переезда архитектуры в середине работы. Каждый модуль содержит TODO-комментарии с ссылкой на соответствующий раздел требований.
+1. **Telemetry & Metrics ingest:** REST + WebSocket/SSE, хранение raw/physical значений, SLA и heartbeat.
+2. **Run↔Sensor binding и артефакты:** использование таблиц `run_sensors`, CRUD/approve для `/artifacts`.
+3. **RBAC & Auth integration:** обмен токенами с Auth Service, audit-log на старты/остановки capture session, политики raw/physical.
+4. **Наблюдаемость и события:** Prometheus/OTel метрики, вебхуки `run.started/capture.completed`, очереди для API Gateway.
+5. **Документация:** синхронизация OpenAPI/AsyncAPI и обновление демо-сценариев `bin/demo_seed.py` (после реализации ingest).
 
-## Тестирование
-В репозитории включён `pytest` + [yandex-taxi-testsuite](https://github.com/yandex/yandex-taxi-testsuite) (ставится из PyPI как `yandex-taxi-testsuite[postgresql]`). Плагин `testsuite.pytest_plugin` подключён в `tests/conftest.py`, а фикстура `service_client` создаёт aiohttp-клиент сервиса. Запуск тестов:
-
-```bash
-poetry install
-poetry run pytest
-```
-
+Сервис развивается итеративно; актуальный прогресс фиксируется в `docs/experiment-service-roadmap.md`.
 

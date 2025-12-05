@@ -170,6 +170,19 @@ class SensorRepository(BaseRepository):
             raise NotFoundError("Sensor not found")
         return self._to_model(record)
 
+    async def get_by_token(self, sensor_id: UUID, token_hash: bytes) -> Sensor:
+        record = await self._fetchrow(
+            """
+            SELECT * FROM sensors
+            WHERE id = $1 AND token_hash = $2
+            """,
+            sensor_id,
+            token_hash,
+        )
+        if record is None:
+            raise NotFoundError("Sensor not found")
+        return self._to_model(record)
+
     async def set_active_profile(
         self,
         project_id: UUID,

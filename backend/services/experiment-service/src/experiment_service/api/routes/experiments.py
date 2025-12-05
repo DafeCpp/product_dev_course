@@ -134,6 +134,8 @@ async def update_experiment(request: web.Request):
         experiment = await service.update_experiment(project_id, experiment_id, dto)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
+    except InvalidStatusTransitionError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
     return web.json_response(_experiment_response(experiment))
 
 
