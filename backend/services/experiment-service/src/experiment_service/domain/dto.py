@@ -15,6 +15,7 @@ from experiment_service.domain.enums import (
     ExperimentStatus,
     RunStatus,
     SensorStatus,
+    TelemetryConversionStatus,
 )
 
 
@@ -173,4 +174,43 @@ class TelemetryIngestDTO(BaseModel):
     def _validate_readings(cls, value: list[TelemetryReadingDTO]) -> list[TelemetryReadingDTO]:
         if not value:
             raise ValueError("readings must not be empty")
+        return value
+
+
+class TelemetryRecordCreateDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: UUID
+    sensor_id: UUID
+    run_id: UUID | None = None
+    capture_session_id: UUID | None = None
+    timestamp: datetime
+    raw_value: float
+    physical_value: float | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+    conversion_status: TelemetryConversionStatus = TelemetryConversionStatus.RAW_ONLY
+    conversion_profile_id: UUID | None = None
+
+
+class RunMetricPointDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    step: int
+    value: float
+    timestamp: datetime
+
+
+class RunMetricIngestDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: UUID
+    run_id: UUID
+    points: list[RunMetricPointDTO] = Field(default_factory=list)
+
+    @field_validator("points")
+    @classmethod
+    def _validate_points(cls, value: list[RunMetricPointDTO]) -> list[RunMetricPointDTO]:
+        if not value:
+            raise ValueError("metrics must not be empty")
         return value

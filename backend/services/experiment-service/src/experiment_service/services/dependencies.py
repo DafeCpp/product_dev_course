@@ -13,17 +13,20 @@ from experiment_service.repositories import (
     CaptureSessionRepository,
     ConversionProfileRepository,
     ExperimentRepository,
+    RunMetricsRepository,
     RunRepository,
     SensorRepository,
+    TelemetryRepository,
 )
 from experiment_service.repositories.idempotency import IdempotencyRepository
 from experiment_service.services import (
     CaptureSessionService,
     ConversionProfileService,
     ExperimentService,
+    MetricsService,
     RunService,
-    TelemetryService,
     SensorService,
+    TelemetryService,
 )
 from experiment_service.services.idempotency import (
     IDEMPOTENCY_HEADER,
@@ -39,6 +42,7 @@ _IDEMPOTENCY_SERVICE_KEY = "idempotency_service"
 _SENSOR_SERVICE_KEY = "sensor_service"
 _PROFILE_SERVICE_KEY = "conversion_profile_service"
 _TELEMETRY_SERVICE_KEY = "telemetry_service"
+_METRICS_SERVICE_KEY = "metrics_service"
 
 USER_ID_HEADER = "X-User-Id"
 PROJECT_ID_HEADER = "X-Project-Id"
@@ -182,6 +186,18 @@ async def get_telemetry_service(request: web.Request) -> TelemetryService:
         sensor_repo = SensorRepository(pool)
         run_repo = RunRepository(pool)
         capture_repo = CaptureSessionRepository(pool)
-        return TelemetryService(sensor_repo, run_repo, capture_repo)
+        telemetry_repo = TelemetryRepository(pool)
+        profile_repo = ConversionProfileRepository(pool)
+        return TelemetryService(sensor_repo, run_repo, capture_repo, telemetry_repo, profile_repo)
 
     return await _get_or_create_service(request, _TELEMETRY_SERVICE_KEY, builder)
+
+
+async def get_metrics_service(request: web.Request) -> MetricsService:
+    async def builder(_: web.Request) -> MetricsService:
+        pool = await get_pool()
+        run_repo = RunRepository(pool)
+        metrics_repo = RunMetricsRepository(pool)
+        return MetricsService(run_repo, metrics_repo)
+
+    return await _get_or_create_service(request, _METRICS_SERVICE_KEY, builder)

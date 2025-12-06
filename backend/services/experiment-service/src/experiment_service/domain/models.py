@@ -13,6 +13,7 @@ from experiment_service.domain.enums import (
     ExperimentStatus,
     RunStatus,
     SensorStatus,
+    TelemetryConversionStatus,
 )
 
 
@@ -112,5 +113,31 @@ class Artifact(BaseModel):
     is_restricted: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class TelemetryRecord(BaseModel):
+    id: int
+    project_id: UUID
+    sensor_id: UUID
+    run_id: UUID | None = None
+    capture_session_id: UUID | None = None
+    timestamp: datetime
+    raw_value: float
+    physical_value: float | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+    conversion_status: TelemetryConversionStatus = TelemetryConversionStatus.RAW_ONLY
+    conversion_profile_id: UUID | None = None
+    ingested_at: datetime
+
+
+class RunMetric(BaseModel):
+    id: int
+    project_id: UUID
+    run_id: UUID
+    name: str
+    step: int
+    value: float
+    timestamp: datetime
+    created_at: datetime
 
 

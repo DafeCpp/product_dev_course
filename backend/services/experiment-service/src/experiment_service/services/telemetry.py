@@ -12,8 +12,10 @@ from experiment_service.domain.dto import TelemetryIngestDTO
 from experiment_service.domain.models import Sensor
 from experiment_service.repositories import (
     CaptureSessionRepository,
+    ConversionProfileRepository,
     RunRepository,
     SensorRepository,
+    TelemetryRepository,
 )
 from experiment_service.services.sensors import hash_sensor_token
 
@@ -26,10 +28,14 @@ class TelemetryService:
         sensor_repository: SensorRepository,
         run_repository: RunRepository,
         capture_session_repository: CaptureSessionRepository,
+        telemetry_repository: TelemetryRepository,
+        profile_repository: ConversionProfileRepository,
     ):
         self._sensor_repository = sensor_repository
         self._run_repository = run_repository
         self._capture_session_repository = capture_session_repository
+        self._telemetry_repository = telemetry_repository
+        self._profile_repository = profile_repository
 
     async def ingest(self, payload: TelemetryIngestDTO, *, token: str) -> None:
         """Validate sensor token + scope and accept payload for future persistence."""

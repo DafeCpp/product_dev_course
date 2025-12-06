@@ -2,6 +2,8 @@
 -- Run `poetry run python bin/export_schema.py` after editing migrations.
 
 BEGIN;
+DROP TABLE IF EXISTS run_metrics CASCADE;
+DROP TABLE IF EXISTS telemetry_records CASCADE;
 DROP TABLE IF EXISTS request_idempotency CASCADE;
 DROP TABLE IF EXISTS artifacts CASCADE;
 DROP TABLE IF EXISTS capture_session_events CASCADE;
@@ -11,6 +13,7 @@ DROP TABLE IF EXISTS conversion_profiles CASCADE;
 DROP TABLE IF EXISTS sensors CASCADE;
 DROP TABLE IF EXISTS runs CASCADE;
 DROP TABLE IF EXISTS experiments CASCADE;
+DROP TYPE IF EXISTS telemetry_conversion_status CASCADE;
 DROP TYPE IF EXISTS conversion_profile_status CASCADE;
 DROP TYPE IF EXISTS sensor_status CASCADE;
 DROP TYPE IF EXISTS capture_session_status CASCADE;
@@ -238,4 +241,57 @@ CREATE TABLE request_idempotency (
 );
 
 CREATE INDEX request_idempotency_user_idx ON request_idempotency (user_id, created_at DESC);
+
+CREATE TYPE telemetry_conversion_status AS ENUM (
+    'raw_only',
+    'converted',
+    'client_provided',
+    'conversion_failed'
+);
+
+CREATE TABLE telemetry_records (
+    id bigserial PRIMARY KEY,
+    project_id uuid NOT NULL,
+    sensor_id uuid NOT NULL,
+    run_id uuid,
+    capture_session_id uuid,
+    timestamp timestamptz NOT NULL,
+    raw_value double precision NOT NULL,
+    physical_value double precision,
+    meta jsonb NOT NULL DEFAULT '{}'::jsonb,
+    conversion_status telemetry_conversion_status NOT NULL DEFAULT 'raw_only',
+    conversion_profile_id uuid,
+    ingested_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (sensor_id) REFERENCES sensors (id) ON DELETE CASCADE,
+    FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE SET NULL,
+    FOREIGN KEY (capture_session_id) REFERENCES capture_sessions (id) ON DELETE SET NULL,
+    FOREIGN KEY (conversion_profile_id) REFERENCES conversion_profiles (id)
+);
+
+CREATE INDEX telemetry_records_sensor_ts_idx
+    ON telemetry_records (sensor_id, timestamp DESC);
+
+CREATE INDEX telemetry_records_run_ts_idx
+    ON telemetry_records (run_id, timestamp DESC);
+
+CREATE INDEX telemetry_records_capture_ts_idx
+    ON telemetry_records (capture_session_id, timestamp DESC);
+
+CREATE TABLE run_metrics (
+    id bigserial PRIMARY KEY,
+    project_id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    name text NOT NULL,
+    step bigint NOT NULL,
+    value double precision NOT NULL,
+    timestamp timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE
+);
+
+CREATE INDEX run_metrics_run_name_step_idx
+    ON run_metrics (run_id, name, step);
+
+CREATE INDEX run_metrics_project_name_idx
+    ON run_metrics (project_id, name);
 COMMIT;

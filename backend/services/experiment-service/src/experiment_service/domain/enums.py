@@ -53,3 +53,12 @@ class SensorStatus(str, Enum):
     DECOMMISSIONED = "decommissioned"
 
 
+class TelemetryConversionStatus(str, Enum):
+    """Conversion outcomes for telemetry readings."""
+
+    RAW_ONLY = "raw_only"
+    CONVERTED = "converted"
+    CLIENT_PROVIDED = "client_provided"
+    CONVERSION_FAILED = "conversion_failed"
+
+
