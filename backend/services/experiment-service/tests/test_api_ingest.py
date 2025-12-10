@@ -69,26 +69,34 @@ async def _bootstrap_ingest_context(service_client):
 
 
 @pytest.mark.asyncio
-async def test_metrics_ingest_not_implemented(service_client):
+async def test_metrics_ingest_accepts_payload(service_client):
     ctx = await _bootstrap_ingest_context(service_client)
     run_id = ctx["run_id"]
     headers = ctx["headers"]
     resp = await service_client.post(
         f"/api/v1/runs/{run_id}/metrics",
-        json={"metrics": [{"name": "loss", "step": 1, "value": 0.1}]},
+        json={
+            "metrics": [
+                {"name": "loss", "step": 1, "value": 0.1, "timestamp": "2025-01-01T00:00:00Z"}
+            ]
+        },
         headers=headers,
     )
-    assert resp.status == 501
+    assert resp.status == 202
+    body = await resp.json()
+    assert body["accepted"] == 1
 
 
 @pytest.mark.asyncio
-async def test_metrics_query_not_implemented(service_client):
+async def test_metrics_query_returns_series(service_client):
     ctx = await _bootstrap_ingest_context(service_client)
     resp = await service_client.get(
         f"/api/v1/runs/{ctx['run_id']}/metrics",
         headers=ctx["headers"],
     )
-    assert resp.status == 501
+    assert resp.status == 200
+    body = await resp.json()
+    assert "series" in body
 
 
 @pytest.mark.asyncio
