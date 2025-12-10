@@ -37,7 +37,7 @@ class TelemetryService:
         self._telemetry_repository = telemetry_repository
         self._profile_repository = profile_repository
 
-    async def ingest(self, payload: TelemetryIngestDTO, *, token: str) -> None:
+    async def ingest(self, payload: TelemetryIngestDTO, *, token: str) -> int:
         """Validate sensor token + scope and accept payload for future persistence."""
         sensor = await self._authenticate_sensor(payload.sensor_id, token)
         project_id = sensor.project_id
@@ -53,6 +53,7 @@ class TelemetryService:
 
         # TODO: persist telemetry records + enqueue live stream update.
         # This method currently validates scope and tokens only.
+        return len(payload.readings)
 
     async def _authenticate_sensor(self, sensor_id: UUID, token: str) -> Sensor:
         token_hash = hash_sensor_token(token)

@@ -1,0 +1,7 @@
+name: experiment-service
+description: Experiment Tracking Service
+maintainers:
+  - LostPointer
+
+ports:
+  - 8002:8002

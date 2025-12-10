@@ -37,14 +37,14 @@ async def ingest_telemetry(request: web.Request):
         raise web.HTTPBadRequest(text=exc.json()) from exc
     service = await get_telemetry_service(request)
     try:
-        await service.ingest(dto, token=token)
+        accepted = await service.ingest(dto, token=token)
     except UnauthorizedError as exc:
         raise web.HTTPUnauthorized(text=str(exc)) from exc
     except ScopeMismatchError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
-    return web.json_response({"status": "accepted"}, status=202)
+    return web.json_response({"status": "accepted", "accepted": accepted}, status=202)
 
 
 @routes.get("/api/v1/telemetry/stream")
