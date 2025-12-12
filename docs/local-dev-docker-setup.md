@@ -302,8 +302,11 @@ docker-compose run --rm experiment-service python -m pytest
 ### Работа с базой данных
 
 ```bash
-# Подключение к PostgreSQL
+# Подключение к PostgreSQL (порт 5433 на хосте)
 docker-compose exec postgres psql -U postgres -d experiment_db
+
+# Или с хоста (если установлен psql)
+psql -h localhost -p 5433 -U postgres -d experiment_db
 
 # Выполнение миграций
 docker-compose exec experiment-service python bin/migrate.py

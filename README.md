@@ -114,10 +114,10 @@ docker-compose down
 ### Доступные сервисы
 
 После запуска доступны:
+- **Experiment Portal (Frontend):** http://localhost:3000 (dev режим с hot-reload)
 - **Experiment Service API:** http://localhost:8002
-- **Auth Proxy:** http://localhost:8080
-- **Experiment Portal (Frontend):** http://localhost:80 (production) или http://localhost:3000 (dev)
-- **PostgreSQL:** localhost:5432
+- **Auth Proxy (BFF):** http://localhost:8080
+- **PostgreSQL:** localhost:5433 (порт 5433 чтобы не конфликтовать с локальным PostgreSQL)
 
 ### Режимы работы
 
