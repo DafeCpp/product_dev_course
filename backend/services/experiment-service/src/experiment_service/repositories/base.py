@@ -1,7 +1,7 @@
 """Shared asyncpg helpers for repositories."""
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 import asyncpg  # type: ignore[import-untyped]
 
@@ -18,9 +18,9 @@ class BaseRepository:
 
     async def _fetch(self, query: str, *args: Any) -> Iterable[asyncpg.Record]:
         async with self._pool.acquire() as conn:
-            return await conn.fetch(query, *args)
+            return cast(Iterable[asyncpg.Record], await conn.fetch(query, *args))
 
     async def _execute(self, query: str, *args: Any) -> str:
         async with self._pool.acquire() as conn:
-            return await conn.execute(query, *args)
+            return cast(str, await conn.execute(query, *args))
 

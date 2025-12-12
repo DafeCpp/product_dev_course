@@ -44,4 +44,13 @@ addopts = "-p testsuite.pytest_plugin"
 testpaths = ["tests"]
 pythonpath = ["src"]
 
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "aiohttp_cors.*"
+ignore_missing_imports = true
 
