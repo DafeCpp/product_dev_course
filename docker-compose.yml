@@ -118,7 +118,6 @@ services:
       - NODE_ENV=production
     ports:
       - "80:80"
-      - "3000:3000"  # Vite dev server (если используется dev режим)
     depends_on:
       - auth-proxy
     networks:

@@ -117,7 +117,7 @@ docker-compose down
 - **Experiment Portal (Frontend):** http://localhost:3000 (dev режим с hot-reload)
 - **Experiment Service API:** http://localhost:8002
 - **Auth Proxy (BFF):** http://localhost:8080
-- **PostgreSQL:** localhost:5433 (порт 5433 чтобы не конфликтовать с локальным PostgreSQL)
+- **PostgreSQL:** localhost:5433 (порт 5433 чтобы не конфликтовать с локальным PostgreSQL на 5432)
 
 ### Режимы работы
 
