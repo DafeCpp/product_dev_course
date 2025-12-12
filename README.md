@@ -152,6 +152,111 @@ docker-compose down
 
 **Roadmap Experiment Service:** см. `docs/experiment-service-roadmap.md`.
 
+## Карта сервисов
+
+### Архитектурная диаграмма
+
+```mermaid
+graph TB
+    subgraph Frontend["🌐 Frontend Layer"]
+        Portal["Experiment Portal<br/>React SPA<br/>✅ Реализован<br/>:3000/:80"]
+        AuthProxy["Auth Proxy<br/>nginx<br/>✅ Реализован<br/>:8080"]
+    end
+
+    subgraph GatewayLayer["🚪 API Gateway Layer"]
+        Gateway["API Gateway<br/>Единая точка входа<br/>🚧 Планируется"]
+    end
+
+    subgraph Backend["⚙️ Backend Services"]
+        AuthSvc["Auth Service<br/>Аутентификация, JWT<br/>🚧 Планируется"]
+        ExpSvc["Experiment Service<br/>Эксперименты, запуски<br/>✅ Реализован<br/>:8002"]
+        MetricsSvc["Metrics Service<br/>Метрики, временные ряды<br/>🚧 Планируется"]
+        ArtifactSvc["Artifact Service<br/>Файлы, модели<br/>🚧 Планируется"]
+        CompareSvc["Comparison Service<br/>Сравнение экспериментов<br/>🚧 Планируется"]
+        TelemetrySvc["Telemetry Ingest<br/>Потоки телеметрии<br/>🚧 Планируется"]
+    end
+
+    subgraph Infrastructure["🏗️ Infrastructure"]
+        Postgres[("PostgreSQL<br/>Основная БД<br/>:5432")]
+        Redis[("Redis<br/>Кэш, rate limiting<br/>:6379")]
+        RabbitMQ["RabbitMQ<br/>Message Broker<br/>:5672"]
+        S3[("S3 Storage<br/>Артефакты<br/>🚧 Планируется")]
+    end
+
+    Portal -->|HTTP| AuthProxy
+    AuthProxy -->|Proxy| Gateway
+    Gateway -->|REST API| AuthSvc
+    Gateway -->|REST API| ExpSvc
+    Gateway -->|REST API| MetricsSvc
+    Gateway -->|REST API| ArtifactSvc
+    Gateway -->|REST API| CompareSvc
+
+    TelemetrySvc -->|Publish| RabbitMQ
+    RabbitMQ -->|Subscribe| MetricsSvc
+
+    AuthSvc -->|SQL| Postgres
+    ExpSvc -->|SQL| Postgres
+    MetricsSvc -->|SQL| Postgres
+    CompareSvc -->|SQL| Postgres
+    TelemetrySvc -->|SQL| Postgres
+
+    ArtifactSvc -->|Metadata| Postgres
+    ArtifactSvc -->|Files| S3
+
+    ExpSvc -->|Cache| Redis
+    AuthSvc -->|Cache| Redis
+    Gateway -->|Rate Limit| Redis
+
+    ExpSvc -.->|Events| RabbitMQ
+    MetricsSvc -.->|Events| RabbitMQ
+    ArtifactSvc -.->|Events| RabbitMQ
+
+    style ExpSvc fill:#90EE90,stroke:#2E7D32,stroke-width:3px
+    style Portal fill:#90EE90,stroke:#2E7D32,stroke-width:3px
+    style AuthProxy fill:#90EE90,stroke:#2E7D32,stroke-width:3px
+    style AuthSvc fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style MetricsSvc fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style ArtifactSvc fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style CompareSvc fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style Gateway fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style TelemetrySvc fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style S3 fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style Postgres fill:#E3F2FD,stroke:#1976D2
+    style Redis fill:#FFEBEE,stroke:#D32F2F
+    style RabbitMQ fill:#F3E5F5,stroke:#7B1FA2
+```
+
+### Backend сервисы
+
+| Сервис | Статус | Описание | Порт | База данных |
+|--------|--------|----------|------|-------------|
+| **Experiment Service** | ✅ Реализован | Регистрация и хранение экспериментов, запусков, capture sessions, датчиков | 8002 | PostgreSQL |
+| **Auth Service** | 🚧 Планируется | Аутентификация и управление пользователями, проектами, JWT токены | - | PostgreSQL |
+| **Metrics Service** | 🚧 Планируется | Сбор и хранение метрик (accuracy, loss и т.д.), исторические серии | - | PostgreSQL/Timescale |
+| **Artifact Service** | 🚧 Планируется | Хранение артефактов (модели, графики, логи), версионирование | - | S3 + PostgreSQL |
+| **Comparison Service** | 🚧 Планируется | Сравнение экспериментов, расчёт дельт по метрикам | - | PostgreSQL |
+| **API Gateway** | 🚧 Планируется | Единая точка входа, агрегация данных от сервисов, маршрутизация | - | - |
+| **Telemetry Ingest** | 🚧 Планируется | Приём потоков телеметрии, конвертация raw→physical значений | - | Kafka/Redis + PostgreSQL |
+
+### Frontend приложения
+
+| Приложение | Статус | Описание | Порт |
+|------------|--------|----------|------|
+| **Experiment Portal** | ✅ Реализован | React SPA для визуализации экспериментов и дашбордов | 3000 (dev), 80 (prod) |
+| **Auth Proxy** | ✅ Реализован | Прокси для аутентификации и маршрутизации запросов | 8080 |
+
+### Инфраструктурные сервисы
+
+| Сервис | Описание | Порт |
+|--------|----------|------|
+| **PostgreSQL** | Основная база данных для всех сервисов | 5432 |
+| **Redis** | Кэширование, rate limiting, сессии | 6379 |
+| **RabbitMQ** | Message broker для event-driven коммуникации | 5672 (AMQP), 15672 (Management UI) |
+
+### Легенда статусов
+- ✅ **Реализован** - сервис полностью реализован и готов к использованию
+- 🚧 **Планируется** - сервис в планах разработки
+
 ## Система оценивания
 
 ### Семестр 1 (50%)
