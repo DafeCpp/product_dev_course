@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal, cast
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
+from pydantic import AnyHttpUrl, Field, PostgresDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,17 +31,27 @@ class Settings(BaseSettings):
 
     otel_exporter_endpoint: AnyHttpUrl | None = None
 
-    cors_allowed_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8080"]
+    # Use a string field to avoid JSON parsing by pydantic-settings
+    cors_allowed_origins_str: str = Field(
+        default="http://localhost:3000,http://localhost:8080",
+        alias="CORS_ALLOWED_ORIGINS",
     )
 
-    @field_validator("cors_allowed_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
-        """Parse CORS origins from comma-separated string or list."""
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    # This field is populated by the validator, not from env vars
+    cors_allowed_origins: list[str] = Field(
+        default=["http://localhost:3000", "http://localhost:8080"],
+        validation_alias="__cors_allowed_origins_internal__",  # Use a non-existent alias to prevent env parsing
+    )
+
+    @model_validator(mode="after")
+    def parse_cors_origins(self) -> "Settings":
+        """Parse CORS origins from comma-separated string after model initialization."""
+        value = self.cors_allowed_origins_str
+        if value:
+            self.cors_allowed_origins = [
+                origin.strip() for origin in value.split(",") if origin.strip()
+            ]
+        return self
 
 
 @lru_cache

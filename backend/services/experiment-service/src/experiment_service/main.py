@@ -24,13 +24,8 @@ async def openapi_spec(request: web.Request) -> web.StreamResponse:
 
 def create_app() -> web.Application:
     app = web.Application()
-    app.router.add_get("/health", healthcheck)
-    app.router.add_get("/openapi.yaml", openapi_spec)
-    setup_routes(app)
-    app.on_startup.append(init_pool)
-    app.on_cleanup.append(close_pool)
 
-    # Configure CORS
+    # Configure CORS first, before adding routes
     cors = cors_setup(
         app,
         defaults={
@@ -43,6 +38,12 @@ def create_app() -> web.Application:
             for origin in settings.cors_allowed_origins
         },
     )
+
+    app.router.add_get("/health", healthcheck)
+    app.router.add_get("/openapi.yaml", openapi_spec)
+    setup_routes(app)
+    app.on_startup.append(init_pool)
+    app.on_cleanup.append(close_pool)
 
     # Add CORS to all routes
     for route in list(app.router.routes()):
