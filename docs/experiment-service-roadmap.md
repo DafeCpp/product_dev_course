@@ -17,7 +17,7 @@
 ## Текущее состояние (декабрь 2025)
 - **Завершено:** блок Foundation полностью (миграции, CRUD для `Experiment/Run/CaptureSession`, idempotency, пагинация, OpenAPI). Добавлены домены `Sensor` и `ConversionProfile`, статусные машины и покрытие тестами (`tests/test_api_*`).
 - **В процессе:** этап Runs & Capture Management — реализованы batch-операции, проверки инвариантов, заглушки webhook/ingest, но ещё отсутствуют `run_sensors`, `capture_session_events` в API и артефактный контур.
-- **Не реализовано:** Telemetry ingest (REST + WS/SSE), `/runs/{id}/metrics`, артефакты, webhooks/Kafka события, интеграция с Auth Service. Эти задачи остаются в очереди этапов 2‑4.
+- **Не реализовано:** Telemetry ingest (REST + WS/SSE), `/runs/{id}/metrics`, артефакты, webhooks/Kafka события, интеграция с Auth Service, прослойка Auth Proxy/BFF. Эти задачи остаются в очереди этапов 2‑4.
 - **Зависимости:** сервис собран на `aiohttp 3.10`, `asyncpg 0.29`, `pydantic-settings 2.4`, `structlog`, тестируется через `pytest`, `pytest-aiohttp`, `yandex-taxi-testsuite[postgresql]`, кодоген осуществляется `openapi-generator-cli 7.17`.
 
 ## Дорожная карта
@@ -51,6 +51,7 @@
 - Расширенные фильтры API (по git SHA, участникам, связанным датчикам, версиям профилей преобразования).
 - Экспорт данных (JSON/CSV) с выбором слоя `raw/physical`, подписка Comparison Service на события обновлений.
 - Подписки на события через Kafka/Redis Stream для API Gateway и внешних consumers (включая события `conversion_profile.applied`, `capture.backfill.finished`).
+- Auth Proxy/BFF: единая точка для фронта с куками сессии, проксированием REST/WS/SSE, CORS/CSRF, rate limiting на сессию и аудитом логинов.
 
 ### 5. Hardening & Launch (итерация 8+)
 - SLO/SLI мониторинг (Prometheus): RPS, latency, error rate, очередь задач, доля успешных backfill-операций.
@@ -63,3 +64,4 @@
 - **Metrics Service:** запросы на агрегации для карточек запусков, подписки на обновления.
 - **Artifact Service:** webhooks о смене статуса артефактов, ссылки на approved модели.
 - **API Gateway:** агрегированная выдача для внешних клиентов, rate limiting и аутентификация.
+- **Auth Proxy/BFF:** хранение access/refresh в HttpOnly куках, валидация сессии для фронта, проксирование `/api/*` и WS/SSE к Experiment Service (и далее к Gateway), нормализация ошибок, CORS/CSRF.

@@ -1,0 +1,143 @@
+# Docker Compose конфигурация для локального запуска системы
+#
+# Использование:
+#   Development режим: docker-compose up (автоматически загрузит docker-compose.override.yml)
+#   Production режим: docker-compose -f docker-compose.yml up
+#
+# Подготовка:
+#   1. cp env.docker.example .env
+#   2. cp docker-compose.override.yml.example docker-compose.override.yml (для dev режима)
+#   3. docker-compose up
+
+version: "3.9"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: experiment-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-experiment_db}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - experiment-network
+    restart: unless-stopped
+
+  # Experiment Service - Backend API
+  experiment-service:
+    build:
+      context: ./backend/services/experiment-service
+      dockerfile: Dockerfile
+    container_name: experiment-service
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/experiment_db}
+      - ENV=${EXPERIMENT_SERVICE_ENV:-development}
+      - APP_NAME=${EXPERIMENT_SERVICE_APP_NAME:-experiment-service}
+      - HOST=${EXPERIMENT_SERVICE_HOST:-0.0.0.0}
+      - PORT=${EXPERIMENT_SERVICE_PORT:-8002}
+      - DB_POOL_SIZE=${EXPERIMENT_SERVICE_DB_POOL_SIZE:-20}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      - TELEMETRY_BROKER_URL=${TELEMETRY_BROKER_URL:-redis://redis:6379/0}
+    ports:
+      - "${EXPERIMENT_SERVICE_PORT:-8002}:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read()\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Auth Proxy - BFF для фронтенда
+  auth-proxy:
+    build:
+      context: ./frontend/apps/auth-proxy
+      dockerfile: Dockerfile
+      target: production
+    container_name: auth-proxy
+    env_file:
+      - .env
+    environment:
+      - PORT=${AUTH_PROXY_PORT:-8080}
+      - TARGET_EXPERIMENT_URL=${TARGET_EXPERIMENT_URL:-http://experiment-service:8002}
+      - AUTH_URL=${AUTH_URL:-http://auth-service:8001}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - COOKIE_SAMESITE=${COOKIE_SAMESITE:-lax}
+      - ACCESS_COOKIE_NAME=${ACCESS_COOKIE_NAME:-access_token}
+      - REFRESH_COOKIE_NAME=${REFRESH_COOKIE_NAME:-refresh_token}
+      - ACCESS_TTL_SEC=${ACCESS_TTL_SEC:-900}
+      - REFRESH_TTL_SEC=${REFRESH_TTL_SEC:-1209600}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-60}
+      - LOG_LEVEL=${AUTH_PROXY_LOG_LEVEL:-info}
+      - NODE_ENV=production
+    ports:
+      - "${AUTH_PROXY_PORT:-8080}:8080"
+    depends_on:
+      experiment-service:
+        condition: service_healthy
+    networks:
+      - experiment-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Experiment Portal - Frontend SPA
+  experiment-portal:
+    build:
+      context: ./frontend/apps/experiment-portal
+      dockerfile: Dockerfile
+      target: production
+    container_name: experiment-portal
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-proxy
+    networks:
+      - experiment-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Named volumes для персистентности данных
+volumes:
+  postgres_data:
+    name: ${POSTGRES_DATA_VOLUME:-experiment-postgres-data}
+
+# Docker network для взаимодействия сервисов
+networks:
+  experiment-network:
+    name: ${DOCKER_NETWORK_NAME:-experiment-tracking-network}
+    driver: bridge
+

@@ -42,12 +42,14 @@
 | Компонент | Ответственность | Хранение данных |
 |-----------|-----------------|-----------------|
 | Auth Service | Регистрация пользователей, проекты, токены доступа (JWT). | PostgreSQL |
+| Auth Proxy (BFF) | Тонкая прослойка для фронта: login/logout/refresh, хранение access/refresh в HttpOnly-куках, прокси `/api/*` на backend, нормализация ошибок, CSRF/CORS. | Стейт отсутствует |
 | Telemetry Ingest Service | Регистрация датчиков, прием потоков данных, конвертация raw→physical значений, буферизация и маршрутизация в Metrics Service. | Kafka/Redis stream + PostgreSQL метаданные |
 | Experiment Service | CRUD экспериментов и запусков, статусы, связи с метриками/артефактами (доступ через asyncpg, без ORM). | PostgreSQL |
 | Metrics Service | Прием батчей/стримов метрик, хранение исторических серий, агрегации. | PostgreSQL/Timescale |
 | Artifact Service | Загрузка артефактов (файлы/ссылки), версияция. | S3-совместимый сторадж + метаданные в PostgreSQL |
 | Comparison Service | Построение сравнений по метрикам/артефактам, расчёт дельт. | Временные таблицы/PostgreSQL |
 | API Gateway | Агрегирует ответы сервисов, проверяет права, предоставляет внешний REST/GraphQL API. | Стейт отсутствует |
+| Auth Proxy (BFF) | Прослойка между фронтом и сервисами: аутентификация, управление сессией через куки, унификация ошибок, CORS/CSRF, проксирование REST/WebSocket/SSE. | Стейт в сессиях/куках (access/refresh), без БД |
 | Frontend | React SPA: монитор датчиков, графики, управление экспериментами. | Работает поверх API Gateway + WebSocket канал |
 
 ## 6. Функциональные требования
@@ -55,6 +57,7 @@
 - Регистрация пользователя по инвайт-коду, восстановление пароля.
 - Создание проектов, добавление участников с ролями `owner`, `editor`, `viewer`.
 - JWT авторизация, ротация refresh токенов, черный список при отзыве.
+- Веб-клиент общается через `Auth Proxy (BFF)`: login/logout/refresh с HttpOnly Secure куками (`access`, `refresh`), эндпоинт `/auth/me` для профиля, проксирование `/api/*` на Experiment Service/API Gateway с проверкой сессии, CORS/CSRF и rate limiting по сессии.
 
 #### Инварианты прав доступа
 - Каждая сущность (датчик, эксперимент, запуск, capture session, артефакт) принадлежит проекту; пользователь должен состоять в проекте, чтобы увидеть её даже в read-only режиме.
@@ -157,6 +160,21 @@
 - Все операции с профилями преобразования, старт/стоп capture session и backfill подписываются в аудит-лог (user_id, роль, IP, user-agent, request_id) и хранятся минимум 1 год.
 - Доступ к raw-значениям контролируется политиками проекта; при включении режима `physical-only` API возвращает 403 на попытку чтения raw даже для прямых запросов.
 - Минимальные требования к шифрованию: TLS 1.3 на внешних каналах, AES-256 для токенов и conversion profiles в БД, KMS для ключей; все логи с пользовательскими токенами проходят маскирование.
+
+### 6.13 Auth Proxy / BFF требования
+- Внешняя точка для фронта: `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, прокси `/api/*` и WS/SSE на backend.
+- Access/refresh в HttpOnly Secure SameSite=Lax куках, ротация refresh; фронт не хранит токены в `localStorage`.
+- CSRF: double-submit токен или custom header (`X-CSRF-Token`) + SameSite.
+- CORS: whitelist фронтовых origin, ограниченные методы/заголовки, запрет credentials от посторонних доменов.
+- Rate limiting/lockout для логина и по сессии; маскирование токенов и паролей в логах, запрет body-логирования на `/auth/*`.
+- Проксирование заголовков: `X-Request-Id`, user/role, отбрасывать опасные заголовки; поддержка upgrade для WebSocket и SSE.
+
+### 6.14 Auth Proxy / BFF стек и ранний скоп
+- **Выбор стека:** Fastify + TypeScript (плагины `@fastify/http-proxy`, `@fastify/cors`, `@fastify/rate-limit`, `@fastify/cookie`).
+- **Минимальный набор маршрутов:** `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`; прокси `/api/*` → Experiment Service (далее — API Gateway), прокси WS/SSE.
+- **Хранение сессий:** access/refresh в HttpOnly Secure SameSite=Lax куках; ротация refresh; TTL и revocation через Auth Service.
+- **Безопасность:** CORS whitelist для фронтов, CSRF double-submit/custom header, rate limit на логин и по сессии, маскирование секретов в логах, запрет логирования тела `/auth/*`.
+- **Наблюдаемость:** логирование запросов с `request_id`, метрики по proxied RPS/latency/error rate.
 
 ## 7. API и интеграции
 - Все сервисы описывают OpenAPI спецификацию; API Gateway публикует объединенную схему.
