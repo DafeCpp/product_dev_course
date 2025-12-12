@@ -1,0 +1,38 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Сбор логов из Docker контейнеров
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Извлекаем имя контейнера
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      # Извлекаем имя сервиса из лейблов Docker Compose
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service'
+      # Извлекаем имя проекта из лейблов Docker Compose
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'project'
+      # Фильтруем только контейнеры нашего проекта (опционально, можно убрать для всех логов)
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        regex: 'product_dev_course'
+        action: keep
+      # Добавляем лейбл для всех логов
+      - target_label: 'job'
+        replacement: 'docker'
+      # Удаляем служебные метки для чистоты
+      - regex: '__meta_docker_container_label_com_docker_compose_.*'
+        action: labeldrop
+
