@@ -87,6 +87,53 @@ pip install -r requirements.txt
 
 Подробная инструкция: [Setup Guide](docs/setup-guide.md)
 
+## Локальный запуск через Docker
+
+Для быстрого запуска всей системы локально используется Docker Compose.
+
+### Быстрый старт с Docker
+
+```bash
+# 1. Подготовка окружения
+cp env.docker.example .env
+cp docker-compose.override.yml.example docker-compose.override.yml
+
+# 2. Запуск в development режиме (с hot-reload)
+docker-compose up
+
+# 3. Или в фоновом режиме
+docker-compose up -d
+
+# 4. Просмотр логов
+docker-compose logs -f
+
+# 5. Остановка
+docker-compose down
+```
+
+### Доступные сервисы
+
+После запуска доступны:
+- **Experiment Service API:** http://localhost:8002
+- **Auth Proxy:** http://localhost:8080
+- **Experiment Portal (Frontend):** http://localhost:80 (production) или http://localhost:3000 (dev)
+- **PostgreSQL:** localhost:5432
+
+### Режимы работы
+
+- **Development режим** (по умолчанию): hot-reload, volumes для исходного кода, dev команды
+- **Production режим:** оптимизированные образы, без hot-reload
+  ```bash
+  docker-compose -f docker-compose.yml up
+  ```
+
+### Документация
+
+Подробная документация по локальной разработке:
+- [Инвентаризация сервисов](docs/local-dev-inventory.md)
+- [Нормализация окружения](docs/local-dev-env-normalization.md)
+- [Настройка Docker и hot-reload](docs/local-dev-docker-setup.md)
+
 ## Итоговый проект
 
 Микросервисная система сбора и отображения экспериментов (Experiment Tracking Platform) с 6 сервисами на Python:
