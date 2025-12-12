@@ -53,23 +53,24 @@ docker-compose up
 
 ### Experiment Service (Python/aiohttp)
 
-**Инструмент:** `watchfiles`
+**Инструмент:** Стандартный запуск Python (hot-reload через перезапуск контейнера)
 
 **Как работает:**
 1. Исходный код монтируется через volume из `./backend/services/experiment-service/src`
-2. `watchfiles` отслеживает изменения `.py` файлов в `./src`
-3. При изменении автоматически перезапускается процесс `python -m experiment_service.main`
+2. При изменении кода нужно перезапустить контейнер для применения изменений
+3. Для автоматического hot-reload можно использовать `watchfiles`, но в текущей конфигурации используется упрощенный вариант
 
 **Команда запуска:**
 ```bash
-watchfiles 'python -m experiment_service.main' --filter python ./src
+python -m experiment_service.main
 ```
 
-**Проверка работы:**
+**Применение изменений:**
 1. Откройте файл `backend/services/experiment-service/src/experiment_service/main.py`
-2. Внесите изменение (например, добавьте комментарий)
+2. Внесите изменение
 3. Сохраните файл
-4. В логах `docker-compose logs -f experiment-service` должно появиться сообщение о перезапуске
+4. Перезапустите контейнер: `docker-compose restart experiment-service`
+5. Или используйте `watchfiles` в override файле (требует настройки)
 
 ### Auth Proxy (Node.js/Fastify)
 
