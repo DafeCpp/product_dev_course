@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from aiohttp import web
+from aiohttp_cors import setup as cors_setup, ResourceOptions
 
 from experiment_service.api.router import setup_routes
 from experiment_service.db.pool import close_pool, init_pool
@@ -28,6 +29,25 @@ def create_app() -> web.Application:
     setup_routes(app)
     app.on_startup.append(init_pool)
     app.on_cleanup.append(close_pool)
+
+    # Configure CORS
+    cors = cors_setup(
+        app,
+        defaults={
+            origin: ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*",
+                allow_methods="*",
+            )
+            for origin in settings.cors_allowed_origins
+        },
+    )
+
+    # Add CORS to all routes
+    for route in list(app.router.routes()):
+        cors.add(route)
+
     return app
 
 
