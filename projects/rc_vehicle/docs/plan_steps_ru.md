@@ -32,8 +32,8 @@
 - `docs/media/himoto_sct16_receiver_ch.jpg` — приёмник Himoto 4CH (CH1..CH4)
 
 Ссылки (начнут отображаться, когда файлы будут добавлены в репозиторий):
-- `docs/media/himoto_sct16_internals_esc_rx.jpg`
-- `docs/media/himoto_sct16_receiver_ch.jpg`
+- ![Himoto SCT‑16: компоновка, ESC и приёмник](media/himoto_sct16_internals_esc_rx.jpg)
+- ![Himoto SCT‑16: приёмник Himoto 4CH, разъёмы CH1..CH4](media/himoto_sct16_receiver_ch.jpg)
 
 ## 3) Электрическая интеграция
 ### Ветка A
