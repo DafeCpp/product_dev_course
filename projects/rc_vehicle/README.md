@@ -19,6 +19,7 @@ CLI/агент для отправки телеметрии в Experiment Servic
 ## Документация
 - `docs/ts.md` — краткое ТЗ и критерии приёмки (MVP).
 - `docs/interfaces_protocols.md` — протоколы: WebSocket (ESP32↔браузер) и UART кадры (ESP32↔STM32).
+- `docs/glossary_ru.md` — глоссарий терминов и сокращений (ESC, BEC, PWM, IMU и т.д.).
 - (вне проекта) `docs/telemetry-rc-stm32.md` — рекомендации по формату телеметрии для Experiment Service, если будем экспортировать данные в ingest.
 
 ## Планируемая структура (позже)

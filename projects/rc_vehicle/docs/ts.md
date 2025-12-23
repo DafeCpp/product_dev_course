@@ -7,6 +7,8 @@
 - безопасное поведение при потере связи (**failsafe**),
 - возможность последующего апгрейда датчиками скорости (Холл) для более “настоящего” контроля пробуксовки.
 
+Термины/сокращения: см. `docs/glossary_ru.md`.
+
 База (шасси): **Himoto SCT‑16 4WD RTR 1:16 2.4G (HI4192|RED)** — см. карточку: [Яндекс Маркет](https://market.yandex.ru/card/radioupravlyayemyy-short-kors-trak-himoto-sct-16-4wd-rtr-masshtab-116-24g---hi4192red/4399880474?do-waremd5=9jRAzA7SdRMQfoiYw52cAw&cpc=d2PGwzy0QTs0eLnRlKp0k5YCu2JHodVzFJDvJtshUWzSyDz3E9FKzWqRWc9gIULXX9EJ9Ku-0mvQsCTCCBzwqE-a6FjyS4PfsjEQ8zw1WU-FqmGO5HghkO4aplP4qdbhCmxXetVCLQqycN6o03nHXP_tLSTfOP2glbQ73t_oCvPUAJbjP6PtzyvAx9EZdLsM_MZD6JCx9hF2cmhA0Yc88aMXOZ_Ei1IVvZjbvcsvgHDewTubfOP7WxmSPsCnzZvbiXsTE30oPZ2PX6ct5WAkjK3DLf9791pMdJqhKAAkwv7LcDElOfELc6S0wxkUen63wrtSxWiKAo38hVIlcprRM84HQu9ao5TKsC9LjxYBM0hP5J5NaEfI0IHukClWKjyg9bwUETyJZKEokhHrUvGdfPVfDCgSMMCBr0cFhxl4T4GRgdt4k6KP_xjqOGhNoV-7&ogV=-9). Бюджет базы: **≤10k₽**.
 
 ## 2) Архитектура (ветка A)
@@ -33,6 +35,7 @@
 - предпочтительно: отдельные разъёмы `CH1/CH2` или `STR/THR`.
 
 Подтверждение по факту (Himoto SCT‑16, по фото): есть отдельный RC‑приёмник **Himoto 2.4GHz 4CH** с 3‑pin разъёмами `CH1..CH4` → PWM совместимость ветки A выглядит подтверждённой.
+Фото диагностики: см. `docs/plan_steps_ru.md` (раздел “Фото (в репозитории)”).
 
 ## 4) Функциональные требования (MVP)
 ### Управление
