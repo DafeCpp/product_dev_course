@@ -1,0 +1,24 @@
+experiment_service:
+  base_url: "http://localhost:8002"
+  sensor_token: "PUT_SENSOR_TOKEN_HERE"
+  timeout_s: 10
+
+target:
+  sensor_id: "00000000-0000-0000-0000-000000000000"
+  run_id: null
+  capture_session_id: null
+  meta:
+    vehicle_type: "rc_car"
+    controller: "esp32"
+    link_protocol: "ws"
+
+batch:
+  max_readings: 400
+  flush_interval_ms: 300
+
+source:
+  type: "esp32_ws"
+  url: "ws://192.168.4.1/ws" # replace with real endpoint
+  reconnect_delay_ms: 1000
+
+

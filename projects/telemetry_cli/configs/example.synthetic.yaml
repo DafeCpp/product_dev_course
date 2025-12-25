@@ -1,0 +1,38 @@
+experiment_service:
+  base_url: "http://localhost:8002"
+  sensor_token: "PUT_SENSOR_TOKEN_HERE"
+  timeout_s: 10
+
+target:
+  sensor_id: "00000000-0000-0000-0000-000000000000"
+  run_id: null
+  capture_session_id: null
+  meta:
+    vehicle_type: "rc_car"
+    controller: "generator"
+    fw_version: "synthetic-0.1"
+
+batch:
+  max_readings: 200
+  flush_interval_ms: 500
+
+source:
+  type: "synthetic"
+  sample_hz: 50
+  signals:
+    - signal: "imu.ax"
+      kind: "sine"
+      amplitude: 0.5
+      offset: 0.0
+      freq_hz: 1.0
+    - signal: "imu.ay"
+      kind: "saw"
+      amplitude: 1.0
+      offset: 0.0
+      freq_hz: 0.3
+    - signal: "battery.v"
+      kind: "noise"
+      offset: 8.2
+      noise_std: 0.02
+
+

@@ -1,0 +1,24 @@
+experiment_service:
+  base_url: "http://localhost:8002"
+  sensor_token: "PUT_SENSOR_TOKEN_HERE"
+  timeout_s: 10
+
+target:
+  sensor_id: "00000000-0000-0000-0000-000000000000"
+  run_id: null
+  capture_session_id: null
+  meta:
+    vehicle_type: "rc_car"
+    controller: "stm32"
+    link_protocol: "udp_json"
+
+batch:
+  max_readings: 500
+  flush_interval_ms: 300
+
+source:
+  type: "udp_json"
+  host: "0.0.0.0"
+  port: 9999
+
+
