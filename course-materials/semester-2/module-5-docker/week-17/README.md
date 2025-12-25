@@ -30,19 +30,19 @@
 ┌─────────────────────────────────────────────────┐
 │            Virtual Machines                     │
 ├─────────────────────────────────────────────────┤
-│  ┌────────┐  ┌────────┐  ┌────────┐           │
-│  │ App A  │  │ App B  │  │ App C  │           │
-│  ├────────┤  ├────────┤  ├────────┤           │
-│  │  Bins  │  │  Bins  │  │  Bins  │           │
-│  ├────────┤  ├────────┤  ├────────┤           │
-│  │Guest OS│  │Guest OS│  │Guest OS│           │
-│  └────────┘  └────────┘  └────────┘           │
-│  ┌─────────────────────────────────┐           │
-│  │         Hypervisor              │           │
-│  └─────────────────────────────────┘           │
-│  ┌─────────────────────────────────┐           │
-│  │         Host OS                 │           │
-│  └─────────────────────────────────┘           │
+│  ┌────────┐  ┌────────┐  ┌────────┐             │
+│  │ App A  │  │ App B  │  │ App C  │             │
+│  ├────────┤  ├────────┤  ├────────┤             │
+│  │  Bins  │  │  Bins  │  │  Bins  │             │
+│  ├────────┤  ├────────┤  ├────────┤             │
+│  │Guest OS│  │Guest OS│  │Guest OS│             │
+│  └────────┘  └────────┘  └────────┘             │
+│  ┌─────────────────────────────────┐            │
+│  │         Hypervisor              │            │
+│  └─────────────────────────────────┘            │
+│  ┌─────────────────────────────────┐            │
+│  │         Host OS                 │            │
+│  └─────────────────────────────────┘            │
 └─────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────┐
@@ -93,7 +93,7 @@
 # Работа с образами
 docker build -t myapp:latest .      # Собрать образ
 docker images                        # Список образов
-docker pull python:3.11              # Скачать образ
+docker pull python:3.14              # Скачать образ
 docker push myrepo/myapp:latest      # Загрузить образ
 docker rmi myapp:latest              # Удалить образ
 
@@ -123,7 +123,7 @@ docker volume prune                  # Очистить volumes
 
 ```dockerfile
 # Указываем базовый образ
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Метаданные
 LABEL maintainer="your.email@example.com"
@@ -178,7 +178,7 @@ docker rm todo-app
 
 **Улучшенный Dockerfile:**
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
@@ -215,7 +215,7 @@ CMD ["python", "main.py"]
 
 ```dockerfile
 # Stage 1: Builder
-FROM python:3.11-slim as builder
+FROM python:3.14-slim as builder
 
 WORKDIR /app
 
@@ -229,7 +229,7 @@ COPY requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 

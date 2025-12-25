@@ -335,7 +335,7 @@ async def process_as_completed():
 # ✅ Slow completed after 3s    (через 3 сек)
 ```
 
-### 5. Task Groups (Python 3.11+)
+### 5. Task Groups (Python 3.14+)
 
 ```python
 import asyncio

@@ -65,7 +65,7 @@ product_dev_course/
 ## Быстрый старт
 
 ### Предварительные требования
-- Python 3.11+
+- Python 3.14+
 - Node.js 18+
 - Docker Desktop
 - Git

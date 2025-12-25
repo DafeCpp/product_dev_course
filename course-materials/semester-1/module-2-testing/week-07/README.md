@@ -92,7 +92,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Run tests
         run: pytest
@@ -111,7 +111,7 @@ on:
     branches: [ main ]
 
 env:
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: '3.14'
 
 jobs:
   lint:
@@ -240,7 +240,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.12', '3.13', '3.14']
 
     steps:
       - uses: actions/checkout@v4
@@ -406,7 +406,7 @@ pip install mypy
 ```toml
 # pyproject.toml
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -874,7 +874,7 @@ jobs:
 - name: Set up Python
   uses: actions/setup-python@v5
   with:
-    python-version: '3.11'
+    python-version: '3.14'
     cache: 'pip'  # Кэширование pip packages
 
 - name: Cache pre-commit

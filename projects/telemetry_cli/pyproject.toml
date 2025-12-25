@@ -7,7 +7,7 @@ name = "telemetry-cli"
 version = "0.1.0"
 description = "Universal telemetry agent (real sources + synthetic signals) -> Experiment Service telemetry ingest."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [{ name = "product_dev_course" }]
 dependencies = [

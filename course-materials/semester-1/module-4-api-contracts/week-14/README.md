@@ -623,7 +623,7 @@ REST API для управления задачами и проектами.
 
 ## Технологии
 
-- Python 3.11+
+- Python 3.14+
 - aiohttp
 - PostgreSQL
 - asyncpg

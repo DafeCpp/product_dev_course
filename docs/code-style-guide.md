@@ -612,7 +612,7 @@ function calculateDiscount(
 Краткое описание сервиса и его назначения
 
 ## Технологии
-- Python 3.11 / TypeScript 5.0
+- Python 3.14 / TypeScript 5.0
 - aiohttp / Express
 - PostgreSQL
 - Redis
@@ -764,7 +764,7 @@ repos:
     rev: 23.10.0
     hooks:
       - id: black
-        language_version: python3.11
+        language_version: python3.14
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.1.3

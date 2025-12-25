@@ -6,33 +6,62 @@
 BACKEND_DIR := projects/backend/services/experiment-service
 FRONTEND_DIR := projects/frontend/apps/experiment-portal
 OPENAPI_SPEC := openapi/openapi.yaml
+# Python interpreter to use for Poetry virtualenv.
+# Override examples:
+#   make PYTHON=/path/to/python backend-install
+#   make PYTHON=python3.14 backend-install
+#
+# IMPORTANT: do NOT resolve to an absolute path at Makefile parse time.
+# Many setups (pyenv, asdf) expose Python via shims in $PATH only in interactive shells.
+PYTHON ?= python3.14
 
 test: type-check test-backend test-frontend
 
 backend-install:
-	cd $(BACKEND_DIR) && poetry install --with dev
+	@cd $(BACKEND_DIR) && \
+		PY=""; \
+		if [ -n "$(PYTHON)" ] && [ -x "$(PYTHON)" ]; then PY="$(PYTHON)"; fi; \
+		if [ -z "$$PY" ] && command -v "$(PYTHON)" >/dev/null 2>&1; then PY="$(PYTHON)"; fi; \
+		if [ -z "$$PY" ] && [ -x "$$HOME/.pyenv/shims/python3.14" ]; then PY="$$HOME/.pyenv/shims/python3.14"; fi; \
+		if [ -z "$$PY" ] && command -v python3.14 >/dev/null 2>&1; then PY="python3.14"; fi; \
+		if [ -z "$$PY" ] && command -v python3 >/dev/null 2>&1; then PY="python3"; fi; \
+		if [ -z "$$PY" ] && command -v python >/dev/null 2>&1; then PY="python"; fi; \
+		if [ -z "$$PY" ]; then \
+			echo "❌ Не найден Python интерпретатор (пробовал: $$PYTHON, python3.14, python3, python)."; \
+			echo "   Этот репозиторий требует Python 3.14+."; \
+			echo "   Установите Python 3.14 (например через pyenv) и повторите, или укажите путь: make PYTHON=/path/to/python backend-install"; \
+			exit 1; \
+		fi; \
+		if ! "$$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 14) else 1)' >/dev/null 2>&1; then \
+			echo "❌ Найден Python, но версия < 3.14: $$($$PY -V 2>&1)"; \
+			echo "   Этот репозиторий требует Python 3.14+."; \
+			echo "   Установите Python 3.14 (например через pyenv) и повторите, или укажите путь: make PYTHON=/path/to/python3.14 backend-install"; \
+			exit 1; \
+		fi; \
+		poetry env use "$$PY" >/dev/null && \
+		poetry install --with dev
 
 frontend-install:
-	cd $(FRONTEND_DIR) && npm ci
+	@cd $(FRONTEND_DIR) && npm ci
 
 type-check: backend-install
-	cd $(BACKEND_DIR) && poetry run mypy src
+	@cd $(BACKEND_DIR) && poetry run mypy src
 
 test-backend: backend-install
-	cd $(BACKEND_DIR) && poetry run pytest
+	@cd $(BACKEND_DIR) && poetry run pytest
 
 test-frontend: frontend-install
-	cd $(FRONTEND_DIR) && npm run test
+	@cd $(FRONTEND_DIR) && npm run test
 
 .PHONY: generate-sdk
 generate-sdk:
-	cd $(BACKEND_DIR) && rm -rf clients/typescript-fetch && \
+	@cd $(BACKEND_DIR) && rm -rf clients/typescript-fetch && \
 		poetry run openapi-generator-cli generate \
 			-i $(OPENAPI_SPEC) \
 			-g typescript-fetch \
 			-o clients/typescript-fetch \
 			-c openapi/clients/typescript-fetch-config.yaml
-	cd $(BACKEND_DIR) && rm -rf clients/cpp-restsdk && \
+	@cd $(BACKEND_DIR) && rm -rf clients/cpp-restsdk && \
 		poetry run openapi-generator-cli generate \
 			-i $(OPENAPI_SPEC) \
 			-g cpp-restsdk \

@@ -74,7 +74,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Install dependencies
         run: |
@@ -205,7 +205,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Install dependencies
@@ -452,10 +452,10 @@ USER appuser
 
 ```dockerfile
 # Multi-stage build
-FROM python:3.11-slim as builder
+FROM python:3.14-slim as builder
 # ... build ...
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 COPY --from=builder /root/.local /root/.local
 # Только runtime, без build tools
 ```

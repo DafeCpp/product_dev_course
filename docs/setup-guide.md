@@ -21,7 +21,7 @@
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Установка основных инструментов
-brew install python@3.11
+brew install python@3.14
 brew install node
 brew install git
 brew install --cask docker
@@ -33,8 +33,24 @@ brew install --cask docker
 # Обновление системы
 sudo apt update && sudo apt upgrade -y
 
-# Python 3.11
-sudo apt install python3.11 python3.11-venv python3-pip -y
+# Python 3.14
+# В Ubuntu/Debian нужная версия часто отсутствует в стандартных репозиториях.
+# Рекомендуемый способ — pyenv (сборка из исходников).
+sudo apt install -y \
+  build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+  curl libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
+
+curl -fsSL https://pyenv.run | bash
+
+# Добавьте в ~/.bashrc (или ~/.zshrc) и перезапустите shell:
+# export PYENV_ROOT="$HOME/.pyenv"
+# [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+# eval "$(pyenv init -)"
+
+# Установка Python 3.14.x и выбор версии в репозитории
+pyenv install 3.14.2
+cd product_dev_course
+pyenv local 3.14.2
 
 # Node.js 18
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
@@ -51,7 +67,7 @@ sudo apt install git -y
 
 ### Windows
 
-1. **Python:** Скачать с [python.org](https://www.python.org/downloads/) (3.11+)
+1. **Python:** Скачать с [python.org](https://www.python.org/downloads/) (3.14+)
    - Обязательно отметить "Add Python to PATH"
 2. **Node.js:** Скачать с [nodejs.org](https://nodejs.org/) (LTS версия)
 3. **Docker Desktop:** Скачать с [docker.com](https://www.docker.com/products/docker-desktop/)
@@ -66,7 +82,7 @@ sudo apt install git -y
 cd product_dev_course/course-materials/semester-1/module-1-web-api/week-01
 
 # Создание venv
-python3.11 -m venv venv
+python3.14 -m venv venv
 
 # Активация (macOS/Linux)
 source venv/bin/activate
@@ -76,7 +92,7 @@ venv\Scripts\activate
 
 # Проверка версии
 python --version
-# Должно быть: Python 3.11.x
+# Должно быть: Python 3.14.x
 ```
 
 ### Установка базовых зависимостей
@@ -118,7 +134,7 @@ docker run hello-world
 ### Базовый Dockerfile для Python
 
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
@@ -424,7 +440,7 @@ python test_app.py
 **macOS/Linux:**
 ```bash
 # Добавьте в ~/.bashrc или ~/.zshrc
-export PATH="/usr/local/opt/python@3.11/bin:$PATH"
+export PATH="/usr/local/opt/python@3.14/bin:$PATH"
 ```
 
 **Windows:**
@@ -470,7 +486,7 @@ docker run --name postgres-dev ...
 # Убедитесь что установлены все зависимости
 pip install aiohttp aiohttp-cors
 
-# Проверьте версию Python (должна быть 3.11+)
+# Проверьте версию Python (должна быть 3.14+)
 python --version
 ```
 

@@ -471,7 +471,7 @@ pip install pytest-cov
 pytest --cov=src --cov-report=html --cov-report=term
 
 # Результат
----------- coverage: platform darwin, python 3.11.5 -----------
+---------- coverage: platform darwin, python 3.14.0 -----------
 Name                Stmts   Miss  Cover
 ---------------------------------------
 src/__init__.py         0      0   100%

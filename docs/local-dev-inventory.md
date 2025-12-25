@@ -9,7 +9,7 @@
 
 ### 1. Experiment Service (Backend)
 - **Путь:** `projects/backend/services/experiment-service/`
-- **Технологии:** Python 3.11, aiohttp 3.10, asyncpg 0.29, PostgreSQL
+- **Технологии:** Python 3.14, aiohttp 3.10, asyncpg 0.29, PostgreSQL
 - **Порт:** 8002
 - **Dockerfile:** ✅ Есть (`projects/backend/services/experiment-service/Dockerfile`)
 - **docker-compose.yml:** ✅ Есть (локальный, только для experiment-service)

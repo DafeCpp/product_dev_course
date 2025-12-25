@@ -19,7 +19,7 @@
 
 | Категория        | Пакеты / версии                                         | Назначение                        |
 |------------------|--------------------------------------------------------|----------------------------------|
-| Runtime          | `python 3.11+`, `aiohttp 3.10`, `asyncpg 0.29`, `pydantic-settings 2.4`, `orjson`, `structlog` | HTTP API, PostgreSQL, конфигурация и логирование |
+| Runtime          | `python 3.14+`, `aiohttp 3.10`, `asyncpg 0.29`, `pydantic-settings 2.4`, `orjson`, `structlog` | HTTP API, PostgreSQL, конфигурация и логирование |
 | Dev/Test         | `pytest 8`, `pytest-asyncio`, `pytest-aiohttp`, `yandex-taxi-testsuite[postgresql]`, `ruff`, `mypy` | автотесты, статический анализ    |
 | Tooling / SDK    | `openapi-generator-cli 7.17`, `httpx`                   | генерация клиентов и smoke-тесты |
 
