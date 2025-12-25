@@ -7,7 +7,10 @@ import Layout from './Layout'
 describe('Layout', () => {
     it('renders header links and page content', () => {
         render(
-            <MemoryRouter initialEntries={['/experiments']}>
+            <MemoryRouter
+                initialEntries={['/experiments']}
+                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+            >
                 <Layout>
                     <div>Test content</div>
                 </Layout>

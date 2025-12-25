@@ -42,7 +42,7 @@ backend-install:
 		poetry install --with dev
 
 frontend-install:
-	@cd $(FRONTEND_DIR) && npm ci
+	@cd $(FRONTEND_DIR) && npm ci --no-audit --no-fund --loglevel=error
 
 type-check: backend-install
 	@cd $(BACKEND_DIR) && poetry run mypy src
