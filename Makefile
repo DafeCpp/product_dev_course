@@ -1,4 +1,5 @@
-.PHONY: test test-backend test-frontend type-check
+.PHONY: test test-backend test-frontend type-check backend-install frontend-install
+.PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
 
@@ -8,13 +9,19 @@ OPENAPI_SPEC := openapi/openapi.yaml
 
 test: type-check test-backend test-frontend
 
-type-check:
+backend-install:
+	cd $(BACKEND_DIR) && poetry install --with dev
+
+frontend-install:
+	cd $(FRONTEND_DIR) && npm ci
+
+type-check: backend-install
 	cd $(BACKEND_DIR) && poetry run mypy src
 
-test-backend:
+test-backend: backend-install
 	cd $(BACKEND_DIR) && poetry run pytest
 
-test-frontend:
+test-frontend: frontend-install
 	cd $(FRONTEND_DIR) && npm run test
 
 .PHONY: generate-sdk
