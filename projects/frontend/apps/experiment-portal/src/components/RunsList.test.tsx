@@ -30,10 +30,10 @@ const mockRun = {
     id: 'run-123',
     experiment_id: 'exp-123',
     name: 'Test Run',
-    parameters: { param1: 'value1', param2: 'value2', param3: 'value3' },
+    params: { param1: 'value1', param2: 'value2', param3: 'value3' },
     status: 'running' as const,
     started_at: '2024-01-01T10:00:00Z',
-    completed_at: '2024-01-01T11:00:00Z',
+    finished_at: '2024-01-01T11:00:00Z',
     duration_seconds: 3600,
     metadata: {},
     created_at: '2024-01-01T00:00:00Z',
@@ -102,9 +102,9 @@ describe('RunsList', () => {
         const mockList = vi.mocked(runsApi.list)
         mockList.mockResolvedValueOnce({
             runs: [
-                { ...mockRun, id: 'run-1', status: 'created' as const },
+                { ...mockRun, id: 'run-1', status: 'draft' as const },
                 { ...mockRun, id: 'run-2', status: 'running' as const },
-                { ...mockRun, id: 'run-3', status: 'completed' as const },
+                { ...mockRun, id: 'run-3', status: 'succeeded' as const },
                 { ...mockRun, id: 'run-4', status: 'failed' as const },
             ],
             total: 4,
@@ -115,9 +115,9 @@ describe('RunsList', () => {
         render(<RunsList experimentId="exp-123" />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            expect(screen.getByText('Создан')).toBeInTheDocument()
+            expect(screen.getByText('Черновик')).toBeInTheDocument()
             expect(screen.getByText('Выполняется')).toBeInTheDocument()
-            expect(screen.getByText('Завершен')).toBeInTheDocument()
+            expect(screen.getByText('Успешно')).toBeInTheDocument()
             expect(screen.getByText('Ошибка')).toBeInTheDocument()
         })
     })
@@ -245,7 +245,7 @@ describe('RunsList', () => {
         })
     })
 
-    it('displays completed_at when available', async () => {
+    it('displays finished_at when available', async () => {
         const mockList = vi.mocked(runsApi.list)
         mockList.mockResolvedValueOnce({
             runs: [mockRun],
@@ -257,22 +257,22 @@ describe('RunsList', () => {
         render(<RunsList experimentId="exp-123" />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            // Проверяем, что дата completed_at отображается (ищем по полному тексту или используем getAllByText)
+            // Проверяем, что дата finished_at отображается (ищем по полному тексту или используем getAllByText)
             const dateTexts = screen.getAllByText(/01 Jan/i)
             expect(dateTexts.length).toBeGreaterThan(0)
             // Проверяем, что есть дата с временем завершения (11:00)
-            const completedAtText = screen.getByText(/01 Jan 11:00/i)
-            expect(completedAtText).toBeInTheDocument()
+            const finishedAtText = screen.getByText(/01 Jan 11:00/i)
+            expect(finishedAtText).toBeInTheDocument()
         })
     })
 
-    it('displays "-" when completed_at is not available', async () => {
+    it('displays "-" when finished_at is not available', async () => {
         const mockList = vi.mocked(runsApi.list)
         mockList.mockResolvedValueOnce({
             runs: [
                 {
                     ...mockRun,
-                    completed_at: undefined,
+                    finished_at: undefined,
                 },
             ],
             total: 1,
@@ -312,7 +312,7 @@ describe('RunsList', () => {
             runs: [
                 {
                     ...mockRun,
-                    parameters: {
+                    params: {
                         param1: 'value1',
                         param2: 'value2',
                         param3: 'value3',

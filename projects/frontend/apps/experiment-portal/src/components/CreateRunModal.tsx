@@ -16,7 +16,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
     const queryClient = useQueryClient()
     const [formData, setFormData] = useState<RunCreate>({
         name: '',
-        parameters: {},
+        params: {},
         notes: '',
         metadata: {},
     })
@@ -43,11 +43,11 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         setError(null)
         setJsonError(null)
 
-        // Парсим JSON для parameters
-        let parameters: Record<string, any> = {}
+        // Парсим JSON для params
+        let params: Record<string, any> = {}
         if (parametersJson.trim()) {
             try {
-                parameters = JSON.parse(parametersJson)
+                params = JSON.parse(parametersJson)
             } catch (err) {
                 setJsonError('Ошибка в формате JSON для параметров')
                 return
@@ -67,7 +67,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
 
         createMutation.mutate({
             name: formData.name,
-            parameters,
+            params,
             notes: formData.notes || undefined,
             metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         })
@@ -77,7 +77,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         if (!createMutation.isPending) {
             setFormData({
                 name: '',
-                parameters: {},
+                params: {},
                 notes: '',
                 metadata: {},
             })

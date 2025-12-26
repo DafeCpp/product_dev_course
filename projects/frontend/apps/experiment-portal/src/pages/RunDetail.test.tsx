@@ -51,10 +51,10 @@ const mockRun = {
     id: 'run-123',
     experiment_id: 'exp-123',
     name: 'Test Run',
-    parameters: { param1: 'value1', param2: 'value2' },
+    params: { param1: 'value1', param2: 'value2' },
     status: 'running' as const,
     started_at: '2024-01-01T10:00:00Z',
-    completed_at: undefined,
+    finished_at: undefined,
     duration_seconds: 3600,
     notes: 'Test notes',
     metadata: { key: 'value' },
@@ -68,7 +68,7 @@ const mockExperiment = {
     name: 'Test Experiment',
     description: 'Test description',
     experiment_type: 'test',
-    created_by: 'user-123',
+    owner_id: 'user-123',
     status: 'running' as const,
     tags: [],
     metadata: {},
@@ -261,7 +261,7 @@ describe('RunDetail', () => {
         mockGet.mockResolvedValueOnce(mockRun)
         mockComplete.mockResolvedValueOnce({
             ...mockRun,
-            status: 'completed' as const,
+            status: 'succeeded' as const,
         })
 
         render(<RunDetail />, { wrapper: createWrapper() })
@@ -328,11 +328,11 @@ describe('RunDetail', () => {
         })
     })
 
-    it('does not show action buttons for completed status', async () => {
+    it('does not show action buttons for succeeded status', async () => {
         const mockGet = vi.mocked(runsApi.get)
         mockGet.mockResolvedValueOnce({
             ...mockRun,
-            status: 'completed' as const,
+            status: 'succeeded' as const,
         })
 
         render(<RunDetail />, { wrapper: createWrapper() })
@@ -414,7 +414,7 @@ describe('RunDetail', () => {
 
         resolveComplete!({
             ...mockRun,
-            status: 'completed' as const,
+            status: 'succeeded' as const,
         })
     })
 

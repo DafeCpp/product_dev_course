@@ -118,10 +118,10 @@ describe('API Client', () => {
                     id: 'exp-123',
                     project_id: 'project-123',
                     name: 'Test Experiment',
-                    status: 'created',
+                    status: 'draft',
                     tags: [],
                     metadata: {},
-                    created_by: 'user-1',
+                    owner_id: 'user-1',
                     created_at: '2024-01-01T00:00:00Z',
                     updated_at: '2024-01-01T00:00:00Z',
                 }
@@ -144,10 +144,10 @@ describe('API Client', () => {
                 const mockExperiment = {
                     id: 'exp-123',
                     ...createData,
-                    status: 'created',
+                    status: 'draft',
                     tags: [],
                     metadata: {},
-                    created_by: 'user-1',
+                    owner_id: 'user-1',
                     created_at: '2024-01-01T00:00:00Z',
                     updated_at: '2024-01-01T00:00:00Z',
                 }
@@ -176,7 +176,7 @@ describe('API Client', () => {
                     status: 'running',
                     tags: [],
                     metadata: {},
-                    created_by: 'user-1',
+                    owner_id: 'user-1',
                     created_at: '2024-01-01T00:00:00Z',
                     updated_at: '2024-01-02T00:00:00Z',
                 }
@@ -295,8 +295,8 @@ describe('API Client', () => {
                     id: 'run-123',
                     experiment_id: 'exp-123',
                     name: 'Test Run',
-                    parameters: {},
-                    status: 'created',
+                    params: {},
+                    status: 'draft',
                     metadata: {},
                     created_at: '2024-01-01T00:00:00Z',
                     updated_at: '2024-01-01T00:00:00Z',
@@ -314,13 +314,13 @@ describe('API Client', () => {
             it('calls POST /api/v1/experiments/:id/runs with data', async () => {
                 const createData = {
                     name: 'New Run',
-                    parameters: { param1: 'value1' },
+                    params: { param1: 'value1' },
                 }
                 const mockRun = {
                     id: 'run-123',
                     experiment_id: 'exp-123',
                     ...createData,
-                    status: 'created',
+                    status: 'draft',
                     metadata: {},
                     created_at: '2024-01-01T00:00:00Z',
                     updated_at: '2024-01-01T00:00:00Z',
@@ -347,7 +347,7 @@ describe('API Client', () => {
                     id: 'run-123',
                     experiment_id: 'exp-123',
                     name: 'Updated Run',
-                    parameters: {},
+                    params: {},
                     status: 'running',
                     metadata: {},
                     created_at: '2024-01-01T00:00:00Z',
@@ -363,13 +363,13 @@ describe('API Client', () => {
         })
 
         describe('complete', () => {
-            it('calls PATCH /api/v1/runs/:id with status completed', async () => {
+            it('calls PATCH /api/v1/runs/:id with status succeeded', async () => {
                 const mockRun = {
                     id: 'run-123',
                     experiment_id: 'exp-123',
                     name: 'Test Run',
-                    parameters: {},
-                    status: 'completed',
+                    params: {},
+                    status: 'succeeded',
                     metadata: {},
                     created_at: '2024-01-01T00:00:00Z',
                     updated_at: '2024-01-02T00:00:00Z',
@@ -379,7 +379,7 @@ describe('API Client', () => {
                 const result = await runsApi.complete('run-123')
 
                 expect(mockAxiosInstance.patch).toHaveBeenCalledWith('/api/v1/runs/run-123', {
-                    status: 'completed',
+                    status: 'succeeded',
                 })
                 expect(result).toEqual(mockRun)
             })
@@ -391,7 +391,7 @@ describe('API Client', () => {
                     id: 'run-123',
                     experiment_id: 'exp-123',
                     name: 'Test Run',
-                    parameters: {},
+                    params: {},
                     status: 'failed',
                     metadata: {},
                     created_at: '2024-01-01T00:00:00Z',
@@ -413,7 +413,7 @@ describe('API Client', () => {
                     id: 'run-123',
                     experiment_id: 'exp-123',
                     name: 'Test Run',
-                    parameters: {},
+                    params: {},
                     status: 'failed',
                     metadata: {},
                     created_at: '2024-01-01T00:00:00Z',

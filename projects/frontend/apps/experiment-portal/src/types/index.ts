@@ -6,8 +6,8 @@ export interface Experiment {
   name: string
   description?: string
   experiment_type?: string
-  created_by: string
-  status: 'created' | 'running' | 'completed' | 'failed' | 'archived'
+  owner_id: string
+  status: 'draft' | 'running' | 'succeeded' | 'failed' | 'archived'
   tags: string[]
   metadata: Record<string, any>
   created_at: string
@@ -18,10 +18,10 @@ export interface Run {
   id: string
   experiment_id: string
   name: string
-  parameters: Record<string, any>
-  status: 'created' | 'running' | 'completed' | 'failed'
+  params: Record<string, any>
+  status: 'draft' | 'running' | 'succeeded' | 'failed' | 'archived'
   started_at?: string
-  completed_at?: string
+  finished_at?: string
   duration_seconds?: number
   notes?: string
   metadata: Record<string, any>
@@ -49,14 +49,14 @@ export interface ExperimentUpdate {
 
 export interface RunCreate {
   name: string
-  parameters: Record<string, any>
+  params: Record<string, any>
   notes?: string
   metadata?: Record<string, any>
 }
 
 export interface RunUpdate {
   name?: string
-  parameters?: Record<string, any>
+  params?: Record<string, any>
   notes?: string
   metadata?: Record<string, any>
   status?: string

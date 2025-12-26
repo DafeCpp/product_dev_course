@@ -155,8 +155,8 @@ describe('CreateRunModal', () => {
             id: 'run-1',
             experiment_id: 'exp-1',
             name: 'Test Run',
-            parameters: { key: 'value' },
-            status: 'created' as const,
+            params: { key: 'value' },
+            status: 'draft' as const,
             notes: 'Test notes',
             metadata: { meta: 'data' },
             created_at: '2024-01-01T00:00:00Z',
@@ -188,7 +188,7 @@ describe('CreateRunModal', () => {
         await waitFor(() => {
             expect(mockCreate).toHaveBeenCalledWith('exp-1', {
                 name: 'Test Run',
-                parameters: { key: 'value' },
+                params: { key: 'value' },
                 notes: 'Test notes',
                 metadata: { meta: 'data' },
             })
@@ -208,8 +208,8 @@ describe('CreateRunModal', () => {
             id: 'run-1',
             experiment_id: 'exp-1',
             name: 'Test Run',
-            parameters: {},
-            status: 'created' as const,
+            params: {},
+            status: 'draft' as const,
             metadata: {},
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
@@ -233,7 +233,7 @@ describe('CreateRunModal', () => {
         await waitFor(() => {
             expect(mockCreate).toHaveBeenCalledWith('exp-1', {
                 name: 'Test Run',
-                parameters: {},
+                params: {},
                 notes: undefined,
                 metadata: undefined,
             })
@@ -357,8 +357,8 @@ describe('CreateRunModal', () => {
             id: 'run-1',
             experiment_id: 'exp-1',
             name: 'Test Run',
-            parameters: {},
-            status: 'created' as const,
+            params: {},
+            status: 'draft' as const,
             metadata: {},
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',

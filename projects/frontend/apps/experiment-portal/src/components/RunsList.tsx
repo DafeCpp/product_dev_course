@@ -69,14 +69,14 @@ function RunsList({ experimentId }: RunsListProps) {
                 </td>
                 <td>
                   <div className="parameters-preview">
-                    {Object.keys(run.parameters).slice(0, 3).map((key) => (
+                    {Object.keys(run.params).slice(0, 3).map((key) => (
                       <span key={key} className="param-item">
-                        {key}: {String(run.parameters[key]).substring(0, 20)}
+                        {key}: {String(run.params[key]).substring(0, 20)}
                       </span>
                     ))}
-                    {Object.keys(run.parameters).length > 3 && (
+                    {Object.keys(run.params).length > 3 && (
                       <span className="param-more">
-                        +{Object.keys(run.parameters).length - 3}
+                        +{Object.keys(run.params).length - 3}
                       </span>
                     )}
                   </div>
@@ -87,8 +87,8 @@ function RunsList({ experimentId }: RunsListProps) {
                     : '-'}
                 </td>
                 <td>
-                  {run.completed_at
-                    ? format(new Date(run.completed_at), 'dd MMM HH:mm')
+                  {run.finished_at
+                    ? format(new Date(run.finished_at), 'dd MMM HH:mm')
                     : '-'}
                 </td>
                 <td>{formatDuration(run.duration_seconds)}</td>

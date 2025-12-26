@@ -1,9 +1,9 @@
 // Status mappings for different entity types
 
 export const experimentStatusMap = {
-    created: { badgeClass: 'badge-secondary', text: 'Создан' },
+    draft: { badgeClass: 'badge-secondary', text: 'Черновик' },
     running: { badgeClass: 'badge-info', text: 'Выполняется' },
-    completed: { badgeClass: 'badge-success', text: 'Завершен' },
+    succeeded: { badgeClass: 'badge-success', text: 'Успешно' },
     failed: { badgeClass: 'badge-danger', text: 'Ошибка' },
     archived: { badgeClass: 'badge-secondary', text: 'Архивирован' },
 }
@@ -16,10 +16,11 @@ export const sensorStatusMap = {
 }
 
 export const runStatusMap = {
-    created: { badgeClass: 'badge-secondary', text: 'Создан' },
+    draft: { badgeClass: 'badge-secondary', text: 'Черновик' },
     running: { badgeClass: 'badge-info', text: 'Выполняется' },
-    completed: { badgeClass: 'badge-success', text: 'Завершен' },
+    succeeded: { badgeClass: 'badge-success', text: 'Успешно' },
     failed: { badgeClass: 'badge-danger', text: 'Ошибка' },
+    archived: { badgeClass: 'badge-secondary', text: 'Архивирован' },
 }
 
 export const captureSessionStatusMap = {

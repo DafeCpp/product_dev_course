@@ -204,10 +204,10 @@ function RunDetail() {
               value={format(new Date(run.started_at), 'dd MMM yyyy HH:mm:ss')}
             />
           )}
-          {run.completed_at && (
+          {run.finished_at && (
             <InfoRow
               label="Завершение"
-              value={format(new Date(run.completed_at), 'dd MMM yyyy HH:mm:ss')}
+              value={format(new Date(run.finished_at), 'dd MMM yyyy HH:mm:ss')}
             />
           )}
           {run.duration_seconds && (
@@ -229,7 +229,7 @@ function RunDetail() {
         <div className="parameters-section">
           <h3>Параметры запуска</h3>
           <pre className="parameters-json">
-            {JSON.stringify(run.parameters, null, 2)}
+            {JSON.stringify(run.params, null, 2)}
           </pre>
         </div>
 

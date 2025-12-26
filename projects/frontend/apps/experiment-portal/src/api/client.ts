@@ -143,7 +143,7 @@ export const runsApi = {
   },
 
   complete: async (id: string): Promise<Run> => {
-    const response = await apiClient.patch(`/api/v1/runs/${id}`, { status: 'completed' })
+    const response = await apiClient.patch(`/api/v1/runs/${id}`, { status: 'succeeded' })
     return response.data
   },
 

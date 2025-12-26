@@ -34,10 +34,10 @@ const mockExperiment = {
     name: 'Test Experiment',
     description: 'Test description',
     experiment_type: 'aerodynamics',
-    status: 'created' as const,
+    status: 'draft' as const,
     tags: ['test', 'aerodynamics'],
     metadata: {},
-    created_by: 'user-1',
+    owner_id: 'user-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
 }
@@ -236,9 +236,9 @@ describe('ExperimentsList', () => {
         const mockList = vi.mocked(experimentsApi.list)
         mockList.mockResolvedValueOnce({
             experiments: [
-                { ...mockExperiment, status: 'created' },
+                { ...mockExperiment, status: 'draft' },
                 { ...mockExperiment, id: 'exp-2', status: 'running' },
-                { ...mockExperiment, id: 'exp-3', status: 'completed' },
+                { ...mockExperiment, id: 'exp-3', status: 'succeeded' },
                 { ...mockExperiment, id: 'exp-4', status: 'failed' },
             ],
             total: 4,
@@ -250,13 +250,13 @@ describe('ExperimentsList', () => {
 
         await waitFor(() => {
             // Ищем badges по классу, чтобы избежать конфликта с option в select
-            const createdBadge = screen.getByText('Создан', { selector: '.badge' })
+            const draftBadge = screen.getByText('Черновик', { selector: '.badge' })
             const runningBadge = screen.getByText('Выполняется', { selector: '.badge' })
-            const completedBadge = screen.getByText('Завершен', { selector: '.badge' })
+            const succeededBadge = screen.getByText('Успешно', { selector: '.badge' })
             const failedBadge = screen.getByText('Ошибка', { selector: '.badge' })
-            expect(createdBadge).toBeInTheDocument()
+            expect(draftBadge).toBeInTheDocument()
             expect(runningBadge).toBeInTheDocument()
-            expect(completedBadge).toBeInTheDocument()
+            expect(succeededBadge).toBeInTheDocument()
             expect(failedBadge).toBeInTheDocument()
         })
     })
