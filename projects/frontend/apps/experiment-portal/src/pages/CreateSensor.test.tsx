@@ -1,0 +1,220 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import CreateSensor from './CreateSensor'
+import { sensorsApi } from '../api/client'
+
+// Мокаем sensorsApi
+vi.mock('../api/client', () => ({
+    sensorsApi: {
+        create: vi.fn(),
+    },
+}))
+
+// Мокаем useNavigate
+const mockNavigate = vi.fn()
+vi.mock('react-router-dom', async () => {
+    const actual = await vi.importActual('react-router-dom')
+    return {
+        ...actual,
+        useNavigate: () => mockNavigate,
+    }
+})
+
+const createWrapper = () => {
+    const queryClient = new QueryClient({
+        defaultOptions: {
+            queries: { retry: false },
+            mutations: { retry: false },
+        },
+    })
+    return ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+            <MemoryRouter>{children}</MemoryRouter>
+        </QueryClientProvider>
+    )
+}
+
+describe('CreateSensor', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+        mockNavigate.mockClear()
+    })
+
+    it('renders form with all fields', () => {
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        expect(screen.getByRole('heading', { name: /зарегистрировать датчик/i })).toBeInTheDocument()
+        expect(screen.getByLabelText(/project id/i)).toBeInTheDocument()
+        expect(screen.getByLabelText(/название/i)).toBeInTheDocument()
+        expect(screen.getByLabelText(/тип датчика/i)).toBeInTheDocument()
+        expect(screen.getByLabelText(/входная единица измерения/i)).toBeInTheDocument()
+        expect(screen.getByLabelText(/единица отображения/i)).toBeInTheDocument()
+    })
+
+    it('validates required fields', async () => {
+        const user = userEvent.setup()
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        const submitButton = screen.getByRole('button', { name: /зарегистрировать/i })
+        await user.click(submitButton)
+
+        // HTML5 validation should prevent submission
+        const projectInput = screen.getByLabelText(/project id/i) as HTMLInputElement
+        expect(projectInput.validity.valueMissing).toBe(true)
+    })
+
+    it('submits form with correct data', async () => {
+        const user = userEvent.setup()
+        const mockCreate = vi.mocked(sensorsApi.create)
+        const mockResponse = {
+            sensor: {
+                id: 'sensor-1',
+                project_id: 'project-1',
+                name: 'Test Sensor',
+                type: 'temperature',
+                input_unit: 'V',
+                display_unit: '°C',
+                status: 'registering' as const,
+                created_at: '2024-01-01T00:00:00Z',
+                updated_at: '2024-01-01T00:00:00Z',
+            },
+            token: 'test-token-12345',
+        }
+        mockCreate.mockResolvedValueOnce(mockResponse)
+
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
+        await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
+        await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
+        await user.type(screen.getByLabelText(/единица отображения/i), '°C')
+
+        const submitButton = screen.getByRole('button', { name: /зарегистрировать/i })
+        await user.click(submitButton)
+
+        await waitFor(() => {
+            expect(mockCreate).toHaveBeenCalledWith({
+                project_id: 'project-1',
+                name: 'Test Sensor',
+                type: 'temperature',
+                input_unit: 'V',
+                display_unit: '°C',
+                calibration_notes: undefined,
+            })
+        })
+    })
+
+    it('shows error on submission failure', async () => {
+        const user = userEvent.setup()
+        const mockCreate = vi.mocked(sensorsApi.create)
+        mockCreate.mockRejectedValueOnce({
+            response: {
+                data: { error: 'Sensor name already exists' },
+            },
+        })
+
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
+        await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
+        await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
+        await user.type(screen.getByLabelText(/единица отображения/i), '°C')
+
+        const submitButton = screen.getByRole('button', { name: /зарегистрировать/i })
+        await user.click(submitButton)
+
+        await waitFor(() => {
+            expect(screen.getByText(/sensor name already exists/i)).toBeInTheDocument()
+        })
+    })
+
+    it('displays token after successful registration', async () => {
+        const user = userEvent.setup()
+        const mockCreate = vi.mocked(sensorsApi.create)
+        const mockResponse = {
+            sensor: {
+                id: 'sensor-1',
+                project_id: 'project-1',
+                name: 'Test Sensor',
+                type: 'temperature',
+                input_unit: 'V',
+                display_unit: '°C',
+                status: 'registering' as const,
+                created_at: '2024-01-01T00:00:00Z',
+                updated_at: '2024-01-01T00:00:00Z',
+            },
+            token: 'test-token-12345',
+        }
+        mockCreate.mockResolvedValueOnce(mockResponse)
+
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
+        await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
+        await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
+        await user.type(screen.getByLabelText(/единица отображения/i), '°C')
+
+        const submitButton = screen.getByRole('button', { name: /зарегистрировать/i })
+        await user.click(submitButton)
+
+        await waitFor(() => {
+            expect(screen.getByText(/датчик успешно зарегистрирован/i)).toBeInTheDocument()
+            expect(screen.getByText('test-token-12345')).toBeInTheDocument()
+        })
+    })
+
+    it('allows copying token to clipboard', async () => {
+        const user = userEvent.setup()
+        const mockCreate = vi.mocked(sensorsApi.create)
+        const mockResponse = {
+            sensor: {
+                id: 'sensor-1',
+                project_id: 'project-1',
+                name: 'Test Sensor',
+                type: 'temperature',
+                input_unit: 'V',
+                display_unit: '°C',
+                status: 'registering' as const,
+                created_at: '2024-01-01T00:00:00Z',
+                updated_at: '2024-01-01T00:00:00Z',
+            },
+            token: 'test-token-12345',
+        }
+        mockCreate.mockResolvedValueOnce(mockResponse)
+
+        // Мокаем clipboard API
+        const mockWriteText = vi.fn().mockResolvedValue(undefined)
+        vi.stubGlobal('navigator', {
+            clipboard: {
+                writeText: mockWriteText,
+            },
+        })
+
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
+        await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
+        await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
+        await user.type(screen.getByLabelText(/единица отображения/i), '°C')
+
+        const submitButton = screen.getByRole('button', { name: /зарегистрировать/i })
+        await user.click(submitButton)
+
+        await waitFor(() => {
+            expect(screen.getByText('test-token-12345')).toBeInTheDocument()
+        })
+
+        const copyButton = screen.getByRole('button', { name: /копировать/i })
+        await user.click(copyButton)
+
+        expect(mockWriteText).toHaveBeenCalledWith('test-token-12345')
+    })
+})
+

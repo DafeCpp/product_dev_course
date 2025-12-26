@@ -98,3 +98,67 @@ export interface AuthResponse {
   [key: string]: unknown
 }
 
+/** Типы для датчиков */
+
+export type SensorStatus = 'registering' | 'active' | 'inactive' | 'archived'
+
+export interface Sensor {
+  id: string
+  project_id: string
+  name: string
+  type: string
+  input_unit: string
+  display_unit: string
+  status: SensorStatus
+  token_preview?: string | null
+  last_heartbeat?: string | null
+  active_profile_id?: string | null
+  calibration_notes?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SensorCreate {
+  project_id: string
+  name: string
+  type: string
+  input_unit: string
+  display_unit: string
+  calibration_notes?: string
+  conversion_profile?: ConversionProfileInput
+}
+
+export interface SensorUpdate {
+  name?: string
+  type?: string
+  input_unit?: string
+  display_unit?: string
+  calibration_notes?: string
+}
+
+export interface ConversionProfileInput {
+  version: string
+  kind: string
+  payload: Record<string, any>
+  status?: 'draft' | 'scheduled' | 'active' | 'deprecated'
+  valid_from?: string
+  valid_to?: string
+}
+
+export interface SensorRegisterResponse {
+  sensor: Sensor
+  token: string
+}
+
+export interface SensorTokenResponse {
+  sensor: Sensor
+  token: string
+}
+
+export interface SensorsListResponse {
+  sensors: Sensor[]
+  total: number
+  page: number
+  page_size: number
+}
+

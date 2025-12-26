@@ -9,6 +9,12 @@ import type {
   RunCreate,
   RunUpdate,
   RunsListResponse,
+  Sensor,
+  SensorCreate,
+  SensorUpdate,
+  SensorsListResponse,
+  SensorRegisterResponse,
+  SensorTokenResponse,
 } from '../types'
 
 // API работает через Auth Proxy, который автоматически добавляет токен из куки
@@ -138,6 +144,43 @@ export const runsApi = {
 
   fail: async (id: string, reason?: string): Promise<Run> => {
     const response = await apiClient.patch(`/api/v1/runs/${id}`, { status: 'failed', reason })
+    return response.data
+  },
+}
+
+// Sensors API
+export const sensorsApi = {
+  list: async (params?: {
+    project_id?: string
+    status?: string
+    page?: number
+    page_size?: number
+  }): Promise<SensorsListResponse> => {
+    const response = await apiClient.get('/api/v1/sensors', { params })
+    return response.data
+  },
+
+  get: async (id: string, params?: { project_id?: string }): Promise<Sensor> => {
+    const response = await apiClient.get(`/api/v1/sensors/${id}`, { params })
+    return response.data
+  },
+
+  create: async (data: SensorCreate): Promise<SensorRegisterResponse> => {
+    const response = await apiClient.post('/api/v1/sensors', data)
+    return response.data
+  },
+
+  update: async (id: string, data: SensorUpdate, params?: { project_id?: string }): Promise<Sensor> => {
+    const response = await apiClient.patch(`/api/v1/sensors/${id}`, data, { params })
+    return response.data
+  },
+
+  delete: async (id: string, params?: { project_id?: string }): Promise<void> => {
+    await apiClient.delete(`/api/v1/sensors/${id}`, { params })
+  },
+
+  rotateToken: async (id: string, params?: { project_id?: string }): Promise<SensorTokenResponse> => {
+    const response = await apiClient.post(`/api/v1/sensors/${id}/rotate-token`, {}, { params })
     return response.data
   },
 }

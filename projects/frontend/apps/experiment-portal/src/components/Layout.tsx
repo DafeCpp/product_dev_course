@@ -52,6 +52,12 @@ function Layout({ children }: LayoutProps) {
               >
                 Новый эксперимент
               </Link>
+              <Link
+                to="/sensors"
+                className={location.pathname.startsWith('/sensors') ? 'active' : ''}
+              >
+                Датчики
+              </Link>
             </nav>
             <div className="user-menu">
               {user && (

@@ -6,6 +6,9 @@ import ExperimentsList from './pages/ExperimentsList'
 import ExperimentDetail from './pages/ExperimentDetail'
 import CreateExperiment from './pages/CreateExperiment'
 import RunDetail from './pages/RunDetail'
+import SensorsList from './pages/SensorsList'
+import SensorDetail from './pages/SensorDetail'
+import CreateSensor from './pages/CreateSensor'
 import './App.css'
 
 function App() {
@@ -23,6 +26,9 @@ function App() {
                 <Route path="/experiments/new" element={<CreateExperiment />} />
                 <Route path="/experiments/:id" element={<ExperimentDetail />} />
                 <Route path="/runs/:id" element={<RunDetail />} />
+                <Route path="/sensors" element={<SensorsList />} />
+                <Route path="/sensors/new" element={<CreateSensor />} />
+                <Route path="/sensors/:id" element={<SensorDetail />} />
               </Routes>
             </Layout>
           </ProtectedRoute>

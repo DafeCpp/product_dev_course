@@ -1,0 +1,63 @@
+.sensors-list {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.sensors-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.sensor-card {
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-decoration: none;
+    color: inherit;
+}
+
+.sensor-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.sensor-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 16px 0;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+}
+
+.info-row strong {
+    color: #666;
+    font-weight: 500;
+}
+
+.info-row span {
+    color: #333;
+}
+
+.sensor-meta {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
+.badge-warning {
+    background-color: #ffc107;
+    color: #000;
+}
+
+.mono {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
