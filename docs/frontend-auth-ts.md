@@ -285,11 +285,13 @@ me(): Promise<User>
 - Автоматическое добавление токенов из cookies
 - Interceptor для автоматического обновления токенов
 - Обработка 401 ошибок
+- **Автоматическая генерация и передача `trace_id` и `request_id` в заголовках**
 
 **Конфигурация:**
 - Base URL: `VITE_AUTH_PROXY_URL` (через Auth Proxy)
 - `withCredentials: true`
 - Content-Type: `application/json`
+- Заголовки: `X-Trace-Id`, `X-Request-Id` (генерируются автоматически)
 
 ## 4. Типы TypeScript
 
@@ -525,6 +527,79 @@ const apiClient = axios.create({
 
 - Логирование всех ошибок в консоль (development)
 - Отправка критичных ошибок в систему мониторинга (production)
+- **Обязательное включение trace_id и request_id во все логи**
+
+#### 11.2.1. Trace ID и Request ID
+
+**Требования:**
+- Frontend должен генерировать `trace_id` для каждого пользовательского действия (UUID v4)
+- `trace_id` передается в заголовке `X-Trace-Id` при всех запросах к API
+- `request_id` генерируется для каждого HTTP запроса (UUID v4) и передается в заголовке `X-Request-Id`
+- `trace_id` сохраняется в течение всей пользовательской сессии или действия (например, весь flow входа)
+- `request_id` уникален для каждого отдельного HTTP запроса
+
+**Реализация:**
+- Axios interceptor для автоматической генерации и добавления `trace_id` и `request_id` в заголовки
+- Генерация нового `trace_id` при начале новой пользовательской сессии/действия
+- Логирование всех ошибок с включением `trace_id` и `request_id`
+
+**Пример конфигурации Axios:**
+```typescript
+// Генерация trace_id для сессии
+const traceId = generateTraceId() // UUID v4
+
+apiClient.interceptors.request.use((config) => {
+  // Генерируем request_id для каждого запроса
+  const requestId = generateRequestId() // UUID v4
+  
+  config.headers['X-Trace-Id'] = traceId
+  config.headers['X-Request-Id'] = requestId
+  
+  // Логирование запроса с trace_id и request_id
+  console.log({
+    trace_id: traceId,
+    request_id: requestId,
+    method: config.method,
+    url: config.url,
+  })
+  
+  return config
+})
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Логирование ошибки с trace_id и request_id
+    const traceId = error.config?.headers?.['X-Trace-Id']
+    const requestId = error.config?.headers?.['X-Request-Id']
+    
+    console.error({
+      trace_id: traceId,
+      request_id: requestId,
+      error: error.message,
+      status: error.response?.status,
+      url: error.config?.url,
+    })
+    
+    return Promise.reject(error)
+  }
+)
+```
+
+**Формат логов:**
+Все логи должны включать:
+```typescript
+{
+  timestamp: new Date().toISOString(),
+  trace_id: "550e8400-e29b-41d4-a716-446655440000",
+  request_id: "660e8400-e29b-41d4-a716-446655440001",
+  level: "error",
+  message: "API request failed",
+  url: "/api/experiments",
+  method: "GET",
+  status: 500
+}
+```
 
 ## 12. Производительность
 
@@ -552,6 +627,8 @@ const apiClient = axios.create({
 
 ## 14. Будущие улучшения
 
+- [ ] Страница деталей проекта
+- [ ] Управление участниками проекта через UI
 - [ ] Двухфакторная аутентификация (2FA)
 - [ ] "Запомнить меня" функциональность
 - [ ] Восстановление пароля

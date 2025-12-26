@@ -9,6 +9,8 @@ import RunDetail from './pages/RunDetail'
 import SensorsList from './pages/SensorsList'
 import SensorDetail from './pages/SensorDetail'
 import CreateSensor from './pages/CreateSensor'
+import ProjectsList from './pages/ProjectsList'
+import CreateProject from './pages/CreateProject'
 import './App.css'
 
 function App() {
@@ -22,6 +24,8 @@ function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<Navigate to="/experiments" replace />} />
+                <Route path="/projects" element={<ProjectsList />} />
+                <Route path="/projects/new" element={<CreateProject />} />
                 <Route path="/experiments" element={<ExperimentsList />} />
                 <Route path="/experiments/new" element={<CreateExperiment />} />
                 <Route path="/experiments/:id" element={<ExperimentDetail />} />

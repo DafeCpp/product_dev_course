@@ -46,3 +46,67 @@ class User:
             data["hashed_password"] = self.hashed_password
         return data
 
+
+@dataclass
+class Project:
+    """Project domain model."""
+
+    id: UUID
+    name: str
+    description: str | None
+    owner_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> Project:
+        """Create Project from database row."""
+        return cls(
+            id=row["id"],
+            name=row["name"],
+            description=row.get("description"),
+            owner_id=row["owner_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "owner_id": str(self.owner_id),
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+
+@dataclass
+class ProjectMember:
+    """Project member domain model."""
+
+    project_id: UUID
+    user_id: UUID
+    role: str  # 'owner', 'editor', 'viewer'
+    created_at: datetime
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> ProjectMember:
+        """Create ProjectMember from database row."""
+        return cls(
+            project_id=row["project_id"],
+            user_id=row["user_id"],
+            role=row["role"],
+            created_at=row["created_at"],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "project_id": str(self.project_id),
+            "user_id": str(self.user_id),
+            "role": self.role,
+            "created_at": self.created_at.isoformat(),
+        }
+

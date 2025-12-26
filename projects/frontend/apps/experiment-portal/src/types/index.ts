@@ -218,3 +218,49 @@ export interface TelemetryIngestResponse {
   accepted: number
 }
 
+/** Типы для проектов */
+
+export interface Project {
+  id: string
+  name: string
+  description?: string | null
+  owner_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectCreate {
+  name: string
+  description?: string
+}
+
+export interface ProjectUpdate {
+  name?: string
+  description?: string
+}
+
+export interface ProjectsListResponse {
+  projects: Project[]
+}
+
+export interface ProjectMember {
+  project_id: string
+  user_id: string
+  role: 'owner' | 'editor' | 'viewer'
+  created_at: string
+  username?: string | null
+}
+
+export interface ProjectMemberAdd {
+  user_id: string
+  role: 'owner' | 'editor' | 'viewer'
+}
+
+export interface ProjectMemberUpdate {
+  role: 'owner' | 'editor' | 'viewer'
+}
+
+export interface ProjectMembersListResponse {
+  members: ProjectMember[]
+}
+

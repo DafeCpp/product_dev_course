@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
-import { experimentsApi } from '../api/client'
+import { useNavigate, Link } from 'react-router-dom'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
-import { Error, FormGroup, FormActions } from '../components/common'
+import { Error, FormGroup, FormActions, Loading } from '../components/common'
 import './CreateExperiment.css'
 
 function CreateExperiment() {
@@ -19,6 +19,11 @@ function CreateExperiment() {
   const [tagsInput, setTagsInput] = useState('')
   const [metadataInput, setMetadataInput] = useState('{}')
   const [error, setError] = useState<string | null>(null)
+
+  const { data: projectsData, isLoading: projectsLoading } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectsApi.list(),
+  })
 
   const createMutation = useMutation({
     mutationFn: (data: ExperimentCreate) => experimentsApi.create(data),
@@ -65,16 +70,35 @@ function CreateExperiment() {
       {error && <Error message={error} />}
 
       <form onSubmit={handleSubmit} className="experiment-form card">
-        <FormGroup label="Project ID" required>
-          <input
-            type="text"
-            value={formData.project_id}
-            onChange={(e) =>
-              setFormData({ ...formData, project_id: e.target.value })
-            }
-            required
-            placeholder="UUID проекта"
-          />
+        <FormGroup label="Проект" required>
+          {projectsLoading ? (
+            <Loading />
+          ) : (
+            <>
+              <select
+                value={formData.project_id}
+                onChange={(e) =>
+                  setFormData({ ...formData, project_id: e.target.value })
+                }
+                required
+              >
+                <option value="">Выберите проект</option>
+                {projectsData?.projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              {projectsData?.projects.length === 0 && (
+                <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
+                  У вас нет проектов.{' '}
+                  <Link to="/projects/new" style={{ color: 'var(--primary-color, #007bff)' }}>
+                    Создать проект
+                  </Link>
+                </div>
+              )}
+            </>
+          )}
         </FormGroup>
 
         <FormGroup label="Название" required>

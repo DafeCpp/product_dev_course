@@ -47,3 +47,52 @@ class PasswordChangeRequest(BaseModel):
     old_password: str
     new_password: str = Field(..., min_length=8, max_length=100)
 
+
+# Project DTOs
+class ProjectCreateRequest(BaseModel):
+    """Project creation request."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=1000)
+
+
+class ProjectUpdateRequest(BaseModel):
+    """Project update request."""
+
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=1000)
+
+
+class ProjectResponse(BaseModel):
+    """Project response."""
+
+    id: str
+    name: str
+    description: str | None
+    owner_id: str
+    created_at: str
+    updated_at: str
+
+
+class ProjectMemberAddRequest(BaseModel):
+    """Add member to project request."""
+
+    user_id: str
+    role: str = Field(..., pattern="^(owner|editor|viewer)$")
+
+
+class ProjectMemberUpdateRequest(BaseModel):
+    """Update project member role request."""
+
+    role: str = Field(..., pattern="^(owner|editor|viewer)$")
+
+
+class ProjectMemberResponse(BaseModel):
+    """Project member response."""
+
+    project_id: str
+    user_id: str
+    role: str
+    created_at: str
+    username: str | None = None  # Optional, populated when joining with users table
+

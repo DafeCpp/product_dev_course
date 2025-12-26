@@ -43,6 +43,20 @@ class InvalidTokenError(AuthError):
     message = "Invalid or expired token"
 
 
+class NotFoundError(AuthError):
+    """Resource not found."""
+
+    status_code = 404
+    message = "Resource not found"
+
+
+class ForbiddenError(AuthError):
+    """Access forbidden."""
+
+    status_code = 403
+    message = "Access forbidden"
+
+
 def handle_auth_error(request: web.Request, error: AuthError) -> web.Response:
     """Handle authentication errors."""
     return web.json_response(

@@ -9,7 +9,8 @@ import asyncpg
 from aiohttp import web
 from aiohttp_cors import setup as cors_setup, ResourceOptions
 
-from auth_service.api.routes.auth import setup_routes
+from auth_service.api.routes.auth import setup_routes as setup_auth_routes
+from auth_service.api.routes.projects import setup_routes as setup_project_routes
 from auth_service.db.pool import close_pool, init_pool
 from auth_service.settings import settings
 
@@ -152,7 +153,8 @@ def create_app() -> web.Application:
 
     # Setup routes
     app.router.add_get("/health", healthcheck)
-    setup_routes(app)
+    setup_auth_routes(app)
+    setup_project_routes(app)
 
     # Setup database pool and migrations
     app.on_startup.append(init_pool)

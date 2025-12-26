@@ -20,6 +20,14 @@ import type {
   CaptureSessionsListResponse,
   TelemetryIngest,
   TelemetryIngestResponse,
+  Project,
+  ProjectCreate,
+  ProjectUpdate,
+  ProjectsListResponse,
+  ProjectMember,
+  ProjectMemberAdd,
+  ProjectMemberUpdate,
+  ProjectMembersListResponse,
 } from '../types'
 
 // API работает через Auth Proxy, который автоматически добавляет токен из куки
@@ -235,6 +243,64 @@ export const telemetryApi = {
           'Content-Type': 'application/json',
         },
       }
+    )
+    return response.data
+  },
+}
+
+// Projects API
+export const projectsApi = {
+  list: async (): Promise<ProjectsListResponse> => {
+    const response = await apiClient.get<ProjectsListResponse>('/projects')
+    return response.data
+  },
+
+  get: async (id: string): Promise<Project> => {
+    const response = await apiClient.get<Project>(`/projects/${id}`)
+    return response.data
+  },
+
+  create: async (data: ProjectCreate): Promise<Project> => {
+    const response = await apiClient.post<Project>('/projects', data)
+    return response.data
+  },
+
+  update: async (id: string, data: ProjectUpdate): Promise<Project> => {
+    const response = await apiClient.put<Project>(`/projects/${id}`, data)
+    return response.data
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/projects/${id}`)
+  },
+
+  listMembers: async (projectId: string): Promise<ProjectMembersListResponse> => {
+    const response = await apiClient.get<ProjectMembersListResponse>(
+      `/projects/${projectId}/members`
+    )
+    return response.data
+  },
+
+  addMember: async (projectId: string, data: ProjectMemberAdd): Promise<ProjectMember> => {
+    const response = await apiClient.post<ProjectMember>(
+      `/projects/${projectId}/members`,
+      data
+    )
+    return response.data
+  },
+
+  removeMember: async (projectId: string, userId: string): Promise<void> => {
+    await apiClient.delete(`/projects/${projectId}/members/${userId}`)
+  },
+
+  updateMemberRole: async (
+    projectId: string,
+    userId: string,
+    data: ProjectMemberUpdate
+  ): Promise<ProjectMember> => {
+    const response = await apiClient.put<ProjectMember>(
+      `/projects/${projectId}/members/${userId}/role`,
+      data
     )
     return response.data
   },

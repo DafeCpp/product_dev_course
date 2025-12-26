@@ -1,0 +1,13 @@
+.create-project {
+    padding: 2rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.create-project h2 {
+    margin-bottom: 2rem;
+}
+
+.project-form {
+    padding: 2rem;
+}
