@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
 import RunsList from '../components/RunsList'
+import CreateRunModal from '../components/CreateRunModal'
 import './ExperimentDetail.css'
 
 function ExperimentDetail() {
@@ -11,6 +12,7 @@ function ExperimentDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [showEditForm, setShowEditForm] = useState(false)
+  const [showCreateRunModal, setShowCreateRunModal] = useState(false)
 
   const { data: experiment, isLoading, error } = useQuery({
     queryKey: ['experiment', id],
@@ -148,16 +150,21 @@ function ExperimentDetail() {
           <h3>Запуски эксперимента</h3>
           <button
             className="btn btn-primary"
-            onClick={() => {
-              // TODO: Открыть модальное окно или перейти на страницу создания run
-              alert('Функция создания run будет добавлена')
-            }}
+            onClick={() => setShowCreateRunModal(true)}
           >
             Новый запуск
           </button>
         </div>
         <RunsList experimentId={id!} />
       </div>
+
+      {id && (
+        <CreateRunModal
+          experimentId={id}
+          isOpen={showCreateRunModal}
+          onClose={() => setShowCreateRunModal(false)}
+        />
+      )}
     </div>
   )
 }

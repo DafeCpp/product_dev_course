@@ -36,19 +36,29 @@
   - Завершение запуска (complete)
   - Пометить как ошибка (fail)
   - Отображение параметров и метаданных
+  - Управление capture sessions (старт/стоп отсчёта)
+  - Отображение активной capture session
+  - Список всех capture sessions
 
 ### 4. API клиент
 - ✅ Базовый API клиент (`src/api/client.ts`)
 - ✅ Методы для experiments: list, get, create, update, delete, search
 - ✅ Методы для runs: list, get, create, update, complete, fail
-- ✅ Автоматическое добавление токена из localStorage
-- ✅ Обработка 401 ошибок (редирект на /login)
+- ✅ Методы для sensors: list, get, create, update, delete, rotateToken
+- ✅ Методы для capture sessions: list, create, stop, delete
+- ✅ Auth API клиент (`src/api/auth.ts`) для работы с Auth Proxy
+- ✅ Интеграция с Auth Proxy через HttpOnly cookies
+- ✅ Автоматическое обновление токенов через interceptor
+- ✅ Обработка 401 ошибок (автоматический refresh)
 
 ### 5. Типы TypeScript
 - ✅ Полный набор типов в `src/types/index.ts`:
   - Experiment, Run
   - ExperimentCreate, ExperimentUpdate
   - RunCreate, RunUpdate
+  - User, LoginRequest, AuthResponse
+  - Sensor, SensorCreate, SensorUpdate
+  - CaptureSession, CaptureSessionCreate
   - Responses для списков
 
 ---
@@ -98,52 +108,25 @@
 
 ---
 
-### 3. Capture Sessions (Старт/Стоп отсчёта) 🔴 КРИТИЧНО
+### 3. Capture Sessions (Старт/Стоп отсчёта) ✅ ВЫПОЛНЕНО
 **Требование MVP:** Кнопка старт/стоп отсчёта с сохранением сырых данных
 
-**Что отсутствует:**
-- ❌ UI для управления capture sessions
-- ❌ Кнопки "Старт отсчёта" / "Стоп отсчёта"
-- ❌ Отображение списка capture sessions для run
-- ❌ API методы для capture sessions
-- ❌ Типы для CaptureSession
-
-**Что нужно:**
-1. Добавить типы в `src/types/index.ts`:
-   ```typescript
-   interface CaptureSession {
-     id: string
-     run_id: string
-     project_id: string
-     ordinal_number: number
-     status: 'draft' | 'running' | 'succeeded' | 'failed' | 'archived'
-     started_at?: string
-     stopped_at?: string
-     notes?: string
-     // ...
-   }
-   ```
-
-2. Добавить API методы в `src/api/client.ts`:
-   - `captureSessionsApi.list(runId)`
-   - `captureSessionsApi.create(runId, data)`
-   - `captureSessionsApi.stop(runId, sessionId)`
-   - `captureSessionsApi.delete(runId, sessionId)`
-
-3. Обновить страницу `RunDetail.tsx`:
-   - Добавить кнопку "Старт отсчёта" (если run в статусе `running`)
-   - Показывать активную capture session
-   - Кнопка "Стоп отсчёта" для активной сессии
-   - Список всех capture sessions для run
-
-4. Обновить страницу `ExperimentDetail.tsx`:
-   - В списке runs показывать статус capture session
+**Что реализовано:**
+- ✅ UI для управления capture sessions на странице RunDetail
+- ✅ Кнопка "Старт отсчёта" для активных runs
+- ✅ Кнопка "Стоп отсчёта" для активной capture session
+- ✅ Отображение активной capture session
+- ✅ Список всех capture sessions для run
+- ✅ Удаление capture sessions
+- ✅ API методы для capture sessions
+- ✅ Типы для CaptureSession
+- ✅ Тесты для функциональности capture sessions
 
 **API endpoints (Experiment Service):**
-- `GET /api/v1/runs/{run_id}/capture-sessions`
-- `POST /api/v1/runs/{run_id}/capture-sessions`
-- `POST /api/v1/runs/{run_id}/capture-sessions/{session_id}/stop`
-- `DELETE /api/v1/runs/{run_id}/capture-sessions/{session_id}`
+- ✅ `GET /api/v1/runs/{run_id}/capture-sessions` - список сессий
+- ✅ `POST /api/v1/runs/{run_id}/capture-sessions` - создание сессии
+- ✅ `POST /api/v1/runs/{run_id}/capture-sessions/{session_id}/stop` - остановка сессии
+- ✅ `DELETE /api/v1/runs/{run_id}/capture-sessions/{session_id}` - удаление сессии
 
 ---
 
@@ -206,7 +189,7 @@
 2. ✅ CRUD запусков - **ГОТОВО**
 3. ✅ **Аутентификация** - **ГОТОВО**
 4. ✅ **Список датчиков** - **ГОТОВО**
-5. ❌ **Capture Sessions (старт/стоп)** - нужно сделать
+5. ✅ **Capture Sessions (старт/стоп)** - **ГОТОВО**
 
 ### Важно (желательно для MVP):
 6. ❌ Создание Run из UI
@@ -239,21 +222,21 @@ src/
 │   ├── CreateSensor.tsx       # НОВОЕ - создание датчика
 │   └── CreateRun.tsx          # НОВОЕ - создание run (модалка)
 ├── components/
-│   ├── CaptureSessionControl.tsx  # НОВОЕ - управление capture session
-│   └── CaptureSessionsList.tsx    # НОВОЕ - список capture sessions
+│   └── (capture sessions интегрированы в RunDetail.tsx)
 ├── api/
-│   └── client.ts              # ДОПОЛНИТЬ - методы для sensors, capture sessions
+│   └── client.ts              # ✅ ДОПОЛНЕНО - методы для sensors, capture sessions
 └── types/
-    └── index.ts               # ДОПОЛНИТЬ - типы для Sensor, CaptureSession
+    └── index.ts               # ✅ ДОПОЛНЕНО - типы для Sensor, CaptureSession
 ```
 
 ---
 
 ## Следующие шаги
 
-1. **Начать с аутентификации** - это блокирует остальное
-2. **Добавить управление датчиками** - критично для MVP
-3. **Реализовать capture sessions** - основная фича MVP
+1. ✅ **Аутентификация** - **ВЫПОЛНЕНО**
+2. ✅ **Управление датчиками** - **ВЫПОЛНЕНО**
+3. ✅ **Capture Sessions** - **ВЫПОЛНЕНО**
 4. **Добавить создание Run из UI** - улучшит UX
-5. **Тестирование и полировка**
+5. **Тестовая отправка телеметрии** - для проверки датчиков
+6. **Тестирование и полировка**
 
