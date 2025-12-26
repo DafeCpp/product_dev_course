@@ -5,6 +5,7 @@
 .PHONY: dev dev-up dev-down dev-restart dev-logs dev-fix dev-clean grafana-reset-password
 
 BACKEND_SERVICES_DIR := projects/backend/services
+BACKEND_DIR := projects/backend/services/experiment-service
 FRONTEND_DIR := projects/frontend/apps/experiment-portal
 OPENAPI_SPEC := openapi/openapi.yaml
 # Find all backend services (directories with pyproject.toml)
@@ -127,13 +128,13 @@ test-frontend-docker:
 .PHONY: generate-sdk
 generate-sdk:
 	@cd $(BACKEND_DIR) && rm -rf clients/typescript-fetch && \
-		poetry run openapi-generator-cli generate \
+		poetry --directory=. run openapi-generator-cli generate \
 			-i $(OPENAPI_SPEC) \
 			-g typescript-fetch \
 			-o clients/typescript-fetch \
 			-c openapi/clients/typescript-fetch-config.yaml
 	@cd $(BACKEND_DIR) && rm -rf clients/cpp-restsdk && \
-		poetry run openapi-generator-cli generate \
+		poetry --directory=. run openapi-generator-cli generate \
 			-i $(OPENAPI_SPEC) \
 			-g cpp-restsdk \
 			-o clients/cpp-restsdk \
