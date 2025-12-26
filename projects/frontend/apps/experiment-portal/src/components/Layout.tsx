@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
+import UserProfileModal from './UserProfileModal'
 import './Layout.css'
 
 interface LayoutProps {
@@ -13,6 +14,7 @@ function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
 
   const { data: user } = useQuery({
     queryKey: ['auth', 'me'],
@@ -71,7 +73,13 @@ function Layout({ children }: LayoutProps) {
             <div className="user-menu">
               {user && (
                 <div className="user-info">
-                  <span className="username">{user.username}</span>
+                  <button
+                    className="username-link"
+                    onClick={() => setIsProfileModalOpen(true)}
+                    title="Открыть профиль"
+                  >
+                    {user.username}
+                  </button>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={handleLogout}
@@ -88,6 +96,11 @@ function Layout({ children }: LayoutProps) {
       <main className="main">
         <div className="container">{children}</div>
       </main>
+
+      <UserProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
     </div>
   )
 }

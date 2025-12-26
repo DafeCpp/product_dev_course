@@ -131,3 +131,21 @@
   font-size: 14px;
   font-weight: 500;
 }
+
+.username-link {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.username-link:hover {
+  color: #007bff;
+  background-color: #f0f7ff;
+}
