@@ -3,8 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { sensorsApi } from '../api/client'
 import { format } from 'date-fns'
-import type { SensorStatus, SensorTokenResponse } from '../types'
+import type { SensorTokenResponse } from '../types'
 import TestTelemetryModal from '../components/TestTelemetryModal'
+import {
+    StatusBadge,
+    Loading,
+    Error,
+    InfoRow,
+    sensorStatusMap,
+} from '../components/common'
 import './SensorDetail.css'
 
 function SensorDetail() {
@@ -38,26 +45,6 @@ function SensorDetail() {
         },
     })
 
-    const getStatusBadge = (status: SensorStatus) => {
-        const badges: Record<SensorStatus, string> = {
-            registering: 'badge-secondary',
-            active: 'badge-success',
-            inactive: 'badge-warning',
-            archived: 'badge-secondary',
-        }
-        return badges[status] || 'badge-secondary'
-    }
-
-    const getStatusText = (status: SensorStatus) => {
-        const texts: Record<SensorStatus, string> = {
-            registering: 'Регистрация',
-            active: 'Активен',
-            inactive: 'Неактивен',
-            archived: 'Архивирован',
-        }
-        return texts[status] || status
-    }
-
     const formatLastHeartbeat = (heartbeat?: string | null) => {
         if (!heartbeat) return 'Никогда'
         const date = new Date(heartbeat)
@@ -72,11 +59,11 @@ function SensorDetail() {
     }
 
     if (isLoading) {
-        return <div className="loading">Загрузка...</div>
+        return <Loading />
     }
 
     if (error || !sensor) {
-        return <div className="error">Датчик не найден</div>
+        return <Error message="Датчик не найден" />
     }
 
     return (
@@ -85,9 +72,7 @@ function SensorDetail() {
                 <div className="card-header">
                     <h2 className="card-title">{sensor.name}</h2>
                     <div className="header-actions">
-                        <span className={`badge ${getStatusBadge(sensor.status)}`}>
-                            {getStatusText(sensor.status)}
-                        </span>
+                        <StatusBadge status={sensor.status} statusMap={sensorStatusMap} />
                         <button
                             className="btn btn-primary"
                             onClick={() => setShowTestTelemetryModal(true)}
@@ -146,54 +131,41 @@ function SensorDetail() {
                 )}
 
                 <div className="sensor-info">
-                    <div className="info-row">
-                        <strong>ID:</strong>
-                        <span className="mono">{sensor.id}</span>
-                    </div>
-                    <div className="info-row">
-                        <strong>Project ID:</strong>
-                        <span className="mono">{sensor.project_id}</span>
-                    </div>
-                    <div className="info-row">
-                        <strong>Тип:</strong>
-                        <span>{sensor.type}</span>
-                    </div>
-                    <div className="info-row">
-                        <strong>Входная единица:</strong>
-                        <span>{sensor.input_unit}</span>
-                    </div>
-                    <div className="info-row">
-                        <strong>Единица отображения:</strong>
-                        <span>{sensor.display_unit}</span>
-                    </div>
-                    <div className="info-row">
-                        <strong>Статус:</strong>
-                        <span>{getStatusText(sensor.status)}</span>
-                    </div>
+                    <InfoRow label="ID" value={<span className="mono">{sensor.id}</span>} />
+                    <InfoRow label="Project ID" value={<span className="mono">{sensor.project_id}</span>} />
+                    <InfoRow label="Тип" value={sensor.type} />
+                    <InfoRow label="Входная единица" value={sensor.input_unit} />
+                    <InfoRow label="Единица отображения" value={sensor.display_unit} />
+                    <InfoRow
+                        label="Статус"
+                        value={
+                            <StatusBadge status={sensor.status} statusMap={sensorStatusMap} />
+                        }
+                    />
                     {sensor.token_preview && (
-                        <div className="info-row">
-                            <strong>Токен (превью):</strong>
-                            <span className="mono">****{sensor.token_preview}</span>
-                        </div>
+                        <InfoRow
+                            label="Токен (превью)"
+                            value={<span className="mono">****{sensor.token_preview}</span>}
+                        />
                     )}
-                    <div className="info-row">
-                        <strong>Последний heartbeat:</strong>
-                        <span>{formatLastHeartbeat(sensor.last_heartbeat)}</span>
-                    </div>
+                    <InfoRow
+                        label="Последний heartbeat"
+                        value={formatLastHeartbeat(sensor.last_heartbeat)}
+                    />
                     {sensor.active_profile_id && (
-                        <div className="info-row">
-                            <strong>Активный профиль преобразования:</strong>
-                            <span className="mono">{sensor.active_profile_id}</span>
-                        </div>
+                        <InfoRow
+                            label="Активный профиль преобразования"
+                            value={<span className="mono">{sensor.active_profile_id}</span>}
+                        />
                     )}
-                    <div className="info-row">
-                        <strong>Создан:</strong>
-                        <span>{format(new Date(sensor.created_at), 'dd MMM yyyy HH:mm')}</span>
-                    </div>
-                    <div className="info-row">
-                        <strong>Обновлен:</strong>
-                        <span>{format(new Date(sensor.updated_at), 'dd MMM yyyy HH:mm')}</span>
-                    </div>
+                    <InfoRow
+                        label="Создан"
+                        value={format(new Date(sensor.created_at), 'dd MMM yyyy HH:mm')}
+                    />
+                    <InfoRow
+                        label="Обновлен"
+                        value={format(new Date(sensor.updated_at), 'dd MMM yyyy HH:mm')}
+                    />
                 </div>
 
                 {sensor.calibration_notes && (

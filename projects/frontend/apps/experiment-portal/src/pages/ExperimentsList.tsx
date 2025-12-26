@@ -3,6 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
+import {
+  StatusBadge,
+  Loading,
+  Error,
+  EmptyState,
+  Pagination,
+  PageHeader,
+  Tags,
+  experimentStatusMap,
+} from '../components/common'
 import './ExperimentsList.css'
 
 function ExperimentsList() {
@@ -32,44 +42,24 @@ function ExperimentsList() {
     },
   })
 
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, string> = {
-      created: 'badge-secondary',
-      running: 'badge-info',
-      completed: 'badge-success',
-      failed: 'badge-danger',
-      archived: 'badge-secondary',
-    }
-    return badges[status] || 'badge-secondary'
-  }
-
-  const getStatusText = (status: string) => {
-    const texts: Record<string, string> = {
-      created: 'Создан',
-      running: 'Выполняется',
-      completed: 'Завершен',
-      failed: 'Ошибка',
-      archived: 'Архивирован',
-    }
-    return texts[status] || status
-  }
-
   if (isLoading) {
-    return <div className="loading">Загрузка...</div>
+    return <Loading />
   }
 
   if (error) {
-    return <div className="error">Ошибка загрузки экспериментов</div>
+    return <Error message="Ошибка загрузки экспериментов" />
   }
 
   return (
     <div className="experiments-list">
-      <div className="page-header">
-        <h2>Эксперименты</h2>
-        <Link to="/experiments/new" className="btn btn-primary">
-          Создать эксперимент
-        </Link>
-      </div>
+      <PageHeader
+        title="Эксперименты"
+        action={
+          <Link to="/experiments/new" className="btn btn-primary">
+            Создать эксперимент
+          </Link>
+        }
+      />
 
       <div className="filters card">
         <div className="filters-grid">
@@ -128,9 +118,7 @@ function ExperimentsList() {
               >
                 <div className="card-header">
                   <h3 className="card-title">{experiment.name}</h3>
-                  <span className={`badge ${getStatusBadge(experiment.status)}`}>
-                    {getStatusText(experiment.status)}
-                  </span>
+                  <StatusBadge status={experiment.status} statusMap={experimentStatusMap} />
                 </div>
 
                 {experiment.description && (
@@ -143,15 +131,7 @@ function ExperimentsList() {
                   </div>
                 )}
 
-                {experiment.tags && experiment.tags.length > 0 && (
-                  <div className="tags">
-                    {experiment.tags.map((tag) => (
-                      <span key={tag} className="tag">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <Tags tags={experiment.tags} />
 
                 <div className="experiment-meta">
                   <small>
@@ -164,34 +144,15 @@ function ExperimentsList() {
           </div>
 
           {data.experiments.length === 0 && (
-            <div className="empty-state">
-              <p>Эксперименты не найдены</p>
-            </div>
+            <EmptyState message="Эксперименты не найдены" />
           )}
 
-          {data.total > pageSize && (
-            <div className="pagination">
-              <button
-                className="btn btn-secondary"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                Назад
-              </button>
-              <span>
-                Страница {page} из {Math.ceil(data.total / pageSize)}
-              </span>
-              <button
-                className="btn btn-secondary"
-                onClick={() =>
-                  setPage((p) => Math.min(Math.ceil(data.total / pageSize), p + 1))
-                }
-                disabled={page >= Math.ceil(data.total / pageSize)}
-              >
-                Вперед
-              </button>
-            </div>
-          )}
+          <Pagination
+            currentPage={page}
+            totalItems={data.total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
         </>
       )}
     </div>

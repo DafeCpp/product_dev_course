@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { runsApi } from '../api/client'
 import { format } from 'date-fns'
+import { StatusBadge, Loading, Error, EmptyState, runStatusMap } from './common'
 import './RunsList.css'
 
 interface RunsListProps {
@@ -13,26 +14,6 @@ function RunsList({ experimentId }: RunsListProps) {
     queryKey: ['runs', experimentId],
     queryFn: () => runsApi.list(experimentId),
   })
-
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, string> = {
-      created: 'badge-secondary',
-      running: 'badge-info',
-      completed: 'badge-success',
-      failed: 'badge-danger',
-    }
-    return badges[status] || 'badge-secondary'
-  }
-
-  const getStatusText = (status: string) => {
-    const texts: Record<string, string> = {
-      created: 'Создан',
-      running: 'Выполняется',
-      completed: 'Завершен',
-      failed: 'Ошибка',
-    }
-    return texts[status] || status
-  }
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return '-'
@@ -49,19 +30,15 @@ function RunsList({ experimentId }: RunsListProps) {
   }
 
   if (isLoading) {
-    return <div className="loading">Загрузка запусков...</div>
+    return <Loading message="Загрузка запусков..." />
   }
 
   if (error) {
-    return <div className="error">Ошибка загрузки запусков</div>
+    return <Error message="Ошибка загрузки запусков" />
   }
 
   if (!data || data.runs.length === 0) {
-    return (
-      <div className="empty-state">
-        <p>Запуски не найдены</p>
-      </div>
-    )
+    return <EmptyState message="Запуски не найдены" />
   }
 
   return (
@@ -88,9 +65,7 @@ function RunsList({ experimentId }: RunsListProps) {
                   </Link>
                 </td>
                 <td>
-                  <span className={`badge ${getStatusBadge(run.status)}`}>
-                    {getStatusText(run.status)}
-                  </span>
+                  <StatusBadge status={run.status} statusMap={runStatusMap} />
                 </td>
                 <td>
                   <div className="parameters-preview">

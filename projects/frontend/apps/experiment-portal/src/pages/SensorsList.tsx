@@ -3,7 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { sensorsApi } from '../api/client'
 import { format } from 'date-fns'
-import type { SensorStatus, Sensor } from '../types'
+import type { Sensor } from '../types'
+import {
+    StatusBadge,
+    Loading,
+    Error,
+    EmptyState,
+    Pagination,
+    PageHeader,
+    sensorStatusMap,
+} from '../components/common'
 import './SensorsList.css'
 
 function SensorsList() {
@@ -23,26 +32,6 @@ function SensorsList() {
             }),
     })
 
-    const getStatusBadge = (status: SensorStatus) => {
-        const badges: Record<SensorStatus, string> = {
-            registering: 'badge-secondary',
-            active: 'badge-success',
-            inactive: 'badge-warning',
-            archived: 'badge-secondary',
-        }
-        return badges[status] || 'badge-secondary'
-    }
-
-    const getStatusText = (status: SensorStatus) => {
-        const texts: Record<SensorStatus, string> = {
-            registering: 'Регистрация',
-            active: 'Активен',
-            inactive: 'Неактивен',
-            archived: 'Архивирован',
-        }
-        return texts[status] || status
-    }
-
     const formatLastHeartbeat = (heartbeat?: string | null) => {
         if (!heartbeat) return 'Никогда'
         const date = new Date(heartbeat)
@@ -57,21 +46,23 @@ function SensorsList() {
     }
 
     if (isLoading) {
-        return <div className="loading">Загрузка...</div>
+        return <Loading />
     }
 
     if (error) {
-        return <div className="error">Ошибка загрузки датчиков</div>
+        return <Error message="Ошибка загрузки датчиков" />
     }
 
     return (
         <div className="sensors-list">
-            <div className="page-header">
-                <h2>Датчики</h2>
-                <Link to="/sensors/new" className="btn btn-primary">
-                    Зарегистрировать датчик
-                </Link>
-            </div>
+            <PageHeader
+                title="Датчики"
+                action={
+                    <Link to="/sensors/new" className="btn btn-primary">
+                        Зарегистрировать датчик
+                    </Link>
+                }
+            />
 
             <div className="filters card">
                 <div className="filters-grid">
@@ -119,9 +110,7 @@ function SensorsList() {
                             >
                                 <div className="card-header">
                                     <h3 className="card-title">{sensor.name}</h3>
-                                    <span className={`badge ${getStatusBadge(sensor.status)}`}>
-                                        {getStatusText(sensor.status)}
-                                    </span>
+                                    <StatusBadge status={sensor.status} statusMap={sensorStatusMap} />
                                 </div>
 
                                 <div className="sensor-info">
@@ -158,34 +147,15 @@ function SensorsList() {
                     </div>
 
                     {data.sensors.length === 0 && (
-                        <div className="empty-state">
-                            <p>Датчики не найдены</p>
-                        </div>
+                        <EmptyState message="Датчики не найдены" />
                     )}
 
-                    {data.total > pageSize && (
-                        <div className="pagination">
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                disabled={page === 1}
-                            >
-                                Назад
-                            </button>
-                            <span>
-                                Страница {page} из {Math.ceil(data.total / pageSize)}
-                            </span>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() =>
-                                    setPage((p) => Math.min(Math.ceil(data.total / pageSize), p + 1))
-                                }
-                                disabled={page >= Math.ceil(data.total / pageSize)}
-                            >
-                                Вперед
-                            </button>
-                        </div>
-                    )}
+                    <Pagination
+                        currentPage={page}
+                        totalItems={data.total}
+                        pageSize={pageSize}
+                        onPageChange={setPage}
+                    />
                 </>
             )}
         </div>

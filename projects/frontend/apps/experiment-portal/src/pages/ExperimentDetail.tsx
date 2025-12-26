@@ -5,6 +5,14 @@ import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
 import RunsList from '../components/RunsList'
 import CreateRunModal from '../components/CreateRunModal'
+import {
+  StatusBadge,
+  Loading,
+  Error,
+  InfoRow,
+  Tags,
+  experimentStatusMap,
+} from '../components/common'
 import './ExperimentDetail.css'
 
 function ExperimentDetail() {
@@ -28,34 +36,12 @@ function ExperimentDetail() {
     },
   })
 
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, string> = {
-      created: 'badge-secondary',
-      running: 'badge-info',
-      completed: 'badge-success',
-      failed: 'badge-danger',
-      archived: 'badge-secondary',
-    }
-    return badges[status] || 'badge-secondary'
-  }
-
-  const getStatusText = (status: string) => {
-    const texts: Record<string, string> = {
-      created: 'Создан',
-      running: 'Выполняется',
-      completed: 'Завершен',
-      failed: 'Ошибка',
-      archived: 'Архивирован',
-    }
-    return texts[status] || status
-  }
-
   if (isLoading) {
-    return <div className="loading">Загрузка...</div>
+    return <Loading />
   }
 
   if (error || !experiment) {
-    return <div className="error">Эксперимент не найден</div>
+    return <Error message="Эксперимент не найден" />
   }
 
   return (
@@ -64,9 +50,7 @@ function ExperimentDetail() {
         <div className="card-header">
           <h2 className="card-title">{experiment.name}</h2>
           <div className="header-actions">
-            <span className={`badge ${getStatusBadge(experiment.status)}`}>
-              {getStatusText(experiment.status)}
-            </span>
+            <StatusBadge status={experiment.status} statusMap={experimentStatusMap} />
             <button
               className="btn btn-secondary"
               onClick={() => setShowEditForm(!showEditForm)}
@@ -94,44 +78,25 @@ function ExperimentDetail() {
         )}
 
         <div className="experiment-info">
-          <div className="info-row">
-            <strong>ID:</strong>
-            <span className="mono">{experiment.id}</span>
-          </div>
-          <div className="info-row">
-            <strong>Project ID:</strong>
-            <span className="mono">{experiment.project_id}</span>
-          </div>
+          <InfoRow label="ID" value={<span className="mono">{experiment.id}</span>} />
+          <InfoRow label="Project ID" value={<span className="mono">{experiment.project_id}</span>} />
           {experiment.experiment_type && (
-            <div className="info-row">
-              <strong>Тип:</strong>
-              <span>{experiment.experiment_type}</span>
-            </div>
+            <InfoRow label="Тип" value={experiment.experiment_type} />
           )}
-          <div className="info-row">
-            <strong>Создан:</strong>
-            <span>
-              {format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')}
-            </span>
-          </div>
-          <div className="info-row">
-            <strong>Обновлен:</strong>
-            <span>
-              {format(new Date(experiment.updated_at), 'dd MMM yyyy HH:mm')}
-            </span>
-          </div>
+          <InfoRow
+            label="Создан"
+            value={format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')}
+          />
+          <InfoRow
+            label="Обновлен"
+            value={format(new Date(experiment.updated_at), 'dd MMM yyyy HH:mm')}
+          />
         </div>
 
         {experiment.tags && experiment.tags.length > 0 && (
           <div className="tags-section">
             <h3>Теги</h3>
-            <div className="tags">
-              {experiment.tags.map((tag) => (
-                <span key={tag} className="tag">
-                  {tag}
-                </span>
-              ))}
-            </div>
+            <Tags tags={experiment.tags} />
           </div>
         )}
 
