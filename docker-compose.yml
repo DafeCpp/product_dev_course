@@ -24,6 +24,7 @@ services:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -33,6 +34,42 @@ services:
     networks:
       - experiment-network
     restart: unless-stopped
+
+  # Auth Service - сервис аутентификации
+  auth-service:
+    build:
+      context: ./projects/backend/services/auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/auth_db}
+      - ENV=${AUTH_SERVICE_ENV:-development}
+      - APP_NAME=${AUTH_SERVICE_APP_NAME:-auth-service}
+      - HOST=${AUTH_SERVICE_HOST:-0.0.0.0}
+      - PORT=${AUTH_SERVICE_PORT:-8001}
+      - DB_POOL_SIZE=${AUTH_SERVICE_DB_POOL_SIZE:-20}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ACCESS_TOKEN_TTL_SEC=${ACCESS_TTL_SEC:-900}
+      - REFRESH_TOKEN_TTL_SEC=${REFRESH_TTL_SEC:-1209600}
+      - BCRYPT_ROUNDS=${BCRYPT_ROUNDS:-12}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+    ports:
+      - "${AUTH_SERVICE_PORT:-8001}:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # Experiment Service - Backend API
   experiment-service:
@@ -96,6 +133,8 @@ services:
       - "${AUTH_PROXY_PORT:-8080}:8080"
     depends_on:
       experiment-service:
+        condition: service_healthy
+      auth-service:
         condition: service_healthy
     networks:
       - experiment-network

@@ -48,12 +48,21 @@
 ## Отсутствующие сервисы (упоминаются в документации)
 
 ### 4. Auth Service
-- **Упоминается в:** `env.example`, `docs/experiment-tracking-ts.md`, `docs/experiment-service-roadmap.md`
-- **Ожидаемый порт:** 8001
-- **Технологии:** Не определены (вероятно Python)
-- **Dockerfile:** ❌ Нет
-- **Статус:** ❌ Не реализован
-- **Примечание:** Experiment Service может работать с заглушками через заголовки `X-User-Id`, `X-Project-Id`, `X-Project-Role` для отладки
+- **Путь:** `projects/backend/services/auth-service/`
+- **Технологии:** Python 3.14, aiohttp 3.10, asyncpg 0.31, PostgreSQL, PyJWT, bcrypt
+- **Порт:** 8001
+- **Dockerfile:** ✅ Есть (`projects/backend/services/auth-service/Dockerfile`)
+- **env.example:** ✅ Есть
+- **Зависимости:**
+  - PostgreSQL 16 (база данных `auth_db`)
+- **Статус:** ✅ Полностью реализован и готов к запуску
+- **API Endpoints:**
+  - `POST /auth/register` - регистрация пользователя
+  - `POST /auth/login` - вход пользователя
+  - `POST /auth/refresh` - обновление токена
+  - `POST /auth/logout` - выход
+  - `GET /auth/me` - информация о текущем пользователе
+  - `GET /health` - health check
 
 ### 5. Metrics Service
 - **Упоминается в:** `docs/experiment-tracking-ts.md`, `docs/experiment-service-roadmap.md`
@@ -114,8 +123,8 @@
 3. ✅ **Experiment Portal** - фронтенд приложение (опционально, можно тестировать через API)
 
 ### Опциональные компоненты:
-4. ⚠️ **Auth Proxy** - нужен Auth Service для полной функциональности
-5. ⚠️ **Auth Service** - можно использовать заглушки в experiment-service
+4. ✅ **Auth Service** - сервис аутентификации (рекомендуется для полной функциональности)
+5. ✅ **Auth Proxy** - BFF для фронтенда (требует Auth Service)
 
 ### Не требуются для базового запуска:
 - RabbitMQ
@@ -131,6 +140,7 @@
 | Сервис | Путь к Dockerfile | Статус |
 |--------|-------------------|--------|
 | Experiment Service | `projects/backend/services/experiment-service/Dockerfile` | ✅ Готов |
+| Auth Service | `projects/backend/services/auth-service/Dockerfile` | ✅ Готов |
 | Auth Proxy | `projects/frontend/apps/auth-proxy/Dockerfile` | ✅ Готов |
 | Experiment Portal | `projects/frontend/apps/experiment-portal/Dockerfile` | ✅ Готов |
 
@@ -151,6 +161,15 @@
   - `AUTH_SERVICE_URL` - URL Auth Service (опционально)
   - `RABBITMQ_URL` - URL RabbitMQ (не используется активно)
   - `TELEMETRY_BROKER_URL` - URL Redis (не используется активно)
+
+### Auth Service
+- Файл: `projects/backend/services/auth-service/env.example`
+- Основные переменные:
+  - `DATABASE_URL` - подключение к PostgreSQL (база `auth_db`)
+  - `JWT_SECRET` - секретный ключ для подписи JWT токенов
+  - `ACCESS_TOKEN_TTL_SEC` - время жизни access токена (по умолчанию 900 сек)
+  - `REFRESH_TOKEN_TTL_SEC` - время жизни refresh токена (по умолчанию 1209600 сек)
+  - `BCRYPT_ROUNDS` - количество раундов для хеширования паролей
 
 ### Auth Proxy
 - Файл: `projects/frontend/apps/auth-proxy/env.example`
@@ -185,10 +204,12 @@
 
 ## Заметки
 
+- ✅ Auth Service полностью реализован и готов к использованию
+- Auth Proxy требует Auth Service для полной функциональности
 - Experiment Service может работать без Auth Service, используя заголовки для отладки
-- Auth Proxy требует Auth Service для полной функциональности, но можно запустить с заглушкой
 - Большинство сервисов из roadmap еще не реализованы и не требуются для базового запуска
 - RabbitMQ и Redis упоминаются, но не используются активно в текущей реализации
+- PostgreSQL используется для двух баз данных: `experiment_db` (experiment-service) и `auth_db` (auth-service)
 
 
 

@@ -51,6 +51,26 @@ docker-compose up
 
 ## Архитектура Hot-Reload
 
+### Auth Service (Python/aiohttp)
+
+**Инструмент:** `watchfiles` (настроен в `docker-compose.override.yml`)
+
+**Как работает:**
+1. Исходный код монтируется через volume из `./projects/backend/services/auth-service/src`
+2. `watchfiles` отслеживает изменения `.py` файлов в `./src`
+3. При изменении автоматически перезапускается процесс `python -m auth_service.main`
+
+**Команда запуска:**
+```bash
+watchfiles --filter python 'python -m auth_service.main' ./src
+```
+
+**Проверка работы:**
+1. Откройте файл `projects/backend/services/auth-service/src/auth_service/main.py`
+2. Внесите изменение (например, добавьте комментарий)
+3. Сохраните файл
+4. В логах `docker-compose logs -f auth-service` должно появиться сообщение о перезапуске
+
 ### Experiment Service (Python/aiohttp)
 
 **Инструмент:** `watchfiles` (настроен в `docker-compose.override.yml`)
@@ -117,6 +137,10 @@ npm run dev  # выполняет: vite
 ### Multi-stage Build
 
 Все Dockerfile'ы используют multi-stage build для оптимизации:
+
+#### Auth Service
+- **Base stage:** Установка зависимостей через Poetry
+- **Production:** Запуск приложения
 
 #### Experiment Service
 - **Base stage:** Установка зависимостей через Poetry
@@ -281,9 +305,12 @@ docker-compose logs -f
 
 # Логи конкретного сервиса
 docker-compose logs -f experiment-service
+docker-compose logs -f auth-service
+docker-compose logs -f auth-proxy
 
 # Последние 100 строк
 docker-compose logs --tail=100 experiment-service
+docker-compose logs --tail=100 auth-service
 ```
 
 ### Выполнение команд в контейнере
@@ -304,12 +331,15 @@ docker-compose run --rm experiment-service python -m pytest
 ```bash
 # Подключение к PostgreSQL (порт 5433 на хосте)
 docker-compose exec postgres psql -U postgres -d experiment_db
+docker-compose exec postgres psql -U postgres -d auth_db
 
 # Или с хоста (если установлен psql)
 psql -h localhost -p 5433 -U postgres -d experiment_db
+psql -h localhost -p 5433 -U postgres -d auth_db
 
 # Выполнение миграций
 docker-compose exec experiment-service python bin/migrate.py
+docker-compose exec auth-service python bin/migrate.py
 ```
 
 ### Очистка

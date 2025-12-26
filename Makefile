@@ -2,6 +2,7 @@
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
+.PHONY: dev dev-up dev-down dev-restart
 
 BACKEND_DIR := projects/backend/services/experiment-service
 FRONTEND_DIR := projects/frontend/apps/experiment-portal
@@ -166,4 +167,64 @@ logs-stack-restart: logs-stack-down logs-stack-up
 
 # Алиас для запуска
 logs-stack: logs-stack-up
+
+# ============================================
+# Локальная отладка (Frontend + Backend + Auth Service + Auth Proxy + Grafana)
+# ============================================
+
+# Запуск фронтенда, бэкенда, auth-service, auth-proxy и Grafana для локальной отладки
+dev-up:
+	@echo "Запуск фронтенда, бэкенда, auth-service, auth-proxy и Grafana для локальной отладки..."
+	@if [ ! -f docker-compose.override.yml ]; then \
+		echo "⚠️  Файл docker-compose.override.yml не найден. Создаю из примера..."; \
+		cp docker-compose.override.yml.example docker-compose.override.yml 2>/dev/null || true; \
+	fi
+	@if [ ! -f .env ]; then \
+		echo "⚠️  Файл .env не найден. Создаю из примера..."; \
+		cp env.docker.example .env 2>/dev/null || true; \
+	fi
+	@if [ -f docker-compose.override.yml ]; then \
+		docker-compose up -d postgres auth-service experiment-service auth-proxy experiment-portal loki grafana; \
+	else \
+		docker-compose -f docker-compose.yml -f docker-compose.logging.yml up -d postgres auth-service experiment-service auth-proxy experiment-portal loki grafana; \
+	fi
+	@echo ""
+	@echo "✅ Сервисы запущены!"
+	@echo "🌐 Фронтенд доступен на http://localhost:3000"
+	@echo "🔧 Бэкенд API доступен на http://localhost:8002"
+	@echo "🔐 Auth Proxy доступен на http://localhost:8080"
+	@echo "🔑 Auth Service доступен на http://localhost:8001"
+	@echo ""
+	@echo "👤 Пользователь по умолчанию:"
+	@echo "   Username: admin"
+	@echo "   Password: admin123"
+	@echo "   ⚠️  Требуется смена пароля при первом входе!"
+	@echo ""
+	@echo "💡 Для регистрации нового пользователя используйте:"
+	@echo "   curl -X POST http://localhost:8001/auth/register \\"
+	@echo "     -H 'Content-Type: application/json' \\"
+	@echo "     -d '{\"username\":\"testuser\",\"email\":\"test@example.com\",\"password\":\"testpass123\"}'"
+	@echo "📊 Grafana доступна на http://localhost:3001"
+	@echo ""
+	@echo ""
+	@echo "👤 Grafana логин: admin"
+	@echo "🔑 Grafana пароль: admin (или значение из GRAFANA_ADMIN_PASSWORD в .env)"
+	@echo ""
+	@echo "Для просмотра логов: make logs-service, make logs-portal или make logs-stack"
+
+# Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana
+dev-down:
+	@echo "Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana..."
+	@if [ -f docker-compose.override.yml ]; then \
+		docker-compose stop postgres auth-service experiment-service auth-proxy experiment-portal loki grafana; \
+	else \
+		docker-compose -f docker-compose.yml -f docker-compose.logging.yml stop postgres auth-service experiment-service auth-proxy experiment-portal loki grafana; \
+	fi
+	@echo "✅ Сервисы остановлены"
+
+# Перезапуск фронтенда, бэкенда, auth-service, auth-proxy и Grafana
+dev-restart: dev-down dev-up
+
+# Алиас для запуска
+dev: dev-up
 

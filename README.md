@@ -49,7 +49,8 @@ product_dev_course/
 │   │   ├── common/             # Общие компоненты и DTO
 │   │   ├── libs/               # Внутренние библиотеки/SDK
 │   │   └── services/           # Микросервисы платформы
-│   │       └── experiment-service/
+│   │       ├── experiment-service/
+│   │       └── auth-service/
 │   ├── frontend/
 │   │   ├── common/             # Общие UI-компоненты и токены
 │   │   ├── libs/               # Фронтенд библиотеки
@@ -119,8 +120,12 @@ docker-compose down
 После запуска доступны:
 - **Experiment Portal (Frontend):** http://localhost:3000 (dev режим с hot-reload)
 - **Experiment Service API:** http://localhost:8002
+- **Auth Service:** http://localhost:8001
 - **Auth Proxy (BFF):** http://localhost:8080
+- **Grafana (Logging):** http://localhost:3001 (логин: admin, пароль: admin)
 - **PostgreSQL:** localhost:5433 (порт 5433 чтобы не конфликтовать с локальным PostgreSQL на 5432)
+  - База данных `experiment_db` для experiment-service
+  - База данных `auth_db` для auth-service
 
 ### Режимы работы
 

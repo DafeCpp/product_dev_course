@@ -4,10 +4,26 @@
 
 ## 1. Подготовка окружения
 
-1. `docker-compose up -d` из `projects/backend/services/experiment-service` (API + PostgreSQL).
-2. `poetry run python bin/migrate.py --database-url <dsn>` — применить миграции.
-3. `poetry run python bin/demo_seed.py` — создать `demo_project`, базовые эксперименты, датчики и тестовые токены.
-4. Сохранить `project_id`, `owner_user_id`, выданные токены (`token_preview` виден в БД, полный токен выводится только при seed).
+1. Запустить все сервисы: `make dev` (или `docker-compose up -d`)
+2. Применить миграции:
+   - Experiment Service: `docker-compose exec experiment-service python bin/migrate.py`
+   - Auth Service: `docker-compose exec auth-service python bin/migrate.py`
+3. Зарегистрировать пользователя в Auth Service:
+   ```bash
+   curl -X POST http://localhost:8001/auth/register \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"demo","email":"demo@example.com","password":"demo123"}'
+   ```
+4. Войти и получить токен:
+   ```bash
+   curl -X POST http://localhost:8001/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"demo","password":"demo123"}'
+   ```
+5. (Опционально) `poetry run python bin/demo_seed.py` — создать `demo_project`, базовые эксперименты, датчики и тестовые токены.
+6. Сохранить `project_id`, `owner_user_id`, выданные токены (`token_preview` виден в БД, полный токен выводится только при seed).
+
+**Примечание:** Для демо можно использовать заголовки `X-User-Id`, `X-Project-Id`, `X-Project-Role` для отладки, но рекомендуется использовать реальную аутентификацию через Auth Service и Auth Proxy.
 
 ## 2. Регистрация датчика и профиля
 
