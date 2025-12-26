@@ -273,6 +273,7 @@ me(): Promise<User>
 - Base URL: `VITE_AUTH_PROXY_URL` (по умолчанию `http://localhost:8080`)
 - `withCredentials: true` для работы с cookies
 - Content-Type: `application/json`
+- **Автоматическая генерация и передача `trace_id` и `request_id` в заголовках `X-Trace-Id` и `X-Request-Id`**
 
 ### 3.2. Main API Client
 
@@ -430,6 +431,7 @@ experiment-portal/
 2. Auth Proxy проксирует запросы к Auth Service
 3. Auth Proxy управляет HttpOnly cookies с токенами
 4. Auth Proxy добавляет токены в заголовки для других сервисов
+5. **Frontend передает `trace_id` и `request_id` в заголовках, Auth Proxy сохраняет и передает их дальше**
 
 ### 8.2. Endpoints через Auth Proxy
 
@@ -637,4 +639,21 @@ apiClient.interceptors.response.use(
 - [ ] Уведомления о безопасности (новый вход, смена пароля)
 - [ ] История входов
 - [ ] Управление активными сессиями
+
+## 15. Требования к логированию для всех сервисов
+
+**Важно:** Требования по `trace_id` и `request_id` применяются ко **всем компонентам** системы:
+- **Frontend** (текущий документ)
+- **Auth Service**
+- **Experiment Service**
+- **Auth Proxy (BFF)**
+- **API Gateway** (если используется)
+- **Любые другие сервисы и компоненты**
+
+Все компоненты должны:
+1. Генерировать уникальные идентификаторы для каждого запроса/действия
+2. Передавать `trace_id` и `request_id` через заголовки HTTP
+3. Включать эти идентификаторы во все логи
+4. Использовать структурированное логирование для удобного поиска по `trace_id` или `request_id`
+5. Обеспечивать возможность отслеживания запроса от Frontend через все сервисы до завершения
 
