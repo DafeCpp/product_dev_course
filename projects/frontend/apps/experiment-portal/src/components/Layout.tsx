@@ -1,5 +1,7 @@
 import { ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { authApi } from '../api/auth'
 import './Layout.css'
 
 interface LayoutProps {
@@ -8,6 +10,26 @@ interface LayoutProps {
 
 function Layout({ children }: LayoutProps) {
   const location = useLocation()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const { data: user } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: () => authApi.me(),
+    staleTime: 5 * 60 * 1000, // 5 минут
+  })
+
+  const logoutMutation = useMutation({
+    mutationFn: () => authApi.logout(),
+    onSuccess: () => {
+      queryClient.clear()
+      navigate('/login')
+    },
+  })
+
+  const handleLogout = () => {
+    logoutMutation.mutate()
+  }
 
   return (
     <div className="layout">
@@ -25,18 +47,26 @@ function Layout({ children }: LayoutProps) {
                 Эксперименты
               </Link>
               <Link
-                to="/sensors"
-                className={location.pathname.startsWith('/sensors') ? 'active' : ''}
-              >
-                Датчики
-              </Link>
-              <Link
                 to="/experiments/new"
                 className={location.pathname === '/experiments/new' ? 'active' : ''}
               >
                 Новый эксперимент
               </Link>
             </nav>
+            <div className="user-menu">
+              {user && (
+                <div className="user-info">
+                  <span className="username">{user.username}</span>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleLogout}
+                    disabled={logoutMutation.isPending}
+                  >
+                    {logoutMutation.isPending ? 'Выход...' : 'Выйти'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

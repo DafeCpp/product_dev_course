@@ -1,4 +1,4 @@
-/** API клиент для взаимодействия с бэкендом */
+/** API клиент для взаимодействия с бэкендом через Auth Proxy */
 import axios from 'axios'
 import type {
   Experiment,
@@ -9,40 +9,47 @@ import type {
   RunCreate,
   RunUpdate,
   RunsListResponse,
-  Sensor,
-  SensorCreate,
-  SensorUpdate,
-  SensorsListResponse,
-  SensorTokenResponse,
 } from '../types'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
+// API работает через Auth Proxy, который автоматически добавляет токен из куки
+const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL || 'http://localhost:8080'
 
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: AUTH_PROXY_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Важно для работы с HttpOnly куками
 })
 
-// Добавление токена в заголовки
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// Обработка ошибок
+// Обработка ошибок и автоматическое обновление токена
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Перенаправление на страницу входа
-      localStorage.removeItem('access_token')
-      window.location.href = '/login'
+  async (error) => {
+    const originalRequest = error.config
+
+    // Если получили 401 и это не повторный запрос
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        // Пытаемся обновить токен через Auth Proxy
+        const authProxyUrl = import.meta.env.VITE_AUTH_PROXY_URL || 'http://localhost:8080'
+        await axios.post(
+          `${authProxyUrl}/auth/refresh`,
+          {},
+          { withCredentials: true }
+        )
+
+        // Повторяем оригинальный запрос
+        return apiClient(originalRequest)
+      } catch (refreshError) {
+        // Если refresh не удался - перенаправляем на страницу входа
+        window.location.href = '/login'
+        return Promise.reject(refreshError)
+      }
     }
+
     return Promise.reject(error)
   }
 )
@@ -131,39 +138,6 @@ export const runsApi = {
 
   fail: async (id: string, reason?: string): Promise<Run> => {
     const response = await apiClient.patch(`/api/v1/runs/${id}`, { status: 'failed', reason })
-    return response.data
-  },
-}
-
-// Sensors API
-export const sensorsApi = {
-  list: async (params?: {
-    project_id?: string
-    page?: number
-    page_size?: number
-  }): Promise<SensorsListResponse> => {
-    const response = await apiClient.get('/api/v1/sensors', { params })
-    return response.data
-  },
-
-  get: async (id: string, projectId?: string): Promise<Sensor> => {
-    const params = projectId ? { project_id: projectId } : {}
-    const response = await apiClient.get(`/api/v1/sensors/${id}`, { params })
-    return response.data
-  },
-
-  create: async (data: SensorCreate): Promise<SensorTokenResponse> => {
-    const response = await apiClient.post('/api/v1/sensors', data)
-    return response.data
-  },
-
-  update: async (id: string, data: SensorUpdate): Promise<Sensor> => {
-    const response = await apiClient.patch(`/api/v1/sensors/${id}`, data)
-    return response.data
-  },
-
-  rotateToken: async (id: string): Promise<SensorTokenResponse> => {
-    const response = await apiClient.post(`/api/v1/sensors/${id}/rotate-token`)
     return response.data
   },
 }

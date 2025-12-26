@@ -59,3 +59,20 @@
   padding: 32px 0;
 }
 
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.username {
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+}
