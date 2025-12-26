@@ -3,14 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { runsApi, experimentsApi, captureSessionsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
-import StatusBadge from '../components/StatusBadge'
-import Loading from '../components/Loading'
-import Error from '../components/Error'
-import InfoRow from '../components/InfoRow'
-import MetadataSection from '../components/MetadataSection'
-import EmptyState from '../components/EmptyState'
-import SectionHeader from '../components/SectionHeader'
-import { formatDuration } from '../utils/formatDuration'
 import './RunDetail.css'
 
 function RunDetail() {
@@ -91,6 +83,64 @@ function RunDetail() {
     },
   })
 
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return '-'
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    if (hours > 0) {
+      return `${hours}ч ${minutes}м ${secs}с`
+    }
+    if (minutes > 0) {
+      return `${minutes}м ${secs}с`
+    }
+    return `${secs}с`
+  }
+
+  const getStatusBadge = (status: string) => {
+    const badges: Record<string, string> = {
+      created: 'badge-secondary',
+      running: 'badge-info',
+      completed: 'badge-success',
+      failed: 'badge-danger',
+    }
+    return badges[status] || 'badge-secondary'
+  }
+
+  const getStatusText = (status: string) => {
+    const texts: Record<string, string> = {
+      created: 'Создан',
+      running: 'Выполняется',
+      completed: 'Завершен',
+      failed: 'Ошибка',
+    }
+    return texts[status] || status
+  }
+
+  const getSessionStatusBadge = (status: string) => {
+    const badges: Record<string, string> = {
+      draft: 'badge-secondary',
+      running: 'badge-info',
+      succeeded: 'badge-success',
+      failed: 'badge-danger',
+      archived: 'badge-secondary',
+      backfilling: 'badge-warning',
+    }
+    return badges[status] || 'badge-secondary'
+  }
+
+  const getSessionStatusText = (status: string) => {
+    const texts: Record<string, string> = {
+      draft: 'Черновик',
+      running: 'Выполняется',
+      succeeded: 'Успешно',
+      failed: 'Ошибка',
+      archived: 'Архивирован',
+      backfilling: 'Дозаполнение',
+    }
+    return texts[status] || status
+  }
+
   const formatSessionDuration = (startedAt?: string | null, stoppedAt?: string | null) => {
     if (!startedAt) return '-'
     const start = new Date(startedAt)
@@ -100,11 +150,11 @@ function RunDetail() {
   }
 
   if (isLoading) {
-    return <Loading />
+    return <div className="loading">Загрузка...</div>
   }
 
   if (error || !run) {
-    return <Error message="Запуск не найден" />
+    return <div className="error">Запуск не найден</div>
   }
 
   return (
@@ -121,7 +171,9 @@ function RunDetail() {
             </Link>
           </div>
           <div className="header-actions">
-            <StatusBadge status={run.status} variant="run" />
+            <span className={`badge ${getStatusBadge(run.status)}`}>
+              {getStatusText(run.status)}
+            </span>
             {run.status === 'running' && (
               <>
                 {!activeSession ? (
@@ -173,34 +225,46 @@ function RunDetail() {
         </div>
 
         <div className="run-info">
-          <InfoRow label="ID" value={run.id} mono />
-          <InfoRow label="Experiment ID" value={run.experiment_id} mono />
-          <InfoRow
-            label="Статус"
-            value={<StatusBadge status={run.status} variant="run" />}
-          />
+          <div className="info-row">
+            <strong>ID:</strong>
+            <span className="mono">{run.id}</span>
+          </div>
+          <div className="info-row">
+            <strong>Experiment ID:</strong>
+            <span className="mono">{run.experiment_id}</span>
+          </div>
+          <div className="info-row">
+            <strong>Статус:</strong>
+            <span>{getStatusText(run.status)}</span>
+          </div>
           {run.started_at && (
-            <InfoRow
-              label="Начало"
-              value={format(new Date(run.started_at), 'dd MMM yyyy HH:mm:ss')}
-            />
+            <div className="info-row">
+              <strong>Начало:</strong>
+              <span>
+                {format(new Date(run.started_at), 'dd MMM yyyy HH:mm:ss')}
+              </span>
+            </div>
           )}
           {run.completed_at && (
-            <InfoRow
-              label="Завершение"
-              value={format(new Date(run.completed_at), 'dd MMM yyyy HH:mm:ss')}
-            />
+            <div className="info-row">
+              <strong>Завершение:</strong>
+              <span>
+                {format(new Date(run.completed_at), 'dd MMM yyyy HH:mm:ss')}
+              </span>
+            </div>
           )}
           {run.duration_seconds && (
-            <InfoRow
-              label="Длительность"
-              value={formatDuration(run.duration_seconds)}
-            />
+            <div className="info-row">
+              <strong>Длительность:</strong>
+              <span>{formatDuration(run.duration_seconds)}</span>
+            </div>
           )}
-          <InfoRow
-            label="Создан"
-            value={format(new Date(run.created_at), 'dd MMM yyyy HH:mm')}
-          />
+          <div className="info-row">
+            <strong>Создан:</strong>
+            <span>
+              {format(new Date(run.created_at), 'dd MMM yyyy HH:mm')}
+            </span>
+          </div>
         </div>
 
         {run.notes && (
@@ -217,17 +281,40 @@ function RunDetail() {
           </pre>
         </div>
 
-        <MetadataSection metadata={run.metadata} />
+        {run.metadata && Object.keys(run.metadata).length > 0 && (
+          <div className="metadata-section">
+            <h3>Метаданные</h3>
+            <pre className="metadata-json">
+              {JSON.stringify(run.metadata, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
 
       {/* Capture Sessions Section */}
       <div className="capture-sessions-section card">
-        <SectionHeader title="Сессии отсчёта" />
+        <div className="card-header">
+          <h3>Сессии отсчёта</h3>
+        </div>
 
         {sessionsLoading ? (
-          <Loading message="Загрузка сессий..." />
+          <div className="loading">Загрузка сессий...</div>
         ) : sessions.length === 0 ? (
-          <EmptyState message="Сессии отсчёта отсутствуют" />
+          <div className="empty-state">
+            <p>Сессии отсчёта отсутствуют</p>
+            {run.status === 'running' && !activeSession && experiment && (
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  const notes = prompt('Заметки (опционально):')
+                  createSessionMutation.mutate(notes || undefined)
+                }}
+                disabled={createSessionMutation.isPending}
+              >
+                Создать сессию
+              </button>
+            )}
+          </div>
         ) : (
           <div className="sessions-list">
             {activeSession && (
@@ -235,7 +322,9 @@ function RunDetail() {
                 <div className="session-header">
                   <div>
                     <h4>Активная сессия #{activeSession.ordinal_number}</h4>
-                    <StatusBadge status={activeSession.status} variant="capture-session" />
+                    <span className={`badge ${getSessionStatusBadge(activeSession.status)}`}>
+                      {getSessionStatusText(activeSession.status)}
+                    </span>
                   </div>
                   <button
                     className="btn btn-danger btn-sm"
@@ -251,22 +340,21 @@ function RunDetail() {
                 </div>
                 {activeSession.started_at && (
                   <div className="session-info">
-                    <InfoRow
-                      label="Начало"
-                      value={format(
-                        new Date(activeSession.started_at),
-                        'dd MMM yyyy HH:mm:ss'
-                      )}
-                    />
-                    <InfoRow
-                      label="Длительность"
-                      value={formatSessionDuration(
-                        activeSession.started_at,
-                        activeSession.stopped_at
-                      )}
-                    />
+                    <div className="info-row">
+                      <strong>Начало:</strong>
+                      <span>
+                        {format(new Date(activeSession.started_at), 'dd MMM yyyy HH:mm:ss')}
+                      </span>
+                    </div>
+                    <div className="info-row">
+                      <strong>Длительность:</strong>
+                      <span>{formatSessionDuration(activeSession.started_at, activeSession.stopped_at)}</span>
+                    </div>
                     {activeSession.notes && (
-                      <InfoRow label="Заметки" value={activeSession.notes} />
+                      <div className="info-row">
+                        <strong>Заметки:</strong>
+                        <span>{activeSession.notes}</span>
+                      </div>
                     )}
                   </div>
                 )}
@@ -281,7 +369,9 @@ function RunDetail() {
                   <div className="session-header">
                     <div>
                       <h4>Сессия #{session.ordinal_number}</h4>
-                      <StatusBadge status={session.status} variant="capture-session" />
+                      <span className={`badge ${getSessionStatusBadge(session.status)}`}>
+                        {getSessionStatusText(session.status)}
+                      </span>
                     </div>
                     {session.status !== 'archived' && (
                       <button
@@ -299,44 +389,36 @@ function RunDetail() {
                   </div>
                   <div className="session-info">
                     {session.started_at && (
-                      <InfoRow
-                        label="Начало"
-                        value={format(new Date(session.started_at), 'dd MMM yyyy HH:mm:ss')}
-                      />
+                      <div className="info-row">
+                        <strong>Начало:</strong>
+                        <span>
+                          {format(new Date(session.started_at), 'dd MMM yyyy HH:mm:ss')}
+                        </span>
+                      </div>
                     )}
                     {session.stopped_at && (
-                      <InfoRow
-                        label="Остановка"
-                        value={format(new Date(session.stopped_at), 'dd MMM yyyy HH:mm:ss')}
-                      />
+                      <div className="info-row">
+                        <strong>Остановка:</strong>
+                        <span>
+                          {format(new Date(session.stopped_at), 'dd MMM yyyy HH:mm:ss')}
+                        </span>
+                      </div>
                     )}
                     {session.started_at && (
-                      <InfoRow
-                        label="Длительность"
-                        value={formatSessionDuration(session.started_at, session.stopped_at)}
-                      />
+                      <div className="info-row">
+                        <strong>Длительность:</strong>
+                        <span>{formatSessionDuration(session.started_at, session.stopped_at)}</span>
+                      </div>
                     )}
                     {session.notes && (
-                      <InfoRow label="Заметки" value={session.notes} />
+                      <div className="info-row">
+                        <strong>Заметки:</strong>
+                        <span>{session.notes}</span>
+                      </div>
                     )}
                   </div>
                 </div>
               ))}
-          </div>
-        )}
-
-        {run.status === 'running' && !activeSession && experiment && sessions.length === 0 && (
-          <div style={{ marginTop: '16px' }}>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                const notes = prompt('Заметки (опционально):')
-                createSessionMutation.mutate(notes || undefined)
-              }}
-              disabled={createSessionMutation.isPending}
-            >
-              Создать сессию
-            </button>
           </div>
         )}
       </div>
@@ -345,3 +427,4 @@ function RunDetail() {
 }
 
 export default RunDetail
+

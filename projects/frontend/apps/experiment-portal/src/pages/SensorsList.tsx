@@ -3,16 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { sensorsApi } from '../api/client'
 import { format } from 'date-fns'
-import type { Sensor } from '../types'
-import StatusBadge from '../components/StatusBadge'
-import Loading from '../components/Loading'
-import Error from '../components/Error'
-import EmptyState from '../components/EmptyState'
-import Pagination from '../components/Pagination'
-import PageHeader from '../components/PageHeader'
-import InfoRow from '../components/InfoRow'
-import Filters from '../components/Filters'
-import { formatLastHeartbeat } from '../utils/formatLastHeartbeat'
+import type { SensorStatus, Sensor } from '../types'
 import './SensorsList.css'
 
 function SensorsList() {
@@ -32,62 +23,90 @@ function SensorsList() {
             }),
     })
 
+    const getStatusBadge = (status: SensorStatus) => {
+        const badges: Record<SensorStatus, string> = {
+            registering: 'badge-secondary',
+            active: 'badge-success',
+            inactive: 'badge-warning',
+            archived: 'badge-secondary',
+        }
+        return badges[status] || 'badge-secondary'
+    }
+
+    const getStatusText = (status: SensorStatus) => {
+        const texts: Record<SensorStatus, string> = {
+            registering: 'Регистрация',
+            active: 'Активен',
+            inactive: 'Неактивен',
+            archived: 'Архивирован',
+        }
+        return texts[status] || status
+    }
+
+    const formatLastHeartbeat = (heartbeat?: string | null) => {
+        if (!heartbeat) return 'Никогда'
+        const date = new Date(heartbeat)
+        const now = new Date()
+        const diffMs = now.getTime() - date.getTime()
+        const diffMins = Math.floor(diffMs / 60000)
+
+        if (diffMins < 1) return 'Только что'
+        if (diffMins < 60) return `${diffMins} мин назад`
+        if (diffMins < 1440) return `${Math.floor(diffMins / 60)} ч назад`
+        return format(date, 'dd MMM yyyy HH:mm')
+    }
+
     if (isLoading) {
-        return <Loading />
+        return <div className="loading">Загрузка...</div>
     }
 
     if (error) {
-        return <Error message="Ошибка загрузки датчиков" />
+        return <div className="error">Ошибка загрузки датчиков</div>
     }
 
     return (
         <div className="sensors-list">
-            <PageHeader
-                title="Датчики"
-                action={
-                    <Link to="/sensors/new" className="btn btn-primary">
-                        Зарегистрировать датчик
-                    </Link>
-                }
-            />
+            <div className="page-header">
+                <h2>Датчики</h2>
+                <Link to="/sensors/new" className="btn btn-primary">
+                    Зарегистрировать датчик
+                </Link>
+            </div>
 
-            <Filters
-                fields={[
-                    {
-                        id: 'sensor_project_id',
-                        label: 'Project ID',
-                        type: 'text',
-                        value: projectId,
-                        onChange: (value) => {
-                            setProjectId(value)
-                            setPage(1)
-                        },
-                        placeholder: 'UUID проекта',
-                    },
-                    {
-                        id: 'sensor_status',
-                        label: 'Статус',
-                        type: 'select',
-                        value: status,
-                        onChange: (value) => {
-                            setStatus(value)
-                            setPage(1)
-                        },
-                        options: [
-                            { value: '', label: 'Все' },
-                            { value: 'registering', label: 'Регистрация' },
-                            { value: 'active', label: 'Активен' },
-                            { value: 'inactive', label: 'Неактивен' },
-                            { value: 'archived', label: 'Архивирован' },
-                        ],
-                    },
-                ]}
-                onReset={() => {
-                    setProjectId('')
-                    setStatus('')
-                    setPage(1)
-                }}
-            />
+            <div className="filters card">
+                <div className="filters-grid">
+                    <div className="form-group">
+                        <label htmlFor="sensor_project_id">Project ID</label>
+                        <input
+                            id="sensor_project_id"
+                            type="text"
+                            placeholder="UUID проекта"
+                            value={projectId}
+                            onChange={(e) => {
+                                setProjectId(e.target.value)
+                                setPage(1)
+                            }}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="sensor_status">Статус</label>
+                        <select
+                            id="sensor_status"
+                            value={status}
+                            onChange={(e) => {
+                                setStatus(e.target.value)
+                                setPage(1)
+                            }}
+                        >
+                            <option value="">Все</option>
+                            <option value="registering">Регистрация</option>
+                            <option value="active">Активен</option>
+                            <option value="inactive">Неактивен</option>
+                            <option value="archived">Архивирован</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
 
             {data && (
                 <>
@@ -100,25 +119,31 @@ function SensorsList() {
                             >
                                 <div className="card-header">
                                     <h3 className="card-title">{sensor.name}</h3>
-                                    <StatusBadge status={sensor.status} variant="sensor" />
+                                    <span className={`badge ${getStatusBadge(sensor.status)}`}>
+                                        {getStatusText(sensor.status)}
+                                    </span>
                                 </div>
 
                                 <div className="sensor-info">
-                                    <InfoRow label="Тип" value={sensor.type} />
-                                    <InfoRow
-                                        label="Единицы"
-                                        value={`${sensor.input_unit} → ${sensor.display_unit}`}
-                                    />
-                                    <InfoRow
-                                        label="Последний heartbeat"
-                                        value={formatLastHeartbeat(sensor.last_heartbeat)}
-                                    />
+                                    <div className="info-row">
+                                        <strong>Тип:</strong>
+                                        <span>{sensor.type}</span>
+                                    </div>
+                                    <div className="info-row">
+                                        <strong>Единицы:</strong>
+                                        <span>
+                                            {sensor.input_unit} → {sensor.display_unit}
+                                        </span>
+                                    </div>
+                                    <div className="info-row">
+                                        <strong>Последний heartbeat:</strong>
+                                        <span>{formatLastHeartbeat(sensor.last_heartbeat)}</span>
+                                    </div>
                                     {sensor.token_preview && (
-                                        <InfoRow
-                                            label="Токен"
-                                            value={`****${sensor.token_preview}`}
-                                            mono
-                                        />
+                                        <div className="info-row">
+                                            <strong>Токен:</strong>
+                                            <span className="mono">****{sensor.token_preview}</span>
+                                        </div>
                                     )}
                                 </div>
 
@@ -133,14 +158,34 @@ function SensorsList() {
                     </div>
 
                     {data.sensors.length === 0 && (
-                        <EmptyState message="Датчики не найдены" />
+                        <div className="empty-state">
+                            <p>Датчики не найдены</p>
+                        </div>
                     )}
 
-                    <Pagination
-                        currentPage={page}
-                        totalPages={Math.ceil(data.total / pageSize)}
-                        onPageChange={setPage}
-                    />
+                    {data.total > pageSize && (
+                        <div className="pagination">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                            >
+                                Назад
+                            </button>
+                            <span>
+                                Страница {page} из {Math.ceil(data.total / pageSize)}
+                            </span>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() =>
+                                    setPage((p) => Math.min(Math.ceil(data.total / pageSize), p + 1))
+                                }
+                                disabled={page >= Math.ceil(data.total / pageSize)}
+                            >
+                                Вперед
+                            </button>
+                        </div>
+                    )}
                 </>
             )}
         </div>

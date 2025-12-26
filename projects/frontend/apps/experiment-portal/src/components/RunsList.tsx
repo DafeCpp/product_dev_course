@@ -2,11 +2,6 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { runsApi } from '../api/client'
 import { format } from 'date-fns'
-import StatusBadge from './StatusBadge'
-import Loading from './Loading'
-import Error from './Error'
-import EmptyState from './EmptyState'
-import { formatDuration } from '../utils/formatDuration'
 import './RunsList.css'
 
 interface RunsListProps {
@@ -19,16 +14,54 @@ function RunsList({ experimentId }: RunsListProps) {
     queryFn: () => runsApi.list(experimentId),
   })
 
+  const getStatusBadge = (status: string) => {
+    const badges: Record<string, string> = {
+      created: 'badge-secondary',
+      running: 'badge-info',
+      completed: 'badge-success',
+      failed: 'badge-danger',
+    }
+    return badges[status] || 'badge-secondary'
+  }
+
+  const getStatusText = (status: string) => {
+    const texts: Record<string, string> = {
+      created: 'Создан',
+      running: 'Выполняется',
+      completed: 'Завершен',
+      failed: 'Ошибка',
+    }
+    return texts[status] || status
+  }
+
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return '-'
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    if (hours > 0) {
+      return `${hours}ч ${minutes}м ${secs}с`
+    }
+    if (minutes > 0) {
+      return `${minutes}м ${secs}с`
+    }
+    return `${secs}с`
+  }
+
   if (isLoading) {
-    return <Loading message="Загрузка запусков..." />
+    return <div className="loading">Загрузка запусков...</div>
   }
 
   if (error) {
-    return <Error message="Ошибка загрузки запусков" />
+    return <div className="error">Ошибка загрузки запусков</div>
   }
 
   if (!data || data.runs.length === 0) {
-    return <EmptyState message="Запуски не найдены" />
+    return (
+      <div className="empty-state">
+        <p>Запуски не найдены</p>
+      </div>
+    )
   }
 
   return (
@@ -55,7 +88,9 @@ function RunsList({ experimentId }: RunsListProps) {
                   </Link>
                 </td>
                 <td>
-                  <StatusBadge status={run.status} variant="run" />
+                  <span className={`badge ${getStatusBadge(run.status)}`}>
+                    {getStatusText(run.status)}
+                  </span>
                 </td>
                 <td>
                   <div className="parameters-preview">

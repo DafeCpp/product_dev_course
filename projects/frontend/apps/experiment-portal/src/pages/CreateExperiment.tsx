@@ -3,9 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
-import Error from '../components/Error'
-import FormGroup from '../components/FormGroup'
-import FormActions from '../components/FormActions'
 import './CreateExperiment.css'
 
 function CreateExperiment() {
@@ -64,10 +61,13 @@ function CreateExperiment() {
     <div className="create-experiment">
       <h2>Создать эксперимент</h2>
 
-      {error && <Error message={error} />}
+      {error && <div className="error">{error}</div>}
 
       <form onSubmit={handleSubmit} className="experiment-form card">
-        <FormGroup label="Project ID" required>
+        <div className="form-group">
+          <label>
+            Project ID <span className="required">*</span>
+          </label>
           <input
             type="text"
             value={formData.project_id}
@@ -77,9 +77,12 @@ function CreateExperiment() {
             required
             placeholder="UUID проекта"
           />
-        </FormGroup>
+        </div>
 
-        <FormGroup label="Название" required>
+        <div className="form-group">
+          <label>
+            Название <span className="required">*</span>
+          </label>
           <input
             type="text"
             value={formData.name}
@@ -87,9 +90,10 @@ function CreateExperiment() {
             required
             placeholder="Например: Аэродинамические испытания крыла"
           />
-        </FormGroup>
+        </div>
 
-        <FormGroup label="Описание">
+        <div className="form-group">
+          <label>Описание</label>
           <textarea
             value={formData.description}
             onChange={(e) =>
@@ -97,9 +101,10 @@ function CreateExperiment() {
             }
             placeholder="Детальное описание эксперимента..."
           />
-        </FormGroup>
+        </div>
 
-        <FormGroup label="Тип эксперимента">
+        <div className="form-group">
+          <label>Тип эксперимента</label>
           <select
             value={formData.experiment_type}
             onChange={(e) =>
@@ -113,37 +118,50 @@ function CreateExperiment() {
             <option value="vibration">Вибрационные</option>
             <option value="other">Другое</option>
           </select>
-        </FormGroup>
+        </div>
 
-        <FormGroup
-          label="Теги"
-          hint="Введите теги через запятую для удобной фильтрации"
-        >
+        <div className="form-group">
+          <label>Теги</label>
           <input
             type="text"
             value={tagsInput}
             onChange={(e) => setTagsInput(e.target.value)}
             placeholder="Через запятую: аэродинамика, крыло, naca"
           />
-        </FormGroup>
+          <small className="form-hint">
+            Введите теги через запятую для удобной фильтрации
+          </small>
+        </div>
 
-        <FormGroup
-          label="Метаданные (JSON)"
-          hint="Дополнительные данные эксперимента в формате JSON"
-        >
+        <div className="form-group">
+          <label>Метаданные (JSON)</label>
           <textarea
             value={metadataInput}
             onChange={(e) => setMetadataInput(e.target.value)}
             placeholder='{"wind_speed": "30 m/s", "angle_of_attack": "0-15 deg"}'
             style={{ fontFamily: 'monospace', fontSize: '12px' }}
           />
-        </FormGroup>
+          <small className="form-hint">
+            Дополнительные данные эксперимента в формате JSON
+          </small>
+        </div>
 
-        <FormActions
-          onCancel={() => navigate('/experiments')}
-          submitLabel="Создать эксперимент"
-          isSubmitting={createMutation.isPending}
-        />
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate('/experiments')}
+          >
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={createMutation.isPending}
+          >
+            {createMutation.isPending ? 'Создание...' : 'Создать эксперимент'}
+          </button>
+        </div>
       </form>
     </div>
   )

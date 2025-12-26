@@ -3,14 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
-import StatusBadge from '../components/StatusBadge'
-import Loading from '../components/Loading'
-import Error from '../components/Error'
-import EmptyState from '../components/EmptyState'
-import Pagination from '../components/Pagination'
-import Tags from '../components/Tags'
-import PageHeader from '../components/PageHeader'
-import Filters from '../components/Filters'
 import './ExperimentsList.css'
 
 function ExperimentsList() {
@@ -40,75 +32,90 @@ function ExperimentsList() {
     },
   })
 
+  const getStatusBadge = (status: string) => {
+    const badges: Record<string, string> = {
+      created: 'badge-secondary',
+      running: 'badge-info',
+      completed: 'badge-success',
+      failed: 'badge-danger',
+      archived: 'badge-secondary',
+    }
+    return badges[status] || 'badge-secondary'
+  }
+
+  const getStatusText = (status: string) => {
+    const texts: Record<string, string> = {
+      created: 'Создан',
+      running: 'Выполняется',
+      completed: 'Завершен',
+      failed: 'Ошибка',
+      archived: 'Архивирован',
+    }
+    return texts[status] || status
+  }
+
   if (isLoading) {
-    return <Loading />
+    return <div className="loading">Загрузка...</div>
   }
 
   if (error) {
-    return <Error message="Ошибка загрузки экспериментов" />
+    return <div className="error">Ошибка загрузки экспериментов</div>
   }
 
   return (
     <div className="experiments-list">
-      <PageHeader
-        title="Эксперименты"
-        action={
-          <Link to="/experiments/new" className="btn btn-primary">
-            Создать эксперимент
-          </Link>
-        }
-      />
+      <div className="page-header">
+        <h2>Эксперименты</h2>
+        <Link to="/experiments/new" className="btn btn-primary">
+          Создать эксперимент
+        </Link>
+      </div>
 
-      <Filters
-        fields={[
-          {
-            id: 'search',
-            label: 'Поиск',
-            type: 'text',
-            value: searchQuery,
-            onChange: (value) => {
-              setSearchQuery(value)
-              setPage(1)
-            },
-            placeholder: 'Название, описание...',
-          },
-          {
-            id: 'project_id',
-            label: 'Project ID',
-            type: 'text',
-            value: projectId,
-            onChange: (value) => {
-              setProjectId(value)
-              setPage(1)
-            },
-            placeholder: 'UUID проекта',
-          },
-          {
-            id: 'status',
-            label: 'Статус',
-            type: 'select',
-            value: status,
-            onChange: (value) => {
-              setStatus(value)
-              setPage(1)
-            },
-            options: [
-              { value: '', label: 'Все' },
-              { value: 'created', label: 'Создан' },
-              { value: 'running', label: 'Выполняется' },
-              { value: 'completed', label: 'Завершен' },
-              { value: 'failed', label: 'Ошибка' },
-              { value: 'archived', label: 'Архивирован' },
-            ],
-          },
-        ]}
-        onReset={() => {
-          setSearchQuery('')
-          setProjectId('')
-          setStatus('')
-          setPage(1)
-        }}
-      />
+      <div className="filters card">
+        <div className="filters-grid">
+          <div className="form-group">
+            <label>Поиск</label>
+            <input
+              type="text"
+              placeholder="Название, описание..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setPage(1)
+              }}
+            />
+          </div>
+          <div className="form-group">
+            <label>Project ID</label>
+            <input
+              type="text"
+              placeholder="UUID проекта"
+              value={projectId}
+              onChange={(e) => {
+                setProjectId(e.target.value)
+                setPage(1)
+              }}
+            />
+          </div>
+          <div className="form-group">
+            <label>Статус</label>
+            <select
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="">Все</option>
+              <option value="created">Создан</option>
+              <option value="running">Выполняется</option>
+              <option value="completed">Завершен</option>
+              <option value="failed">Ошибка</option>
+              <option value="archived">Архивирован</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       {data && (
         <>
@@ -121,7 +128,9 @@ function ExperimentsList() {
               >
                 <div className="card-header">
                   <h3 className="card-title">{experiment.name}</h3>
-                  <StatusBadge status={experiment.status} variant="experiment" />
+                  <span className={`badge ${getStatusBadge(experiment.status)}`}>
+                    {getStatusText(experiment.status)}
+                  </span>
                 </div>
 
                 {experiment.description && (
@@ -134,7 +143,15 @@ function ExperimentsList() {
                   </div>
                 )}
 
-                <Tags tags={experiment.tags} />
+                {experiment.tags && experiment.tags.length > 0 && (
+                  <div className="tags">
+                    {experiment.tags.map((tag) => (
+                      <span key={tag} className="tag">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 <div className="experiment-meta">
                   <small>
@@ -147,14 +164,34 @@ function ExperimentsList() {
           </div>
 
           {data.experiments.length === 0 && (
-            <EmptyState message="Эксперименты не найдены" />
+            <div className="empty-state">
+              <p>Эксперименты не найдены</p>
+            </div>
           )}
 
-          <Pagination
-            currentPage={page}
-            totalPages={Math.ceil(data.total / pageSize)}
-            onPageChange={setPage}
-          />
+          {data.total > pageSize && (
+            <div className="pagination">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Назад
+              </button>
+              <span>
+                Страница {page} из {Math.ceil(data.total / pageSize)}
+              </span>
+              <button
+                className="btn btn-secondary"
+                onClick={() =>
+                  setPage((p) => Math.min(Math.ceil(data.total / pageSize), p + 1))
+                }
+                disabled={page >= Math.ceil(data.total / pageSize)}
+              >
+                Вперед
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
