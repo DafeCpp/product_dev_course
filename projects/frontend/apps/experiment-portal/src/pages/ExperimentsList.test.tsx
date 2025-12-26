@@ -356,9 +356,11 @@ describe('ExperimentsList', () => {
         render(<ExperimentsList />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            const createLink = screen.getByText('Создать эксперимент')
-            expect(createLink).toBeInTheDocument()
-            expect(createLink.closest('a')).toHaveAttribute('href', '/experiments/new')
+            const createButtons = screen.getAllByRole('button', { name: /создать эксперимент/i })
+            // Должна быть кнопка в PageHeader
+            const headerButton = createButtons.find(btn => btn.classList.contains('btn-primary'))
+            expect(headerButton).toBeInTheDocument()
+            expect(headerButton).toHaveClass('btn', 'btn-primary')
         })
     })
 })

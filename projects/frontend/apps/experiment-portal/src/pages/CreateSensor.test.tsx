@@ -4,12 +4,15 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CreateSensor from './CreateSensor'
-import { sensorsApi } from '../api/client'
+import { sensorsApi, projectsApi } from '../api/client'
 
-// Мокаем sensorsApi
+// Мокаем API
 vi.mock('../api/client', () => ({
     sensorsApi: {
         create: vi.fn(),
+    },
+    projectsApi: {
+        list: vi.fn(),
     },
 }))
 
@@ -41,13 +44,22 @@ describe('CreateSensor', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         mockNavigate.mockClear()
+        // Мокаем projectsApi.list по умолчанию
+        const mockProjectsApi = vi.mocked(projectsApi)
+        mockProjectsApi.list.mockResolvedValue({
+            projects: [
+                { id: 'project-1', name: 'Test Project', description: '', created_at: '2024-01-01T00:00:00Z' },
+            ],
+        })
     })
 
-    it('renders form with all fields', () => {
+    it('renders form with all fields', async () => {
         render(<CreateSensor />, { wrapper: createWrapper() })
 
         expect(screen.getByRole('heading', { name: /зарегистрировать датчик/i })).toBeInTheDocument()
-        expect(screen.getByLabelText(/project id/i)).toBeInTheDocument()
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
         expect(screen.getByLabelText(/название/i)).toBeInTheDocument()
         expect(screen.getByLabelText(/тип датчика/i)).toBeInTheDocument()
         expect(screen.getByLabelText(/входная единица измерения/i)).toBeInTheDocument()
@@ -58,12 +70,16 @@ describe('CreateSensor', () => {
         const user = userEvent.setup()
         render(<CreateSensor />, { wrapper: createWrapper() })
 
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+
         const submitButton = screen.getByRole('button', { name: /зарегистрировать/i })
         await user.click(submitButton)
 
         // HTML5 validation should prevent submission
-        const projectInput = screen.getByLabelText(/project id/i) as HTMLInputElement
-        expect(projectInput.validity.valueMissing).toBe(true)
+        const projectSelect = screen.getByLabelText(/проект/i) as HTMLSelectElement
+        expect(projectSelect.validity.valueMissing).toBe(true)
     })
 
     it('submits form with correct data', async () => {
@@ -87,7 +103,10 @@ describe('CreateSensor', () => {
 
         render(<CreateSensor />, { wrapper: createWrapper() })
 
-        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
@@ -119,7 +138,10 @@ describe('CreateSensor', () => {
 
         render(<CreateSensor />, { wrapper: createWrapper() })
 
-        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
@@ -154,7 +176,10 @@ describe('CreateSensor', () => {
 
         render(<CreateSensor />, { wrapper: createWrapper() })
 
-        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
@@ -198,7 +223,10 @@ describe('CreateSensor', () => {
 
         render(<CreateSensor />, { wrapper: createWrapper() })
 
-        await user.type(screen.getByLabelText(/project id/i), 'project-1')
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
