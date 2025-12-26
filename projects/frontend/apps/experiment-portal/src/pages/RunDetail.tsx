@@ -2,7 +2,16 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { runsApi, experimentsApi, captureSessionsApi } from '../api/client'
 import { format } from 'date-fns'
+<<<<<<< HEAD
 import type { CaptureSession } from '../types'
+=======
+import StatusBadge from '../components/StatusBadge'
+import Loading from '../components/Loading'
+import Error from '../components/Error'
+import InfoRow from '../components/InfoRow'
+import MetadataSection from '../components/MetadataSection'
+import { formatDuration } from '../utils/formatDuration'
+>>>>>>> 2eb1d9e (refactor: extract reusable React components)
 import './RunDetail.css'
 
 function RunDetail() {
@@ -48,6 +57,7 @@ function RunDetail() {
     },
   })
 
+<<<<<<< HEAD
   // Создание capture session
   const createSessionMutation = useMutation({
     mutationFn: (notes?: string) => {
@@ -149,12 +159,14 @@ function RunDetail() {
     return formatDuration(seconds)
   }
 
+=======
+>>>>>>> 2eb1d9e (refactor: extract reusable React components)
   if (isLoading) {
-    return <div className="loading">Загрузка...</div>
+    return <Loading />
   }
 
   if (error || !run) {
-    return <div className="error">Запуск не найден</div>
+    return <Error message="Запуск не найден" />
   }
 
   return (
@@ -171,9 +183,7 @@ function RunDetail() {
             </Link>
           </div>
           <div className="header-actions">
-            <span className={`badge ${getStatusBadge(run.status)}`}>
-              {getStatusText(run.status)}
-            </span>
+            <StatusBadge status={run.status} variant="run" />
             {run.status === 'running' && (
               <>
                 {!activeSession ? (
@@ -225,46 +235,34 @@ function RunDetail() {
         </div>
 
         <div className="run-info">
-          <div className="info-row">
-            <strong>ID:</strong>
-            <span className="mono">{run.id}</span>
-          </div>
-          <div className="info-row">
-            <strong>Experiment ID:</strong>
-            <span className="mono">{run.experiment_id}</span>
-          </div>
-          <div className="info-row">
-            <strong>Статус:</strong>
-            <span>{getStatusText(run.status)}</span>
-          </div>
+          <InfoRow label="ID" value={run.id} mono />
+          <InfoRow label="Experiment ID" value={run.experiment_id} mono />
+          <InfoRow
+            label="Статус"
+            value={<StatusBadge status={run.status} variant="run" />}
+          />
           {run.started_at && (
-            <div className="info-row">
-              <strong>Начало:</strong>
-              <span>
-                {format(new Date(run.started_at), 'dd MMM yyyy HH:mm:ss')}
-              </span>
-            </div>
+            <InfoRow
+              label="Начало"
+              value={format(new Date(run.started_at), 'dd MMM yyyy HH:mm:ss')}
+            />
           )}
           {run.completed_at && (
-            <div className="info-row">
-              <strong>Завершение:</strong>
-              <span>
-                {format(new Date(run.completed_at), 'dd MMM yyyy HH:mm:ss')}
-              </span>
-            </div>
+            <InfoRow
+              label="Завершение"
+              value={format(new Date(run.completed_at), 'dd MMM yyyy HH:mm:ss')}
+            />
           )}
           {run.duration_seconds && (
-            <div className="info-row">
-              <strong>Длительность:</strong>
-              <span>{formatDuration(run.duration_seconds)}</span>
-            </div>
+            <InfoRow
+              label="Длительность"
+              value={formatDuration(run.duration_seconds)}
+            />
           )}
-          <div className="info-row">
-            <strong>Создан:</strong>
-            <span>
-              {format(new Date(run.created_at), 'dd MMM yyyy HH:mm')}
-            </span>
-          </div>
+          <InfoRow
+            label="Создан"
+            value={format(new Date(run.created_at), 'dd MMM yyyy HH:mm')}
+          />
         </div>
 
         {run.notes && (
@@ -281,14 +279,7 @@ function RunDetail() {
           </pre>
         </div>
 
-        {run.metadata && Object.keys(run.metadata).length > 0 && (
-          <div className="metadata-section">
-            <h3>Метаданные</h3>
-            <pre className="metadata-json">
-              {JSON.stringify(run.metadata, null, 2)}
-            </pre>
-          </div>
-        )}
+        <MetadataSection metadata={run.metadata} />
       </div>
 
       {/* Capture Sessions Section */}

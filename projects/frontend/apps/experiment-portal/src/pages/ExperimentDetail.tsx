@@ -5,6 +5,13 @@ import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
 import RunsList from '../components/RunsList'
 import CreateRunModal from '../components/CreateRunModal'
+import StatusBadge from '../components/StatusBadge'
+import Loading from '../components/Loading'
+import Error from '../components/Error'
+import InfoRow from '../components/InfoRow'
+import Tags from '../components/Tags'
+import MetadataSection from '../components/MetadataSection'
+import SectionHeader from '../components/SectionHeader'
 import './ExperimentDetail.css'
 
 function ExperimentDetail() {
@@ -12,7 +19,6 @@ function ExperimentDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [showEditForm, setShowEditForm] = useState(false)
-  const [showCreateRunModal, setShowCreateRunModal] = useState(false)
 
   const { data: experiment, isLoading, error } = useQuery({
     queryKey: ['experiment', id],
@@ -28,34 +34,12 @@ function ExperimentDetail() {
     },
   })
 
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, string> = {
-      created: 'badge-secondary',
-      running: 'badge-info',
-      completed: 'badge-success',
-      failed: 'badge-danger',
-      archived: 'badge-secondary',
-    }
-    return badges[status] || 'badge-secondary'
-  }
-
-  const getStatusText = (status: string) => {
-    const texts: Record<string, string> = {
-      created: 'Создан',
-      running: 'Выполняется',
-      completed: 'Завершен',
-      failed: 'Ошибка',
-      archived: 'Архивирован',
-    }
-    return texts[status] || status
-  }
-
   if (isLoading) {
-    return <div className="loading">Загрузка...</div>
+    return <Loading />
   }
 
   if (error || !experiment) {
-    return <div className="error">Эксперимент не найден</div>
+    return <Error message="Эксперимент не найден" />
   }
 
   return (
@@ -64,9 +48,7 @@ function ExperimentDetail() {
         <div className="card-header">
           <h2 className="card-title">{experiment.name}</h2>
           <div className="header-actions">
-            <span className={`badge ${getStatusBadge(experiment.status)}`}>
-              {getStatusText(experiment.status)}
-            </span>
+            <StatusBadge status={experiment.status} variant="experiment" />
             <button
               className="btn btn-secondary"
               onClick={() => setShowEditForm(!showEditForm)}
@@ -94,77 +76,48 @@ function ExperimentDetail() {
         )}
 
         <div className="experiment-info">
-          <div className="info-row">
-            <strong>ID:</strong>
-            <span className="mono">{experiment.id}</span>
-          </div>
-          <div className="info-row">
-            <strong>Project ID:</strong>
-            <span className="mono">{experiment.project_id}</span>
-          </div>
+          <InfoRow label="ID" value={experiment.id} mono />
+          <InfoRow label="Project ID" value={experiment.project_id} mono />
           {experiment.experiment_type && (
-            <div className="info-row">
-              <strong>Тип:</strong>
-              <span>{experiment.experiment_type}</span>
-            </div>
+            <InfoRow label="Тип" value={experiment.experiment_type} />
           )}
-          <div className="info-row">
-            <strong>Создан:</strong>
-            <span>
-              {format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')}
-            </span>
-          </div>
-          <div className="info-row">
-            <strong>Обновлен:</strong>
-            <span>
-              {format(new Date(experiment.updated_at), 'dd MMM yyyy HH:mm')}
-            </span>
-          </div>
+          <InfoRow
+            label="Создан"
+            value={format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')}
+          />
+          <InfoRow
+            label="Обновлен"
+            value={format(new Date(experiment.updated_at), 'dd MMM yyyy HH:mm')}
+          />
         </div>
 
         {experiment.tags && experiment.tags.length > 0 && (
           <div className="tags-section">
             <h3>Теги</h3>
-            <div className="tags">
-              {experiment.tags.map((tag) => (
-                <span key={tag} className="tag">
-                  {tag}
-                </span>
-              ))}
-            </div>
+            <Tags tags={experiment.tags} />
           </div>
         )}
 
-        {experiment.metadata && Object.keys(experiment.metadata).length > 0 && (
-          <div className="metadata-section">
-            <h3>Метаданные</h3>
-            <pre className="metadata-json">
-              {JSON.stringify(experiment.metadata, null, 2)}
-            </pre>
-          </div>
-        )}
+        <MetadataSection metadata={experiment.metadata} />
       </div>
 
       <div className="runs-section">
-        <div className="section-header">
-          <h3>Запуски эксперимента</h3>
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowCreateRunModal(true)}
-          >
-            Новый запуск
-          </button>
-        </div>
+        <SectionHeader
+          title="Запуски эксперимента"
+          action={
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                // TODO: Открыть модальное окно или перейти на страницу создания run
+                alert('Функция создания run будет добавлена')
+              }}
+            >
+              Новый запуск
+            </button>
+          }
+        />
         <RunsList experimentId={id!} />
       </div>
-
-      {id && (
-        <CreateRunModal
-          experimentId={id}
-          isOpen={showCreateRunModal}
-          onClose={() => setShowCreateRunModal(false)}
-        />
-      )}
     </div>
   )
 }
