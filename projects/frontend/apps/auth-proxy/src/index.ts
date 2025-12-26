@@ -117,15 +117,48 @@ function clearAuthCookies(reply: FastifyReply, cfg: Config) {
 }
 
 /**
- * Извлекает или генерирует trace_id и request_id из заголовков
+ * Генерирует UUID без дефисов
+ */
+function generateUUID(): string {
+    return randomUUID().replace(/-/g, '')
+}
+
+/**
+ * Нормализует UUID, убирая дефисы (если есть)
+ */
+function normalizeUUID(uuid: string | undefined): string | undefined {
+    return uuid ? uuid.replace(/-/g, '') : undefined
+}
+
+/**
+ * Извлекает trace_id из заголовков (или генерирует новый для запроса от фронтенда)
+ * Генерирует новый request_id для каждого запроса в auth-proxy
  */
 function getTraceContext(request: FastifyRequest): {
     traceId: string
     requestId: string
 } {
-    const traceId = (request.headers['x-trace-id'] as string) || randomUUID()
-    const requestId = (request.headers['x-request-id'] as string) || request.id || randomUUID()
+    // trace_id должен быть уникален для каждого запроса от фронтенда
+    // извлекаем из заголовков (нормализуем, убирая дефисы) или генерируем новый
+    const traceId = normalizeUUID(request.headers['x-trace-id'] as string) || generateUUID()
+    // request_id должен быть уникален для каждого запроса в каждом сервисе
+    // всегда генерируем новый для auth-proxy
+    const requestId = generateUUID()
     return { traceId, requestId }
+}
+
+/**
+ * Генерирует новый request_id для исходящего запроса к другому сервису
+ * trace_id передается без изменений
+ */
+function getOutgoingRequestHeaders(traceId: string): {
+    'X-Trace-Id': string
+    'X-Request-Id': string
+} {
+    return {
+        'X-Trace-Id': traceId,
+        'X-Request-Id': generateUUID(), // новый request_id для каждого исходящего запроса
+    }
 }
 
 async function buildServer(config: Config) {
@@ -197,23 +230,40 @@ async function buildServer(config: Config) {
 
     // Hook для логирования ответов
     app.addHook('onResponse', async (request, reply) => {
-        request.log.info({
+        const logData: Record<string, unknown> = {
             method: request.method,
             url: request.url,
             statusCode: reply.statusCode,
-        }, 'Request completed')
+        }
+
+        // Логируем ошибки с дополнительной информацией
+        if (reply.statusCode >= 400) {
+            logData.error = 'Request failed'
+        }
+
+        request.log.info(logData, 'Request completed')
+    })
+
+    // Hook для логирования ошибок прокси
+    app.addHook('onError', async (request, reply, error) => {
+        request.log.error({
+            method: request.method,
+            url: request.url,
+            error: error.message,
+            stack: error.stack,
+        }, 'Proxy error')
     })
 
     // Auth routes (login/refresh/logout/me) — устанавливают куки
     app.post('/auth/login', async (request, reply) => {
-        const { traceId, requestId } = getTraceContext(request)
+        const { traceId } = getTraceContext(request)
+        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
         const res = await fetch(`${config.authUrl}/auth/login`, {
             method: 'POST',
             headers: {
                 'content-type': 'application/json',
-                'X-Trace-Id': traceId,
-                'X-Request-Id': requestId,
+                ...outgoingHeaders,
             },
             body: JSON.stringify(request.body ?? {}),
         })
@@ -247,14 +297,14 @@ async function buildServer(config: Config) {
             return { error: 'Refresh token not provided' }
         }
 
-        const { traceId, requestId } = getTraceContext(request)
+        const { traceId } = getTraceContext(request)
+        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
         const res = await fetch(`${config.authUrl}/auth/refresh`, {
             method: 'POST',
             headers: {
                 'content-type': 'application/json',
-                'X-Trace-Id': traceId,
-                'X-Request-Id': requestId,
+                ...outgoingHeaders,
             },
             body: JSON.stringify({ refresh_token: refreshToken }),
         })
@@ -278,6 +328,7 @@ async function buildServer(config: Config) {
 
     app.post('/auth/logout', async (request, reply) => {
         const { traceId, requestId } = getTraceContext(request)
+        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
         // Best-effort revoke
         try {
@@ -285,8 +336,7 @@ async function buildServer(config: Config) {
                 method: 'POST',
                 headers: {
                     'content-type': 'application/json',
-                    'X-Trace-Id': traceId,
-                    'X-Request-Id': requestId,
+                    ...outgoingHeaders,
                 },
                 body: JSON.stringify({}),
             })
@@ -308,13 +358,13 @@ async function buildServer(config: Config) {
             return { error: 'Unauthorized' }
         }
 
-        const { traceId, requestId } = getTraceContext(request)
+        const { traceId } = getTraceContext(request)
+        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
         const res = await fetch(`${config.authUrl}/auth/me`, {
             headers: {
                 authorization: `Bearer ${access}`,
-                'X-Trace-Id': traceId,
-                'X-Request-Id': requestId,
+                ...outgoingHeaders,
             },
         })
 
@@ -329,6 +379,103 @@ async function buildServer(config: Config) {
         return res.json().catch(() => ({}))
     })
 
+    /**
+     * Декодирует JWT токен и извлекает user_id
+     */
+    function decodeJWT(token: string): { user_id?: string } | null {
+        try {
+            // JWT состоит из трех частей: header.payload.signature
+            const parts = token.split('.')
+            if (parts.length !== 3) return null
+
+            // Декодируем payload (base64url)
+            const payload = parts[1]
+            const decoded = Buffer.from(payload, 'base64url').toString('utf-8')
+            const parsed = JSON.parse(decoded)
+
+            // JWT payload содержит sub (subject) с user_id
+            return { user_id: parsed.sub || parsed.user_id }
+        } catch (err) {
+            return null
+        }
+    }
+
+    /**
+     * Извлекает project_id из query параметров
+     * Примечание: body недоступен в rewriteRequestHeaders, поэтому используем только query
+     */
+    function extractProjectId(req: FastifyRequest): string | null {
+        // Пытаемся получить из query параметров
+        const query = req.query as Record<string, string | string[]> | undefined
+        if (query?.project_id) {
+            const projectId = Array.isArray(query.project_id)
+                ? query.project_id[0]
+                : query.project_id
+            return projectId
+        }
+
+        return null
+    }
+
+    // Hook для извлечения project_id из body для POST/PUT/PATCH запросов
+    app.addHook('preHandler', async (request, reply) => {
+        // Для запросов к /api/* пытаемся извлечь project_id из body
+        if (request.url.startsWith('/api/') && request.body) {
+            const body = request.body as Record<string, unknown> | undefined
+            if (body?.project_id && typeof body.project_id === 'string') {
+                // Сохраняем project_id в request для использования в rewriteRequestHeaders
+                ; (request as any).bodyProjectId = body.project_id
+            }
+        }
+    })
+
+    // Projects proxy - forward /projects/* to Auth Service
+    await app.register(httpProxy, {
+        prefix: '/projects',
+        upstream: config.authUrl,
+        rewritePrefix: '/projects',
+        http2: false,
+        replyOptions: {
+            rewriteRequestHeaders: (req, headers) => {
+                const cookies = parseCookies(req.headers.cookie as string | undefined)
+                const access = cookies[config.accessCookieName]
+                // trace_id передается от фронтенда, извлекаем из заголовков (нормализуем) или генерируем новый
+                const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                // Генерируем новый request_id для каждого исходящего запроса
+                const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+                // Создаем новый объект заголовков, фильтруя массивы
+                const newHeaders: Record<string, string> = {}
+
+                // Копируем существующие заголовки (только строковые значения)
+                for (const [key, value] of Object.entries(headers)) {
+                    if (typeof value === 'string') {
+                        newHeaders[key] = value
+                    } else if (Array.isArray(value) && value.length > 0) {
+                        // Берем первое значение из массива
+                        newHeaders[key] = String(value[0])
+                    }
+                }
+
+                // Убеждаемся, что Content-Type установлен для POST/PUT/PATCH запросов
+                if (!newHeaders['content-type'] && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+                    newHeaders['content-type'] = 'application/json'
+                }
+
+                // Добавляем обязательные заголовки (trace_id передается, request_id генерируется новый)
+                newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+
+                // Добавляем Authorization если есть токен
+                if (access) {
+                    newHeaders['authorization'] = `Bearer ${access}`
+                }
+
+                return newHeaders
+            },
+        },
+    })
+
     // Experiment service proxy (+future gateway), with WS/SSE
     await app.register(httpProxy, {
         prefix: '/api',
@@ -340,15 +487,59 @@ async function buildServer(config: Config) {
             rewriteRequestHeaders: (req, headers) => {
                 const cookies = parseCookies(req.headers.cookie as string | undefined)
                 const access = cookies[config.accessCookieName]
-                const traceId = (req.headers['x-trace-id'] as string) || randomUUID()
-                const requestId = (req.headers['x-request-id'] as string) || req.id || randomUUID()
+                // trace_id передается от фронтенда, извлекаем из заголовков (нормализуем) или генерируем новый
+                const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                // Генерируем новый request_id для каждого исходящего запроса
+                const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
-                return {
-                    ...headers,
-                    'X-Trace-Id': traceId,
-                    'X-Request-Id': requestId,
-                    ...(access ? { authorization: `Bearer ${access}` } : {}),
+                // Создаем новый объект заголовков, фильтруя массивы
+                const newHeaders: Record<string, string> = {}
+
+                // Копируем существующие заголовки (только строковые значения)
+                for (const [key, value] of Object.entries(headers)) {
+                    if (typeof value === 'string') {
+                        newHeaders[key] = value
+                    } else if (Array.isArray(value) && value.length > 0) {
+                        // Берем первое значение из массива
+                        newHeaders[key] = String(value[0])
+                    }
                 }
+
+                // Добавляем обязательные заголовки (trace_id передается, request_id генерируется новый)
+                newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+
+                // Добавляем Authorization если есть токен
+                if (access) {
+                    newHeaders['authorization'] = `Bearer ${access}`
+
+                    // Декодируем JWT для получения user_id
+                    const decoded = decodeJWT(access)
+                    if (decoded?.user_id) {
+                        newHeaders['X-User-Id'] = decoded.user_id
+                    }
+                }
+
+                // Извлекаем project_id из запроса (query параметры или body)
+                let projectId = extractProjectId(req as FastifyRequest)
+
+                // Если не нашли в query, пытаемся извлечь из body (для POST/PUT/PATCH)
+                if (!projectId) {
+                    const bodyProjectId = (req as any).bodyProjectId
+                    if (bodyProjectId && typeof bodyProjectId === 'string') {
+                        projectId = bodyProjectId
+                    }
+                }
+
+                // Добавляем project_id в заголовки только если он найден
+                // Если не найден, Experiment Service будет требовать его в query/body
+                if (projectId) {
+                    newHeaders['X-Project-Id'] = projectId
+                    // По умолчанию роль owner, можно будет улучшить позже
+                    newHeaders['X-Project-Role'] = 'owner'
+                }
+
+                return newHeaders
             },
         },
     })
