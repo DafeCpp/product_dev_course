@@ -6,10 +6,11 @@ from pathlib import Path
 from aiohttp import web
 from aiohttp_cors import setup as cors_setup, ResourceOptions
 
+from backend_common.logging_config import configure_logging
+from backend_common.middleware.trace import create_trace_middleware
+
 from experiment_service.api.router import setup_routes
 from experiment_service.db.pool import close_pool, init_pool
-from experiment_service.logging_config import configure_logging
-from experiment_service.middleware.trace import trace_middleware
 from experiment_service.settings import settings
 
 # Configure structured logging
@@ -31,6 +32,7 @@ def create_app() -> web.Application:
     app = web.Application()
 
     # Add trace middleware first (before other middleware)
+    trace_middleware = create_trace_middleware(settings.app_name)
     app.middlewares.append(trace_middleware)
 
     # Configure CORS first, before adding routes

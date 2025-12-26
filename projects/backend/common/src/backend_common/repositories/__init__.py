@@ -1,0 +1,2 @@
+"""Common repository base classes."""
+

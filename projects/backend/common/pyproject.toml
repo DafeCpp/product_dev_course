@@ -1,0 +1,35 @@
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "backend-common"
+version = "0.1.0"
+description = "Common code shared between backend services"
+authors = ["Product Dev Course"]
+readme = "README.md"
+packages = [
+    { include = "backend_common", from = "src" }
+]
+
+[tool.poetry.dependencies]
+python = "^3.14"
+aiohttp = "^3.10.5"
+asyncpg = "^0.31.0"
+pydantic-settings = "^2.4.0"
+structlog = "^24.2.0"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.5.0"
+mypy = "^1.10.0"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+

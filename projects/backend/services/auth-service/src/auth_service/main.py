@@ -9,11 +9,12 @@ import asyncpg
 from aiohttp import web
 from aiohttp_cors import setup as cors_setup, ResourceOptions
 
+from backend_common.logging_config import configure_logging
+from backend_common.middleware.trace import create_trace_middleware
+
 from auth_service.api.routes.auth import setup_routes as setup_auth_routes
 from auth_service.api.routes.projects import setup_routes as setup_project_routes
 from auth_service.db.pool import close_pool, init_pool
-from auth_service.logging_config import configure_logging
-from auth_service.middleware.trace import trace_middleware
 from auth_service.settings import settings
 
 # Configure structured logging
@@ -143,6 +144,7 @@ def create_app() -> web.Application:
     app = web.Application()
 
     # Add trace middleware first (before other middleware)
+    trace_middleware = create_trace_middleware(settings.app_name)
     app.middlewares.append(trace_middleware)
 
     # Configure CORS

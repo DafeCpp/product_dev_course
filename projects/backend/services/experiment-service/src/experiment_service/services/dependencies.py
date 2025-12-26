@@ -53,30 +53,38 @@ PROJECT_ROLE_HEADER = "X-Project-Role"
 class UserContext:
     user_id: UUID
     project_roles: dict[UUID, str]
-    active_project_id: UUID
+    active_project_id: UUID | None
 
 
 async def require_current_user(request: web.Request) -> UserContext:
     """Temporary auth hook: relies on debug headers provided by API gateway/tests."""
     user_header = request.headers.get(USER_ID_HEADER)
-    project_header = request.headers.get(PROJECT_ID_HEADER)
-    if user_header is None or project_header is None:
+    if user_header is None:
         raise web.HTTPUnauthorized(
-            reason=f"Headers {USER_ID_HEADER} and {PROJECT_ID_HEADER} are required"
+            reason=f"Header {USER_ID_HEADER} is required"
         )
     try:
         user_id = UUID(user_header)
     except ValueError as exc:
         raise web.HTTPBadRequest(text=f"Invalid {USER_ID_HEADER}") from exc
-    try:
-        project_id = UUID(project_header)
-    except ValueError as exc:
-        raise web.HTTPBadRequest(text=f"Invalid {PROJECT_ID_HEADER}") from exc
+
+    # project_id опционален - если не передан, будет использован из query/body или вернется ошибка
+    project_header = request.headers.get(PROJECT_ID_HEADER)
+    project_id: UUID | None = None
+    if project_header:
+        try:
+            project_id = UUID(project_header)
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text=f"Invalid {PROJECT_ID_HEADER}") from exc
+
     role = request.headers.get(PROJECT_ROLE_HEADER, "owner")
+
+    # Если project_id передан, используем его как active_project_id
+    # Если не передан, active_project_id будет None (будет установлен позже через resolve_project_id)
     return UserContext(
         user_id=user_id,
-        project_roles={project_id: role},
-        active_project_id=project_id,
+        project_roles={project_id: role} if project_id else {},
+        active_project_id=project_id,  # Может быть None
     )
 
 
@@ -100,6 +108,11 @@ def resolve_project_id(
     require_role: tuple[str, ...] | None = None,
 ) -> UUID:
     if project_id_str is None:
+        # Если project_id не передан, используем active_project_id из заголовков
+        if user.active_project_id is None:
+            raise web.HTTPBadRequest(
+                text="project_id is required. Provide it in query parameter, request body, or X-Project-Id header"
+            )
         ensure_project_access(user, user.active_project_id, require_role=require_role)
         return user.active_project_id
     try:

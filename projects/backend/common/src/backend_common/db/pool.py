@@ -5,28 +5,35 @@ import asyncpg  # type: ignore[import-untyped]
 
 from typing import Any, AsyncIterator
 
-from backend_common.db.pool import (
-    close_pool as _close_pool,
-    get_pool as _get_pool,
-    init_pool as _init_pool,
-)
 
-from experiment_service.settings import settings
+pool: asyncpg.Pool | None = None
 
 
-async def init_pool(_app: Any = None) -> None:
+async def init_pool(database_url: str, pool_size: int, _app: Any = None) -> None:
     """Initialize global asyncpg pool."""
-    await _init_pool(str(settings.database_url), settings.db_pool_size, _app)
+    global pool
+    if pool is None:
+        pool = await asyncpg.create_pool(
+            dsn=database_url,
+            max_size=pool_size,
+        )
 
 
 async def close_pool(_app: Any = None) -> None:
     """Close pool on shutdown."""
-    await _close_pool(_app)
+    global pool
+    if pool is not None:
+        await pool.close()
+        pool = None
 
 
 async def get_pool() -> asyncpg.Pool:
     """Return the initialized asyncpg pool, creating it if needed."""
-    return await _get_pool()
+    global pool
+    if pool is None:
+        raise RuntimeError("Database pool not initialized. Call init_pool() first.")
+    assert pool is not None  # for type checkers
+    return pool
 
 
 async def get_connection() -> AsyncIterator[asyncpg.Connection]:
