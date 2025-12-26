@@ -9,6 +9,11 @@ import type {
   RunCreate,
   RunUpdate,
   RunsListResponse,
+  Sensor,
+  SensorCreate,
+  SensorUpdate,
+  SensorsListResponse,
+  SensorTokenResponse,
 } from '../types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
@@ -126,6 +131,39 @@ export const runsApi = {
 
   fail: async (id: string, reason?: string): Promise<Run> => {
     const response = await apiClient.patch(`/api/v1/runs/${id}`, { status: 'failed', reason })
+    return response.data
+  },
+}
+
+// Sensors API
+export const sensorsApi = {
+  list: async (params?: {
+    project_id?: string
+    page?: number
+    page_size?: number
+  }): Promise<SensorsListResponse> => {
+    const response = await apiClient.get('/api/v1/sensors', { params })
+    return response.data
+  },
+
+  get: async (id: string, projectId?: string): Promise<Sensor> => {
+    const params = projectId ? { project_id: projectId } : {}
+    const response = await apiClient.get(`/api/v1/sensors/${id}`, { params })
+    return response.data
+  },
+
+  create: async (data: SensorCreate): Promise<SensorTokenResponse> => {
+    const response = await apiClient.post('/api/v1/sensors', data)
+    return response.data
+  },
+
+  update: async (id: string, data: SensorUpdate): Promise<Sensor> => {
+    const response = await apiClient.patch(`/api/v1/sensors/${id}`, data)
+    return response.data
+  },
+
+  rotateToken: async (id: string): Promise<SensorTokenResponse> => {
+    const response = await apiClient.post(`/api/v1/sensors/${id}/rotate-token`)
     return response.data
   },
 }

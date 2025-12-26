@@ -1,0 +1,81 @@
+.sensors-list {
+  padding: 20px 0;
+}
+
+.sensors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.sensor-card {
+  display: block;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.sensor-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.status-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.status-indicator {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-online {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-delayed {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status-offline {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.status-unknown {
+  background-color: #e2e3e5;
+  color: #383d41;
+}
+
+.sensor-info {
+  margin: 16px 0;
+}
+
+.info-row {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #495057;
+}
+
+.info-row strong {
+  color: #333;
+  margin-right: 8px;
+}
+
+.heartbeat-time {
+  color: #007bff;
+  font-weight: 500;
+}
+
+.sensor-meta {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #eee;
+  color: #999;
+}

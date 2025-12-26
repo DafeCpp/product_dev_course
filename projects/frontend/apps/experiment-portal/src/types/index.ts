@@ -76,3 +76,49 @@ export interface RunsListResponse {
   page_size: number
 }
 
+/** Типы для датчиков */
+export interface Sensor {
+  id: string
+  project_id: string
+  name: string
+  type: string
+  input_unit: string
+  display_unit: string
+  status: 'registering' | 'active' | 'inactive' | 'decommissioned'
+  token_preview?: string
+  last_heartbeat?: string
+  active_profile_id?: string
+  calibration_notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SensorCreate {
+  project_id: string
+  name: string
+  type: string
+  input_unit: string
+  display_unit: string
+}
+
+export interface SensorUpdate {
+  name?: string
+  type?: string
+  input_unit?: string
+  display_unit?: string
+  status?: string
+  calibration_notes?: string
+}
+
+export interface SensorsListResponse {
+  sensors: Sensor[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface SensorTokenResponse {
+  sensor: Sensor
+  token: string
+}
+

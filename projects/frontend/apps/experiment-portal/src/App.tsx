@@ -4,6 +4,7 @@ import ExperimentsList from './pages/ExperimentsList'
 import ExperimentDetail from './pages/ExperimentDetail'
 import CreateExperiment from './pages/CreateExperiment'
 import RunDetail from './pages/RunDetail'
+import SensorsList from './pages/SensorsList'
 import './App.css'
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
         <Route path="/experiments/new" element={<CreateExperiment />} />
         <Route path="/experiments/:id" element={<ExperimentDetail />} />
         <Route path="/runs/:id" element={<RunDetail />} />
+        <Route path="/sensors" element={<SensorsList />} />
       </Routes>
     </Layout>
   )
