@@ -2,17 +2,16 @@
 
 ## Запуск
 
-### Автоматически (Development режим)
-
-Стек логирования запускается автоматически при:
-```bash
-docker-compose up
-```
-
-### Вручную (если нужно запустить отдельно)
+Стек логирования находится в отдельном проекте `infrastructure/logging/`:
 
 ```bash
 make logs-stack-up
+```
+
+Или вручную:
+```bash
+cd infrastructure/logging
+docker-compose -f docker-compose.yml up -d
 ```
 
 ## Доступ

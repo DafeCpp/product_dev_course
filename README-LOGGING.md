@@ -4,19 +4,9 @@
 
 ## Быстрый старт
 
-### Автоматический запуск (Development режим)
+### Запуск стека логирования
 
-Стек логирования **автоматически запускается** при `docker-compose up` в development режиме (когда используется `docker-compose.override.yml`):
-
-```bash
-docker-compose up
-```
-
-Grafana будет доступна на http://localhost:3001 сразу после запуска.
-
-### Ручной запуск (Production или отдельно)
-
-Если нужно запустить стек логирования отдельно:
+Стек логирования находится в отдельном проекте `infrastructure/logging/`:
 
 ```bash
 make logs-stack-up
@@ -24,8 +14,11 @@ make logs-stack-up
 
 Или вручную:
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.logging.yml up -d
+cd infrastructure/logging
+docker-compose -f docker-compose.yml up -d
 ```
+
+Grafana будет доступна на http://localhost:3001 после запуска.
 
 ### 2. Доступ к Grafana
 
@@ -95,12 +88,12 @@ curl "http://localhost:3100/loki/api/v1/labels"
 ### Loki
 - Хранилище логов
 - API: http://localhost:3100
-- Конфигурация: `loki-config.yml`
+- Конфигурация: `infrastructure/logging/loki-config.yml`
 
 ### Promtail
 - Сборщик логов из Docker контейнеров
 - Автоматически обнаруживает контейнеры через Docker socket
-- Конфигурация: `promtail-config.yml`
+- Конфигурация: `infrastructure/logging/promtail-config.yml`
 
 ### Grafana
 - Веб-интерфейс для визуализации
@@ -120,7 +113,7 @@ make logs-stack-down
 make logs-stack-restart
 
 # Просмотр статуса
-docker-compose -f docker-compose.yml -f docker-compose.logging.yml ps
+cd infrastructure/logging && docker-compose -f docker-compose.yml ps
 ```
 
 ## Настройка
@@ -146,7 +139,7 @@ GRAFANA_ANONYMOUS_ENABLED=false
 
 По умолчанию Promtail собирает логи только контейнеров проекта `product_dev_course`.
 
-Чтобы собирать логи всех контейнеров, удалите или закомментируйте строки 33-35 в `promtail-config.yml`:
+Чтобы собирать логи всех контейнеров, удалите или закомментируйте строки 33-35 в `infrastructure/logging/promtail-config.yml`:
 
 ```yaml
 # - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
@@ -162,7 +155,7 @@ GRAFANA_ANONYMOUS_ENABLED=false
 
 Для очистки данных:
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.logging.yml down -v
+cd infrastructure/logging && docker-compose -f docker-compose.yml down -v
 ```
 
 ## Troubleshooting
@@ -171,12 +164,12 @@ docker-compose -f docker-compose.yml -f docker-compose.logging.yml down -v
 
 1. Проверьте, что Promtail запущен:
    ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.logging.yml ps promtail
+   cd infrastructure/logging && docker-compose -f docker-compose.yml ps promtail
    ```
 
 2. Проверьте логи Promtail:
    ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.logging.yml logs promtail
+   cd infrastructure/logging && docker-compose -f docker-compose.yml logs promtail
    ```
 
 3. Проверьте, что Loki доступен:
@@ -188,12 +181,12 @@ docker-compose -f docker-compose.yml -f docker-compose.logging.yml down -v
 
 1. Проверьте, что контейнер запущен:
    ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.logging.yml ps grafana
+   cd infrastructure/logging && docker-compose -f docker-compose.yml ps grafana
    ```
 
 2. Проверьте логи:
    ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.logging.yml logs grafana
+   cd infrastructure/logging && docker-compose -f docker-compose.yml logs grafana
    ```
 
 3. Убедитесь, что порт 3001 не занят:

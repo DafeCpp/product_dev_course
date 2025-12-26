@@ -103,6 +103,7 @@ services:
   # ============================================
   # Логирование (Grafana Loki + Promtail + Grafana)
   # Автоматически запускается в dev режиме
+  # Конфигурационные файлы находятся в infrastructure/logging/
   # ============================================
 
   # Loki - система хранения и агрегации логов
@@ -112,7 +113,7 @@ services:
     ports:
       - "${LOKI_PORT:-3100}:3100"
     volumes:
-      - ./loki-config.yml:/etc/loki/local-config.yaml:ro
+      - ./infrastructure/logging/loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     networks:
@@ -132,7 +133,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./infrastructure/logging/promtail-config.yml:/etc/promtail/config.yml:ro
     command: -config.file=/etc/promtail/config.yml
     depends_on:
       loki:
@@ -156,8 +157,8 @@ services:
       - GF_INSTALL_PLUGINS=
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./infrastructure/logging/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/logging/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       loki:
         condition: service_healthy
