@@ -269,7 +269,7 @@ describe('CreateExperiment', () => {
         const clickPromise = user.click(submitButton)
 
         await waitFor(() => {
-            const button = screen.getByRole('button', { name: /создание\.\.\./i })
+            const button = screen.getByRole('button', { name: /сохранение\.\.\./i })
             expect(button).toBeDisabled()
         })
 

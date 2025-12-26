@@ -141,9 +141,7 @@ function CreateExperiment() {
 
         <FormActions
           onCancel={() => navigate('/experiments')}
-          submitLabel={
-            createMutation.isPending ? 'Создание...' : 'Создать эксперимент'
-          }
+          submitLabel="Создать эксперимент"
           isSubmitting={createMutation.isPending}
         />
       </form>
