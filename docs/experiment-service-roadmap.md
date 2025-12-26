@@ -26,6 +26,7 @@
 - Доменные модели `Experiment`, `Run`, `CaptureSession`, базовые CRUD-ручки c привязкой к проектам.
 - Валидация состояний (`draft → running → finished/failed/archived`), idempotency для повторных запросов.
 - RBAC-хуки (owner/editor/viewer) и enforcing project-level scope на всех ручках.
+- **Многоуровневый доступ к проектам:** к проекту могут иметь доступ несколько пользователей с разными ролями (owner/editor/viewer). При запросе списка проектов пользователь получает все доступные ему проекты (где он является участником через таблицу `project_members`).
 - Миграции (Alembic) + сиды для тестовых данных.
 - OpenAPI v1, генерация client SDK (internal).
 
