@@ -4,11 +4,14 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SensorsList from './SensorsList'
-import { sensorsApi } from '../api/client'
+import { sensorsApi, projectsApi } from '../api/client'
 
-// Мокаем sensorsApi
+// Мокаем API
 vi.mock('../api/client', () => ({
     sensorsApi: {
+        list: vi.fn(),
+    },
+    projectsApi: {
         list: vi.fn(),
     },
 }))
@@ -43,12 +46,26 @@ const mockSensor = {
     updated_at: '2024-01-01T00:00:00Z',
 }
 
+const mockProject = {
+    id: 'project-1',
+    name: 'Test Project',
+    description: '',
+    owner_id: 'user-1',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+}
+
 describe('SensorsList', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        // Мокаем projectsApi.list по умолчанию
+        const mockProjectsApi = vi.mocked(projectsApi)
+        mockProjectsApi.list.mockResolvedValue({
+            projects: [mockProject],
+        })
     })
 
-    it('renders loading state', () => {
+    it('renders loading state', async () => {
         const mockList = vi.mocked(sensorsApi.list)
         mockList.mockImplementation(
             () =>
@@ -59,7 +76,10 @@ describe('SensorsList', () => {
 
         render(<SensorsList />, { wrapper: createWrapper() })
 
-        expect(screen.getByText(/загрузка/i)).toBeInTheDocument()
+        // Ждем, пока проекты загрузятся и будет выбран первый проект
+        await waitFor(() => {
+            expect(screen.getByText(/загрузка/i)).toBeInTheDocument()
+        })
     })
 
     it('renders error state', async () => {
@@ -70,7 +90,7 @@ describe('SensorsList', () => {
 
         await waitFor(() => {
             expect(screen.getByText(/ошибка загрузки датчиков/i)).toBeInTheDocument()
-        })
+        }, { timeout: 3000 })
     })
 
     it('renders sensors list', async () => {
@@ -100,6 +120,21 @@ describe('SensorsList', () => {
     it('filters by project_id', async () => {
         const user = userEvent.setup()
         const mockList = vi.mocked(sensorsApi.list)
+        const mockProjectsApi = vi.mocked(projectsApi)
+
+        // Мокаем несколько проектов
+        const project2 = {
+            id: 'project-2',
+            name: 'Project 2',
+            description: '',
+            owner_id: 'user-1',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+        }
+        mockProjectsApi.list.mockResolvedValue({
+            projects: [mockProject, project2],
+        })
+
         mockList.mockResolvedValue({
             sensors: [],
             total: 0,
@@ -109,31 +144,25 @@ describe('SensorsList', () => {
 
         render(<SensorsList />, { wrapper: createWrapper() })
 
+        // Ждем, пока проекты загрузятся и будет выбран первый проект
         await waitFor(() => {
             expect(mockList).toHaveBeenCalled()
         })
 
         // Ждем, пока форма загрузится
         await waitFor(() => {
-            expect(screen.getByPlaceholderText(/uuid проекта/i)).toBeInTheDocument()
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
         })
 
-        const projectInput = screen.getByPlaceholderText(/uuid проекта/i)
-        await user.clear(projectInput)
-        projectInput.focus()
-        await user.paste('project-123')
+        const projectSelect = screen.getByLabelText(/проект/i)
+        await user.selectOptions(projectSelect, 'project-2')
 
-        // Ждем, пока будет вызов с полным текстом 'project-123'
+        // Ждем, пока будет вызов с project-2
         await waitFor(() => {
             const calls = mockList.mock.calls
-            expect(calls.length).toBeGreaterThan(0)
-            // Ищем вызов с полным текстом 'project-123'
-            const callWithFullText = calls.find(
-                (call) => call[0]?.project_id === 'project-123'
-            )
-            expect(callWithFullText).toBeDefined()
-            expect(callWithFullText![0]).toMatchObject({
-                project_id: 'project-123',
+            const lastCall = calls[calls.length - 1]
+            expect(lastCall[0]).toMatchObject({
+                project_id: 'project-2',
             })
         }, { timeout: 3000 })
     })
@@ -150,6 +179,7 @@ describe('SensorsList', () => {
 
         render(<SensorsList />, { wrapper: createWrapper() })
 
+        // Ждем, пока проекты загрузятся и будет выбран первый проект
         await waitFor(() => {
             expect(mockList).toHaveBeenCalled()
         })

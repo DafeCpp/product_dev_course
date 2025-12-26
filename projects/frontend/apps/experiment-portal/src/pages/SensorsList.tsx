@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { sensorsApi } from '../api/client'
+import { sensorsApi, projectsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { Sensor } from '../types'
 import {
@@ -14,6 +14,7 @@ import {
     PageHeader,
     sensorStatusMap,
 } from '../components/common'
+import SensorDetailModal from '../components/SensorDetailModal'
 import './SensorsList.css'
 
 function SensorsList() {
@@ -22,6 +23,20 @@ function SensorsList() {
     const [status, setStatus] = useState<string>('')
     const [page, setPage] = useState(1)
     const pageSize = 20
+    const [selectedSensorId, setSelectedSensorId] = useState<string | null>(null)
+
+    // Загружаем список проектов для автоматического выбора первого проекта
+    const { data: projectsData } = useQuery({
+        queryKey: ['projects'],
+        queryFn: () => projectsApi.list(),
+    })
+
+    // Автоматически выбираем первый проект, если project_id не указан
+    useEffect(() => {
+        if (!projectId && projectsData?.projects && projectsData.projects.length > 0) {
+            setProjectId(projectsData.projects[0].id)
+        }
+    }, [projectId, projectsData])
 
     const { data, isLoading, error } = useQuery({
         queryKey: ['sensors', projectId, status, page],
@@ -32,6 +47,7 @@ function SensorsList() {
                 page,
                 page_size: pageSize,
             }),
+        enabled: !!projectId, // Запрос выполняется только если project_id выбран
     })
 
     const formatLastHeartbeat = (heartbeat?: string | null) => {
@@ -50,9 +66,21 @@ function SensorsList() {
     return (
         <div className="sensors-list">
             {isLoading && <Loading />}
-            {error && <Error message="Ошибка загрузки датчиков" />}
+            {error && (
+                <Error
+                    message={
+                        error instanceof Error
+                            ? error.message
+                            : 'Ошибка загрузки датчиков. Убедитесь, что выбран проект.'
+                    }
+                />
+            )}
 
-            {!isLoading && !error && (
+            {!projectId && projectsData?.projects && projectsData.projects.length === 0 && (
+                <EmptyState message="У вас нет проектов. Создайте проект, чтобы начать работу с датчиками." />
+            )}
+
+            {!isLoading && !error && projectId && (
                 <>
                     <PageHeader
                         title="Датчики"
@@ -66,17 +94,22 @@ function SensorsList() {
                     <div className="filters card">
                         <div className="filters-grid">
                             <div className="form-group">
-                                <label htmlFor="sensor_project_id">Project ID</label>
-                                <input
+                                <label htmlFor="sensor_project_id">Проект</label>
+                                <select
                                     id="sensor_project_id"
-                                    type="text"
-                                    placeholder="UUID проекта"
                                     value={projectId}
                                     onChange={(e) => {
                                         setProjectId(e.target.value)
                                         setPage(1)
                                     }}
-                                />
+                                >
+                                    <option value="">Выберите проект</option>
+                                    {projectsData?.projects.map((project) => (
+                                        <option key={project.id} value={project.id}>
+                                            {project.name}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="form-group">
                                 <label htmlFor="sensor_status">Статус</label>
@@ -102,10 +135,11 @@ function SensorsList() {
                         <>
                             <div className="sensors-grid">
                                 {data.sensors.map((sensor: Sensor) => (
-                                    <Link
+                                    <div
                                         key={sensor.id}
-                                        to={`/sensors/${sensor.id}`}
                                         className="sensor-card card"
+                                        onClick={() => setSelectedSensorId(sensor.id)}
+                                        style={{ cursor: 'pointer' }}
                                     >
                                         <div className="card-header">
                                             <h3 className="card-title">{sensor.name}</h3>
@@ -141,7 +175,7 @@ function SensorsList() {
                                                 {format(new Date(sensor.created_at), 'dd MMM yyyy HH:mm')}
                                             </small>
                                         </div>
-                                    </Link>
+                                    </div>
                                 ))}
                             </div>
 
@@ -172,6 +206,14 @@ function SensorsList() {
                     </button>,
                     document.body
                 )}
+
+            {selectedSensorId && (
+                <SensorDetailModal
+                    isOpen={!!selectedSensorId}
+                    onClose={() => setSelectedSensorId(null)}
+                    sensorId={selectedSensorId}
+                />
+            )}
         </div>
     )
 }
