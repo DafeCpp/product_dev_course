@@ -2,7 +2,7 @@
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
-.PHONY: dev dev-up dev-down dev-restart dev-logs dev-fix grafana-reset-password
+.PHONY: dev dev-up dev-down dev-restart dev-logs dev-fix dev-clean grafana-reset-password
 
 BACKEND_SERVICES_DIR := projects/backend/services
 FRONTEND_DIR := projects/frontend/apps/experiment-portal
@@ -289,6 +289,24 @@ dev-fix:
 
 # Алиас для запуска
 dev: dev-up
+
+# Очистка всех данных в dev (база данных, логи)
+# ⚠️  ВНИМАНИЕ: Эта команда удалит все данные из базы данных и все логи!
+dev-clean:
+	@echo "⚠️  ВНИМАНИЕ: Эта команда удалит все данные из базы данных и все логи!"
+	@echo "Остановка всех dev-сервисов..."
+	@docker-compose stop postgres auth-service experiment-service auth-proxy experiment-portal loki promtail grafana 2>/dev/null || true
+	@cd infrastructure/logging && docker-compose -f docker-compose.yml stop loki promtail grafana 2>/dev/null || true
+	@echo "Удаление контейнеров..."
+	@docker-compose rm -f postgres auth-service experiment-service auth-proxy experiment-portal loki promtail grafana 2>/dev/null || true
+	@cd infrastructure/logging && docker-compose -f docker-compose.yml rm -f loki promtail grafana 2>/dev/null || true
+	@echo "Удаление volumes (база данных и логи)..."
+	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-experiment-postgres-data} 2>/dev/null || true
+	@docker volume rm -f $${LOKI_DATA_VOLUME:-experiment-loki-data} 2>/dev/null || true
+	@docker volume rm -f $${GRAFANA_DATA_VOLUME:-experiment-grafana-data} 2>/dev/null || true
+	@echo "✅ Все данные очищены!"
+	@echo ""
+	@echo "💡 Для запуска сервисов заново выполните: make dev-up"
 
 # ============================================
 # Миграции базы данных
