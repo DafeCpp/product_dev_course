@@ -1,0 +1,19 @@
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "wifi_ap.cpp"
+        "http_server.cpp"
+        "websocket_server.cpp"
+        "uart_bridge.cpp"
+        "protocol.cpp"
+    INCLUDE_DIRS
+        "."
+    PRIV_REQUIRES
+        esp_wifi
+        esp_http_server
+        nvs_flash
+        driver
+        freertos
+        json
+)
+
