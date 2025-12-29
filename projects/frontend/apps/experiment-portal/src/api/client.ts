@@ -262,6 +262,20 @@ export const sensorsApi = {
     const response = await apiClient.post(`/api/v1/sensors/${id}/rotate-token`, {}, { params })
     return response.data
   },
+
+  // Multiple projects management
+  getProjects: async (id: string): Promise<{ project_ids: string[] }> => {
+    const response = await apiClient.get(`/api/v1/sensors/${id}/projects`)
+    return response.data
+  },
+
+  addProject: async (id: string, projectId: string): Promise<void> => {
+    await apiClient.post(`/api/v1/sensors/${id}/projects`, { project_id: projectId })
+  },
+
+  removeProject: async (id: string, projectId: string): Promise<void> => {
+    await apiClient.delete(`/api/v1/sensors/${id}/projects/${projectId}`)
+  },
 }
 
 // Capture Sessions API

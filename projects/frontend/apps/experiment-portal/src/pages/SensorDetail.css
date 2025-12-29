@@ -91,3 +91,197 @@
     line-height: 1.6;
     white-space: pre-wrap;
 }
+
+/* Секция управления проектами */
+.sensor-projects-section {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid #eee;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.section-header h3 {
+    margin: 0;
+    color: #333;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.projects-list {
+    margin-top: 16px;
+}
+
+.projects-list table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.projects-list th,
+.projects-list td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.projects-list th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #555;
+    font-size: 14px;
+}
+
+.projects-list tr:nth-child(even) {
+    background-color: #fcfcfc;
+}
+
+.projects-list tr:hover {
+    background-color: #f0f0f0;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.badge-primary {
+    background-color: #007bff;
+}
+
+.text-muted {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.btn-sm {
+    padding: 4px 12px;
+    font-size: 0.875rem;
+}
+
+/* Модальное окно для добавления проекта */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    max-width: 500px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 32px;
+    line-height: 1;
+    color: #666;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.modal-close:hover:not(:disabled) {
+    background-color: #f0f0f0;
+}
+
+.modal-close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.modal-form {
+    padding: 24px;
+}
+
+.modal-form .form-group {
+    margin-bottom: 20px;
+}
+
+.modal-form .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #333;
+}
+
+.modal-form .form-group select {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+}
+
+.modal-form .form-group select:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.modal-form .required {
+    color: #dc3545;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+.modal-form .error {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    font-size: 14px;
+}

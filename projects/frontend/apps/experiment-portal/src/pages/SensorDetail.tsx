@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { sensorsApi } from '../api/client'
+import { sensorsApi, projectsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { SensorTokenResponse } from '../types'
 import TestTelemetryModal from '../components/TestTelemetryModal'
@@ -21,11 +21,30 @@ function SensorDetail() {
     const [showToken, setShowToken] = useState(false)
     const [newToken, setNewToken] = useState<string | null>(null)
     const [showTestTelemetryModal, setShowTestTelemetryModal] = useState(false)
+    const [showAddProjectModal, setShowAddProjectModal] = useState(false)
+    const [selectedProjectId, setSelectedProjectId] = useState<string>('')
 
     const { data: sensor, isLoading, error } = useQuery({
         queryKey: ['sensor', id],
         queryFn: () => sensorsApi.get(id!),
         enabled: !!id,
+    })
+
+    // Получаем список проектов датчика
+    const {
+        data: sensorProjectsData,
+        isLoading: isLoadingProjects,
+        refetch: refetchProjects,
+    } = useQuery({
+        queryKey: ['sensor', id, 'projects'],
+        queryFn: () => sensorsApi.getProjects(id!),
+        enabled: !!id,
+    })
+
+    // Получаем список всех доступных проектов для добавления
+    const { data: allProjectsData } = useQuery({
+        queryKey: ['projects'],
+        queryFn: () => projectsApi.list(),
     })
 
     const deleteMutation = useMutation({
@@ -42,6 +61,23 @@ function SensorDetail() {
             setNewToken(response.token)
             setShowToken(true)
             queryClient.invalidateQueries({ queryKey: ['sensor', id] })
+        },
+    })
+
+    // Мутации для управления проектами
+    const addProjectMutation = useMutation({
+        mutationFn: (projectId: string) => sensorsApi.addProject(id!, projectId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
+            setShowAddProjectModal(false)
+            setSelectedProjectId('')
+        },
+    })
+
+    const removeProjectMutation = useMutation({
+        mutationFn: (projectId: string) => sensorsApi.removeProject(id!, projectId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
         },
     })
 
@@ -132,7 +168,7 @@ function SensorDetail() {
 
                 <div className="sensor-info">
                     <InfoRow label="ID" value={<span className="mono">{sensor.id}</span>} />
-                    <InfoRow label="Project ID" value={<span className="mono">{sensor.project_id}</span>} />
+                    <InfoRow label="Основной проект" value={<span className="mono">{sensor.project_id}</span>} />
                     <InfoRow label="Тип" value={sensor.type} />
                     <InfoRow label="Входная единица" value={sensor.input_unit} />
                     <InfoRow label="Единица отображения" value={sensor.display_unit} />
@@ -174,6 +210,174 @@ function SensorDetail() {
                         <p>{sensor.calibration_notes}</p>
                     </div>
                 )}
+
+                {/* Секция управления проектами */}
+                <div className="sensor-projects-section">
+                    <div className="section-header">
+                        <h3>Проекты датчика</h3>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setShowAddProjectModal(true)}
+                            disabled={addProjectMutation.isPending || removeProjectMutation.isPending}
+                        >
+                            Добавить проект
+                        </button>
+                    </div>
+
+                    {isLoadingProjects && <Loading />}
+
+                    {!isLoadingProjects && sensorProjectsData && (
+                        <>
+                            {sensorProjectsData.project_ids.length === 0 ? (
+                                <p className="text-muted">Датчик не привязан ни к одному проекту</p>
+                            ) : (
+                                <div className="projects-list">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>ID проекта</th>
+                                                <th>Название</th>
+                                                <th>Действия</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {sensorProjectsData.project_ids.map((projectId) => {
+                                                const project = allProjectsData?.projects.find(
+                                                    (p) => p.id === projectId
+                                                )
+                                                const isPrimary = projectId === sensor.project_id
+
+                                                return (
+                                                    <tr key={projectId}>
+                                                        <td>
+                                                            <span className="mono">{projectId}</span>
+                                                            {isPrimary && (
+                                                                <span className="badge badge-primary" style={{ marginLeft: '8px' }}>
+                                                                    Основной
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td>{project?.name || 'Неизвестный проект'}</td>
+                                                        <td>
+                                                            {!isPrimary && (
+                                                                <button
+                                                                    className="btn btn-danger btn-sm"
+                                                                    onClick={() => {
+                                                                        if (
+                                                                            confirm(
+                                                                                `Удалить датчик из проекта ${project?.name || projectId}?`
+                                                                            )
+                                                                        ) {
+                                                                            removeProjectMutation.mutate(projectId)
+                                                                        }
+                                                                    }}
+                                                                    disabled={removeProjectMutation.isPending}
+                                                                >
+                                                                    Удалить
+                                                                </button>
+                                                            )}
+                                                            {isPrimary && (
+                                                                <span className="text-muted">Нельзя удалить основной проект</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* Модальное окно для добавления проекта */}
+                    {showAddProjectModal && (
+                        <div className="modal-overlay" onClick={() => setShowAddProjectModal(false)}>
+                            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                                <div className="modal-header">
+                                    <h2>Добавить проект</h2>
+                                    <button
+                                        type="button"
+                                        className="modal-close"
+                                        onClick={() => {
+                                            setShowAddProjectModal(false)
+                                            setSelectedProjectId('')
+                                        }}
+                                        disabled={addProjectMutation.isPending}
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <div className="modal-form">
+                                    <div className="form-group">
+                                        <label htmlFor="add-project-select">
+                                            Проект <span className="required">*</span>
+                                        </label>
+                                        <select
+                                            id="add-project-select"
+                                            value={selectedProjectId}
+                                            onChange={(e) => setSelectedProjectId(e.target.value)}
+                                            disabled={addProjectMutation.isPending}
+                                        >
+                                            <option value="">Выберите проект</option>
+                                            {allProjectsData?.projects
+                                                .filter(
+                                                    (p) =>
+                                                        !sensorProjectsData?.project_ids.includes(p.id)
+                                                )
+                                                .map((project) => (
+                                                    <option key={project.id} value={project.id}>
+                                                        {project.name}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                    </div>
+                                    {allProjectsData?.projects.filter(
+                                        (p) => !sensorProjectsData?.project_ids.includes(p.id)
+                                    ).length === 0 && (
+                                            <p className="text-muted">
+                                                Все доступные проекты уже добавлены к датчику
+                                            </p>
+                                        )}
+                                    {addProjectMutation.isError && (
+                                        <div className="error">
+                                            {addProjectMutation.error &&
+                                                typeof addProjectMutation.error === 'object' &&
+                                                'message' in addProjectMutation.error
+                                                ? String(addProjectMutation.error.message)
+                                                : 'Ошибка при добавлении проекта'}
+                                        </div>
+                                    )}
+                                    <div className="modal-actions">
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            onClick={() => {
+                                                setShowAddProjectModal(false)
+                                                setSelectedProjectId('')
+                                            }}
+                                            disabled={addProjectMutation.isPending}
+                                        >
+                                            Отмена
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary"
+                                            onClick={() => {
+                                                if (selectedProjectId) {
+                                                    addProjectMutation.mutate(selectedProjectId)
+                                                }
+                                            }}
+                                            disabled={!selectedProjectId || addProjectMutation.isPending}
+                                        >
+                                            {addProjectMutation.isPending ? 'Добавление...' : 'Добавить'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {id && (
