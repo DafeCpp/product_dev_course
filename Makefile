@@ -281,8 +281,11 @@ dev-fix:
 	@docker ps -a --filter "name=experiment-portal" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=grafana" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=loki" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+	@docker ps -a --filter "name=backend-postgres" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@echo "Удаление контейнеров с префиксом проекта..."
 	docker-compose rm -f postgres auth-service experiment-service auth-proxy experiment-portal loki promtail grafana 2>/dev/null || true
+	@echo "Удаление volume PostgreSQL для пересоздания с правильным паролем..."
+	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
 	@echo "Очистка неиспользуемых образов..."
 	@docker image prune -f >/dev/null 2>&1 || true
 	@echo "✅ Очистка завершена. Запускаю сервисы заново..."
@@ -302,7 +305,7 @@ dev-clean:
 	@docker-compose rm -f postgres auth-service experiment-service auth-proxy experiment-portal loki promtail grafana 2>/dev/null || true
 	@cd infrastructure/logging && docker-compose -f docker-compose.yml rm -f loki promtail grafana 2>/dev/null || true
 	@echo "Удаление volumes (база данных и логи)..."
-	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-experiment-postgres-data} 2>/dev/null || true
+	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
 	@docker volume rm -f $${LOKI_DATA_VOLUME:-experiment-loki-data} 2>/dev/null || true
 	@docker volume rm -f $${GRAFANA_DATA_VOLUME:-experiment-grafana-data} 2>/dev/null || true
 	@echo "✅ Все данные очищены!"
@@ -316,8 +319,8 @@ dev-clean:
 # Применение миграций auth-service
 auth-migrate:
 	@echo "Применение миграций auth-service..."
-	@docker-compose exec -T auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/auth_db}" || \
-		docker-compose exec auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/auth_db}"
+	@docker-compose exec -T auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}" || \
+		docker-compose exec auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}"
 	@echo "✅ Миграции применены"
 
 # Создание базы данных auth_db (если не существует)

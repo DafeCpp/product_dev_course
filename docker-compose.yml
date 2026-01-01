@@ -15,11 +15,16 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: experiment-postgres
+    container_name: backend-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-experiment_db}
+      # Database-specific users
+      AUTH_DB_USER: ${AUTH_DB_USER:-auth_user}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_password}
+      EXPERIMENT_DB_USER: ${EXPERIMENT_DB_USER:-experiment_user}
+      EXPERIMENT_DB_PASSWORD: ${EXPERIMENT_DB_PASSWORD:-experiment_password}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
@@ -44,9 +49,9 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/auth_db}
+      # Использует AUTH_DATABASE_URL из .env, если задан, иначе дефолт для auth_db с отдельным пользователем
+      - DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}
       - ENV=${AUTH_SERVICE_ENV:-development}
-      - APP_NAME=${AUTH_SERVICE_APP_NAME:-auth-service}
       - HOST=${AUTH_SERVICE_HOST:-0.0.0.0}
       - PORT=${AUTH_SERVICE_PORT:-8001}
       - DB_POOL_SIZE=${AUTH_SERVICE_DB_POOL_SIZE:-20}
@@ -80,9 +85,9 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/experiment_db}
+      # Использует EXPERIMENT_DATABASE_URL из .env, если задан, иначе дефолт для experiment_db с отдельным пользователем
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}
       - ENV=${EXPERIMENT_SERVICE_ENV:-development}
-      - APP_NAME=${EXPERIMENT_SERVICE_APP_NAME:-experiment-service}
       - HOST=${EXPERIMENT_SERVICE_HOST:-0.0.0.0}
       - PORT=${EXPERIMENT_SERVICE_PORT:-8002}
       - DB_POOL_SIZE=${EXPERIMENT_SERVICE_DB_POOL_SIZE:-20}
@@ -173,7 +178,7 @@ services:
 # Named volumes для персистентности данных
 volumes:
   postgres_data:
-    name: ${POSTGRES_DATA_VOLUME:-experiment-postgres-data}
+    name: ${POSTGRES_DATA_VOLUME:-backend-postgres-data}
 
 # Docker network для взаимодействия сервисов
 networks:
