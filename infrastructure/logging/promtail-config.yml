@@ -55,41 +55,42 @@ scrape_configs:
         action: labeldrop
     pipeline_stages:
       # Парсим JSON логи Docker (обертка Docker)
-      # Формат: {"log":"{...}","stream":"stdout","time":"..."}
+      # Формат: {"log":"...","stream":"stdout","time":"..."}
       - json:
           expressions:
             docker_log: log
             stream: stream
-      # Извлекаем trace_id и request_id через regex из JSON строки
-      # Это более надежно работает с вложенными JSON строками
-      # Используем именованные группы Go regex синтаксиса
+      # Парсим TSKV формат из docker_log
+      # TSKV формат: timestamp=2024-01-01T12:00:00Z level=INFO logger=service event=message trace_id=123 request_id=456 path=/api/v1
+      # Извлекаем конкретные поля через regex с именованными группами
       - regex:
-          expression: '"trace_id"\s*:\s*"(?P<trace_id>[a-f0-9\-]+)"'
+          # Извлекаем level (значение без пробелов или в кавычках)
+          expression: '\blevel=(?P<level>[A-Za-z]+)'
           source: docker_log
       - regex:
-          expression: '"request_id"\s*:\s*"(?P<request_id>[a-f0-9\-]+)"'
+          # Извлекаем path (может быть в кавычках или без)
+          expression: '\bpath=(?P<path>"[^"]+"|[^\s]+)'
           source: docker_log
-      # Пытаемся также распарсить JSON для других полей (опционально)
-      - json:
-          expressions:
-            level: level
-            event: event
-            message: message
-            msg: msg
-            method: method
-            url: url
-            path: path
-            statusCode: statusCode
-            status_code: status_code
-            error: error
-            error_type: error_type
+      - regex:
+          # Извлекаем trace_id (UUID формат)
+          expression: '\btrace_id=(?P<trace_id>[a-f0-9\-]+)'
           source: docker_log
-      # Извлекаем сообщение лога для отображения (оставляем оригинальный JSON)
+      - regex:
+          # Извлекаем request_id (UUID формат)
+          expression: '\brequest_id=(?P<request_id>[a-f0-9\-]+)'
+          source: docker_log
+      # Удаляем кавычки из path, если они есть
+      - regex:
+          expression: '^"(?P<path>[^"]+)"$'
+          source: path
+      # Извлекаем сообщение лога для отображения (оставляем оригинальный TSKV)
       - output:
           source: docker_log
-      # Извлекаем trace_id и request_id как labels для фильтрации в Grafana
+      # Извлекаем поля как labels для фильтрации в Grafana
       # Labels создаются только если поля существуют и не пустые
       # Важно: эти labels опциональные, базовые labels (container, job, service) остаются
       - labels:
           trace_id:
           request_id:
+          level:
+          path:

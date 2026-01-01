@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import asyncpg
 from aiohttp import web
@@ -13,8 +14,13 @@ from backend_common.logging_config import configure_logging
 from backend_common.middleware.trace import create_trace_middleware
 
 from experiment_service.api.router import setup_routes
-from experiment_service.db.pool import close_pool, init_pool
+from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
 from experiment_service.settings import settings
+
+
+async def init_pool(_app: Any = None) -> None:
+    """Initialize pool with service settings."""
+    await init_pool_service(_app, settings)
 
 # Configure structured logging
 configure_logging()
@@ -199,7 +205,14 @@ def create_app() -> web.Application:
 
 
 def main() -> None:
-    web.run_app(create_app(), host=settings.host, port=settings.port)
+    # Disable aiohttp access log (we use structlog middleware instead)
+    # This prevents duplicate/unstructured logs
+    web.run_app(
+        create_app(),
+        host=settings.host,
+        port=settings.port,
+        access_log=None,  # Disable default access log
+    )
 
 
 if __name__ == "__main__":

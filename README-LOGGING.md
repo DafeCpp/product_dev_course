@@ -63,7 +63,12 @@ curl "http://localhost:3100/loki/api/v1/labels"
 {container=~"experiment-.*"}
 ```
 
-### Только ошибки
+### Только ошибки (используя label level)
+```
+{level="ERROR"}
+```
+
+Или старый способ (поиск по содержимому):
 ```
 {service=~".+"} |= "error" |= "ERROR" |= "Error" |= "exception"
 ```
@@ -75,12 +80,36 @@ curl "http://localhost:3100/loki/api/v1/labels"
 
 ### Логи PostgreSQL
 ```
-{container="experiment-postgres"}
+{container="backend-postgres"}
+```
+
+### Фильтрация по URL path
+```
+{path="/auth/login"}
+```
+
+Или с регулярным выражением:
+```
+{path=~"/api/.*"}
 ```
 
 ### Комбинация фильтров
 ```
-{service="experiment-service"} |= "error" | json | level="ERROR"
+{service="experiment-service", level="ERROR"}
+```
+
+Или с path:
+```
+{service="experiment-service", path="/api/users", level="ERROR"}
+```
+
+### Фильтрация по trace_id и request_id
+```
+{trace_id="550e8400-e29b-41d4-a716-446655440000"}
+```
+
+```
+{request_id="660e8400-e29b-41d4-a716-446655440001"}
 ```
 
 ## Компоненты стека
