@@ -1,7 +1,5 @@
-build/
-
 # ESP-IDF build artifacts
-/projects/rc_vehicle/firmware/esp32/build/
+build/
 *.bin
 *.elf
 *.map
@@ -47,4 +45,7 @@ Thumbs.db
 *.tmp
 *.bak
 *.orig
+
+# Cache
+.cache/
 

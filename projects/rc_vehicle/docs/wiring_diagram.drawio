@@ -1,0 +1,94 @@
+<mxfile host="app.diagrams.net" modified="2024-01-01T00:00:00.000Z" agent="5.0" version="21.0.0" etag="drawio" type="device">
+  <diagram name="RC Vehicle Wiring" id="rc-vehicle-wiring">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ESP32-S3 -->
+        <mxCell id="esp32" value="ESP32-S3 Zero mini&#xa;&#xa;GPIO17: TX&#xa;GPIO18: RX&#xa;5V: Power" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="100" y="400" width="150" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- RP2040 -->
+        <mxCell id="rp2040" value="Raspberry Pi Pico&#xa;(RP2040)&#xa;&#xa;GPIO0: UART TX&#xa;GPIO1: UART RX&#xa;GPIO2: PWM Throttle&#xa;GPIO3: PWM Steering&#xa;GPIO4: RC Throttle In&#xa;GPIO5: RC Steering In&#xa;GPIO6: I2C SDA&#xa;GPIO7: I2C SCL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="500" y="300" width="200" height="240" as="geometry" />
+        </mxCell>
+
+        <!-- UART Connection -->
+        <mxCell id="uart" value="UART&#xa;115200 baud" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;" edge="1" parent="1" source="esp32" target="rp2040">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- MPU-6050 -->
+        <mxCell id="mpu6050" value="MPU-6050&#xa;(IMU)&#xa;&#xa;SDA: GPIO6&#xa;SCL: GPIO7&#xa;VCC: 3.3V&#xa;GND: GND" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="800" y="400" width="150" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- I2C Connection -->
+        <mxCell id="i2c" value="I2C&#xa;400 kHz" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;" edge="1" parent="1" source="rp2040" target="mpu6050">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- RC Receiver -->
+        <mxCell id="rc_rx" value="RC Receiver&#xa;(Himoto 4CH)&#xa;&#xa;CH1: GPIO4&#xa;CH2: GPIO5&#xa;5V: Power" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="500" y="100" width="150" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- RC Connection -->
+        <mxCell id="rc_conn" value="PWM Input&#xa;(через делитель)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#b85450;" edge="1" parent="1" source="rc_rx" target="rp2040">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ESC -->
+        <mxCell id="esc" value="ESC&#xa;(Throttle)&#xa;&#xa;Signal: GPIO2&#xa;GND: GND" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="600" width="120" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Servo -->
+        <mxCell id="servo" value="Servo&#xa;(Steering)&#xa;&#xa;Signal: GPIO3&#xa;+5V: BEC&#xa;GND: GND" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="500" y="600" width="120" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- PWM Connections -->
+        <mxCell id="pwm_throttle" value="PWM&#xa;50 Hz" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9673a6;" edge="1" parent="1" source="rp2040" target="esc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pwm_steering" value="PWM&#xa;50 Hz" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9673a6;" edge="1" parent="1" source="rp2040" target="servo">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- BEC -->
+        <mxCell id="bec" value="BEC&#xa;5V Output&#xa;&#xa;→ ESP32-S3&#xa;→ RP2040&#xa;→ Servo&#xa;→ RC RX" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="100" y="600" width="120" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- Power Connections -->
+        <mxCell id="power_esp32" value="5V" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="bec" target="esp32">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="power_rp2040" value="5V" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="bec" target="rp2040">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="power_servo" value="5V" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="bec" target="servo">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- GND Note -->
+        <mxCell id="gnd_note" value="⚠️ Все компоненты подключены к общей земле (GND)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontColor=#d79b00;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="100" y="800" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Title -->
+        <mxCell id="title" value="RC Vehicle - Схема подключения" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="400" height="40" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+

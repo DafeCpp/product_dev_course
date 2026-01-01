@@ -19,6 +19,9 @@ CLI/агент для отправки телеметрии в Experiment Servic
 ## Документация
 - `docs/ts.md` — краткое ТЗ и критерии приёмки (MVP).
 - `docs/interfaces_protocols.md` — протоколы: WebSocket (ESP32↔браузер) и UART кадры (ESP32↔RP2040).
+- `docs/wiring_diagram.md` — **схема подключения компонентов** (ESP32, RP2040, IMU, ESC, Servo, RC приёмник).
+- `docs/wiring_diagram.drawio` — визуальная схема для редактирования в draw.io.
+- `docs/ai_schematic_tools.md` — инструменты и AI для генерации схем.
 - `docs/glossary_ru.md` — глоссарий терминов и сокращений (ESC, BEC, PWM, IMU и т.д.).
 - `docs/cpp_coding_style.md` — стиль кода для прошивок (C++): Google Style Guide, расширения `.hpp`, правила форматирования.
 - `docs/firmware_timing.md` — тайминги и частоты для прошивок.
@@ -29,3 +32,28 @@ CLI/агент для отправки телеметрии в Experiment Servic
 - `firmware/esp32/` — прошивка ESP32‑S3 (AP + web UI + WS + UART мост) — *в разработке*
 - `docs/` — спецификации и схемы
   - `firmware_timing.md` — тайминги и частоты для прошивок
+
+## Сборка прошивок
+
+Для удобной сборки обеих прошивок используется Makefile в корне проекта:
+
+```bash
+# Показать все доступные команды
+make help
+
+# Собрать обе прошивки
+make all
+
+# Собрать только ESP32
+make esp32-build
+
+# Собрать только RP2040
+make rp2040-build
+
+# Очистить все проекты
+make clean
+```
+
+Подробные инструкции по сборке каждой прошивки:
+- ESP32: см. `firmware/esp32/README.md`
+- RP2040: см. `firmware/rp2040/README.md`
