@@ -118,10 +118,13 @@ rp2040-build: check-rp2040-toolchain
 	else \
 		cd $(RP2040_BUILD_DIR) && cmake .. && make; \
 	fi
-	@if [ -f $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2 ]; then \
+	@if [ -f $(RP2040_BUILD_DIR)/main/rc_vehicle_rp2040.uf2 ]; then \
+		echo "$(GREEN)Сборка RP2040 завершена! Файл: $(RP2040_BUILD_DIR)/main/rc_vehicle_rp2040.uf2$(NC)"; \
+	elif [ -f $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2 ]; then \
 		echo "$(GREEN)Сборка RP2040 завершена! Файл: $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2$(NC)"; \
 	else \
 		echo "$(RED)Ошибка: файл .uf2 не найден после сборки$(NC)"; \
+		echo "$(YELLOW)Проверьте директорию: $(RP2040_BUILD_DIR)/main/$(NC)"; \
 		exit 1; \
 	fi
 
@@ -135,12 +138,21 @@ rp2040-flash:
 	@echo "1. Зажмите кнопку BOOTSEL на Raspberry Pi Pico"
 	@echo "2. Подключите Pico к компьютеру через USB"
 	@echo "3. Отпустите кнопку BOOTSEL"
-	@echo "4. Скопируйте файл $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2 на диск RPI-RP2"
+	@echo "4. Скопируйте файл .uf2 на диск RPI-RP2"
 	@echo ""
-	@if [ -f $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2 ]; then \
-		echo "$(GREEN)Файл прошивки найден: $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2$(NC)"; \
+	@UF2_FILE=""; \
+	if [ -f $(RP2040_BUILD_DIR)/main/rc_vehicle_rp2040.uf2 ]; then \
+		UF2_FILE="$(RP2040_BUILD_DIR)/main/rc_vehicle_rp2040.uf2"; \
+	elif [ -f $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2 ]; then \
+		UF2_FILE="$(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2"; \
+	fi; \
+	if [ -n "$$UF2_FILE" ]; then \
+		echo "$(GREEN)Файл прошивки найден: $$UF2_FILE$(NC)"; \
 		echo "$(YELLOW)Используйте команду для копирования (замените /dev/sdX на ваш диск):$(NC)"; \
-		echo "  sudo cp $(RP2040_BUILD_DIR)/rc_vehicle_rp2040.uf2 /media/\$$USER/RPI-RP2/"; \
+		echo "  sudo cp $$UF2_FILE /media/\$$USER/RPI-RP2/"; \
+		echo ""; \
+		echo "$(YELLOW)Или используйте автоматическое определение диска:$(NC)"; \
+		echo "  sudo cp $$UF2_FILE /media/\$$USER/RPI-RP2/ 2>/dev/null || sudo cp $$UF2_FILE /run/media/\$$USER/RPI-RP2/"; \
 	else \
 		echo "$(RED)Ошибка: файл прошивки не найден. Выполните: make rp2040-build$(NC)"; \
 		exit 1; \

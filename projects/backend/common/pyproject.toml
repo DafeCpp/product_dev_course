@@ -19,6 +19,7 @@ aiohttp = "^3.10.5"
 asyncpg = "^0.31.0"
 pydantic-settings = "^2.4.0"
 structlog = "^24.2.0"
+pyyaml = "^6.0.3"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.5.0"

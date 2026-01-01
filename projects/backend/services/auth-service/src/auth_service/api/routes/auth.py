@@ -4,7 +4,7 @@ from __future__ import annotations
 from aiohttp import web
 
 from auth_service.core.exceptions import AuthError, handle_auth_error
-from auth_service.db.pool import get_pool
+from backend_common.db.pool import get_pool_service as get_pool
 from auth_service.domain.dto import (
     AuthTokensResponse,
     PasswordChangeRequest,
@@ -17,9 +17,9 @@ from auth_service.repositories.users import UserRepository
 from auth_service.services.auth import AuthService
 
 
-def get_auth_service(request: web.Request) -> AuthService:
+async def get_auth_service(request: web.Request) -> AuthService:
     """Get auth service from request."""
-    pool = get_pool()
+    pool = await get_pool()
     user_repo = UserRepository(pool)
     return AuthService(user_repo)
 
@@ -33,7 +33,7 @@ async def register(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        auth_service = get_auth_service(request)
+        auth_service = await get_auth_service(request)
         user, tokens = await auth_service.register(
             username=req.username,
             email=req.email,
@@ -68,7 +68,7 @@ async def login(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        auth_service = get_auth_service(request)
+        auth_service = await get_auth_service(request)
         user, tokens = await auth_service.login(
             username=req.username,
             password=req.password,
@@ -102,7 +102,7 @@ async def refresh(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        auth_service = get_auth_service(request)
+        auth_service = await get_auth_service(request)
         tokens = await auth_service.refresh_token(req.refresh_token)
         return web.json_response(tokens.model_dump(), status=200)
     except AuthError as e:
@@ -121,7 +121,7 @@ async def me(request: web.Request) -> web.Response:
     token = auth_header[7:]  # Remove "Bearer "
 
     try:
-        auth_service = get_auth_service(request)
+        auth_service = await get_auth_service(request)
         user = await auth_service.get_user_by_token(token)
         return web.json_response(
             UserResponse(
@@ -159,7 +159,7 @@ async def change_password(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        auth_service = get_auth_service(request)
+        auth_service = await get_auth_service(request)
         # Get user from token
         user = await auth_service.get_user_by_token(token)
         # Change password

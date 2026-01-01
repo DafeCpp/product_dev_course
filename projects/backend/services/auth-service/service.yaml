@@ -1,10 +1,10 @@
-name: experiment-service
-description: Experiment Tracking Service
+name: auth-service
+description: Authentication Service
 maintainers:
   - LostPointer
 
 ports:
-  - 8002:8002
+  - 8001:8001
 
 database:
   # PostgreSQL connection pool settings
@@ -12,4 +12,5 @@ database:
   pool_size: 20
   # Database URL is typically set via environment variable DATABASE_URL
   # but can be overridden here if needed
-  # url: postgresql://postgres:postgres@localhost:5432/experiment_db
+  # url: postgresql://postgres:postgres@localhost:5432/auth_db
+

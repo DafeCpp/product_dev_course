@@ -8,7 +8,7 @@ from uuid import UUID
 
 from aiohttp import web
 
-from experiment_service.db.pool import get_pool
+from backend_common.db.pool import get_pool_service as get_pool
 from experiment_service.repositories import (
     CaptureSessionRepository,
     ConversionProfileRepository,

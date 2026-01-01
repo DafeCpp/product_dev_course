@@ -6,7 +6,7 @@ from uuid import UUID
 from aiohttp import web
 
 from auth_service.core.exceptions import AuthError, ForbiddenError, NotFoundError, handle_auth_error
-from auth_service.db.pool import get_pool
+from backend_common.db.pool import get_pool_service as get_pool
 from auth_service.domain.dto import (
     ProjectCreateRequest,
     ProjectMemberAddRequest,
@@ -21,9 +21,9 @@ from auth_service.services.auth import AuthService
 from auth_service.services.projects import ProjectService
 
 
-def get_project_service(request: web.Request) -> ProjectService:
+async def get_project_service(request: web.Request) -> ProjectService:
     """Get project service from request."""
-    pool = get_pool()
+    pool = await get_pool()
     project_repo = ProjectRepository(pool)
     user_repo = UserRepository(pool)
     return ProjectService(project_repo, user_repo)
@@ -37,7 +37,7 @@ async def get_user_id_from_token(request: web.Request) -> UUID:
         raise InvalidCredentialsError("Unauthorized")
 
     token = auth_header[7:]  # Remove "Bearer "
-    pool = get_pool()
+    pool = await get_pool()
     user_repo = UserRepository(pool)
     auth_service = AuthService(user_repo)
     user = await auth_service.get_user_by_token(token)
@@ -58,7 +58,7 @@ async def create_project(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         project = await service.create_project(
             name=req.name,
             description=req.description,
@@ -95,7 +95,7 @@ async def get_project(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         project = await service.get_project(project_id, user_id)
         return web.json_response(
             ProjectResponse(
@@ -127,7 +127,7 @@ async def list_projects(request: web.Request) -> web.Response:
         return handle_auth_error(request, e)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         projects = await service.list_user_projects(user_id)
         return web.json_response(
             {
@@ -171,7 +171,7 @@ async def update_project(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         project = await service.update_project(
             project_id=project_id,
             user_id=user_id,
@@ -213,7 +213,7 @@ async def delete_project(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         await service.delete_project(project_id, user_id)
         return web.json_response({"ok": True}, status=200)
     except NotFoundError as e:
@@ -240,7 +240,7 @@ async def list_members(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         members = await service.list_members(project_id, user_id)
         return web.json_response(
             {
@@ -292,7 +292,7 @@ async def add_member(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid user ID"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         member = await service.add_member(project_id, user_id, new_user_id, req.role)
         return web.json_response(
             ProjectMemberResponse(
@@ -328,7 +328,7 @@ async def remove_member(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid ID"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         await service.remove_member(project_id, user_id, member_user_id)
         return web.json_response({"ok": True}, status=200)
     except NotFoundError as e:
@@ -362,7 +362,7 @@ async def update_member_role(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        service = get_project_service(request)
+        service = await get_project_service(request)
         member = await service.update_member_role(project_id, user_id, member_user_id, req.role)
         return web.json_response(
             ProjectMemberResponse(

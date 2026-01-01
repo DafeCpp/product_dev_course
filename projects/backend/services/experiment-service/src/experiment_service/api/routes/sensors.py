@@ -202,7 +202,7 @@ async def add_sensor_project(request: web.Request):
         # Just verify sensor exists by trying to get it
         # We use get_by_id which doesn't require project_id
         from experiment_service.repositories.sensors import SensorRepository
-        from experiment_service.db.pool import get_pool
+        from backend_common.db.pool import get_pool_service as get_pool
         pool = await get_pool()
         repo = SensorRepository(pool)
         await repo.get_by_id(sensor_id)
