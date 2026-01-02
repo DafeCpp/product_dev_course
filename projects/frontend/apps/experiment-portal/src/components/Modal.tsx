@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
 import './CreateRunModal.css'
 
 interface ModalProps {
@@ -14,6 +14,19 @@ function Modal({ isOpen, onClose, title, children, disabled = false, className =
     if (!isOpen) {
         return null
     }
+
+    useEffect(() => {
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape' && !disabled) {
+                onClose()
+            }
+        }
+
+        document.addEventListener('keydown', handleEscape)
+        return () => {
+            document.removeEventListener('keydown', handleEscape)
+        }
+    }, [disabled, onClose])
 
     const handleOverlayClick = () => {
         if (!disabled) {
