@@ -12,7 +12,10 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "cross-env VITE_CJS_IGNORE_WARNING=1 vitest run",
-    "test:watch": "cross-env VITE_CJS_IGNORE_WARNING=1 vitest"
+    "test:watch": "cross-env VITE_CJS_IGNORE_WARNING=1 vitest",
+    "cy:open": "cypress open",
+    "cy:run": "cypress run",
+    "e2e": "start-server-and-test \"vite --host 0.0.0.0 --port 3005 --strictPort\" http://localhost:3005 \"cypress run\""
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.12",
@@ -33,10 +36,12 @@
     "@typescript-eslint/parser": "^8.50.1",
     "@vitejs/plugin-react": "^5.1.2",
     "cross-env": "^10.1.0",
+    "cypress": "^13.17.0",
     "eslint": "^9.39.2",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.26",
     "jsdom": "^27.3.0",
+    "start-server-and-test": "^2.0.10",
     "typescript": "^5.9.3",
     "vite": "^7.3.0",
     "vitest": "^4.0.16"

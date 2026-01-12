@@ -223,6 +223,13 @@ describe('ExperimentsList', () => {
             page_size: 20,
         })
 
+        // Иногда из-за перерендеров/рефетчей React Query страница может на мгновение вернуться в loading —
+        // дождёмся, пока фильтры снова будут видимы, и только потом взаимодействуем с select.
+        await waitFor(() => {
+            expect(screen.queryByText('Загрузка...')).not.toBeInTheDocument()
+            expect(screen.getByText('Проект')).toBeInTheDocument()
+        }, { timeout: 5000 })
+
         const projectLabel = screen.getByText('Проект')
         const projectSelect = projectLabel.parentElement?.querySelector('select') as HTMLSelectElement
         expect(projectSelect).toBeInTheDocument()
