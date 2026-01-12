@@ -1,0 +1,11 @@
+name: telemetry-ingest-service
+description: Public telemetry ingest service
+maintainers:
+  - LostPointer
+
+ports:
+  - 8003:8003
+
+database:
+  pool_size: 20
+

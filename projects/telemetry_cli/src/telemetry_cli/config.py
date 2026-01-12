@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field, HttpUrl, SecretStr
 
 
 class ExperimentServiceConfig(BaseModel):
-    base_url: HttpUrl = Field(default="http://localhost:8002")
+    # MVP: telemetry is ingested via a dedicated service (default port 8003)
+    base_url: HttpUrl = Field(default="http://localhost:8003")
     sensor_token: SecretStr
     timeout_s: float = Field(default=10.0, ge=0.1)
 

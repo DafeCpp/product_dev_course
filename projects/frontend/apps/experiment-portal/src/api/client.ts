@@ -360,14 +360,14 @@ export const captureSessionsApi = {
 // Telemetry API
 export const telemetryApi = {
   ingest: async (data: TelemetryIngest, sensorToken: string): Promise<TelemetryIngestResponse> => {
-    // Для телеметрии используется прямой запрос к Experiment Service с токеном датчика
+    // Для телеметрии используется прямой запрос к Telemetry Ingest Service с токеном датчика
     // (не через Auth Proxy, так как это публичный endpoint)
-    const EXPERIMENT_SERVICE_URL = import.meta.env.VITE_EXPERIMENT_SERVICE_URL || 'http://localhost:8002'
+    const TELEMETRY_INGEST_URL = import.meta.env.VITE_TELEMETRY_INGEST_URL || 'http://localhost:8003'
     const requestId = generateRequestId()
     const traceId = getTraceId()
 
     const response = await axios.post(
-      `${EXPERIMENT_SERVICE_URL}/api/v1/telemetry`,
+      `${TELEMETRY_INGEST_URL}/api/v1/telemetry`,
       data,
       {
         headers: {

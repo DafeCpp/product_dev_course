@@ -74,7 +74,7 @@ poetry run python bin/demo_sensor.py \
 Внутри CLI:
 
 ```bash
-curl -X POST http://localhost:8002/api/v1/telemetry \
+curl -X POST http://localhost:8003/api/v1/telemetry \
   -H "Authorization: Bearer <sensor_token>" \
   -d '{
         "sensor_id":"...",
@@ -86,7 +86,7 @@ curl -X POST http://localhost:8002/api/v1/telemetry \
       }'
 ```
 
-Параллельно можно открыть `ws://localhost:8002/api/v1/telemetry/stream?sensor_id=...` (после реализации WebSocket/SSE) и показать лайв-график.
+Параллельно можно открыть `ws://localhost:8002/api/v1/telemetry/stream?sensor_id=...` (после реализации WebSocket/SSE в Experiment Service) и показать лайв-график.
 
 ## 5. Метрики и остановка сессии
 

@@ -10,7 +10,7 @@ def utc_now() -> datetime:
 
 
 def to_rfc3339_z(dt: datetime) -> str:
-    # Experiment Service expects "format: date-time". In tests they use "...Z".
+    # Ingest API expects "format: date-time". In tests they use "...Z".
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     dt = dt.astimezone(timezone.utc)
@@ -19,7 +19,7 @@ def to_rfc3339_z(dt: datetime) -> str:
 
 @dataclass(frozen=True, slots=True)
 class TelemetryReading:
-    """One time-series reading for Experiment Service ingest."""
+    """One time-series reading for Telemetry Ingest Service."""
 
     timestamp: datetime
     raw_value: float

@@ -1,0 +1,2 @@
+"""Telemetry Ingest Service package."""
+

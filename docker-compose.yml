@@ -110,6 +110,37 @@ services:
       retries: 3
       start_period: 40s
 
+  # Telemetry Ingest Service - public ingest API for devices
+  telemetry-ingest-service:
+    build:
+      context: ./projects/backend
+      dockerfile: services/telemetry-ingest-service/Dockerfile
+    container_name: telemetry-ingest-service
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}
+      - ENV=${TELEMETRY_INGEST_ENV:-development}
+      - HOST=${TELEMETRY_INGEST_HOST:-0.0.0.0}
+      - PORT=${TELEMETRY_INGEST_PORT:-8003}
+      - DB_POOL_SIZE=${TELEMETRY_INGEST_DB_POOL_SIZE:-20}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+    command: ["python", "-m", "telemetry_ingest_service.main"]
+    ports:
+      - "${TELEMETRY_INGEST_PORT:-8003}:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health').read()\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   # Auth Proxy - BFF для фронтенда
   auth-proxy:
     build:

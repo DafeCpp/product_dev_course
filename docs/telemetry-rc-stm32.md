@@ -1,6 +1,6 @@
 # Телеметрия для RC моделей (машинка/самолёт) и STM32: соглашения и формат
 
-Этот документ фиксирует рекомендации по тому, как отправлять телеметрию в текущую реализацию ingest в Experiment Service (`POST /api/v1/telemetry`).
+Этот документ фиксирует рекомендации по тому, как отправлять телеметрию в Telemetry Ingest Service (`POST /api/v1/telemetry`).
 
 ## Цели
 - **Поддержка STM32 + датчики**: частые измерения (IMU, GPS, напряжение, ток, температура, RPM).
@@ -38,7 +38,7 @@
 
 ## Пример запроса (REST)
 ```bash
-curl -X POST http://localhost:8002/api/v1/telemetry \
+curl -X POST http://localhost:8003/api/v1/telemetry \
   -H "Authorization: Bearer <sensor_token>" \
   -d '{
         "sensor_id":"<sensor_id>",

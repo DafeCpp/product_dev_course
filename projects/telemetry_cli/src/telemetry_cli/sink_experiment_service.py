@@ -40,14 +40,19 @@ class ExperimentServiceClient:
 
         payload: dict[str, Any] = {
             "sensor_id": str(sensor_id),
-            "readings": [r.as_ingest_dict() for r in readings],
+            "readings": [],
         }
+        for r in readings:
+            item = r.as_ingest_dict()
+            # Merge global meta into each reading's meta (API forbids top-level `meta`)
+            if meta:
+                item_meta = item.get("meta") or {}
+                item["meta"] = {**meta, **item_meta}
+            payload["readings"].append(item)
         if run_id is not None:
             payload["run_id"] = str(run_id)
         if capture_session_id is not None:
             payload["capture_session_id"] = str(capture_session_id)
-        if meta:
-            payload["meta"] = meta
 
         resp = await self._client.post(
             f"{self._base_url}/api/v1/telemetry",

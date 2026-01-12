@@ -1,5 +1,5 @@
 experiment_service:
-  base_url: "http://localhost:8002"
+  base_url: "http://localhost:8003"
   sensor_token: "PUT_SENSOR_TOKEN_HERE"
   timeout_s: 10
 
