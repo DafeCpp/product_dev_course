@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
+import { setActiveProjectId } from '../utils/activeProject'
 import Modal from './Modal'
 import './CreateRunModal.css'
 
@@ -109,9 +110,11 @@ function CreateExperimentModal({ isOpen, onClose }: CreateExperimentModalProps) 
                             <select
                                 id="experiment_project"
                                 value={formData.project_id}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, project_id: e.target.value })
-                                }
+                                onChange={(e) => {
+                                    const id = e.target.value
+                                    setFormData({ ...formData, project_id: id })
+                                    if (id) setActiveProjectId(id)
+                                }}
                                 required
                                 disabled={createMutation.isPending}
                             >

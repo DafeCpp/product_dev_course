@@ -1,5 +1,6 @@
 /** API клиент для взаимодействия с бэкендом через Auth Proxy */
 import axios from 'axios'
+import type { AxiosRequestConfig } from 'axios'
 import type {
   Experiment,
   ExperimentCreate,
@@ -31,6 +32,7 @@ import type {
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
+import { getActiveProjectId } from '../utils/activeProject'
 
 // API работает через Auth Proxy, который автоматически добавляет токен из куки
 const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL || 'http://localhost:8080'
@@ -43,6 +45,76 @@ const apiClient = axios.create({
   withCredentials: true, // Важно для работы с HttpOnly куками
   timeout: 30000, // 30 секунд таймаут
 })
+
+function _extractProjectIdFromData(data: unknown): string | undefined {
+  if (!data) return undefined
+  if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+    const projectId = (data as any).project_id
+    return typeof projectId === 'string' && projectId ? projectId : undefined
+  }
+  if (typeof data === 'string') {
+    // иногда axios/transform могут давать строку, пробуем распарсить JSON
+    try {
+      const parsed = JSON.parse(data)
+      const projectId = parsed?.project_id
+      return typeof projectId === 'string' && projectId ? projectId : undefined
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function _withProjectIdConfig(
+  url: string,
+  config: AxiosRequestConfig | undefined,
+  data?: unknown
+): AxiosRequestConfig | undefined {
+  // Проставляем project_id только для experiment-service API (через auth-proxy)
+  if (!url.startsWith('/api/')) return config
+
+  const existing = (config?.params as any)?.project_id
+  if (existing) return config
+
+  const projectId = _extractProjectIdFromData(data) || getActiveProjectId() || undefined
+  if (!projectId) return config
+
+  const next: AxiosRequestConfig = { ...(config || {}) }
+  next.params = { ...(next.params as any), project_id: projectId }
+  return next
+}
+
+async function apiGet<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  const cfg = _withProjectIdConfig(url, config)
+  const response = cfg ? await apiClient.get(url, cfg) : await apiClient.get(url)
+  return response.data
+}
+
+async function apiPost<T = any>(
+  url: string,
+  data?: any,
+  config?: AxiosRequestConfig
+): Promise<T> {
+  const cfg = _withProjectIdConfig(url, config, data)
+  const response = cfg ? await apiClient.post(url, data, cfg) : await apiClient.post(url, data)
+  return response.data
+}
+
+async function apiPatch<T = any>(
+  url: string,
+  data?: any,
+  config?: AxiosRequestConfig
+): Promise<T> {
+  const cfg = _withProjectIdConfig(url, config, data)
+  const response = cfg ? await apiClient.patch(url, data, cfg) : await apiClient.patch(url, data)
+  return response.data
+}
+
+async function apiDelete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  const cfg = _withProjectIdConfig(url, config)
+  const response = cfg ? await apiClient.delete(url, cfg) : await apiClient.delete(url)
+  return response.data
+}
 
 // Interceptor для добавления trace_id и request_id в заголовки
 apiClient.interceptors.request.use(
@@ -148,27 +220,23 @@ export const experimentsApi = {
     page?: number
     page_size?: number
   }): Promise<ExperimentsListResponse> => {
-    const response = await apiClient.get('/api/v1/experiments', { params })
-    return response.data
+    return await apiGet('/api/v1/experiments', { params })
   },
 
   get: async (id: string): Promise<Experiment> => {
-    const response = await apiClient.get(`/api/v1/experiments/${id}`)
-    return response.data
+    return await apiGet(`/api/v1/experiments/${id}`)
   },
 
   create: async (data: ExperimentCreate): Promise<Experiment> => {
-    const response = await apiClient.post('/api/v1/experiments', data)
-    return response.data
+    return await apiPost('/api/v1/experiments', data)
   },
 
   update: async (id: string, data: ExperimentUpdate): Promise<Experiment> => {
-    const response = await apiClient.patch(`/api/v1/experiments/${id}`, data)
-    return response.data
+    return await apiPatch(`/api/v1/experiments/${id}`, data)
   },
 
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/experiments/${id}`)
+    await apiDelete(`/api/v1/experiments/${id}`)
   },
 
   search: async (params: {
@@ -177,8 +245,7 @@ export const experimentsApi = {
     page?: number
     page_size?: number
   }): Promise<ExperimentsListResponse> => {
-    const response = await apiClient.get('/api/v1/experiments/search', { params })
-    return response.data
+    return await apiGet('/api/v1/experiments/search', { params })
   },
 }
 
@@ -192,38 +259,29 @@ export const runsApi = {
       page_size?: number
     }
   ): Promise<RunsListResponse> => {
-    const response = await apiClient.get(`/api/v1/experiments/${experimentId}/runs`, {
+    return await apiGet(`/api/v1/experiments/${experimentId}/runs`, {
       params,
     })
-    return response.data
   },
 
   get: async (id: string): Promise<Run> => {
-    const response = await apiClient.get(`/api/v1/runs/${id}`)
-    return response.data
+    return await apiGet(`/api/v1/runs/${id}`)
   },
 
   create: async (experimentId: string, data: RunCreate): Promise<Run> => {
-    const response = await apiClient.post(
-      `/api/v1/experiments/${experimentId}/runs`,
-      data
-    )
-    return response.data
+    return await apiPost(`/api/v1/experiments/${experimentId}/runs`, data)
   },
 
   update: async (id: string, data: RunUpdate): Promise<Run> => {
-    const response = await apiClient.patch(`/api/v1/runs/${id}`, data)
-    return response.data
+    return await apiPatch(`/api/v1/runs/${id}`, data)
   },
 
   complete: async (id: string): Promise<Run> => {
-    const response = await apiClient.patch(`/api/v1/runs/${id}`, { status: 'succeeded' })
-    return response.data
+    return await apiPatch(`/api/v1/runs/${id}`, { status: 'succeeded' })
   },
 
   fail: async (id: string, reason?: string): Promise<Run> => {
-    const response = await apiClient.patch(`/api/v1/runs/${id}`, { status: 'failed', reason })
-    return response.data
+    return await apiPatch(`/api/v1/runs/${id}`, { status: 'failed', reason })
   },
 }
 
@@ -235,32 +293,27 @@ export const sensorsApi = {
     page?: number
     page_size?: number
   }): Promise<SensorsListResponse> => {
-    const response = await apiClient.get('/api/v1/sensors', { params })
-    return response.data
+    return await apiGet('/api/v1/sensors', { params })
   },
 
   get: async (id: string, params?: { project_id?: string }): Promise<Sensor> => {
-    const response = await apiClient.get(`/api/v1/sensors/${id}`, { params })
-    return response.data
+    return await apiGet(`/api/v1/sensors/${id}`, { params })
   },
 
   create: async (data: SensorCreate): Promise<SensorRegisterResponse> => {
-    const response = await apiClient.post('/api/v1/sensors', data)
-    return response.data
+    return await apiPost('/api/v1/sensors', data)
   },
 
   update: async (id: string, data: SensorUpdate, params?: { project_id?: string }): Promise<Sensor> => {
-    const response = await apiClient.patch(`/api/v1/sensors/${id}`, data, { params })
-    return response.data
+    return await apiPatch(`/api/v1/sensors/${id}`, data, { params })
   },
 
   delete: async (id: string, params?: { project_id?: string }): Promise<void> => {
-    await apiClient.delete(`/api/v1/sensors/${id}`, { params })
+    await apiDelete(`/api/v1/sensors/${id}`, { params })
   },
 
   rotateToken: async (id: string, params?: { project_id?: string }): Promise<SensorTokenResponse> => {
-    const response = await apiClient.post(`/api/v1/sensors/${id}/rotate-token`, {}, { params })
-    return response.data
+    return await apiPost(`/api/v1/sensors/${id}/rotate-token`, {}, { params })
   },
 
   // Multiple projects management
@@ -270,11 +323,11 @@ export const sensorsApi = {
   },
 
   addProject: async (id: string, projectId: string): Promise<void> => {
-    await apiClient.post(`/api/v1/sensors/${id}/projects`, { project_id: projectId })
+    await apiPost(`/api/v1/sensors/${id}/projects`, { project_id: projectId })
   },
 
   removeProject: async (id: string, projectId: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/sensors/${id}/projects/${projectId}`)
+    await apiDelete(`/api/v1/sensors/${id}/projects/${projectId}`)
   },
 }
 
@@ -284,27 +337,23 @@ export const captureSessionsApi = {
     page?: number
     page_size?: number
   }): Promise<CaptureSessionsListResponse> => {
-    const response = await apiClient.get(`/api/v1/runs/${runId}/capture-sessions`, { params })
-    return response.data
+    return await apiGet(`/api/v1/runs/${runId}/capture-sessions`, { params })
   },
 
   get: async (runId: string, sessionId: string): Promise<CaptureSession> => {
-    const response = await apiClient.get(`/api/v1/runs/${runId}/capture-sessions/${sessionId}`)
-    return response.data
+    return await apiGet(`/api/v1/runs/${runId}/capture-sessions/${sessionId}`)
   },
 
   create: async (runId: string, data: CaptureSessionCreate, params?: { project_id?: string }): Promise<CaptureSession> => {
-    const response = await apiClient.post(`/api/v1/runs/${runId}/capture-sessions`, data, { params })
-    return response.data
+    return await apiPost(`/api/v1/runs/${runId}/capture-sessions`, data, { params })
   },
 
   stop: async (runId: string, sessionId: string): Promise<CaptureSession> => {
-    const response = await apiClient.post(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/stop`)
-    return response.data
+    return await apiPost(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/stop`)
   },
 
   delete: async (runId: string, sessionId: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/runs/${runId}/capture-sessions/${sessionId}`)
+    await apiDelete(`/api/v1/runs/${runId}/capture-sessions/${sessionId}`)
   },
 }
 

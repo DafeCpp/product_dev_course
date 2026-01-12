@@ -23,7 +23,7 @@ type Config = {
     logLevel: string
 }
 
-function parseConfig(): Config {
+export function parseConfig(): Config {
     const num = (value: string | undefined, fallback: number) => {
         const parsed = value ? Number(value) : NaN
         return Number.isFinite(parsed) ? parsed : fallback
@@ -66,7 +66,7 @@ type AuthTokens = {
     [key: string]: unknown
 }
 
-function parseCookies(header: string | undefined): Record<string, string> {
+export function parseCookies(header: string | undefined): Record<string, string> {
     if (!header) return {}
     return header
         .split(';')
@@ -82,7 +82,7 @@ function parseCookies(header: string | undefined): Record<string, string> {
         }, {})
 }
 
-function setAuthCookies(
+export function setAuthCookies(
     reply: FastifyReply,
     cfg: Config,
     tokens: AuthTokens,
@@ -111,7 +111,7 @@ function setAuthCookies(
     }
 }
 
-function clearAuthCookies(reply: FastifyReply, cfg: Config) {
+export function clearAuthCookies(reply: FastifyReply, cfg: Config) {
     reply.clearCookie(cfg.accessCookieName, { path: '/' })
     reply.clearCookie(cfg.refreshCookieName, { path: '/' })
 }
@@ -134,7 +134,7 @@ function normalizeUUID(uuid: string | undefined): string | undefined {
  * Извлекает trace_id из заголовков (или генерирует новый для запроса от фронтенда)
  * Генерирует новый request_id для каждого запроса в auth-proxy
  */
-function getTraceContext(request: FastifyRequest): {
+export function getTraceContext(request: FastifyRequest): {
     traceId: string
     requestId: string
 } {
@@ -151,7 +151,7 @@ function getTraceContext(request: FastifyRequest): {
  * Генерирует новый request_id для исходящего запроса к другому сервису
  * trace_id передается без изменений
  */
-function getOutgoingRequestHeaders(traceId: string): {
+export function getOutgoingRequestHeaders(traceId: string): {
     'X-Trace-Id': string
     'X-Request-Id': string
 } {
@@ -161,7 +161,7 @@ function getOutgoingRequestHeaders(traceId: string): {
     }
 }
 
-async function buildServer(config: Config) {
+export async function buildServer(config: Config) {
     const app = fastify({
         logger: {
             level: config.logLevel,
@@ -433,6 +433,41 @@ async function buildServer(config: Config) {
     }
 
     /**
+     * Извлекает project_id из request.body, учитывая что при использовании @fastify/http-proxy
+     * body часто приходит как Buffer (сырой payload), а не распарсенный JSON-объект.
+     */
+    function extractProjectIdFromBody(request: FastifyRequest): string | null {
+        const contentType = String(request.headers['content-type'] || '').toLowerCase()
+        const body: unknown = request.body
+
+        if (!body) return null
+
+        // Если body уже распарсили как объект (например, не через proxy или с кастомным парсером)
+        if (
+            typeof body === 'object' &&
+            !Buffer.isBuffer(body) &&
+            body !== null &&
+            !Array.isArray(body)
+        ) {
+            const projectId = (body as any).project_id
+            return typeof projectId === 'string' ? projectId : null
+        }
+
+        // В proxy-режиме body часто Buffer/string. Парсим JSON только если content-type JSON.
+        if (!contentType.includes('application/json')) return null
+
+        try {
+            const raw = Buffer.isBuffer(body) ? body.toString('utf-8') : String(body)
+            if (!raw) return null
+            const parsed = JSON.parse(raw) as any
+            const projectId = parsed?.project_id
+            return typeof projectId === 'string' ? projectId : null
+        } catch {
+            return null
+        }
+    }
+
+    /**
      * Проверяет членство пользователя в проекте через Auth Service
      * и возвращает роль пользователя в проекте
      */
@@ -486,13 +521,10 @@ async function buildServer(config: Config) {
             let projectId: string | null = null
 
             // Пытаемся получить project_id из body (для POST/PUT/PATCH)
-            if (request.body) {
-                const body = request.body as Record<string, unknown> | undefined
-                if (body?.project_id && typeof body.project_id === 'string') {
-                    projectId = body.project_id
-                        // Сохраняем project_id в request для использования в rewriteRequestHeaders
-                        ; (request as any).bodyProjectId = projectId
-                }
+            projectId = extractProjectIdFromBody(request)
+            if (projectId) {
+                // Сохраняем project_id в request для использования в rewriteRequestHeaders
+                ; (request as any).bodyProjectId = projectId
             }
 
             // Если не нашли в body, пытаемся получить из query параметров
@@ -730,4 +762,7 @@ async function start() {
     }
 }
 
-start()
+// Важно: не запускаем сервер при импорте модуля (нужно для Jest-тестов)
+if (require.main === module) {
+    void start()
+}

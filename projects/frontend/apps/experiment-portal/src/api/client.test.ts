@@ -160,7 +160,8 @@ describe('API Client', () => {
 
                 expect(mockAxiosInstance.post).toHaveBeenCalledWith(
                     '/api/v1/experiments',
-                    createData
+                    createData,
+                    { params: { project_id: createData.project_id } }
                 )
                 expect(result).toEqual(mockExperiment)
             })

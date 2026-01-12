@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
+import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading } from '../components/common'
 import './CreateExperiment.css'
 
@@ -78,7 +79,11 @@ function CreateExperiment() {
               <select
                 value={formData.project_id}
                 onChange={(e) =>
-                  setFormData({ ...formData, project_id: e.target.value })
+                  (() => {
+                    const id = e.target.value
+                    setFormData({ ...formData, project_id: id })
+                    if (id) setActiveProjectId(id)
+                  })()
                 }
                 required
               >

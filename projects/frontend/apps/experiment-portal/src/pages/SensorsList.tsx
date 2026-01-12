@@ -15,6 +15,7 @@ import {
     sensorStatusMap,
 } from '../components/common'
 import SensorDetailModal from '../components/SensorDetailModal'
+import { setActiveProjectId } from '../utils/activeProject'
 import './SensorsList.css'
 
 function SensorsList() {
@@ -34,7 +35,9 @@ function SensorsList() {
     // Автоматически выбираем первый проект, если project_id не указан
     useEffect(() => {
         if (!projectId && projectsData?.projects && projectsData.projects.length > 0) {
-            setProjectId(projectsData.projects[0].id)
+            const id = projectsData.projects[0].id
+            setProjectId(id)
+            setActiveProjectId(id)
         }
     }, [projectId, projectsData])
 
@@ -99,7 +102,9 @@ function SensorsList() {
                                     id="sensor_project_id"
                                     value={projectId}
                                     onChange={(e) => {
-                                        setProjectId(e.target.value)
+                                        const id = e.target.value
+                                        setProjectId(id)
+                                        setActiveProjectId(id)
                                         setPage(1)
                                     }}
                                 >

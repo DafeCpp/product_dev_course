@@ -117,7 +117,9 @@ describe('sensorsApi', () => {
 
             const result = await sensorsApi.create(sensorData)
 
-            expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/v1/sensors', sensorData)
+            expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/v1/sensors', sensorData, {
+                params: { project_id: sensorData.project_id },
+            })
             expect(result).toEqual(mockResponse.data)
         })
     })

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { sensorsApi, projectsApi } from '../api/client'
 import type { SensorCreate, SensorRegisterResponse } from '../types'
+import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading } from '../components/common'
 import './CreateSensor.css'
 
@@ -107,9 +108,11 @@ function CreateSensor() {
                             <select
                                 id="project_id"
                                 value={formData.project_id}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, project_id: e.target.value })
-                                }
+                                onChange={(e) => {
+                                    const id = e.target.value
+                                    setFormData({ ...formData, project_id: id })
+                                    if (id) setActiveProjectId(id)
+                                }}
                                 required
                             >
                                 <option value="">Выберите проект</option>
