@@ -246,6 +246,10 @@ export const experimentsApi = {
     return await apiPatch(`/api/v1/experiments/${id}`, data)
   },
 
+  archive: async (id: string, params?: { project_id?: string }): Promise<Experiment> => {
+    return await apiPost(`/api/v1/experiments/${id}/archive`, {}, { params })
+  },
+
   delete: async (id: string): Promise<void> => {
     await apiDelete(`/api/v1/experiments/${id}`)
   },

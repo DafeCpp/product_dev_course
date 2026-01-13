@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
 import type { Experiment, ExperimentUpdate } from '../types'
 import Modal from './Modal'
+import { experimentStatusMap } from './common/statusMaps'
 import './CreateRunModal.css'
 
 interface ExperimentEditModalProps {
@@ -19,6 +20,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
     const [experimentType, setExperimentType] = useState('')
     const [tagsInput, setTagsInput] = useState('')
     const [metadataInput, setMetadataInput] = useState('{}')
+    const [status, setStatus] = useState<Experiment['status']>('draft')
     const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
@@ -29,6 +31,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         setExperimentType(experiment.experiment_type ?? '')
         setTagsInput((experiment.tags || []).join(', '))
         setMetadataInput(JSON.stringify(experiment.metadata || {}, null, 2))
+        setStatus(experiment.status)
     }, [experiment, isOpen])
 
     const updateMutation = useMutation({
@@ -48,7 +51,36 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         },
     })
 
-    const isBusy = updateMutation.isPending
+    const archiveMutation = useMutation({
+        mutationFn: async () => experimentsApi.archive(experiment.id, { project_id: experiment.project_id }),
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['experiments'] })
+            await queryClient.invalidateQueries({ queryKey: ['experiment', experiment.id] })
+            onClose()
+        },
+        onError: (err: any) => {
+            const msg =
+                err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                err?.message ||
+                'Ошибка архивации эксперимента'
+            setError(msg)
+        },
+    })
+
+    const isBusy = updateMutation.isPending || archiveMutation.isPending
+
+    const statusTransitions: Record<Experiment['status'], Experiment['status'][]> = {
+        draft: ['running', 'archived'],
+        running: ['succeeded', 'failed'],
+        succeeded: ['archived'],
+        failed: ['archived'],
+        archived: [],
+    }
+
+    const statusOptions = [experiment.status, ...statusTransitions[experiment.status]].filter(
+        (v, idx, arr) => arr.indexOf(v) === idx
+    )
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
@@ -74,6 +106,15 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
             experiment_type: experimentType.trim() || undefined,
             tags,
             metadata,
+        }
+
+        const nextStatus = status
+        if (nextStatus !== experiment.status) {
+            if (nextStatus === 'archived') {
+                archiveMutation.mutate()
+                return
+            }
+            payload.status = nextStatus
         }
 
         updateMutation.mutate(payload)
@@ -102,6 +143,29 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
                     <div className="mono" style={{ padding: '0.5rem 0' }}>
                         {experiment.project_id}
                     </div>
+                </div>
+
+                <div className="form-group">
+                    <label htmlFor="experiment_edit_status">Статус</label>
+                    <select
+                        id="experiment_edit_status"
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value as Experiment['status'])}
+                        disabled={isBusy || statusOptions.length <= 1}
+                    >
+                        {statusOptions.map((s) => (
+                            <option key={s} value={s}>
+                                {experimentStatusMap[s]?.text ?? s}
+                            </option>
+                        ))}
+                    </select>
+                    {statusOptions.length <= 1 ? (
+                        <small className="form-hint">Для текущего статуса переходы недоступны.</small>
+                    ) : (
+                        <small className="form-hint">
+                            Доступные переходы зависят от текущего статуса (draft → running/archived → …).
+                        </small>
+                    )}
                 </div>
 
                 <div className="form-group">

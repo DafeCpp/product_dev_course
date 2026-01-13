@@ -49,6 +49,14 @@ function RunDetail() {
     },
   })
 
+  const startRunMutation = useMutation({
+    mutationFn: () => runsApi.update(id!, { status: 'running' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['run', id] })
+      queryClient.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+
   const failMutation = useMutation({
     mutationFn: (reason?: string) => runsApi.fail(id!, reason),
     onSuccess: () => {
@@ -144,6 +152,15 @@ function RunDetail() {
           </div>
           <div className="header-actions">
             <StatusBadge status={run.status} statusMap={runStatusMap} />
+            {run.status === 'draft' && (
+              <button
+                className="btn btn-primary"
+                onClick={() => startRunMutation.mutate()}
+                disabled={startRunMutation.isPending}
+              >
+                {startRunMutation.isPending ? 'Запуск...' : 'Запустить'}
+              </button>
+            )}
             {canManageSessions && (
               <>
                 {!activeSession ? (
