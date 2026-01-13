@@ -1,6 +1,7 @@
 """Domain services exports."""
 
 from experiment_service.services.capture_sessions import CaptureSessionService
+from experiment_service.services.capture_session_events import CaptureSessionEventService
 from experiment_service.services.experiments import ExperimentService
 from experiment_service.services.metrics import MetricsService
 from experiment_service.services.runs import RunService
@@ -11,6 +12,7 @@ __all__ = [
     "ExperimentService",
     "RunService",
     "CaptureSessionService",
+    "CaptureSessionEventService",
     "SensorService",
     "ConversionProfileService",
     "TelemetryService",

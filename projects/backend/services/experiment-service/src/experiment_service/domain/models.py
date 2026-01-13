@@ -142,3 +142,12 @@ class RunMetric(BaseModel):
     created_at: datetime
 
 
+class CaptureSessionEvent(BaseModel):
+    id: int
+    capture_session_id: UUID
+    event_type: str
+    actor_id: UUID
+    actor_role: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+

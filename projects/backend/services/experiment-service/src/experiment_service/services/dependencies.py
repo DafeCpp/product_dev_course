@@ -11,6 +11,7 @@ from aiohttp import web
 from backend_common.db.pool import get_pool_service as get_pool
 from experiment_service.repositories import (
     CaptureSessionRepository,
+    CaptureSessionEventRepository,
     ConversionProfileRepository,
     ExperimentRepository,
     RunMetricsRepository,
@@ -21,6 +22,7 @@ from experiment_service.repositories import (
 from experiment_service.repositories.idempotency import IdempotencyRepository
 from experiment_service.services import (
     CaptureSessionService,
+    CaptureSessionEventService,
     ConversionProfileService,
     ExperimentService,
     MetricsService,
@@ -38,6 +40,7 @@ TService = TypeVar("TService")
 _EXPERIMENT_SERVICE_KEY = "experiment_service"
 _RUN_SERVICE_KEY = "run_service"
 _CAPTURE_SERVICE_KEY = "capture_session_service"
+_CAPTURE_EVENT_SERVICE_KEY = "capture_session_event_service"
 _IDEMPOTENCY_SERVICE_KEY = "idempotency_service"
 _SENSOR_SERVICE_KEY = "sensor_service"
 _PROFILE_SERVICE_KEY = "conversion_profile_service"
@@ -167,6 +170,15 @@ async def get_capture_session_service(request: web.Request) -> CaptureSessionSer
         return CaptureSessionService(capture_repo, run_repo)
 
     return await _get_or_create_service(request, _CAPTURE_SERVICE_KEY, builder)
+
+
+async def get_capture_session_event_service(request: web.Request) -> CaptureSessionEventService:
+    async def builder(_: web.Request) -> CaptureSessionEventService:
+        pool = await get_pool()
+        repo = CaptureSessionEventRepository(pool)
+        return CaptureSessionEventService(repo)
+
+    return await _get_or_create_service(request, _CAPTURE_EVENT_SERVICE_KEY, builder)
 
 
 async def get_idempotency_service(request: web.Request) -> IdempotencyService:

@@ -54,7 +54,10 @@
   - ✅ **Инвариант 2:** нельзя удалить `Sensor`, если он участвует в активных `CaptureSession` (через `run_sensors → capture_sessions`).
   - ✅ **Инвариант 3:** нельзя удалить `CaptureSession`, если она активна (`running/backfilling`); удаление допустимо после завершения.
 - **Webhook-триггеры:** ❌ Не реализовано. Webhook-триггеры `run.started`, `run.finished`, `capture.started`, `capture.completed` отсутствуют. Требуется реализация системы webhooks.
-- **Аудит-лог действий пользователей:** ❌ Не реализовано. Таблица `capture_session_events` существует в схеме (`experiment-service/migrations/001_initial_schema.sql:173`), но не используется в API. Требуется реализация логирования действий пользователей с фиксацией роли.
+- **Аудит-лог действий пользователей:** ⚠️ Частично реализовано. Таблица `capture_session_events` используется для аудита старт/стоп capture-сессий с фиксацией `actor_id` и `actor_role`.
+  - ✅ Запись событий на `POST /api/v1/runs/{run_id}/capture-sessions` (`capture_session.created`) и `POST /api/v1/runs/{run_id}/capture-sessions/{session_id}/stop` (`capture_session.stopped`).
+  - ✅ Чтение событий: `GET /api/v1/runs/{run_id}/capture-sessions/{session_id}/events` (доступно viewer+).
+  - ❌ Полный audit trail по остальным сущностям/операциям (runs/experiments/sensors/artifacts), а также гарантии неизменяемости/retention — в backlog.
 - **Догрузка данных после завершения (late/backfill ingest):** ❌ Не реализовано. Нужна возможность добавлять телеметрию в `capture_session` **после** завершения эксперимента (например, часть данных копится на устройстве и выгружается только в конце). Требуется:
   - принять batched-данные с timestamp’ами «из прошлого» и привязкой к `run_id`/`capture_session_id`;
   - корректно обрабатывать out-of-order точки и большие батчи (лимиты/стриминг);

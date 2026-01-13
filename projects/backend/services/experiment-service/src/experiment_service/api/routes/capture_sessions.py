@@ -18,6 +18,7 @@ from experiment_service.domain.models import CaptureSession
 from experiment_service.services.dependencies import (
     ensure_project_access,
     get_capture_session_service,
+    get_capture_session_event_service,
     get_idempotency_service,
     get_run_service,
     require_current_user,
@@ -26,6 +27,9 @@ from experiment_service.services.dependencies import (
 from experiment_service.services.idempotency import IDEMPOTENCY_HEADER, IdempotencyService
 
 routes = web.RouteTableDef()
+
+EVENT_CREATED = "capture_session.created"
+EVENT_STOPPED = "capture_session.stopped"
 
 
 def _session_response(session: CaptureSession) -> dict:
@@ -93,6 +97,21 @@ async def create_capture_session(request: web.Request):
         session = await service.create_session(dto)
     except InvalidStatusTransitionError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
+    actor_role = user.project_roles.get(project_id)
+    if actor_role:
+        audit = await get_capture_session_event_service(request)
+        await audit.record_event(
+            capture_session_id=session.id,
+            event_type=EVENT_CREATED,
+            actor_id=user.user_id,
+            actor_role=actor_role,
+            payload={
+                "run_id": str(run_id),
+                "ordinal_number": session.ordinal_number,
+                "status": session.status.value,
+                "notes": session.notes,
+            },
+        )
     response_payload = _session_response(session)
     if idempotency_key:
         try:
@@ -135,7 +154,51 @@ async def stop_capture_session(request: web.Request):
         session = await service.update_session(project_id, session_id, dto)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
+    actor_role = user.project_roles.get(project_id)
+    if actor_role:
+        audit = await get_capture_session_event_service(request)
+        await audit.record_event(
+            capture_session_id=session.id,
+            event_type=EVENT_STOPPED,
+            actor_id=user.user_id,
+            actor_role=actor_role,
+            payload={
+                "run_id": str(run_id),
+                "status": session.status.value,
+                "stopped_at": session.stopped_at.isoformat() if session.stopped_at else None,
+                "archived": session.archived,
+                "notes": session.notes,
+            },
+        )
     return web.json_response(_session_response(session))
+
+
+@routes.get("/api/v1/runs/{run_id}/capture-sessions/{session_id}/events")
+async def list_capture_session_events(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_project_access(user, project_id)
+    run_id = parse_uuid(request.match_info["run_id"], "run_id")
+    session_id = parse_uuid(request.match_info["session_id"], "session_id")
+    await _ensure_run(request, project_id, run_id)
+    capture_service = await get_capture_session_service(request)
+    try:
+        session = await capture_service.get_session(project_id, session_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    if session.run_id != run_id:
+        raise web.HTTPNotFound(text="Capture session not found")
+    audit = await get_capture_session_event_service(request)
+    limit, offset = pagination_params(request)
+    events, total = await audit.list_events(session_id, limit=limit, offset=offset)
+    payload = paginated_response(
+        [evt.model_dump(mode="json") for evt in events],
+        limit=limit,
+        offset=offset,
+        key="events",
+        total=total,
+    )
+    return web.json_response(payload)
 
 
 @routes.delete("/api/v1/runs/{run_id}/capture-sessions/{session_id}")
