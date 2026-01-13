@@ -124,6 +124,12 @@ Frontend использует Experiment Service API:
 
 При получении 401 ошибки происходит автоматический редирект на `/login` (нужно реализовать страницу входа).
 
+## CSRF
+
+Auth Proxy использует защиту **double-submit cookie**:
+- после `POST /auth/login` или `POST /auth/refresh` прокси выставляет cookie `csrf_token`
+- frontend автоматически добавляет заголовок `X-CSRF-Token` (значение из cookie) для POST/PUT/PATCH/DELETE запросов
+
 ## Разработка
 
 ### Добавление новой страницы

@@ -37,8 +37,13 @@ docker build -t auth-proxy:dev .
 docker run -p 8080:8080 --env-file env.example auth-proxy:dev
 ```
 
-## CSRF (следующий шаг)
-- Генерация токена (cookie + header `X-CSRF-Token`) при логине/refresh.
-- Проверка на state-changing методах (POST/PUT/PATCH/DELETE) в прокси.
-- Отключение для idempotent методов/health.
+## CSRF
+
+Реализовано как **double-submit cookie**:
+- Auth Proxy выставляет cookie `csrf_token` (НЕ HttpOnly) при `POST /auth/login` и `POST /auth/refresh`.
+- Для state-changing методов **POST/PUT/PATCH/DELETE** при наличии session cookies требуется заголовок `X-CSRF-Token`,
+  равный значению cookie `csrf_token`.
+- Исключения:
+  - `/auth/login`, `/auth/refresh` (CSRF cookie ещё нет)
+  - `/api/v1/telemetry/*` (там аутентификация по `Authorization: Bearer <sensor_token>`, а не по cookies)
 
