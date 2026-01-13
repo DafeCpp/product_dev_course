@@ -5,6 +5,9 @@
 - `cp docker-compose.override.yml.example docker-compose.override.yml` (optional, for dev)
 - `docker-compose up -d`
 
+Quick path (one command):
+- `make mvp-demo-check` (runs `dev-up` + миграции + полный e2e прогон через `8001/8002/8003`)
+
 Expected services (ports):
 - Auth Service: `8001`
 - Experiment Service: `8002`

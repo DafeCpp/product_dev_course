@@ -358,4 +358,13 @@ auth-create-db:
 # Инициализация auth-service (создание БД + миграции)
 auth-init: auth-create-db auth-migrate
 	@echo "✅ Auth-service инициализирован"
+# Применение миграций experiment-service
+experiment-migrate:
+	@echo "Применение миграций experiment-service..."
+	@docker-compose exec -T experiment-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}" || \
+		docker-compose exec experiment-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}"
+	@echo "✅ Миграции применены"
 
+.PHONY: mvp-demo-check
+mvp-demo-check: dev-up auth-init experiment-migrate
+	@bash scripts/mvp_demo_check.sh
