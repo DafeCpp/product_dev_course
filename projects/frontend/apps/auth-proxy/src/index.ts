@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto'
 type Config = {
     port: number
     targetExperimentUrl: string
+    targetTelemetryUrl: string
     authUrl: string
     corsOrigins: string[]
     cookieDomain?: string
@@ -38,6 +39,8 @@ export function parseConfig(): Config {
         port: num(process.env.PORT, 8080),
         targetExperimentUrl:
             process.env.TARGET_EXPERIMENT_URL || 'http://localhost:8002',
+        targetTelemetryUrl:
+            process.env.TARGET_TELEMETRY_URL || 'http://localhost:8003',
         authUrl: process.env.AUTH_URL || 'http://localhost:8001',
         corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000')
             .split(',')
@@ -624,6 +627,45 @@ export async function buildServer(config: Config) {
                     has_authorization: !!newHeaders['authorization'],
                     content_type: newHeaders['content-type'] || undefined,
                 }, 'Request headers prepared for Auth Service')
+
+                return newHeaders
+            },
+        },
+    })
+
+    // Telemetry ingest proxy (SSE + REST ingest). This must be registered BEFORE /api proxy,
+    // otherwise /api/* would forward telemetry endpoints to experiment-service.
+    await app.register(httpProxy, {
+        prefix: '/api/v1/telemetry',
+        upstream: config.targetTelemetryUrl,
+        rewritePrefix: '/api/v1/telemetry',
+        http2: false,
+        replyOptions: {
+            rewriteRequestHeaders: (req, headers) => {
+                // Keep client Authorization header (sensor token), do NOT inject auth-service cookie token.
+                const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+                const newHeaders: Record<string, string> = {}
+                for (const [key, value] of Object.entries(headers)) {
+                    if (typeof value === 'string') newHeaders[key] = value
+                    else if (Array.isArray(value) && value.length > 0) newHeaders[key] = String(value[0])
+                }
+
+                newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+
+                // Ensure no cookie is forwarded to telemetry ingest service
+                delete newHeaders['cookie']
+
+                app.log.info({
+                    method: req.method,
+                    url: req.url,
+                    upstream: config.targetTelemetryUrl,
+                    has_authorization: !!newHeaders['authorization'],
+                    trace_id: outgoingHeaders['X-Trace-Id'],
+                    request_id: outgoingHeaders['X-Request-Id'],
+                }, 'Proxying request to Telemetry Ingest Service')
 
                 return newHeaders
             },
