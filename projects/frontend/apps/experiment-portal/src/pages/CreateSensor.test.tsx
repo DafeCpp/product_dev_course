@@ -49,8 +49,22 @@ describe('CreateSensor', () => {
         const mockProjectsApi = vi.mocked(projectsApi)
         mockProjectsApi.list.mockResolvedValue({
             projects: [
-                { id: 'project-1', name: 'Test Project', description: '', created_at: '2024-01-01T00:00:00Z' },
-                { id: 'project-2', name: 'Second Project', description: '', created_at: '2024-01-01T00:00:00Z' },
+                {
+                    id: 'project-1',
+                    name: 'Test Project',
+                    description: '',
+                    owner_id: 'user-1',
+                    created_at: '2024-01-01T00:00:00Z',
+                    updated_at: '2024-01-01T00:00:00Z',
+                },
+                {
+                    id: 'project-2',
+                    name: 'Second Project',
+                    description: '',
+                    owner_id: 'user-1',
+                    created_at: '2024-01-01T00:00:00Z',
+                    updated_at: '2024-01-01T00:00:00Z',
+                },
             ],
         })
     })

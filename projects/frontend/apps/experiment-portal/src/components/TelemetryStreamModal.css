@@ -1,5 +1,7 @@
-.telemetry-stream-modal {
-    max-width: 980px;
+.modal-content.telemetry-stream-modal {
+    max-width: 1200px;
+    width: min(1200px, 96vw);
+    max-height: 92vh;
 }
 
 .telemetry-stream {
