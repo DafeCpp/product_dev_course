@@ -147,5 +147,47 @@ describe('ProjectModal', () => {
             })
         })
     })
+
+    it('allows editor to switch from view to edit and save', async () => {
+        const mockAuthApi = vi.mocked(authApi)
+        mockAuthApi.me.mockResolvedValue({
+            id: 'editor-1',
+            username: 'editor',
+            email: 'editor@example.com',
+            is_active: true,
+            created_at: '2024-01-01T00:00:00Z',
+        })
+
+        const mockProjectsApi = vi.mocked(projectsApi)
+        mockProjectsApi.get.mockResolvedValue(mockProject as any)
+        mockProjectsApi.listMembers.mockResolvedValue({
+            members: [{ project_id: projectId, user_id: 'editor-1', role: 'editor', created_at: '2024-01-01T00:00:00Z' }],
+        } as any)
+        mockProjectsApi.update.mockResolvedValue({
+            ...mockProject,
+            description: 'New desc',
+        } as any)
+
+        render(<ProjectModal isOpen={true} onClose={mockOnClose} mode="view" projectId={projectId} />, {
+            wrapper: createWrapper(),
+        })
+
+        // В режиме view появляется кнопка "Редактировать" для editor/owner
+        const user = userEvent.setup()
+        await user.click(await screen.findByRole('button', { name: /редактировать/i }))
+
+        const desc = (await screen.findByLabelText(/описание/i)) as HTMLTextAreaElement
+        await user.clear(desc)
+        await user.type(desc, 'New desc')
+
+        await user.click(screen.getByRole('button', { name: /сохранить/i }))
+
+        await waitFor(() => {
+            expect(mockProjectsApi.update).toHaveBeenCalledWith(projectId, {
+                name: 'Project A',
+                description: 'New desc',
+            })
+        })
+    })
 })
 

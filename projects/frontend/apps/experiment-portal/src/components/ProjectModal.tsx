@@ -8,6 +8,7 @@ import { Error, InfoRow, Loading } from './common'
 import './CreateRunModal.css'
 
 type ProjectModalMode = 'create' | 'view' | 'edit'
+type ProjectUiMode = 'view' | 'edit'
 
 interface ProjectModalProps {
     isOpen: boolean
@@ -21,6 +22,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [error, setError] = useState<string | null>(null)
+    const [uiMode, setUiMode] = useState<ProjectUiMode>(mode === 'edit' ? 'edit' : 'view')
 
     const isCreate = mode === 'create'
     const needsProject = mode === 'view' || mode === 'edit'
@@ -62,7 +64,32 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
     }, [membersData?.members, needsProject, project, user])
 
     const canEditByRole = role === 'owner' || role === 'editor'
-    const canEdit = isCreate || (mode === 'edit' && canEditByRole)
+    const canEdit = isCreate || (uiMode === 'edit' && canEditByRole)
+
+    // Синхронизируем UI-режим с пропсом mode при открытии.
+    // Важно: даже если нас открыли в режиме edit, но роль не позволяет — принудительно будем в view.
+    useEffect(() => {
+        if (!isOpen) return
+        if (isCreate) {
+            setUiMode('edit')
+            return
+        }
+        setUiMode(mode === 'edit' ? 'edit' : 'view')
+    }, [isOpen, isCreate, mode, projectId])
+
+    useEffect(() => {
+        if (!isOpen) return
+        if (isCreate) return
+        // Не "сбрасываем" edit-режим во время загрузки данных о проекте/участниках,
+        // иначе modal, открытый в mode="edit", навсегда останется в view.
+        const roleResolved =
+            !!user &&
+            !!project &&
+            // если владелец — роли достаточно без списка участников
+            (user.id === project.owner_id || (!membersLoading && (!!membersData || membersIsError)))
+
+        if (uiMode === 'edit' && roleResolved && !canEditByRole) setUiMode('view')
+    }, [canEditByRole, isCreate, isOpen, membersData, membersIsError, membersLoading, project, uiMode, user])
 
     useEffect(() => {
         if (!isOpen) return
@@ -93,9 +120,9 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
 
     const title = useMemo(() => {
         if (isCreate) return 'Создать проект'
-        if (mode === 'edit' && canEditByRole) return 'Проект: просмотр и редактирование'
+        if (uiMode === 'edit' && canEditByRole) return 'Проект: просмотр и редактирование'
         return 'Проект: просмотр'
-    }, [canEditByRole, isCreate, mode])
+    }, [canEditByRole, isCreate, uiMode])
 
     const createMutation = useMutation({
         mutationFn: async (data: ProjectCreate) => projectsApi.create(data),
@@ -153,6 +180,24 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
             name: name.trim(),
             description: description.trim() || undefined,
         })
+    }
+
+    const startEditing = () => {
+        if (isCreate) return
+        if (!canEditByRole) return
+        setError(null)
+        setUiMode('edit')
+    }
+
+    const cancelEditing = () => {
+        if (isCreate) return
+        setError(null)
+        setUiMode('view')
+        // Возвращаем значения из проекта (если есть) — чтобы отмена реально отменяла правки.
+        if (project) {
+            setName(project.name ?? '')
+            setDescription(project.description ?? '')
+        }
     }
 
     const handleClose = () => {
@@ -238,14 +283,36 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
                             >
                                 {isCreate ? 'Отмена' : 'Закрыть'}
                             </button>
-                            {canEdit && (
+                            {!isCreate && canEditByRole && uiMode === 'view' && (
                                 <button
-                                    type="submit"
-                                    className="btn btn-primary"
-                                    disabled={isBusy || !name.trim()}
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={startEditing}
+                                    disabled={isBusy}
                                 >
-                                    {isBusy ? 'Сохранение...' : isCreate ? 'Создать проект' : 'Сохранить'}
+                                    Редактировать
                                 </button>
+                            )}
+                            {canEdit && (
+                                <>
+                                    {!isCreate && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            onClick={cancelEditing}
+                                            disabled={isBusy}
+                                        >
+                                            Отмена
+                                        </button>
+                                    )}
+                                    <button
+                                        type="submit"
+                                        className="btn btn-primary"
+                                        disabled={isBusy || !name.trim()}
+                                    >
+                                        {isBusy ? 'Сохранение...' : isCreate ? 'Создать проект' : 'Сохранить'}
+                                    </button>
+                                </>
                             )}
                         </div>
                     </form>
