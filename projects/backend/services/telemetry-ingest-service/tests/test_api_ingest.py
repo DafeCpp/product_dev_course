@@ -160,3 +160,83 @@ async def test_ingest_run_capture_mismatch_400(service_client, pgsql):
     )
     assert resp.status == 400
 
+
+async def test_ingest_rejects_archived_run_400(service_client, pgsql):
+    project_id = uuid4()
+    sensor_id = uuid4()
+    run_id = uuid4()
+    capture_session_id = uuid4()
+    token = "test-token"
+
+    db_uri = pgsql["telemetry_ingest_service"].conninfo.get_uri()
+    await _seed(
+        db_uri=db_uri,
+        project_id=project_id,
+        sensor_id=sensor_id,
+        token=token,
+        run_id=run_id,
+        capture_session_id=capture_session_id,
+    )
+
+    conn = await asyncpg.connect(db_uri)
+    try:
+        await conn.execute(
+            "UPDATE runs SET status = 'archived' WHERE id = $1 AND project_id = $2",
+            run_id,
+            project_id,
+        )
+    finally:
+        await conn.close()
+
+    resp = await service_client.post(
+        "/api/v1/telemetry",
+        json={
+            "sensor_id": str(sensor_id),
+            "run_id": str(run_id),
+            "capture_session_id": str(capture_session_id),
+            "readings": [{"timestamp": "2026-01-01T00:00:00Z", "raw_value": 1.0}],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status == 400
+
+
+async def test_ingest_rejects_archived_capture_session_400(service_client, pgsql):
+    project_id = uuid4()
+    sensor_id = uuid4()
+    run_id = uuid4()
+    capture_session_id = uuid4()
+    token = "test-token"
+
+    db_uri = pgsql["telemetry_ingest_service"].conninfo.get_uri()
+    await _seed(
+        db_uri=db_uri,
+        project_id=project_id,
+        sensor_id=sensor_id,
+        token=token,
+        run_id=run_id,
+        capture_session_id=capture_session_id,
+    )
+
+    conn = await asyncpg.connect(db_uri)
+    try:
+        await conn.execute(
+            "UPDATE capture_sessions SET archived = true WHERE id = $1 AND project_id = $2",
+            capture_session_id,
+            project_id,
+        )
+    finally:
+        await conn.close()
+
+    resp = await service_client.post(
+        "/api/v1/telemetry",
+        json={
+            "sensor_id": str(sensor_id),
+            "run_id": str(run_id),
+            "capture_session_id": str(capture_session_id),
+            "readings": [{"timestamp": "2026-01-01T00:00:00Z", "raw_value": 1.0}],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status == 400
+

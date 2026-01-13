@@ -10,7 +10,12 @@ from experiment_service.domain.dto import (
     TelemetryIngestDTO,
     TelemetryRecordCreateDTO,
 )
-from experiment_service.domain.enums import SensorStatus, TelemetryConversionStatus
+from experiment_service.domain.enums import (
+    CaptureSessionStatus,
+    RunStatus,
+    SensorStatus,
+    TelemetryConversionStatus,
+)
 from experiment_service.domain.models import ConversionProfile, Sensor
 
 from experiment_service.core.exceptions import (
@@ -58,6 +63,16 @@ class TelemetryService:
 
         if run_id is None:
             run_id = capture_run_id
+
+        # Late/backfill policy (MVP): allow ingest after completion, but never into archived run/session.
+        if run_id is not None:
+            run = await self._run_repository.get(project_id, run_id)
+            if run.status == RunStatus.ARCHIVED:
+                raise ScopeMismatchError("Run is archived")
+        if payload.capture_session_id is not None:
+            session = await self._capture_session_repository.get(project_id, payload.capture_session_id)
+            if session.status == CaptureSessionStatus.ARCHIVED or session.archived is True:
+                raise ScopeMismatchError("Capture session is archived")
 
         active_profile = await self._get_active_profile(sensor)
         records = []

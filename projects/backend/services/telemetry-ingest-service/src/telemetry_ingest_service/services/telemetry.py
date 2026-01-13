@@ -71,12 +71,15 @@ class TelemetryIngestService:
         if run_id is None:
             return None
         row = await conn.fetchrow(
-            "SELECT id FROM runs WHERE project_id = $1 AND id = $2",
+            "SELECT id, status FROM runs WHERE project_id = $1 AND id = $2",
             project_id,
             run_id,
         )
         if row is None:
             raise NotFoundError("Run not found")
+        status = row.get("status")
+        if isinstance(status, str) and status.lower() == "archived":
+            raise ScopeMismatchError("Run is archived")
         return UUID(str(row["id"]))
 
     async def _ensure_capture_scope(
@@ -85,12 +88,18 @@ class TelemetryIngestService:
         if capture_session_id is None:
             return None
         row = await conn.fetchrow(
-            "SELECT run_id FROM capture_sessions WHERE project_id = $1 AND id = $2",
+            "SELECT run_id, status, archived FROM capture_sessions WHERE project_id = $1 AND id = $2",
             project_id,
             capture_session_id,
         )
         if row is None:
             raise NotFoundError("Capture session not found")
+        status = row.get("status")
+        if isinstance(status, str) and status.lower() == "archived":
+            raise ScopeMismatchError("Capture session is archived")
+        archived = row.get("archived")
+        if isinstance(archived, bool) and archived is True:
+            raise ScopeMismatchError("Capture session is archived")
         return UUID(str(row["run_id"]))
 
     async def _bulk_insert(

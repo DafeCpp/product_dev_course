@@ -202,6 +202,71 @@ async def test_telemetry_ingest_rejects_mismatched_capture(service_client):
 
 
 @pytest.mark.asyncio
+async def test_telemetry_ingest_rejects_archived_run_or_capture(service_client):
+    ctx = await _bootstrap_ingest_context(service_client)
+    headers = ctx["headers"]
+    run_id = ctx["run_id"]
+    session_id = ctx["capture_session_id"]
+
+    # Stop capture session and mark archived
+    resp = await service_client.post(
+        f"/api/v1/runs/{run_id}/capture-sessions/{session_id}/stop",
+        json={"status": "succeeded", "archived": True},
+        headers=headers,
+    )
+    assert resp.status == 200
+
+    payload = {
+        "sensor_id": ctx["sensor_id"],
+        "run_id": run_id,
+        "capture_session_id": session_id,
+        "readings": [{"timestamp": "2025-01-01T00:00:00Z", "raw_value": 1.23}],
+    }
+    resp = await service_client.post(
+        "/api/v1/telemetry",
+        json=payload,
+        headers={"Authorization": f"Bearer {ctx['token']}"},
+    )
+    assert resp.status == 400
+
+    # Now un-archive capture session by creating a new session, stop it (not archived),
+    # archive the run, and ensure ingest is blocked by run status.
+    resp_session = await service_client.post(
+        f"/api/v1/runs/{run_id}/capture-sessions",
+        json={"ordinal_number": 2, "status": "running"},
+        headers=headers,
+    )
+    assert resp_session.status == 201
+    session2_id = (await resp_session.json())["id"]
+    resp = await service_client.post(
+        f"/api/v1/runs/{run_id}/capture-sessions/{session2_id}/stop",
+        json={"status": "succeeded"},
+        headers=headers,
+    )
+    assert resp.status == 200
+
+    resp = await service_client.patch(
+        f"/api/v1/runs/{run_id}",
+        json={"status": "archived"},
+        headers=headers,
+    )
+    assert resp.status == 200
+
+    payload2 = {
+        "sensor_id": ctx["sensor_id"],
+        "run_id": run_id,
+        "capture_session_id": session2_id,
+        "readings": [{"timestamp": "2025-01-01T00:00:00Z", "raw_value": 1.23}],
+    }
+    resp = await service_client.post(
+        "/api/v1/telemetry",
+        json=payload2,
+        headers={"Authorization": f"Bearer {ctx['token']}"},
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
 async def test_telemetry_ingest_requires_readings(service_client):
     ctx = await _bootstrap_ingest_context(service_client)
     payload = {"sensor_id": ctx["sensor_id"], "readings": []}

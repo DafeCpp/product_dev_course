@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS capture_sessions (
     project_id uuid NOT NULL,
     ordinal_number integer NOT NULL DEFAULT 1,
     status text NOT NULL DEFAULT 'draft',
+    archived boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE

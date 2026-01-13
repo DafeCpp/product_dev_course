@@ -67,6 +67,9 @@
   - принять batched-данные с timestamp’ами «из прошлого» и привязкой к `run_id`/`capture_session_id`;
   - корректно обрабатывать out-of-order точки и большие батчи (лимиты/стриминг);
   - зафиксировать доменную политику: допустим ли ingest в `finished/archived`, как маркировать «late data» и как это влияет на отчёты.
+  - ⚠️ **MVP реализован:** ingest разрешён для `succeeded/failed` (late data), но запрещён для `archived`:
+    - `Run` со статусом `archived` блокирует ingest.
+    - `CaptureSession` со статусом `archived` или с флагом `archived=true` блокирует ingest.
 
 ### 3. Data Integrity & Scaling (итерации 5‑6)
 - **Фоновые задачи (worker):** ❌ Не реализовано. Фоновые задачи для авто-закрытия зависших запусков и реконcиляции capture-сессий, а также мониторинга backfill-процессов отсутствуют. Требуется реализация worker-сервиса.
