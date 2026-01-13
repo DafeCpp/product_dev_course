@@ -1,4 +1,4 @@
-.PHONY: test test-backend test-frontend type-check backend-install frontend-install
+.PHONY: test test-backend test-frontend test-telemetry-cli type-check backend-install frontend-install
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
@@ -21,7 +21,7 @@ PYTHON ?= python3.14
 NODE ?= node
 FRONTEND_NODE_IMAGE ?= node:24-alpine
 
-test: type-check test-backend test-frontend
+test: type-check test-backend test-telemetry-cli test-frontend
 
 backend-install:
 	@if [ -z "$(BACKEND_SERVICES)" ]; then \
@@ -106,6 +106,28 @@ test-backend: backend-install
 		(cd $$service && poetry run pytest) || failed=1; \
 	done; \
 	exit $$failed
+
+test-telemetry-cli:
+	@echo "🧪 Running tests for telemetry-cli..."
+	@cd projects/telemetry_cli && \
+		PY=""; \
+		if [ -n "$(PYTHON)" ] && [ -x "$(PYTHON)" ]; then PY="$(PYTHON)"; fi; \
+		if [ -z "$$PY" ] && command -v "$(PYTHON)" >/dev/null 2>&1; then PY="$(PYTHON)"; fi; \
+		if [ -z "$$PY" ] && [ -x "$$HOME/.pyenv/shims/python3.14" ]; then PY="$$HOME/.pyenv/shims/python3.14"; fi; \
+		if [ -z "$$PY" ] && command -v python3.14 >/dev/null 2>&1; then PY="python3.14"; fi; \
+		if [ -z "$$PY" ] && command -v python3 >/dev/null 2>&1; then PY="python3"; fi; \
+		if [ -z "$$PY" ] && command -v python >/dev/null 2>&1; then PY="python"; fi; \
+		if [ -z "$$PY" ]; then \
+			echo "❌ Не найден Python интерпретатор для telemetry-cli тестов."; \
+			exit 1; \
+		fi; \
+		if [ ! -x ".venv/bin/python" ]; then \
+			echo "📦 Creating venv for telemetry-cli tests..."; \
+			"$$PY" -m venv .venv || exit 1; \
+			.venv/bin/python -m pip install -U pip >/dev/null || exit 1; \
+			.venv/bin/pip install -e . >/dev/null || exit 1; \
+		fi; \
+		PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p "test_*.py" -q
 
 test-frontend: frontend-install
 	@cd $(FRONTEND_DIR) && \
