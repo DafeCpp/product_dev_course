@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any
@@ -71,47 +72,59 @@ async def _dispatcher_loop(app: web.Application) -> None:
     session: ClientSession = app[_WEBHOOK_SESSION_KEY]
 
     while True:
-        due = await repo.list_due_pending(limit=100)
+        due = await repo.claim_due_pending(limit=100)
         if not due:
             await asyncio.sleep(settings.webhook_dispatch_interval_seconds)
             continue
 
-        for delivery in due:
-            new_attempt = delivery.attempt_count + 1
-            ok, err = await _deliver(
-                session, delivery, timeout_s=settings.webhook_request_timeout_seconds
-            )
-            if ok:
-                await repo.mark_attempt(
-                    delivery.id,
-                    success=True,
-                    status="succeeded",
-                    last_error=None,
-                    next_attempt_at=None,
-                    attempt_count=new_attempt,
-                )
-                continue
+        global_sem = asyncio.Semaphore(settings.webhook_dispatch_max_concurrency)
+        target_sems: dict[str, asyncio.Semaphore] = defaultdict(
+            lambda: asyncio.Semaphore(settings.webhook_target_max_concurrency)
+        )
 
-            if new_attempt >= settings.webhook_max_attempts:
-                await repo.mark_attempt(
-                    delivery.id,
-                    success=False,
-                    status="failed",
-                    last_error=err,
-                    next_attempt_at=None,
-                    attempt_count=new_attempt,
-                )
-                continue
+        async def _handle_one(delivery: WebhookDelivery) -> None:
+            async with global_sem:
+                async with target_sems[delivery.target_url]:
+                    ok, err = await _deliver(
+                        session, delivery, timeout_s=settings.webhook_request_timeout_seconds
+                    )
 
-            next_at = datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds(new_attempt))
-            await repo.mark_attempt(
-                delivery.id,
-                success=False,
-                status="pending",
-                last_error=err,
-                next_attempt_at=next_at,
-                attempt_count=new_attempt,
-            )
+                    # attempt_count is incremented during claim (1-based attempt number for this try)
+                    attempt = delivery.attempt_count
+
+                    if ok:
+                        await repo.mark_attempt(
+                            delivery.id,
+                            success=True,
+                            status="succeeded",
+                            last_error=None,
+                            next_attempt_at=None,
+                            attempt_count=attempt,
+                        )
+                        return
+
+                    if attempt >= settings.webhook_max_attempts:
+                        await repo.mark_attempt(
+                            delivery.id,
+                            success=False,
+                            status="dead_lettered",
+                            last_error=err,
+                            next_attempt_at=None,
+                            attempt_count=attempt,
+                        )
+                        return
+
+                    next_at = datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds(attempt))
+                    await repo.mark_attempt(
+                        delivery.id,
+                        success=False,
+                        status="pending",
+                        last_error=err,
+                        next_attempt_at=next_at,
+                        attempt_count=attempt,
+                    )
+
+        await asyncio.gather(*[_handle_one(d) for d in due])
 
 
 async def start_webhook_dispatcher(app: web.Application) -> None:

@@ -1,6 +1,8 @@
 """Webhook domain service (subscriptions + emitting events)."""
 from __future__ import annotations
 
+import json
+from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any, List
 from uuid import UUID
@@ -73,6 +75,14 @@ class WebhookService:
         deliveries: List[WebhookDelivery] = []
         occurred_at = datetime.now(timezone.utc).isoformat()
         for sub in subs:
+            payload_bytes = json.dumps(
+                payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            payload_hash = sha256(payload_bytes).hexdigest()
+            dedup_key = f"{sub.id}:{event_type}:{payload_hash}"
             body = {
                 "event_type": event_type,
                 "project_id": str(project_id),
@@ -86,6 +96,7 @@ class WebhookService:
                 target_url=sub.target_url,
                 secret=sub.secret,
                 request_body=body,
+                dedup_key=dedup_key,
             )
             deliveries.append(delivery)
         return deliveries

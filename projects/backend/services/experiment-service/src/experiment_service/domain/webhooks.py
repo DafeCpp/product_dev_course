@@ -30,6 +30,8 @@ class WebhookDelivery(BaseModel):
     status: str
     attempt_count: int
     last_error: str | None = None
+    dedup_key: str | None = None
+    locked_at: datetime | None = None
     next_attempt_at: datetime
     created_at: datetime
     updated_at: datetime

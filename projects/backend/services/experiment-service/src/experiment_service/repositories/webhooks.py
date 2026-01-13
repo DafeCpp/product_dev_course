@@ -134,7 +134,44 @@ class WebhookDeliveryRepository(BaseRepository):
         target_url: str,
         secret: str | None,
         request_body: dict[str, Any],
+        dedup_key: str | None = None,
     ) -> WebhookDelivery:
+        body_json = json.dumps(request_body)
+        if dedup_key:
+            record = await self._fetchrow(
+                """
+                INSERT INTO webhook_deliveries (
+                    subscription_id,
+                    project_id,
+                    event_type,
+                    target_url,
+                    secret,
+                    request_body,
+                    dedup_key,
+                    status,
+                    attempt_count,
+                    next_attempt_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, 'pending', 0, now())
+                ON CONFLICT (dedup_key) DO NOTHING
+                RETURNING *
+                """,
+                subscription_id,
+                project_id,
+                event_type,
+                target_url,
+                secret,
+                body_json,
+                dedup_key,
+            )
+            if record is None:
+                record = await self._fetchrow(
+                    "SELECT * FROM webhook_deliveries WHERE dedup_key = $1",
+                    dedup_key,
+                )
+            assert record is not None
+            return self._to_model(record)
+
         record = await self._fetchrow(
             """
             INSERT INTO webhook_deliveries (
@@ -156,23 +193,47 @@ class WebhookDeliveryRepository(BaseRepository):
             event_type,
             target_url,
             secret,
-            json.dumps(request_body),
+            body_json,
         )
         assert record is not None
         return self._to_model(record)
 
-    async def list_due_pending(self, *, limit: int = 50) -> List[WebhookDelivery]:
-        records = await self._fetch(
-            """
-            SELECT *
-            FROM webhook_deliveries
-            WHERE status = 'pending'
-              AND next_attempt_at <= now()
-            ORDER BY next_attempt_at ASC, created_at ASC
-            LIMIT $1
-            """,
-            limit,
-        )
+    async def claim_due_pending(self, *, limit: int = 50) -> List[WebhookDelivery]:
+        """
+        Atomically claim due deliveries for processing.
+
+        Uses row-level locking (FOR UPDATE SKIP LOCKED) so multiple dispatchers
+        won't process the same delivery concurrently.
+
+        Side-effects:
+          - status -> in_progress
+          - locked_at -> now()
+          - attempt_count += 1
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                records = await conn.fetch(
+                    """
+                    WITH cte AS (
+                        SELECT id
+                        FROM webhook_deliveries
+                        WHERE status = 'pending'
+                          AND next_attempt_at <= now()
+                        ORDER BY next_attempt_at ASC, created_at ASC
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT $1
+                    )
+                    UPDATE webhook_deliveries d
+                    SET status = 'in_progress',
+                        locked_at = now(),
+                        attempt_count = d.attempt_count + 1,
+                        updated_at = now()
+                    FROM cte
+                    WHERE d.id = cte.id
+                    RETURNING d.*
+                    """,
+                    limit,
+                )
         return [self._to_model(r) for r in records]
 
     async def list_by_project(
@@ -232,6 +293,7 @@ class WebhookDeliveryRepository(BaseRepository):
             """
             UPDATE webhook_deliveries
             SET status = 'pending',
+                locked_at = NULL,
                 next_attempt_at = now(),
                 last_error = NULL,
                 updated_at = now()
@@ -254,13 +316,14 @@ class WebhookDeliveryRepository(BaseRepository):
         next_attempt_at: datetime | None,
         attempt_count: int,
     ) -> None:
-        # status is either 'pending'/'succeeded'/'failed'
+        # status is one of 'pending'/'in_progress'/'succeeded'/'dead_lettered' (plus legacy 'failed')
         await self._execute(
             """
             UPDATE webhook_deliveries
             SET status = $2,
                 attempt_count = $3,
                 last_error = $4,
+                locked_at = NULL,
                 next_attempt_at = COALESCE($5, next_attempt_at),
                 updated_at = now()
             WHERE id = $1

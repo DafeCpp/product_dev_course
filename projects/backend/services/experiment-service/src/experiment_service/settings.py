@@ -31,6 +31,8 @@ class Settings(BaseServiceSettings):
     webhook_dispatch_interval_seconds: float = 0.2
     webhook_request_timeout_seconds: float = 3.0
     webhook_max_attempts: int = 5
+    webhook_dispatch_max_concurrency: int = 10
+    webhook_target_max_concurrency: int = 1
 
 
 @lru_cache

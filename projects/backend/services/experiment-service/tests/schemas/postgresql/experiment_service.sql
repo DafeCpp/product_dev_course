@@ -258,6 +258,8 @@ CREATE TABLE webhook_deliveries (
     status text NOT NULL DEFAULT 'pending',
     attempt_count integer NOT NULL DEFAULT 0,
     last_error text,
+    dedup_key text,
+    locked_at timestamptz,
     next_attempt_at timestamptz NOT NULL DEFAULT now(),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
@@ -269,6 +271,12 @@ CREATE INDEX webhook_deliveries_pending_idx
 
 CREATE INDEX webhook_deliveries_project_idx
     ON webhook_deliveries (project_id, created_at DESC);
+
+ALTER TABLE webhook_deliveries
+    ADD CONSTRAINT webhook_deliveries_dedup_key_key UNIQUE (dedup_key);
+
+CREATE INDEX webhook_deliveries_status_next_attempt_idx
+    ON webhook_deliveries (status, next_attempt_at, created_at);
 
 CREATE TRIGGER webhook_deliveries_set_updated_at
     BEFORE UPDATE ON webhook_deliveries
