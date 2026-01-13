@@ -44,12 +44,35 @@ describe('CreateExperimentModal', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         mockNavigate.mockClear()
+        window.localStorage.clear()
         // Мокаем projectsApi.list по умолчанию
         const mockProjectsApi = vi.mocked(projectsApi)
         mockProjectsApi.list.mockResolvedValue({
             projects: [
-                { id: 'project-1', name: 'Test Project', description: '', created_at: '2024-01-01T00:00:00Z' },
+                {
+                    id: 'project-1',
+                    name: 'Test Project',
+                    description: '',
+                    owner_id: 'user-1',
+                    created_at: '2024-01-01T00:00:00Z',
+                    updated_at: '2024-01-01T00:00:00Z',
+                },
             ],
+        })
+    })
+
+    it('prefills project from activeProjectId when defaultProjectId is not provided', async () => {
+        window.localStorage.setItem('experiment_portal.active_project_id', 'project-1')
+
+        render(<CreateExperimentModal isOpen={true} onClose={vi.fn()} />, { wrapper: createWrapper() })
+
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+
+        const projectSelect = screen.getByLabelText(/проект/i) as HTMLSelectElement
+        await waitFor(() => {
+            expect(projectSelect.value).toBe('project-1')
         })
     })
 

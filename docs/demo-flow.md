@@ -1,131 +1,78 @@
-# Demo Flow (после реализации Telemetry/Metrics ingest)
+# Demo Flow (MVP, “для людей”)
 
-Сценарий демонстрации должен показывать полный путь данных: от регистрации датчика и запуска эксперимента до потоковой/батчевой телеметрии и визуализации. После добавления ingest-компонентов используем следующий план.
+Короткий сценарий демонстрации MVP: за одну команду поднимаем окружение и генерируем “живые” данные (проект → эксперимент → run → capture session → telemetry), дальше показываем это в UI и, при необходимости, подтверждаем через Grafana/DB.
 
-## 1. Подготовка окружения
+## 0. Что должно быть запущено
 
-1. Запустить все сервисы: `make dev` (или `docker-compose up -d`)
-2. Применить миграции:
-   - Experiment Service: `docker-compose exec experiment-service python bin/migrate.py`
-   - Auth Service: `docker-compose exec auth-service python bin/migrate.py`
-3. Зарегистрировать пользователя в Auth Service:
-   ```bash
-   curl -X POST http://localhost:8001/auth/register \
-     -H 'Content-Type: application/json' \
-     -d '{"username":"demo","email":"demo@example.com","password":"demo123"}'
-   ```
-4. Войти и получить токен:
-   ```bash
-   curl -X POST http://localhost:8001/auth/login \
-     -H 'Content-Type: application/json' \
-     -d '{"username":"demo","password":"demo123"}'
-   ```
-5. (Опционально) `poetry run python bin/demo_seed.py` — создать `demo_project`, базовые эксперименты, датчики и тестовые токены.
-6. Сохранить `project_id`, `owner_user_id`, выданные токены (`token_preview` виден в БД, полный токен выводится только при seed).
+Порты:
+- Auth Service: `8001`
+- Experiment Service: `8002`
+- Telemetry Ingest Service: `8003`
+- Auth Proxy: `8080`
+- Experiment Portal: `3000` (dev) / `80` (prod)
 
-**Примечание:** Для демо можно использовать заголовки `X-User-Id`, `X-Project-Id`, `X-Project-Role` для отладки, но рекомендуется использовать реальную аутентификацию через Auth Service и Auth Proxy.
+## 1. Подготовка данных одной командой
 
-## 2. Регистрация датчика и профиля
+В корне репозитория:
 
 ```bash
-curl -X POST http://localhost:8002/api/v1/sensors \
-  -H "X-User-Id: <owner>" \
-  -H "X-Project-Id: <project_id>" \
-  -H "X-Project-Role: owner" \
-  -H "Idempotency-Key: demo-sensor-1" \
-  -d '{
-        "project_id":"<project_id>",
-        "name":"temperature_raw",
-        "type":"thermocouple",
-        "input_unit":"mV",
-        "display_unit":"C",
-        "conversion_profile":{
-          "version":"v1",
-          "kind":"linear",
-          "payload":{"a":1.23,"b":0.2}
-        }
-      }'
+make mvp-demo-check
 ```
 
-Ответ содержит `sensor` и одноразовый `token`. Сохраняем их для CLI.
+Команда:
+- поднимет dev-стек (`make dev-up`);
+- применит миграции (`make auth-init`, `make experiment-migrate`);
+- создаст пользователя + проект + эксперимент + run + capture session + датчик;
+- отправит 1 точку телеметрии через `Telemetry Ingest` (`POST http://localhost:8003/api/v1/telemetry`);
+- проверит, что `sensors.last_heartbeat` обновился и в `telemetry_records` есть строки.
 
-## 3. Эксперимент → запуск → capture session
+Важно:
+- Скрипт выводит в консоль `username`, `user_id`, `project_id`, `experiment_id`, `run_id`, `capture_session_id`, `sensor_id`.
+- Пароль пользователя в демо‑прогоне: `demo12345`.
 
-1. `POST /api/v1/experiments` (с `project_id`, `name`, `tags`) → `experiment_id`.
-2. `POST /api/v1/experiments/{experiment_id}/runs` → `run_id`.
-3. `POST /api/v1/runs/{run_id}/capture-sessions` с `ordinal_number=1`, `status="running"` → `capture_session_id`.
+## 2. Демонстрация в UI (5–7 минут)
 
-В UI /tests можно проверить, что статус `running`.
+1. Откройте портал: `http://localhost:3000`
+2. Войдите пользователем из вывода `make mvp-demo-check` (пароль `demo12345`).
+3. Откройте список проектов и убедитесь, что есть проект `mvp-demo-<timestamp>`.
+4. Перейдите в список экспериментов и выберите этот проект.
+5. Откройте эксперимент `MVP Demo Experiment <timestamp>`.
+6. Перейдите в созданный run `run-1`.
+7. Убедитесь, что есть capture session со статусом `running` (ordinal `1`).
+8. Перейдите в Sensors → откройте `temperature_raw` → убедитесь, что:
+   - `last_heartbeat` не пустой (обновился после ingest),
+   - (опционально) в форме “тестовая отправка” можно отправить ещё 1–2 точки.
 
-## 4. Telemetry ingest
+Ожидаемый результат:
+- В UI виден полный “сквозной” путь данных: проект → эксперимент → запуск → сессия → датчик с обновлённым heartbeat.
 
-- CLI `demo_sensor.py` (добавить в `bin/`):
+## 3. Если задают вопросы “а данные точно в системе?”
+
+### Быстрая проверка Telemetry Ingest
 
 ```bash
-poetry run python bin/demo_sensor.py \
-  --sensor-id <sensor_id> \
-  --token <sensor_token> \
-  --run-id <run_id> \
-  --capture-session-id <session_id> \
-  --mode stream \
-  --duration 30
+curl -sf http://localhost:8003/health
 ```
 
-Внутри CLI:
+### Быстрая проверка в БД (telemetry_records)
+
+Подставьте `sensor_id` из вывода `make mvp-demo-check`:
 
 ```bash
-curl -X POST http://localhost:8003/api/v1/telemetry \
-  -H "Authorization: Bearer <sensor_token>" \
-  -d '{
-        "sensor_id":"...",
-        "run_id":"...",
-        "capture_session_id":"...",
-        "readings":[
-          {"timestamp":"2025-12-05T12:00:00Z","raw_value":1.23,"meta":{"step":1}}
-        ]
-      }'
+docker-compose exec -T postgres psql -U postgres -d experiment_db -c \
+  "select count(*) from telemetry_records where sensor_id='<sensor_id>';"
 ```
 
-Параллельно можно открыть `ws://localhost:8002/api/v1/telemetry/stream?sensor_id=...` (после реализации WebSocket/SSE в Experiment Service) и показать лайв-график.
+### Логи в Grafana (если нужно)
 
-## 5. Метрики и остановка сессии
+- Grafana: `http://localhost:3001` (admin/admin)
+- Пример запроса: `{service="telemetry-ingest-service"}` или `{service="experiment-service"}`
 
-1. `POST /api/v1/runs/{run_id}/capture-sessions/{session_id}/stop` (`status="succeeded"`, `stopped_at=now`).
-2. `POST /api/v1/runs/{run_id}/metrics`:
+## 4. Troubleshooting
 
-```bash
-curl -X POST http://localhost:8002/api/v1/runs/<run_id>/metrics \
-  -H "X-User-Id: <owner>" -H "X-Project-Id: <project_id>" -H "X-Project-Role: owner" \
-  -d '{
-        "metrics":[
-          {"name":"loss","step":1,"value":0.42,"timestamp":"2025-12-05T12:00:00Z"},
-          {"name":"loss","step":2,"value":0.31,"timestamp":"2025-12-05T12:01:00Z"}
-        ]
-      }'
-```
-
-3. `GET /api/v1/runs/{run_id}/metrics?name=loss` → убедиться, что массив точек возвращается.
-
-## 6. Визуальный walkthrough
-
-- В `projects/frontend/apps/experiment-portal`:
-  - Открыть список экспериментов, найти `demo_project`.
-  - Зайти в run → переключиться между capture session, показать графики (при реализации WebSocket — лайв-график).
-  - Показать журнал событий (capture start/stop, ingest, метрики).
-
-## 7. Архивация и cleanup
-
-1. `PATCH /api/v1/runs/{run_id}` (`status="succeeded"`).
-2. `POST /api/v1/experiments/{experiment_id}/archive`.
-3. (опционально) `POST /api/v1/runs:batch-status` для массовых переключений.
-
-## Checklist для демо
-
-- [ ] Миграции применены, seed выполнен.
-- [ ] Есть свежие токены датчиков.
-- [ ] CLI/скрипты для ingest и метрик работают.
-- [ ] UI показывает данные (графики, списки).
-- [ ] Имеется fallback (скрипты для повторного заполнения данных).
-
-После реализации Telemetry/Metrics ingest и UI-графиков этот документ нужно дополнить скриншотами/реплей-скриптами.
+- Если `experiment-portal` не поднимается / была ошибка `ContainerConfig`:
+  - `make dev-fix` (почистит проблемные контейнеры и поднимет стек заново).
+- Если после `make mvp-demo-check` в UI “не видно данных”:
+  - обновите страницу;
+  - проверьте, что выбран нужный проект (`mvp-demo-<timestamp>`).
 

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
-import { setActiveProjectId } from '../utils/activeProject'
+import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import Modal from './Modal'
 import './CreateRunModal.css'
 
@@ -48,14 +48,18 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
     // Если проект выбран в фильтрах списка, проставляем его в форме при открытии модалки.
     useEffect(() => {
         if (!isOpen) return
-        if (!defaultProjectId) return
+        // Пробуем префилл:
+        // 1) выбранный проект в списке (defaultProjectId)
+        // 2) последний активный проект из localStorage (activeProjectId)
+        const candidateProjectId = defaultProjectId || getActiveProjectId()
+        if (!candidateProjectId) return
 
         setFormData((prev) => {
             // Не перетираем выбор пользователя, если он уже выбрал проект в модалке
             if (prev.project_id) return prev
-            return { ...prev, project_id: defaultProjectId }
+            return { ...prev, project_id: candidateProjectId }
         })
-        setActiveProjectId(defaultProjectId)
+        setActiveProjectId(candidateProjectId)
     }, [isOpen, defaultProjectId])
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -89,7 +93,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
     const handleClose = () => {
         if (!createMutation.isPending) {
             setFormData({
-                project_id: defaultProjectId || '',
+                project_id: defaultProjectId || getActiveProjectId() || '',
                 name: '',
                 description: '',
                 experiment_type: '',
