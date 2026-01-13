@@ -116,11 +116,14 @@ class WebhookDeliveryRepository(BaseRepository):
 
     @staticmethod
     def _to_model(record: Record) -> WebhookDelivery:
-        payload = dict(record)
+        return WebhookDelivery.model_validate(WebhookDeliveryRepository._normalize(dict(record)))
+
+    @staticmethod
+    def _normalize(payload: dict[str, Any]) -> dict[str, Any]:
         value = payload.get("request_body")
         if isinstance(value, str):
             payload["request_body"] = json.loads(value)
-        return WebhookDelivery.model_validate(payload)
+        return payload
 
     async def enqueue(
         self,
@@ -171,6 +174,75 @@ class WebhookDeliveryRepository(BaseRepository):
             limit,
         )
         return [self._to_model(r) for r in records]
+
+    async def list_by_project(
+        self,
+        project_id: UUID,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Tuple[List[WebhookDelivery], int]:
+        where = ["project_id = $1"]
+        values: list[Any] = [project_id]
+        idx = 2
+        if status is not None:
+            where.append(f"status = ${idx}")
+            values.append(status)
+            idx += 1
+        where_sql = " AND ".join(where)
+        query = f"""
+            SELECT *,
+                   COUNT(*) OVER() AS total_count
+            FROM webhook_deliveries
+            WHERE {where_sql}
+            ORDER BY created_at DESC
+            LIMIT ${idx} OFFSET ${idx + 1}
+        """
+        values.extend([limit, offset])
+        records = await self._fetch(query, *values)
+        items: List[WebhookDelivery] = []
+        total: int | None = None
+        for rec in records:
+            rec_dict = dict(rec)
+            total_value = rec_dict.pop("total_count", None)
+            if total_value is not None:
+                total = int(total_value)
+            items.append(WebhookDelivery.model_validate(self._normalize(rec_dict)))
+        if total is None:
+            total = await self._count_by_project(project_id, status=status)
+        return items, total
+
+    async def _count_by_project(self, project_id: UUID, *, status: str | None = None) -> int:
+        if status is None:
+            record = await self._fetchrow(
+                "SELECT COUNT(*) AS total FROM webhook_deliveries WHERE project_id = $1",
+                project_id,
+            )
+        else:
+            record = await self._fetchrow(
+                "SELECT COUNT(*) AS total FROM webhook_deliveries WHERE project_id = $1 AND status = $2",
+                project_id,
+                status,
+            )
+        return int(record["total"]) if record else 0
+
+    async def retry(self, project_id: UUID, delivery_id: UUID) -> None:
+        record = await self._fetchrow(
+            """
+            UPDATE webhook_deliveries
+            SET status = 'pending',
+                next_attempt_at = now(),
+                last_error = NULL,
+                updated_at = now()
+            WHERE project_id = $1 AND id = $2
+            RETURNING id
+            """,
+            project_id,
+            delivery_id,
+        )
+        if record is None:
+            raise NotFoundError("Webhook delivery not found")
 
     async def mark_attempt(
         self,

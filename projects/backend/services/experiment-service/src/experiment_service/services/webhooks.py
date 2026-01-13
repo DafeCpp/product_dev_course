@@ -44,6 +44,24 @@ class WebhookService:
     async def delete_subscription(self, project_id: UUID, subscription_id: UUID) -> None:
         await self._subscriptions.delete(project_id, subscription_id)
 
+    async def list_deliveries(
+        self,
+        project_id: UUID,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        return await self._deliveries.list_by_project(
+            project_id,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def retry_delivery(self, project_id: UUID, delivery_id: UUID) -> None:
+        await self._deliveries.retry(project_id, delivery_id)
+
     async def emit(
         self,
         *,

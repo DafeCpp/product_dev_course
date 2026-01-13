@@ -55,6 +55,7 @@
   - ✅ **Инвариант 3:** нельзя удалить `CaptureSession`, если она активна (`running/backfilling`); удаление допустимо после завершения.
 - **Webhook-триггеры:** ⚠️ Частично реализовано. Добавлена система webhooks на базе outbox (`webhook_deliveries`) + подписок (`webhook_subscriptions`) и фонового dispatcher’а.
   - ✅ CRUD подписок: `GET/POST/DELETE /api/v1/webhooks` (owner/editor для записи; viewer+ для чтения).
+  - ✅ Delivery ops (MVP hardening): `GET /api/v1/webhooks/deliveries` и `POST /api/v1/webhooks/deliveries/{delivery_id}:retry`.
   - ✅ Триггеры:
     - `capture_session.created` и `capture_session.stopped` (на create/stop capture session).
     - `run.started`, `run.finished`, `run.archived` (на `PATCH /api/v1/runs/{id}` и `POST /api/v1/runs:batch-status`).

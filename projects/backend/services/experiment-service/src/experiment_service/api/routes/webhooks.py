@@ -82,3 +82,37 @@ async def delete_webhook(request: web.Request):
         raise web.HTTPNotFound(text=str(exc)) from exc
     return web.Response(status=204)
 
+
+@routes.get("/api/v1/webhooks/deliveries")
+async def list_webhook_deliveries(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_project_access(user, project_id)
+    status = request.rel_url.query.get("status")
+    limit, offset = pagination_params(request)
+    service = await get_webhook_service(request)
+    items, total = await service.list_deliveries(project_id, status=status, limit=limit, offset=offset)
+    payload = paginated_response(
+        [item.model_dump(mode="json") for item in items],
+        limit=limit,
+        offset=offset,
+        key="deliveries",
+        total=total,
+    )
+    return web.json_response(payload)
+
+
+@routes.post("/api/v1/webhooks/deliveries/{delivery_id}:retry")
+async def retry_webhook_delivery(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(
+        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
+    )
+    delivery_id = parse_uuid(request.match_info["delivery_id"], "delivery_id")
+    service = await get_webhook_service(request)
+    try:
+        await service.retry_delivery(project_id, delivery_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    return web.Response(status=204)
+
