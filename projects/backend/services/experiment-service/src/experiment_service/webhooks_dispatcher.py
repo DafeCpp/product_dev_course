@@ -12,6 +12,7 @@ from aiohttp import ClientSession, ClientTimeout, web
 
 from backend_common.db.pool import get_pool_service as get_pool
 
+from experiment_service.domain.webhooks import WebhookDelivery
 from experiment_service.repositories.webhooks import WebhookDeliveryRepository
 from experiment_service.settings import settings
 
@@ -26,10 +27,18 @@ def _signature(secret: str, body_bytes: bytes) -> str:
 
 def _backoff_seconds(attempt: int) -> int:
     # attempt is 1-based
-    return min(60, 2 ** min(attempt, 6))
+    # Use bitshift for stable int typing under mypy.
+    exp: int = min(attempt, 6)
+    delay: int = 1 << exp
+    return min(60, delay)
 
 
-async def _deliver(session: ClientSession, delivery, *, timeout_s: float) -> tuple[bool, str | None]:
+async def _deliver(
+    session: ClientSession,
+    delivery: WebhookDelivery,
+    *,
+    timeout_s: float,
+) -> tuple[bool, str | None]:
     body_bytes = json.dumps(delivery.request_body, separators=(",", ":"), ensure_ascii=False).encode(
         "utf-8"
     )
@@ -41,11 +50,12 @@ async def _deliver(session: ClientSession, delivery, *, timeout_s: float) -> tup
     if delivery.secret:
         headers["X-Webhook-Signature"] = _signature(delivery.secret, body_bytes)
     try:
+        timeout = ClientTimeout(total=timeout_s)
         async with session.post(
             delivery.target_url,
             data=body_bytes,
             headers=headers,
-            timeout=timeout_s,
+            timeout=timeout,
         ) as resp:
             if 200 <= resp.status < 300:
                 return True, None
