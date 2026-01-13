@@ -10,6 +10,7 @@ import { sensorsApi, projectsApi } from '../api/client'
 vi.mock('../api/client', () => ({
     sensorsApi: {
         create: vi.fn(),
+        addProject: vi.fn(),
     },
     projectsApi: {
         list: vi.fn(),
@@ -49,6 +50,7 @@ describe('CreateSensor', () => {
         mockProjectsApi.list.mockResolvedValue({
             projects: [
                 { id: 'project-1', name: 'Test Project', description: '', created_at: '2024-01-01T00:00:00Z' },
+                { id: 'project-2', name: 'Second Project', description: '', created_at: '2024-01-01T00:00:00Z' },
             ],
         })
     })
@@ -85,6 +87,7 @@ describe('CreateSensor', () => {
     it('submits form with correct data', async () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(sensorsApi.create)
+        const mockAddProject = vi.mocked(sensorsApi.addProject)
         const mockResponse = {
             sensor: {
                 id: 'sensor-1',
@@ -106,7 +109,7 @@ describe('CreateSensor', () => {
         await waitFor(() => {
             expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
         })
-        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
+        await user.selectOptions(screen.getByLabelText(/проект/i), ['project-1'])
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
@@ -125,6 +128,55 @@ describe('CreateSensor', () => {
                 calibration_notes: undefined,
             })
         })
+        expect(mockAddProject).not.toHaveBeenCalled()
+    })
+
+    it('adds sensor to additional projects after creation', async () => {
+        const user = userEvent.setup()
+        const mockCreate = vi.mocked(sensorsApi.create)
+        const mockAddProject = vi.mocked(sensorsApi.addProject)
+
+        mockCreate.mockResolvedValueOnce({
+            sensor: {
+                id: 'sensor-1',
+                project_id: 'project-1',
+                name: 'Test Sensor',
+                type: 'temperature',
+                input_unit: 'V',
+                display_unit: '°C',
+                status: 'registering' as const,
+                created_at: '2024-01-01T00:00:00Z',
+                updated_at: '2024-01-01T00:00:00Z',
+            },
+            token: 'test-token-12345',
+        })
+        mockAddProject.mockResolvedValueOnce(undefined)
+
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+        // Выбираем два проекта (первый будет основным)
+        await user.selectOptions(screen.getByLabelText(/проект/i), ['project-1', 'project-2'])
+        await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
+        await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
+        await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
+        await user.type(screen.getByLabelText(/единица отображения/i), '°C')
+
+        await user.click(screen.getByRole('button', { name: /зарегистрировать/i }))
+
+        await waitFor(() => {
+            expect(mockCreate).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    project_id: 'project-1',
+                })
+            )
+        })
+
+        await waitFor(() => {
+            expect(mockAddProject).toHaveBeenCalledWith('sensor-1', 'project-2')
+        })
     })
 
     it('shows error on submission failure', async () => {
@@ -141,7 +193,7 @@ describe('CreateSensor', () => {
         await waitFor(() => {
             expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
         })
-        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
+        await user.selectOptions(screen.getByLabelText(/проект/i), ['project-1'])
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
@@ -179,7 +231,7 @@ describe('CreateSensor', () => {
         await waitFor(() => {
             expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
         })
-        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
+        await user.selectOptions(screen.getByLabelText(/проект/i), ['project-1'])
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
@@ -226,7 +278,7 @@ describe('CreateSensor', () => {
         await waitFor(() => {
             expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
         })
-        await user.selectOptions(screen.getByLabelText(/проект/i), 'project-1')
+        await user.selectOptions(screen.getByLabelText(/проект/i), ['project-1'])
         await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
         await user.selectOptions(screen.getByLabelText(/тип датчика/i), 'temperature')
         await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')

@@ -17,8 +17,13 @@ function CreateSensor() {
         display_unit: '',
         calibration_notes: '',
     })
+    const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
     const [showToken, setShowToken] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [additionalProjectsStatus, setAdditionalProjectsStatus] = useState<
+        'idle' | 'adding' | 'done' | 'error'
+    >('idle')
+    const [additionalProjectsError, setAdditionalProjectsError] = useState<string | null>(null)
 
     const { data: projectsData, isLoading: projectsLoading } = useQuery({
         queryKey: ['projects'],
@@ -28,6 +33,33 @@ function CreateSensor() {
     const createMutation = useMutation({
         mutationFn: (data: SensorCreate) => sensorsApi.create(data),
         onSuccess: (response: SensorRegisterResponse) => {
+            const extraProjectIds = selectedProjectIds.filter(
+                (pid) => pid && pid !== response.sensor.project_id
+            )
+
+            if (extraProjectIds.length > 0) {
+                setAdditionalProjectsStatus('adding')
+                setAdditionalProjectsError(null)
+                    ; (async () => {
+                        try {
+                            await Promise.all(
+                                extraProjectIds.map((pid) => sensorsApi.addProject(response.sensor.id, pid))
+                            )
+                            setAdditionalProjectsStatus('done')
+                        } catch (e: any) {
+                            setAdditionalProjectsStatus('error')
+                            setAdditionalProjectsError(
+                                e?.response?.data?.error ||
+                                e?.message ||
+                                'Не удалось добавить датчик в дополнительные проекты'
+                            )
+                        }
+                    })()
+            } else {
+                setAdditionalProjectsStatus('idle')
+                setAdditionalProjectsError(null)
+            }
+
             // Показываем токен пользователю
             setShowToken(true)
             // Можно сохранить токен в state для отображения
@@ -43,6 +75,9 @@ function CreateSensor() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
+
+        // На всякий случай: если пользователь не выбрал проект через multi-select
+        if (!formData.project_id) return
 
         createMutation.mutate({
             ...formData,
@@ -65,6 +100,16 @@ function CreateSensor() {
                     <p className="warning">
                         ⚠️ Сохраните токен сейчас! Он больше не будет показан.
                     </p>
+                    {additionalProjectsStatus === 'adding' && (
+                        <p style={{ marginTop: '0.5rem', color: '#666' }}>
+                            Добавляем датчик в дополнительные проекты...
+                        </p>
+                    )}
+                    {additionalProjectsStatus === 'error' && additionalProjectsError && (
+                        <div style={{ marginTop: '0.5rem' }}>
+                            <Error message={additionalProjectsError} />
+                        </div>
+                    )}
                     <div className="token-box">
                         <label>Токен датчика:</label>
                         <div className="token-value">
@@ -100,28 +145,37 @@ function CreateSensor() {
             {error && <Error message={error} />}
 
             <form onSubmit={handleSubmit} className="sensor-form card">
-                <FormGroup label="Проект" htmlFor="project_id" required>
+                <FormGroup label="Проекты" htmlFor="project_id" required>
                     {projectsLoading ? (
                         <Loading />
                     ) : (
                         <>
                             <select
                                 id="project_id"
-                                value={formData.project_id}
+                                multiple
+                                value={selectedProjectIds}
                                 onChange={(e) => {
-                                    const id = e.target.value
-                                    setFormData({ ...formData, project_id: id })
-                                    if (id) setActiveProjectId(id)
+                                    const ids = Array.from(e.target.selectedOptions)
+                                        .map((o) => o.value)
+                                        .filter(Boolean)
+
+                                    setSelectedProjectIds(ids)
+
+                                    const primary = ids[0] || ''
+                                    setFormData({ ...formData, project_id: primary })
+                                    if (primary) setActiveProjectId(primary)
                                 }}
                                 required
                             >
-                                <option value="">Выберите проект</option>
                                 {projectsData?.projects.map((project) => (
                                     <option key={project.id} value={project.id}>
                                         {project.name}
                                     </option>
                                 ))}
                             </select>
+                            <small className="form-hint">
+                                Можно выбрать несколько проектов. Первый выбранный проект будет основным.
+                            </small>
                             {projectsData?.projects.length === 0 && (
                                 <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
                                     У вас нет проектов.{' '}
