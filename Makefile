@@ -247,10 +247,11 @@ dev-up:
 		echo "⚠️  Файл .env не найден. Создаю из примера..."; \
 		cp env.docker.example .env 2>/dev/null || true; \
 	fi
-	docker-compose up -d postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal loki alloy grafana
+	docker-compose up -d postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
 	@echo ""
 	@echo "✅ Сервисы запущены!"
 	@echo "🌐 Фронтенд доступен на http://localhost:3000"
+	@echo "🧪 Sensor Simulator доступен на http://localhost:8082"
 	@echo "🔧 Бэкенд API доступен на http://localhost:8002"
 	@echo "📡 Telemetry Ingest доступен на http://localhost:8003"
 	@echo "🔐 Auth Proxy доступен на http://localhost:8080"
@@ -281,7 +282,7 @@ dev-up:
 # Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana
 dev-down:
 	@echo "Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana..."
-	docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal loki alloy grafana
+	docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
 	@echo "✅ Сервисы остановлены"
 
 # Перезапуск фронтенда, бэкенда, auth-service, auth-proxy и Grafana
@@ -290,24 +291,25 @@ dev-restart: dev-down dev-up
 # Просмотр логов всех dev-сервисов
 dev-logs:
 	@echo "Просмотр логов всех dev-сервисов (Ctrl+C для выхода)"
-	docker-compose logs -f --tail=50 postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal loki alloy grafana
+	docker-compose logs -f --tail=50 postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
 
 # Исправление ошибки ContainerConfig (удаление проблемных контейнеров и пересоздание)
 dev-fix:
 	@echo "Исправление ошибки ContainerConfig..."
 	@echo "Остановка всех dev-сервисов..."
-	docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal loki alloy grafana 2>/dev/null || true
+	docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
 	@echo "Удаление проблемных контейнеров..."
 	@docker ps -a --filter "name=experiment-service" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=auth-service" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=telemetry-ingest-service" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=auth-proxy" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=experiment-portal" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+	@docker ps -a --filter "name=sensor-simulator" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=grafana" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=loki" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=backend-postgres" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@echo "Удаление контейнеров с префиксом проекта..."
-	docker-compose rm -f postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal loki alloy grafana 2>/dev/null || true
+	docker-compose rm -f postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
 	@echo "Удаление volume PostgreSQL для пересоздания с правильным паролем..."
 	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
 	@echo "Очистка неиспользуемых образов..."
@@ -323,10 +325,10 @@ dev: dev-up
 dev-clean:
 	@echo "⚠️  ВНИМАНИЕ: Эта команда удалит все данные из базы данных и все логи!"
 	@echo "Остановка всех dev-сервисов..."
-	@docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal loki alloy grafana 2>/dev/null || true
+	@docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
 	@cd infrastructure/logging && docker-compose -f docker-compose.yml stop loki alloy grafana 2>/dev/null || true
 	@echo "Удаление контейнеров..."
-	@docker-compose rm -f postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal loki alloy grafana 2>/dev/null || true
+	@docker-compose rm -f postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
 	@cd infrastructure/logging && docker-compose -f docker-compose.yml rm -f loki alloy grafana 2>/dev/null || true
 	@echo "Удаление volumes (база данных и логи)..."
 	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
@@ -344,7 +346,7 @@ dev-clean-all:
 	@docker-compose down 2>/dev/null || true
 	@cd infrastructure/logging && docker-compose -f docker-compose.yml down 2>/dev/null || true
 	@echo "Удаление всех контейнеров проекта (включая остановленные)..."
-	@docker ps -a --filter "name=backend-postgres" --filter "name=auth-service" --filter "name=experiment-service" --filter "name=telemetry-ingest-service" --filter "name=auth-proxy" --filter "name=experiment-portal" --filter "name=loki" --filter "name=alloy" --filter "name=grafana" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+	@docker ps -a --filter "name=backend-postgres" --filter "name=auth-service" --filter "name=experiment-service" --filter "name=telemetry-ingest-service" --filter "name=auth-proxy" --filter "name=experiment-portal" --filter "name=sensor-simulator" --filter "name=loki" --filter "name=alloy" --filter "name=grafana" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker-compose rm -f 2>/dev/null || true
 	@cd infrastructure/logging && docker-compose -f docker-compose.yml rm -f 2>/dev/null || true
 	@echo "Удаление volumes (база данных и логи)..."
