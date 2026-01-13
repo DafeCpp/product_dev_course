@@ -369,14 +369,16 @@ export const captureSessionsApi = {
 // Telemetry API
 export const telemetryApi = {
   ingest: async (data: TelemetryIngest, sensorToken: string): Promise<TelemetryIngestResponse> => {
-    // Для телеметрии используется прямой запрос к Telemetry Ingest Service с токеном датчика
-    // (не через Auth Proxy, так как это публичный endpoint)
-    const TELEMETRY_INGEST_URL = import.meta.env.VITE_TELEMETRY_INGEST_URL || 'http://localhost:8003'
+    // By default, route telemetry through Auth Proxy (same-origin / unified CORS),
+    // while preserving sensor token via Authorization header.
+    // You can override with direct telemetry-ingest-service URL via VITE_TELEMETRY_INGEST_URL.
+    const TELEMETRY_BASE_URL =
+      import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
     const requestId = generateRequestId()
     const traceId = getTraceId()
 
     const response = await axios.post(
-      `${TELEMETRY_INGEST_URL}/api/v1/telemetry`,
+      `${TELEMETRY_BASE_URL}/api/v1/telemetry`,
       data,
       {
         headers: {
@@ -399,8 +401,9 @@ export const telemetryApi = {
     },
     sensorToken: string
   ): Promise<Response> => {
-    const TELEMETRY_INGEST_URL = import.meta.env.VITE_TELEMETRY_INGEST_URL || 'http://localhost:8003'
-    const url = new URL(`${TELEMETRY_INGEST_URL}/api/v1/telemetry/stream`)
+    const TELEMETRY_BASE_URL =
+      import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
+    const url = new URL(`${TELEMETRY_BASE_URL}/api/v1/telemetry/stream`)
     url.searchParams.set('sensor_id', params.sensor_id)
     if (typeof params.since_id === 'number') url.searchParams.set('since_id', String(params.since_id))
     if (typeof params.max_events === 'number') url.searchParams.set('max_events', String(params.max_events))
