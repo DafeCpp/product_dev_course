@@ -16,7 +16,7 @@ function CreateProject() {
 
     const createMutation = useMutation({
         mutationFn: (data: ProjectCreate) => projectsApi.create(data),
-        onSuccess: (project) => {
+        onSuccess: () => {
             // Переходим на список проектов после создания
             navigate('/projects')
         },

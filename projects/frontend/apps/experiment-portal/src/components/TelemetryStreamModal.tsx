@@ -18,24 +18,80 @@ function _clamp(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, n))
 }
 
-function _buildSparklinePath(values: number[], width: number, height: number): string {
-    if (values.length === 0) return ''
-    if (values.length === 1) return `M 0 ${height / 2} L ${width} ${height / 2}`
+function _formatNumber(n: number) {
+    const abs = Math.abs(n)
+    if (abs >= 1000) return n.toFixed(0)
+    if (abs >= 100) return n.toFixed(1)
+    if (abs >= 10) return n.toFixed(2)
+    return n.toFixed(3)
+}
 
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const span = max - min || 1
+type SparklineBuilt = {
+    linePath: string
+    areaPath: string
+    lastPoint: { x: number; y: number } | null
+    min: number
+    max: number
+    last: number | null
+}
 
-    const stepX = width / (values.length - 1)
+function _buildSparkline(values: number[], width: number, height: number): SparklineBuilt {
+    if (values.length === 0) return { linePath: '', areaPath: '', lastPoint: null, min: 0, max: 0, last: null }
+
+    const margin = { left: 44, right: 14, top: 12, bottom: 26 }
+    const plotW = Math.max(1, width - margin.left - margin.right)
+    const plotH = Math.max(1, height - margin.top - margin.bottom)
+    const bottomY = margin.top + plotH
+
+    const rawMin = Math.min(...values)
+    const rawMax = Math.max(...values)
+
+    let min = rawMin
+    let max = rawMax
+    let span = max - min
+    if (span === 0) {
+        const pad = Math.max(1, Math.abs(max) * 0.1)
+        min = min - pad
+        max = max + pad
+        span = max - min
+    } else {
+        const pad = span * 0.08
+        min = min - pad
+        max = max + pad
+        span = max - min
+    }
+
+    const stepX = values.length === 1 ? plotW : plotW / (values.length - 1)
     const points = values.map((v, i) => {
-        const x = i * stepX
-        const y = height - ((v - min) / span) * height
+        const x = margin.left + i * stepX
+        const y = margin.top + ((max - v) / span) * plotH
         return [x, y] as const
     })
 
     const [x0, y0] = points[0]
     const rest = points.slice(1).map(([x, y]) => `L ${x.toFixed(2)} ${y.toFixed(2)}`).join(' ')
-    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} ${rest}`
+    const linePath = `M ${x0.toFixed(2)} ${y0.toFixed(2)} ${rest}`.trim()
+
+    const xLast = points[points.length - 1][0]
+    const yLast = points[points.length - 1][1]
+    const areaPath = [
+        `M ${margin.left.toFixed(2)} ${bottomY.toFixed(2)}`,
+        `L ${x0.toFixed(2)} ${y0.toFixed(2)}`,
+        rest,
+        `L ${xLast.toFixed(2)} ${bottomY.toFixed(2)}`,
+        'Z',
+    ]
+        .filter(Boolean)
+        .join(' ')
+
+    return {
+        linePath,
+        areaPath,
+        lastPoint: { x: xLast, y: yLast },
+        min: rawMin,
+        max: rawMax,
+        last: values[values.length - 1] ?? null,
+    }
 }
 
 export default function TelemetryStreamModal({ sensorId, sensorToken, isOpen, onClose }: TelemetryStreamModalProps) {
@@ -84,7 +140,9 @@ export default function TelemetryStreamModal({ sensorId, sensorToken, isOpen, on
         return vals.slice(-50)
     }, [records, valueMode])
 
-    const sparkPath = useMemo(() => _buildSparklinePath(plottedValues, 420, 80), [plottedValues])
+    const SPARK_W = 640
+    const SPARK_H = 170
+    const spark = useMemo(() => _buildSparkline(plottedValues, SPARK_W, SPARK_H), [plottedValues])
 
     const stop = () => {
         abortRef.current?.abort()
@@ -255,6 +313,20 @@ export default function TelemetryStreamModal({ sensorId, sensorToken, isOpen, on
                 <div className="sparkline-card">
                     <div className="sparkline-header">
                         <strong>График (последние 50)</strong>
+                        <div className="sparkline-stats">
+                            {spark.last !== null ? (
+                                <>
+                                    <span className="mono">
+                                        last={_formatNumber(spark.last)}{' '}
+                                        <span className="dim">
+                                            (min={_formatNumber(spark.min)} max={_formatNumber(spark.max)})
+                                        </span>
+                                    </span>
+                                </>
+                            ) : (
+                                <span className="dim">нет данных</span>
+                            )}
+                        </div>
                         <div className="mode-toggle">
                             <label>
                                 <input
@@ -276,9 +348,62 @@ export default function TelemetryStreamModal({ sensorId, sensorToken, isOpen, on
                             </label>
                         </div>
                     </div>
-                    <svg width="100%" height="90" viewBox="0 0 420 90" role="img" aria-label="telemetry sparkline">
-                        <rect x="0" y="0" width="420" height="90" className="sparkline-bg" />
-                        <path d={sparkPath} className="sparkline-path" />
+                    <svg
+                        className="sparkline-svg"
+                        width="100%"
+                        height="170"
+                        viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+                        role="img"
+                        aria-label="telemetry sparkline"
+                        preserveAspectRatio="none"
+                    >
+                        <title>Последние 50 значений ({valueMode})</title>
+                        <rect x="0" y="0" width={SPARK_W} height={SPARK_H} className="sparkline-bg" />
+
+                        {/* grid */}
+                        <g className="sparkline-grid">
+                            <line x1="44" y1="12" x2="44" y2="144" />
+                            <line x1="44" y1="144" x2="626" y2="144" />
+                            <line x1="44" y1="12" x2="626" y2="12" />
+                            <line x1="44" y1={(12 + (144 - 12) * 0.33).toFixed(2)} x2="626" y2={(12 + (144 - 12) * 0.33).toFixed(2)} />
+                            <line x1="44" y1={(12 + (144 - 12) * 0.66).toFixed(2)} x2="626" y2={(12 + (144 - 12) * 0.66).toFixed(2)} />
+                        </g>
+
+                        {/* y labels */}
+                        {plottedValues.length > 0 && (
+                            <g className="sparkline-labels">
+                                <text x="8" y="18">
+                                    {_formatNumber(spark.max)}
+                                </text>
+                                <text x="8" y="148">
+                                    {_formatNumber(spark.min)}
+                                </text>
+                                <text x="44" y="166">
+                                    старые → новые
+                                </text>
+                            </g>
+                        )}
+
+                        {plottedValues.length === 0 ? (
+                            <g className="sparkline-empty">
+                                <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle">
+                                    Нет данных — нажмите «Старт»
+                                </text>
+                            </g>
+                        ) : (
+                            <>
+                                <path d={spark.areaPath} className="sparkline-area" />
+                                <path d={spark.linePath} className="sparkline-path" />
+                                {spark.lastPoint && (
+                                    <circle
+                                        className="sparkline-last"
+                                        cx={spark.lastPoint.x}
+                                        cy={spark.lastPoint.y}
+                                        r="3.5"
+                                    />
+                                )}
+                            </>
+                        )}
                     </svg>
                 </div>
 
