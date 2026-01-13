@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { runsApi, experimentsApi, captureSessionsApi } from '../api/client'
@@ -13,10 +14,12 @@ import {
   captureSessionStatusMap,
 } from '../components/common'
 import './RunDetail.css'
+import { setActiveProjectId } from '../utils/activeProject'
 
 function RunDetail() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const { data: run, isLoading, error } = useQuery({
     queryKey: ['run', id],
@@ -30,6 +33,13 @@ function RunDetail() {
     queryFn: () => experimentsApi.get(run!.experiment_id),
     enabled: !!run?.experiment_id,
   })
+
+  // В experiment-service project_id обязателен: подстраиваем локальный "active project"
+  // под run/experiment, чтобы PATCH/POST работали консистентно (особенно при переходе по прямой ссылке).
+  useEffect(() => {
+    if (!experiment?.project_id) return
+    setActiveProjectId(experiment.project_id)
+  }, [experiment?.project_id])
 
   // Получаем список capture sessions
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
@@ -47,13 +57,22 @@ function RunDetail() {
       queryClient.invalidateQueries({ queryKey: ['run', id] })
       queryClient.invalidateQueries({ queryKey: ['runs'] })
     },
+    onError: (err: any) => {
+      setActionError(err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Не удалось завершить run')
+    },
   })
 
   const startRunMutation = useMutation({
-    mutationFn: () => runsApi.update(id!, { status: 'running' }),
+    mutationFn: () => {
+      setActionError(null)
+      return runsApi.update(id!, { status: 'running' })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['run', id] })
       queryClient.invalidateQueries({ queryKey: ['runs'] })
+    },
+    onError: (err: any) => {
+      setActionError(err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Не удалось запустить run')
     },
   })
 
@@ -62,6 +81,9 @@ function RunDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['run', id] })
       queryClient.invalidateQueries({ queryKey: ['runs'] })
+    },
+    onError: (err: any) => {
+      setActionError(err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Не удалось пометить run как failed')
     },
   })
 
@@ -156,7 +178,8 @@ function RunDetail() {
               <button
                 className="btn btn-primary"
                 onClick={() => startRunMutation.mutate()}
-                disabled={startRunMutation.isPending}
+                disabled={startRunMutation.isPending || !experiment}
+                title={!experiment ? 'Загрузка эксперимента (project_id)...' : undefined}
               >
                 {startRunMutation.isPending ? 'Запуск...' : 'Запустить'}
               </button>
@@ -214,6 +237,12 @@ function RunDetail() {
             )}
           </div>
         </div>
+
+        {actionError && (
+          <div className="error" style={{ marginTop: '0.75rem' }}>
+            {actionError}
+          </div>
+        )}
 
         <div className="run-info">
           <InfoRow label="ID" value={<span className="mono">{run.id}</span>} />
