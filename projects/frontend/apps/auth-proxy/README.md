@@ -4,6 +4,7 @@
 
 ## Возможности (MVP)
 - `/auth/*` проксируется в Auth Service.
+- `/api/v1/telemetry/*` (REST ingest + SSE stream) проксируется в Telemetry Ingest Service (с сохранением `Authorization: Bearer <sensor_token>` от клиента).
 - `/api/*` (REST + WS/SSE) проксируется в Experiment Service (далее — API Gateway).
 - Куки access/refresh — HttpOnly, Secure (по конфигу), SameSite=Lax.
 - CORS whitelist + credentials, базовый rate limit, healthcheck `/health`.
@@ -21,6 +22,7 @@ npm run dev
 ## Переменные окружения
 - `PORT` — порт прокси (по умолчанию 8080)
 - `TARGET_EXPERIMENT_URL` — upstream Experiment Service (например, http://localhost:8002)
+- `TARGET_TELEMETRY_URL` — upstream Telemetry Ingest Service (например, http://localhost:8003)
 - `AUTH_URL` — upstream Auth Service (например, http://localhost:8001)
 - `COOKIE_DOMAIN`, `COOKIE_SECURE`, `COOKIE_SAMESITE` — параметры установки куков
 - `ACCESS_COOKIE_NAME`, `REFRESH_COOKIE_NAME` — названия куков

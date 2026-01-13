@@ -50,18 +50,26 @@ npm run build
 
 ### Переменные окружения
 
-Создайте файл `.env`:
+Создайте файл `.env` (опционально):
 
 ```env
-VITE_API_URL=http://localhost:8002
+# Auth Proxy (BFF). По умолчанию: http://localhost:8080
+VITE_AUTH_PROXY_URL=http://localhost:8080
+
+# Override (опционально): прямой Telemetry Ingest Service.
+# Если не задано — телеметрия (REST ingest + SSE stream) идёт через auth-proxy.
+# VITE_TELEMETRY_INGEST_URL=http://localhost:8003
 ```
 
-По умолчанию используется `http://localhost:8002` (Experiment Service)
+По умолчанию frontend ходит в backend через **Auth Proxy**:
+- `/api/*` → auth-proxy → experiment-service
+- `/projects/*` → auth-proxy → auth-service
+- `/api/v1/telemetry/*` → auth-proxy → telemetry-ingest-service (с `Authorization: Bearer <sensor_token>`)
 
 ### Проксирование запросов
 
 Для разработки настроен прокси в `vite.config.ts`:
-- Запросы к `/api/*` проксируются на `http://localhost:8000` (API Gateway)
+- Запросы к `/api/*` и `/projects/*` проксируются на `VITE_AUTH_PROXY_URL` (по умолчанию `http://localhost:8080`)
 
 ## Структура проекта
 
