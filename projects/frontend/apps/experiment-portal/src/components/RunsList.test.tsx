@@ -9,6 +9,7 @@ import { runsApi } from '../api/client'
 vi.mock('../api/client', () => ({
     runsApi: {
         list: vi.fn(),
+        bulkTags: vi.fn(),
     },
 }))
 
@@ -32,6 +33,7 @@ const mockRun = {
     name: 'Test Run',
     params: { param1: 'value1', param2: 'value2', param3: 'value3' },
     status: 'running' as const,
+    tags: ['alpha'],
     started_at: '2024-01-01T10:00:00Z',
     finished_at: '2024-01-01T11:00:00Z',
     duration_seconds: 3600,
@@ -96,6 +98,47 @@ describe('RunsList', () => {
         await waitFor(() => {
             expect(screen.getByText('Test Run')).toBeInTheDocument()
         })
+    })
+
+    it('allows selecting runs and calling bulk tags', async () => {
+        const mockList = vi.mocked(runsApi.list)
+        const mockBulk = vi.mocked((runsApi as any).bulkTags)
+        mockList.mockResolvedValueOnce({
+            runs: [mockRun, { ...mockRun, id: 'run-456', name: 'Run 2', tags: [] }],
+            total: 2,
+            page: 1,
+            page_size: 20,
+        })
+        mockBulk.mockResolvedValueOnce({ runs: [mockRun] })
+
+        const { userEvent } = await import('@testing-library/user-event')
+        const user = userEvent.setup()
+
+        render(<RunsList experimentId="exp-123" />, { wrapper: createWrapper() })
+
+        await waitFor(() => {
+            expect(screen.getByText('Test Run')).toBeInTheDocument()
+        })
+
+        // select first run
+        await user.click(screen.getByLabelText('select run run-123'))
+        const bulkBtn = screen.getByRole('button', { name: /bulk tagging/i })
+        expect(bulkBtn).not.toBeDisabled()
+
+        await user.click(bulkBtn)
+
+        // fill tags and submit
+        await user.selectOptions(screen.getByLabelText('Операция'), 'add')
+        await user.type(screen.getByLabelText(/теги/i), 'beta, gamma')
+        await user.click(screen.getByRole('button', { name: 'Применить' }))
+
+        await waitFor(() => {
+            expect(mockBulk).toHaveBeenCalled()
+        })
+
+        const call = mockBulk.mock.calls[0][0]
+        expect(call.run_ids).toEqual(['run-123'])
+        expect(call.add_tags).toEqual(['beta', 'gamma'])
     })
 
     it('displays status badges correctly', async () => {

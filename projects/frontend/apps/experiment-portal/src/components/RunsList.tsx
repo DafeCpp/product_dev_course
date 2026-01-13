@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { runsApi } from '../api/client'
 import { format } from 'date-fns'
 import { StatusBadge, Loading, Error, EmptyState, runStatusMap } from './common'
+import Tags from './common/Tags'
+import BulkRunTagsModal from './BulkRunTagsModal'
 import './RunsList.css'
 
 interface RunsListProps {
@@ -14,6 +17,16 @@ function RunsList({ experimentId }: RunsListProps) {
     queryKey: ['runs', experimentId],
     queryFn: () => runsApi.list(experimentId),
   })
+
+  const [selected, setSelected] = useState<Record<string, boolean>>({})
+  const [isBulkOpen, setIsBulkOpen] = useState(false)
+
+  const runs = data?.runs ?? []
+  const selectedRunIds = useMemo(
+    () => runs.map((r) => r.id).filter((id) => selected[id]),
+    [runs, selected]
+  )
+  const allSelected = runs.length > 0 && selectedRunIds.length === runs.length
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return '-'
@@ -37,18 +50,43 @@ function RunsList({ experimentId }: RunsListProps) {
     return <Error message="Ошибка загрузки запусков" />
   }
 
-  if (!data || data.runs.length === 0) {
+  if (!data || runs.length === 0) {
     return <EmptyState message="Запуски не найдены" />
   }
 
   return (
     <div className="runs-list">
+      <div className="runs-actions">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setIsBulkOpen(true)}
+          disabled={selectedRunIds.length === 0}
+        >
+          Bulk tagging ({selectedRunIds.length})
+        </button>
+      </div>
       <div className="runs-table">
         <table>
           <thead>
             <tr>
+              <th className="runs-select-col">
+                <input
+                  type="checkbox"
+                  aria-label="select all runs"
+                  checked={allSelected}
+                  onChange={(e) => {
+                    const next: Record<string, boolean> = {}
+                    if (e.target.checked) {
+                      for (const r of runs) next[r.id] = true
+                    }
+                    setSelected(next)
+                  }}
+                />
+              </th>
               <th>Название</th>
               <th>Статус</th>
+              <th>Теги</th>
               <th>Параметры</th>
               <th>Начало</th>
               <th>Завершение</th>
@@ -57,8 +95,18 @@ function RunsList({ experimentId }: RunsListProps) {
             </tr>
           </thead>
           <tbody>
-            {data.runs.map((run) => (
+            {runs.map((run) => (
               <tr key={run.id}>
+                <td className="runs-select-col">
+                  <input
+                    type="checkbox"
+                    aria-label={`select run ${run.id}`}
+                    checked={!!selected[run.id]}
+                    onChange={(e) => {
+                      setSelected((prev) => ({ ...prev, [run.id]: e.target.checked }))
+                    }}
+                  />
+                </td>
                 <td>
                   <Link to={`/runs/${run.id}`} className="run-link">
                     {run.name}
@@ -66,6 +114,9 @@ function RunsList({ experimentId }: RunsListProps) {
                 </td>
                 <td>
                   <StatusBadge status={run.status} statusMap={runStatusMap} />
+                </td>
+                <td>
+                  <Tags tags={run.tags || []} />
                 </td>
                 <td>
                   <div className="parameters-preview">
@@ -105,6 +156,13 @@ function RunsList({ experimentId }: RunsListProps) {
           </tbody>
         </table>
       </div>
+
+      <BulkRunTagsModal
+        isOpen={isBulkOpen}
+        onClose={() => setIsBulkOpen(false)}
+        experimentId={experimentId}
+        runIds={selectedRunIds}
+      />
     </div>
   )
 }

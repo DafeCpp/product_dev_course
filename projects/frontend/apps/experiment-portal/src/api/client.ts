@@ -283,6 +283,15 @@ export const runsApi = {
   fail: async (id: string, reason?: string): Promise<Run> => {
     return await apiPatch(`/api/v1/runs/${id}`, { status: 'failed', reason })
   },
+
+  bulkTags: async (args: {
+    run_ids: string[]
+    set_tags?: string[]
+    add_tags?: string[]
+    remove_tags?: string[]
+  }): Promise<{ runs: Run[] }> => {
+    return await apiPost('/api/v1/runs:bulk-tags', args)
+  },
 }
 
 // Sensors API

@@ -2,6 +2,16 @@
   overflow-x: auto;
 }
 
+.runs-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.runs-select-col {
+  width: 40px;
+}
+
 .runs-table table {
   width: 100%;
   border-collapse: collapse;
@@ -66,4 +76,3 @@
   padding: 4px 12px;
   font-size: 12px;
 }
-

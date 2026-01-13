@@ -20,6 +20,7 @@ export interface Run {
   name: string
   params: Record<string, any>
   status: 'draft' | 'running' | 'succeeded' | 'failed' | 'archived'
+  tags?: string[]
   started_at?: string
   finished_at?: string
   duration_seconds?: number
