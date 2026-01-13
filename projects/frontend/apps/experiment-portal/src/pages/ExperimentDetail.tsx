@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
 import RunsList from '../components/RunsList'
 import CreateRunModal from '../components/CreateRunModal'
+import ExperimentEditModal from '../components/ExperimentEditModal'
 import {
   StatusBadge,
   Loading,
@@ -14,6 +15,7 @@ import {
   experimentStatusMap,
 } from '../components/common'
 import './ExperimentDetail.css'
+import { setActiveProjectId } from '../utils/activeProject'
 
 function ExperimentDetail() {
   const { id } = useParams<{ id: string }>()
@@ -27,6 +29,13 @@ function ExperimentDetail() {
     queryFn: () => experimentsApi.get(id!),
     enabled: !!id,
   })
+
+  // В experiment-service project_id обязателен: подстраиваем локальный "active project"
+  // под эксперимент, чтобы PATCH/GET работали консистентно (особенно при переходе по прямой ссылке).
+  useEffect(() => {
+    if (!experiment?.project_id) return
+    setActiveProjectId(experiment.project_id)
+  }, [experiment?.project_id])
 
   const deleteMutation = useMutation({
     mutationFn: () => experimentsApi.delete(id!),
@@ -53,7 +62,7 @@ function ExperimentDetail() {
             <StatusBadge status={experiment.status} statusMap={experimentStatusMap} />
             <button
               className="btn btn-secondary"
-              onClick={() => setShowEditForm(!showEditForm)}
+              onClick={() => setShowEditForm(true)}
             >
               Редактировать
             </button>
@@ -128,6 +137,14 @@ function ExperimentDetail() {
           experimentId={id}
           isOpen={showCreateRunModal}
           onClose={() => setShowCreateRunModal(false)}
+        />
+      )}
+
+      {experiment && (
+        <ExperimentEditModal
+          isOpen={showEditForm}
+          onClose={() => setShowEditForm(false)}
+          experiment={experiment}
         />
       )}
     </div>

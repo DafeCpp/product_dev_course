@@ -1,0 +1,187 @@
+import { useEffect, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { experimentsApi } from '../api/client'
+import type { Experiment, ExperimentUpdate } from '../types'
+import Modal from './Modal'
+import './CreateRunModal.css'
+
+interface ExperimentEditModalProps {
+    isOpen: boolean
+    onClose: () => void
+    experiment: Experiment
+}
+
+function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModalProps) {
+    const queryClient = useQueryClient()
+
+    const [name, setName] = useState('')
+    const [description, setDescription] = useState('')
+    const [experimentType, setExperimentType] = useState('')
+    const [tagsInput, setTagsInput] = useState('')
+    const [metadataInput, setMetadataInput] = useState('{}')
+    const [error, setError] = useState<string | null>(null)
+
+    useEffect(() => {
+        if (!isOpen) return
+        setError(null)
+        setName(experiment.name ?? '')
+        setDescription(experiment.description ?? '')
+        setExperimentType(experiment.experiment_type ?? '')
+        setTagsInput((experiment.tags || []).join(', '))
+        setMetadataInput(JSON.stringify(experiment.metadata || {}, null, 2))
+    }, [experiment, isOpen])
+
+    const updateMutation = useMutation({
+        mutationFn: async (data: ExperimentUpdate) => experimentsApi.update(experiment.id, data),
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['experiments'] })
+            await queryClient.invalidateQueries({ queryKey: ['experiment', experiment.id] })
+            onClose()
+        },
+        onError: (err: any) => {
+            const msg =
+                err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                err?.message ||
+                'Ошибка обновления эксперимента'
+            setError(msg)
+        },
+    })
+
+    const isBusy = updateMutation.isPending
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault()
+        setError(null)
+
+        const tags = tagsInput
+            .split(',')
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0)
+
+        let metadata: Record<string, any> | undefined = undefined
+        try {
+            const parsed = JSON.parse((metadataInput || '').trim() || '{}')
+            metadata = parsed && typeof parsed === 'object' ? parsed : {}
+        } catch {
+            setError('Неверный формат JSON в метаданных')
+            return
+        }
+
+        const payload: ExperimentUpdate = {
+            name: name.trim() || undefined,
+            description: description.trim() || undefined,
+            experiment_type: experimentType.trim() || undefined,
+            tags,
+            metadata,
+        }
+
+        updateMutation.mutate(payload)
+    }
+
+    const handleClose = () => {
+        if (isBusy) return
+        onClose()
+    }
+
+    return (
+        <Modal
+            isOpen={isOpen}
+            onClose={handleClose}
+            title="Эксперимент: редактирование"
+            disabled={isBusy}
+            className="experiment-modal"
+        >
+            <form onSubmit={handleSubmit} className="modal-form">
+                {error && <div className="error">{error}</div>}
+
+                <div className="form-group">
+                    <label>
+                        Project ID
+                    </label>
+                    <div className="mono" style={{ padding: '0.5rem 0' }}>
+                        {experiment.project_id}
+                    </div>
+                </div>
+
+                <div className="form-group">
+                    <label htmlFor="experiment_edit_name">
+                        Название <span className="required">*</span>
+                    </label>
+                    <input
+                        id="experiment_edit_name"
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        disabled={isBusy}
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label htmlFor="experiment_edit_description">Описание</label>
+                    <textarea
+                        id="experiment_edit_description"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={3}
+                        disabled={isBusy}
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label htmlFor="experiment_edit_type">Тип эксперимента</label>
+                    <select
+                        id="experiment_edit_type"
+                        value={experimentType}
+                        onChange={(e) => setExperimentType(e.target.value)}
+                        disabled={isBusy}
+                    >
+                        <option value="">Выберите тип</option>
+                        <option value="baseline">Бейзлайн (контроль)</option>
+                        <option value="benchmark">Бенчмарк / сравнение</option>
+                        <option value="validation">Валидация / проверка</option>
+                        <option value="calibration">Калибровка</option>
+                        <option value="demo">Демо</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+
+                <div className="form-group">
+                    <label htmlFor="experiment_edit_tags">Теги</label>
+                    <input
+                        id="experiment_edit_tags"
+                        type="text"
+                        value={tagsInput}
+                        onChange={(e) => setTagsInput(e.target.value)}
+                        placeholder="Через запятую: аэродинамика, крыло, naca"
+                        disabled={isBusy}
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label htmlFor="experiment_edit_metadata">Метаданные (JSON)</label>
+                    <textarea
+                        id="experiment_edit_metadata"
+                        value={metadataInput}
+                        onChange={(e) => setMetadataInput(e.target.value)}
+                        rows={8}
+                        disabled={isBusy}
+                    />
+                </div>
+
+                <div className="modal-actions">
+                    <button type="button" className="btn btn-secondary" onClick={handleClose} disabled={isBusy}>
+                        Отмена
+                    </button>
+                    <button type="submit" className="btn btn-primary" disabled={isBusy || !name.trim()}>
+                        {isBusy ? 'Сохранение...' : 'Сохранить'}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    )
+}
+
+export default ExperimentEditModal
+

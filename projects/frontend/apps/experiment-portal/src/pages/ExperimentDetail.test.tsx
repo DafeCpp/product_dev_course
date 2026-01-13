@@ -11,6 +11,7 @@ vi.mock('../api/client', () => ({
     experimentsApi: {
         get: vi.fn(),
         delete: vi.fn(),
+        update: vi.fn(),
     },
 }))
 
@@ -214,9 +215,9 @@ describe('ExperimentDetail', () => {
         const editButton = screen.getByText('Редактировать')
         await user.click(editButton)
 
-        // Note: The component doesn't actually render edit form in current implementation
-        // This test verifies the button click works
-        expect(editButton).toBeInTheDocument()
+        // Модалка редактирования должна открыться и быть предзаполнена данными эксперимента
+        expect(screen.getByText('Эксперимент: редактирование')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('Test Experiment')).toBeInTheDocument()
     })
 
     it('displays experiment type', async () => {
