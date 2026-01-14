@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
-import { Loading, Error, EmptyState, PageHeader } from '../components/common'
+import { Loading, Error, EmptyState, FloatingActionButton } from '../components/common'
 import ProjectModal from '../components/ProjectModal'
 import ProjectMembersModal from '../components/ProjectMembersModal'
 import './ProjectsList.css'
@@ -35,7 +35,7 @@ function ProjectsList() {
     })
 
     // Получаем текущего пользователя для проверки роли
-    const { data: currentUser } = useQuery({
+    const { data: currentUser, isLoading: userLoading } = useQuery({
         queryKey: ['auth', 'me'],
         queryFn: () => authApi.me(),
     })
@@ -67,6 +67,7 @@ function ProjectsList() {
     const isProjectOwner = (projectOwnerId: string) => {
         return currentUser?.id === projectOwnerId
     }
+    const actionsDisabled = isLoading || userLoading
 
     return (
         <div className="projects-list">
@@ -83,19 +84,6 @@ function ProjectsList() {
 
             {showContent && data && (
                 <>
-                    <PageHeader
-                        title="Проекты"
-                        action={
-                            <button
-                                className="btn btn-primary"
-                                onClick={openCreateProject}
-                                disabled={isLoading}
-                            >
-                                Создать проект
-                            </button>
-                        }
-                    />
-
                     {data.projects.length === 0 ? (
                         <EmptyState message="У вас пока нет проектов">
                             <button
@@ -120,6 +108,7 @@ function ProjectsList() {
                                                 onClick={() => openProject(project.id, project.owner_id)}
                                                 title={isProjectOwner(project.owner_id) ? 'Просмотр и редактирование' : 'Просмотр'}
                                                 aria-label="Открыть проект"
+                                                disabled={actionsDisabled}
                                             >
                                                 {isProjectOwner(project.owner_id) ? '✏️' : 'ℹ️'}
                                             </button>
@@ -129,6 +118,7 @@ function ProjectsList() {
                                                     onClick={() => handleManageMembers(project.id, project.owner_id)}
                                                     title="Управление участниками"
                                                     aria-label="Управление участниками"
+                                                    disabled={actionsDisabled}
                                                 >
                                                     👥
                                                 </button>
@@ -168,14 +158,11 @@ function ProjectsList() {
 
             {typeof document !== 'undefined' &&
                 createPortal(
-                    <button
-                        className="fab"
+                    <FloatingActionButton
                         onClick={openCreateProject}
                         title="Создать проект"
-                        aria-label="Создать проект"
-                    >
-                        +
-                    </button>,
+                        ariaLabel="Создать проект"
+                    />,
                     document.body
                 )}
         </div>

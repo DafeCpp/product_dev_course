@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { sensorsApi, projectsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { Sensor } from '../types'
@@ -12,6 +12,8 @@ import {
     EmptyState,
     Pagination,
     PageHeader,
+    FloatingActionButton,
+    MaterialSelect,
     sensorStatusMap,
 } from '../components/common'
 import SensorDetailModal from '../components/SensorDetailModal'
@@ -88,53 +90,53 @@ function SensorsList() {
                     <PageHeader
                         title="Датчики"
                         action={
-                            <Link to="/sensors/new" className="btn btn-primary">
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => navigate('/sensors/new')}
+                                disabled={projectsLoading || isLoading}
+                            >
                                 Зарегистрировать датчик
-                            </Link>
+                            </button>
                         }
                     />
 
                     <div className="filters card">
                         <div className="filters-grid">
-                            <div className="form-group">
-                                <label htmlFor="sensor_project_id">Проект</label>
-                                <select
-                                    id="sensor_project_id"
-                                    value={projectId}
-                                    onChange={(e) => {
-                                        const id = e.target.value
-                                        setProjectId(id)
-                                        setActiveProjectId(id)
-                                        setPage(1)
-                                    }}
-                                    disabled={projectsLoading || isLoading}
-                                >
-                                    <option value="">Выберите проект</option>
-                                    {projectsData?.projects.map((project) => (
-                                        <option key={project.id} value={project.id}>
-                                            {project.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="sensor_status">Статус</label>
-                                <select
-                                    id="sensor_status"
-                                    value={status}
-                                    onChange={(e) => {
-                                        setStatus(e.target.value)
-                                        setPage(1)
-                                    }}
-                                    disabled={isLoading}
-                                >
-                                    <option value="">Все</option>
-                                    <option value="registering">Регистрация</option>
-                                    <option value="active">Активен</option>
-                                    <option value="inactive">Неактивен</option>
-                                    <option value="archived">Архивирован</option>
-                                </select>
-                            </div>
+                            <MaterialSelect
+                                id="sensor_project_id"
+                                label="Проект"
+                                value={projectId}
+                                onChange={(id) => {
+                                    setProjectId(id)
+                                    setActiveProjectId(id)
+                                    setPage(1)
+                                }}
+                                disabled={projectsLoading || isLoading}
+                            >
+                                <option value="">Выберите проект</option>
+                                {projectsData?.projects.map((project) => (
+                                    <option key={project.id} value={project.id}>
+                                        {project.name}
+                                    </option>
+                                ))}
+                            </MaterialSelect>
+                            <MaterialSelect
+                                id="sensor_status"
+                                label="Статус"
+                                value={status}
+                                onChange={(value) => {
+                                    setStatus(value)
+                                    setPage(1)
+                                }}
+                                disabled={isLoading}
+                            >
+                                <option value="">Все</option>
+                                <option value="registering">Регистрация</option>
+                                <option value="active">Активен</option>
+                                <option value="inactive">Неактивен</option>
+                                <option value="archived">Архивирован</option>
+                            </MaterialSelect>
                         </div>
                     </div>
 
@@ -203,14 +205,11 @@ function SensorsList() {
 
             {typeof document !== 'undefined' &&
                 createPortal(
-                    <button
-                        className="fab"
+                    <FloatingActionButton
                         onClick={() => navigate('/sensors/new')}
                         title="Зарегистрировать датчик"
-                        aria-label="Зарегистрировать датчик"
-                    >
-                        +
-                    </button>,
+                        ariaLabel="Зарегистрировать датчик"
+                    />,
                     document.body
                 )}
 

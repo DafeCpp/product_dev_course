@@ -4,6 +4,7 @@ import { experimentsApi } from '../api/client'
 import type { Experiment, ExperimentUpdate } from '../types'
 import Modal from './Modal'
 import { experimentStatusMap } from './common/statusMaps'
+import { MaterialSelect } from './common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateRunModal.css'
@@ -162,10 +163,10 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
 
                 <div className="form-group">
                     <label htmlFor="experiment_edit_status">Статус</label>
-                    <select
+                    <MaterialSelect
                         id="experiment_edit_status"
                         value={status}
-                        onChange={(e) => setStatus(e.target.value as Experiment['status'])}
+                        onChange={(value) => setStatus(value as Experiment['status'])}
                         disabled={isBusy || statusOptions.length <= 1}
                     >
                         {statusOptions.map((s) => (
@@ -173,7 +174,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
                                 {experimentStatusMap[s]?.text ?? s}
                             </option>
                         ))}
-                    </select>
+                    </MaterialSelect>
                     {statusOptions.length <= 1 ? (
                         <small className="form-hint">Для текущего статуса переходы недоступны.</small>
                     ) : (
@@ -210,10 +211,10 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
 
                 <div className="form-group">
                     <label htmlFor="experiment_edit_type">Тип эксперимента</label>
-                    <select
+                    <MaterialSelect
                         id="experiment_edit_type"
                         value={experimentType}
-                        onChange={(e) => setExperimentType(e.target.value)}
+                        onChange={setExperimentType}
                         disabled={isBusy}
                     >
                         <option value="">Выберите тип</option>
@@ -223,7 +224,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
                         <option value="calibration">Калибровка</option>
                         <option value="demo">Демо</option>
                         <option value="other">Другое</option>
-                    </select>
+                    </MaterialSelect>
                 </div>
 
                 <div className="form-group">

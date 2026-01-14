@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { experimentsApi, projectsApi, runsApi, sensorsApi } from '../api/client'
-import { EmptyState, Error as ErrorComponent, Loading, PageHeader } from '../components/common'
+import {
+    EmptyState,
+    Error as ErrorComponent,
+    FloatingActionButton,
+    Loading,
+    MaterialSelect,
+    PageHeader,
+} from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
@@ -14,7 +22,7 @@ function TelemetryViewer() {
     const [panelIds, setPanelIds] = useState<string[]>([])
     const [filtersOpen, setFiltersOpen] = useState(true)
 
-    const { data: projectsData } = useQuery({
+    const { data: projectsData, isLoading: projectsLoading } = useQuery({
         queryKey: ['projects'],
         queryFn: () => projectsApi.list(),
     })
@@ -49,7 +57,14 @@ function TelemetryViewer() {
     const experiments = experimentsData?.experiments || []
     const runs = runsData?.runs || []
     const hasProjects = !!projectsData?.projects?.length
-    const canAddPanel = !!projectId && sensors.length > 0 && !isLoading && !error
+    const canAddPanel =
+        !!projectId &&
+        sensors.length > 0 &&
+        !projectsLoading &&
+        !experimentsLoading &&
+        !runsLoading &&
+        !isLoading &&
+        !error
 
     const projectName = projectsData?.projects.find((p) => p.id === projectId)?.name || 'Проект не выбран'
     const experimentName =
@@ -72,16 +87,11 @@ function TelemetryViewer() {
 
     return (
         <div className="telemetry-view">
-            <PageHeader
-                title="Телеметрия"
-                action={
-                    <button className="btn btn-primary" onClick={addPanel} disabled={!canAddPanel}>
-                        Добавить панель
-                    </button>
-                }
-            />
+            <PageHeader title="Телеметрия" />
 
-            {!hasProjects && (
+            {projectsLoading && <Loading message="Загрузка проектов..." />}
+
+            {!projectsLoading && !hasProjects && (
                 <EmptyState message="У вас нет проектов. Создайте проект, чтобы просматривать телеметрию." />
             )}
 
@@ -95,65 +105,58 @@ function TelemetryViewer() {
 
                     {filtersOpen && (
                         <div className="telemetry-view__grid">
-                            <div className="form-group">
-                                <label htmlFor="telemetry_project_id">Проект</label>
-                                <select
-                                    id="telemetry_project_id"
-                                    value={projectId}
-                                    onChange={(e) => {
-                                        const id = e.target.value
-                                        setProjectId(id)
-                                        setActiveProjectId(id)
-                                        setExperimentId('')
-                                        setRunId('')
-                                    }}
-                                >
-                                    <option value="">Выберите проект</option>
-                                    {projectsData?.projects.map((project) => (
-                                        <option key={project.id} value={project.id}>
-                                            {project.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <MaterialSelect
+                                id="telemetry_project_id"
+                                label="Проект"
+                                value={projectId}
+                                onChange={(id) => {
+                                    setProjectId(id)
+                                    setActiveProjectId(id)
+                                    setExperimentId('')
+                                    setRunId('')
+                                }}
+                                disabled={projectsLoading}
+                            >
+                                <option value="">Выберите проект</option>
+                                {projectsData?.projects.map((project) => (
+                                    <option key={project.id} value={project.id}>
+                                        {project.name}
+                                    </option>
+                                ))}
+                            </MaterialSelect>
 
-                            <div className="form-group">
-                                <label htmlFor="telemetry_experiment_id">Эксперимент</label>
-                                <select
-                                    id="telemetry_experiment_id"
-                                    value={experimentId}
-                                    onChange={(e) => {
-                                        const id = e.target.value
-                                        setExperimentId(id)
-                                        setRunId('')
-                                    }}
-                                    disabled={!projectId || experimentsLoading}
-                                >
-                                    <option value="">Выберите эксперимент</option>
-                                    {experiments.map((experiment) => (
-                                        <option key={experiment.id} value={experiment.id}>
-                                            {experiment.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <MaterialSelect
+                                id="telemetry_experiment_id"
+                                label="Эксперимент"
+                                value={experimentId}
+                                onChange={(id) => {
+                                    setExperimentId(id)
+                                    setRunId('')
+                                }}
+                                disabled={!projectId || experimentsLoading || projectsLoading}
+                            >
+                                <option value="">Выберите эксперимент</option>
+                                {experiments.map((experiment) => (
+                                    <option key={experiment.id} value={experiment.id}>
+                                        {experiment.name}
+                                    </option>
+                                ))}
+                            </MaterialSelect>
 
-                            <div className="form-group">
-                                <label htmlFor="telemetry_run_id">Пуск</label>
-                                <select
-                                    id="telemetry_run_id"
-                                    value={runId}
-                                    onChange={(e) => setRunId(e.target.value)}
-                                    disabled={!experimentId || runsLoading}
-                                >
-                                    <option value="">Выберите пуск</option>
-                                    {runs.map((run) => (
-                                        <option key={run.id} value={run.id}>
-                                            {run.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <MaterialSelect
+                                id="telemetry_run_id"
+                                label="Пуск"
+                                value={runId}
+                                onChange={setRunId}
+                                disabled={!experimentId || runsLoading || experimentsLoading || projectsLoading}
+                            >
+                                <option value="">Выберите пуск</option>
+                                {runs.map((run) => (
+                                    <option key={run.id} value={run.id}>
+                                        {run.name}
+                                    </option>
+                                ))}
+                            </MaterialSelect>
                         </div>
                     )}
 
@@ -170,7 +173,8 @@ function TelemetryViewer() {
                     {!isLoading && !error && projectId && sensors.length === 0 && (
                         <EmptyState message="В выбранном проекте нет датчиков." />
                     )}
-                    {experimentsError && (
+                    {experimentsLoading && <Loading message="Загрузка экспериментов..." />}
+                    {!experimentsLoading && experimentsError && (
                         <ErrorComponent
                             message={
                                 experimentsError instanceof Error
@@ -179,7 +183,8 @@ function TelemetryViewer() {
                             }
                         />
                     )}
-                    {runsError && (
+                    {runsLoading && <Loading message="Загрузка запусков..." />}
+                    {!runsLoading && runsError && (
                         <ErrorComponent
                             message={runsError instanceof Error ? runsError.message : 'Ошибка загрузки запусков.'}
                         />
@@ -213,6 +218,17 @@ function TelemetryViewer() {
                     />
                 ))}
             </div>
+
+            {typeof document !== 'undefined' &&
+                createPortal(
+                    <FloatingActionButton
+                        onClick={addPanel}
+                        title="Добавить панель"
+                        ariaLabel="Добавить панель"
+                        disabled={!canAddPanel}
+                    />,
+                    document.body
+                )}
         </div>
     )
 }

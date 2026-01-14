@@ -12,6 +12,7 @@ import {
     Error,
     InfoRow,
     sensorStatusMap,
+    MaterialSelect,
 } from './common'
 import './SensorDetailModal.css'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
@@ -369,10 +370,10 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
                                 <label htmlFor="add-project-select">
                                     Проект <span className="required">*</span>
                                 </label>
-                                <select
+                                <MaterialSelect
                                     id="add-project-select"
                                     value={selectedProjectId}
-                                    onChange={(e) => setSelectedProjectId(e.target.value)}
+                                    onChange={(value) => setSelectedProjectId(value)}
                                     disabled={isPending}
                                 >
                                     <option value="">Выберите проект</option>
@@ -386,7 +387,7 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
                                                 {project.name}
                                             </option>
                                         ))}
-                                </select>
+                                </MaterialSelect>
                             </div>
                             {allProjectsData?.projects.filter(
                                 (p) => !sensorProjectsData?.project_ids.includes(p.id)

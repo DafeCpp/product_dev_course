@@ -3,6 +3,7 @@ import type { Sensor, TelemetryStreamRecord } from '../types'
 import { telemetryApi } from '../api/client'
 import { createSSEParser } from '../utils/sse'
 import Modal from './Modal'
+import { MaterialSelect } from './common'
 import './TelemetryPanel.css'
 
 type TelemetryPanelProps = {
@@ -324,11 +325,12 @@ export default function TelemetryPanel({ panelId, title, sensors, onRemove }: Te
                     <div className="form-group">
                         <label>Сенсоры</label>
                         <div className="telemetry-panel__sensor-picker">
-                            <select
+                            <MaterialSelect
+                                id={`telemetry_panel_sensor_${panelId}`}
                                 value=""
-                                onChange={(e) => {
-                                    addSensor(e.target.value)
-                                    e.currentTarget.value = ''
+                                onChange={(value, event) => {
+                                    addSensor(value)
+                                    event.currentTarget.value = ''
                                 }}
                                 disabled={availableSensors.length === 0}
                             >
@@ -338,7 +340,7 @@ export default function TelemetryPanel({ panelId, title, sensors, onRemove }: Te
                                         {sensor.name} ({sensor.type})
                                     </option>
                                 ))}
-                            </select>
+                            </MaterialSelect>
                             <div className="telemetry-panel__sensor-list">
                                 {selectedSensorIds.length === 0 && <span className="telemetry-panel__hint">Сенсоры не выбраны</span>}
                                 {filteredSensors.map((sensor) => (

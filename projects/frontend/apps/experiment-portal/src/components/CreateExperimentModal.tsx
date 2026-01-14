@@ -7,7 +7,7 @@ import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import { Loading } from './common'
+import { Loading, MaterialSelect } from './common'
 import './CreateRunModal.css'
 
 interface CreateExperimentModalProps {
@@ -148,11 +148,10 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                         <Loading message="Загрузка проектов..." />
                     ) : (
                         <>
-                            <select
+                            <MaterialSelect
                                 id="experiment_project"
                                 value={formData.project_id}
-                                onChange={(e) => {
-                                    const id = e.target.value
+                                onChange={(id) => {
                                     setFormData({ ...formData, project_id: id })
                                     if (id) setActiveProjectId(id)
                                 }}
@@ -165,7 +164,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                                         {project.name}
                                     </option>
                                 ))}
-                            </select>
+                            </MaterialSelect>
                             {projectsData?.projects.length === 0 && (
                                 <small className="form-hint">
                                     У вас нет проектов. Перейдите на страницу проектов, чтобы создать проект.
@@ -206,11 +205,11 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
 
                 <div className="form-group">
                     <label htmlFor="experiment_type">Тип эксперимента</label>
-                    <select
+                    <MaterialSelect
                         id="experiment_type"
-                        value={formData.experiment_type}
-                        onChange={(e) =>
-                            setFormData({ ...formData, experiment_type: e.target.value })
+                        value={formData.experiment_type ?? ''}
+                        onChange={(value) =>
+                            setFormData({ ...formData, experiment_type: value })
                         }
                         disabled={createMutation.isPending}
                     >
@@ -221,7 +220,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                         <option value="calibration">Калибровка</option>
                         <option value="demo">Демо</option>
                         <option value="other">Другое</option>
-                    </select>
+                    </MaterialSelect>
                 </div>
 
                 <div className="form-group">

@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { sensorsApi, projectsApi } from '../api/client'
 import type { SensorCreate, SensorRegisterResponse } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
-import { Error, FormGroup, FormActions, Loading } from '../components/common'
+import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
 import './CreateSensor.css'
@@ -196,12 +196,12 @@ function CreateSensor() {
                         <Loading />
                     ) : (
                         <>
-                            <select
+                            <MaterialSelect
                                 id="project_id"
                                 multiple
                                 value={selectedProjectIds}
-                                onChange={(e) => {
-                                    const ids = Array.from(e.target.selectedOptions)
+                                onChange={(_, event) => {
+                                    const ids = Array.from(event.target.selectedOptions)
                                         .map((o) => o.value)
                                         .filter(Boolean)
 
@@ -218,7 +218,7 @@ function CreateSensor() {
                                         {project.name}
                                     </option>
                                 ))}
-                            </select>
+                            </MaterialSelect>
                             <small className="form-hint">
                                 Можно выбрать несколько проектов. Первый выбранный проект будет основным.
                             </small>
@@ -246,10 +246,10 @@ function CreateSensor() {
                 </FormGroup>
 
                 <FormGroup label="Тип датчика" htmlFor="sensor_type" required>
-                    <select
+                    <MaterialSelect
                         id="sensor_type"
                         value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                        onChange={(value) => setFormData({ ...formData, type: value })}
                         required
                     >
                         <option value="">Выберите тип</option>
@@ -260,7 +260,7 @@ function CreateSensor() {
                         <option value="voltage">Напряжение</option>
                         <option value="humidity">Влажность</option>
                         <option value="other">Другое</option>
-                    </select>
+                    </MaterialSelect>
                 </FormGroup>
 
                 <FormGroup

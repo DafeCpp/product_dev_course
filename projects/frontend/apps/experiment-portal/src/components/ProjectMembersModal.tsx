@@ -4,7 +4,7 @@ import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
 import type { ProjectMemberAdd, ProjectMemberUpdate } from '../types'
 import Modal from './Modal'
-import { Loading, Error } from './common'
+import { Loading, Error, MaterialSelect } from './common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateRunModal.css'
@@ -220,21 +220,22 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
                                                         </td>
                                                         <td>
                                                             {canEdit ? (
-                                                                <select
+                                                                <MaterialSelect
+                                                                    id={`member_role_${member.user_id}`}
                                                                     value={member.role}
-                                                                    onChange={(e) =>
+                                                                    onChange={(value) =>
                                                                         handleRoleChange(
                                                                             member.user_id,
-                                                                            e.target
-                                                                                .value as 'owner' | 'editor' | 'viewer'
+                                                                            value as 'owner' | 'editor' | 'viewer'
                                                                         )
                                                                     }
                                                                     disabled={isPending}
+                                                                    className="md-select--compact"
                                                                 >
                                                                     <option value="viewer">Наблюдатель</option>
                                                                     <option value="editor">Редактор</option>
                                                                     <option value="owner">Владелец</option>
-                                                                </select>
+                                                                </MaterialSelect>
                                                             ) : (
                                                                 <span>{getRoleLabel(member.role)}</span>
                                                             )}
@@ -292,20 +293,18 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
 
                                     <div className="form-group">
                                         <label htmlFor="new_member_role">Роль</label>
-                                        <select
+                                        <MaterialSelect
                                             id="new_member_role"
                                             value={newMemberRole}
-                                            onChange={(e) =>
-                                                setNewMemberRole(
-                                                    e.target.value as 'owner' | 'editor' | 'viewer'
-                                                )
+                                            onChange={(value) =>
+                                                setNewMemberRole(value as 'owner' | 'editor' | 'viewer')
                                             }
                                             disabled={isPending}
                                         >
                                             <option value="viewer">Наблюдатель</option>
                                             <option value="editor">Редактор</option>
                                             <option value="owner">Владелец</option>
-                                        </select>
+                                        </MaterialSelect>
                                     </div>
 
                                     <button

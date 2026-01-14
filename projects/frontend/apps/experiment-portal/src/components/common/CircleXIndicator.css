@@ -1,0 +1,32 @@
+.circle-x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--outline);
+    background: var(--surface);
+    color: var(--text-secondary);
+    user-select: none;
+    pointer-events: none;
+}
+
+.circle-x svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+.circle-x--inline {
+    width: 32px;
+    height: 32px;
+}
+
+.circle-x--fab {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 56px;
+    height: 56px;
+    box-shadow: var(--elevation-2);
+    z-index: 1000;
+}

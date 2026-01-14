@@ -12,6 +12,7 @@ import {
   InfoRow,
   runStatusMap,
   captureSessionStatusMap,
+  MaterialSelect,
 } from '../components/common'
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
 import './RunDetail.css'
@@ -394,17 +395,17 @@ function RunDetail() {
             <div className="telemetry-controls">
               <div className="form-group">
                 <label htmlFor="run-telemetry-sensor">Датчик</label>
-                <select
+                <MaterialSelect
                   id="run-telemetry-sensor"
                   value={selectedSensorId}
-                  onChange={(e) => setSelectedSensorId(e.target.value)}
+                  onChange={(value) => setSelectedSensorId(value)}
                 >
                   {sensors.map((sensor) => (
                     <option key={sensor.id} value={sensor.id}>
                       {sensor.name} ({sensor.type})
                     </option>
                   ))}
-                </select>
+                </MaterialSelect>
               </div>
               <div className="telemetry-actions">
                 <button

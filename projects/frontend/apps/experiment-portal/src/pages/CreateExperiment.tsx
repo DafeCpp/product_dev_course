@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
-import { Error, FormGroup, FormActions, Loading } from '../components/common'
+import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateExperiment.css'
@@ -98,15 +98,13 @@ function CreateExperiment() {
             <Loading />
           ) : (
             <>
-              <select
+              <MaterialSelect
+                id="create_experiment_project_id"
                 value={formData.project_id}
-                onChange={(e) =>
-                  (() => {
-                    const id = e.target.value
-                    setFormData({ ...formData, project_id: id })
-                    if (id) setActiveProjectId(id)
-                  })()
-                }
+                onChange={(id) => {
+                  setFormData({ ...formData, project_id: id })
+                  if (id) setActiveProjectId(id)
+                }}
                 required
               >
                 <option value="">Выберите проект</option>
@@ -115,7 +113,7 @@ function CreateExperiment() {
                     {project.name}
                   </option>
                 ))}
-              </select>
+              </MaterialSelect>
               {projectsData?.projects.length === 0 && (
                 <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
                   У вас нет проектов.{' '}
@@ -149,10 +147,11 @@ function CreateExperiment() {
         </FormGroup>
 
         <FormGroup label="Тип эксперимента">
-          <select
+          <MaterialSelect
+            id="create_experiment_type"
             value={formData.experiment_type}
-            onChange={(e) =>
-              setFormData({ ...formData, experiment_type: e.target.value })
+            onChange={(value) =>
+              setFormData({ ...formData, experiment_type: value })
             }
           >
             <option value="">Выберите тип</option>
@@ -162,7 +161,7 @@ function CreateExperiment() {
             <option value="calibration">Калибровка</option>
             <option value="demo">Демо</option>
             <option value="other">Другое</option>
-          </select>
+          </MaterialSelect>
         </FormGroup>
 
         <FormGroup

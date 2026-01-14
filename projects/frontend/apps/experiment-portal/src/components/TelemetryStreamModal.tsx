@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from './Modal'
+import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
 import { createSSEParser } from '../utils/sse'
 import type { TelemetryStreamRecord } from '../types'
@@ -325,16 +326,16 @@ export default function TelemetryStreamModal({
                     {hasFilterOptions && (
                         <div className="form-group">
                             <label htmlFor="telemetry_stream_filter">filter</label>
-                            <select
+                            <MaterialSelect
                                 id="telemetry_stream_filter"
                                 value={filterMode}
-                                onChange={(e) => setFilterMode(e.target.value as FilterMode)}
+                                onChange={(value) => setFilterMode(value as FilterMode)}
                                 disabled={status === 'connecting'}
                             >
                                 <option value="all">all events</option>
                                 {filterRunId && <option value="run">this run</option>}
                                 {filterCaptureSessionId && <option value="capture">active capture session</option>}
-                            </select>
+                            </MaterialSelect>
                         </div>
                     )}
                 </div>

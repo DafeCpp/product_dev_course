@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import Modal from './Modal'
+import { MaterialSelect } from './common'
 import { runsApi } from '../api/client'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
@@ -81,16 +82,16 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
 
                 <div className="form-group">
                     <label htmlFor="bulk_mode">Операция</label>
-                    <select
+                    <MaterialSelect
                         id="bulk_mode"
                         value={mode}
-                        onChange={(e) => setMode(e.target.value as BulkMode)}
+                        onChange={(value) => setMode(value as BulkMode)}
                         disabled={mutation.isPending}
                     >
                         <option value="add">Добавить теги</option>
                         <option value="remove">Удалить теги</option>
                         <option value="set">Заменить теги (можно очистить)</option>
-                    </select>
+                    </MaterialSelect>
                 </div>
 
                 <div className="form-group">

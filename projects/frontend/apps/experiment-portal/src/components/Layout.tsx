@@ -44,6 +44,15 @@ function Layout({ children }: LayoutProps) {
     logoutMutation.mutate()
   }
 
+  const pageTitleMap: Record<string, string> = {
+    '/projects': 'Проекты',
+    '/experiments': 'Эксперименты',
+    '/sensors': 'Датчики',
+    '/telemetry': 'Телеметрия',
+  }
+  const pageTitle =
+    Object.entries(pageTitleMap).find(([path]) => location.pathname.startsWith(path))?.[1] || ''
+
   return (
     <div className="layout">
       <div
@@ -83,9 +92,11 @@ function Layout({ children }: LayoutProps) {
       <header className="header">
         <div className="header-container">
           <div className="header-content">
-            <Link to="/" className="logo">
-              <h1>Experiment Tracking</h1>
-            </Link>
+            <div className="header-brand">
+              <Link to="/" className="logo">
+                <h1>{pageTitle || 'Experiment Tracking'}</h1>
+              </Link>
+            </div>
             <div className="user-menu">
               {user && (
                 <div className="user-info">
@@ -110,7 +121,11 @@ function Layout({ children }: LayoutProps) {
         </div>
       </header>
       <main className="main">
-        <div className="container">{children}</div>
+        <div className="container">
+          <div key={location.pathname} className="page-transition">
+            {children}
+          </div>
+        </div>
       </main>
 
       <UserProfileModal

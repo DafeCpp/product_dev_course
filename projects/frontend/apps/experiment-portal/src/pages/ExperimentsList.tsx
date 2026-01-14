@@ -11,6 +11,8 @@ import {
   EmptyState,
   Pagination,
   PageHeader,
+  FloatingActionButton,
+  MaterialSelect,
   Tags,
   experimentStatusMap,
 } from '../components/common'
@@ -62,6 +64,7 @@ function ExperimentsList() {
     },
     enabled: !!projectId, // Запрос выполняется только если project_id выбран
   })
+  const isBusy = isLoading || projectsLoading
 
   return (
     <div className="experiments-list">
@@ -109,44 +112,44 @@ function ExperimentsList() {
                     setSearchQuery(e.target.value)
                     setPage(1)
                   }}
+                  disabled={isBusy}
                 />
               </div>
-              <div className="form-group">
-                <label>Проект</label>
-                <select
-                  value={projectId}
-                  onChange={(e) => {
-                    const id = e.target.value
-                    setProjectId(id)
-                    setActiveProjectId(id)
-                    setPage(1)
-                  }}
-                >
-                  <option value="">Выберите проект</option>
-                  {projectsData?.projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Статус</label>
-                <select
-                  value={status}
-                  onChange={(e) => {
-                    setStatus(e.target.value)
-                    setPage(1)
-                  }}
-                >
-                  <option value="">Все</option>
-                  <option value="created">Создан</option>
-                  <option value="running">Выполняется</option>
-                  <option value="completed">Завершен</option>
-                  <option value="failed">Ошибка</option>
-                  <option value="archived">Архивирован</option>
-                </select>
-              </div>
+              <MaterialSelect
+                id="experiment_project_id"
+                label="Проект"
+                value={projectId}
+                onChange={(id) => {
+                  setProjectId(id)
+                  setActiveProjectId(id)
+                  setPage(1)
+                }}
+                disabled={isBusy}
+              >
+                <option value="">Выберите проект</option>
+                {projectsData?.projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </MaterialSelect>
+              <MaterialSelect
+                id="experiment_status"
+                label="Статус"
+                value={status}
+                onChange={(value) => {
+                  setStatus(value)
+                  setPage(1)
+                }}
+                disabled={isBusy}
+              >
+                <option value="">Все</option>
+                <option value="created">Создан</option>
+                <option value="running">Выполняется</option>
+                <option value="completed">Завершен</option>
+                <option value="failed">Ошибка</option>
+                <option value="archived">Архивирован</option>
+              </MaterialSelect>
             </div>
           </div>
 
@@ -209,14 +212,11 @@ function ExperimentsList() {
 
       {typeof document !== 'undefined' &&
         createPortal(
-          <button
-            className="fab"
+          <FloatingActionButton
             onClick={() => setIsCreateModalOpen(true)}
             title="Создать эксперимент"
-            aria-label="Создать эксперимент"
-          >
-            +
-          </button>,
+            ariaLabel="Создать эксперимент"
+          />,
           document.body
         )}
     </div>

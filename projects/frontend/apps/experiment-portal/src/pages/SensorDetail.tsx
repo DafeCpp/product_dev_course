@@ -13,6 +13,7 @@ import {
     EmptyState,
     InfoRow,
     sensorStatusMap,
+    MaterialSelect,
 } from '../components/common'
 import './SensorDetail.css'
 import { IS_TEST } from '../utils/env'
@@ -346,10 +347,10 @@ function SensorDetail() {
                                         <label htmlFor="add-project-select">
                                             Проект <span className="required">*</span>
                                         </label>
-                                        <select
+                                        <MaterialSelect
                                             id="add-project-select"
                                             value={selectedProjectId}
-                                            onChange={(e) => setSelectedProjectId(e.target.value)}
+                                            onChange={(value) => setSelectedProjectId(value)}
                                             disabled={addProjectMutation.isPending}
                                         >
                                             <option value="">Выберите проект</option>
@@ -363,7 +364,7 @@ function SensorDetail() {
                                                         {project.name}
                                                     </option>
                                                 ))}
-                                        </select>
+                                        </MaterialSelect>
                                     </div>
                                     {allProjectsData?.projects.filter(
                                         (p) => !sensorProjectsData?.project_ids.includes(p.id)
