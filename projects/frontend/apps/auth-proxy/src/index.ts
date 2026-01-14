@@ -276,20 +276,19 @@ export async function buildServer(config: Config) {
             accept.includes('text/event-stream') ||
             url.startsWith('/api/v1/telemetry/stream')
         if (isSse) {
-            if (!request.raw.socket) return
-            if (typeof request.raw.setTimeout === 'function') {
-                request.raw.setTimeout(0)
-            }
-            // Keep the socket open for streaming.
-            if (typeof request.raw.socket?.setTimeout === 'function') {
-                request.raw.socket.setTimeout(0)
-            }
-            if (typeof reply.raw.setTimeout === 'function') {
-                reply.raw.setTimeout(0)
-            }
-            if (!reply.raw.headersSent) {
-                reply.raw.setHeader('Cache-Control', 'no-cache, no-transform')
-                reply.raw.setHeader('X-Accel-Buffering', 'no')
+            try {
+                if (typeof request.raw.setTimeout === 'function') {
+                    request.raw.setTimeout(0)
+                }
+                // Keep the socket open for streaming.
+                if (typeof request.raw.socket?.setTimeout === 'function') {
+                    request.raw.socket.setTimeout(0)
+                }
+                if (typeof reply.raw.setTimeout === 'function') {
+                    reply.raw.setTimeout(0)
+                }
+            } catch (err) {
+                request.log.warn({ err }, 'SSE hardening failed')
             }
         }
     })

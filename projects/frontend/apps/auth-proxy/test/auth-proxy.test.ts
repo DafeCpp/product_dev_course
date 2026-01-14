@@ -229,5 +229,94 @@ describe('auth-proxy server', () => {
             await upstream.close()
         }
     })
+
+    test('allows state-changing /api requests when referer origin is allowed', async () => {
+        const upstream = (await import('fastify')).default({ logger: false })
+        upstream.post('/api/v1/ping', async () => ({ ok: true }))
+        await upstream.listen({ port: 0, host: '127.0.0.1' })
+        const address = upstream.server.address()
+        const port = typeof address === 'object' && address ? address.port : 0
+
+        const app = await buildServer({
+            port: 0,
+            targetExperimentUrl: `http://127.0.0.1:${port}`,
+            targetTelemetryUrl: 'http://example.invalid',
+            authUrl: 'http://example.invalid',
+            corsOrigins: ['http://localhost:3000'],
+            cookieSecure: false,
+            cookieSameSite: 'lax',
+            accessCookieName: 'access_token',
+            refreshCookieName: 'refresh_token',
+            accessTtlSec: 900,
+            refreshTtlSec: 1209600,
+            rateLimitWindowMs: 60000,
+            rateLimitMax: 60,
+            logLevel: 'silent',
+        })
+        await app.ready()
+        try {
+            const res = await app.inject({
+                method: 'POST',
+                url: '/api/v1/ping',
+                headers: {
+                    referer: 'http://localhost:3000/some/page',
+                    cookie: 'access_token=a.b.c; csrf_token=csrf123',
+                    'x-csrf-token': 'csrf123',
+                    'content-type': 'application/json',
+                },
+                payload: JSON.stringify({ x: 1 }),
+            })
+
+            expect(res.statusCode).toBe(200)
+            expect(res.json()).toEqual({ ok: true })
+        } finally {
+            await app.close()
+            await upstream.close()
+        }
+    })
+
+    test('blocks state-changing /api requests when origin is missing', async () => {
+        const upstream = (await import('fastify')).default({ logger: false })
+        upstream.post('/api/v1/ping', async () => ({ ok: true }))
+        await upstream.listen({ port: 0, host: '127.0.0.1' })
+        const address = upstream.server.address()
+        const port = typeof address === 'object' && address ? address.port : 0
+
+        const app = await buildServer({
+            port: 0,
+            targetExperimentUrl: `http://127.0.0.1:${port}`,
+            targetTelemetryUrl: 'http://example.invalid',
+            authUrl: 'http://example.invalid',
+            corsOrigins: ['http://localhost:3000'],
+            cookieSecure: false,
+            cookieSameSite: 'lax',
+            accessCookieName: 'access_token',
+            refreshCookieName: 'refresh_token',
+            accessTtlSec: 900,
+            refreshTtlSec: 1209600,
+            rateLimitWindowMs: 60000,
+            rateLimitMax: 60,
+            logLevel: 'silent',
+        })
+        await app.ready()
+        try {
+            const res = await app.inject({
+                method: 'POST',
+                url: '/api/v1/ping',
+                headers: {
+                    cookie: 'access_token=a.b.c; csrf_token=csrf123',
+                    'x-csrf-token': 'csrf123',
+                    'content-type': 'application/json',
+                },
+                payload: JSON.stringify({ x: 1 }),
+            })
+
+            expect(res.statusCode).toBe(403)
+            expect(res.json()).toEqual({ error: 'CSRF origin missing or invalid' })
+        } finally {
+            await app.close()
+            await upstream.close()
+        }
+    })
 })
 
