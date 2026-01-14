@@ -6,7 +6,7 @@ import type { ProjectMemberAdd, ProjectMemberUpdate } from '../types'
 import Modal from './Modal'
 import { Loading, Error } from './common'
 import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateRunModal.css'
 
 interface ProjectMembersModalProps {
@@ -69,10 +69,12 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
             setNewMemberUserId('')
             setNewMemberRole('viewer')
             setError(null)
+            notifySuccess('Участник добавлен')
         },
         onError: (err: any) => {
             const msg = err.response?.data?.error || err.message || 'Ошибка добавления участника'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -83,10 +85,12 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
             queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
             queryClient.invalidateQueries({ queryKey: ['projects'] })
             setError(null)
+            notifySuccess('Участник удалён')
         },
         onError: (err: any) => {
             const msg = err.response?.data?.error || err.message || 'Ошибка удаления участника'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -97,10 +101,12 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
             setError(null)
+            notifySuccess('Роль обновлена')
         },
         onError: (err: any) => {
             const msg = err.response?.data?.error || err.message || 'Ошибка изменения роли'
             setError(msg)
+            notifyError(msg)
         },
     })
 

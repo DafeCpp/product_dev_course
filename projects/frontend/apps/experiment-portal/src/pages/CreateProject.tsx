@@ -5,6 +5,7 @@ import { projectsApi } from '../api/client'
 import type { ProjectCreate } from '../types'
 import { Error, FormGroup, FormActions } from '../components/common'
 import { IS_TEST } from '../utils/env'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateProject.css'
 
 function CreateProject() {
@@ -18,12 +19,14 @@ function CreateProject() {
     const createMutation = useMutation({
         mutationFn: (data: ProjectCreate) => projectsApi.create(data),
         onSuccess: () => {
+            notifySuccess('Проект создан')
             // Переходим на список проектов после создания
             navigate('/projects')
         },
         onError: (err: any) => {
             const msg = err.response?.data?.error || 'Ошибка создания проекта'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -31,8 +34,15 @@ function CreateProject() {
         e.preventDefault()
         setError(null)
 
+        if (!formData.name.trim()) {
+            const msg = 'Название проекта обязательно'
+            setError(msg)
+            notifyError(msg)
+            return
+        }
+
         createMutation.mutate({
-            name: formData.name,
+            name: formData.name.trim(),
             description: formData.description || undefined,
         })
     }

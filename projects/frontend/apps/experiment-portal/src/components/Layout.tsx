@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import UserProfileModal from './UserProfileModal'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './Layout.css'
 
 interface LayoutProps {
@@ -26,7 +27,16 @@ function Layout({ children }: LayoutProps) {
     mutationFn: () => authApi.logout(),
     onSuccess: () => {
       queryClient.clear()
+      notifySuccess('Выход выполнен')
       navigate('/login')
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Ошибка выхода'
+      notifyError(msg)
     },
   })
 

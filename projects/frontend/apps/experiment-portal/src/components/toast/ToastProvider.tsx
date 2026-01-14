@@ -65,10 +65,12 @@ export default function ToastProvider({ children }: { children: ReactNode }) {
   const rendered = useMemo(() => {
     return toasts.map((t) => {
       const msg = t.event.message || ''
+      const variant = t.event.variant || (t.event.kind === 'debug-http-error' ? 'error' : undefined)
+      const toastClass = variant ? `toast-card toast-${variant}` : 'toast-card'
       return (
         <div
           key={t.id}
-          className="toast-card"
+          className={toastClass}
           onPointerDown={() => pin(t.id)}
           onMouseEnter={() => pin(t.id)}
           onFocusCapture={() => pin(t.id)}

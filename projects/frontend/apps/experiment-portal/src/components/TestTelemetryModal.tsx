@@ -4,7 +4,7 @@ import { telemetryApi } from '../api/client'
 import type { TelemetryIngest } from '../types'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './TestTelemetryModal.css'
 
 interface TestTelemetryModalProps {
@@ -31,6 +31,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
         onSuccess: (response) => {
             setSuccess(`Телеметрия успешно отправлена. Принято записей: ${response.accepted}`)
             setError(null)
+            notifySuccess('Телеметрия отправлена')
             // Очищаем форму через 2 секунды
             setTimeout(() => {
                 setMetaJson('{}')
@@ -42,6 +43,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             const msg = err.response?.data?.error || err.message || 'Ошибка отправки телеметрии'
             setError(msg)
             setSuccess(null)
+            notifyError(msg)
         },
     })
 

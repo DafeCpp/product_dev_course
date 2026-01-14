@@ -6,6 +6,7 @@ import type { ProjectCreate, ProjectUpdate } from '../types'
 import Modal from './Modal'
 import { Error, InfoRow, Loading } from './common'
 import { IS_TEST } from '../utils/env'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateRunModal.css'
 
 type ProjectModalMode = 'create' | 'view' | 'edit'
@@ -129,6 +130,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         mutationFn: async (data: ProjectCreate) => projectsApi.create(data),
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['projects'] })
+            notifySuccess('Проект создан')
             onClose()
         },
         onError: (err: any) => {
@@ -138,6 +140,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
                 err?.message ||
                 'Ошибка создания проекта'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -146,6 +149,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['projects'] })
             if (projectId) await queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
+            notifySuccess('Проект обновлён')
             onClose()
         },
         onError: (err: any) => {
@@ -155,6 +159,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
                 err?.message ||
                 'Ошибка обновления проекта'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -168,6 +173,13 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         setError(null)
 
         if (!canEdit) return
+
+        if (!name.trim()) {
+            const msg = 'Название проекта обязательно'
+            setError(msg)
+            notifyError(msg)
+            return
+        }
 
         if (isCreate) {
             createMutation.mutate({

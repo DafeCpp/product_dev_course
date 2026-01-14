@@ -19,6 +19,14 @@
   overflow: hidden;
 }
 
+.toast-card.toast-error {
+  border-left: 4px solid #dc3545;
+}
+
+.toast-card.toast-success {
+  border-left: 4px solid #28a745;
+}
+
 .toast-card-header {
   display: flex;
   justify-content: space-between;
@@ -33,6 +41,14 @@
   font-weight: 600;
   color: #222;
   line-height: 1.25;
+}
+
+.toast-card.toast-error .toast-title {
+  color: #b02a37;
+}
+
+.toast-card.toast-success .toast-title {
+  color: #1e7e34;
 }
 
 .toast-close {
@@ -67,4 +83,3 @@
   font-family: 'Courier New', monospace;
   font-size: 12px;
 }
-

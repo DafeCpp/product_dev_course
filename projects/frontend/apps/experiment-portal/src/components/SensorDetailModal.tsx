@@ -14,6 +14,7 @@ import {
     sensorStatusMap,
 } from './common'
 import './SensorDetailModal.css'
+import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
 
 interface SensorDetailModalProps {
     isOpen: boolean
@@ -57,7 +58,12 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
         mutationFn: () => sensorsApi.delete(sensorId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['sensors'] })
+            notifySuccess('Датчик удалён')
             onClose()
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления датчика'
+            notifyError(msg)
         },
     })
 
@@ -67,6 +73,11 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
             setNewToken(response.token)
             setShowToken(true)
             queryClient.invalidateQueries({ queryKey: ['sensor', sensorId] })
+            notifySuccess('Токен обновлён')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка ротации токена'
+            notifyError(msg)
         },
     })
 
@@ -77,6 +88,11 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
             queryClient.invalidateQueries({ queryKey: ['sensor', sensorId, 'projects'] })
             setShowAddProjectModal(false)
             setSelectedProjectId('')
+            notifySuccess('Проект добавлен')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка добавления проекта'
+            notifyError(msg)
         },
     })
 
@@ -84,6 +100,11 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
         mutationFn: (projectId: string) => sensorsApi.removeProject(sensorId, projectId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['sensor', sensorId, 'projects'] })
+            notifySuccess('Проект удалён')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления проекта'
+            notifyError(msg)
         },
     })
 
@@ -174,7 +195,10 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
                                             className="btn btn-secondary btn-sm"
                                             onClick={() => {
                                                 navigator.clipboard.writeText(newToken)
-                                                alert('Токен скопирован в буфер обмена')
+                                                notifySuccessSticky(
+                                                    'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
+                                                    'Токен скопирован'
+                                                )
                                             }}
                                         >
                                             Копировать

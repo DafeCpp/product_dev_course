@@ -6,6 +6,7 @@ import type { SensorCreate, SensorRegisterResponse } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading } from '../components/common'
 import { IS_TEST } from '../utils/env'
+import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
 import './CreateSensor.css'
 
 function CreateSensor() {
@@ -47,6 +48,7 @@ function CreateSensor() {
                                 extraProjectIds.map((pid) => sensorsApi.addProject(response.sensor.id, pid))
                             )
                             setAdditionalProjectsStatus('done')
+                            notifySuccess('Датчик добавлен в дополнительные проекты')
                         } catch (e: any) {
                             setAdditionalProjectsStatus('error')
                             const msg =
@@ -54,6 +56,7 @@ function CreateSensor() {
                                 e?.message ||
                                 'Не удалось добавить датчик в дополнительные проекты'
                             setAdditionalProjectsError(msg)
+                            notifyError(msg)
                         }
                     })()
             } else {
@@ -63,6 +66,7 @@ function CreateSensor() {
 
             // Показываем токен пользователю
             setShowToken(true)
+            notifySuccess('Датчик зарегистрирован')
             // Можно сохранить токен в state для отображения
             setTimeout(() => {
                 navigate(`/sensors/${response.sensor.id}`)
@@ -71,6 +75,7 @@ function CreateSensor() {
         onError: (err: any) => {
             const msg = err.response?.data?.error || 'Ошибка регистрации датчика'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -79,7 +84,12 @@ function CreateSensor() {
         setError(null)
 
         // На всякий случай: если пользователь не выбрал проект через multi-select
-        if (!formData.project_id) return
+        if (!formData.project_id) {
+            const msg = 'Выберите хотя бы один проект'
+            setError(msg)
+            notifyError(msg)
+            return
+        }
 
         createMutation.mutate({
             ...formData,
@@ -90,7 +100,10 @@ function CreateSensor() {
     const handleCopyToken = () => {
         if (createMutation.data?.token) {
             navigator.clipboard.writeText(createMutation.data.token)
-            alert('Токен скопирован в буфер обмена')
+            notifySuccessSticky(
+                'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
+                'Токен скопирован'
+            )
         }
     }
 

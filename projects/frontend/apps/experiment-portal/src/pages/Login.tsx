@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
 import { IS_TEST } from '../utils/env'
+import { notifyError } from '../utils/notify'
 import './Login.css'
 
 function Login() {
@@ -29,6 +30,7 @@ function Login() {
                 err.response?.data?.message ||
                 'Ошибка входа. Проверьте имя пользователя и пароль.'
             setError(msg)
+            notifyError(msg)
         },
     })
 

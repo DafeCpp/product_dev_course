@@ -16,6 +16,7 @@ import {
 } from '../components/common'
 import './SensorDetail.css'
 import { IS_TEST } from '../utils/env'
+import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
 
 function SensorDetail() {
     const { id } = useParams<{ id: string }>()
@@ -54,7 +55,12 @@ function SensorDetail() {
         mutationFn: () => sensorsApi.delete(id!),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['sensors'] })
+            notifySuccess('Датчик удалён')
             navigate('/sensors')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления датчика'
+            notifyError(msg)
         },
     })
 
@@ -64,6 +70,11 @@ function SensorDetail() {
             setNewToken(response.token)
             setShowToken(true)
             queryClient.invalidateQueries({ queryKey: ['sensor', id] })
+            notifySuccess('Токен обновлён')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка ротации токена'
+            notifyError(msg)
         },
     })
 
@@ -74,6 +85,11 @@ function SensorDetail() {
             queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
             setShowAddProjectModal(false)
             setSelectedProjectId('')
+            notifySuccess('Проект добавлен')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка добавления проекта'
+            notifyError(msg)
         },
     })
 
@@ -81,6 +97,11 @@ function SensorDetail() {
         mutationFn: (projectId: string) => sensorsApi.removeProject(id!, projectId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
+            notifySuccess('Проект удалён')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления проекта'
+            notifyError(msg)
         },
     })
 
@@ -156,7 +177,10 @@ function SensorDetail() {
                                 className="btn btn-secondary btn-sm"
                                 onClick={() => {
                                     navigator.clipboard.writeText(newToken)
-                                    alert('Токен скопирован в буфер обмена')
+                                    notifySuccessSticky(
+                                        'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
+                                        'Токен скопирован'
+                                    )
                                 }}
                             >
                                 Копировать

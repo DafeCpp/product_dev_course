@@ -5,7 +5,7 @@ import { runsApi } from '../api/client'
 import type { RunCreate } from '../types'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateRunModal.css'
 
 interface CreateRunModalProps {
@@ -33,12 +33,14 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         onSuccess: (run) => {
             queryClient.invalidateQueries({ queryKey: ['runs', experimentId] })
             queryClient.invalidateQueries({ queryKey: ['experiment', experimentId] })
+            notifySuccess('Запуск создан')
             onClose()
             navigate(`/runs/${run.id}`)
         },
         onError: (err: any) => {
             const msg = err.response?.data?.error || 'Ошибка создания запуска'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -46,6 +48,13 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         e.preventDefault()
         setError(null)
         setJsonError(null)
+
+        if (!formData.name.trim()) {
+            const msg = 'Название запуска обязательно'
+            setError(msg)
+            notifyError(msg)
+            return
+        }
 
         // Парсим JSON для params
         let params: Record<string, any> = {}
@@ -74,7 +83,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         }
 
         createMutation.mutate({
-            name: formData.name,
+            name: formData.name.trim(),
             params,
             notes: formData.notes || undefined,
             metadata: Object.keys(metadata).length > 0 ? metadata : undefined,

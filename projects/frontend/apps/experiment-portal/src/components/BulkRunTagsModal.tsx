@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import Modal from './Modal'
 import { runsApi } from '../api/client'
 import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { notifyError, notifySuccess } from '../utils/notify'
 
 type BulkMode = 'add' | 'remove' | 'set'
 
@@ -46,10 +46,12 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
             setTagsText('')
             setMode('add')
             setError(null)
+            notifySuccess('Теги обновлены')
         },
         onError: (err: any) => {
             const msg = err?.response?.data?.error || err?.message || 'Ошибка bulk tagging'
             setError(msg)
+            notifyError(msg)
         },
     })
 

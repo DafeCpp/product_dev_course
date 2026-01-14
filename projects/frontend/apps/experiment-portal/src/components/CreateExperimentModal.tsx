@@ -6,7 +6,8 @@ import type { ExperimentCreate } from '../types'
 import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { notifyError, notifySuccess } from '../utils/notify'
+import { Loading } from './common'
 import './CreateRunModal.css'
 
 interface CreateExperimentModalProps {
@@ -39,12 +40,14 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
         mutationFn: (data: ExperimentCreate) => experimentsApi.create(data),
         onSuccess: (experiment) => {
             queryClient.invalidateQueries({ queryKey: ['experiments'] })
+            notifySuccess('Эксперимент создан')
             onClose()
             navigate(`/experiments/${experiment.id}`)
         },
         onError: (err: any) => {
             const msg = err.response?.data?.error || 'Ошибка создания эксперимента'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -69,6 +72,20 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
         e.preventDefault()
         setError(null)
 
+        if (!formData.project_id) {
+            const msg = 'Выберите проект'
+            setError(msg)
+            notifyError(msg)
+            return
+        }
+
+        if (!formData.name.trim()) {
+            const msg = 'Название эксперимента обязательно'
+            setError(msg)
+            notifyError(msg)
+            return
+        }
+
         // Парсинг тегов
         const tags = tagsInput
             .split(',')
@@ -88,6 +105,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
 
         createMutation.mutate({
             ...formData,
+            name: formData.name.trim(),
             tags,
             metadata,
             description: formData.description || undefined,
@@ -127,7 +145,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                         Проект <span className="required">*</span>
                     </label>
                     {projectsLoading ? (
-                        <div>Загрузка проектов...</div>
+                        <Loading message="Загрузка проектов..." />
                     ) : (
                         <>
                             <select

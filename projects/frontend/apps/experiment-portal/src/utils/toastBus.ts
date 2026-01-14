@@ -1,7 +1,9 @@
 export type ToastKind = 'debug-http-error' | 'text'
+export type ToastVariant = 'error' | 'success' | 'info'
 
 export type ToastEvent = {
   kind: ToastKind
+  variant?: ToastVariant
   title: string
   message?: string
   /**

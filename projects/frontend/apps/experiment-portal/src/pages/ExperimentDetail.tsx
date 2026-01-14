@@ -18,6 +18,7 @@ import {
 import './ExperimentDetail.css'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
+import { notifyError, notifySuccess } from '../utils/notify'
 
 function ExperimentDetail() {
   const { id } = useParams<{ id: string }>()
@@ -43,7 +44,16 @@ function ExperimentDetail() {
     mutationFn: () => experimentsApi.delete(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['experiments'] })
+      notifySuccess('Эксперимент удалён')
       navigate('/experiments')
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Ошибка удаления эксперимента'
+      notifyError(msg)
     },
   })
 

@@ -17,6 +17,7 @@ import TelemetryStreamModal from '../components/TelemetryStreamModal'
 import './RunDetail.css'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
+import { notifyError, notifySuccess } from '../utils/notify'
 
 function RunDetail() {
   const { id } = useParams<{ id: string }>()
@@ -83,9 +84,16 @@ function RunDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['run', id] })
       queryClient.invalidateQueries({ queryKey: ['runs'] })
+      notifySuccess('Run завершён')
     },
     onError: (err: any) => {
-      setActionError(err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Не удалось завершить run')
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Не удалось завершить run'
+      setActionError(msg)
+      notifyError(msg)
     },
   })
 
@@ -97,9 +105,16 @@ function RunDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['run', id] })
       queryClient.invalidateQueries({ queryKey: ['runs'] })
+      notifySuccess('Run запущен')
     },
     onError: (err: any) => {
-      setActionError(err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Не удалось запустить run')
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Не удалось запустить run'
+      setActionError(msg)
+      notifyError(msg)
     },
   })
 
@@ -108,9 +123,16 @@ function RunDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['run', id] })
       queryClient.invalidateQueries({ queryKey: ['runs'] })
+      notifySuccess('Run помечен как failed')
     },
     onError: (err: any) => {
-      setActionError(err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Не удалось пометить run как failed')
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Не удалось пометить run как failed'
+      setActionError(msg)
+      notifyError(msg)
     },
   })
 
@@ -130,14 +152,16 @@ function RunDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
+      notifySuccess('Отсчёт запущен')
     },
     onError: (err: any) => {
-      setActionError(
+      const msg =
         err?.response?.data?.message ||
         err?.response?.data?.error ||
         err?.message ||
         'Не удалось запустить отсчёт'
-      )
+      setActionError(msg)
+      notifyError(msg)
     },
   })
 
@@ -147,14 +171,16 @@ function RunDetail() {
     onSuccess: () => {
       setOptimisticActiveSessionId(null)
       queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
+      notifySuccess('Отсчёт остановлен')
     },
     onError: (err: any) => {
-      setActionError(
+      const msg =
         err?.response?.data?.message ||
         err?.response?.data?.error ||
         err?.message ||
         'Не удалось остановить отсчёт'
-      )
+      setActionError(msg)
+      notifyError(msg)
     },
   })
 
@@ -163,6 +189,16 @@ function RunDetail() {
     mutationFn: (sessionId: string) => captureSessionsApi.delete(id!, sessionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
+      notifySuccess('Сессия удалена')
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Не удалось удалить сессию'
+      setActionError(msg)
+      notifyError(msg)
     },
   })
 

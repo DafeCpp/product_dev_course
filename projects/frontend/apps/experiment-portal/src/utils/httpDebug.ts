@@ -336,6 +336,7 @@ export function maybeEmitHttpErrorToast(info: HttpDebugInfo): void {
 
   emitToast({
     kind: 'text',
+    variant: 'error',
     title: 'Ошибка запроса',
     message: [
       `${status}${method || shortUrl ? ` — ${method} ${shortUrl}` : ''}`.trim(),
@@ -349,6 +350,7 @@ export function maybeEmitHttpErrorToast(info: HttpDebugInfo): void {
   if (!_isDevEnabled()) return
   emitToast({
     kind: 'debug-http-error',
+    variant: 'error',
     title: 'Request failed',
     message: `${info.request.method || ''} ${info.request.url || ''}`.trim() || info.message,
     payload: info,

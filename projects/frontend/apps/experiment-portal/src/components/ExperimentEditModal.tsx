@@ -5,7 +5,7 @@ import type { Experiment, ExperimentUpdate } from '../types'
 import Modal from './Modal'
 import { experimentStatusMap } from './common/statusMaps'
 import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './CreateRunModal.css'
 
 interface ExperimentEditModalProps {
@@ -41,6 +41,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['experiments'] })
             await queryClient.invalidateQueries({ queryKey: ['experiment', experiment.id] })
+            notifySuccess('Эксперимент обновлён')
             onClose()
         },
         onError: (err: any) => {
@@ -50,6 +51,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
                 err?.message ||
                 'Ошибка обновления эксперимента'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -58,6 +60,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['experiments'] })
             await queryClient.invalidateQueries({ queryKey: ['experiment', experiment.id] })
+            notifySuccess('Эксперимент архивирован')
             onClose()
         },
         onError: (err: any) => {
@@ -67,6 +70,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
                 err?.message ||
                 'Ошибка архивации эксперимента'
             setError(msg)
+            notifyError(msg)
         },
     })
 
@@ -87,6 +91,13 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
+
+        if (!name.trim()) {
+            const msg = 'Название эксперимента обязательно'
+            setError(msg)
+            notifyError(msg)
+            return
+        }
 
         const tags = tagsInput
             .split(',')
