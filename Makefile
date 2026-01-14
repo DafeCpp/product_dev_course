@@ -2,7 +2,7 @@
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
-.PHONY: dev dev-up dev-down dev-restart dev-rebuild dev-logs dev-fix dev-clean grafana-reset-password
+.PHONY: dev dev-up dev-down dev-restart dev-rebuild dev-rebuild-changed dev-logs dev-fix dev-clean grafana-reset-password
 
 BACKEND_SERVICES_DIR := projects/backend/services
 BACKEND_DIR := projects/backend/services/experiment-service
@@ -25,6 +25,7 @@ COMPOSE_DOCKER_CLI_BUILD ?= 1
 DOCKER_BUILD_ENV := DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) COMPOSE_DOCKER_CLI_BUILD=$(COMPOSE_DOCKER_CLI_BUILD)
 BACKEND_BASE_DOCKERFILE := projects/backend/Dockerfile.base
 BACKEND_BASE_HASH := $(shell sha256sum $(BACKEND_BASE_DOCKERFILE) 2>/dev/null | awk '{print $$1}')
+BACKEND_DEV_SERVICES := auth-service experiment-service telemetry-ingest-service
 
 test: type-check test-backend test-telemetry-cli test-frontend
 
@@ -306,6 +307,92 @@ dev-rebuild: dev-down
 		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose build --no-cache postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana; \
 	fi
 	@$(MAKE) dev-up
+
+# Пересборка только тех образов, которые затронуты изменениями в git
+dev-rebuild-changed:
+	@set -e; \
+	if ! command -v git >/dev/null 2>&1; then \
+		echo "❌ git не найден — невозможно определить измененные файлы."; \
+		exit 1; \
+	fi; \
+	changed_files="$$(git status --porcelain=v1 -uall | awk '{print $$2}')"; \
+	if [ -z "$$changed_files" ]; then \
+		echo "✅ Изменений не найдено — пересборка не требуется."; \
+		exit 0; \
+	fi; \
+	services=""; \
+	base_changed=0; \
+	if echo "$$changed_files" | grep -q '^projects/backend/Dockerfile.base$$'; then \
+		base_changed=1; \
+		services="$$services $(BACKEND_DEV_SERVICES)"; \
+	fi; \
+	if echo "$$changed_files" | grep -q '^projects/backend/common/'; then \
+		services="$$services $(BACKEND_DEV_SERVICES)"; \
+	fi; \
+	if echo "$$changed_files" | grep -q '^projects/backend/services/auth-service/'; then \
+		services="$$services auth-service"; \
+	fi; \
+	if echo "$$changed_files" | grep -q '^projects/backend/services/experiment-service/'; then \
+		services="$$services experiment-service"; \
+	fi; \
+	if echo "$$changed_files" | grep -q '^projects/backend/services/telemetry-ingest-service/'; then \
+		services="$$services telemetry-ingest-service"; \
+	fi; \
+	if echo "$$changed_files" | grep -q '^projects/frontend/apps/auth-proxy/'; then \
+		services="$$services auth-proxy"; \
+	fi; \
+	if echo "$$changed_files" | grep -q '^projects/frontend/apps/experiment-portal/'; then \
+		services="$$services experiment-portal"; \
+	fi; \
+	if echo "$$changed_files" | grep -q '^projects/frontend/apps/sensor-simulator/'; then \
+		services="$$services sensor-simulator"; \
+	fi; \
+	services="$$(echo $$services | tr ' ' '\n' | awk 'NF' | sort -u | tr '\n' ' ')"; \
+	if [ -z "$$services" ]; then \
+		echo "✅ Изменения не затрагивают сборку образов — пересборка не требуется."; \
+		exit 0; \
+	fi; \
+	if echo "$$services" | grep -q -E '(^| )(auth-service|experiment-service|telemetry-ingest-service)( |$$)'; then \
+		if [ "$$base_changed" = "1" ]; then \
+			$(MAKE) backend-base-no-cache; \
+		else \
+			$(MAKE) backend-base-check || $(MAKE) backend-base; \
+		fi; \
+	fi; \
+	@echo "Пересборка измененных сервисов: $$services"; \
+	if docker buildx version >/dev/null 2>&1; then \
+		$(DOCKER_BUILD_ENV) docker-compose build $$services; \
+	else \
+		echo "⚠️  buildx не найден — docker-compose build без BuildKit."; \
+		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose build $$services; \
+	fi; \
+	docker-compose up -d $$services
+
+# Пересборка только одного backend сервиса (make dev-auth-service и т.д.)
+dev-%:
+	@service="$*"; \
+	if ! echo "$(BACKEND_DEV_SERVICES)" | tr ' ' '\n' | grep -qx "$$service"; then \
+		echo "❌ Неизвестный backend сервис: $$service"; \
+		echo "   Доступные: $(BACKEND_DEV_SERVICES)"; \
+		exit 1; \
+	fi; \
+	$(MAKE) backend-base-check || $(MAKE) backend-base; \
+	if [ ! -f docker-compose.override.yml ]; then \
+		echo "⚠️  Файл docker-compose.override.yml не найден. Создаю из примера..."; \
+		cp docker-compose.override.yml.example docker-compose.override.yml 2>/dev/null || true; \
+	fi; \
+	if [ ! -f .env ]; then \
+		echo "⚠️  Файл .env не найден. Создаю из примера..."; \
+		cp env.docker.example .env 2>/dev/null || true; \
+	fi; \
+	echo "Пересборка $$service..."; \
+	if docker buildx version >/dev/null 2>&1; then \
+		$(DOCKER_BUILD_ENV) docker-compose build $$service; \
+	else \
+		echo "⚠️  buildx не найден — docker-compose build без BuildKit."; \
+		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose build $$service; \
+	fi; \
+	docker-compose up -d $$service
 
 backend-base:
 	@set -e; \
