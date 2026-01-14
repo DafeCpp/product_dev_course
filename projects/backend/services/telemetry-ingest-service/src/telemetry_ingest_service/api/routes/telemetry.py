@@ -33,6 +33,36 @@ def _extract_bearer_token(request: web.Request) -> str:
     return token
 
 
+def _normalize_bearer(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
+    return value or None
+
+
+def _extract_stream_token(request: web.Request) -> str:
+    # Prefer standard Authorization header, then fall back to headers/query
+    # for SSE clients that cannot set custom headers.
+    token = _normalize_bearer(request.headers.get("Authorization"))
+    if token:
+        return token
+    token = _normalize_bearer(
+        request.headers.get("X-Access-Token") or request.headers.get("X-Sensor-Token")
+    )
+    if token:
+        return token
+    token = _normalize_bearer(
+        request.rel_url.query.get("access_token") or request.rel_url.query.get("token")
+    )
+    if token:
+        return token
+    raise web.HTTPUnauthorized(reason="Authorization token is required")
+
+
 @routes.post("/api/v1/telemetry")
 async def ingest_telemetry(request: web.Request) -> web.Response:
     """Public REST ingest endpoint for sensor telemetry."""
@@ -113,7 +143,7 @@ async def telemetry_stream(request: web.Request) -> web.StreamResponse:
       - max_events (optional): stop after sending N events (useful for tests)
       - idle_timeout_seconds (optional, default 30): stop after N seconds without new data
     """
-    token = _extract_bearer_token(request)
+    token = _extract_stream_token(request)
     sensor_id_raw = request.rel_url.query.get("sensor_id")
     if not sensor_id_raw:
         raise web.HTTPBadRequest(text="sensor_id is required")

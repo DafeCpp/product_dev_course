@@ -62,6 +62,18 @@ paths:
           schema:
             type: string
           description: Bearer sensor token (or user JWT via auth-proxy)
+        - name: X-Access-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional token for SSE clients that cannot set Authorization
+        - name: access_token
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional token for SSE clients that cannot set Authorization
         - name: sensor_id
           in: query
           required: true

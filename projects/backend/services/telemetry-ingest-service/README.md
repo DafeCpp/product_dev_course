@@ -7,7 +7,7 @@ Public REST ingest service for sensor telemetry.
 - `GET /health` — service health check
 - `GET /openapi.yaml` — OpenAPI spec
 - `POST /api/v1/telemetry` — ingest telemetry batch (`Authorization: Bearer <sensor_token>`)
-- `GET /api/v1/telemetry/stream` — SSE stream of telemetry records for a sensor (Bearer token can be either sensor token or user JWT via auth-proxy)
+- `GET /api/v1/telemetry/stream` — SSE stream of telemetry records for a sensor (Bearer token can be either sensor token or user JWT via auth-proxy; for SSE clients without headers, `access_token` query param is supported)
 
 ## Behavior (current semantics)
 

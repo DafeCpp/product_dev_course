@@ -41,6 +41,18 @@ stream:
         description: Bearer sensor token (or user JWT via auth-proxy)
         schema:
           type: string
+      - name: X-Access-Token
+        in: header
+        required: false
+        description: Optional token for SSE clients that cannot set Authorization
+        schema:
+          type: string
+      - name: access_token
+        in: query
+        required: false
+        description: Optional token for SSE clients that cannot set Authorization
+        schema:
+          type: string
       - name: sensor_id
         in: query
         required: true
