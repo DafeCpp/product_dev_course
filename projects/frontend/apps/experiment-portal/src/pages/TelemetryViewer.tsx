@@ -86,7 +86,7 @@ function TelemetryViewer() {
             )}
 
             {hasProjects && (
-                <div className="telemetry-view__filters card">
+                <div className={`telemetry-view__filters card${filtersOpen ? '' : ' telemetry-view__filters--collapsed'}`}>
                     <div className="telemetry-view__filters-header">
                         <div className="telemetry-view__summary">
                             {projectName} → {experimentName} → {runName}

@@ -41,6 +41,14 @@
     margin-top: 12px;
 }
 
+.telemetry-view__filters--collapsed .telemetry-view__filters-header {
+    margin-bottom: 0;
+}
+
+.telemetry-view__filters--collapsed .telemetry-view__collapse-wrap {
+    margin-top: 0;
+}
+
 .telemetry-view__collapse:hover {
     background: #f1f5f9;
 }
