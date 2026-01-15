@@ -180,6 +180,37 @@ export function getOutgoingRequestHeaders(traceId: string): {
     }
 }
 
+function _decodeJwtPayload(token: string): Record<string, unknown> | null {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    try {
+        const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+        const padded = payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), '=')
+        const decoded = Buffer.from(padded, 'base64').toString('utf-8')
+        const data = JSON.parse(decoded)
+        return typeof data === 'object' && data ? (data as Record<string, unknown>) : null
+    } catch {
+        return null
+    }
+}
+
+function _isJwtExpired(token: string, skewSec = 30): boolean {
+    const payload = _decodeJwtPayload(token)
+    const expRaw = payload?.exp
+    let exp: number | null = null
+    if (typeof expRaw === 'number') {
+        exp = expRaw
+    } else if (typeof expRaw === 'string') {
+        const parsed = Number(expRaw)
+        exp = Number.isFinite(parsed) ? parsed : null
+    }
+    if (exp === null) return false
+    // Some issuers may provide exp in milliseconds.
+    if (exp > 1_000_000_000_000) exp = Math.floor(exp / 1000)
+    const nowSec = Math.floor(Date.now() / 1000)
+    return exp <= nowSec + skewSec
+}
+
 export async function buildServer(config: Config) {
     const app = fastify({
         logger: {
@@ -324,9 +355,44 @@ export async function buildServer(config: Config) {
         }
     }
 
+    async function _refreshAccessTokenForRequest(
+        request: FastifyRequest,
+        reply: FastifyReply
+    ): Promise<string | null> {
+        const refreshToken = request.cookies?.[config.refreshCookieName]
+        if (!refreshToken) return null
+
+        const traceId =
+            (request as any).traceId ||
+            normalizeUUID(request.headers['x-trace-id'] as string) ||
+            generateUUID()
+        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+        const res = await fetch(`${config.authUrl}/auth/refresh`, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                ...outgoingHeaders,
+            },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+        })
+
+        if (!res.ok) {
+            clearAuthCookies(reply, config)
+            return null
+        }
+
+        const data = (await res.json()) as AuthTokens
+        if (!data.access_token) return null
+
+        setAuthCookies(reply, config, data)
+        setCsrfCookie(reply, config)
+        return data.access_token
+    }
+
     // CSRF protection for cookie-authenticated, state-changing requests (double-submit cookie).
     // Exclusions:
-    //  - /auth/login and /auth/refresh: no CSRF cookie yet
+    //  - /auth/login, /auth/register, and /auth/refresh: no CSRF cookie yet
     //  - /api/v1/telemetry/*: auth is via Authorization sensor token (not cookies)
     app.addHook('preHandler', async (request, reply) => {
         const method = (request.method || '').toUpperCase()
@@ -335,7 +401,12 @@ export async function buildServer(config: Config) {
 
         const url = request.url || ''
         if (url === '/health') return
-        if (url.startsWith('/auth/login') || url.startsWith('/auth/refresh')) return
+        if (
+            url.startsWith('/auth/login') ||
+            url.startsWith('/auth/register') ||
+            url.startsWith('/auth/refresh')
+        )
+            return
         if (url.startsWith('/api/v1/telemetry')) return
 
         const hasSessionCookie = Boolean(
@@ -358,6 +429,28 @@ export async function buildServer(config: Config) {
         if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
             reply.status(403).send({ error: 'CSRF token missing or invalid' })
             return
+        }
+    })
+
+    // Ensure telemetry stream requests always carry a valid bearer token.
+    app.addHook('preHandler', async (request, reply) => {
+        const url = request.url || ''
+        if (!url.startsWith('/api/v1/telemetry/stream')) return
+
+        if (request.headers?.authorization) return
+
+        const access = request.cookies?.[config.accessCookieName]
+        if (access && !_isJwtExpired(access)) {
+            ; (request.headers as any).authorization = `Bearer ${access}`
+            return
+        }
+
+        const refreshed = await _refreshAccessTokenForRequest(request, reply)
+        if (refreshed) {
+            ; (request.headers as any).authorization = `Bearer ${refreshed}`
+        } else if (access) {
+            // Fall back to the existing access token if refresh failed.
+            ; (request.headers as any).authorization = `Bearer ${access}`
         }
     })
 
@@ -409,6 +502,37 @@ export async function buildServer(config: Config) {
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
         const res = await fetch(`${config.authUrl}/auth/login`, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                ...outgoingHeaders,
+            },
+            body: JSON.stringify(request.body ?? {}),
+        })
+
+        if (!res.ok) {
+            reply.status(res.status)
+            return res.json().catch(() => ({}))
+        }
+
+        const data = (await res.json()) as AuthTokens
+        if (!data.access_token) {
+            reply.status(502)
+            return { error: 'Auth service response missing access_token' }
+        }
+
+        setAuthCookies(reply, config, data)
+        setCsrfCookie(reply, config)
+
+        const { access_token, refresh_token, ...rest } = data
+        return rest
+    })
+
+    app.post('/auth/register', async (request, reply) => {
+        const { traceId } = getTraceContext(request)
+        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+        const res = await fetch(`${config.authUrl}/auth/register`, {
             method: 'POST',
             headers: {
                 'content-type': 'application/json',

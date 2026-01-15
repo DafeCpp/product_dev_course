@@ -373,7 +373,7 @@ export const telemetryApi = {
       since_id?: number
       max_events?: number
       idle_timeout_seconds?: number
-    },
+    }
   ): Promise<{ response: Response; debug: { url: string; headers: Record<string, string>; method: string } }> => {
     // Stream is user-authenticated via auth-proxy session cookies.
     // Do NOT attach sensor token here (UI doesn't ask for it anymore).
@@ -385,13 +385,32 @@ export const telemetryApi = {
       url.searchParams.set('idle_timeout_seconds', String(params.idle_timeout_seconds))
     }
 
-    const traceId = getTraceId()
-    const requestId = generateRequestId()
-    const headers: Record<string, string> = {
-      'X-Trace-Id': traceId,
-      'X-Request-Id': requestId,
+    const makeHeaders = () => {
+      const traceId = getTraceId()
+      const requestId = generateRequestId()
+      return {
+        'X-Trace-Id': traceId,
+        'X-Request-Id': requestId,
+      } as Record<string, string>
     }
 
+    const tryRefresh = async () => {
+      const refreshHeaders = makeHeaders()
+      const csrf = getCsrfToken()
+      const refreshResp = await fetch(`${AUTH_PROXY_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          ...refreshHeaders,
+          'Content-Type': 'application/json',
+          ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
+        },
+        body: JSON.stringify({}),
+        credentials: 'include',
+      })
+      return refreshResp.ok
+    }
+
+    const headers = makeHeaders()
     const debug = { url: url.toString(), headers, method: 'GET' }
     try {
       const response = await fetch(debug.url, {
@@ -399,6 +418,19 @@ export const telemetryApi = {
         headers: debug.headers,
         credentials: 'include',
       })
+      if (response.status === 401) {
+        const refreshed = await tryRefresh()
+        if (refreshed) {
+          const retryHeaders = makeHeaders()
+          const retryDebug = { url: url.toString(), headers: retryHeaders, method: 'GET' }
+          const retryResponse = await fetch(retryDebug.url, {
+            method: retryDebug.method,
+            headers: retryDebug.headers,
+            credentials: 'include',
+          })
+          return { response: retryResponse, debug: retryDebug }
+        }
+      }
       return { response, debug }
     } catch (e: any) {
       // Attach debug info for higher-level error handling / toasts.
