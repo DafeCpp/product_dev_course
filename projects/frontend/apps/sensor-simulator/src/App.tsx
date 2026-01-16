@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 type Scenario = 'steady' | 'bursts' | 'dropout' | 'out_of_order' | 'late_data'
 
+type Waveform = 'sine' | 'pulses' | 'saw'
+
 type TelemetryIngestReading = {
     timestamp: string
     raw_value: number
@@ -36,6 +38,24 @@ function mulberry32(seed: number): () => number {
 
 function clamp(n: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, n))
+}
+
+function posMod(n: number, mod: number): number {
+    // works for negative n as well
+    return ((n % mod) + mod) % mod
+}
+
+function waveformValue(waveform: Waveform, tSec: number, amplitude: number, periodSec: number, dutyCycle: number): number {
+    const a = Math.abs(amplitude)
+    const p = Math.max(0.001, periodSec)
+    const phase = posMod(tSec, p) / p // 0..1
+
+    if (waveform === 'sine') return Math.sin(2 * Math.PI * phase) * a
+    if (waveform === 'saw') return (2 * phase - 1) * a // -A..+A ramp
+
+    // pulses: 0..A rectangular impulses
+    const d = clamp(dutyCycle, 0, 1)
+    return phase < d ? a : 0
 }
 
 function safeJsonParse(value: string): unknown {
@@ -146,6 +166,11 @@ export function App() {
     const [lateSeconds, setLateSeconds] = useState(3600)
     const [outOfOrderFraction, setOutOfOrderFraction] = useState(0.2)
 
+    const [waveform, setWaveform] = useState<Waveform>('sine')
+    const [amplitude, setAmplitude] = useState(10)
+    const [periodSec, setPeriodSec] = useState(5)
+    const [dutyCycle, setDutyCycle] = useState(0.1)
+
     const [isRunning, setIsRunning] = useState(false)
     const [sent, setSent] = useState(0)
     const [accepted, setAccepted] = useState(0)
@@ -190,7 +215,10 @@ export function App() {
             const tMs = base + i * stepMs
             const t = tMs / 1000
             const noise = (rng() - 0.5) * 0.15
-            const raw = Math.sin(t * 1.2) * 10 + noise * 10 + 20
+            const raw =
+                waveformValue(waveform, t, clamp(amplitude, 0, 1_000_000), clamp(periodSec, 0.001, 1_000_000), dutyCycle) +
+                noise * 10 +
+                20
             const phys = raw * 1.0
 
             let ts = new Date(tMs).toISOString()
@@ -235,6 +263,12 @@ export function App() {
                 scenario,
                 rate_hz: effectiveRateHz,
                 batch_size: n,
+                signal: {
+                    waveform,
+                    amplitude: clamp(amplitude, 0, 1_000_000),
+                    period_sec: clamp(periodSec, 0.001, 1_000_000),
+                    duty_cycle: waveform === 'pulses' ? clamp(dutyCycle, 0, 1) : null,
+                },
             },
             readings: buildReadings(n, effectiveRateHz),
         }
@@ -451,6 +485,56 @@ export function App() {
                                 placeholder="42"
                             />
                             <div className="hint">Один и тот же seed → одинаковый шум/перемешивание.</div>
+                        </div>
+                    </div>
+
+                    <div className="row" style={{ marginTop: 10 }}>
+                        <div>
+                            <label>signal waveform</label>
+                            <select value={waveform} onChange={(e) => setWaveform(e.target.value as Waveform)}>
+                                <option value="sine">sine</option>
+                                <option value="pulses">rect pulses</option>
+                                <option value="saw">saw</option>
+                            </select>
+                            <div className="hint">Форма сигнала для raw_value (плюс шум и смещение +20).</div>
+                        </div>
+                        <div>
+                            <label>amplitude</label>
+                            <input
+                                type="number"
+                                value={amplitude}
+                                min={0}
+                                step={1}
+                                onChange={(e) => setAmplitude(Number(e.target.value))}
+                            />
+                            <div className="hint">Для sine/saw: размах; для pulses: высота импульса.</div>
+                        </div>
+                    </div>
+
+                    <div className="row" style={{ marginTop: 10 }}>
+                        <div>
+                            <label>period (sec)</label>
+                            <input
+                                type="number"
+                                value={periodSec}
+                                min={0.001}
+                                step={0.1}
+                                onChange={(e) => setPeriodSec(Number(e.target.value))}
+                            />
+                            <div className="hint">Один период сигнала в секундах.</div>
+                        </div>
+                        <div>
+                            <label>duty cycle (0..1)</label>
+                            <input
+                                type="number"
+                                value={dutyCycle}
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                disabled={waveform !== 'pulses'}
+                                onChange={(e) => setDutyCycle(Number(e.target.value))}
+                            />
+                            <div className="hint">Только для pulses: доля периода, когда импульс “вкл”.</div>
                         </div>
                     </div>
 
