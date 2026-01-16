@@ -108,6 +108,9 @@ async def _authorize_stream_user(*, token: str, project_id: UUID) -> None:
       - GET /projects/{project_id}/members
     """
     base = settings.auth_service_url.rstrip("/")
+    if base.endswith("/api/v1"):
+        # Support envs that include the experiment-service prefix by mistake.
+        base = base[: -len("/api/v1")]
     headers = {"Authorization": f"Bearer {token}"}
 
     async with aiohttp.ClientSession() as session:
