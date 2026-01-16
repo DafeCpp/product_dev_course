@@ -87,20 +87,6 @@ function SensorsList() {
 
             {!isLoading && !error && projectId && (
                 <>
-                    <PageHeader
-                        title="Датчики"
-                        action={
-                            <button
-                                type="button"
-                                className="btn btn-primary"
-                                onClick={() => navigate('/sensors/new')}
-                                disabled={projectsLoading || isLoading}
-                            >
-                                Зарегистрировать датчик
-                            </button>
-                        }
-                    />
-
                     <div className="filters card">
                         <div className="filters-grid">
                             <MaterialSelect
@@ -114,7 +100,6 @@ function SensorsList() {
                                 }}
                                 disabled={projectsLoading || isLoading}
                             >
-                                <option value="">Выберите проект</option>
                                 {projectsData?.projects.map((project) => (
                                     <option key={project.id} value={project.id}>
                                         {project.name}

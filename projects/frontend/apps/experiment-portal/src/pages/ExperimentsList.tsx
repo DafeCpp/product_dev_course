@@ -87,19 +87,6 @@ function ExperimentsList() {
 
       {!isLoading && !error && (
         <>
-          <PageHeader
-            title="Эксперименты"
-            action={
-              <button
-                className="btn btn-primary"
-                onClick={() => setIsCreateModalOpen(true)}
-                disabled={isLoading || projectsLoading}
-              >
-                Создать эксперимент
-              </button>
-            }
-          />
-
           <div className="filters card">
             <div className="filters-grid">
               <div className="form-group">
@@ -126,7 +113,6 @@ function ExperimentsList() {
                 }}
                 disabled={isBusy}
               >
-                <option value="">Выберите проект</option>
                 {projectsData?.projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
