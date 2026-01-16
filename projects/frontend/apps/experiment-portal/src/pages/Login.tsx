@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
@@ -107,6 +107,9 @@ function Login() {
                             {loginMutation.isPending ? 'Вход...' : 'Войти'}
                         </button>
                     </form>
+                    <div className="auth-switch">
+                        Нет аккаунта? <Link to="/register">Зарегистрироваться</Link>
+                    </div>
                 </div>
             </div>
         </div>

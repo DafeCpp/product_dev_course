@@ -1,6 +1,6 @@
 /** API клиент для аутентификации через Auth Proxy */
 import axios from 'axios'
-import type { User, LoginRequest, AuthResponse } from '../types'
+import type { User, LoginRequest, RegisterRequest, AuthResponse } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
 import { getCsrfToken } from '../utils/csrf'
@@ -63,6 +63,14 @@ export const authApi = {
      */
     login: async (credentials: LoginRequest): Promise<AuthResponse> => {
         const response = await authClient.post<AuthResponse>('/auth/login', credentials)
+        return response.data
+    },
+
+    /**
+     * Регистрация пользователя
+     */
+    register: async (payload: RegisterRequest): Promise<AuthResponse> => {
+        const response = await authClient.post<AuthResponse>('/auth/register', payload)
         return response.data
     },
 

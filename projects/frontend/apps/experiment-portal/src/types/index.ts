@@ -84,6 +84,7 @@ export interface User {
   username: string
   email: string
   is_active: boolean
+  password_change_required?: boolean
   created_at: string
 }
 
@@ -92,10 +93,19 @@ export interface LoginRequest {
   password: string
 }
 
+export interface RegisterRequest {
+  username: string
+  email: string
+  password: string
+}
+
 export interface AuthResponse {
+  user?: User
   expires_in?: number
   refresh_expires_in?: number
   token_type?: string
+  access_token?: string
+  refresh_token?: string
   [key: string]: unknown
 }
 

@@ -18,7 +18,9 @@ function ProtectedRoute({ children }: ProtectedRouteProps) {
         queryKey: ['auth', 'me'],
         queryFn: () => authApi.me(),
         retry: false,
-        staleTime: 5 * 60 * 1000, // 5 минут
+        staleTime: 0,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: true,
     })
 
     if (isLoading) {
