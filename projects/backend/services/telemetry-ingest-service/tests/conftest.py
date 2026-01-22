@@ -16,6 +16,14 @@ pytest_plugins = (
 
 PG_SCHEMAS_PATH = Path(__file__).parent / "schemas" / "postgresql"
 
+class _TimescaleInternalTables:
+    """
+    Exclude TimescaleDB internal schemas (e.g. `_timescaledb_catalog`) from testsuite TRUNCATE list.
+    """
+
+    def __contains__(self, item: object) -> bool:
+        return isinstance(item, str) and item.startswith("_timescaledb_")
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -31,6 +39,11 @@ def pgsql_local(pgsql_local_create):
         schema_dirs=[PG_SCHEMAS_PATH],
     )
     return pgsql_local_create(list(databases.values()))
+
+
+@pytest.fixture(scope="session")
+def pgsql_cleanup_exclude_tables():
+    return _TimescaleInternalTables()
 
 
 @pytest.fixture

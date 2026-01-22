@@ -23,3 +23,14 @@ Public REST ingest service for sensor telemetry.
 
 Run via the root `docker-compose.yml` (recommended).
 
+## Tests (TimescaleDB)
+
+Testsuite PostgreSQL in this repo uses local `initdb/pg_ctl` by default; TimescaleDB requires an external DB.
+Start TimescaleDB via root compose, then pass DSN:
+
+```bash
+docker compose up -d postgres
+cd projects/backend/services/telemetry-ingest-service
+poetry install
+poetry run pytest --postgresql postgresql://postgres:postgres@localhost:5433/postgres
+```

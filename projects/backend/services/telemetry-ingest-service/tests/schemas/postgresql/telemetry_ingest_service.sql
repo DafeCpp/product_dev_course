@@ -2,6 +2,7 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 DO $$
 BEGIN
@@ -65,7 +66,7 @@ CREATE TABLE IF NOT EXISTS run_sensors (
 );
 
 CREATE TABLE IF NOT EXISTS telemetry_records (
-    id bigserial PRIMARY KEY,
+    id bigserial NOT NULL,
     project_id uuid NOT NULL,
     sensor_id uuid NOT NULL,
     run_id uuid,
@@ -74,13 +75,27 @@ CREATE TABLE IF NOT EXISTS telemetry_records (
     raw_value double precision NOT NULL,
     physical_value double precision,
     meta jsonb NOT NULL DEFAULT '{}'::jsonb,
+    signal text GENERATED ALWAYS AS ((meta->>'signal')) STORED,
     conversion_status telemetry_conversion_status NOT NULL DEFAULT 'raw_only',
     conversion_profile_id uuid,
     ingested_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (sensor_id, timestamp, id),
     FOREIGN KEY (sensor_id) REFERENCES sensors (id) ON DELETE CASCADE,
     FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE SET NULL,
     FOREIGN KEY (capture_session_id) REFERENCES capture_sessions (id) ON DELETE SET NULL
 );
+
+SELECT create_hypertable(
+    'telemetry_records',
+    'timestamp',
+    partitioning_column => 'sensor_id',
+    number_partitions => 2,
+    chunk_time_interval => INTERVAL '1 day',
+    if_not_exists => TRUE
+);
+
+CREATE INDEX IF NOT EXISTS telemetry_records_project_sensor_ts_id_idx
+    ON telemetry_records (project_id, sensor_id, timestamp ASC, id ASC);
 
 COMMIT;
 
