@@ -274,6 +274,7 @@ export default function TelemetryPanel({
         try {
             const { response: resp } = await telemetryApi.stream({
                 sensor_id: sensorId,
+                since_ts: new Date().toISOString(),
                 since_id: 0,
                 idle_timeout_seconds: 30,
             })

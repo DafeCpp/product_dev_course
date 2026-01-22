@@ -59,9 +59,16 @@ stream:
         schema:
           type: string
           format: uuid
+      - name: since_ts
+        in: query
+        required: false
+        description: Cursor timestamp (ISO8601/RFC3339). Defaults to epoch if omitted.
+        schema:
+          type: string
       - name: since_id
         in: query
         required: false
+        description: Cursor tie-break id for identical timestamps. Defaults to 0.
         schema:
           type: integer
           default: 0

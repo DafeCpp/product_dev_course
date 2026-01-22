@@ -107,6 +107,7 @@ export default function TelemetryStreamModal({
     filterRunId,
     filterCaptureSessionId,
 }: TelemetryStreamModalProps) {
+    const [sinceTs, setSinceTs] = useState(() => new Date().toISOString())
     const [sinceId, setSinceId] = useState('0')
     const [idleTimeoutSeconds, setIdleTimeoutSeconds] = useState('30')
     const [maxPoints, setMaxPoints] = useState('200')
@@ -122,6 +123,7 @@ export default function TelemetryStreamModal({
     const [error, setError] = useState<string | null>(null)
     const [records, setRecords] = useState<TelemetryStreamRecord[]>([])
     const [lastId, setLastId] = useState<number>(0)
+    const [lastTs, setLastTs] = useState<string>('')
 
     const abortRef = useRef<AbortController | null>(null)
     const runningRef = useRef(false)
@@ -136,6 +138,8 @@ export default function TelemetryStreamModal({
             setError(null)
             setRecords([])
             setLastId(0)
+            setLastTs('')
+            setSinceTs(new Date().toISOString())
             setSinceId('0')
             setIdleTimeoutSeconds('30')
             setMaxPoints('200')
@@ -179,12 +183,14 @@ export default function TelemetryStreamModal({
     const start = async () => {
         setError(null)
 
+        const ts = sinceTs && Number.isFinite(Date.parse(sinceTs)) ? sinceTs : new Date().toISOString()
         const since = _clamp(Number(sinceId || '0'), 0, Number.MAX_SAFE_INTEGER)
         const idle = _clamp(Number(idleTimeoutSeconds || '30'), 1, 600)
         const max = _clamp(Number(maxPoints || '200'), 10, 2000)
 
         setRecords([])
         setLastId(since)
+        setLastTs(ts)
         setStatus('connecting')
 
         const abort = new AbortController()
@@ -193,7 +199,7 @@ export default function TelemetryStreamModal({
 
         try {
             const { response: resp, debug } = await telemetryApi.stream(
-                { sensor_id: sensorId, since_id: since, idle_timeout_seconds: idle }
+                { sensor_id: sensorId, since_ts: ts, since_id: since, idle_timeout_seconds: idle }
             )
             if (!resp.ok) {
                 const text = await resp.text().catch(() => '')
@@ -223,6 +229,7 @@ export default function TelemetryStreamModal({
                     try {
                         const parsed = JSON.parse(evt.data) as TelemetryStreamRecord
                         setLastId(parsed.id)
+                        setLastTs(parsed.timestamp)
                         setRecords((prev) => {
                             const next = [...prev, parsed]
                             return next.length > max ? next.slice(next.length - max) : next
@@ -287,7 +294,18 @@ export default function TelemetryStreamModal({
 
                 <div className="form-grid">
                     <div className="form-group">
-                        <label htmlFor="telemetry_stream_since">since_id</label>
+                        <label htmlFor="telemetry_stream_since_ts">since_ts</label>
+                        <input
+                            id="telemetry_stream_since_ts"
+                            type="text"
+                            value={sinceTs}
+                            onChange={(e) => setSinceTs(e.target.value)}
+                            disabled={status === 'connecting' || status === 'streaming'}
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label htmlFor="telemetry_stream_since">since_id (tie-break)</label>
                         <input
                             id="telemetry_stream_since"
                             type="number"
@@ -355,6 +373,7 @@ export default function TelemetryStreamModal({
                         {filterRunId && <span className="mono">run_id: {filterRunId}</span>}
                         {filterCaptureSessionId && <span className="mono">cs_id: {filterCaptureSessionId}</span>}
                         <span className="mono">last_id: {lastId}</span>
+                        {lastTs && <span className="mono">last_ts: {lastTs}</span>}
                         <span>events: {filteredRecords.length}{filterMode !== 'all' ? ` / ${records.length}` : ''}</span>
                     </div>
                 </div>
