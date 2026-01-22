@@ -26,6 +26,10 @@ DOCKER_BUILD_ENV := DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) COMPOSE_DOCKER_CLI_BUILD=
 BACKEND_BASE_DOCKERFILE := projects/backend/Dockerfile.base
 BACKEND_BASE_HASH := $(shell sha256sum $(BACKEND_BASE_DOCKERFILE) 2>/dev/null | awk '{print $$1}')
 BACKEND_DEV_SERVICES := auth-service experiment-service telemetry-ingest-service
+# Backend tests require TimescaleDB (telemetry tables are hypertables).
+# By default we run tests against the docker-compose postgres container and
+# dynamically discover its credentials and mapped host port (so local .env works).
+TEST_POSTGRESQL_DSN ?=
 
 test: type-check test-backend test-telemetry-cli test-frontend
 
@@ -106,10 +110,35 @@ test-backend: backend-install
 		echo "⚠️  Не найдено ни одного backend сервиса в $(BACKEND_SERVICES_DIR)"; \
 		exit 1; \
 	fi; \
+	echo "🐘 Starting TimescaleDB (postgres) for backend tests..."; \
+	docker-compose up -d postgres >/dev/null 2>&1 || (echo "❌ docker-compose failed to start postgres" && exit 1); \
+	# Wait for readiness (up to ~30s). \
+	for i in $$(seq 1 60); do \
+		docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 && break; \
+		sleep 0.5; \
+	done; \
+	if ! docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then \
+		echo "❌ Postgres is not ready"; \
+		docker-compose logs --tail=80 postgres; \
+		exit 1; \
+	fi; \
+	PG_TEST_DSN="$(TEST_POSTGRESQL_DSN)"; \
+	if [ -z "$$PG_TEST_DSN" ]; then \
+		hostport="$$(docker-compose port postgres 5432 2>/dev/null | tail -n 1 | sed 's/.*://')"; \
+		if [ -z "$$hostport" ]; then hostport=5433; fi; \
+		# Strip quotes if .env uses POSTGRES_USER="..." format. \
+		pg_user="$$(docker-compose exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_USER:-postgres}\"' | sed 's/\"//g')"; \
+		pg_pass="$$(docker-compose exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_PASSWORD:-postgres}\"' | sed 's/\"//g')"; \
+		# If the postgres volume already exists, POSTGRES_PASSWORD env won't update the actual role password. \
+		# Ensure the role password matches what we'll use in the DSN. \
+		docker-compose exec -T postgres psql -U postgres -d postgres -c "ALTER USER \"$${pg_user}\" WITH PASSWORD '$${pg_pass}';" >/dev/null 2>&1 || true; \
+		PG_TEST_DSN="postgresql://$${pg_user}:$${pg_pass}@localhost:$${hostport}/postgres"; \
+	fi; \
+	echo "🔌 Using PostgreSQL DSN for tests: $$(echo $$PG_TEST_DSN | sed -E 's#(postgresql://[^:]+:)[^@]+@#\\1***@#')"; \
 	failed=0; \
 	for service in $(BACKEND_SERVICES); do \
 		echo "🧪 Running tests for $$(basename $$service)..."; \
-		(cd $$service && poetry run pytest) || failed=1; \
+		(cd $$service && poetry run pytest --postgresql "$$PG_TEST_DSN") || failed=1; \
 	done; \
 	exit $$failed
 
