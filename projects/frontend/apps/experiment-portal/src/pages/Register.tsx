@@ -5,7 +5,7 @@ import { authApi } from '../api/auth'
 import type { RegisterRequest } from '../types'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './Register.css'
+import './Register.scss'
 
 function Register() {
     const navigate = useNavigate()

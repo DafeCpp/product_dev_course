@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import './InfoRow.css'
+import './InfoRow.scss'
 
 interface InfoRowProps {
     label: string

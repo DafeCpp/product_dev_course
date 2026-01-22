@@ -1,0 +1,75 @@
+@import './styles/colors';
+@import './styles/effects';
+@import './styles/tokens';
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: light;
+  --primary: #{$primary};
+  --primary-hover: #{$primary-hover};
+  --primary-container: #{$primary-container};
+  --secondary: #{$secondary};
+  --secondary-container: #{$secondary-container};
+  --surface: #{$surface};
+  --surface-variant: #{$surface-variant};
+  --background: #{$background};
+  --outline: #{$outline};
+  --text: #{$text};
+  --text-secondary: #{$text-secondary};
+  --error: #{$error};
+  --error-container: #{$error-container};
+  --success: #{$success};
+  --success-container: #{$success-container};
+  --warning: #{$warning};
+  --warning-container: #{$warning-container};
+  --info: #{$info};
+  --info-container: #{$info-container};
+  --elevation-1: #{$elevation-1};
+  --elevation-2: #{$elevation-2};
+  --elevation-3: #{$elevation-3};
+  --radius-sm: #{$radius-sm};
+  --radius-md: #{$radius-md};
+  --radius-lg: #{$radius-lg};
+  --radius-pill: #{$radius-pill};
+}
+
+body {
+  font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Oxygen', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background);
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 16px;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+}

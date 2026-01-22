@@ -15,7 +15,7 @@ import {
   MaterialSelect,
 } from '../components/common'
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
-import './RunDetail.css'
+import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'

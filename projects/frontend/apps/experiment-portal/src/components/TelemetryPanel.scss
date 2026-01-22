@@ -1,3 +1,5 @@
+@import '../styles/colors';
+
 .telemetry-panel {
     display: flex;
     flex-direction: column;
@@ -19,9 +21,9 @@
 }
 
 .telemetry-panel__drag-handle {
-    border: 1px solid #e2e8f0;
-    background: #f8fafc;
-    color: #64748b;
+    border: 1px solid $surface-pill;
+    background: $surface-muted;
+    color: $text-hint;
     border-radius: 6px;
     padding: 4px 6px;
     font-size: 12px;
@@ -44,7 +46,7 @@
 }
 
 .telemetry-panel__title:focus {
-    border-color: #d0d7de;
+    border-color: $border-focus;
     outline: none;
 }
 
@@ -69,11 +71,11 @@
     flex-wrap: wrap;
     gap: 10px;
     font-size: 12px;
-    color: #475569;
+    color: $text-muted;
 }
 
 .telemetry-panel__meta-item {
-    background: #f8fafc;
+    background: $surface-muted;
     border-radius: 999px;
     padding: 4px 10px;
 }
@@ -90,11 +92,11 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    color: #0f172a;
+    color: $text-ink;
 }
 
 .telemetry-panel__checkbox input {
-    accent-color: #2563eb;
+    accent-color: $accent-blue;
 }
 
 .telemetry-panel__sensor-picker {
@@ -113,8 +115,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #f1f5f9;
-    color: #0f172a;
+    background: $surface-hover;
+    color: $text-ink;
     padding: 4px 8px;
     border-radius: 999px;
     font-size: 12px;
@@ -125,21 +127,21 @@
     border: none;
     font-size: 14px;
     cursor: pointer;
-    color: #64748b;
+    color: $text-hint;
 }
 
 .telemetry-panel__hint {
     font-size: 12px;
-    color: #64748b;
+    color: $text-hint;
 }
 
 .telemetry-panel__chart {
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid $border-default;
     border-radius: 10px;
     padding: 12px;
-    background: var(--card-bg, #fff);
+    background: $surface-base;
 }
 
 .telemetry-panel__chart-area {
@@ -159,10 +161,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: rgba(15, 23, 42, 0.55);
+    color: $overlay-strong-text;
     font-size: 13px;
     text-align: center;
-    background: rgba(15, 23, 42, 0.04);
+    background: $overlay-strong-bg;
     border-radius: 8px;
 }
 
@@ -178,7 +180,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: #0f172a;
+    color: $text-ink;
 }
 
 .telemetry-panel__legend-dot {
@@ -189,12 +191,12 @@
 }
 
 .telemetry-panel__legend-value {
-    color: #475569;
+    color: $text-muted;
     margin-left: 4px;
 }
 
 .telemetry-panel__error {
-    color: #b91c1c;
+    color: $text-danger;
     font-size: 12px;
 }
 

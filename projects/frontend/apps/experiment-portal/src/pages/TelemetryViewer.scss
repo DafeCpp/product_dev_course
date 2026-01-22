@@ -1,3 +1,5 @@
+@import '../styles/colors';
+
 .telemetry-view__filters {
     max-width: none;
     width: 100%;
@@ -67,9 +69,9 @@
     width: calc(100% + 40px);
     margin: auto -20px -20px;
     border: none;
-    border-top: 1px solid #eee;
-    background: #f8fafc;
-    color: #475569;
+    border-top: 1px solid $border-subtle;
+    background: $surface-muted;
+    color: $text-muted;
     padding: 4px 0 6px;
     font-size: 14px;
     cursor: pointer;
@@ -95,7 +97,7 @@
 }
 
 .telemetry-view__collapse:hover {
-    background: #f1f5f9;
+    background: $surface-hover;
 }
 
 .telemetry-view__mode {
@@ -132,7 +134,7 @@
 .telemetry-view__sensor-filter label {
     display: block;
     font-size: 12px;
-    color: #475569;
+    color: $text-muted;
     margin-bottom: 4px;
 }
 
@@ -141,6 +143,11 @@
     gap: 8px;
     align-items: center;
     flex-wrap: wrap;
+}
+
+.telemetry-view__sensor-meta {
+    font-size: 12px;
+    color: $text-muted;
 }
 
 .telemetry-view__sensor-list {
@@ -155,7 +162,7 @@
     gap: 6px;
     padding: 4px 10px;
     border-radius: 999px;
-    background: #e2e8f0;
+    background: $surface-pill;
     font-size: 12px;
 }
 
@@ -168,7 +175,7 @@
 }
 
 .telemetry-view__hint {
-    color: #64748b;
+    color: $text-hint;
     font-size: 12px;
 }
 
@@ -186,22 +193,22 @@
     font-size: 12px;
 }
 
-.telemetry-view__history-options input[type="number"] {
+.telemetry-view__history-options input[type='number'] {
     width: 120px;
 }
 
 .telemetry-view__text-input {
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid #cbd5f5;
+    border: 1px solid $input-border;
     border-radius: 10px;
     font-size: 13px;
-    background: #fff;
+    background: $surface-base;
 }
 
 .telemetry-view__history-summary {
     font-size: 12px;
-    color: #475569;
+    color: $text-muted;
 }
 
 .telemetry-view__checkbox {
@@ -226,9 +233,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #64748b;
+    color: $text-hint;
     font-size: 14px;
-    background: rgba(248, 250, 252, 0.9);
+    background: $overlay-empty-bg;
     border-radius: 12px;
 }
 
@@ -238,15 +245,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #1e293b;
+    color: $text-strong;
     font-size: 14px;
     font-weight: 500;
-    background: rgba(248, 250, 252, 0.75);
+    background: $overlay-loading-bg;
     border-radius: 12px;
 }
 
 .telemetry-view__error {
-    color: #b91c1c;
+    color: $text-danger;
     font-size: 13px;
 }
 
@@ -267,7 +274,7 @@
 }
 
 .telemetry-view__panel-item--over {
-    outline: 2px dashed #94a3b8;
+    outline: 2px dashed $outline-muted;
     outline-offset: 4px;
 }
 

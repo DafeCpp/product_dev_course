@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import './EmptyState.css'
+import './EmptyState.scss'
 
 interface EmptyStateProps {
     message: string

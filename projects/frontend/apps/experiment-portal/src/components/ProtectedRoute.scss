@@ -1,3 +1,5 @@
+@import '../styles/colors';
+
 .loading-container {
     display: flex;
     align-items: center;
@@ -7,5 +9,5 @@
 
 .loading {
     font-size: 16px;
-    color: #666;
+    color: $text-dim;
 }

@@ -3,7 +3,7 @@ import type { ToastEvent } from '../../utils/toastBus'
 import { subscribeToasts } from '../../utils/toastBus'
 import type { HttpDebugInfo } from '../../utils/httpDebug'
 import DebugErrorToast from './DebugErrorToast'
-import './ToastViewport.css'
+import './ToastViewport.scss'
 
 type ToastItem = {
   id: string

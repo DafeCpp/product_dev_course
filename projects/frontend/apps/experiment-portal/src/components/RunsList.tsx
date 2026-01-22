@@ -7,7 +7,7 @@ import { StatusBadge, Loading, Error, EmptyState, runStatusMap } from './common'
 import { IS_TEST } from '../utils/env'
 import Tags from './common/Tags'
 import BulkRunTagsModal from './BulkRunTagsModal'
-import './RunsList.css'
+import './RunsList.scss'
 
 interface RunsListProps {
   experimentId: string

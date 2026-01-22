@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import UserProfileModal from './UserProfileModal'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './Layout.css'
+import './Layout.scss'
 
 interface LayoutProps {
   children: ReactNode

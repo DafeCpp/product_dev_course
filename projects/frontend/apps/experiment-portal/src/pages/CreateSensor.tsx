@@ -7,7 +7,7 @@ import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
-import './CreateSensor.css'
+import './CreateSensor.scss'
 
 function CreateSensor() {
     const navigate = useNavigate()

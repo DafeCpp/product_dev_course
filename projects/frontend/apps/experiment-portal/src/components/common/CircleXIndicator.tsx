@@ -1,4 +1,4 @@
-import './CircleXIndicator.css'
+import './CircleXIndicator.scss'
 
 type CircleXIndicatorProps = {
     title?: string

@@ -1,3 +1,5 @@
+@import '../styles/colors';
+
 .create-experiment h2 {
   margin-bottom: 24px;
 }
@@ -9,12 +11,12 @@
 .form-hint {
   display: block;
   margin-top: 4px;
-  color: #666;
+  color: $text-dim;
   font-size: 12px;
 }
 
 .required {
-  color: #dc3545;
+  color: $toast-danger;
 }
 
 .form-actions {
@@ -23,11 +25,10 @@
   gap: 12px;
   margin-top: 24px;
   padding-top: 24px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid $border-subtle;
 }
 
 .form-actions button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
-

@@ -5,7 +5,7 @@ import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
 import { IS_TEST } from '../utils/env'
 import { notifyError } from '../utils/notify'
-import './Login.css'
+import './Login.scss'
 
 function Login() {
     const navigate = useNavigate()

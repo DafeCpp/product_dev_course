@@ -1,3 +1,5 @@
+@import '../styles/colors';
+
 .create-sensor {
     max-width: 800px;
     margin: 0 auto;
@@ -13,12 +15,12 @@
 }
 
 .warning {
-    background-color: #fff3cd;
-    border: 1px solid #ffc107;
+    background-color: $surface-warning;
+    border: 1px solid $warning-border;
     border-radius: 8px;
     padding: 12px 16px;
     margin: 20px 0;
-    color: #856404;
+    color: $text-warning-strong;
     font-weight: 500;
 }
 
@@ -31,15 +33,15 @@
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: #333;
+    color: $text-body;
 }
 
 .token-value {
     display: flex;
     gap: 12px;
     align-items: center;
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
+    background-color: $surface-muted-alt;
+    border: 1px solid $border-soft;
     border-radius: 8px;
     padding: 16px;
 }
@@ -49,11 +51,11 @@
     font-family: 'Courier New', monospace;
     font-size: 14px;
     word-break: break-all;
-    color: #333;
+    color: $text-body;
 }
 
 .redirect-info {
-    color: #666;
+    color: $text-dim;
     font-size: 14px;
     margin: 16px 0;
 }
@@ -70,7 +72,7 @@
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: #333;
+    color: $text-body;
 }
 
 .form-group input,
@@ -78,7 +80,7 @@
 .form-group textarea {
     width: 100%;
     padding: 12px 16px;
-    border: 1px solid #ddd;
+    border: 1px solid $border-input;
     border-radius: 8px;
     font-size: 16px;
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -88,19 +90,19 @@
 .form-group select:focus,
 .form-group textarea:focus {
     outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+    border-color: $accent-blue-legacy;
+    box-shadow: 0 0 0 3px $accent-blue-ring;
 }
 
 .form-hint {
     display: block;
     margin-top: 4px;
     font-size: 12px;
-    color: #666;
+    color: $text-dim;
 }
 
 .required {
-    color: #dc3545;
+    color: $toast-danger;
 }
 
 .form-actions {
@@ -109,5 +111,5 @@
     justify-content: flex-end;
     margin-top: 32px;
     padding-top: 24px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid $border-subtle;
 }

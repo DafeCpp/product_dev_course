@@ -1,3 +1,5 @@
+@import './styles/colors';
+
 .app {
   min-height: 100vh;
 }
@@ -24,7 +26,7 @@
 
 .btn-primary {
   background-color: var(--primary);
-  color: #fff;
+  color: $surface-base;
 }
 
 .btn-primary:hover {
@@ -39,33 +41,33 @@
 }
 
 .btn-secondary:hover {
-  background-color: #ebe4f4;
+  background-color: $surface-variant-hover;
   box-shadow: var(--elevation-2);
 }
 
 .btn-danger {
   background-color: var(--error);
-  color: #fff;
+  color: $surface-base;
 }
 
 .btn-danger:hover {
-  background-color: #9b1f1a;
+  background-color: $danger-hover;
   box-shadow: var(--elevation-2);
 }
 
 .btn-success {
   background-color: var(--success);
-  color: #fff;
+  color: $surface-base;
 }
 
 .btn-success:hover {
-  background-color: #174d1a;
+  background-color: $success-hover;
   box-shadow: var(--elevation-2);
 }
 
 .btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(103, 80, 164, 0.25);
+  box-shadow: 0 0 0 3px $accent-primary-ring-25;
 }
 
 .btn:active {
@@ -136,7 +138,7 @@
 .form-group select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(103, 80, 164, 0.2);
+  box-shadow: 0 0 0 3px $accent-primary-ring-20;
 }
 
 .form-group textarea {
@@ -150,7 +152,7 @@
   padding: 20px;
   margin-bottom: 20px;
   box-shadow: var(--elevation-1);
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  border: 1px solid $border-shadow;
 }
 
 .card-header {
@@ -190,7 +192,7 @@
 
 .badge-warning {
   background-color: var(--warning-container);
-  color: #7a4900;
+  color: $text-warning;
 }
 
 .badge-danger {

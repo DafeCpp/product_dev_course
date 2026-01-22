@@ -1,4 +1,4 @@
-import './Error.css'
+import './Error.scss'
 
 interface ErrorProps {
     message: string

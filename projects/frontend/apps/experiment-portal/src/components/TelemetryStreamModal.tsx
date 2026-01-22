@@ -7,7 +7,7 @@ import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
 import { IS_TEST } from '../utils/env'
 import { notifyError } from '../utils/notify'
-import './TelemetryStreamModal.css'
+import './TelemetryStreamModal.scss'
 
 type TelemetryStreamModalProps = {
     sensorId: string

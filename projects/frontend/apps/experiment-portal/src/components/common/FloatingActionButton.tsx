@@ -1,5 +1,5 @@
 import type { MouseEventHandler } from 'react'
-import './FloatingActionButton.css'
+import './FloatingActionButton.scss'
 
 type FloatingActionButtonProps = {
     onClick: MouseEventHandler<HTMLButtonElement>

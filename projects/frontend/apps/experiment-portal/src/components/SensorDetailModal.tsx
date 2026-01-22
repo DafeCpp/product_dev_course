@@ -14,7 +14,7 @@ import {
     sensorStatusMap,
     MaterialSelect,
 } from './common'
-import './SensorDetailModal.css'
+import './SensorDetailModal.scss'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
 
 interface SensorDetailModalProps {

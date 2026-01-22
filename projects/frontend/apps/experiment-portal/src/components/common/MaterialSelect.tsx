@@ -8,7 +8,7 @@ import {
     useRef,
     useState,
 } from 'react'
-import './MaterialSelect.css'
+import './MaterialSelect.scss'
 
 type MaterialSelectProps = {
     id: string

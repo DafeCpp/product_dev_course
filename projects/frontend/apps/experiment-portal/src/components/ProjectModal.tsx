@@ -7,7 +7,7 @@ import Modal from './Modal'
 import { Error, InfoRow, Loading } from './common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './CreateRunModal.css'
+import './CreateRunModal.scss'
 
 type ProjectModalMode = 'create' | 'view' | 'edit'
 type ProjectUiMode = 'view' | 'edit'

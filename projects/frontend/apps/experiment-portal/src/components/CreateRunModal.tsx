@@ -6,7 +6,7 @@ import type { RunCreate } from '../types'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './CreateRunModal.css'
+import './CreateRunModal.scss'
 
 interface CreateRunModalProps {
     experimentId: string

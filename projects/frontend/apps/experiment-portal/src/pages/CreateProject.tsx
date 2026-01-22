@@ -6,7 +6,7 @@ import type { ProjectCreate } from '../types'
 import { Error, FormGroup, FormActions } from '../components/common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './CreateProject.css'
+import './CreateProject.scss'
 
 function CreateProject() {
     const navigate = useNavigate()

@@ -8,7 +8,7 @@ import TelemetryPanel from '../components/TelemetryPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
 import type { CaptureSession, Sensor, TelemetryQueryRecord } from '../types'
-import './TelemetryViewer.css'
+import './TelemetryViewer.scss'
 
 type TelemetryViewerState = {
     projectId: string
@@ -26,10 +26,12 @@ type TelemetryHistoryState = {
     valueMode: HistoryValueMode
     includeLate: boolean
     maxPoints: number
+    order: 'asc' | 'desc'
 }
 
 const HISTORY_MAX_POINTS_DEFAULT = 5000
 const HISTORY_PAGE_SIZE = 2000
+const HISTORY_MAX_SENSORS = 50
 
 function TelemetryViewer() {
     const [projectId, setProjectId] = useState<string>('')
@@ -53,6 +55,7 @@ function TelemetryViewer() {
     const [historyValueMode, setHistoryValueMode] = useState<HistoryValueMode>('physical')
     const [historyIncludeLate, setHistoryIncludeLate] = useState(true)
     const [historyMaxPoints, setHistoryMaxPoints] = useState(HISTORY_MAX_POINTS_DEFAULT)
+    const [historyOrder, setHistoryOrder] = useState<'asc' | 'desc'>('asc')
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyError, setHistoryError] = useState<string | null>(null)
     const [historyPoints, setHistoryPoints] = useState<TelemetryQueryRecord[]>([])
@@ -133,6 +136,9 @@ function TelemetryViewer() {
             if (typeof parsed.maxPoints === 'number' && Number.isFinite(parsed.maxPoints)) {
                 setHistoryMaxPoints(Math.max(100, Math.min(20000, Math.round(parsed.maxPoints))))
             }
+            if (parsed.order === 'asc' || parsed.order === 'desc') {
+                setHistoryOrder(parsed.order)
+            }
         } catch {
             // ignore malformed local storage
         } finally {
@@ -148,9 +154,10 @@ function TelemetryViewer() {
             valueMode: historyValueMode,
             includeLate: historyIncludeLate,
             maxPoints: historyMaxPoints,
+            order: historyOrder,
         }
         window.localStorage.setItem('telemetry_history_state', JSON.stringify(payload))
-    }, [historyCaptureSessionId, historySensorIds, historyValueMode, historyIncludeLate, historyMaxPoints])
+    }, [historyCaptureSessionId, historySensorIds, historyValueMode, historyIncludeLate, historyMaxPoints, historyOrder])
 
     useEffect(() => {
         if (typeof window === 'undefined' || !panelsLoadedRef.current) return
@@ -306,6 +313,16 @@ function TelemetryViewer() {
             return hay.includes(query)
         })
     }, [availableHistorySensors, historySensorFilter])
+
+    const historySensorOverLimit = historySensorIds.length > HISTORY_MAX_SENSORS
+    const historySensorLimitReached = historySensorIds.length >= HISTORY_MAX_SENSORS
+
+    useEffect(() => {
+        if (historySensorOverLimit && historyError?.includes('сенсоров')) return
+        if (!historySensorOverLimit && historyError === 'Можно выбрать не более 50 сенсоров') {
+            setHistoryError(null)
+        }
+    }, [historySensorOverLimit, historyError])
 
     const historySensorsById = useMemo(() => {
         const map = new Map<string, Sensor>()
@@ -466,14 +483,24 @@ function TelemetryViewer() {
 
     const addHistorySensor = (sensorId: string) => {
         if (!sensorId) return
-        setHistorySensorIds((prev) => (prev.includes(sensorId) ? prev : [...prev, sensorId]))
+        setHistorySensorIds((prev) => {
+            if (prev.includes(sensorId)) return prev
+            if (prev.length >= HISTORY_MAX_SENSORS) {
+                setHistoryError('Можно выбрать не более 50 сенсоров')
+                return prev
+            }
+            return [...prev, sensorId]
+        })
     }
 
     const addAllHistorySensors = () => {
         if (availableHistorySensors.length === 0) return
         setHistorySensorIds((prev) => {
             const next = new Set(prev)
-            availableHistorySensors.forEach((sensor) => next.add(sensor.id))
+            for (const sensor of availableHistorySensors) {
+                if (next.size >= HISTORY_MAX_SENSORS) break
+                next.add(sensor.id)
+            }
             return Array.from(next)
         })
     }
@@ -508,6 +535,10 @@ function TelemetryViewer() {
     const loadHistory = async () => {
         if (!historyCaptureSessionId) return
         setHistoryError(null)
+        if (historySensorOverLimit) {
+            setHistoryError('Можно выбрать не более 50 сенсоров')
+            return
+        }
         setHistoryLoading(true)
         setHistoryPoints([])
         setHistoryLoadedCount(0)
@@ -525,6 +556,7 @@ function TelemetryViewer() {
                     since_id: sinceId,
                     limit: pageLimit,
                     include_late: historyIncludeLate,
+                    order: historyOrder,
                 })
                 collected.push(...resp.points)
                 setHistoryLoadedCount(collected.length)
@@ -827,7 +859,7 @@ function TelemetryViewer() {
                                     type="button"
                                     className="btn btn-secondary btn-xs"
                                     onClick={addAllHistorySensors}
-                                    disabled={availableHistorySensors.length === 0}
+                                    disabled={availableHistorySensors.length === 0 || historySensorLimitReached}
                                 >
                                     Добавить все
                                 </button>
@@ -839,6 +871,9 @@ function TelemetryViewer() {
                                 >
                                     Очистить
                                 </button>
+                            </div>
+                            <div className="telemetry-view__sensor-meta">
+                                Выбрано {historySensorIds.length} / {HISTORY_MAX_SENSORS}
                             </div>
                             <div className="telemetry-view__sensor-list">
                                 {historySensorIds.length === 0 && (
@@ -877,6 +912,26 @@ function TelemetryViewer() {
                                 />
                                 include late
                             </label>
+                            <div className="telemetry-view__mode-toggle">
+                                <label>
+                                    <input
+                                        type="radio"
+                                        name="history-order"
+                                        checked={historyOrder === 'asc'}
+                                        onChange={() => setHistoryOrder('asc')}
+                                    />
+                                    от начала
+                                </label>
+                                <label>
+                                    <input
+                                        type="radio"
+                                        name="history-order"
+                                        checked={historyOrder === 'desc'}
+                                        onChange={() => setHistoryOrder('desc')}
+                                    />
+                                    последние
+                                </label>
+                            </div>
                             <div className="telemetry-view__mode-toggle">
                                 <label>
                                     <input

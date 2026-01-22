@@ -2,7 +2,7 @@ import { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
-import './ProtectedRoute.css'
+import './ProtectedRoute.scss'
 
 interface ProtectedRouteProps {
     children: ReactNode

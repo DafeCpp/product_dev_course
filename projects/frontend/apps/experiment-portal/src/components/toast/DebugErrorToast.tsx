@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { HttpDebugInfo } from '../../utils/httpDebug'
 import { formatHttpDebugText } from '../../utils/httpDebug'
-import './DebugErrorToast.css'
+import './DebugErrorToast.scss'
 
 export default function DebugErrorToast({ info }: { info: HttpDebugInfo }) {
   const [open, setOpen] = useState(false)

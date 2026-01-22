@@ -7,7 +7,7 @@ import Modal from './Modal'
 import { Loading, Error, MaterialSelect } from './common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './CreateRunModal.css'
+import './CreateRunModal.scss'
 
 interface ProjectMembersModalProps {
     isOpen: boolean

@@ -5,7 +5,7 @@ import type { TelemetryIngest } from '../types'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './TestTelemetryModal.css'
+import './TestTelemetryModal.scss'
 
 interface TestTelemetryModalProps {
     sensorId: string

@@ -10,7 +10,7 @@ import SensorsList from './pages/SensorsList'
 import CreateSensor from './pages/CreateSensor'
 import ProjectsList from './pages/ProjectsList'
 import TelemetryViewer from './pages/TelemetryViewer'
-import './App.css'
+import './App.scss'
 
 function App() {
   return (

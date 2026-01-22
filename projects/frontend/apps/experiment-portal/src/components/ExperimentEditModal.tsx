@@ -7,7 +7,7 @@ import { experimentStatusMap } from './common/statusMaps'
 import { MaterialSelect } from './common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './CreateRunModal.css'
+import './CreateRunModal.scss'
 
 interface ExperimentEditModalProps {
     isOpen: boolean

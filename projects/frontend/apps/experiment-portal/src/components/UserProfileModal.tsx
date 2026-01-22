@@ -4,7 +4,7 @@ import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
 import Modal from './Modal'
 import { Loading, Error, EmptyState, InfoRow } from './common'
-import './CreateRunModal.css'
+import './CreateRunModal.scss'
 
 interface UserProfileModalProps {
     isOpen: boolean

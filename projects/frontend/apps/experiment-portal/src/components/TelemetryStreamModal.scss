@@ -1,3 +1,5 @@
+@import '../styles/colors';
+
 .modal-content.telemetry-stream-modal {
     max-width: 1200px;
     width: min(1200px, 96vw);
@@ -47,10 +49,10 @@
 }
 
 .sparkline-card {
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color, #{$border-default});
     border-radius: 10px;
     padding: 12px;
-    background: var(--card-bg, #fff);
+    background: var(--card-bg, #{$surface-base});
 }
 
 .sparkline-header {
@@ -87,7 +89,7 @@
 }
 
 .sparkline-bg {
-    fill: rgba(15, 23, 42, 0.04);
+    fill: $overlay-strong-bg;
 }
 
 .sparkline-svg {
@@ -99,40 +101,40 @@
 }
 
 .sparkline-grid line {
-    stroke: rgba(15, 23, 42, 0.12);
+    stroke: $overlay-ink-12;
     stroke-width: 1;
     shape-rendering: crispEdges;
 }
 
 .sparkline-labels text {
-    fill: rgba(15, 23, 42, 0.7);
+    fill: $overlay-ink-70;
     font-size: 12px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .sparkline-empty text {
-    fill: rgba(15, 23, 42, 0.55);
+    fill: $overlay-strong-text;
     font-size: 13px;
 }
 
 .sparkline-area {
-    fill: rgba(37, 99, 235, 0.14);
+    fill: $sparkline-area;
 }
 
 .sparkline-path {
-    stroke: #2563eb;
+    stroke: $accent-blue;
     stroke-width: 2;
     fill: none;
 }
 
 .sparkline-last {
-    fill: #2563eb;
-    stroke: rgba(255, 255, 255, 0.9);
+    fill: $accent-blue;
+    stroke: $sparkline-point-stroke;
     stroke-width: 2;
 }
 
 .records {
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    border-top: 1px solid var(--border-color, #{$border-default});
     padding-top: 10px;
 }
 
@@ -147,9 +149,9 @@
     gap: 10px;
     flex-wrap: wrap;
     padding: 6px 8px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    border: 1px solid $overlay-ink-08;
     border-radius: 8px;
-    background: rgba(15, 23, 42, 0.02);
+    background: $overlay-ink-02;
 }
 
 .empty {

@@ -18,7 +18,7 @@ import {
 } from '../components/common'
 import SensorDetailModal from '../components/SensorDetailModal'
 import { setActiveProjectId } from '../utils/activeProject'
-import './SensorsList.css'
+import './SensorsList.scss'
 
 function SensorsList() {
     const navigate = useNavigate()

@@ -1,4 +1,4 @@
-import './Tags.css'
+import './Tags.scss'
 
 interface TagsProps {
     tags: string[]

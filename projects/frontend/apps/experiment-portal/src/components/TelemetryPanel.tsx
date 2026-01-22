@@ -5,7 +5,7 @@ import { telemetryApi } from '../api/client'
 import { createSSEParser } from '../utils/sse'
 import Modal from './Modal'
 import { MaterialSelect } from './common'
-import './TelemetryPanel.css'
+import './TelemetryPanel.scss'
 
 type TelemetryPanelProps = {
     panelId: string

@@ -1,3 +1,5 @@
+@import '../styles/colors';
+
 .run-header {
   max-width: 1000px;
 }
@@ -25,24 +27,24 @@
   display: inline-block;
   margin-top: 8px;
   font-size: 14px;
-  color: #007bff;
+  color: $accent-blue-legacy;
 }
 
 .notes-section {
   margin-top: 24px;
   padding-top: 24px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid $border-subtle;
 }
 
 .notes-section h3 {
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 8px;
-  color: #333;
+  color: $text-body;
 }
 
 .notes-section p {
-  color: #666;
+  color: $text-dim;
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -51,7 +53,7 @@
 .metadata-section {
   margin-top: 24px;
   padding-top: 24px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid $border-subtle;
 }
 
 .parameters-section h3,
@@ -59,12 +61,12 @@
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 12px;
-  color: #333;
+  color: $text-body;
 }
 
 .parameters-json,
 .metadata-json {
-  background-color: #f8f9fa;
+  background-color: $surface-muted-alt;
   padding: 16px;
   border-radius: 4px;
   overflow-x: auto;
@@ -138,15 +140,15 @@
 }
 
 .session-card {
-  border: 1px solid #e0e0e0;
+  border: 1px solid $border-muted;
   border-radius: 8px;
   padding: 16px;
-  background-color: #fff;
+  background-color: $surface-base;
 }
 
 .session-card.active {
-  border-color: #007bff;
-  background-color: #f0f8ff;
+  border-color: $accent-blue-legacy;
+  background-color: $surface-info;
 }
 
 .session-header {
@@ -182,17 +184,17 @@
 
 .session-info .info-row strong {
   min-width: 100px;
-  color: #666;
+  color: $text-dim;
 }
 
 .session-info .info-row span {
-  color: #333;
+  color: $text-body;
 }
 
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  color: #666;
+  color: $text-dim;
 }
 
 .empty-state p {

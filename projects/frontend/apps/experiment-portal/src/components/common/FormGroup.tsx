@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import './FormGroup.css'
+import './FormGroup.scss'
 
 interface FormGroupProps {
     label: string

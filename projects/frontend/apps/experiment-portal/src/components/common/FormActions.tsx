@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import './FormActions.css'
+import './FormActions.scss'
 
 interface FormActionsProps {
     children: ReactNode

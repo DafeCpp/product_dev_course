@@ -1,3 +1,5 @@
+@import '../../styles/colors';
+
 .debug-toast {
   display: flex;
   flex-direction: column;
@@ -20,12 +22,12 @@
 
 .debug-toast-status {
   font-weight: 700;
-  color: #222;
+  color: $text-title;
   font-size: 13px;
 }
 
 .debug-toast-req {
-  color: #333;
+  color: $text-body;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -38,13 +40,13 @@
 }
 
 .debug-toast-ids {
-  color: #555;
+  color: $text-quiet;
   font-size: 12px;
 }
 
 .debug-toast-details {
-  background: #f8f9fa;
-  border: 1px solid #eee;
+  background: $surface-muted-alt;
+  border: 1px solid $border-subtle;
   border-radius: 8px;
   padding: 10px;
   max-height: 320px;
@@ -54,4 +56,3 @@
   font-size: 12px;
   line-height: 1.3;
 }
-

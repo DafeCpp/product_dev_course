@@ -6,7 +6,7 @@ import { authApi } from '../api/auth'
 import { Loading, Error, EmptyState, FloatingActionButton } from '../components/common'
 import ProjectModal from '../components/ProjectModal'
 import ProjectMembersModal from '../components/ProjectMembersModal'
-import './ProjectsList.css'
+import './ProjectsList.scss'
 
 function ProjectsList() {
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)

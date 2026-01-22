@@ -15,7 +15,7 @@ import {
   Tags,
   experimentStatusMap,
 } from '../components/common'
-import './ExperimentDetail.css'
+import './ExperimentDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'

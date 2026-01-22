@@ -15,7 +15,7 @@ import {
     sensorStatusMap,
     MaterialSelect,
 } from '../components/common'
-import './SensorDetail.css'
+import './SensorDetail.scss'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
 

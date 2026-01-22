@@ -19,7 +19,7 @@ import {
 import CreateExperimentModal from '../components/CreateExperimentModal'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
-import './ExperimentsList.css'
+import './ExperimentsList.scss'
 
 function ExperimentsList() {
   const [projectId, setProjectId] = useState<string>('')

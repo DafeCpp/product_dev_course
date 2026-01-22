@@ -1,6 +1,6 @@
 import { ReactNode, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import './CreateRunModal.css'
+import './Modal.scss'
 
 interface ModalProps {
     isOpen: boolean

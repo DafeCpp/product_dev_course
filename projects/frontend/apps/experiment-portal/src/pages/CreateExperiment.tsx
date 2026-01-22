@@ -7,7 +7,7 @@ import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
-import './CreateExperiment.css'
+import './CreateExperiment.scss'
 
 function CreateExperiment() {
   const navigate = useNavigate()
