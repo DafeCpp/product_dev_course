@@ -30,6 +30,7 @@ type TelemetryHistoryState = {
 }
 
 const HISTORY_MAX_POINTS_DEFAULT = 5000
+const HISTORY_MAX_POINTS_LIMIT = 20000
 const HISTORY_PAGE_SIZE = 2000
 const HISTORY_MAX_SENSORS = 50
 
@@ -129,7 +130,11 @@ function TelemetryViewer() {
             if (typeof parsed.captureSessionId === 'string') setHistoryCaptureSessionId(parsed.captureSessionId)
             if (Array.isArray(parsed.sensorIds)) {
                 const next = parsed.sensorIds.filter((id) => typeof id === 'string' && id.trim().length > 0)
-                setHistorySensorIds(next)
+                const limited = next.slice(0, HISTORY_MAX_SENSORS)
+                setHistorySensorIds(limited)
+                if (next.length > HISTORY_MAX_SENSORS) {
+                    setHistoryError('Можно выбрать не более 50 сенсоров')
+                }
             }
             if (parsed.valueMode === 'physical' || parsed.valueMode === 'raw') setHistoryValueMode(parsed.valueMode)
             if (typeof parsed.includeLate === 'boolean') setHistoryIncludeLate(parsed.includeLate)
@@ -324,6 +329,19 @@ function TelemetryViewer() {
         }
     }, [historySensorOverLimit, historyError])
 
+    useEffect(() => {
+        if (historyMaxPoints > HISTORY_MAX_POINTS_LIMIT) {
+            setHistoryMaxPoints(HISTORY_MAX_POINTS_LIMIT)
+        }
+    }, [historyMaxPoints])
+
+    useEffect(() => {
+        setHistoryPoints([])
+        setHistoryLoadedCount(0)
+        setHistoryWasTruncated(false)
+        setHistoryError(null)
+    }, [historyCaptureSessionId, historySensorIds, historyIncludeLate, historyOrder, historyMaxPoints])
+
     const historySensorsById = useMemo(() => {
         const map = new Map<string, Sensor>()
         sensors.forEach((sensor) => map.set(sensor.id, sensor))
@@ -366,6 +384,29 @@ function TelemetryViewer() {
         })
         return latest > 0 ? new Date(latest).toISOString() : null
     }, [historyPoints])
+
+    const historyCursorBySensor = useMemo(() => {
+        const latestBySensor = new Map<string, { tsMs: number; id: number }>()
+        historyPoints.forEach((point) => {
+            const tsMs = Date.parse(point.timestamp)
+            if (!Number.isFinite(tsMs)) return
+            const current = latestBySensor.get(point.sensor_id)
+            if (!current || tsMs > current.tsMs || (tsMs === current.tsMs && point.id > current.id)) {
+                latestBySensor.set(point.sensor_id, { tsMs, id: point.id })
+            }
+        })
+        const result: Record<string, { timestamp: string; id: number }> = {}
+        latestBySensor.forEach((value, sensorId) => {
+            result[sensorId] = { timestamp: new Date(value.tsMs).toISOString(), id: value.id }
+        })
+        return result
+    }, [historyPoints])
+
+    const historyDisplayMaxPoints = useMemo(() => {
+        const value =
+            Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
+        return Math.min(HISTORY_MAX_POINTS_LIMIT, value)
+    }, [historyMaxPoints])
 
     const historySessionOptions = useMemo(() => {
         const query = historySessionFilter.trim().toLowerCase()
@@ -501,6 +542,9 @@ function TelemetryViewer() {
                 if (next.size >= HISTORY_MAX_SENSORS) break
                 next.add(sensor.id)
             }
+            if (next.size >= HISTORY_MAX_SENSORS && availableHistorySensors.length > next.size) {
+                setHistoryError('Можно выбрать не более 50 сенсоров')
+            }
             return Array.from(next)
         })
     }
@@ -518,6 +562,8 @@ function TelemetryViewer() {
         const sensorIds = historyEffectiveSensorIds
         if (sensorIds.length === 0) return
         const panelId = generateUUID()
+        const startFromCursorBySensor =
+            Object.keys(historyCursorBySensor).length > 0 ? historyCursorBySensor : undefined
         const payload = {
             title: 'History -> Live',
             selectedSensorIds: sensorIds,
@@ -526,6 +572,7 @@ function TelemetryViewer() {
             timeWindowSeconds: 300,
             useLatestAnchor: true,
             startFromTimestamp: historyLastTimestamp ?? undefined,
+            startFromCursorBySensor,
         }
         window.localStorage.setItem(`telemetry_panel_state_${panelId}`, JSON.stringify(payload))
         setPanelIds((prev) => [...prev, panelId])
@@ -546,7 +593,9 @@ function TelemetryViewer() {
         try {
             let sinceId = 0
             const collected: TelemetryQueryRecord[] = []
-            const safeMaxPoints = Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
+            const safeMaxPointsRaw =
+                Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
+            const safeMaxPoints = Math.min(HISTORY_MAX_POINTS_LIMIT, safeMaxPointsRaw)
             let lastHasMore = false
             while (collected.length < safeMaxPoints) {
                 const pageLimit = Math.min(HISTORY_PAGE_SIZE, safeMaxPoints - collected.length)
@@ -845,7 +894,7 @@ function TelemetryViewer() {
                                         event.currentTarget.value = ''
                                     }
                                 }}
-                                disabled={filteredHistorySensors.length === 0}
+                                disabled={filteredHistorySensors.length === 0 || historySensorLimitReached}
                             >
                                 <option value="">Добавить сенсор</option>
                                 {filteredHistorySensors.map((sensor) => (
@@ -956,7 +1005,7 @@ function TelemetryViewer() {
                                 type="button"
                                 className="btn btn-primary btn-sm"
                                 onClick={loadHistory}
-                                disabled={historyLoading || !historyCaptureSessionId}
+                                disabled={historyLoading || !historyCaptureSessionId || historySensorOverLimit}
                             >
                                 {historyLoading ? 'Загрузка...' : 'Загрузить'}
                             </button>
@@ -976,7 +1025,8 @@ function TelemetryViewer() {
                     {(historyLoadedCount > 0 || historyWasTruncated) && (
                         <div className="telemetry-view__history-summary">
                             Загружено точек: {historyLoadedCount}
-                            {historyWasTruncated && ` (показаны первые ${historyMaxPoints})`}
+                            {historyWasTruncated &&
+                                ` (показаны ${historyOrder === 'desc' ? 'последние' : 'первые'} ${historyDisplayMaxPoints})`}
                         </div>
                     )}
 
