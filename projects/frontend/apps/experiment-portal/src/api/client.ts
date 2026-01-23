@@ -459,6 +459,7 @@ export const telemetryApi = {
     since_id?: number
     limit?: number
     include_late?: boolean
+    order?: 'asc' | 'desc'
   }): Promise<TelemetryQueryResponse> => {
     const TELEMETRY_BASE_URL =
       import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
@@ -473,6 +474,9 @@ export const telemetryApi = {
     if (typeof params.limit === 'number') url.searchParams.set('limit', String(params.limit))
     if (typeof params.include_late === 'boolean') {
       url.searchParams.set('include_late', params.include_late ? 'true' : 'false')
+    }
+    if (params.order === 'asc' || params.order === 'desc') {
+      url.searchParams.set('order', params.order)
     }
 
     const headers = {
