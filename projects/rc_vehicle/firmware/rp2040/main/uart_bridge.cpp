@@ -1,98 +1,54 @@
 #include "uart_bridge.hpp"
 
-#include <string.h>
-
 #include "config.hpp"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
-#include "protocol.hpp"
+#include "uart_bridge_base.hpp"
 
-static uint8_t uart_rx_buffer[UART_BUF_SIZE];
-static size_t uart_rx_buffer_pos = 0;
+class Rp2040UartBridge : public UartBridgeBase {
+public:
+  int Init() override {
+    uart_init(UART_ID, UART_BAUD_RATE);
+    gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+    rx_pos_ = 0;
+    return 0;
+  }
 
-int UartBridgeInit(void) {
-  // Инициализация UART
-  uart_init(UART_ID, UART_BAUD_RATE);
+  int Write(const uint8_t *data, size_t len) override {
+    if (data == nullptr)
+      return -1;
+    uart_write_blocking(UART_ID, data, len);
+    return 0;
+  }
 
-  // Настройка GPIO
-  gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-  gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+  int ReadAvailable(uint8_t *buf, size_t max_len) override {
+    if (buf == nullptr || max_len == 0)
+      return 0;
+    size_t n = 0;
+    while (n < max_len && uart_is_readable(UART_ID)) {
+      buf[n++] = static_cast<uint8_t>(uart_getc(UART_ID));
+    }
+    return static_cast<int>(n);
+  }
+};
 
-  // Очистка буфера
-  uart_rx_buffer_pos = 0;
-  memset(uart_rx_buffer, 0, sizeof(uart_rx_buffer));
+static Rp2040UartBridge s_bridge;
 
-  return 0;
-}
+int UartBridgeInit(void) { return s_bridge.Init(); }
 
 int UartBridgeSendTelem(const void *telem_data) {
-  if (telem_data == NULL) {
+  if (telem_data == nullptr)
     return -1;
-  }
-
-  uint8_t frame_buffer[32];
-  size_t frame_len = ProtocolBuildTelem(frame_buffer, sizeof(frame_buffer),
-                                        (const TelemetryData *)telem_data);
-
-  if (frame_len == 0) {
-    return -1;
-  }
-
-  // Отправка кадра
-  uart_write_blocking(UART_ID, frame_buffer, frame_len);
-
-  return 0;
+  return s_bridge.SendTelem(*static_cast<const TelemetryData *>(telem_data));
 }
 
 bool UartBridgeReceiveCommand(float *throttle, float *steering) {
-  if (throttle == NULL || steering == NULL) {
-    return false;
-  }
-
-  // Чтение доступных данных
-  while (uart_is_readable(UART_ID) &&
-         uart_rx_buffer_pos < sizeof(uart_rx_buffer)) {
-    uart_rx_buffer[uart_rx_buffer_pos++] = uart_getc(UART_ID);
-  }
-
-  // Поиск начала кадра
-  int frame_start = ProtocolFindFrameStart(uart_rx_buffer, uart_rx_buffer_pos);
-  if (frame_start < 0) {
-    // Кадр не найден, очищаем буфер если он переполнен
-    if (uart_rx_buffer_pos >= sizeof(uart_rx_buffer) - 1) {
-      uart_rx_buffer_pos = 0;
-    }
-    return false;
-  }
-
-  // Сдвигаем буфер к началу кадра
-  if (frame_start > 0) {
-    memmove(uart_rx_buffer, &uart_rx_buffer[frame_start],
-            uart_rx_buffer_pos - frame_start);
-    uart_rx_buffer_pos -= frame_start;
-  }
-
-  // Парсинг кадра (минимальная длина кадра COMMAND = 16 байт)
-  if (uart_rx_buffer_pos < 16) {
-    return false; // Недостаточно данных
-  }
-
-  size_t parsed_len = ProtocolParseCommand(uart_rx_buffer, uart_rx_buffer_pos,
-                                           throttle, steering);
-
-  if (parsed_len > 0) {
-    // Удаляем обработанный кадр из буфера
-    memmove(uart_rx_buffer, &uart_rx_buffer[parsed_len],
-            uart_rx_buffer_pos - parsed_len);
-    uart_rx_buffer_pos -= parsed_len;
+  auto cmd = s_bridge.ReceiveCommand();
+  if (cmd) {
+    *throttle = cmd->throttle;
+    *steering = cmd->steering;
     return true;
   }
-
-  // Если кадр невалидный, удаляем первый байт и продолжаем поиск
-  if (uart_rx_buffer_pos > 0) {
-    memmove(uart_rx_buffer, &uart_rx_buffer[1], uart_rx_buffer_pos - 1);
-    uart_rx_buffer_pos--;
-  }
-
   return false;
 }

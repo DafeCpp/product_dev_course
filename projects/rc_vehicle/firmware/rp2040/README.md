@@ -16,19 +16,22 @@
 ## Структура проекта
 
 ```
-firmware/rp2040/
-├── main/
-│   ├── main.cpp               # Точка входа
-│   ├── config.hpp             # Конфигурация (пины, частоты, тайминги)
-│   ├── pwm_control.cpp/hpp    # PWM управление ESC/серво
-│   ├── rc_input.cpp/hpp       # Чтение RC-in сигналов
-│   ├── imu.cpp/hpp            # Работа с IMU (MPU-6050)
-│   ├── failsafe.cpp/hpp       # Failsafe защита
-│   ├── uart_bridge.cpp/hpp    # UART мост к ESP32
-│   └── protocol.cpp/hpp       # Парсинг/формирование UART кадров
-├── CMakeLists.txt             # Для Pico SDK
-├── pico_sdk_import.cmake      # Импорт Pico SDK
-└── README.md
+firmware/
+├── common/                    # Общий код (RP2040 + STM32)
+│   ├── protocol.hpp/cpp       # Протокол UART (AA 55, CRC16)
+│   └── README.md
+└── rp2040/
+    ├── main/
+    │   ├── main.cpp               # Точка входа
+    │   ├── config.hpp             # Конфигурация (пины, частоты, тайминги)
+    │   ├── pwm_control.cpp/hpp    # PWM управление ESC/серво
+    │   ├── rc_input.cpp/hpp       # Чтение RC-in сигналов
+    │   ├── imu.cpp/hpp            # Работа с IMU (MPU-6050)
+    │   ├── failsafe.cpp/hpp       # Failsafe защита
+    │   └── uart_bridge.cpp/hpp    # UART мост к ESP32 (использует common/protocol)
+    ├── CMakeLists.txt             # Для Pico SDK
+    ├── pico_sdk_import.cmake      # Импорт Pico SDK
+    └── README.md
 ```
 
 ## Сборка
@@ -44,10 +47,30 @@ firmware/rp2040/
    ```
 
 2. **Установка инструментов**
+
+   **Linux (apt):**
    ```bash
-   # Установка CMake (минимум версия 3.13)
+   # CMake не ниже 3.13, ARM GCC, newlib, build-essential
    sudo apt-get install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential
    ```
+
+   **macOS (Homebrew):**
+   ```bash
+   brew install cmake
+   brew install --cask gcc-arm-embedded
+   ```
+   Используйте **gcc-arm-embedded** (cask), а не `arm-none-eabi-gcc`: у последнего в Homebrew нет `nosys.specs`, сборка падает с ошибкой «cannot read spec file 'nosys.specs'». Если после установки `arm-none-eabi-gcc` не в PATH, добавьте в `~/.zshrc` или `~/.bash_profile`:
+   ```bash
+   export PATH="/Applications/ArmGNUToolchain/*/arm-none-eabi/bin:$PATH"
+   ```
+   (подставьте нужную версию вместо `*`, например `14.2.rel1`).
+
+   **Если загрузка через Homebrew не удаётся** (ошибка `Could not resolve host: developer.arm.com` — сетевая/DNS проблема):
+   1. Скачайте тулчейн вручную с [Arm GNU Toolchain Downloads](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) — раздел «Arm bare-metal target (arm-none-eabi)», пакет .pkg для macOS (arm64 или x64 по вашей системе). Скачать можно с другого компьютера/сети или при отключённом VPN.
+   2. Установите .pkg, затем добавьте в PATH (подставьте свою версию):
+      ```bash
+      export PATH="/Applications/ArmGNUToolchain/15.2.Rel1/arm-none-eabi/bin:$PATH"
+      ```
 
 3. **Настройка окружения**
    ```bash
@@ -56,15 +79,20 @@ firmware/rp2040/
 
 ### Сборка проекта
 
+Из корня прошивки (где лежит `Makefile`):
+
 ```bash
 cd firmware/rp2040
-mkdir build
-cd build
-cmake ..
+export PICO_SDK_PATH=/path/to/pico-sdk   # если ещё не задан
 make
 ```
 
-После сборки будет создан файл `rc_vehicle_rp2040.uf2` в директории `build/`.
+Makefile сам создаёт `build/`, при необходимости запускает `cmake` и собирает проект. После сборки файл `rc_vehicle_rp2040.uf2` будет в `build/`.
+
+**Команды make:**
+- `make` — полная сборка (исполняемый файл и .uf2)
+- `make clean` — удаление директории `build/` (полная пересборка при следующем `make`)
+- Параллельная сборка: `make -j$(nproc)` (Linux) или `make -j$(sysctl -n hw.ncpu)` (macOS)
 
 ### Прошивка
 

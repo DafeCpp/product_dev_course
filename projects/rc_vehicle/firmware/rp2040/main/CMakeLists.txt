@@ -1,3 +1,5 @@
+set(RC_VEHICLE_COMMON_DIR ${CMAKE_SOURCE_DIR}/../common)
+
 add_executable(rc_vehicle_rp2040
     main.cpp
     pwm_control.cpp
@@ -5,7 +7,8 @@ add_executable(rc_vehicle_rp2040
     imu.cpp
     failsafe.cpp
     uart_bridge.cpp
-    protocol.cpp
+    ${RC_VEHICLE_COMMON_DIR}/protocol.cpp
+    ${RC_VEHICLE_COMMON_DIR}/uart_bridge_base.cpp
 )
 
 # Установка стандарта C++23
@@ -13,6 +16,8 @@ set_target_properties(rc_vehicle_rp2040 PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
+
+target_include_directories(rc_vehicle_rp2040 PRIVATE ${RC_VEHICLE_COMMON_DIR})
 
 target_link_libraries(rc_vehicle_rp2040
     pico_stdlib

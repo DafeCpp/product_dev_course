@@ -34,16 +34,7 @@
 #define TELEM_SEND_INTERVAL_MS 50 // 20 Hz - частота отправки телеметрии
 #define FAILSAFE_TIMEOUT_MS 250   // Таймаут failsafe (250 мс)
 
-// Протокол UART
-#define UART_FRAME_PREFIX_0 0xAA
-#define UART_FRAME_PREFIX_1 0x55
-#define UART_PROTOCOL_VERSION 0x01
-
-// Типы сообщений UART
-#define UART_MSG_TYPE_COMMAND 0x01
-#define UART_MSG_TYPE_TELEM 0x02
-#define UART_MSG_TYPE_PING 0x03
-#define UART_MSG_TYPE_PONG 0x04
+// Константы протокола UART — в firmware/common/protocol.hpp
 
 // PWM значения (микросекунды)
 #define PWM_NEUTRAL_US 1500 // Нейтраль (1.5 мс)
