@@ -1,6 +1,11 @@
-# STM32G431CBTx (Cortex-M4, 128K Flash, 32K RAM) — из схемы rc_vehicle
-set(OPENCM3_TARGET stm32g4)
-set(LD_SCRIPT_DIR g4)
-set(LD_SCRIPT stm32g431xb.ld)
+# STM32G431CB (Cortex-M4, 128K Flash, 32K RAM) — STM32Cube LL
 set(MCU_DEFINE STM32G4)
 set(MCU_CFLAGS -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16)
+set(CUBE_PATH_VAR STM32CUBE_G4_PATH)
+set(CUBE_DEVICE STM32G431xx)
+set(CUBE_CHIP_HEADER stm32g431xx.h)
+set(STARTUP_ASM startup_stm32g431xx.s)
+set(LD_SCRIPT stm32g431cb_flash.ld)
+set(HSE_VALUE 24000000)
+set(CMSIS_DEVICE_DIR cmsis_device_g4)
+set(HAL_DRIVER_DIR stm32g4xx_hal_driver)

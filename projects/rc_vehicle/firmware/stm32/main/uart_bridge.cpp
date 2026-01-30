@@ -1,13 +1,11 @@
 #include "uart_bridge.hpp"
 #include "uart_bridge_base.hpp"
-// TODO: реализовать Init/Write/ReadAvailable на libopencm3 (USART, пины в
-// board_pins.hpp)
+// TODO: реализовать Init/Write/ReadAvailable на STM32Cube LL (USART, пины в board_pins.hpp)
 
 class Stm32UartBridge : public UartBridgeBase {
 public:
   int Init() override {
-    // TODO: rcc_periph_clock_enable USART+GPIO, gpio_set_af,
-    // usart_set_baudrate, usart_enable
+    // TODO: LL: RCC enable USART+GPIO, GPIO AF, USART baud, enable
     rx_pos_ = 0;
     return 0;
   }
@@ -15,7 +13,7 @@ public:
   int Write(const uint8_t *data, size_t len) override {
     if (data == nullptr)
       return -1;
-    // TODO: usart_send_blocking в цикле по data[0..len-1]
+    // TODO: LL_USART_TransmitData8 в цикле
     (void)len;
     return 0;
   }
@@ -23,7 +21,7 @@ public:
   int ReadAvailable(uint8_t *buf, size_t max_len) override {
     if (buf == nullptr || max_len == 0)
       return 0;
-    // TODO: чтение из USART RX (poll или из кольцевого буфера прерываний)
+    // TODO: LL_USART_IsActiveFlag_RXNE + ReceiveData8
     return 0;
   }
 };

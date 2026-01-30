@@ -1,7 +1,6 @@
 #include "rc_input.hpp"
 #include "config.hpp"
-// TODO: реализовать на libopencm3 (input capture или GPIO + таймер). Пины в
-// board_pins.hpp
+// TODO: реализовать на STM32Cube LL (input capture или GPIO + таймер). Пины в board_pins.hpp
 
 static bool initialized = false;
 

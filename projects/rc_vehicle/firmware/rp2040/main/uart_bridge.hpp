@@ -2,6 +2,10 @@
 
 #include <stdint.h>
 
+#include <optional>
+
+#include "protocol.hpp"
+
 /**
  * Инициализация UART моста к ESP32
  * @return 0 при успехе, -1 при ошибке
@@ -10,15 +14,19 @@ int UartBridgeInit(void);
 
 /**
  * Отправка телеметрии на ESP32
- * @param telem_data указатель на данные телеметрии
+ * @param telem_data данные телеметрии
  * @return 0 при успехе, -1 при ошибке
  */
-int UartBridgeSendTelem(const void *telem_data);
+int UartBridgeSendTelem(const TelemetryData &telem_data);
+
+/** Команда от ESP32: газ и руль. */
+struct UartBridgeCommand {
+  float throttle{0.f};
+  float steering{0.f};
+};
 
 /**
  * Попытка принять команду от ESP32
- * @param throttle указатель для значения газа (будет заполнен)
- * @param steering указатель для значения руля (будет заполнен)
- * @return true если команда получена, false если нет
+ * @return команда (throttle, steering) или std::nullopt, если команды нет
  */
-bool UartBridgeReceiveCommand(float *throttle, float *steering);
+std::optional<UartBridgeCommand> UartBridgeReceiveCommand();

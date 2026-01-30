@@ -19,3 +19,6 @@ idf_component_register(
         json
 )
 
+# C++23 для всей прошивки (явно закрепляем стандарт)
+target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++23)
+

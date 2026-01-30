@@ -1,30 +1,32 @@
 #include "platform.hpp"
-#include <libopencm3/cm3/nvic.h>
-#include <libopencm3/cm3/systick.h>
 
-static volatile uint32_t _millis = 0;
+#include <stdint.h>
 
-extern "C" void sys_tick_handler(void) { _millis++; }
+#if defined(STM32F1)
+#include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#elif defined(STM32G4)
+#include <stm32g4xx.h>
+#endif
 
-uint32_t platform_get_time_ms(void) { return _millis; }
+static volatile uint32_t s_millis = 0;
+
+extern "C" void SysTick_Handler(void) { s_millis++; }
+
+uint32_t platform_get_time_ms(void) { return s_millis; }
 
 void platform_delay_ms(uint32_t ms) {
-  uint32_t end = _millis + ms;
-  while (_millis < end) {
-    __asm__("nop");
+  uint32_t end = s_millis + ms;
+  while (s_millis < end) {
+    __NOP();
   }
 }
 
-// 1 ms тик: SysTick = CPU_freq/1000 - 1. Подставьте частоту под вашу плату (F1:
-// 72M, F4: 96/168M, G4: 170M).
-#ifndef SYSTICK_RELOAD
-#define SYSTICK_RELOAD (72000000 / 1000 - 1) // 72 MHz по умолчанию (STM32F1)
-#endif
-
 void platform_init(void) {
-  systick_set_clocksource(STK_CSR_CLKSOURCE_AHB);
-  systick_set_reload(SYSTICK_RELOAD);
-  systick_interrupt_enable();
-  systick_counter_enable();
-  nvic_set_priority(NVIC_SYSTICK_IRQ, 0x80);
+  // SysTick: 1 ms. SystemCoreClock задаётся в system_stm32f1xx.c (и др.) после SystemInit()
+  if (SysTick_Config(SystemCoreClock / 1000u) != 0u) {
+    for (;;) { __NOP(); }
+  }
+  NVIC_SetPriority(SysTick_IRQn, 0x80u);
 }

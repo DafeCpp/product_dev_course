@@ -1,6 +1,7 @@
 #include "websocket_server.hpp"
 
 #include <string.h>
+#include <vector>
 
 #include "cJSON.h"
 #include "config.hpp"
@@ -19,13 +20,8 @@ static esp_err_t ws_handler(httpd_req_t* req) {
   }
 
   httpd_ws_frame_t ws_pkt;
-  uint8_t* buf = (uint8_t*)calloc(1, WS_RX_BUFFER_SIZE);
-  if (buf == NULL) {
-    ESP_LOGE(TAG, "Failed to allocate buffer");
-    return ESP_ERR_NO_MEM;
-  }
-
-  ws_pkt.payload = buf;
+  std::vector<uint8_t> buf(WS_RX_BUFFER_SIZE, 0);
+  ws_pkt.payload = buf.data();
   ws_pkt.type = HTTPD_WS_TYPE_TEXT;
 
   while (1) {
@@ -41,7 +37,7 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     }
 
     // Парсинг JSON команды
-    cJSON* json = cJSON_Parse((char*)ws_pkt.payload);
+    cJSON* json = cJSON_Parse(reinterpret_cast<char*>(ws_pkt.payload));
     if (json == NULL) {
       ESP_LOGW(TAG, "Failed to parse JSON");
       continue;
@@ -56,8 +52,8 @@ static esp_err_t ws_handler(httpd_req_t* req) {
       if (!steer) steer = cJSON_GetObjectItem(json, "steer");
 
       if (throttle && steer) {
-        float thr = (float)throttle->valuedouble;
-        float str = (float)steer->valuedouble;
+        float thr = static_cast<float>(throttle->valuedouble);
+        float str = static_cast<float>(steer->valuedouble);
 
         // Отправка команды на RP2040 через UART
         UartBridgeSendCommand(thr, str);
@@ -67,7 +63,6 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     cJSON_Delete(json);
   }
 
-  free(buf);
   return ESP_OK;
 }
 

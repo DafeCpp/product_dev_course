@@ -65,7 +65,8 @@ esp_err_t UartBridgeSendCommand(float throttle, float steering) {
 
 esp_err_t UartBridgeReceiveTelem(void *telem_data) {
   if (telem_data == nullptr) return ESP_ERR_INVALID_ARG;
-  return s_bridge.ReceiveTelem(static_cast<TelemetryData *>(telem_data)) == 0
-             ? ESP_OK
-             : ESP_ERR_NOT_FOUND;
+  auto opt = s_bridge.ReceiveTelem();
+  if (!opt) return ESP_ERR_NOT_FOUND;
+  *static_cast<TelemetryData *>(telem_data) = *opt;
+  return ESP_OK;
 }

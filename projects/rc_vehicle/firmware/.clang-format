@@ -1,3 +1,5 @@
+# Общий стиль для всех прошивок (esp32, rp2040, stm32, common)
+# Запуск: clang-format -i path/to/file.cpp
 ---
 Language: Cpp
 BasedOnStyle: Google
@@ -18,4 +20,3 @@ SpaceBeforeParens: ControlStatements
 SpacesBeforeTrailingComments: 2
 TabWidth: 2
 UseTab: Never
-

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <span>
 
 // Общие константы протокола UART (RP2040/STM32 ↔ ESP32)
 #define UART_FRAME_PREFIX_0 0xAA
@@ -21,17 +22,17 @@ struct TelemetryData {
   int16_t gx, gy, gz; // Гироскоп (mdps)
 };
 
-size_t ProtocolBuildTelem(uint8_t *buffer, size_t buffer_size,
+size_t ProtocolBuildTelem(std::span<uint8_t> buffer,
                           const TelemetryData *telem_data);
-size_t ProtocolParseCommand(const uint8_t *buffer, size_t buffer_size,
+size_t ProtocolParseCommand(std::span<const uint8_t> buffer,
                             float *throttle, float *steering);
 
 /** COMMAND (ESP32 → MCU): throttle/steering. Для ESP32. */
-size_t ProtocolBuildCommand(uint8_t *buffer, size_t buffer_size,
-                            float throttle, float steering);
+size_t ProtocolBuildCommand(std::span<uint8_t> buffer, float throttle,
+                            float steering);
 /** TELEM (MCU → ESP32): парсинг в TelemetryData. Для ESP32. */
-size_t ProtocolParseTelem(const uint8_t *buffer, size_t buffer_size,
+size_t ProtocolParseTelem(std::span<const uint8_t> buffer,
                           TelemetryData *telem_data);
 
-uint16_t ProtocolCrc16(const uint8_t *data, size_t length);
-int ProtocolFindFrameStart(const uint8_t *buffer, size_t buffer_size);
+uint16_t ProtocolCrc16(std::span<const uint8_t> data);
+int ProtocolFindFrameStart(std::span<const uint8_t> buffer);
