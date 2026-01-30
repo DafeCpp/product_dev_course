@@ -20,12 +20,13 @@
 #define RC_IN_PULSE_NEUTRAL_US 1500 // Нейтральное значение (1.5 мс)
 #define RC_IN_TIMEOUT_MS 250        // Таймаут потери сигнала (250 мс)
 
-// IMU конфигурация (I2C)
-#define I2C_ID i2c0
-#define I2C_SDA_PIN 6           // GPIO6 для SDA (настраивается по схеме)
-#define I2C_SCL_PIN 7           // GPIO7 для SCL (настраивается по схеме)
-#define I2C_FREQUENCY_HZ 400000 // 400 kHz
-#define IMU_I2C_ADDRESS 0x68    // MPU-6050 адрес (может быть 0x68 или 0x69)
+// IMU конфигурация (SPI, MPU-6050). Пины не пересекаются с UART(0,1), PWM(2,3), RC-in(4,5)
+#define SPI_ID spi0
+#define SPI_CS_PIN 8    // Chip Select (настраивается по схеме)
+#define SPI_SCK_PIN 6   // SPI SCK
+#define SPI_MOSI_PIN 7  // SPI MOSI
+#define SPI_MISO_PIN 9  // SPI MISO
+#define SPI_BAUD_HZ 1000000 // 1 MHz для MPU-6050
 
 // Тайминги (в миллисекундах)
 #define PWM_UPDATE_INTERVAL_MS 20 // 50 Hz - частота обновления PWM

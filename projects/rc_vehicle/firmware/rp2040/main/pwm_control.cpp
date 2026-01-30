@@ -1,45 +1,14 @@
 #include "pwm_control.hpp"
 
-#include <math.h>
-
 #include "config.hpp"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
+#include "rc_vehicle_common.hpp"
 
 static uint pwm_throttle_slice = 0;
 static uint pwm_steering_slice = 0;
-
-// Конвертация значения [-1.0..1.0] в ширину импульса в микросекундах
-static uint16_t ValueToPulseWidth(float value) {
-  // Ограничение диапазона
-  if (value < -1.0f)
-    value = -1.0f;
-  if (value > 1.0f)
-    value = 1.0f;
-
-  // Конвертация в микросекунды:
-  // value = -1.0 -> PWM_MIN_US (1000 мкс)
-  // value = 0.0  -> PWM_NEUTRAL_US (1500 мкс)
-  // value = 1.0  -> PWM_MAX_US (2000 мкс)
-  float pulse_us;
-  if (value >= 0.0f) {
-    // Положительные значения: от нейтрали до максимума
-    pulse_us = PWM_NEUTRAL_US + value * (PWM_MAX_US - PWM_NEUTRAL_US);
-  } else {
-    // Отрицательные значения: от минимума до нейтрали
-    pulse_us = PWM_NEUTRAL_US + value * (PWM_NEUTRAL_US - PWM_MIN_US);
-  }
-
-  // Дополнительная проверка границ
-  if (pulse_us < PWM_MIN_US)
-    pulse_us = PWM_MIN_US;
-  if (pulse_us > PWM_MAX_US)
-    pulse_us = PWM_MAX_US;
-
-  return (uint16_t)pulse_us;
-}
 
 int PwmControlInit(void) {
   // Инициализация GPIO для PWM
@@ -74,7 +43,8 @@ int PwmControlInit(void) {
 }
 
 int PwmControlSetThrottle(float throttle) {
-  uint16_t pulse_us = ValueToPulseWidth(throttle);
+  uint16_t pulse_us = rc_vehicle::PulseWidthUsFromNormalized(
+      throttle, PWM_MIN_US, PWM_NEUTRAL_US, PWM_MAX_US);
   // Конвертация микросекунд в тики PWM (20000 тиков = 20 мс, 1 тик = 1 мкс)
   uint16_t level = pulse_us;
   pwm_set_chan_level(pwm_throttle_slice, pwm_gpio_to_channel(PWM_THROTTLE_PIN),
@@ -83,7 +53,8 @@ int PwmControlSetThrottle(float throttle) {
 }
 
 int PwmControlSetSteering(float steering) {
-  uint16_t pulse_us = ValueToPulseWidth(steering);
+  uint16_t pulse_us = rc_vehicle::PulseWidthUsFromNormalized(
+      steering, PWM_MIN_US, PWM_NEUTRAL_US, PWM_MAX_US);
   // Конвертация микросекунд в тики PWM (20000 тиков = 20 мс, 1 тик = 1 мкс)
   uint16_t level = pulse_us;
   pwm_set_chan_level(pwm_steering_slice, pwm_gpio_to_channel(PWM_STEERING_PIN),

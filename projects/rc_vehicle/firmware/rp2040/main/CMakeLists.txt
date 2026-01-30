@@ -5,10 +5,13 @@ add_executable(rc_vehicle_rp2040
     pwm_control.cpp
     rc_input.cpp
     imu.cpp
+    spi_pico.cpp
     failsafe.cpp
     uart_bridge.cpp
     ${RC_VEHICLE_COMMON_DIR}/protocol.cpp
     ${RC_VEHICLE_COMMON_DIR}/uart_bridge_base.cpp
+    ${RC_VEHICLE_COMMON_DIR}/mpu6050_spi.cpp
+    ${RC_VEHICLE_COMMON_DIR}/failsafe_core.cpp
 )
 
 # Установка стандарта C++23
@@ -23,7 +26,7 @@ target_link_libraries(rc_vehicle_rp2040
     pico_stdlib
     hardware_pwm
     hardware_uart
-    hardware_i2c
+    hardware_spi
     hardware_gpio
 )
 

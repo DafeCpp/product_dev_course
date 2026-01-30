@@ -1,10 +1,9 @@
 #include "rc_input.hpp"
 
-#include <math.h>
-
 #include "config.hpp"
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
+#include "rc_vehicle_common.hpp"
 
 static uint32_t last_throttle_pulse_time = 0;
 static uint32_t last_steering_pulse_time = 0;
@@ -30,14 +29,9 @@ static void gpio_callback(uint gpio, uint32_t events) {
       uint32_t pulse_width = now - last_rise_time_throttle;
       if (pulse_width >= RC_IN_PULSE_MIN_US &&
           pulse_width <= RC_IN_PULSE_MAX_US) {
-        // Конвертация в значение [-1.0..1.0]
-        float value = (float)(pulse_width - RC_IN_PULSE_NEUTRAL_US) /
-                      (float)(RC_IN_PULSE_MAX_US - RC_IN_PULSE_NEUTRAL_US);
-        if (value < -1.0f)
-          value = -1.0f;
-        if (value > 1.0f)
-          value = 1.0f;
-        last_throttle_value = value;
+        last_throttle_value = rc_vehicle::NormalizedFromPulseWidthUs(
+            pulse_width, RC_IN_PULSE_MIN_US, RC_IN_PULSE_NEUTRAL_US,
+            RC_IN_PULSE_MAX_US);
         last_throttle_pulse_time = now;
         last_rise_time_throttle = 0; // Сброс для следующего импульса
       }
@@ -45,14 +39,9 @@ static void gpio_callback(uint gpio, uint32_t events) {
       uint32_t pulse_width = now - last_rise_time_steering;
       if (pulse_width >= RC_IN_PULSE_MIN_US &&
           pulse_width <= RC_IN_PULSE_MAX_US) {
-        // Конвертация в значение [-1.0..1.0]
-        float value = (float)(pulse_width - RC_IN_PULSE_NEUTRAL_US) /
-                      (float)(RC_IN_PULSE_MAX_US - RC_IN_PULSE_NEUTRAL_US);
-        if (value < -1.0f)
-          value = -1.0f;
-        if (value > 1.0f)
-          value = 1.0f;
-        last_steering_value = value;
+        last_steering_value = rc_vehicle::NormalizedFromPulseWidthUs(
+            pulse_width, RC_IN_PULSE_MIN_US, RC_IN_PULSE_NEUTRAL_US,
+            RC_IN_PULSE_MAX_US);
         last_steering_pulse_time = now;
         last_rise_time_steering = 0; // Сброс для следующего импульса
       }

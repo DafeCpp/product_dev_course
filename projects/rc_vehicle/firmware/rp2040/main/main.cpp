@@ -7,28 +7,15 @@
 #include "protocol.hpp"
 #include "pwm_control.hpp"
 #include "rc_input.hpp"
+#include "slew_rate.hpp"
 #include "uart_bridge.hpp"
 
 static const char *TAG = "main";
 
-// Глобальные переменные для управления
 static float current_throttle = 0.0f;
 static float current_steering = 0.0f;
 static bool rc_active = false;
 static bool wifi_active = false;
-
-// Slew-rate limiting (опционально)
-static float ApplySlewRate(float target, float current,
-                           float max_change_per_sec, uint32_t dt_ms) {
-  float max_change = max_change_per_sec * (dt_ms / 1000.0f);
-  float diff = target - current;
-  if (diff > max_change) {
-    return current + max_change;
-  } else if (diff < -max_change) {
-    return current - max_change;
-  }
-  return target;
-}
 
 int main() {
   // Инициализация stdio для отладки (USB Serial)
@@ -87,7 +74,7 @@ int main() {
 
   // Основной цикл
   while (true) {
-    uint32_t now = time_us_32() / 1000; // в миллисекундах
+    uint32_t now = time_us_32() / 1000;  // в миллисекундах
 
     // Обновление PWM (50 Hz)
     if (now - last_pwm_update >= PWM_UPDATE_INTERVAL_MS) {
@@ -98,10 +85,12 @@ int main() {
       float target_throttle = current_throttle;
       float target_steering = current_steering;
 
-      target_throttle = ApplySlewRate(target_throttle, current_throttle,
-                                      SLEW_RATE_THROTTLE_MAX_PER_SEC, dt_ms);
-      target_steering = ApplySlewRate(target_steering, current_steering,
-                                      SLEW_RATE_STEERING_MAX_PER_SEC, dt_ms);
+      target_throttle = ApplySlewRate(
+          target_throttle, current_throttle,
+          SLEW_RATE_THROTTLE_MAX_PER_SEC, dt_ms);
+      target_steering = ApplySlewRate(
+          target_steering, current_steering,
+          SLEW_RATE_STEERING_MAX_PER_SEC, dt_ms);
 
       current_throttle = target_throttle;
       current_steering = target_steering;
@@ -124,17 +113,16 @@ int main() {
       if (rc_active) {
         current_throttle = rc_throttle;
         current_steering = rc_steering;
-        wifi_active = false; // RC активен, Wi-Fi команды игнорируются
+        wifi_active = false;  // RC активен, Wi-Fi команды игнорируются
       }
     }
 
     // Чтение команд от ESP32 (Wi-Fi)
-    float wifi_throttle, wifi_steering;
-    if (UartBridgeReceiveCommand(&wifi_throttle, &wifi_steering)) {
+    if (auto cmd = UartBridgeReceiveCommand()) {
       // Wi-Fi команды принимаются только если RC не активен
       if (!rc_active) {
-        current_throttle = wifi_throttle;
-        current_steering = wifi_steering;
+        current_throttle = cmd->throttle;
+        current_steering = cmd->steering;
         wifi_active = true;
       } else {
         wifi_active = false;
@@ -152,7 +140,7 @@ int main() {
     }
 
     // Обновление failsafe
-    if (now - last_failsafe_update >= 10) { // Каждые 10 мс
+    if (now - last_failsafe_update >= 10) {  // Каждые 10 мс
       last_failsafe_update = now;
       bool failsafe = FailsafeUpdate(rc_active, wifi_active);
 
@@ -171,12 +159,10 @@ int main() {
       // Формирование данных телеметрии
       telem_data.seq = telem_seq++;
       telem_data.status = 0;
-      if (rc_active)
-        telem_data.status |= 0x01; // bit0: rc_ok
-      if (wifi_active)
-        telem_data.status |= 0x02; // bit1: wifi_ok
+      if (rc_active) telem_data.status |= 0x01;    // bit0: rc_ok
+      if (wifi_active) telem_data.status |= 0x02;  // bit1: wifi_ok
       if (FailsafeIsActive())
-        telem_data.status |= 0x04; // bit2: failsafe_active
+        telem_data.status |= 0x04;  // bit2: failsafe_active
 
       // Конвертация IMU данных
       ImuConvertToTelem(&imu_data, &telem_data.ax, &telem_data.ay,
@@ -184,11 +170,11 @@ int main() {
                         &telem_data.gz);
 
       // Отправка телеметрии
-      UartBridgeSendTelem(&telem_data);
+      UartBridgeSendTelem(telem_data);
     }
 
     // Небольшая задержка для снижения нагрузки на CPU
-    sleep_us(1000); // 1 мс
+    sleep_us(1000);  // 1 мс
   }
 
   return 0;

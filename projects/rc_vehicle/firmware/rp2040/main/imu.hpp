@@ -1,32 +1,17 @@
 #pragma once
 
-#include <stdbool.h>
 #include <stdint.h>
 
-// Структура для данных IMU
-struct ImuData {
-  float ax, ay, az; // Акселерометр (g)
-  float gx, gy, gz; // Гироскоп (dps)
-};
+#include "mpu6050_spi.hpp"
 
-/**
- * Инициализация IMU (MPU-6050)
- * @return 0 при успехе, -1 при ошибке
- */
+// ImuData и C-API для main (реализация через Mpu6050Spi + SpiPico)
+
+/** Инициализация IMU (MPU-6050 по SPI). 0 — успех, -1 — ошибка. */
 int ImuInit(void);
 
-/**
- * Чтение данных с IMU
- * @param data указатель на структуру для данных
- * @return 0 при успехе, -1 при ошибке
- */
+/** Чтение данных с IMU. 0 — успех, -1 — ошибка. */
 int ImuRead(ImuData *data);
 
-/**
- * Конвертация данных IMU в формат для телеметрии (int16)
- * @param data данные IMU
- * @param ax, ay, az указатели для акселерометра (mg)
- * @param gx, gy, gz указатели для гироскопа (mdps)
- */
+/** Конвертация данных IMU в формат телеметрии (mg, mdps → int16). */
 void ImuConvertToTelem(const ImuData *data, int16_t *ax, int16_t *ay,
                        int16_t *az, int16_t *gx, int16_t *gy, int16_t *gz);
