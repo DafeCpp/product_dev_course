@@ -32,3 +32,6 @@
 
 // Пины и периферия задаются в board_pins.hpp (подключается по MCU)
 #include "board_pins.hpp"
+
+// Общий конфиг (переиспользуемые таймауты/дефолты).
+#include "../../common/config_common.hpp"

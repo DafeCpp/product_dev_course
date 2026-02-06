@@ -24,9 +24,16 @@ project(rc_vehicle_rp2040)
 # Инициализация Pico SDK
 pico_sdk_init()
 
-# Поддержка C++23 для всего проекта
-set(CMAKE_CXX_STANDARD 23)
+# C++26 (если поддерживается компилятором), иначе C++23.
+set(RC_VEHICLE_CXX_STANDARD 23)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
+  set(RC_VEHICLE_CXX_STANDARD 26)
+endif()
+
+set(CMAKE_CXX_STANDARD ${RC_VEHICLE_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 # Добавляем main компонент
 add_subdirectory(main)

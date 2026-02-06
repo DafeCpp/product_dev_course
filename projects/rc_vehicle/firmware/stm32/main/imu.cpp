@@ -6,15 +6,11 @@
 static SpiStm32 g_spi;
 static Mpu6050Spi g_mpu(&g_spi);
 
-int ImuInit(void) {
-  return g_mpu.Init();
-}
+int ImuInit() { return g_mpu.Init(); }
 
-int ImuRead(ImuData *data) {
-  return g_mpu.Read(data);
-}
+int ImuRead(ImuData &data) { return g_mpu.Read(data); }
 
-void ImuConvertToTelem(const ImuData *data, int16_t *ax, int16_t *ay,
-                       int16_t *az, int16_t *gx, int16_t *gy, int16_t *gz) {
+void ImuConvertToTelem(const ImuData &data, int16_t &ax, int16_t &ay,
+                       int16_t &az, int16_t &gx, int16_t &gy, int16_t &gz) {
   Mpu6050Spi::ConvertToTelem(data, ax, ay, az, gx, gy, gz);
 }

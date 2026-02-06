@@ -23,16 +23,25 @@ struct TelemetryData {
 };
 
 size_t ProtocolBuildTelem(std::span<uint8_t> buffer,
-                          const TelemetryData *telem_data);
-size_t ProtocolParseCommand(std::span<const uint8_t> buffer,
-                            float *throttle, float *steering);
+                          const TelemetryData &telem_data);
+size_t ProtocolParseCommand(std::span<const uint8_t> buffer, float &throttle,
+                            float &steering);
 
 /** COMMAND (ESP32 → MCU): throttle/steering. Для ESP32. */
 size_t ProtocolBuildCommand(std::span<uint8_t> buffer, float throttle,
                             float steering);
 /** TELEM (MCU → ESP32): парсинг в TelemetryData. Для ESP32. */
 size_t ProtocolParseTelem(std::span<const uint8_t> buffer,
-                          TelemetryData *telem_data);
+                          TelemetryData &telem_data);
 
 uint16_t ProtocolCrc16(std::span<const uint8_t> data);
 int ProtocolFindFrameStart(std::span<const uint8_t> buffer);
+
+/** PING (ESP32 → MCU): проверка связи, без payload. */
+size_t ProtocolBuildPing(std::span<uint8_t> buffer);
+/** Распарсить входящий PING. Возврат: длина кадра (8) или 0. */
+size_t ProtocolParsePing(std::span<const uint8_t> buffer);
+/** PONG (MCU → ESP32): ответ на PING. */
+size_t ProtocolBuildPong(std::span<uint8_t> buffer);
+/** Распарсить входящий PONG. Возврат: длина кадра (8) или 0. */
+size_t ProtocolParsePong(std::span<const uint8_t> buffer);

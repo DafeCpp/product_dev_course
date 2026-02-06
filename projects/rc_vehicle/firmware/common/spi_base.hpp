@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 /**
  * Базовый класс SPI-драйвера.
@@ -19,10 +20,11 @@ class SpiBase {
   /**
    * Полнодуплексный обмен: отправить len байт из tx, принять len байт в rx.
    * Реализация держит CS активным на время всего обмена.
-   * @param tx данные для отправки (не nullptr)
-   * @param rx буфер приёма (не nullptr; может совпадать с tx для in-place)
-   * @param len количество байт
+   * @param tx данные для отправки
+   * @param rx буфер приёма (может совпадать по памяти с tx для in-place)
+   * Требование: tx.size() == rx.size() и size > 0.
    * @return 0 при успехе, -1 при ошибке
    */
-  virtual int Transfer(const uint8_t *tx, uint8_t *rx, size_t len) = 0;
+  virtual int Transfer(std::span<const uint8_t> tx,
+                       std::span<uint8_t> rx) = 0;
 };

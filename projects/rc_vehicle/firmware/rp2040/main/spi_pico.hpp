@@ -9,7 +9,7 @@ class SpiPico : public SpiBase {
           unsigned int mosi_pin, unsigned int miso_pin, unsigned int baud_hz);
 
   int Init() override;
-  int Transfer(const uint8_t *tx, uint8_t *rx, size_t len) override;
+  int Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) override;
 
  private:
   void *spi_id_;

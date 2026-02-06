@@ -1,6 +1,7 @@
 #pragma once
-#include <stdbool.h>
 
-int RcInputInit(void);
-bool RcInputReadThrottle(float *throttle);
-bool RcInputReadSteering(float *steering);
+#include <optional>
+
+int RcInputInit();
+std::optional<float> RcInputReadThrottle();
+std::optional<float> RcInputReadSteering();

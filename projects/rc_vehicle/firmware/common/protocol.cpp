@@ -1,9 +1,9 @@
 #include "protocol.hpp"
 
 size_t ProtocolBuildTelem(std::span<uint8_t> buffer,
-                          const TelemetryData *telem_data) {
+                          const TelemetryData &telem_data) {
   constexpr size_t kMinTelemFrameSize = 6 + 15 + 2;  // header + payload + CRC
-  if (buffer.size() < kMinTelemFrameSize || telem_data == nullptr) {
+  if (buffer.size() < kMinTelemFrameSize) {
     return 0;
   }
   buffer[0] = UART_FRAME_PREFIX_0;
@@ -13,21 +13,21 @@ size_t ProtocolBuildTelem(std::span<uint8_t> buffer,
   uint16_t payload_len = 15;
   buffer[4] = payload_len & 0xFF;
   buffer[5] = (payload_len >> 8) & 0xFF;
-  buffer[6] = telem_data->seq & 0xFF;
-  buffer[7] = (telem_data->seq >> 8) & 0xFF;
-  buffer[8] = telem_data->status;
-  buffer[9] = telem_data->ax & 0xFF;
-  buffer[10] = (telem_data->ax >> 8) & 0xFF;
-  buffer[11] = telem_data->ay & 0xFF;
-  buffer[12] = (telem_data->ay >> 8) & 0xFF;
-  buffer[13] = telem_data->az & 0xFF;
-  buffer[14] = (telem_data->az >> 8) & 0xFF;
-  buffer[15] = telem_data->gx & 0xFF;
-  buffer[16] = (telem_data->gx >> 8) & 0xFF;
-  buffer[17] = telem_data->gy & 0xFF;
-  buffer[18] = (telem_data->gy >> 8) & 0xFF;
-  buffer[19] = telem_data->gz & 0xFF;
-  buffer[20] = (telem_data->gz >> 8) & 0xFF;
+  buffer[6] = telem_data.seq & 0xFF;
+  buffer[7] = (telem_data.seq >> 8) & 0xFF;
+  buffer[8] = telem_data.status;
+  buffer[9] = telem_data.ax & 0xFF;
+  buffer[10] = (telem_data.ax >> 8) & 0xFF;
+  buffer[11] = telem_data.ay & 0xFF;
+  buffer[12] = (telem_data.ay >> 8) & 0xFF;
+  buffer[13] = telem_data.az & 0xFF;
+  buffer[14] = (telem_data.az >> 8) & 0xFF;
+  buffer[15] = telem_data.gx & 0xFF;
+  buffer[16] = (telem_data.gx >> 8) & 0xFF;
+  buffer[17] = telem_data.gy & 0xFF;
+  buffer[18] = (telem_data.gy >> 8) & 0xFF;
+  buffer[19] = telem_data.gz & 0xFF;
+  buffer[20] = (telem_data.gz >> 8) & 0xFF;
   uint16_t crc =
       ProtocolCrc16(buffer.subspan(2, 4 + payload_len));
   size_t crc_pos = 6 + payload_len;
@@ -36,9 +36,9 @@ size_t ProtocolBuildTelem(std::span<uint8_t> buffer,
   return crc_pos + 2;
 }
 
-size_t ProtocolParseCommand(std::span<const uint8_t> buffer,
-                            float *throttle, float *steering) {
-  if (buffer.size() < 16 || throttle == nullptr || steering == nullptr) {
+size_t ProtocolParseCommand(std::span<const uint8_t> buffer, float &throttle,
+                            float &steering) {
+  if (buffer.size() < 16) {
     return 0;
   }
   if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1) {
@@ -57,12 +57,15 @@ size_t ProtocolParseCommand(std::span<const uint8_t> buffer,
   if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4 + payload_len))) {
     return 0;
   }
-  int16_t thr_i16 =
-      static_cast<int16_t>(buffer[8] | (buffer[9] << 8));
-  int16_t steer_i16 =
-      static_cast<int16_t>(buffer[10] | (buffer[11] << 8));
-  *throttle = static_cast<float>(thr_i16) / 32767.0f;
-  *steering = static_cast<float>(steer_i16) / 32767.0f;
+  int16_t thr_i16 = static_cast<int16_t>(buffer[8] | (buffer[9] << 8));
+  int16_t steer_i16 = static_cast<int16_t>(buffer[10] | (buffer[11] << 8));
+  throttle = static_cast<float>(thr_i16) / 32767.0f;
+  steering = static_cast<float>(steer_i16) / 32767.0f;
+  // Защита от -32768 (получается чуть меньше -1.0) и любых выбросов.
+  if (throttle > 1.0f) throttle = 1.0f;
+  if (throttle < -1.0f) throttle = -1.0f;
+  if (steering > 1.0f) steering = 1.0f;
+  if (steering < -1.0f) steering = -1.0f;
   return 6 + payload_len + 2;
 }
 
@@ -98,9 +101,9 @@ size_t ProtocolBuildCommand(std::span<uint8_t> buffer, float throttle,
 }
 
 size_t ProtocolParseTelem(std::span<const uint8_t> buffer,
-                          TelemetryData *telem_data) {
+                          TelemetryData &telem_data) {
   constexpr size_t kMinTelemFrameSize = 6 + 15 + 2;  // header + payload + CRC
-  if (buffer.size() < kMinTelemFrameSize || telem_data == nullptr) {
+  if (buffer.size() < kMinTelemFrameSize) {
     return 0;
   }
   if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1) {
@@ -118,14 +121,14 @@ size_t ProtocolParseTelem(std::span<const uint8_t> buffer,
   if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4 + payload_len))) {
     return 0;
   }
-  telem_data->seq = buffer[6] | (buffer[7] << 8);
-  telem_data->status = buffer[8];
-  telem_data->ax = static_cast<int16_t>(buffer[9] | (buffer[10] << 8));
-  telem_data->ay = static_cast<int16_t>(buffer[11] | (buffer[12] << 8));
-  telem_data->az = static_cast<int16_t>(buffer[13] | (buffer[14] << 8));
-  telem_data->gx = static_cast<int16_t>(buffer[15] | (buffer[16] << 8));
-  telem_data->gy = static_cast<int16_t>(buffer[17] | (buffer[18] << 8));
-  telem_data->gz = static_cast<int16_t>(buffer[19] | (buffer[20] << 8));
+  telem_data.seq = buffer[6] | (buffer[7] << 8);
+  telem_data.status = buffer[8];
+  telem_data.ax = static_cast<int16_t>(buffer[9] | (buffer[10] << 8));
+  telem_data.ay = static_cast<int16_t>(buffer[11] | (buffer[12] << 8));
+  telem_data.az = static_cast<int16_t>(buffer[13] | (buffer[14] << 8));
+  telem_data.gx = static_cast<int16_t>(buffer[15] | (buffer[16] << 8));
+  telem_data.gy = static_cast<int16_t>(buffer[17] | (buffer[18] << 8));
+  telem_data.gz = static_cast<int16_t>(buffer[19] | (buffer[20] << 8));
   return 6 + payload_len + 2;
 }
 
@@ -155,4 +158,58 @@ int ProtocolFindFrameStart(std::span<const uint8_t> buffer) {
     }
   }
   return -1;
+}
+
+static constexpr size_t kPingPongFrameSize = 6 + 0 + 2;  // header + 0 payload + CRC
+
+size_t ProtocolBuildPing(std::span<uint8_t> buffer) {
+  if (buffer.size() < kPingPongFrameSize) return 0;
+  buffer[0] = UART_FRAME_PREFIX_0;
+  buffer[1] = UART_FRAME_PREFIX_1;
+  buffer[2] = UART_PROTOCOL_VERSION;
+  buffer[3] = UART_MSG_TYPE_PING;
+  buffer[4] = 0;
+  buffer[5] = 0;
+  uint16_t crc = ProtocolCrc16(buffer.subspan(2, 4));
+  buffer[6] = crc & 0xFF;
+  buffer[7] = (crc >> 8) & 0xFF;
+  return kPingPongFrameSize;
+}
+
+size_t ProtocolParsePing(std::span<const uint8_t> buffer) {
+  if (buffer.size() < kPingPongFrameSize) return 0;
+  if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1)
+    return 0;
+  if (buffer[2] != UART_PROTOCOL_VERSION || buffer[3] != UART_MSG_TYPE_PING)
+    return 0;
+  if (buffer[4] != 0 || buffer[5] != 0) return 0;
+  uint16_t recv_crc = buffer[6] | (buffer[7] << 8);
+  if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4))) return 0;
+  return kPingPongFrameSize;
+}
+
+size_t ProtocolBuildPong(std::span<uint8_t> buffer) {
+  if (buffer.size() < kPingPongFrameSize) return 0;
+  buffer[0] = UART_FRAME_PREFIX_0;
+  buffer[1] = UART_FRAME_PREFIX_1;
+  buffer[2] = UART_PROTOCOL_VERSION;
+  buffer[3] = UART_MSG_TYPE_PONG;
+  buffer[4] = 0;
+  buffer[5] = 0;
+  uint16_t crc = ProtocolCrc16(buffer.subspan(2, 4));
+  buffer[6] = crc & 0xFF;
+  buffer[7] = (crc >> 8) & 0xFF;
+  return kPingPongFrameSize;
+}
+
+size_t ProtocolParsePong(std::span<const uint8_t> buffer) {
+  if (buffer.size() < kPingPongFrameSize) return 0;
+  if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1)
+    return 0;
+  if (buffer[2] != UART_PROTOCOL_VERSION || buffer[3] != UART_MSG_TYPE_PONG)
+    return 0;
+  if (buffer[4] != 0 || buffer[5] != 0) return 0;
+  uint16_t recv_crc = buffer[6] | (buffer[7] << 8);
+  if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4))) return 0;
+  return kPingPongFrameSize;
 }

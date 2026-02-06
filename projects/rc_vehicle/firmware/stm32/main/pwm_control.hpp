@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 
-int PwmControlInit(void);
+int PwmControlInit();
 int PwmControlSetThrottle(float throttle);
 int PwmControlSetSteering(float steering);
-void PwmControlSetNeutral(void);
+void PwmControlSetNeutral();

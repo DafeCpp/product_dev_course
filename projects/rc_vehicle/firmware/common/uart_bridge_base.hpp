@@ -51,11 +51,21 @@ class UartBridgeBase {
    */
   std::optional<UartCommand> ReceiveCommand();
 
+  /** Принять PING от ESP32 (MCU должен ответить SendPong). */
+  bool ReceivePing();
+  /** Отправить PONG в ответ на PING (MCU). */
+  int SendPong();
+
   // --- API для ESP32: отправка команд, приём телеметрии ---
   int SendCommand(float throttle, float steering);
   /** Принять телеметрию от MCU. std::nullopt, если кадра нет или он невалидный.
    */
   std::optional<TelemetryData> ReceiveTelem();
+
+  /** Отправить PING на MCU (ESP32). */
+  int SendPing();
+  /** Принять PONG от MCU (ESP32). */
+  bool ReceivePong();
 
  protected:
   /** Записать в UART. Возврат: 0 при успехе, -1 при ошибке. */

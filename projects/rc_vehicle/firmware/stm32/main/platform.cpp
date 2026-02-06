@@ -12,21 +12,24 @@
 
 static volatile uint32_t s_millis = 0;
 
-extern "C" void SysTick_Handler(void) { s_millis++; }
+extern "C" void SysTick_Handler() { s_millis++; }
 
-uint32_t platform_get_time_ms(void) { return s_millis; }
+uint32_t PlatformGetTimeMs() { return s_millis; }
 
-void platform_delay_ms(uint32_t ms) {
+void PlatformDelayMs(uint32_t ms) {
   uint32_t end = s_millis + ms;
   while (s_millis < end) {
     __NOP();
   }
 }
 
-void platform_init(void) {
-  // SysTick: 1 ms. SystemCoreClock задаётся в system_stm32f1xx.c (и др.) после SystemInit()
+void PlatformInit() {
+  // SysTick: 1 ms. SystemCoreClock задаётся в system_stm32f1xx.c (и др.) после
+  // SystemInit()
   if (SysTick_Config(SystemCoreClock / 1000u) != 0u) {
-    for (;;) { __NOP(); }
+    for (;;) {
+      __NOP();
+    }
   }
   NVIC_SetPriority(SysTick_IRQn, 0x80u);
 }

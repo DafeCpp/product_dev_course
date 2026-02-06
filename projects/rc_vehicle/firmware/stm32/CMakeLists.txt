@@ -61,9 +61,19 @@ set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
 set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
 
+# C++26 (если поддерживается компилятором), иначе C++23.
+set(RC_VEHICLE_CXX_STANDARD 23)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
+  set(RC_VEHICLE_CXX_STANDARD 26)
+endif()
+set(CMAKE_CXX_STANDARD ${RC_VEHICLE_CXX_STANDARD})
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
+
 # Флаги C/C++
 set(CMAKE_C_FLAGS "${MCU_CFLAGS} -fdata-sections -ffunction-sections -Wall -Wextra")
-set(CMAKE_CXX_FLAGS "${MCU_CFLAGS} -fdata-sections -ffunction-sections -Wall -Wextra -std=c++23")
+set(CMAKE_CXX_FLAGS "${MCU_CFLAGS} -fdata-sections -ffunction-sections -Wall -Wextra")
 
 # Linker script (GCC)
 set(LD_SCRIPT_PATH ${CMSIS_DEVICE_GCC}/${LD_SCRIPT})

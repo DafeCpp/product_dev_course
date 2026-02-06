@@ -30,3 +30,8 @@ struct UartBridgeCommand {
  * @return команда (throttle, steering) или std::nullopt, если команды нет
  */
 std::optional<UartBridgeCommand> UartBridgeReceiveCommand();
+
+/** Принять PING от ESP32 (нужно ответить UartBridgeSendPong). */
+bool UartBridgeReceivePing(void);
+/** Отправить PONG в ответ на PING. */
+int UartBridgeSendPong(void);

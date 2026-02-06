@@ -14,9 +14,9 @@ add_executable(rc_vehicle_rp2040
     ${RC_VEHICLE_COMMON_DIR}/failsafe_core.cpp
 )
 
-# Установка стандарта C++23
+# Установка стандарта C++26 (если доступен), иначе C++23
 set_target_properties(rc_vehicle_rp2040 PROPERTIES
-    CXX_STANDARD 23
+    CXX_STANDARD ${RC_VEHICLE_CXX_STANDARD}
     CXX_STANDARD_REQUIRED ON
 )
 

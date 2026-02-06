@@ -44,3 +44,7 @@ std::optional<UartBridgeCommand> UartBridgeReceiveCommand() {
   if (cmd) return UartBridgeCommand{cmd->throttle, cmd->steering};
   return std::nullopt;
 }
+
+bool UartBridgeReceivePing(void) { return s_bridge.ReceivePing(); }
+
+int UartBridgeSendPong(void) { return s_bridge.SendPong(); }

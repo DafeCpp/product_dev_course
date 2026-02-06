@@ -6,5 +6,5 @@
 class SpiStm32 : public SpiBase {
  public:
   int Init() override;
-  int Transfer(const uint8_t *tx, uint8_t *rx, size_t len) override;
+  int Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) override;
 };

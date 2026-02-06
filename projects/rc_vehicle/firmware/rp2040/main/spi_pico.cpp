@@ -36,9 +36,11 @@ int SpiPico::Init() {
   return 0;
 }
 
-int SpiPico::Transfer(const uint8_t *tx, uint8_t *rx, size_t len) {
+int SpiPico::Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) {
+  if (tx.size() == 0 || tx.size() != rx.size()) return -1;
   CsSelect();
-  spi_write_read_blocking(static_cast<spi_inst_t *>(spi_id_), tx, rx, len);
+  spi_write_read_blocking(static_cast<spi_inst_t *>(spi_id_), tx.data(),
+                          rx.data(), tx.size());
   CsDeselect();
   return 0;
 }

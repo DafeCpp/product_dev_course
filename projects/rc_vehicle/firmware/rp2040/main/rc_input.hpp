@@ -1,7 +1,8 @@
 #pragma once
 
-#include <stdbool.h>
 #include <stdint.h>
+
+#include <optional>
 
 /**
  * Инициализация RC-in (чтение сигналов с RC приёмника)
@@ -11,17 +12,15 @@ int RcInputInit(void);
 
 /**
  * Чтение значения газа с RC приёмника
- * @param throttle указатель для значения [-1.0..1.0]
- * @return true если сигнал валидный, false если потерян
+ * @return значение [-1.0..1.0] или std::nullopt при потере сигнала
  */
-bool RcInputReadThrottle(float *throttle);
+std::optional<float> RcInputReadThrottle(void);
 
 /**
  * Чтение значения руля с RC приёмника
- * @param steering указатель для значения [-1.0..1.0]
- * @return true если сигнал валидный, false если потерян
+ * @return значение [-1.0..1.0] или std::nullopt при потере сигнала
  */
-bool RcInputReadSteering(float *steering);
+std::optional<float> RcInputReadSteering(void);
 
 /**
  * Проверка наличия валидного RC сигнала

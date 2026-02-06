@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "failsafe.hpp"
+#include "hardware/gpio.h"
 #include "imu.hpp"
 #include "pico/stdlib.h"
 #include "protocol.hpp"
@@ -12,8 +13,12 @@
 
 static const char *TAG = "main";
 
-static float current_throttle = 0.0f;
-static float current_steering = 0.0f;
+// commanded_* — что хотим (RC/Wi‑Fi), applied_* — что реально подаём на PWM
+// (slew-rate)
+static float commanded_throttle = 0.0f;
+static float commanded_steering = 0.0f;
+static float applied_throttle = 0.0f;
+static float applied_steering = 0.0f;
 static bool rc_active = false;
 static bool wifi_active = false;
 
@@ -40,8 +45,20 @@ int main() {
   // Инициализация IMU
   printf("[%s] Initializing IMU...\n", TAG);
   if (ImuInit() != 0) {
+    int who = ImuGetLastWhoAmI();
     printf("[%s] WARNING: Failed to initialize IMU (continuing without IMU)\n",
            TAG);
+    if (who >= 0) {
+      printf(
+          "[%s] IMU WHO_AM_I=0x%02X (expected 0x68 MPU-6050 or 0x70 "
+          "MPU-6500)\n",
+          TAG, who);
+    } else {
+      printf(
+          "[%s] IMU SPI read failed — check wiring: CS=GPIO8, SCK=6, MOSI=7, "
+          "MISO=9, 3V3/GND\n",
+          TAG);
+    }
   }
 
   // Инициализация UART моста
@@ -55,6 +72,10 @@ int main() {
   printf("[%s] Initializing failsafe...\n", TAG);
   FailsafeInit();
 
+  // Встроенный светодиод — индикатор работы
+  gpio_init(PICO_DEFAULT_LED_PIN);
+  gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+
   printf("[%s] All systems initialized. Starting main loop.\n", TAG);
 
   // Таймеры для периодических задач
@@ -63,6 +84,7 @@ int main() {
   uint32_t last_imu_read = time_us_32() / 1000;
   uint32_t last_telem_send = time_us_32() / 1000;
   uint32_t last_failsafe_update = time_us_32() / 1000;
+  uint32_t last_wifi_cmd_ms = 0;
 
   // Данные IMU
   ImuData imu_data = {0};
@@ -81,62 +103,56 @@ int main() {
       uint32_t dt_ms = now - last_pwm_update;
       last_pwm_update = now;
 
-      // Применение slew-rate limiting (опционально)
-      float target_throttle = current_throttle;
-      float target_steering = current_steering;
+      // Slew-rate limiting: applied_* тянется к commanded_*
+      applied_throttle = ApplySlewRate(commanded_throttle, applied_throttle,
+                                       SLEW_RATE_THROTTLE_MAX_PER_SEC, dt_ms);
+      applied_steering = ApplySlewRate(commanded_steering, applied_steering,
+                                       SLEW_RATE_STEERING_MAX_PER_SEC, dt_ms);
 
-      target_throttle = ApplySlewRate(
-          target_throttle, current_throttle,
-          SLEW_RATE_THROTTLE_MAX_PER_SEC, dt_ms);
-      target_steering = ApplySlewRate(
-          target_steering, current_steering,
-          SLEW_RATE_STEERING_MAX_PER_SEC, dt_ms);
-
-      current_throttle = target_throttle;
-      current_steering = target_steering;
-
-      PwmControlSetThrottle(current_throttle);
-      PwmControlSetSteering(current_steering);
+      PwmControlSetThrottle(applied_throttle);
+      PwmControlSetSteering(applied_steering);
     }
 
     // Опрос RC-in (50 Hz)
     if (now - last_rc_poll >= RC_IN_POLL_INTERVAL_MS) {
       last_rc_poll = now;
 
-      float rc_throttle, rc_steering;
-      bool rc_throttle_ok = RcInputReadThrottle(&rc_throttle);
-      bool rc_steering_ok = RcInputReadSteering(&rc_steering);
+      auto rc_throttle = RcInputReadThrottle();
+      auto rc_steering = RcInputReadSteering();
 
-      rc_active = rc_throttle_ok && rc_steering_ok;
+      rc_active = rc_throttle.has_value() && rc_steering.has_value();
 
       // RC имеет приоритет над Wi-Fi
       if (rc_active) {
-        current_throttle = rc_throttle;
-        current_steering = rc_steering;
-        wifi_active = false;  // RC активен, Wi-Fi команды игнорируются
+        commanded_throttle = *rc_throttle;
+        commanded_steering = *rc_steering;
       }
+    }
+
+    // Ответ на PING от ESP32 (проверка связи); светодиод переключается при
+    // каждом PING
+    while (UartBridgeReceivePing()) {
+      UartBridgeSendPong();
+      gpio_put(PICO_DEFAULT_LED_PIN, !gpio_get(PICO_DEFAULT_LED_PIN));
     }
 
     // Чтение команд от ESP32 (Wi-Fi)
     if (auto cmd = UartBridgeReceiveCommand()) {
       // Wi-Fi команды принимаются только если RC не активен
       if (!rc_active) {
-        current_throttle = cmd->throttle;
-        current_steering = cmd->steering;
-        wifi_active = true;
-      } else {
-        wifi_active = false;
+        commanded_throttle = cmd->throttle;
+        commanded_steering = cmd->steering;
+        last_wifi_cmd_ms = now;
       }
-    } else {
-      // Проверка таймаута Wi-Fi команд
-      // (можно добавить таймер последней команды)
-      wifi_active = false;
     }
+    // Wi‑Fi активен, если команда приходила недавно и RC не активен
+    wifi_active =
+        (!rc_active) && ((now - last_wifi_cmd_ms) < WIFI_CMD_TIMEOUT_MS);
 
     // Чтение IMU (50 Hz)
     if (now - last_imu_read >= IMU_READ_INTERVAL_MS) {
       last_imu_read = now;
-      ImuRead(&imu_data);
+      ImuRead(imu_data);
     }
 
     // Обновление failsafe
@@ -146,8 +162,10 @@ int main() {
 
       if (failsafe) {
         // Failsafe активен: нейтраль
-        current_throttle = 0.0f;
-        current_steering = 0.0f;
+        commanded_throttle = 0.0f;
+        commanded_steering = 0.0f;
+        applied_throttle = 0.0f;
+        applied_steering = 0.0f;
         PwmControlSetNeutral();
       }
     }
@@ -165,9 +183,8 @@ int main() {
         telem_data.status |= 0x04;  // bit2: failsafe_active
 
       // Конвертация IMU данных
-      ImuConvertToTelem(&imu_data, &telem_data.ax, &telem_data.ay,
-                        &telem_data.az, &telem_data.gx, &telem_data.gy,
-                        &telem_data.gz);
+      ImuConvertToTelem(imu_data, telem_data.ax, telem_data.ay, telem_data.az,
+                        telem_data.gx, telem_data.gy, telem_data.gz);
 
       // Отправка телеметрии
       UartBridgeSendTelem(telem_data);

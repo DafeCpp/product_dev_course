@@ -105,12 +105,11 @@ int SpiStm32::Init() {
   return 0;
 }
 
-int SpiStm32::Transfer(const uint8_t *tx, uint8_t *rx, size_t len) {
-  if (!tx || !rx || len == 0)
-    return -1;
+int SpiStm32::Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) {
+  if (tx.size() == 0 || tx.size() != rx.size()) return -1;
 
   cs_low();
-  for (size_t i = 0; i < len; i++) {
+  for (size_t i = 0; i < tx.size(); i++) {
     wait_txe();
     LL_SPI_TransmitData8(SPI_PERIPH, tx[i]);
     wait_rxne();

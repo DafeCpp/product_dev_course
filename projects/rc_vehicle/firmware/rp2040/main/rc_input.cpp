@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "hardware/gpio.h"
+#include "hardware/sync.h"
 #include "pico/stdlib.h"
 #include "rc_vehicle_common.hpp"
 
@@ -33,8 +34,9 @@ static void gpio_callback(uint gpio, uint32_t events) {
             pulse_width, RC_IN_PULSE_MIN_US, RC_IN_PULSE_NEUTRAL_US,
             RC_IN_PULSE_MAX_US);
         last_throttle_pulse_time = now;
-        last_rise_time_throttle = 0; // Сброс для следующего импульса
       }
+      // Сброс для следующего импульса — всегда (даже если ширина невалидна)
+      last_rise_time_throttle = 0;
     } else if (gpio == RC_IN_STEERING_PIN && last_rise_time_steering > 0) {
       uint32_t pulse_width = now - last_rise_time_steering;
       if (pulse_width >= RC_IN_PULSE_MIN_US &&
@@ -43,8 +45,9 @@ static void gpio_callback(uint gpio, uint32_t events) {
             pulse_width, RC_IN_PULSE_MIN_US, RC_IN_PULSE_NEUTRAL_US,
             RC_IN_PULSE_MAX_US);
         last_steering_pulse_time = now;
-        last_rise_time_steering = 0; // Сброс для следующего импульса
       }
+      // Сброс для следующего импульса — всегда (даже если ширина невалидна)
+      last_rise_time_steering = 0;
     }
   }
 }
@@ -68,38 +71,36 @@ int RcInputInit(void) {
   return 0;
 }
 
-bool RcInputReadThrottle(float *throttle) {
-  if (throttle == NULL) {
-    return false;
-  }
+std::optional<float> RcInputReadThrottle(void) {
+  uint32_t irq_state = save_and_disable_interrupts();
+  uint32_t last_pulse_time = last_throttle_pulse_time;
+  float last_value = last_throttle_value;
+  restore_interrupts(irq_state);
 
   uint32_t now = time_us_32();
   uint32_t time_since_last_pulse =
-      (now - last_throttle_pulse_time) / 1000; // в миллисекундах
+      (now - last_pulse_time) / 1000;  // в миллисекундах
 
   if (time_since_last_pulse < RC_IN_TIMEOUT_MS) {
-    *throttle = last_throttle_value;
-    return true;
+    return last_value;
   }
-
-  return false;
+  return std::nullopt;
 }
 
-bool RcInputReadSteering(float *steering) {
-  if (steering == NULL) {
-    return false;
-  }
+std::optional<float> RcInputReadSteering(void) {
+  uint32_t irq_state = save_and_disable_interrupts();
+  uint32_t last_pulse_time = last_steering_pulse_time;
+  float last_value = last_steering_value;
+  restore_interrupts(irq_state);
 
   uint32_t now = time_us_32();
   uint32_t time_since_last_pulse =
-      (now - last_steering_pulse_time) / 1000; // в миллисекундах
+      (now - last_pulse_time) / 1000;  // в миллисекундах
 
   if (time_since_last_pulse < RC_IN_TIMEOUT_MS) {
-    *steering = last_steering_value;
-    return true;
+    return last_value;
   }
-
-  return false;
+  return std::nullopt;
 }
 
 bool RcInputIsActive(void) {
