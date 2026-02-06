@@ -5,16 +5,28 @@
 #include <span>
 
 /**
- * Базовый класс SPI-драйвера.
- * Наследники реализуют Init() и Transfer() под конкретный чип (RP2040, STM32).
- * Transfer() выполняет полнодуплексный обмен: реализация должна держать CS
- * активным на время обмена (CS low → обмен → CS high).
+ * SPI абстракции.
+ *
+ * - `SpiBus` — абстракция SPI-шины/периферии (только инициализация).
+ * - `SpiDevice` — абстракция устройства на SPI-шине: `Transfer()` выполняет
+ *   полнодуплексный обмен и должна держать CS активным на время всего обмена
+ *   (CS low → обмен → CS high).
+ *
+ * Платформы реализуют конкретные классы шины/устройства (ESP32, RP2040, STM32).
  */
-class SpiBase {
+class SpiBus {
  public:
-  virtual ~SpiBase() = default;
+  virtual ~SpiBus() = default;
 
-  /** Инициализация SPI и пина CS. Возврат: 0 при успехе, -1 при ошибке. */
+  /** Инициализация SPI-шины. Возврат: 0 при успехе, -1 при ошибке. */
+  virtual int Init() = 0;
+};
+
+class SpiDevice {
+ public:
+  virtual ~SpiDevice() = default;
+
+  /** Инициализация устройства (в т.ч. bus). Возврат: 0/-1. */
   virtual int Init() = 0;
 
   /**
@@ -25,6 +37,5 @@ class SpiBase {
    * Требование: tx.size() == rx.size() и size > 0.
    * @return 0 при успехе, -1 при ошибке
    */
-  virtual int Transfer(std::span<const uint8_t> tx,
-                       std::span<uint8_t> rx) = 0;
+  virtual int Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) = 0;
 };

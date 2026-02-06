@@ -3,8 +3,9 @@
 #include "mpu6050_spi.hpp"
 #include "spi_stm32.hpp"
 
-static SpiStm32 g_spi;
-static Mpu6050Spi g_mpu(&g_spi);
+static SpiBusStm32 g_spi_bus;
+static SpiDeviceStm32 g_spi_imu(g_spi_bus);
+static Mpu6050Spi g_mpu(&g_spi_imu);
 
 int ImuInit() { return g_mpu.Init(); }
 

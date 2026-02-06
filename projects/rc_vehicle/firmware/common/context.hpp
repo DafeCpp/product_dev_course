@@ -21,7 +21,7 @@ struct IsOneOf<T, U, Rest...>
 /**
  * Контекст приложения: регистрация и получение компонентов по типу
  * (compile-time). Список типов компонентов задаётся при объявлении контекста,
- * например: using AppContext = Context<UartBridgeBase, SpiBase>; Регистрация:
+ * например: using AppContext = Context<UartBridgeBase, SpiDevice>; Регистрация:
  * ctx.Set<UartBridgeBase>(&uart_impl); Получение:   auto* uart =
  * ctx.Get<UartBridgeBase>();
  */

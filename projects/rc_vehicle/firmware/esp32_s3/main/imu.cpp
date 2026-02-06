@@ -4,9 +4,10 @@
 #include "mpu6050_spi.hpp"
 #include "spi_esp32.hpp"
 
-static SpiEsp32 g_spi(IMU_SPI_HOST, IMU_SPI_CS_PIN, IMU_SPI_SCK_PIN,
-                      IMU_SPI_MOSI_PIN, IMU_SPI_MISO_PIN, IMU_SPI_BAUD_HZ);
-static Mpu6050Spi g_mpu(&g_spi);
+static SpiBusEsp32 g_spi_bus(IMU_SPI_HOST, IMU_SPI_SCK_PIN, IMU_SPI_MOSI_PIN,
+                             IMU_SPI_MISO_PIN);
+static SpiDeviceEsp32 g_spi_imu(g_spi_bus, IMU_SPI_CS_PIN, IMU_SPI_BAUD_HZ);
+static Mpu6050Spi g_mpu(&g_spi_imu);
 
 int ImuInit(void) { return g_mpu.Init(); }
 

@@ -5,9 +5,10 @@
 #include "mpu6050_spi.hpp"
 #include "spi_pico.hpp"
 
-static SpiPico g_spi(static_cast<void *>(SPI_ID), SPI_CS_PIN, SPI_SCK_PIN,
-                     SPI_MOSI_PIN, SPI_MISO_PIN, SPI_BAUD_HZ);
-static Mpu6050Spi g_mpu(&g_spi);
+static SpiBusPico g_spi_bus(static_cast<void *>(SPI_ID), SPI_SCK_PIN,
+                            SPI_MOSI_PIN, SPI_MISO_PIN, SPI_BAUD_HZ);
+static SpiDevicePico g_spi_imu(g_spi_bus, SPI_CS_PIN);
+static Mpu6050Spi g_mpu(&g_spi_imu);
 
 int ImuInit(void) {
   return g_mpu.Init();

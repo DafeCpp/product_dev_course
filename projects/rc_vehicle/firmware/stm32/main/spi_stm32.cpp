@@ -19,8 +19,6 @@
 #include <stm32g4xx_ll_spi.h>
 #endif
 
-
-#define SPI_NCS_PIN_MASK (1U << SPI_NCS_PIN)
 #define SPI_SCK_PIN_MASK (1U << SPI_SCK_PIN)
 #define SPI_MISO_PIN_MASK (1U << SPI_MISO_PIN)
 #define SPI_MOSI_PIN_MASK (1U << SPI_MOSI_PIN)
@@ -38,14 +36,6 @@
 
 static bool spi_initialized = false;
 
-static void cs_low(void) {
-  LL_GPIO_ResetOutputPin(SPI_NCS_PORT, SPI_NCS_PIN_MASK);
-}
-
-static void cs_high(void) {
-  LL_GPIO_SetOutputPin(SPI_NCS_PORT, SPI_NCS_PIN_MASK);
-}
-
 static void wait_txe(void) {
   while (!LL_SPI_IsActiveFlag_TXE(SPI_PERIPH))
     ;
@@ -61,26 +51,23 @@ static void wait_not_busy(void) {
     ;
 }
 
-int SpiStm32::Init() {
-  if (spi_initialized)
+int SpiBusStm32::Init() {
+  if (inited_) return 0;
+  if (spi_initialized) {
+    inited_ = true;
     return 0;
+  }
 
   RCC_GPIO_SPI_PORT;
   RCC_SPI_PERIPH;
 
-  LL_GPIO_SetPinMode(SPI_NCS_PORT, SPI_NCS_PIN_MASK, LL_GPIO_MODE_OUTPUT);
-  LL_GPIO_SetOutputPin(SPI_NCS_PORT, SPI_NCS_PIN_MASK);
-
 #if defined(STM32F1)
-  LL_GPIO_SetPinSpeed(SPI_NCS_PORT, SPI_NCS_PIN_MASK, LL_GPIO_SPEED_FREQ_LOW);
   LL_GPIO_SetPinMode(SPI_SCK_PORT, SPI_SCK_PIN_MASK, LL_GPIO_MODE_ALTERNATE);
   LL_GPIO_SetPinSpeed(SPI_SCK_PORT, SPI_SCK_PIN_MASK, LL_GPIO_SPEED_FREQ_HIGH);
   LL_GPIO_SetPinMode(SPI_MISO_PORT, SPI_MISO_PIN_MASK, LL_GPIO_MODE_FLOATING);
   LL_GPIO_SetPinMode(SPI_MOSI_PORT, SPI_MOSI_PIN_MASK, LL_GPIO_MODE_ALTERNATE);
   LL_GPIO_SetPinSpeed(SPI_MOSI_PORT, SPI_MOSI_PIN_MASK, LL_GPIO_SPEED_FREQ_HIGH);
 #else
-  LL_GPIO_SetPinOutputType(SPI_NCS_PORT, SPI_NCS_PIN_MASK,
-                           LL_GPIO_OUTPUT_PUSHPULL);
   LL_GPIO_SetPinMode(SPI_SCK_PORT, SPI_SCK_PIN_MASK, LL_GPIO_MODE_ALTERNATE);
   LL_GPIO_SetPinMode(SPI_MISO_PORT, SPI_MISO_PIN_MASK, LL_GPIO_MODE_ALTERNATE);
   LL_GPIO_SetPinMode(SPI_MOSI_PORT, SPI_MOSI_PIN_MASK, LL_GPIO_MODE_ALTERNATE);
@@ -102,13 +89,49 @@ int SpiStm32::Init() {
   LL_SPI_Enable(SPI_PERIPH);
 
   spi_initialized = true;
+  inited_ = true;
   return 0;
 }
 
-int SpiStm32::Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) {
+SpiDeviceStm32::SpiDeviceStm32(SpiBusStm32 &bus)
+    : SpiDeviceStm32(bus, static_cast<void *>(SPI_NCS_PORT), SPI_NCS_PIN) {}
+
+SpiDeviceStm32::SpiDeviceStm32(SpiBusStm32 &bus, void *cs_port,
+                               unsigned int cs_pin)
+    : bus_(bus), cs_port_(cs_port), cs_pin_mask_(1U << cs_pin) {}
+
+void SpiDeviceStm32::CsLow() {
+  LL_GPIO_ResetOutputPin(static_cast<GPIO_TypeDef *>(cs_port_), cs_pin_mask_);
+}
+
+void SpiDeviceStm32::CsHigh() {
+  LL_GPIO_SetOutputPin(static_cast<GPIO_TypeDef *>(cs_port_), cs_pin_mask_);
+}
+
+int SpiDeviceStm32::Init() {
+  if (inited_) return 0;
+  if (bus_.Init() != 0) return -1;
+
+  auto *port = static_cast<GPIO_TypeDef *>(cs_port_);
+  LL_GPIO_SetPinMode(port, cs_pin_mask_, LL_GPIO_MODE_OUTPUT);
+  LL_GPIO_SetOutputPin(port, cs_pin_mask_);
+
+#if defined(STM32F1)
+  LL_GPIO_SetPinSpeed(port, cs_pin_mask_, LL_GPIO_SPEED_FREQ_LOW);
+#else
+  LL_GPIO_SetPinOutputType(port, cs_pin_mask_, LL_GPIO_OUTPUT_PUSHPULL);
+#endif
+
+  inited_ = true;
+  return 0;
+}
+
+int SpiDeviceStm32::Transfer(std::span<const uint8_t> tx,
+                             std::span<uint8_t> rx) {
+  if (!inited_) return -1;
   if (tx.size() == 0 || tx.size() != rx.size()) return -1;
 
-  cs_low();
+  CsLow();
   for (size_t i = 0; i < tx.size(); i++) {
     wait_txe();
     LL_SPI_TransmitData8(SPI_PERIPH, tx[i]);
@@ -116,6 +139,6 @@ int SpiStm32::Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) {
     rx[i] = LL_SPI_ReceiveData8(SPI_PERIPH);
   }
   wait_not_busy();
-  cs_high();
+  CsHigh();
   return 0;
 }

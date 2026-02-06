@@ -12,11 +12,11 @@ struct ImuData {
 
 /**
  * Драйвер MPU-6050 по SPI.
- * Использует SpiBase для обмена; логика регистров и масштабирование — здесь.
+ * Использует `SpiDevice` для обмена; логика регистров и масштабирование — здесь.
  */
 class Mpu6050Spi {
  public:
-  explicit Mpu6050Spi(SpiBase *spi) : spi_(spi) {}
+  explicit Mpu6050Spi(SpiDevice *spi) : spi_(spi) {}
 
   /** Инициализация: проверка WHO_AM_I, сброс SLEEP. 0 — успех, -1 — ошибка. */
   int Init();
@@ -32,7 +32,7 @@ class Mpu6050Spi {
   int GetLastWhoAmI() const { return last_who_am_i_; }
 
  private:
-  SpiBase *spi_;
+  SpiDevice *spi_;
   bool initialized_{false};
   int last_who_am_i_{-1};
 

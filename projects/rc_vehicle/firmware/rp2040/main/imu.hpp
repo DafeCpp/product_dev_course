@@ -4,7 +4,7 @@
 
 #include "mpu6050_spi.hpp"
 
-// ImuData и C-API для main (реализация через Mpu6050Spi + SpiPico)
+// ImuData и C-API для main (реализация через Mpu6050Spi + SpiBusPico/SpiDevicePico)
 
 /** Инициализация IMU (MPU-6050 по SPI). 0 — успех, -1 — ошибка. */
 int ImuInit(void);
