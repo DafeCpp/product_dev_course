@@ -82,3 +82,6 @@ docker-compose.override.yml
 *.bak
 *.swp
 *~
+
+# KiCad auto-backups / archives
+projects/rc_vehicle/stm32_espc3_schemas/*-backups/
