@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
 import { EmptyState, Error as ErrorComponent, FloatingActionButton, Loading, MaterialSelect } from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
+import { notifyError, notifySuccess } from '../utils/notify'
 import type { CaptureSession, Sensor, TelemetryQueryRecord } from '../types'
 import './TelemetryViewer.scss'
 
@@ -260,10 +261,22 @@ function TelemetryViewer() {
         enabled: !!experimentId,
     })
 
+    const { data: runDetail, isLoading: runDetailLoading } = useQuery({
+        queryKey: ['run', runId],
+        queryFn: () => runsApi.get(runId),
+        enabled: !!runId,
+    })
+
+    const { data: runExperiment } = useQuery({
+        queryKey: ['experiment', runDetail?.experiment_id],
+        queryFn: () => experimentsApi.get(runDetail!.experiment_id),
+        enabled: !!runDetail?.experiment_id,
+    })
+
     const { data: captureSessionsData, isLoading: captureSessionsLoading, error: captureSessionsError } = useQuery({
         queryKey: ['capture-sessions', runId],
         queryFn: () => captureSessionsApi.list(runId, { page_size: 200 }),
-        enabled: !!runId && viewMode === 'history',
+        enabled: !!runId,
     })
 
     useEffect(() => {
@@ -294,6 +307,60 @@ function TelemetryViewer() {
     const experiments = experimentsData?.experiments || []
     const runs = runsData?.runs || []
     const captureSessions = captureSessionsData?.capture_sessions || []
+    const activeCaptureSession = captureSessions.find(
+        (s: CaptureSession) => s.status === 'running' || s.status === 'backfilling'
+    )
+    const canManageCaptureSession =
+        !!runId &&
+        !!runDetail &&
+        !!runExperiment &&
+        (runDetail.status === 'draft' || runDetail.status === 'running')
+
+    const queryClient = useQueryClient()
+    const createSessionMutation = useMutation({
+        mutationFn: (notes?: string) => {
+            if (!runExperiment) throw new Error('Experiment not loaded')
+            const nextOrdinal =
+                captureSessions.length > 0
+                    ? Math.max(...captureSessions.map((s: CaptureSession) => s.ordinal_number)) + 1
+                    : 1
+            return captureSessionsApi.create(runId, {
+                project_id: runExperiment.project_id,
+                run_id: runId,
+                ordinal_number: nextOrdinal,
+                notes: notes || undefined,
+            }, { project_id: runExperiment.project_id })
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
+            notifySuccess('Отсчёт запущен')
+        },
+        onError: (err: unknown) => {
+            const msg =
+                (err as any)?.response?.data?.message ||
+                (err as any)?.response?.data?.error ||
+                (err as Error)?.message ||
+                'Не удалось запустить отсчёт'
+            notifyError(msg)
+        },
+    })
+
+    const stopSessionMutation = useMutation({
+        mutationFn: (sessionId: string) => captureSessionsApi.stop(runId, sessionId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
+            notifySuccess('Отсчёт остановлен')
+        },
+        onError: (err: unknown) => {
+            const msg =
+                (err as any)?.response?.data?.message ||
+                (err as any)?.response?.data?.error ||
+                (err as Error)?.message ||
+                'Не удалось остановить отсчёт'
+            notifyError(msg)
+        },
+    })
+
     const hasProjects = !!projectsData?.projects?.length
     const isLiveMode = viewMode === 'live'
     const canAddPanel =
@@ -741,6 +808,47 @@ function TelemetryViewer() {
                                     </option>
                                 ))}
                             </MaterialSelect>
+
+                            {canManageCaptureSession && (
+                                <div className="telemetry-view__capture-actions form-group">
+                                    <label className="telemetry-view__capture-actions-label">Отсчёт (capture session)</label>
+                                    <div className="telemetry-view__capture-actions-btns">
+                                        {activeCaptureSession ? (
+                                            <button
+                                                type="button"
+                                                className="btn btn-danger btn-sm"
+                                                onClick={() => {
+                                                    if (window.confirm('Остановить отсчёт?')) {
+                                                        stopSessionMutation.mutate(activeCaptureSession.id)
+                                                    }
+                                                }}
+                                                disabled={stopSessionMutation.isPending}
+                                            >
+                                                {stopSessionMutation.isPending ? 'Остановка...' : 'Остановить отсчёт'}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="btn btn-primary btn-sm"
+                                                onClick={() => {
+                                                    const notes = window.prompt('Заметки (опционально):')
+                                                    if (notes === null) return
+                                                    createSessionMutation.mutate(notes.trim() || undefined)
+                                                }}
+                                                disabled={
+                                                    createSessionMutation.isPending ||
+                                                    runDetailLoading ||
+                                                    !runExperiment
+                                                }
+                                            >
+                                                {createSessionMutation.isPending
+                                                    ? 'Создание...'
+                                                    : 'Старт отсчёта'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             {viewMode === 'history' && (
                                 <div className="form-group">

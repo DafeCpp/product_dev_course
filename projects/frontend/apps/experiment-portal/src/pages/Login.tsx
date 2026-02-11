@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
 import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { notifyError, notifySuccess } from '../utils/notify'
 import './Login.scss'
 
 function Login() {
@@ -19,9 +19,8 @@ function Login() {
     const loginMutation = useMutation({
         mutationFn: (credentials: LoginRequest) => authApi.login(credentials),
         onSuccess: async () => {
-            // Обновляем кеш пользователя после успешного входа
             await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
-            // После успешного входа перенаправляем на главную страницу
+            notifySuccess('Вход выполнен')
             navigate('/experiments')
         },
         onError: (err: any) => {

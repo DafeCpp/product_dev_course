@@ -65,11 +65,19 @@ function CreateExperiment() {
       .map((t) => t.trim())
       .filter((t) => t.length > 0)
 
-    // Парсинг metadata
-    let metadata = {}
+    // Парсинг metadata (должен быть объект, не массив)
+    let metadata: Record<string, unknown> = {}
     try {
-      metadata = JSON.parse(metadataInput)
-    } catch (e) {
+      const parsed = JSON.parse(metadataInput || '{}')
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        metadata = parsed
+      } else {
+        const msg = 'Метаданные должны быть JSON-объектом (например, {})'
+        setError(msg)
+        notifyError(msg)
+        return
+      }
+    } catch {
       const msg = 'Неверный формат JSON в метаданных'
       setError(msg)
       notifyError(msg)
