@@ -492,11 +492,13 @@ export default function TelemetryPanel({
 
     useEffect(() => {
         const element = plotRef.current
+        const panel = panelRef.current
         if (!element || typeof ResizeObserver === 'undefined') return
         const observer = new ResizeObserver(() => {
             Plotly.Plots.resize(element)
         })
         observer.observe(element)
+        if (panel) observer.observe(panel)
         return () => observer.disconnect()
     }, [])
 

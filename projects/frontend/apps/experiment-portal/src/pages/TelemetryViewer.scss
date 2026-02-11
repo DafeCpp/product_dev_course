@@ -286,12 +286,13 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(320px, 1fr));
     gap: 16px;
-    align-items: start;
+    align-items: stretch;
 }
 
 .telemetry-view__panel-item {
     position: relative;
     overflow: visible;
+    min-height: 380px;
 }
 
 .telemetry-view__panel-item--full {
