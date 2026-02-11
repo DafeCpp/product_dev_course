@@ -26,16 +26,6 @@ type StreamEvent =
 
 const TELEMETRY_BASE = '/telemetry'
 
-type SensorConfig = {
-    key: string
-    label: string
-    sensorId: string
-    sensorToken: string
-    runId: string
-    captureSessionId: string
-    streamSinceId: number
-}
-
 type PersistedSettings = {
     scenario: Scenario
     rateHz: number
@@ -53,11 +43,21 @@ type PersistedSettings = {
     dutyCycle: number
 }
 
-type PersistedStateV1 = {
-    version: 1
+type SensorConfig = {
+    key: string
+    label: string
+    sensorId: string
+    sensorToken: string
+    runId: string
+    captureSessionId: string
+    streamSinceId: number
+    settings: PersistedSettings
+}
+
+type PersistedStateV2 = {
+    version: 2
     sensors: SensorConfig[]
     selectedSensorKey: string
-    settings: PersistedSettings
 }
 
 const STORAGE_KEY = 'sensor-simulator:params:v1'
@@ -112,6 +112,7 @@ function createEmptySensor(): SensorConfig {
         runId: '',
         captureSessionId: '',
         streamSinceId: 0,
+        settings: { ...DEFAULT_SETTINGS },
     }
 }
 
@@ -124,8 +125,30 @@ function sanitizeString(value: unknown, fallback = ''): string {
     return typeof value === 'string' ? value : fallback
 }
 
-function sanitizeSensors(value: unknown): SensorConfig[] | null {
+function sanitizeSettings(raw: unknown): PersistedSettings {
+    const s = raw as any
+    if (!s || typeof s !== 'object') return { ...DEFAULT_SETTINGS }
+    return {
+        scenario: isScenario(s?.scenario) ? s.scenario : DEFAULT_SETTINGS.scenario,
+        rateHz: sanitizeNumber(s?.rateHz, DEFAULT_SETTINGS.rateHz),
+        batchSize: sanitizeNumber(s?.batchSize, DEFAULT_SETTINGS.batchSize),
+        seed: sanitizeNumber(s?.seed, DEFAULT_SETTINGS.seed),
+        burstEverySec: sanitizeNumber(s?.burstEverySec, DEFAULT_SETTINGS.burstEverySec),
+        burstDurationSec: sanitizeNumber(s?.burstDurationSec, DEFAULT_SETTINGS.burstDurationSec),
+        dropoutEverySec: sanitizeNumber(s?.dropoutEverySec, DEFAULT_SETTINGS.dropoutEverySec),
+        dropoutDurationSec: sanitizeNumber(s?.dropoutDurationSec, DEFAULT_SETTINGS.dropoutDurationSec),
+        lateSeconds: sanitizeNumber(s?.lateSeconds, DEFAULT_SETTINGS.lateSeconds),
+        outOfOrderFraction: sanitizeNumber(s?.outOfOrderFraction, DEFAULT_SETTINGS.outOfOrderFraction),
+        waveform: isWaveform(s?.waveform) ? s.waveform : DEFAULT_SETTINGS.waveform,
+        amplitude: sanitizeNumber(s?.amplitude, DEFAULT_SETTINGS.amplitude),
+        periodSec: sanitizeNumber(s?.periodSec, DEFAULT_SETTINGS.periodSec),
+        dutyCycle: sanitizeNumber(s?.dutyCycle, DEFAULT_SETTINGS.dutyCycle),
+    }
+}
+
+function sanitizeSensors(value: unknown, fallbackSettings?: PersistedSettings): SensorConfig[] | null {
     if (!Array.isArray(value)) return null
+    const defSettings = fallbackSettings || DEFAULT_SETTINGS
     const sensors = value
         .map((raw) => {
             const r = raw as any
@@ -139,49 +162,47 @@ function sanitizeSensors(value: unknown): SensorConfig[] | null {
                 runId: sanitizeString(r?.runId),
                 captureSessionId: sanitizeString(r?.captureSessionId),
                 streamSinceId: Math.max(0, Math.floor(sanitizeNumber(r?.streamSinceId, 0))),
+                settings: r?.settings && typeof r.settings === 'object'
+                    ? sanitizeSettings(r.settings)
+                    : { ...defSettings },
             } satisfies SensorConfig
         })
         .filter(Boolean) as SensorConfig[]
     return sensors.length ? sensors : null
 }
 
-function loadPersistedState(): PersistedStateV1 | null {
+function loadPersistedState(): PersistedStateV2 | null {
     if (typeof window === 'undefined') return null
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = safeJsonParse(raw) as any
     if (!parsed || typeof parsed !== 'object') return null
-    if (parsed.version !== 1) return null
 
-    const sensors = sanitizeSensors(parsed.sensors) || [createEmptySensor()]
-
-    const settingsRaw = parsed.settings as any
-    const settings: PersistedSettings = {
-        scenario: isScenario(settingsRaw?.scenario) ? settingsRaw.scenario : DEFAULT_SETTINGS.scenario,
-        rateHz: sanitizeNumber(settingsRaw?.rateHz, DEFAULT_SETTINGS.rateHz),
-        batchSize: sanitizeNumber(settingsRaw?.batchSize, DEFAULT_SETTINGS.batchSize),
-        seed: sanitizeNumber(settingsRaw?.seed, DEFAULT_SETTINGS.seed),
-        burstEverySec: sanitizeNumber(settingsRaw?.burstEverySec, DEFAULT_SETTINGS.burstEverySec),
-        burstDurationSec: sanitizeNumber(settingsRaw?.burstDurationSec, DEFAULT_SETTINGS.burstDurationSec),
-        dropoutEverySec: sanitizeNumber(settingsRaw?.dropoutEverySec, DEFAULT_SETTINGS.dropoutEverySec),
-        dropoutDurationSec: sanitizeNumber(settingsRaw?.dropoutDurationSec, DEFAULT_SETTINGS.dropoutDurationSec),
-        lateSeconds: sanitizeNumber(settingsRaw?.lateSeconds, DEFAULT_SETTINGS.lateSeconds),
-        outOfOrderFraction: sanitizeNumber(settingsRaw?.outOfOrderFraction, DEFAULT_SETTINGS.outOfOrderFraction),
-        waveform: isWaveform(settingsRaw?.waveform) ? settingsRaw.waveform : DEFAULT_SETTINGS.waveform,
-        amplitude: sanitizeNumber(settingsRaw?.amplitude, DEFAULT_SETTINGS.amplitude),
-        periodSec: sanitizeNumber(settingsRaw?.periodSec, DEFAULT_SETTINGS.periodSec),
-        dutyCycle: sanitizeNumber(settingsRaw?.dutyCycle, DEFAULT_SETTINGS.dutyCycle),
+    if (parsed.version === 1) {
+        // V1 migration: global settings → apply to all sensors
+        const globalSettings = sanitizeSettings(parsed.settings)
+        const sensors = sanitizeSensors(parsed.sensors, globalSettings) || [createEmptySensor()]
+        const selectedSensorKey = typeof parsed.selectedSensorKey === 'string' ? parsed.selectedSensorKey : sensors[0]?.key
+        const selectedKeyOk = sensors.some((s) => s.key === selectedSensorKey)
+        return {
+            version: 2,
+            sensors,
+            selectedSensorKey: selectedKeyOk ? selectedSensorKey : sensors[0]!.key,
+        }
     }
 
-    const selectedSensorKey = typeof parsed.selectedSensorKey === 'string' ? parsed.selectedSensorKey : sensors[0]?.key
-    const selectedKeyOk = sensors.some((s) => s.key === selectedSensorKey)
-
-    return {
-        version: 1,
-        sensors,
-        selectedSensorKey: selectedKeyOk ? selectedSensorKey : sensors[0]!.key,
-        settings,
+    if (parsed.version === 2) {
+        const sensors = sanitizeSensors(parsed.sensors) || [createEmptySensor()]
+        const selectedSensorKey = typeof parsed.selectedSensorKey === 'string' ? parsed.selectedSensorKey : sensors[0]?.key
+        const selectedKeyOk = sensors.some((s) => s.key === selectedSensorKey)
+        return {
+            version: 2,
+            sensors,
+            selectedSensorKey: selectedKeyOk ? selectedSensorKey : sensors[0]!.key,
+        }
     }
+
+    return null
 }
 
 function sensorIsReady(sensor: SensorConfig): boolean {
@@ -319,68 +340,22 @@ async function* sseFetchStream(
     }
 }
 
+function sensorIntervalMs(ss: PersistedSettings): number {
+    const effRate = clamp(ss.rateHz, 1, 10_000)
+    const effBatch = clamp(ss.batchSize, 1, 10_000)
+    return clamp(Math.round((1000 * effBatch) / effRate), 50, 60_000)
+}
+
 export function App() {
     const initial = useMemo(() => {
         const loaded = loadPersistedState()
         if (loaded) return loaded
         const s = createEmptySensor()
-        return { version: 1, sensors: [s], selectedSensorKey: s.key, settings: DEFAULT_SETTINGS } satisfies PersistedStateV1
+        return { version: 2, sensors: [s], selectedSensorKey: s.key } satisfies PersistedStateV2
     }, [])
 
     const [sensors, setSensors] = useState<SensorConfig[]>(initial.sensors)
     const [selectedSensorKey, setSelectedSensorKey] = useState<string>(initial.selectedSensorKey)
-
-    const [scenario, setScenario] = useState<Scenario>(initial.settings.scenario)
-    const [rateHz, setRateHz] = useState(initial.settings.rateHz)
-    const [batchSize, setBatchSize] = useState(initial.settings.batchSize)
-    const [seed, setSeed] = useState(initial.settings.seed)
-    const [burstEverySec, setBurstEverySec] = useState(initial.settings.burstEverySec)
-    const [burstDurationSec, setBurstDurationSec] = useState(initial.settings.burstDurationSec)
-    const [dropoutEverySec, setDropoutEverySec] = useState(initial.settings.dropoutEverySec)
-    const [dropoutDurationSec, setDropoutDurationSec] = useState(initial.settings.dropoutDurationSec)
-    const [lateSeconds, setLateSeconds] = useState(initial.settings.lateSeconds)
-    const [outOfOrderFraction, setOutOfOrderFraction] = useState(initial.settings.outOfOrderFraction)
-
-    const [waveform, setWaveform] = useState<Waveform>(initial.settings.waveform)
-    const [amplitude, setAmplitude] = useState(initial.settings.amplitude)
-    const [periodSec, setPeriodSec] = useState(initial.settings.periodSec)
-    const [dutyCycle, setDutyCycle] = useState(initial.settings.dutyCycle)
-
-    const settings = useMemo(
-        () =>
-            ({
-                scenario,
-                rateHz,
-                batchSize,
-                seed,
-                burstEverySec,
-                burstDurationSec,
-                dropoutEverySec,
-                dropoutDurationSec,
-                lateSeconds,
-                outOfOrderFraction,
-                waveform,
-                amplitude,
-                periodSec,
-                dutyCycle,
-            }) satisfies PersistedSettings,
-        [
-            scenario,
-            rateHz,
-            batchSize,
-            seed,
-            burstEverySec,
-            burstDurationSec,
-            dropoutEverySec,
-            dropoutDurationSec,
-            lateSeconds,
-            outOfOrderFraction,
-            waveform,
-            amplitude,
-            periodSec,
-            dutyCycle,
-        ]
-    )
 
     const [isRunning, setIsRunning] = useState(false)
     const [sent, setSent] = useState(0)
@@ -394,9 +369,10 @@ export function App() {
     const seqBySensorRef = useRef<Map<string, number>>(new Map())
     const lastTimestampBySensorRef = useRef<Map<string, number>>(new Map())
     const rngBySensorRef = useRef<Map<string, { seed: number; rng: () => number }>>(new Map())
+    const lastSendBySensorRef = useRef<Map<string, number>>(new Map())
 
-    const latestRef = useRef<{ sensors: SensorConfig[]; settings: PersistedSettings }>({ sensors: [], settings: DEFAULT_SETTINGS })
-    latestRef.current = { sensors, settings }
+    const latestRef = useRef<{ sensors: SensorConfig[] }>({ sensors: [] })
+    latestRef.current = { sensors }
 
     const persistTimerRef = useRef<number | null>(null)
 
@@ -576,36 +552,73 @@ export function App() {
     }
 
     function start() {
-        const { sensors: sensorsNow, settings: settingsNow } = latestRef.current
+        const sensorsNow = latestRef.current.sensors
         const active = sensorsNow.filter(sensorIsReady)
         if (!active.length) return
         setIsRunning(true)
-        appendLog(`[${nowIso()}] ▶️ start (${settingsNow.scenario}) sensors=${active.length}`)
+        lastSendBySensorRef.current.clear()
+        const summaries = active.map((s) => `${sensorDisplayName(s)}(${s.settings.scenario})`).join(', ')
+        appendLog(`[${nowIso()}] ▶️ start sensors=${active.length} [${summaries}]`)
 
         const startMs = Date.now()
+
         const scheduleNext = () => {
-            const elapsedSec = Math.floor((Date.now() - startMs) / 1000)
-            const { settings: settingsSnap } = latestRef.current
-            const effRate = scenarioEffectiveRate(settingsSnap, elapsedSec)
-            const effBatch = clamp(settingsSnap.batchSize, 1, 10_000)
-            const intervalMs = clamp(Math.round((1000 * effBatch) / clamp(effRate, 1, 10_000)), 50, 60_000)
+            const now = Date.now()
+            const elapsedSec = Math.floor((now - startMs) / 1000)
+            const sensorsSnap = latestRef.current.sensors
+            const activeSnap = sensorsSnap.filter(sensorIsReady)
+
+            // Calculate the smallest remaining wait time across all sensors
+            let minWait = 60_000
+            for (const s of activeSnap) {
+                const effRate = scenarioEffectiveRate(s.settings, elapsedSec)
+                const interval = clamp(
+                    Math.round((1000 * clamp(s.settings.batchSize, 1, 10_000)) / clamp(effRate, 1, 10_000)),
+                    50,
+                    60_000
+                )
+                const lastSend = lastSendBySensorRef.current.get(s.key) ?? 0
+                const remaining = Math.max(0, interval - (now - lastSend))
+                if (remaining < minWait) minWait = remaining
+            }
+
             tickRef.current = window.setTimeout(async () => {
-                const { sensors: sensorsInner, settings: settingsInner } = latestRef.current
+                const innerNow = Date.now()
+                const elapsedSecInner = Math.floor((innerNow - startMs) / 1000)
+                const sensorsInner = latestRef.current.sensors
                 const activeInner = sensorsInner.filter(sensorIsReady)
+
                 if (!activeInner.length) {
                     appendLog(`[${nowIso()}] ⚠️ no active sensors — stopping`)
                     stop()
                     return
                 }
-                if (scenarioIsPausedAt(settingsInner, elapsedSec)) {
-                    appendLog(`[${nowIso()}] ⏸️ dropout window`)
-                } else {
-                    await Promise.all(
-                        activeInner.map((sensor) => sendBatchForSensor(sensor, effBatch, effRate, settingsInner, true))
+
+                const toSend: Promise<void>[] = []
+                for (const sensor of activeInner) {
+                    const ss = sensor.settings
+                    const effRate = scenarioEffectiveRate(ss, elapsedSecInner)
+                    const effBatch = clamp(ss.batchSize, 1, 10_000)
+                    const interval = clamp(
+                        Math.round((1000 * effBatch) / clamp(effRate, 1, 10_000)),
+                        50,
+                        60_000
                     )
+                    const lastSend = lastSendBySensorRef.current.get(sensor.key) ?? 0
+
+                    if (innerNow - lastSend >= interval * 0.9) {
+                        if (scenarioIsPausedAt(ss, elapsedSecInner)) {
+                            appendLog(`[${nowIso()}] ⏸️ dropout window sensor=${sensorDisplayName(sensor)}`)
+                        } else {
+                            toSend.push(sendBatchForSensor(sensor, effBatch, effRate, ss, true))
+                        }
+                        lastSendBySensorRef.current.set(sensor.key, innerNow)
+                    }
                 }
+
+                if (toSend.length > 0) await Promise.all(toSend)
                 if (tickRef.current !== null) scheduleNext()
-            }, intervalMs)
+            }, Math.max(minWait, 50))
         }
 
         // kick off immediately
@@ -649,15 +662,15 @@ export function App() {
         for (const k of seqBySensorRef.current.keys()) if (!keys.has(k)) seqBySensorRef.current.delete(k)
         for (const k of lastTimestampBySensorRef.current.keys()) if (!keys.has(k)) lastTimestampBySensorRef.current.delete(k)
         for (const k of rngBySensorRef.current.keys()) if (!keys.has(k)) rngBySensorRef.current.delete(k)
+        for (const k of lastSendBySensorRef.current.keys()) if (!keys.has(k)) lastSendBySensorRef.current.delete(k)
     }, [sensors])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
-        const payload: PersistedStateV1 = {
-            version: 1,
+        const payload: PersistedStateV2 = {
+            version: 2,
             sensors,
             selectedSensorKey,
-            settings,
         }
 
         if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current)
@@ -672,14 +685,33 @@ export function App() {
         return () => {
             if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current)
         }
-    }, [sensors, selectedSensorKey, settings])
+    }, [sensors, selectedSensorKey])
 
     function updateSensor(sensorKey: string, patch: Partial<SensorConfig>) {
         setSensors((prev) => prev.map((s) => (s.key === sensorKey ? { ...s, ...patch } : s)))
     }
 
+    function updateSensorSettings(sensorKey: string, patch: Partial<PersistedSettings>) {
+        setSensors((prev) =>
+            prev.map((s) =>
+                s.key === sensorKey ? { ...s, settings: { ...s.settings, ...patch } } : s
+            )
+        )
+    }
+
+    function copySettingsToAll() {
+        if (!selectedSensor) return
+        const settingsToCopy = { ...selectedSensor.settings }
+        setSensors((prev) => prev.map((s) => ({ ...s, settings: { ...settingsToCopy } })))
+        appendLog(`[${nowIso()}] 📋 copied settings from "${sensorDisplayName(selectedSensor)}" to all sensors`)
+    }
+
     function addSensor() {
         const s = createEmptySensor()
+        // Copy settings from currently selected sensor for convenience
+        if (selectedSensor) {
+            s.settings = { ...selectedSensor.settings }
+        }
         setSensors((prev) => [...prev, s])
         setSelectedSensorKey(s.key)
         appendLog(`[${nowIso()}] ➕ add sensor`)
@@ -690,6 +722,7 @@ export function App() {
         seqBySensorRef.current.delete(sensorKey)
         lastTimestampBySensorRef.current.delete(sensorKey)
         rngBySensorRef.current.delete(sensorKey)
+        lastSendBySensorRef.current.delete(sensorKey)
         if (streamSensorKey === sensorKey) disconnectStream()
         appendLog(`[${nowIso()}] ➖ remove sensor`)
     }
@@ -754,6 +787,9 @@ export function App() {
     const pillClass =
         lastHttpStatus === null ? 'pill' : lastHttpStatus >= 200 && lastHttpStatus < 300 ? 'pill ok' : 'pill bad'
 
+    // Shorthand for selected sensor settings (avoids repetition in JSX)
+    const ss = selectedSensor?.settings ?? DEFAULT_SETTINGS
+
     return (
         <div className="container">
             <div className="header">
@@ -775,7 +811,8 @@ export function App() {
                     <h2>Ingest (POST /api/v1/telemetry)</h2>
 
                     <div className="hint">
-                        Параметры и список датчиков (включая токены) сохраняются в <span className="badge">localStorage</span> этого
+                        Параметры сигнала и сценария настраиваются <b>отдельно для каждого датчика</b>.
+                        Датчики (включая токены и настройки) сохраняются в <span className="badge">localStorage</span> этого
                         браузера. Ingest отправляет телеметрию во <b>все</b> датчики с валидными <span className="badge">sensor_id</span>{' '}
                         и <span className="badge">token</span>.
                     </div>
@@ -790,7 +827,7 @@ export function App() {
                                     key={s.key}
                                     className={`tab ${active ? 'active' : ''} ${ready ? 'ok' : 'warn'}`}
                                     onClick={() => setSelectedSensorKey(s.key)}
-                                    title={ready ? 'ready' : 'missing sensor_id/token'}
+                                    title={ready ? `ready — ${s.settings.scenario} / ${s.settings.waveform}` : 'missing sensor_id/token'}
                                     disabled={streamOn && streamSensorKey !== null}
                                 >
                                     {title}
@@ -869,179 +906,198 @@ export function App() {
                                 >
                                     Remove sensor
                                 </button>
+                                <button
+                                    className="btn"
+                                    disabled={sensors.length <= 1}
+                                    onClick={() => copySettingsToAll()}
+                                    title="Копировать настройки сигнала текущего датчика на все остальные"
+                                >
+                                    Copy settings to all
+                                </button>
                             </div>
-                        </>
-                    )}
 
-                    <div className="row" style={{ marginTop: 10 }}>
-                        <div>
-                            <label>scenario</label>
-                            <select value={scenario} onChange={(e) => setScenario(e.target.value as Scenario)}>
-                                <option value="steady">steady stream</option>
-                                <option value="bursts">bursts</option>
-                                <option value="dropout">dropout</option>
-                                <option value="out_of_order">out-of-order</option>
-                                <option value="late_data">late data</option>
-                            </select>
-                            <div className="hint">Меняет тайминги/порядок/таймстемпы генерируемых readings.</div>
-                        </div>
-                        <div>
-                            <label>seed (deterministic)</label>
-                            <input
-                                type="number"
-                                value={seed}
-                                onChange={(e) => setSeed(Number(e.target.value))}
-                                placeholder="42"
-                            />
-                            <div className="hint">Один и тот же seed → одинаковый шум/перемешивание.</div>
-                        </div>
-                    </div>
+                            {/* ── Per-sensor signal & scenario settings ── */}
+                            <h3 style={{ margin: '18px 0 6px', fontSize: 13, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.3px' }}>
+                                Signal & scenario settings
+                            </h3>
 
-                    <div className="row" style={{ marginTop: 10 }}>
-                        <div>
-                            <label>signal waveform</label>
-                            <select value={waveform} onChange={(e) => setWaveform(e.target.value as Waveform)}>
-                                <option value="sine">sine</option>
-                                <option value="pulses">rect pulses</option>
-                                <option value="saw">saw</option>
-                            </select>
-                            <div className="hint">Форма сигнала для raw_value (плюс шум и смещение +20).</div>
-                        </div>
-                        <div>
-                            <label>amplitude</label>
-                            <input
-                                type="number"
-                                value={amplitude}
-                                min={0}
-                                step={1}
-                                onChange={(e) => setAmplitude(Number(e.target.value))}
-                            />
-                            <div className="hint">Для sine/saw: размах; для pulses: высота импульса.</div>
-                        </div>
-                    </div>
-
-                    <div className="row" style={{ marginTop: 10 }}>
-                        <div>
-                            <label>period (sec)</label>
-                            <input
-                                type="number"
-                                value={periodSec}
-                                min={0.001}
-                                step={0.1}
-                                onChange={(e) => setPeriodSec(Number(e.target.value))}
-                            />
-                            <div className="hint">Один период сигнала в секундах.</div>
-                        </div>
-                        <div>
-                            <label>duty cycle (0..1)</label>
-                            <input
-                                type="number"
-                                value={dutyCycle}
-                                min={0}
-                                max={1}
-                                step={0.05}
-                                disabled={waveform !== 'pulses'}
-                                onChange={(e) => setDutyCycle(Number(e.target.value))}
-                            />
-                            <div className="hint">Только для pulses: доля периода, когда импульс “вкл”.</div>
-                        </div>
-                    </div>
-
-                    <div className="row" style={{ marginTop: 10 }}>
-                        <div>
-                            <label>base rate (Hz)</label>
-                            <input
-                                type="number"
-                                value={rateHz}
-                                min={1}
-                                max={10000}
-                                onChange={(e) => setRateHz(Number(e.target.value))}
-                            />
-                        </div>
-                        <div>
-                            <label>batch size</label>
-                            <input
-                                type="number"
-                                value={batchSize}
-                                min={1}
-                                max={10000}
-                                onChange={(e) => setBatchSize(Number(e.target.value))}
-                            />
-                            <div className="hint">В ingest лимит: максимум 10k readings на запрос.</div>
-                        </div>
-                    </div>
-
-                    {(scenario === 'bursts' || scenario === 'dropout' || scenario === 'late_data' || scenario === 'out_of_order') && (
-                        <div className="row" style={{ marginTop: 10 }}>
-                            {scenario === 'bursts' && (
-                                <>
-                                    <div>
-                                        <label>burst every (sec)</label>
-                                        <input
-                                            type="number"
-                                            value={burstEverySec}
-                                            min={1}
-                                            onChange={(e) => setBurstEverySec(Number(e.target.value))}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label>burst duration (sec)</label>
-                                        <input
-                                            type="number"
-                                            value={burstDurationSec}
-                                            min={1}
-                                            onChange={(e) => setBurstDurationSec(Number(e.target.value))}
-                                        />
-                                    </div>
-                                </>
-                            )}
-                            {scenario === 'dropout' && (
-                                <>
-                                    <div>
-                                        <label>dropout every (sec)</label>
-                                        <input
-                                            type="number"
-                                            value={dropoutEverySec}
-                                            min={1}
-                                            onChange={(e) => setDropoutEverySec(Number(e.target.value))}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label>dropout duration (sec)</label>
-                                        <input
-                                            type="number"
-                                            value={dropoutDurationSec}
-                                            min={1}
-                                            onChange={(e) => setDropoutDurationSec(Number(e.target.value))}
-                                        />
-                                    </div>
-                                </>
-                            )}
-                            {scenario === 'late_data' && (
+                            <div className="row">
                                 <div>
-                                    <label>late seconds (timestamp - N)</label>
-                                    <input
-                                        type="number"
-                                        value={lateSeconds}
-                                        min={1}
-                                        onChange={(e) => setLateSeconds(Number(e.target.value))}
-                                    />
+                                    <label>scenario</label>
+                                    <select
+                                        value={ss.scenario}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { scenario: e.target.value as Scenario })}
+                                    >
+                                        <option value="steady">steady stream</option>
+                                        <option value="bursts">bursts</option>
+                                        <option value="dropout">dropout</option>
+                                        <option value="out_of_order">out-of-order</option>
+                                        <option value="late_data">late data</option>
+                                    </select>
+                                    <div className="hint">Меняет тайминги/порядок/таймстемпы генерируемых readings.</div>
                                 </div>
-                            )}
-                            {scenario === 'out_of_order' && (
                                 <div>
-                                    <label>out-of-order fraction (0..1)</label>
+                                    <label>seed (deterministic)</label>
                                     <input
                                         type="number"
-                                        value={outOfOrderFraction}
+                                        value={ss.seed}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { seed: Number(e.target.value) })}
+                                        placeholder="42"
+                                    />
+                                    <div className="hint">Один и тот же seed → одинаковый шум/перемешивание.</div>
+                                </div>
+                            </div>
+
+                            <div className="row" style={{ marginTop: 10 }}>
+                                <div>
+                                    <label>signal waveform</label>
+                                    <select
+                                        value={ss.waveform}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { waveform: e.target.value as Waveform })}
+                                    >
+                                        <option value="sine">sine</option>
+                                        <option value="pulses">rect pulses</option>
+                                        <option value="saw">saw</option>
+                                    </select>
+                                    <div className="hint">Форма сигнала для raw_value (плюс шум и смещение +20).</div>
+                                </div>
+                                <div>
+                                    <label>amplitude</label>
+                                    <input
+                                        type="number"
+                                        value={ss.amplitude}
+                                        min={0}
+                                        step={1}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { amplitude: Number(e.target.value) })}
+                                    />
+                                    <div className="hint">Для sine/saw: размах; для pulses: высота импульса.</div>
+                                </div>
+                            </div>
+
+                            <div className="row" style={{ marginTop: 10 }}>
+                                <div>
+                                    <label>period (sec)</label>
+                                    <input
+                                        type="number"
+                                        value={ss.periodSec}
+                                        min={0.001}
+                                        step={0.1}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { periodSec: Number(e.target.value) })}
+                                    />
+                                    <div className="hint">Один период сигнала в секундах.</div>
+                                </div>
+                                <div>
+                                    <label>duty cycle (0..1)</label>
+                                    <input
+                                        type="number"
+                                        value={ss.dutyCycle}
                                         min={0}
                                         max={1}
                                         step={0.05}
-                                        onChange={(e) => setOutOfOrderFraction(Number(e.target.value))}
+                                        disabled={ss.waveform !== 'pulses'}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { dutyCycle: Number(e.target.value) })}
+                                    />
+                                    <div className="hint">Только для pulses: доля периода, когда импульс "вкл".</div>
+                                </div>
+                            </div>
+
+                            <div className="row" style={{ marginTop: 10 }}>
+                                <div>
+                                    <label>base rate (Hz)</label>
+                                    <input
+                                        type="number"
+                                        value={ss.rateHz}
+                                        min={1}
+                                        max={10000}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { rateHz: Number(e.target.value) })}
                                     />
                                 </div>
+                                <div>
+                                    <label>batch size</label>
+                                    <input
+                                        type="number"
+                                        value={ss.batchSize}
+                                        min={1}
+                                        max={10000}
+                                        onChange={(e) => updateSensorSettings(selectedSensor.key, { batchSize: Number(e.target.value) })}
+                                    />
+                                    <div className="hint">В ingest лимит: максимум 10k readings на запрос.</div>
+                                </div>
+                            </div>
+
+                            {(ss.scenario === 'bursts' || ss.scenario === 'dropout' || ss.scenario === 'late_data' || ss.scenario === 'out_of_order') && (
+                                <div className="row" style={{ marginTop: 10 }}>
+                                    {ss.scenario === 'bursts' && (
+                                        <>
+                                            <div>
+                                                <label>burst every (sec)</label>
+                                                <input
+                                                    type="number"
+                                                    value={ss.burstEverySec}
+                                                    min={1}
+                                                    onChange={(e) => updateSensorSettings(selectedSensor.key, { burstEverySec: Number(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label>burst duration (sec)</label>
+                                                <input
+                                                    type="number"
+                                                    value={ss.burstDurationSec}
+                                                    min={1}
+                                                    onChange={(e) => updateSensorSettings(selectedSensor.key, { burstDurationSec: Number(e.target.value) })}
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                    {ss.scenario === 'dropout' && (
+                                        <>
+                                            <div>
+                                                <label>dropout every (sec)</label>
+                                                <input
+                                                    type="number"
+                                                    value={ss.dropoutEverySec}
+                                                    min={1}
+                                                    onChange={(e) => updateSensorSettings(selectedSensor.key, { dropoutEverySec: Number(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label>dropout duration (sec)</label>
+                                                <input
+                                                    type="number"
+                                                    value={ss.dropoutDurationSec}
+                                                    min={1}
+                                                    onChange={(e) => updateSensorSettings(selectedSensor.key, { dropoutDurationSec: Number(e.target.value) })}
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                    {ss.scenario === 'late_data' && (
+                                        <div>
+                                            <label>late seconds (timestamp - N)</label>
+                                            <input
+                                                type="number"
+                                                value={ss.lateSeconds}
+                                                min={1}
+                                                onChange={(e) => updateSensorSettings(selectedSensor.key, { lateSeconds: Number(e.target.value) })}
+                                            />
+                                        </div>
+                                    )}
+                                    {ss.scenario === 'out_of_order' && (
+                                        <div>
+                                            <label>out-of-order fraction (0..1)</label>
+                                            <input
+                                                type="number"
+                                                value={ss.outOfOrderFraction}
+                                                min={0}
+                                                max={1}
+                                                step={0.05}
+                                                onChange={(e) => updateSensorSettings(selectedSensor.key, { outOfOrderFraction: Number(e.target.value) })}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                             )}
-                        </div>
+                        </>
                     )}
 
                     <div className="actions">
@@ -1055,11 +1111,15 @@ export function App() {
                             className="btn"
                             disabled={!canSendAny || isRunning}
                             onClick={() => {
-                                const { sensors: sensorsNow, settings: settingsNow } = latestRef.current
+                                const sensorsNow = latestRef.current.sensors
                                 const active = sensorsNow.filter(sensorIsReady)
-                                const n = clamp(settingsNow.batchSize, 1, 10_000)
-                                const r = clamp(settingsNow.rateHz, 1, 10_000)
-                                void Promise.all(active.map((s) => sendBatchForSensor(s, n, r, settingsNow, false)))
+                                void Promise.all(
+                                    active.map((s) => {
+                                        const n = clamp(s.settings.batchSize, 1, 10_000)
+                                        const r = clamp(s.settings.rateHz, 1, 10_000)
+                                        return sendBatchForSensor(s, n, r, s.settings, false)
+                                    })
+                                )
                             }}
                         >
                             Send one batch (all sensors)
@@ -1076,6 +1136,7 @@ export function App() {
                                 seqBySensorRef.current.clear()
                                 lastTimestampBySensorRef.current.clear()
                                 rngBySensorRef.current.clear()
+                                lastSendBySensorRef.current.clear()
                                 appendLog(`[${nowIso()}] 🧹 reset counters/log`)
                             }}
                         >
@@ -1188,4 +1249,3 @@ export function App() {
         </div>
     )
 }
-
