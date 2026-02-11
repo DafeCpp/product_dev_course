@@ -135,6 +135,19 @@
     color: $text-hint;
 }
 
+.telemetry-panel__hint--loading {
+    font-style: italic;
+}
+
+.telemetry-panel__hint--error {
+    color: $error;
+}
+
+.telemetry-panel__hint--empty {
+    color: $text-muted;
+    margin-bottom: 4px;
+}
+
 .telemetry-panel__chart {
     display: flex;
     flex-direction: column;

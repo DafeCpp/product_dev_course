@@ -1195,6 +1195,8 @@ function TelemetryViewer() {
                                 <TelemetryPanel
                                     panelId={panelId}
                                     sensors={sensors}
+                                    sensorsLoading={isLoading}
+                                    sensorsError={error ? (typeof error === 'string' ? error : (error as Error)?.message ?? 'Ошибка загрузки сенсоров') : null}
                                     title={`${panelTitleSeed} #${index + 1}`}
                                     onRemove={() => removePanel(panelId)}
                                     onSizeChange={(size) => handlePanelSizeChange(panelId, size)}

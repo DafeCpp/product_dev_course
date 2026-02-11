@@ -11,6 +11,10 @@ type TelemetryPanelProps = {
     panelId: string
     title: string
     sensors: Sensor[]
+    /** True when sensors are still loading (project-scoped query in progress). */
+    sensorsLoading?: boolean
+    /** Error message from sensors query, if any. */
+    sensorsError?: string | null
     onRemove: () => void
     dragHandleProps?: React.ButtonHTMLAttributes<HTMLButtonElement>
     onSizeChange?: (size: { width: number; height: number }) => void
@@ -65,6 +69,8 @@ export default function TelemetryPanel({
     panelId,
     title,
     sensors,
+    sensorsLoading = false,
+    sensorsError = null,
     onRemove,
     dragHandleProps,
     onSizeChange,
@@ -585,6 +591,17 @@ export default function TelemetryPanel({
                 <div className="telemetry-panel__settings">
                     <div className="form-group">
                         <label>Сенсоры</label>
+                        {sensorsLoading && (
+                            <p className="telemetry-panel__hint telemetry-panel__hint--loading">Загрузка списка сенсоров…</p>
+                        )}
+                        {!sensorsLoading && sensorsError && (
+                            <p className="telemetry-panel__hint telemetry-panel__hint--error">{sensorsError}</p>
+                        )}
+                        {!sensorsLoading && !sensorsError && sensors.length === 0 && (
+                            <p className="telemetry-panel__hint telemetry-panel__hint--empty">
+                                Список сенсоров пуст. Выберите проект с сенсорами в фильтрах выше.
+                            </p>
+                        )}
                         <div className="telemetry-panel__sensor-picker">
                             <MaterialSelect
                                 id={`telemetry_panel_sensor_${panelId}`}
@@ -595,7 +612,7 @@ export default function TelemetryPanel({
                                         event.currentTarget.value = ''
                                     }
                                 }}
-                                disabled={availableSensors.length === 0}
+                                disabled={availableSensors.length === 0 || sensorsLoading}
                             >
                                 <option value="">Добавить сенсор</option>
                                 {availableSensors.map((sensor) => (

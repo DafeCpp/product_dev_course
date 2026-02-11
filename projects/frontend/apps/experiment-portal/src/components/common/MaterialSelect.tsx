@@ -110,8 +110,8 @@ function MaterialSelect({
             width,
             right: 'auto',
             bottom: 'auto',
-            // Above cards/headers; also above modal overlay (z-index: 1000).
-            zIndex: 1100,
+    // Above ALL modal overlays including nested modals (z-index up to 2000+).
+                            zIndex: 10000,
             visibility: 'visible',
             pointerEvents: 'auto',
         })
@@ -163,7 +163,7 @@ function MaterialSelect({
             width: rect ? rect.width : undefined,
             right: 'auto',
             bottom: 'auto',
-            zIndex: 1100,
+            zIndex: 10000,
             visibility: 'visible',
             pointerEvents: 'auto',
         })
@@ -274,7 +274,7 @@ function MaterialSelect({
                                             left: 0,
                                             right: 'auto',
                                             bottom: 'auto',
-                                            zIndex: 1100,
+                                            zIndex: 10000,
                                             visibility: 'visible',
                                             pointerEvents: 'auto',
                                         }

@@ -394,7 +394,7 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
 
             {/* Модальное окно для добавления проекта */}
             {showAddProjectModal && (
-                <div className="modal-overlay" onClick={() => setShowAddProjectModal(false)}>
+                <div className="modal-overlay sensor-detail-add-project-overlay" onClick={() => setShowAddProjectModal(false)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>Добавить проект</h2>

@@ -54,10 +54,10 @@
 }
 
 /* Модальное окно для добавления проекта (вложенное) */
-.modal-overlay {
+.sensor-detail-add-project-overlay {
     z-index: 2000;
 }
 
-.modal-content {
+.sensor-detail-add-project-overlay .modal-content {
     max-width: 500px;
 }
