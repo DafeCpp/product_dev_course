@@ -62,11 +62,6 @@ const SENSITIVE_BODY_KEYS = [
   'cookie',
 ]
 
-function _isDevEnabled(): boolean {
-  // In vitest, MODE is 'test'. We explicitly disable debug toasts there.
-  return !!(import.meta.env.DEV && import.meta.env.MODE !== 'test')
-}
-
 export function truncateString(s: string, maxChars = DEFAULT_TRUNCATE_CHARS): string {
   if (s.length <= maxChars) return s
   return `${s.slice(0, maxChars)}\n…[truncated ${s.length - maxChars} chars]…`
@@ -313,20 +308,19 @@ export function maybeEmitHttpErrorToast(info: HttpDebugInfo): void {
   if (IS_TEST) return
   if (!shouldEmitDebugToast(info)) return
 
-  // Always show a short user-facing toast (non-test). Detailed debug toast is dev-only.
-  const status = typeof info.response?.status === 'number' ? `HTTP ${info.response?.status}` : 'Network error'
+  // Один тост на все окружения: заголовок — кратко, тело — DebugErrorToast (Details + Copy).
+  // Данные уже санитизированы (маскировка секретов), безопасно показывать в prod.
+  const status = typeof info.response?.status === 'number' ? `HTTP ${info.response?.status}` : 'Ошибка сети'
   const method = info.request.method || ''
   const url = info.request.url || ''
   const traceId = info.correlation?.trace_id || info.correlation?.x_trace_id
   const requestId = info.correlation?.request_id || info.correlation?.x_request_id
 
-  // Keep prod-safe: show path only (no query), plus non-sensitive correlation ids.
   let shortUrl = url
   try {
     const u = new URL(url)
     shortUrl = `${u.pathname}${u.hash || ''}`
   } catch {
-    // If URL is not absolute (or invalid), do a light cleanup.
     shortUrl = String(url).split('?')[0] || String(url)
   }
 
@@ -334,27 +328,21 @@ export function maybeEmitHttpErrorToast(info: HttpDebugInfo): void {
     .filter(Boolean)
     .join(' ')
 
-  emitToast({
-    kind: 'text',
-    variant: 'error',
-    title: 'Ошибка запроса',
-    message: [
-      `${status}${method || shortUrl ? ` — ${method} ${shortUrl}` : ''}`.trim(),
-      idsLine,
-    ]
-      .filter(Boolean)
-      .join('\n'),
-    durationMs: 6000,
-  })
+  const title = 'Ошибка запроса'
+  const message = [
+    `${status}${method || shortUrl ? ` — ${method} ${shortUrl}` : ''}`.trim(),
+    idsLine,
+  ]
+    .filter(Boolean)
+    .join('\n')
 
-  if (!_isDevEnabled()) return
   emitToast({
     kind: 'debug-http-error',
     variant: 'error',
-    title: 'Request failed',
-    message: `${info.request.method || ''} ${info.request.url || ''}`.trim() || info.message,
+    title,
+    message,
     payload: info,
-    durationMs: 8000,
+    durationMs: 10000,
   })
 }
 

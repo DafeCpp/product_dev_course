@@ -38,7 +38,7 @@
 - ✅ **Детали эксперимента** (`/experiments/:id`)
   - Просмотр всей информации
 - Редактирование (✅ реализовано: модальное окно `ExperimentEditModal`, PATCH + смена статуса/архивация)
-  - Удаление эксперимента
+- ✅ **Удаление эксперимента** (кнопка в деталях, `experimentsApi.delete`)
   - Список запусков эксперимента
 
 #### 3) CRUD запусков (Runs)
@@ -60,6 +60,7 @@
 - ✅ Методы для runs: list, get, create, update, complete, fail
 - ✅ Методы для sensors: list, get, create, update, delete, rotateToken
 - ✅ Методы для capture sessions: list, create, stop, delete
+- ✅ Методы для webhooks и audit: webhooks (list, create, delete), deliveries (list, retry), run_events (list по run_id / session_id)
 - ✅ Auth API клиент (`projects/frontend/apps/experiment-portal/src/api/auth.ts`) для работы с Auth Proxy
 - ✅ Интеграция с Auth Proxy через HttpOnly cookies
 - ✅ Автоматическое обновление токенов через interceptor
@@ -107,6 +108,8 @@
 - toast появляется на **все** ошибки запросов (включая network/CORS/timeout)
 - есть кнопка **Copy** (копирует единый текст-блок с request/response/correlation)
 - секреты маскируются (tokens/passwords/cookies)
+
+✅ **Реализовано** в `experiment-portal`: один тост снизу справа на каждую ошибку (axios + auth client); компонент `DebugErrorToast` с кнопками Details/Copy, санитизация headers/body в `utils/httpDebug.ts`; корреляция из `x-trace-id`, `x-request-id`, `traceparent`.
 
 ### SSE proxy + CSRF hardening (Auth Proxy) ✅
 
