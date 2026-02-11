@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from datetime import datetime
 from typing import List, Tuple
 from uuid import UUID
 
@@ -12,7 +13,7 @@ from experiment_service.domain.dto import (
     SensorCreateDTO,
     SensorUpdateDTO,
 )
-from experiment_service.domain.enums import ConversionProfileStatus
+from experiment_service.domain.enums import ConversionProfileStatus, SensorStatus
 from experiment_service.domain.models import ConversionProfile, Sensor
 from experiment_service.repositories.conversion_profiles import ConversionProfileRepository
 from experiment_service.repositories.sensors import SensorRepository
@@ -88,11 +89,17 @@ class SensorService:
         *,
         limit: int = 50,
         offset: int = 0,
+        status: SensorStatus | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> tuple[List[Sensor], int]:
         return await self._sensor_repository.list_by_project(
             project_id,
             limit=limit,
             offset=offset,
+            status=status,
+            created_after=created_after,
+            created_before=created_before,
         )
 
     async def list_sensors_by_projects(

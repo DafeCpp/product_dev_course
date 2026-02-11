@@ -1,6 +1,7 @@
 """Sensor repository backed by asyncpg."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, List, Tuple
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import SensorCreateDTO, SensorUpdateDTO
+from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
 from experiment_service.repositories.base import BaseRepository
 
@@ -110,46 +112,73 @@ class SensorRepository(BaseRepository):
         return self._to_model(record)
 
     async def list_by_project(
-        self, project_id: UUID | None = None, *, limit: int = 50, offset: int = 0
+        self,
+        project_id: UUID | None = None,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: SensorStatus | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> Tuple[List[Sensor], int]:
         """List sensors by project. If project_id is None, returns all sensors."""
+        extra_conditions: list[str] = []
+        extra_params: list[Any] = []
+
+        def _add_filter(col: str, value: Any) -> None:
+            nonlocal extra_conditions, extra_params
+            extra_conditions.append(f"s.{col}")
+            extra_params.append(value)
+
+        filter_values: list[tuple[str, str, Any]] = []
+        if status is not None:
+            filter_values.append(("status", "=", status.value))
+        if created_after is not None:
+            filter_values.append(("created_at", ">=", created_after))
+        if created_before is not None:
+            filter_values.append(("created_at", "<=", created_before))
+
         if project_id is None:
-            # Return all sensors.
-            #
-            # NOTE: do not rely on `sensor_projects` here, because some deployments may
-            # contain sensors without backfilled `sensor_projects` rows.
-            records = await self._fetch(
-                """
+            conditions = []
+            params: list[Any] = []
+            idx = 1
+            for col, op, val in filter_values:
+                conditions.append(f"s.{col} {op} ${idx}")
+                params.append(val)
+                idx += 1
+            where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            params.extend([limit, offset])
+            query = f"""
                 SELECT s.*,
                        COUNT(*) OVER() AS total_count
                 FROM sensors s
+                {where}
                 ORDER BY s.created_at DESC
-                LIMIT $1 OFFSET $2
-                """,
-                limit,
-                offset,
-            )
+                LIMIT ${idx} OFFSET ${idx + 1}
+            """
+            records = await self._fetch(query, *params)
         else:
-            # Return sensors for a specific project.
-            # Include both:
-            #  - sensors where this is the primary project (s.project_id)
-            #  - sensors linked via sensor_projects (shared sensors)
-            records = await self._fetch(
-                """
+            conditions = ["(s.project_id = $1 OR sp.project_id = $1)"]
+            params = [project_id]
+            idx = 2
+            for col, op, val in filter_values:
+                conditions.append(f"s.{col} {op} ${idx}")
+                params.append(val)
+                idx += 1
+            where = " AND ".join(conditions)
+            params.extend([limit, offset])
+            query = f"""
                 SELECT s.*,
                        COUNT(*) OVER() AS total_count
                 FROM sensors s
                 LEFT JOIN sensor_projects sp
                   ON s.id = sp.sensor_id
                  AND sp.project_id = $1
-                WHERE s.project_id = $1 OR sp.project_id = $1
+                WHERE {where}
                 ORDER BY s.created_at DESC
-                LIMIT $2 OFFSET $3
-                """,
-                project_id,
-                limit,
-                offset,
-            )
+                LIMIT ${idx} OFFSET ${idx + 1}
+            """
+            records = await self._fetch(query, *params)
         items: List[Sensor] = []
         total: int | None = None
         for rec in records:

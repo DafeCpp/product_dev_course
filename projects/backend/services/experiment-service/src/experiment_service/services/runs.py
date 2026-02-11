@@ -1,6 +1,7 @@
 """Run domain service."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List
 from uuid import UUID
 
@@ -52,10 +53,26 @@ class RunService:
         return await self._repository.list_by_project(project_id, limit=limit, offset=offset)
 
     async def list_runs_for_experiment(
-        self, project_id: UUID, experiment_id: UUID, *, limit: int = 50, offset: int = 0
+        self,
+        project_id: UUID,
+        experiment_id: UUID,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: RunStatus | None = None,
+        tags: list[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> tuple[List[Run], int]:
         return await self._repository.list_by_experiment(
-            project_id, experiment_id, limit=limit, offset=offset
+            project_id,
+            experiment_id,
+            limit=limit,
+            offset=offset,
+            status=status,
+            tags=tags,
+            created_after=created_after,
+            created_before=created_before,
         )
 
     async def update_run(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, List, Tuple
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateDTO
+from experiment_service.domain.enums import ExperimentStatus
 from experiment_service.domain.models import Experiment
 from experiment_service.repositories.base import BaseRepository
 
@@ -70,21 +72,46 @@ class ExperimentRepository(BaseRepository):
         return self._to_model(record)
 
     async def list_by_project(
-        self, project_id: UUID, *, limit: int = 50, offset: int = 0
+        self,
+        project_id: UUID,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: ExperimentStatus | None = None,
+        tags: list[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> Tuple[List[Experiment], int]:
-        records = await self._fetch(
-            """
+        conditions = ["project_id = $1"]
+        params: list[Any] = [project_id]
+        idx = 2
+        if status is not None:
+            conditions.append(f"status = ${idx}")
+            params.append(status.value)
+            idx += 1
+        if tags:
+            conditions.append(f"tags @> ${idx}")
+            params.append(tags)
+            idx += 1
+        if created_after is not None:
+            conditions.append(f"created_at >= ${idx}")
+            params.append(created_after)
+            idx += 1
+        if created_before is not None:
+            conditions.append(f"created_at <= ${idx}")
+            params.append(created_before)
+            idx += 1
+        where = " AND ".join(conditions)
+        params.extend([limit, offset])
+        query = f"""
             SELECT *,
                    COUNT(*) OVER() AS total_count
             FROM experiments
-            WHERE project_id = $1
+            WHERE {where}
             ORDER BY created_at DESC
-            LIMIT $2 OFFSET $3
-            """,
-            project_id,
-            limit,
-            offset,
-        )
+            LIMIT ${idx} OFFSET ${idx + 1}
+        """
+        records = await self._fetch(query, *params)
         items: List[Experiment] = []
         total: int | None = None
         for rec in records:
@@ -98,15 +125,11 @@ class ExperimentRepository(BaseRepository):
                     rec_dict[column] = json.loads(value)
             items.append(Experiment.model_validate(rec_dict))
         if total is None:
-            total = await self._count_by_project(project_id)
+            count_query = f"SELECT COUNT(*) AS total FROM experiments WHERE {where}"
+            count_params = params[: -(2)]  # exclude limit/offset
+            record = await self._fetchrow(count_query, *count_params)
+            total = int(record["total"]) if record else 0
         return items, total
-
-    async def _count_by_project(self, project_id: UUID) -> int:
-        record = await self._fetchrow(
-            "SELECT COUNT(*) AS total FROM experiments WHERE project_id = $1",
-            project_id,
-        )
-        return int(record["total"]) if record else 0
 
     async def search_experiments(
         self,

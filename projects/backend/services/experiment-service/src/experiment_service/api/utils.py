@@ -2,6 +2,7 @@
 # pyright: reportMissingImports=false
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -37,6 +38,28 @@ def pagination_params(
     if offset < 0:
         offset = 0
     return limit, offset
+
+
+def parse_datetime(value: str | None, label: str) -> datetime | None:
+    """Parse an ISO-8601 datetime string from query params. Returns None if value is empty."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+        # Ensure timezone-aware (default to UTC).
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError) as exc:
+        raise web.HTTPBadRequest(text=f"Invalid datetime for {label}: {value}") from exc
+
+
+def parse_tags_filter(value: str | None) -> list[str] | None:
+    """Parse comma-separated tags filter. Returns None if empty."""
+    if not value:
+        return None
+    tags = [t.strip() for t in value.split(",") if t.strip()]
+    return tags if tags else None
 
 
 def paginated_response(
