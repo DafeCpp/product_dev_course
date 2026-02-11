@@ -29,13 +29,17 @@ type TelemetryPanelState = {
     title: string
     selectedSensorIds: string[]
     valueMode: ValueMode
-    maxPoints: number
+    /** @deprecated kept for backward compat with localStorage; no longer shown in UI */
+    maxPoints?: number
     timeWindowSeconds: TimeWindowSeconds
     useLatestAnchor: boolean
     startFromTimestamp?: string
     startFromCursorBySensor?: Record<string, StreamCursor>
     size?: { width: number; height: number }
 }
+
+/** Internal safety cap — prevents chart from rendering too many DOM elements. */
+const MAX_POINTS_CAP = 5000
 
 const SERIES_COLORS = [
     '#2563eb',
@@ -53,10 +57,6 @@ function formatWindow(seconds: number) {
     if (seconds < 60) return `${seconds} сек`
     if (seconds % 60 === 0) return `${seconds / 60} мин`
     return `${seconds} сек`
-}
-
-function clamp(n: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, n))
 }
 
 function parseTimestampMs(value: string) {
@@ -79,7 +79,6 @@ export default function TelemetryPanel({
     const [selectedSensorIds, setSelectedSensorIds] = useState<string[]>([])
     const [status, setStatus] = useState<StreamStatus>('idle')
     const [valueMode, setValueMode] = useState<ValueMode>('physical')
-    const [maxPoints, setMaxPoints] = useState(200)
     const [timeWindowSeconds, setTimeWindowSeconds] = useState<TimeWindowSeconds>(300)
     const [useLatestAnchor, setUseLatestAnchor] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -106,7 +105,6 @@ export default function TelemetryPanel({
             title: panelTitle,
             selectedSensorIds: nextSelectedSensorIds ?? selectedSensorIds,
             valueMode,
-            maxPoints,
             timeWindowSeconds,
             useLatestAnchor,
             startFromTimestamp: startFromTimestamp ?? undefined,
@@ -136,9 +134,6 @@ export default function TelemetryPanel({
                 setSelectedSensorIds(next)
             }
             if (parsed.valueMode === 'physical' || parsed.valueMode === 'raw') setValueMode(parsed.valueMode)
-            if (typeof parsed.maxPoints === 'number' && Number.isFinite(parsed.maxPoints)) {
-                setMaxPoints(clamp(parsed.maxPoints, 50, 2000))
-            }
             if (
                 typeof parsed.timeWindowSeconds === 'number' &&
                 TIME_WINDOWS_SECONDS.includes(parsed.timeWindowSeconds as TimeWindowSeconds)
@@ -222,7 +217,6 @@ export default function TelemetryPanel({
             title: panelTitle,
             selectedSensorIds,
             valueMode,
-            maxPoints,
             timeWindowSeconds,
             useLatestAnchor,
             startFromTimestamp: startFromTimestamp ?? undefined,
@@ -235,7 +229,6 @@ export default function TelemetryPanel({
         panelTitle,
         selectedSensorIds,
         valueMode,
-        maxPoints,
         timeWindowSeconds,
         useLatestAnchor,
         startFromTimestamp,
@@ -338,7 +331,7 @@ export default function TelemetryPanel({
                         const next = { ...prev }
                         const existing = next[sensorId] || []
                         const updated = [...existing, parsed]
-                        next[sensorId] = updated.length > maxPoints ? updated.slice(updated.length - maxPoints) : updated
+                        next[sensorId] = updated.length > MAX_POINTS_CAP ? updated.slice(updated.length - MAX_POINTS_CAP) : updated
                         return next
                     })
                 } catch (e: any) {
@@ -412,7 +405,7 @@ export default function TelemetryPanel({
                     if (!hasWindowAnchor) return true
                     return point.ts >= anchorMs - windowMs
                 })
-                .slice(-maxPoints)
+                .slice(-MAX_POINTS_CAP)
             return {
                 id: sensor.id,
                 name: sensor.name,
@@ -420,7 +413,7 @@ export default function TelemetryPanel({
                 y: points.map((point) => point.y),
             }
         })
-    }, [filteredSensors, recordsBySensor, valueMode, maxPoints, timeWindowSeconds, useLatestAnchor])
+    }, [filteredSensors, recordsBySensor, valueMode, timeWindowSeconds, useLatestAnchor])
 
     const plotlyData = useMemo(
         () =>
@@ -551,7 +544,6 @@ export default function TelemetryPanel({
                     сенсоры: {selectedSensorIds.length || 'нет'}
                 </span>
                 <span className="telemetry-panel__meta-item">режим: {valueMode}</span>
-                <span className="telemetry-panel__meta-item">max points: {maxPoints}</span>
                 <span className="telemetry-panel__meta-item">окно: {formatWindow(timeWindowSeconds)}</span>
                 <span className="telemetry-panel__meta-item">якорь: {useLatestAnchor ? 'последние данные' : 'сейчас'}</span>
             </div>
@@ -661,18 +653,7 @@ export default function TelemetryPanel({
                         </div>
 
                         <div className="form-group telemetry-panel__inline">
-                            <label>max points</label>
-                            <input
-                                type="number"
-                                value={maxPoints}
-                                min={50}
-                                max={2000}
-                                onChange={(e) => setMaxPoints(clamp(Number(e.target.value || 200), 50, 2000))}
-                            />
-                        </div>
-
-                        <div className="form-group telemetry-panel__inline">
-                            <label>Период</label>
+                            <label>Окно</label>
                             <MaterialSelect
                                 id={`telemetry_panel_window_${panelId}`}
                                 value={String(timeWindowSeconds)}
