@@ -22,6 +22,7 @@ import type {
   TelemetryIngest,
   TelemetryIngestResponse,
   TelemetryQueryResponse,
+  TelemetryAggregatedResponse,
   Project,
   ProjectCreate,
   ProjectUpdate,
@@ -561,6 +562,64 @@ export const telemetryApi = {
     }
 
     return (await resp.json()) as TelemetryQueryResponse
+  },
+
+  aggregated: async (params: {
+    capture_session_id: string
+    sensor_id?: string[]
+    signal?: string
+    time_from?: string
+    time_to?: string
+    limit?: number
+    order?: 'asc' | 'desc'
+  }): Promise<TelemetryAggregatedResponse> => {
+    const TELEMETRY_BASE_URL =
+      import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
+    const url = new URL(`${TELEMETRY_BASE_URL}/api/v1/telemetry/aggregated`)
+    url.searchParams.set('capture_session_id', params.capture_session_id)
+    if (Array.isArray(params.sensor_id)) {
+      params.sensor_id.forEach((id) => {
+        if (id) url.searchParams.append('sensor_id', id)
+      })
+    }
+    if (params.signal) url.searchParams.set('signal', params.signal)
+    if (params.time_from) url.searchParams.set('time_from', params.time_from)
+    if (params.time_to) url.searchParams.set('time_to', params.time_to)
+    if (typeof params.limit === 'number') url.searchParams.set('limit', String(params.limit))
+    if (params.order === 'asc' || params.order === 'desc') {
+      url.searchParams.set('order', params.order)
+    }
+
+    const headers = {
+      'X-Trace-Id': getTraceId(),
+      'X-Request-Id': generateRequestId(),
+    }
+
+    const resp = await fetch(url.toString(), {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    })
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      const bodyText = truncateString(text || '')
+      maybeEmitHttpErrorToast(
+        buildHttpDebugInfoFromFetch({
+          message: text || `Ошибка запроса: HTTP ${resp.status}`,
+          request: { method: 'GET', url: url.toString(), headers },
+          response: {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: Object.fromEntries(resp.headers.entries()),
+            body: bodyText,
+          },
+        })
+      )
+      throw new Error(text || `Ошибка запроса: HTTP ${resp.status}`)
+    }
+
+    return (await resp.json()) as TelemetryAggregatedResponse
   },
 }
 

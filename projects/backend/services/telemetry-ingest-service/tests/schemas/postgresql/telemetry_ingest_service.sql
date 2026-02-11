@@ -97,5 +97,32 @@ SELECT create_hypertable(
 CREATE INDEX IF NOT EXISTS telemetry_records_project_sensor_ts_id_idx
     ON telemetry_records (project_id, sensor_id, timestamp ASC, id ASC);
 
+-- Continuous aggregate for 1-minute downsampling.
+CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m
+WITH (timescaledb.continuous) AS
+SELECT
+    time_bucket(INTERVAL '1 minute', "timestamp") AS bucket,
+    sensor_id,
+    signal,
+    capture_session_id,
+    count(*)                    AS sample_count,
+    avg(raw_value)              AS avg_raw,
+    min(raw_value)              AS min_raw,
+    max(raw_value)              AS max_raw,
+    avg(physical_value)         AS avg_physical,
+    min(physical_value)         AS min_physical,
+    max(physical_value)         AS max_physical
+FROM telemetry_records
+GROUP BY bucket, sensor_id, signal, capture_session_id
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy(
+    'telemetry_1m',
+    start_offset    => INTERVAL '7 days',
+    end_offset      => INTERVAL '1 minute',
+    schedule_interval => INTERVAL '1 minute',
+    if_not_exists   => TRUE
+);
+
 COMMIT;
 

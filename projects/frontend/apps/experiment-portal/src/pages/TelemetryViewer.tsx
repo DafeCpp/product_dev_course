@@ -8,8 +8,15 @@ import TelemetryPanel from '../components/TelemetryPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
 import { notifyError, notifySuccess } from '../utils/notify'
-import type { CaptureSession, Sensor, TelemetryQueryRecord } from '../types'
+import type { CaptureSession, Sensor, TelemetryQueryRecord, TelemetryAggregatedRecord } from '../types'
 import './TelemetryViewer.scss'
+
+function hexToRgba(hex: string, alpha: number): string {
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r},${g},${b},${alpha})`
+}
 
 type TelemetryViewerState = {
     projectId: string
@@ -58,9 +65,11 @@ function TelemetryViewer() {
     const [historyIncludeLate, setHistoryIncludeLate] = useState(true)
     const [historyMaxPoints, setHistoryMaxPoints] = useState(HISTORY_MAX_POINTS_DEFAULT)
     const [historyOrder, setHistoryOrder] = useState<'asc' | 'desc'>('asc')
+    const [historyUseAggregated, setHistoryUseAggregated] = useState(false)
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyError, setHistoryError] = useState<string | null>(null)
     const [historyPoints, setHistoryPoints] = useState<TelemetryQueryRecord[]>([])
+    const [historyAggBuckets, setHistoryAggBuckets] = useState<TelemetryAggregatedRecord[]>([])
     const [historyLoadedCount, setHistoryLoadedCount] = useState(0)
     const [historyWasTruncated, setHistoryWasTruncated] = useState(false)
     const [historySessionFilter, setHistorySessionFilter] = useState('')
@@ -509,6 +518,50 @@ function TelemetryViewer() {
         })
     }, [historyPoints, historySensorsById, historyValueMode])
 
+    // Aggregated series: group by sensor_id+signal, build avg / min / max arrays
+    const historyAggSeriesData = useMemo(() => {
+        type AggGroup = {
+            sensorId: string
+            signal: string | null
+            buckets: TelemetryAggregatedRecord[]
+        }
+        const key = (b: TelemetryAggregatedRecord) =>
+            `${b.sensor_id ?? ''}::${b.signal ?? ''}`
+        const groups = new Map<string, AggGroup>()
+        historyAggBuckets.forEach((b) => {
+            const k = key(b)
+            let g = groups.get(k)
+            if (!g) {
+                g = { sensorId: b.sensor_id ?? '', signal: b.signal, buckets: [] }
+                groups.set(k, g)
+            }
+            g.buckets.push(b)
+        })
+        return Array.from(groups.values()).map((g) => {
+            const ordered = g.buckets.slice().sort(
+                (a, b) => new Date(a.bucket).getTime() - new Date(b.bucket).getTime()
+            )
+            const sensor = historySensorsById.get(g.sensorId)
+            const label = `${sensor?.name || g.sensorId}${g.signal ? ` / ${g.signal}` : ''}`
+            return {
+                id: g.sensorId,
+                signal: g.signal,
+                name: label,
+                x: ordered.map((r) => r.bucket),
+                avg: ordered.map((r) =>
+                    historyValueMode === 'physical' ? r.avg_physical : r.avg_raw
+                ),
+                min: ordered.map((r) =>
+                    historyValueMode === 'physical' ? r.min_physical : r.min_raw
+                ),
+                max: ordered.map((r) =>
+                    historyValueMode === 'physical' ? r.max_physical : r.max_raw
+                ),
+                count: ordered.map((r) => r.sample_count),
+            }
+        })
+    }, [historyAggBuckets, historySensorsById, historyValueMode])
+
     const historyEffectiveSensorIds = useMemo(() => {
         if (historySensorIds.length > 0) return historySensorIds
         const unique = new Set<string>()
@@ -581,26 +634,71 @@ function TelemetryViewer() {
     }, [captureSessions, historySessionFilter])
 
     const historyHasData = useMemo(
-        () => historySeriesData.some((series) => series.y.length > 0),
-        [historySeriesData]
+        () =>
+            historyUseAggregated
+                ? historyAggSeriesData.some((s) => s.avg.length > 0)
+                : historySeriesData.some((series) => series.y.length > 0),
+        [historySeriesData, historyAggSeriesData, historyUseAggregated]
     )
 
-    const historyPlotlyData = useMemo(
-        () =>
-            historySeriesData.map((series, index) => ({
-                x: series.x,
-                y: series.y,
-                type: 'scattergl' as const,
-                mode: 'lines' as const,
-                name: series.name,
-                line: {
-                    color: ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#06b6d4', '#e11d48'][index % 6],
-                    width: 2,
-                },
-                hovertemplate: '%{x}<br>%{y:.3f}<extra></extra>',
-            })),
-        [historySeriesData]
-    )
+    const SERIES_COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#06b6d4', '#e11d48']
+
+    const historyPlotlyData = useMemo(() => {
+        if (historyUseAggregated) {
+            // For each sensor+signal group: min band (invisible base), max band (filled to min), avg line
+            const traces: any[] = []
+            historyAggSeriesData.forEach((series, index) => {
+                const color = SERIES_COLORS[index % SERIES_COLORS.length]
+                // min line — invisible lower bound for fill
+                traces.push({
+                    x: series.x,
+                    y: series.min,
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    name: `${series.name} min`,
+                    line: { color: 'transparent', width: 0 },
+                    showlegend: false,
+                    hoverinfo: 'skip' as const,
+                })
+                // max line — filled down to min
+                traces.push({
+                    x: series.x,
+                    y: series.max,
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    name: `${series.name} range`,
+                    line: { color: 'transparent', width: 0 },
+                    fill: 'tonexty' as const,
+                    fillcolor: hexToRgba(color, 0.15),
+                    showlegend: false,
+                    hovertemplate: `min: %{y:.3f}<extra>${series.name} max</extra>`,
+                })
+                // avg line
+                traces.push({
+                    x: series.x,
+                    y: series.avg,
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    name: `${series.name} avg`,
+                    line: { color, width: 2 },
+                    hovertemplate: `avg: %{y:.3f}<extra>${series.name}</extra>`,
+                })
+            })
+            return traces
+        }
+        return historySeriesData.map((series, index) => ({
+            x: series.x,
+            y: series.y,
+            type: 'scattergl' as const,
+            mode: 'lines' as const,
+            name: series.name,
+            line: {
+                color: SERIES_COLORS[index % SERIES_COLORS.length],
+                width: 2,
+            },
+            hovertemplate: '%{x}<br>%{y:.3f}<extra></extra>',
+        }))
+    }, [historySeriesData, historyAggSeriesData, historyUseAggregated])
 
     const historyPlotlyLayout = useMemo(
         () => ({
@@ -728,39 +826,60 @@ function TelemetryViewer() {
         }
         setHistoryLoading(true)
         setHistoryPoints([])
+        setHistoryAggBuckets([])
         setHistoryLoadedCount(0)
         setHistoryWasTruncated(false)
         try {
-            let sinceId = 0
-            const collected: TelemetryQueryRecord[] = []
-            const safeMaxPointsRaw =
-                Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
-            const safeMaxPoints = Math.min(HISTORY_MAX_POINTS_LIMIT, safeMaxPointsRaw)
-            let lastHasMore = false
-            while (collected.length < safeMaxPoints) {
-                const pageLimit = Math.min(HISTORY_PAGE_SIZE, safeMaxPoints - collected.length)
-                const resp = await telemetryApi.query({
+            if (historyUseAggregated) {
+                // --- Aggregated (1m buckets from continuous aggregate) ---
+                const safeLimit = Math.min(
+                    settings.telemetry_query_max_limit ?? HISTORY_MAX_POINTS_LIMIT,
+                    Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT,
+                )
+                const resp = await telemetryApi.aggregated({
                     capture_session_id: historyCaptureSessionId,
                     sensor_id: historySensorIds.length > 0 ? historySensorIds : undefined,
-                    since_id: sinceId,
-                    limit: pageLimit,
-                    include_late: historyIncludeLate,
+                    limit: safeLimit,
                     order: historyOrder,
                 })
-                collected.push(...resp.points)
-                setHistoryLoadedCount(collected.length)
-                lastHasMore = !!resp.next_since_id && resp.points.length > 0
-                if (!lastHasMore) break
-                sinceId = resp.next_since_id ?? sinceId
+                setHistoryAggBuckets(resp.buckets)
+                setHistoryLoadedCount(resp.buckets.length)
+            } else {
+                // --- Raw points ---
+                let sinceId = 0
+                const collected: TelemetryQueryRecord[] = []
+                const safeMaxPointsRaw =
+                    Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
+                const safeMaxPoints = Math.min(HISTORY_MAX_POINTS_LIMIT, safeMaxPointsRaw)
+                let lastHasMore = false
+                while (collected.length < safeMaxPoints) {
+                    const pageLimit = Math.min(HISTORY_PAGE_SIZE, safeMaxPoints - collected.length)
+                    const resp = await telemetryApi.query({
+                        capture_session_id: historyCaptureSessionId,
+                        sensor_id: historySensorIds.length > 0 ? historySensorIds : undefined,
+                        since_id: sinceId,
+                        limit: pageLimit,
+                        include_late: historyIncludeLate,
+                        order: historyOrder,
+                    })
+                    collected.push(...resp.points)
+                    setHistoryLoadedCount(collected.length)
+                    lastHasMore = !!resp.next_since_id && resp.points.length > 0
+                    if (!lastHasMore) break
+                    sinceId = resp.next_since_id ?? sinceId
+                }
+                setHistoryPoints(collected)
+                setHistoryWasTruncated(lastHasMore && collected.length >= safeMaxPoints)
             }
-            setHistoryPoints(collected)
-            setHistoryWasTruncated(lastHasMore && collected.length >= safeMaxPoints)
         } catch (err: any) {
             setHistoryError(err?.message || 'Ошибка загрузки истории')
         } finally {
             setHistoryLoading(false)
         }
     }
+
+    // Placeholder for settings object used above (avoids introducing a new dependency)
+    const settings = { telemetry_query_max_limit: HISTORY_MAX_POINTS_LIMIT }
 
     return (
         <div className="telemetry-view">
@@ -1185,8 +1304,17 @@ function TelemetryViewer() {
                                     type="checkbox"
                                     checked={historyIncludeLate}
                                     onChange={(e) => setHistoryIncludeLate(e.target.checked)}
+                                    disabled={historyUseAggregated}
                                 />
                                 include late
+                            </label>
+                            <label className="telemetry-view__checkbox" title="Загрузить агрегированные данные (1-минутные бакеты: avg/min/max) вместо сырых точек">
+                                <input
+                                    type="checkbox"
+                                    checked={historyUseAggregated}
+                                    onChange={(e) => setHistoryUseAggregated(e.target.checked)}
+                                />
+                                агрегация 1m
                             </label>
                             <div className="telemetry-view__mode-toggle">
                                 <label>
@@ -1251,7 +1379,9 @@ function TelemetryViewer() {
                     {historyError && <div className="telemetry-view__error">{historyError}</div>}
                     {(historyLoadedCount > 0 || historyWasTruncated) && (
                         <div className="telemetry-view__history-summary">
-                            Загружено точек: {historyLoadedCount}
+                            {historyUseAggregated
+                                ? `Загружено бакетов (1m): ${historyLoadedCount}`
+                                : `Загружено точек: ${historyLoadedCount}`}
                             {historyWasTruncated &&
                                 ` (показаны ${historyOrder === 'desc' ? 'последние' : 'первые'} ${historyDisplayMaxPoints})`}
                         </div>

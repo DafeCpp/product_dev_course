@@ -197,7 +197,14 @@
   - ✅ Восстановление застрявших webhook deliveries (`in_progress` дольше `webhook_stuck_minutes` — 10 мин) → `pending`
   - ✅ Очистка старых succeeded webhook deliveries (старше `webhook_succeeded_retention_days` — 30 дней)
 - **Индексы и денормализации:** ✅ Частично (базовые индексы/GIN есть, но без целевых денормализаций и оптимизации под нагрузку)
-- **TimescaleDB для телеметрии:** ❌ (см. `docs/adr/002-timescaledb-telemetry.md`)
+- **TimescaleDB для телеметрии:** ✅ Реализовано (см. `docs/adr/002-timescaledb-telemetry.md`).
+  - ✅ **Hypertable:** `telemetry_records` — hypertable с time partitioning по `timestamp` и space partitioning по `sensor_id` (8 партиций, chunk interval 1 день).
+  - ✅ **Generated column `signal`:** extracted from `meta->>'signal'` для индексирования; индекс `telemetry_records_sensor_signal_ts_idx`.
+  - ✅ **Compression:** `compress_segmentby = 'sensor_id, signal'`, `compress_orderby = 'timestamp DESC'`; автоматическое сжатие чанков старше 7 дней.
+  - ✅ **Retention:** автоматическое удаление сырых точек старше 90 дней.
+  - ✅ **Continuous aggregate `telemetry_1m`:** 1-минутный downsampling (avg/min/max по raw_value и physical_value, sample_count), группировка по `sensor_id`, `signal`, `capture_session_id`; refresh policy (start_offset 7d, end_offset 1m, каждую минуту). Миграция `002_continuous_aggregates.sql`.
+  - ✅ **API:** `GET /api/v1/telemetry/aggregated` в telemetry-ingest-service — запрос из `telemetry_1m` с фильтрами `capture_session_id`, `sensor_id`, `signal`, `time_from`/`time_to`, `limit`, `order`.
+  - ✅ **Frontend:** чекбокс «агрегация 1m» в TelemetryViewer (history mode); при включении данные загружаются из continuous aggregate и отображаются как avg-линия с min/max band (Plotly fill).
 - **Синхронизация по времени между датчиками:** ❌
 - **Инварианты хранения:** ⚠️ Частично (есть DB-констрейнты/уникальности/ссылочная целостность, но нет политик retention/дедупликации/временной синхронизации)
 - **Песочница для нагрузочного тестирования:** ❌
