@@ -178,9 +178,9 @@
   - ✅ нельзя удалить `Sensor`, если он участвует в активных `CaptureSession`
   - ✅ нельзя удалить активную `CaptureSession`
 - **Webhook-триггеры:** ✅ Реализовано (outbox + background dispatcher + dedupe/retry; best-effort delivery).
-- **Frontend:** ❌ нет UI для управления webhooks (список/создание/редактирование/пауза), просмотра delivery attempts и ручного re-delivery.
+- **Frontend:** ✅ UI для управления webhooks (список/создание/удаление подписок, просмотр delivery log с фильтрацией по статусу, ручной retry). Реализовано: страница `/webhooks` (`Webhooks.tsx`), навигация в sidebar.
 - **Аудит-лог действий пользователей:** ✅ Реализовано для `Run`/`CaptureSession` (events + API для чтения).
-- **Frontend:** ❌ нет UI для просмотра audit-log (лента событий по Run/CaptureSession, фильтры по типу события/периоду/actor, drill-down до payload).
+- **Frontend:** ✅ UI для просмотра audit-log: компонент `AuditLog` (timeline с типами событий, actor, payload; пагинация; collapsible). Интегрирован в `RunDetail` (события запуска + события каждой capture session).
 - **Догрузка данных после завершения (late/backfill ingest):** ❌ Не реализовано как отдельный процесс.
   - ⚠️ **MVP-политика зафиксирована:** ingest разрешён для `succeeded/failed` (late data), но запрещён для `archived`.
 

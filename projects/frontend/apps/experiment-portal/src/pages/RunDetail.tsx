@@ -15,6 +15,7 @@ import {
   MaterialSelect,
 } from '../components/common'
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
+import AuditLog from '../components/AuditLog'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
@@ -502,6 +503,11 @@ function RunDetail() {
                     )}
                   </div>
                 )}
+                <AuditLog
+                  runId={id!}
+                  captureSessionId={activeSession.id}
+                  title={`События сессии #${activeSession.ordinal_number}`}
+                />
               </div>
             )}
 
@@ -550,10 +556,23 @@ function RunDetail() {
                     )}
                     {session.notes && <InfoRow label="Заметки" value={session.notes} />}
                   </div>
+                  <AuditLog
+                    runId={id!}
+                    captureSessionId={session.id}
+                    title={`События сессии #${session.ordinal_number}`}
+                  />
                 </div>
               ))}
           </div>
         )}
+      </div>
+
+      {/* Run Audit Log */}
+      <div className="audit-section card">
+        <div className="card-header">
+          <h3>Аудит-лог</h3>
+        </div>
+        <AuditLog runId={id!} title="История событий запуска" />
       </div>
     </div>
   )

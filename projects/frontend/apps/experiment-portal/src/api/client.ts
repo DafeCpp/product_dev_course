@@ -30,6 +30,12 @@ import type {
   ProjectMemberAdd,
   ProjectMemberUpdate,
   ProjectMembersListResponse,
+  RunEventsListResponse,
+  CaptureSessionEventsListResponse,
+  WebhookSubscription,
+  WebhookSubscriptionCreate,
+  WebhooksListResponse,
+  WebhookDeliveriesListResponse,
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
@@ -570,6 +576,56 @@ export const projectsApi = {
       data
     )
     return response.data
+  },
+}
+
+// Run Events (Audit Log) API
+export const runEventsApi = {
+  list: async (runId: string, params?: {
+    page?: number
+    page_size?: number
+  }): Promise<RunEventsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/events`, { params })
+  },
+}
+
+// Capture Session Events (Audit Log) API
+export const captureSessionEventsApi = {
+  list: async (runId: string, sessionId: string, params?: {
+    page?: number
+    page_size?: number
+  }): Promise<CaptureSessionEventsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/events`, { params })
+  },
+}
+
+// Webhooks API
+export const webhooksApi = {
+  list: async (params?: {
+    page?: number
+    page_size?: number
+  }): Promise<WebhooksListResponse> => {
+    return await apiGet('/api/v1/webhooks', { params })
+  },
+
+  create: async (data: WebhookSubscriptionCreate): Promise<WebhookSubscription> => {
+    return await apiPost('/api/v1/webhooks', data)
+  },
+
+  delete: async (webhookId: string): Promise<void> => {
+    await apiDelete(`/api/v1/webhooks/${webhookId}`)
+  },
+
+  listDeliveries: async (params?: {
+    status?: string
+    page?: number
+    page_size?: number
+  }): Promise<WebhookDeliveriesListResponse> => {
+    return await apiGet('/api/v1/webhooks/deliveries', { params })
+  },
+
+  retryDelivery: async (deliveryId: string): Promise<void> => {
+    await apiPost(`/api/v1/webhooks/deliveries/${deliveryId}:retry`)
   },
 }
 

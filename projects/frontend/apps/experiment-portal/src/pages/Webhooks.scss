@@ -1,0 +1,311 @@
+@import '../styles/colors';
+@import '../styles/tokens';
+
+.webhooks-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    h2 {
+      margin: 0;
+      font-size: 1.5rem;
+      color: var(--text);
+    }
+  }
+}
+
+// Subscriptions section
+.webhooks-subscriptions {
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+.webhooks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.webhook-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px;
+  background: $surface-muted;
+  border-radius: $radius-sm;
+  border: 1px solid $border-subtle;
+  gap: 16px;
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__url {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    word-break: break-all;
+    margin-bottom: 6px;
+  }
+
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  &__event-types {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  &__event-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: 'Courier New', monospace;
+    background-color: $primary-container;
+    color: $primary;
+  }
+
+  &__status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+
+    &--active {
+      background-color: $success-container;
+      color: $success;
+    }
+
+    &--inactive {
+      background-color: $error-container;
+      color: $error;
+    }
+  }
+
+  &__secret-indicator {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  &__actions {
+    flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+  }
+
+  &__id {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+}
+
+// Create form
+.webhook-create-form {
+  padding: 16px;
+  border-top: 1px solid var(--outline);
+
+  .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    input {
+      padding: 8px 12px;
+      border: 1px solid var(--outline);
+      border-radius: 6px;
+      font-size: 14px;
+      background: var(--surface);
+      color: var(--text);
+
+      &:focus {
+        outline: none;
+        border-color: $primary;
+        box-shadow: 0 0 0 2px $accent-primary-ring-20;
+      }
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+}
+
+// Deliveries section
+.webhooks-deliveries {
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .filter-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+
+    select {
+      padding: 4px 8px;
+      border: 1px solid var(--outline);
+      border-radius: 6px;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+    }
+  }
+}
+
+.deliveries-list {
+  overflow-x: auto;
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--outline);
+    font-size: 13px;
+  }
+
+  th {
+    background-color: var(--surface-variant);
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  tr:hover td {
+    background-color: var(--surface-variant);
+  }
+
+  .delivery-status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+
+    &--pending {
+      background-color: $warning-container;
+      color: $warning;
+    }
+
+    &--delivered {
+      background-color: $success-container;
+      color: $success;
+    }
+
+    &--failed {
+      background-color: $error-container;
+      color: $error;
+    }
+
+    &--retrying {
+      background-color: $info-container;
+      color: $info;
+    }
+  }
+
+  .delivery-event-type {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+  }
+
+  .delivery-url {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .delivery-error {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: $error;
+    font-size: 12px;
+  }
+
+  .delivery-actions {
+    white-space: nowrap;
+  }
+}
+
+.deliveries-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+
+  button {
+    padding: 4px 12px;
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+
+    &:hover:not(:disabled) {
+      background: var(--surface-variant);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  }
+}
