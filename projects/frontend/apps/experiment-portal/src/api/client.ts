@@ -283,6 +283,9 @@ export const sensorsApi = {
   list: async (params?: {
     project_id?: string
     status?: string
+    /** Backend pagination (preferred). */
+    limit?: number
+    offset?: number
     page?: number
     page_size?: number
   }): Promise<SensorsListResponse> => {

@@ -74,13 +74,23 @@ class SensorRepository(BaseRepository):
                 return sensor
 
     async def get(self, project_id: UUID, sensor_id: UUID) -> Sensor:
-        # Check if sensor exists and is associated with the project
+        # Check if sensor exists and is associated with the project.
+        #
+        # IMPORTANT:
+        # - `sensors.project_id` is the "primary" project (legacy / UX default).
+        # - `sensor_projects` is a many-to-many mapping (newer feature).
+        #
+        # In practice, older deployments may have sensors without a backfilled `sensor_projects`
+        # row. Treat `sensors.project_id` as authoritative membership as well.
         record = await self._fetchrow(
             """
             SELECT s.*
             FROM sensors s
-            INNER JOIN sensor_projects sp ON s.id = sp.sensor_id
-            WHERE s.id = $1 AND sp.project_id = $2
+            LEFT JOIN sensor_projects sp
+              ON s.id = sp.sensor_id
+             AND sp.project_id = $2
+            WHERE s.id = $1
+              AND (s.project_id = $2 OR sp.project_id = $2)
             """,
             sensor_id,
             project_id,
@@ -104,13 +114,15 @@ class SensorRepository(BaseRepository):
     ) -> Tuple[List[Sensor], int]:
         """List sensors by project. If project_id is None, returns all sensors."""
         if project_id is None:
-            # Return all sensors (for users with access to multiple projects)
+            # Return all sensors.
+            #
+            # NOTE: do not rely on `sensor_projects` here, because some deployments may
+            # contain sensors without backfilled `sensor_projects` rows.
             records = await self._fetch(
                 """
-                SELECT DISTINCT s.*,
+                SELECT s.*,
                        COUNT(*) OVER() AS total_count
                 FROM sensors s
-                INNER JOIN sensor_projects sp ON s.id = sp.sensor_id
                 ORDER BY s.created_at DESC
                 LIMIT $1 OFFSET $2
                 """,
@@ -118,14 +130,19 @@ class SensorRepository(BaseRepository):
                 offset,
             )
         else:
-            # Return sensors for a specific project
+            # Return sensors for a specific project.
+            # Include both:
+            #  - sensors where this is the primary project (s.project_id)
+            #  - sensors linked via sensor_projects (shared sensors)
             records = await self._fetch(
                 """
                 SELECT s.*,
                        COUNT(*) OVER() AS total_count
                 FROM sensors s
-                INNER JOIN sensor_projects sp ON s.id = sp.sensor_id
-                WHERE sp.project_id = $1
+                LEFT JOIN sensor_projects sp
+                  ON s.id = sp.sensor_id
+                 AND sp.project_id = $1
+                WHERE s.project_id = $1 OR sp.project_id = $1
                 ORDER BY s.created_at DESC
                 LIMIT $2 OFFSET $3
                 """,
@@ -153,12 +170,21 @@ class SensorRepository(BaseRepository):
             return [], 0
         records = await self._fetch(
             """
-            SELECT DISTINCT s.*,
+            WITH filtered AS (
+                SELECT s.*
+                FROM sensors s
+                WHERE s.project_id = ANY($1::uuid[])
+                   OR EXISTS (
+                        SELECT 1
+                        FROM sensor_projects sp
+                        WHERE sp.sensor_id = s.id
+                          AND sp.project_id = ANY($1::uuid[])
+                   )
+            )
+            SELECT filtered.*,
                    COUNT(*) OVER() AS total_count
-            FROM sensors s
-            INNER JOIN sensor_projects sp ON s.id = sp.sensor_id
-            WHERE sp.project_id = ANY($1::uuid[])
-            ORDER BY s.created_at DESC
+            FROM filtered
+            ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
             """,
             project_ids,
@@ -179,12 +205,20 @@ class SensorRepository(BaseRepository):
 
     async def _count_by_project(self, project_id: UUID | None) -> int:
         if project_id is None:
-            record = await self._fetchrow(
-                "SELECT COUNT(DISTINCT sensor_id) AS total FROM sensor_projects"
-            )
+            record = await self._fetchrow("SELECT COUNT(*) AS total FROM sensors")
         else:
             record = await self._fetchrow(
-                "SELECT COUNT(*) AS total FROM sensor_projects WHERE project_id = $1",
+                """
+                SELECT COUNT(*) AS total
+                FROM sensors s
+                WHERE s.project_id = $1
+                   OR EXISTS (
+                        SELECT 1
+                        FROM sensor_projects sp
+                        WHERE sp.sensor_id = s.id
+                          AND sp.project_id = $1
+                   )
+                """,
                 project_id,
             )
         return int(record["total"]) if record else 0
@@ -193,7 +227,17 @@ class SensorRepository(BaseRepository):
         if not project_ids:
             return 0
         record = await self._fetchrow(
-            "SELECT COUNT(DISTINCT sensor_id) AS total FROM sensor_projects WHERE project_id = ANY($1::uuid[])",
+            """
+            SELECT COUNT(*) AS total
+            FROM sensors s
+            WHERE s.project_id = ANY($1::uuid[])
+               OR EXISTS (
+                    SELECT 1
+                    FROM sensor_projects sp
+                    WHERE sp.sensor_id = s.id
+                      AND sp.project_id = ANY($1::uuid[])
+               )
+            """,
             project_ids,
         )
         return int(record["total"]) if record else 0
@@ -338,7 +382,18 @@ class SensorRepository(BaseRepository):
             "SELECT project_id FROM sensor_projects WHERE sensor_id = $1 ORDER BY created_at",
             sensor_id,
         )
-        return [UUID(str(record["project_id"])) for record in records]
+        if records:
+            return [UUID(str(record["project_id"])) for record in records]
+
+        # Backward compatibility: older DBs might not have sensor_projects backfilled.
+        # Fall back to the primary project from `sensors.project_id`.
+        record = await self._fetchrow(
+            "SELECT project_id FROM sensors WHERE id = $1",
+            sensor_id,
+        )
+        if record is None:
+            return []
+        return [UUID(str(record["project_id"]))]
 
     async def add_sensor_project(self, sensor_id: UUID, project_id: UUID) -> None:
         """Add a sensor to a project."""

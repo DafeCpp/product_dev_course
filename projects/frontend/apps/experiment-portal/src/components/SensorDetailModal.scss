@@ -34,6 +34,14 @@
     gap: 12px;
 }
 
+.sensor-detail-modal__id {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .projects-list {
     margin-top: 16px;
     overflow-x: auto;

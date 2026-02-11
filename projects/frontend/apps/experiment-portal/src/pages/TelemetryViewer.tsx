@@ -216,7 +216,35 @@ function TelemetryViewer() {
 
     const { data: sensorsData, isLoading, error } = useQuery({
         queryKey: ['sensors', projectId],
-        queryFn: () => sensorsApi.list({ project_id: projectId }),
+        queryFn: async () => {
+            // The backend paginates with limit/offset and caps limit at 100.
+            // For Telemetry we want a complete sensor list for selection.
+            const limit = 100
+            let offset = 0
+            let total = 0
+            const collected: Sensor[] = []
+
+            // Safety guard: avoid an infinite loop if upstream misbehaves.
+            const maxTotalToFetch = 5000
+
+            while (collected.length < maxTotalToFetch) {
+                const resp = await sensorsApi.list({ project_id: projectId, limit, offset })
+                total = resp.total
+                collected.push(...resp.sensors)
+
+                if (resp.sensors.length === 0) break
+                offset += resp.sensors.length
+                if (resp.sensors.length < limit) break
+                if (total > 0 && collected.length >= total) break
+            }
+
+            return {
+                sensors: collected,
+                total,
+                page: 1,
+                page_size: collected.length,
+            }
+        },
         enabled: !!projectId,
     })
 

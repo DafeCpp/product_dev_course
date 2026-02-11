@@ -600,3 +600,140 @@ async def test_list_sensors_with_x_project_ids_returns_all_accessible(service_cl
     assert sensor1_id in sensor_ids
     assert sensor2_id in sensor_ids
 
+
+@pytest.mark.asyncio
+async def test_list_and_get_sensor_without_sensor_projects_row(service_client, pgsql):
+    """
+    Regression test:
+    Some deployments may have sensors created before `sensor_projects` was introduced/backfilled.
+    Listing or fetching a sensor by project_id should still work based on `sensors.project_id`.
+    """
+    project_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    headers = make_headers(project_id, user_id=user_id)
+
+    # Create sensor via API (normally creates sensor_projects row too)
+    resp = await service_client.post(
+        "/api/v1/sensors",
+        json={
+            "project_id": str(project_id),
+            "name": "legacy-sensor-without-m2m",
+            "type": "thermocouple",
+            "input_unit": "mV",
+            "display_unit": "C",
+        },
+        headers=headers,
+    )
+    assert resp.status == 201
+    body = await resp.json()
+    sensor_id = body["sensor"]["id"]
+
+    # Simulate legacy DB state: remove the m2m mapping row
+    conninfo = pgsql["experiment_service"].conninfo
+    conn = await asyncpg.connect(dsn=conninfo.get_uri())
+    try:
+        await conn.execute(
+            "DELETE FROM sensor_projects WHERE sensor_id = $1 AND project_id = $2",
+            uuid.UUID(sensor_id),
+            project_id,
+        )
+    finally:
+        await conn.close()
+
+    # List sensors for the project — should still include this sensor
+    resp = await service_client.get(
+        f"/api/v1/sensors?project_id={project_id}&limit=100&offset=0",
+        headers=headers,
+    )
+    assert resp.status == 200
+    listed = await resp.json()
+    assert listed["total"] >= 1
+    assert any(s["id"] == sensor_id for s in listed["sensors"])
+
+    # Get sensor by id in project context — should still work
+    resp = await service_client.get(
+        f"/api/v1/sensors/{sensor_id}?project_id={project_id}",
+        headers=headers,
+    )
+    assert resp.status == 200
+    got = await resp.json()
+    assert got["id"] == sensor_id
+
+    # Projects endpoint should fall back to primary project_id
+    resp = await service_client.get(
+        f"/api/v1/sensors/{sensor_id}/projects",
+        headers=headers,
+    )
+    assert resp.status == 200
+    projects = await resp.json()
+    assert str(project_id) in projects["project_ids"]
+
+
+@pytest.mark.asyncio
+async def test_list_sensors_with_x_project_ids_without_sensor_projects_row(service_client, pgsql):
+    """
+    Regression test:
+    GET /api/v1/sensors without project_id relies on X-Project-Ids (auth-proxy behavior).
+    It should still return sensors even if sensor_projects mapping is missing.
+    """
+    user_id = uuid.uuid4()
+    project1_id = uuid.uuid4()
+    project2_id = uuid.uuid4()
+
+    # Create one sensor per project (creates sensor_projects rows)
+    resp1 = await service_client.post(
+        "/api/v1/sensors",
+        json={
+            "project_id": str(project1_id),
+            "name": "legacy-sensor-p1",
+            "type": "thermocouple",
+            "input_unit": "mV",
+            "display_unit": "C",
+        },
+        headers=make_headers(project1_id, user_id=user_id),
+    )
+    assert resp1.status == 201
+    sensor1_id = (await resp1.json())["sensor"]["id"]
+
+    resp2 = await service_client.post(
+        "/api/v1/sensors",
+        json={
+            "project_id": str(project2_id),
+            "name": "legacy-sensor-p2",
+            "type": "thermocouple",
+            "input_unit": "mV",
+            "display_unit": "C",
+        },
+        headers=make_headers(project2_id, user_id=user_id),
+    )
+    assert resp2.status == 201
+    sensor2_id = (await resp2.json())["sensor"]["id"]
+
+    # Remove sensor_projects rows for both sensors to simulate legacy DB state
+    conninfo = pgsql["experiment_service"].conninfo
+    conn = await asyncpg.connect(dsn=conninfo.get_uri())
+    try:
+        await conn.execute(
+            "DELETE FROM sensor_projects WHERE sensor_id = $1 AND project_id = $2",
+            uuid.UUID(sensor1_id),
+            project1_id,
+        )
+        await conn.execute(
+            "DELETE FROM sensor_projects WHERE sensor_id = $1 AND project_id = $2",
+            uuid.UUID(sensor2_id),
+            project2_id,
+        )
+    finally:
+        await conn.close()
+
+    headers_all = {
+        "X-User-Id": str(user_id),
+        "X-Project-Ids": f"{project1_id},{project2_id}",
+    }
+    resp = await service_client.get("/api/v1/sensors?limit=100&offset=0", headers=headers_all)
+    assert resp.status == 200
+    data = await resp.json()
+    ids = [s["id"] for s in data["sensors"]]
+    assert sensor1_id in ids
+    assert sensor2_id in ids
+
