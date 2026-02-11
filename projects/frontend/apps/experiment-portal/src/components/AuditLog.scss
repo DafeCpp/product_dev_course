@@ -1,0 +1,217 @@
+@import '../styles/colors';
+
+.audit-log {
+  &__toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+
+    &:hover {
+      color: var(--text);
+    }
+
+    .chevron {
+      transition: transform 0.2s ease;
+      font-size: 12px;
+
+      &.open {
+        transform: rotate(90deg);
+      }
+    }
+  }
+
+  &__content {
+    margin-top: 12px;
+  }
+
+  &__timeline {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    position: relative;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 8px;
+      bottom: 8px;
+      width: 2px;
+      background-color: var(--outline);
+    }
+  }
+
+  &__item {
+    display: flex;
+    gap: 16px;
+    padding: 10px 0;
+    position: relative;
+
+    &:first-child {
+      padding-top: 0;
+    }
+
+    &:last-child {
+      padding-bottom: 0;
+    }
+  }
+
+  &__dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: $primary;
+    flex-shrink: 0;
+    margin-top: 4px;
+    position: relative;
+    z-index: 1;
+    border: 2px solid $surface;
+    box-shadow: 0 0 0 2px $primary;
+
+    &--status {
+      background-color: $info;
+      box-shadow: 0 0 0 2px $info;
+    }
+
+    &--create {
+      background-color: $success;
+      box-shadow: 0 0 0 2px $success;
+    }
+
+    &--delete,
+    &--error {
+      background-color: $error;
+      box-shadow: 0 0 0 2px $error;
+    }
+
+    &--tag {
+      background-color: $warning;
+      box-shadow: 0 0 0 2px $warning;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__event-type {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+
+    .event-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: 'Courier New', monospace;
+      background-color: $surface-variant;
+      color: $text-secondary;
+    }
+  }
+
+  &__time {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  &__actor {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+
+    .role-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 500;
+      background-color: $primary-container;
+      color: $primary;
+      margin-left: 4px;
+    }
+  }
+
+  &__payload {
+    margin-top: 6px;
+    padding: 8px 12px;
+    background-color: $surface-muted;
+    border-radius: 6px;
+    border: 1px solid $border-subtle;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    color: $text-body;
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  &__empty {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  &__pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+
+    button {
+      padding: 4px 12px;
+      border: 1px solid var(--outline);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+
+      &:hover:not(:disabled) {
+        background: var(--surface-variant);
+      }
+
+      &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  &__error {
+    color: $error;
+    font-size: 14px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  &__loading {
+    text-align: center;
+    padding: 16px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+}

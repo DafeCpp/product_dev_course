@@ -10,6 +10,8 @@ from pydantic import ValidationError
 from experiment_service.api.utils import (
     paginated_response,
     pagination_params,
+    parse_datetime,
+    parse_tags_filter,
     parse_uuid,
     read_json,
 )
@@ -60,7 +62,22 @@ async def list_experiments(request: web.Request):
             text="project_id is required. Provide it in query parameter (?project_id=...) or X-Project-Id header"
         )
 
-    experiments, total = await service.list_experiments(project_id, limit=limit, offset=offset)
+    # Optional filters
+    status_raw = request.rel_url.query.get("status")
+    status = ExperimentStatus(status_raw) if status_raw else None
+    tags = parse_tags_filter(request.rel_url.query.get("tags"))
+    created_after = parse_datetime(request.rel_url.query.get("created_after"), "created_after")
+    created_before = parse_datetime(request.rel_url.query.get("created_before"), "created_before")
+
+    experiments, total = await service.list_experiments(
+        project_id,
+        limit=limit,
+        offset=offset,
+        status=status,
+        tags=tags,
+        created_after=created_after,
+        created_before=created_before,
+    )
     payload = paginated_response(
         [_experiment_response(item) for item in experiments],
         limit=limit,

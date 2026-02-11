@@ -38,7 +38,7 @@
 - ✅ **Детали эксперимента** (`/experiments/:id`)
   - Просмотр всей информации
 - Редактирование (✅ реализовано: модальное окно `ExperimentEditModal`, PATCH + смена статуса/архивация)
-  - Удаление эксперимента
+- ✅ **Удаление эксперимента** (кнопка в деталях, `experimentsApi.delete`)
   - Список запусков эксперимента
 
 #### 3) CRUD запусков (Runs)
@@ -60,6 +60,7 @@
 - ✅ Методы для runs: list, get, create, update, complete, fail
 - ✅ Методы для sensors: list, get, create, update, delete, rotateToken
 - ✅ Методы для capture sessions: list, create, stop, delete
+- ✅ Методы для webhooks и audit: webhooks (list, create, delete), deliveries (list, retry), run_events (list по run_id / session_id)
 - ✅ Auth API клиент (`projects/frontend/apps/experiment-portal/src/api/auth.ts`) для работы с Auth Proxy
 - ✅ Интеграция с Auth Proxy через HttpOnly cookies
 - ✅ Автоматическое обновление токенов через interceptor
@@ -78,10 +79,10 @@
 
 #### Улучшения UI/UX
 - **Loading states:** ✅ Улучшено: компонент `Loading` со спиннером и текстом; полноэкранная загрузка на списках экспериментов и датчиков (в т.ч. «Загрузка проектов...» до появления выбора); формы/модалки уже имели индикацию при submit (кнопка «Сохранение...», «Вход...» и т.д.).
-- Расширить toast notifications для успешных операций (сейчас есть частично)
-- Валидация форм на клиенте
-- Телеметрия: добавить управление `capture_session` (старт/стоп) в контекстном меню
-- Просмотр исторических данных для пуска/отсчёта
+- **Toast для успешных операций:** ✅ Расширено: тосты успеха уже были на создание/обновление/удаление экспериментов, запусков, датчиков, проектов, webhooks и т.д.; добавлен тост при успешном входе (Login).
+- **Валидация форм на клиенте:** ✅ Базовая: обязательные поля (проект, название) и проверка JSON в формах экспериментов и запусков; metadata/params должны быть объектами (не массив), сообщения об ошибках через notifyError.
+- **Телеметрия — управление capture_session:** ✅ Реализовано: на странице `/telemetry` при выбранном пуске (run) в блоке фильтров отображаются кнопки «Старт отсчёта» / «Остановить отсчёт» (для run в статусе draft/running); запросы run + experiment и список сессий загружаются при выборе пуска.
+- **Просмотр исторических данных для пуска/отсчёта:** ✅ Реализовано: режим «history» в TelemetryViewer — выбор capture session, загрузка точек с пагинацией, Plotly-графики по сенсорам, фильтр сенсоров, raw/physical, include late data, лимит точек, asc/desc.
 
 #### Мобильный клиент (Android)
 - Сделать приложение для Android для просмотра результатов (Experiments/Runs) и телеметрии (live + historical)
@@ -107,6 +108,8 @@
 - toast появляется на **все** ошибки запросов (включая network/CORS/timeout)
 - есть кнопка **Copy** (копирует единый текст-блок с request/response/correlation)
 - секреты маскируются (tokens/passwords/cookies)
+
+✅ **Реализовано** в `experiment-portal`: один тост снизу справа на каждую ошибку (axios + auth client); компонент `DebugErrorToast` с кнопками Details/Copy, санитизация headers/body в `utils/httpDebug.ts`; корреляция из `x-trace-id`, `x-request-id`, `traceparent`.
 
 ### SSE proxy + CSRF hardening (Auth Proxy) ✅
 
@@ -135,14 +138,14 @@
 
 ### Текущее состояние (актуализируется)
 - **✅ Завершено (Foundation):** блок Foundation полностью (миграции, CRUD для `Experiment/Run/CaptureSession`, idempotency, пагинация, OpenAPI, RBAC). Добавлены домены `Sensor` и `ConversionProfile`, статусные машины и покрытие тестами (`tests/test_api_*`). Множественные проекты для датчиков реализованы полностью (backend: таблица `sensor_projects` в миграции `001_initial_schema.sql`, API endpoints, тесты; frontend: UI для управления проектами в `SensorDetail.tsx`). UI для управления доступом к проектам реализован (`ProjectMembersModal` с тестами). Профиль пользователя реализован (`UserProfileModal` с тестами).
-- **⚠️ Частично реализовано (Runs & Capture Management):** batch-update статусов, `CaptureSession` (ordinal_number + статусы), bulk tagging, audit-log (Run/CaptureSession), webhooks (outbox + dispatcher) — ✅. Остаётся: расширение доменных инвариантов ⚠️ и полноценный backfill/late-data процесс ❌ (см. раздел ниже).
-- **❌ Не реализовано / в backlog:** Telemetry ingest (WebSocket), полноценные сценарии backfill/реплея и доменные политики late-data, фоновые задачи (worker), расширенные фильтры API, экспорт данных, бизнес‑политики доступа, SLO/SLI мониторинг, полная интеграция OpenTelemetry, chaos‑тесты, operational документация.
+- **✅ Завершено (Runs & Capture Management):** batch-update статусов, `CaptureSession` (ordinal_number + статусы), bulk tagging, audit-log (Run/CaptureSession), webhooks (outbox + dispatcher), **backfill/late-data процесс** (API start/complete, привязка late-записей, UI). Остаётся: расширение доменных инвариантов ⚠️.
+- **❌ Не реализовано / в backlog:** Telemetry ingest (WebSocket), бизнес‑политики доступа, SLO/SLI мониторинг, chaos‑тесты, operational документация.
   - Примечание: **REST ingest** реализован отдельным сервисом `telemetry-ingest-service` (`POST /api/v1/telemetry`).
   - Примечание: **SSE stream (MVP)** реализован в `telemetry-ingest-service` (`GET /api/v1/telemetry/stream`) и используется во фронтенде (например, `TelemetryStreamModal`, `/telemetry` через `TelemetryViewer`/`TelemetryPanel`).
   - Примечание: **SSE auth (MVP)**: `telemetry-ingest-service` принимает токен как sensor token, так и user JWT (через auth-proxy); для клиентов без возможности выставить заголовок поддержан query `access_token`.
   - Примечание: **MVP late-data политика**: данные после stop capture session не “приклеиваются” обратно к сессии (помечаются в `meta.__system` как late); ingest запрещён для `archived`.
   - В `experiment-service` публичной ручки `/api/v1/telemetry` больше нет; real-time режимы со стороны `experiment-service` и полноценная интеграция со сценариями backfill/реплея — в backlog.
-- **Зависимости:** сервис собран на `aiohttp 3.10`, `asyncpg 0.31`, `pydantic-settings 2.4`, `structlog`, тестируется через `pytest`, `pytest-aiohttp`, `yandex-taxi-testsuite[postgresql]`, кодоген осуществляется `openapi-generator-cli 7.17`.
+- **Зависимости:** сервис собран на `aiohttp 3.10`, `asyncpg 0.31`, `pydantic-settings 2.4`, `structlog`, `opentelemetry-sdk`/`opentelemetry-instrumentation-aiohttp-server`; тестируется через `pytest`, `pytest-aiohttp`, `yandex-taxi-testsuite[postgresql]`; кодоген — `openapi-generator-cli 7.17`.
 
 ---
 
@@ -178,30 +181,227 @@
   - ✅ нельзя удалить `Sensor`, если он участвует в активных `CaptureSession`
   - ✅ нельзя удалить активную `CaptureSession`
 - **Webhook-триггеры:** ✅ Реализовано (outbox + background dispatcher + dedupe/retry; best-effort delivery).
-- **Frontend:** ❌ нет UI для управления webhooks (список/создание/редактирование/пауза), просмотра delivery attempts и ручного re-delivery.
+- **Frontend:** ✅ UI для управления webhooks (список/создание/удаление подписок, просмотр delivery log с фильтрацией по статусу, ручной retry). Реализовано: страница `/webhooks` (`Webhooks.tsx`), навигация в sidebar.
 - **Аудит-лог действий пользователей:** ✅ Реализовано для `Run`/`CaptureSession` (events + API для чтения).
-- **Frontend:** ❌ нет UI для просмотра audit-log (лента событий по Run/CaptureSession, фильтры по типу события/периоду/actor, drill-down до payload).
-- **Догрузка данных после завершения (late/backfill ingest):** ❌ Не реализовано как отдельный процесс.
-  - ⚠️ **MVP-политика зафиксирована:** ingest разрешён для `succeeded/failed` (late data), но запрещён для `archived`.
+- **Frontend:** ✅ UI для просмотра audit-log: компонент `AuditLog` (timeline с типами событий, actor, payload; пагинация; collapsible). Интегрирован в `RunDetail` (события запуска + события каждой capture session).
+- **Догрузка данных после завершения (late/backfill ingest):** ✅ Реализовано.
+  - ✅ **Backfill API:** `POST /api/v1/runs/{run_id}/capture-sessions/{session_id}/backfill/start` — переводит `succeeded` → `backfilling`; `POST .../backfill/complete` — привязывает late-записи (UPDATE `telemetry_records.capture_session_id` по `meta.__system.capture_session_id`) и возвращает `backfilling` → `succeeded`; ответ содержит `attached_records`.
+  - ✅ **Audit + Webhooks:** события `capture_session.backfill_started` / `capture_session.backfill_completed` записываются в audit-log и диспатчатся через webhooks.
+  - ✅ **Frontend:** кнопки «Начать догрузку» / «Завершить догрузку» в `TelemetryViewer` (history mode) рядом с выбором capture session.
+  - ✅ **MVP-политика сохранена:** ingest разрешён для `succeeded/failed` (late data), запрещён для `archived`; во время backfilling данные привязываются как обычные (не late).
 
 ### 3. Data Integrity & Scaling (итерации 5‑6)
-- **Фоновые задачи (worker):** ❌
+- **Фоновые задачи (worker):** ✅ Реализовано: in-process async worker (`background_tasks.py`), запускается вместе с aiohttp-сервером, выполняет периодический sweep (интервал `worker_interval_seconds`, по умолчанию 60 с):
+  - ✅ Очистка idempotency-ключей старше `idempotency_ttl_hours` (48 ч)
+  - ✅ Автостоп зависших capture sessions (`running`/`backfilling` дольше `stale_session_max_hours` — 24 ч) → `failed`
+  - ✅ Восстановление застрявших webhook deliveries (`in_progress` дольше `webhook_stuck_minutes` — 10 мин) → `pending`
+  - ✅ Очистка старых succeeded webhook deliveries (старше `webhook_succeeded_retention_days` — 30 дней)
 - **Индексы и денормализации:** ✅ Частично (базовые индексы/GIN есть, но без целевых денормализаций и оптимизации под нагрузку)
-- **TimescaleDB для телеметрии:** ❌ (см. `docs/adr/002-timescaledb-telemetry.md`)
+- **TimescaleDB для телеметрии:** ✅ Реализовано (см. `docs/adr/002-timescaledb-telemetry.md`).
+  - ✅ **Hypertable:** `telemetry_records` — hypertable с time partitioning по `timestamp` и space partitioning по `sensor_id` (8 партиций, chunk interval 1 день).
+  - ✅ **Generated column `signal`:** extracted from `meta->>'signal'` для индексирования; индекс `telemetry_records_sensor_signal_ts_idx`.
+  - ✅ **Compression:** `compress_segmentby = 'sensor_id, signal'`, `compress_orderby = 'timestamp DESC'`; автоматическое сжатие чанков старше 7 дней.
+  - ✅ **Retention:** автоматическое удаление сырых точек старше 90 дней.
+  - ✅ **Continuous aggregate `telemetry_1m`:** 1-минутный downsampling (avg/min/max по raw_value и physical_value, sample_count), группировка по `sensor_id`, `signal`, `capture_session_id`; refresh policy (start_offset 7d, end_offset 1m, каждую минуту). Миграция `002_continuous_aggregates.sql`.
+  - ✅ **API:** `GET /api/v1/telemetry/aggregated` в telemetry-ingest-service — запрос из `telemetry_1m` с фильтрами `capture_session_id`, `sensor_id`, `signal`, `time_from`/`time_to`, `limit`, `order`.
+  - ✅ **Frontend:** чекбокс «агрегация 1m» в TelemetryViewer (history mode); при включении данные загружаются из continuous aggregate и отображаются как avg-линия с min/max band (Plotly fill).
 - **Синхронизация по времени между датчиками:** ❌
 - **Инварианты хранения:** ⚠️ Частично (есть DB-констрейнты/уникальности/ссылочная целостность, но нет политик retention/дедупликации/временной синхронизации)
 - **Песочница для нагрузочного тестирования:** ❌
 - **Контроль версий схем:** ✅ Реализовано (таблица `schema_migrations` + checksum, применение миграций на старте и через `bin/migrate.py`)
 
+### 3.5 Схемы преобразования датчиков (Conversion Profiles)
+
+> **Статус:** ⚠️ Инфраструктура готова, сквозной пайплайн не реализован.
+> **Приоритет:** Высокий — ключевая фича ТЗ (раздел 6.2).
+
+#### Что уже есть
+
+- ✅ **DB-схема:** таблица `conversion_profiles` (id, sensor_id, version, kind, payload JSONB, status, valid_from/to, created_by, published_by); FK `sensors.active_profile_id` → conversion_profiles; FK `telemetry_records.conversion_profile_id`; enum `telemetry_conversion_status` (raw_only, converted, client_provided, conversion_failed).
+- ✅ **Backend (experiment-service):**
+  - Repository: `ConversionProfileRepository` — CRUD, `publish_profile()` (atomic: activate + deprecate old + update sensor.active_profile_id).
+  - Service: `ConversionProfileService` — list, create, publish; `SensorService.register_sensor()` принимает optional `initial_profile`.
+  - State machine: `draft → {scheduled, active, deprecated}`, `scheduled → {active, deprecated}`, `active → {deprecated}`.
+  - API routes: `POST /api/v1/sensors/{sensor_id}/conversion-profiles`, `GET .../conversion-profiles`, `POST .../conversion-profiles/{id}/publish`.
+  - `TelemetryService._apply_conversion()` для `kind=linear` (`physical = a * raw + b`) — **мёртвый код**, не подключён ни к одному endpoint.
+- ✅ **Frontend types:** `ConversionProfileInput` (version, kind, payload, status, valid_from/to); `SensorCreate.conversion_profile` (опциональное поле).
+- ⚠️ **Telemetry ingest:** вставляет `conversion_status = 'client_provided'` (если клиент прислал physical_value) или `'raw_only'`; **conversion_profile_id всегда NULL**; никакого серверного преобразования.
+
+#### Что нужно реализовать
+
+##### Этап 1: Серверное преобразование при ingest (real-time)
+
+**Цель:** при получении `raw_value` без `physical_value` telemetry-ingest-service автоматически применяет активный профиль датчика.
+
+1. **Загрузка и кэширование профилей** в telemetry-ingest-service:
+   - При старте/первом использовании: `SELECT cp.* FROM conversion_profiles cp JOIN sensors s ON s.active_profile_id = cp.id WHERE s.id = $1`.
+   - In-memory кэш `{sensor_id → ConversionProfile}` с TTL (например, 60 сек) или инвалидацией через webhook/event при публикации нового профиля.
+   - Fallback: если профиля нет → оставить `physical_value = NULL`, `conversion_status = 'raw_only'`.
+
+2. **Применение преобразования** (в `_bulk_insert` перед INSERT):
+   - Если `reading.physical_value IS NOT NULL` → `client_provided` (приоритет клиента).
+   - Иначе если `active_profile` для этого `sensor_id`:
+     - `kind = 'linear'`: `physical = payload.a * raw + payload.b`.
+     - `kind = 'polynomial'`: `physical = Σ(payload.coefficients[i] * raw^i)`.
+     - `kind = 'lookup_table'`: линейная интерполяция по `payload.table` (`[{raw, physical}, ...]`).
+   - При успехе: `conversion_status = 'converted'`, `conversion_profile_id = profile.id`.
+   - При ошибке: `conversion_status = 'conversion_failed'`, `physical_value = NULL`.
+
+3. **Поддерживаемые виды (`kind`)**:
+
+| Kind | Payload (JSONB) | Формула |
+|------|----------------|---------|
+| `linear` | `{"a": float, "b": float}` | `physical = a * raw + b` |
+| `polynomial` | `{"coefficients": [c0, c1, c2, ...]}` | `physical = c0 + c1*x + c2*x² + ...` |
+| `lookup_table` | `{"table": [{"raw": r, "physical": p}, ...]}` | Линейная интерполяция; экстраполяция за границами — clamp к крайним значениям |
+
+4. **Невалидный payload** → `conversion_failed` + лог с деталями.
+
+##### Этап 2: Frontend — управление профилями
+
+1. **API client**: `conversionProfilesApi.list(sensorId)`, `.create(sensorId, data)`, `.publish(sensorId, profileId)`.
+2. **Sensor Detail** — секция «Профили преобразования»:
+   - Таблица: version, kind, status, valid_from/to, created_by, published_by.
+   - Бейдж активного профиля.
+   - Кнопка «Создать профиль» → модалка:
+     - Выбор kind (linear / polynomial / lookup_table).
+     - Редактор payload (JSON или специализированные поля для каждого kind).
+     - Предпросмотр: ввести raw → показать physical (live-калькулятор).
+   - Кнопка «Опубликовать» (owner only) → POST `.../publish`.
+3. **CreateSensor** — добавить optional секцию «Начальный профиль преобразования» (kind + payload).
+
+##### Этап 3: Backfill engine (пересчёт при смене профиля)
+
+**Цель:** при публикации нового профиля пользователь может запустить пересчёт `physical_value` для исторических данных.
+
+1. **API:**
+   - `POST /api/v1/sensors/{sensor_id}/conversion-profiles/{profile_id}/backfill` — запускает пересчёт.
+   - Body: `{"scope": "all" | "capture_sessions", "capture_session_ids": [...], "time_from": "...", "time_to": "..."}`.
+   - Возвращает `backfill_task_id`.
+
+2. **Хранение задач:**
+   - Таблица `conversion_backfill_tasks` (id, sensor_id, profile_id, scope, status [pending/running/succeeded/failed], total_records, processed_records, error, created_at, finished_at).
+   - Статус: `pending → running → succeeded | failed`.
+
+3. **Выполнение:**
+   - Background worker task: `conversion_backfill_worker`.
+   - Читает `telemetry_records` батчами (ORDER BY timestamp ASC, LIMIT 1000).
+   - Для каждой записи: загружает профиль, применяет конверсию, UPDATE `physical_value`, `conversion_profile_id`, `conversion_status`.
+   - Сохраняет прогресс (processed_records) в таблицу задач.
+   - **Идемпотентность:** повторный запуск продолжает с последней обработанной записи.
+   - **Сохранение аудита:** старая `conversion_profile_id` логируется (или хранится в `meta.__system.prev_profile_id`).
+
+4. **Frontend:**
+   - После publish → предложить «Пересчитать historical данные?».
+   - Диалог выбора scope (все данные / конкретные capture sessions).
+   - Прогресс-бар (poll GET `/backfill-tasks/{id}`).
+
+5. **Webhook/audit events:** `conversion_profile.backfill_started`, `conversion_profile.backfill_completed`.
+
+##### Этап 4: Расширения (backlog)
+
+- **Scheduled profiles:** автоматическая активация по `valid_from` (worker task проверяет `status = 'scheduled'` с `valid_from <= now()`).
+- **Custom formula:** пользовательское Python-выражение в sandbox (eval ограничен whitelist операций, без imports).
+- **A/B профили:** два active профиля с split по run_id / capture_session_id для сравнения формул.
+- **Валидация при создании:** проверка payload schema по kind (a/b для linear, coefficients для polynomial, table format для lookup).
+- **Batch ingest с конверсией:** при batch insert > 100 readings — параллельная конверсия с пулом.
+
+#### Зависимости
+
+- Этап 1 зависит от: существующих API профилей в experiment-service (✅), загрузки профиля в telemetry-ingest-service.
+- Этап 2 зависит от: существующих API (✅), нового API-клиента на фронте.
+- Этап 3 зависит от: worker-инфраструктуры (✅ `BackgroundWorker`), новой таблицы `conversion_backfill_tasks`.
+
+#### Критерии готовности (минимум для «реализовано»)
+
+- [ ] Ingest с `raw_value` без `physical_value` → сервер применяет active linear profile → `physical_value` != NULL, `conversion_status = 'converted'`.
+- [ ] Frontend: список профилей в Sensor Detail, создание linear-профиля, публикация.
+- [ ] Backfill: пересчёт за выбранный диапазон, прогресс видим в UI.
+- [ ] Тесты: unit (конверсия) + integration (ingest → query → verify physical_value).
+
 ### 4. Integrations & Collaboration (итерация 7)
 - **Enforcement бизнес-политик:** ❌
-- **Расширенные фильтры API:** ⚠️ Частично (есть поиск `GET /api/v1/experiments/search`; остальные list endpoints требуют расширения фильтров: status/tags/date ranges и т.п.)
-- **Экспорт данных:** ❌
+- **Расширенные фильтры API:** ✅ Реализовано: `GET /api/v1/experiments` поддерживает `?status=`, `?tags=` (comma-separated, @> containment), `?created_after=`, `?created_before=` (ISO-8601); `GET /api/v1/experiments/{id}/runs` — те же фильтры; `GET /api/v1/sensors` — `?status=`, `?created_after=`, `?created_before=`; поиск по тексту — `GET /api/v1/experiments/search?q=`.
+- **Экспорт данных:** ✅ Частично реализовано.
+  - ✅ **Метаданные:** `GET /api/v1/experiments/export?format=csv|json` и `GET /api/v1/experiments/{id}/runs/export?format=csv|json` с поддержкой фильтров (status, tags, created_after, created_before); до 5000 записей; на фронтенде кнопки «CSV» / «JSON» на списке экспериментов и списке запусков.
+  - ❌ **Экспорт с данными датчиков (телеметрия):** экспортировать не только метаданные запусков, но и собранные показания сенсоров (telemetry readings) из capture sessions. Подробный план ниже.
 - **Подписки на события:** ❌
+
+### 4.5 Экспорт данных с телеметрией датчиков
+
+> **Статус:** ❌ Не реализовано.
+> **Приоритет:** Средний — важно для анализа данных вне платформы (Jupyter, MATLAB, Excel).
+
+#### Текущее состояние
+
+Экспорт выгружает только метаданные экспериментов и запусков (название, статус, теги, даты). Фактические показания датчиков (telemetry readings) из capture sessions не включаются.
+
+#### Что нужно реализовать
+
+##### Этап 1: Backend — API экспорта телеметрии
+
+**Цель:** API для выгрузки readings привязанных к конкретным capture sessions / runs.
+
+1. **Экспорт по capture session:**
+   - `GET /api/v1/runs/{run_id}/capture-sessions/{session_id}/telemetry/export`
+   - Query params: `format=csv|json`, `sensor_id` (опционально, фильтр), `signal` (опционально), `include_late=true|false`, `raw_or_physical=raw|physical|both`.
+   - CSV-формат: `timestamp, sensor_id, signal, raw_value, physical_value, conversion_status`.
+   - Стриминговая отдача (chunked transfer) для больших выгрузок.
+
+2. **Экспорт по run (все capture sessions):**
+   - `GET /api/v1/runs/{run_id}/telemetry/export`
+   - Аналогичные query params + `capture_session_id` (опционально, фильтр).
+   - CSV добавляет колонку `capture_session_id`, `capture_session_ordinal`.
+
+3. **Агрегированный экспорт:**
+   - `GET /api/v1/runs/{run_id}/telemetry/export?aggregation=1m` — использует continuous aggregate `telemetry_1m`.
+   - CSV-формат: `bucket, sensor_id, signal, avg_raw, min_raw, max_raw, avg_physical, min_physical, max_physical, sample_count`.
+
+4. **Ограничения и безопасность:**
+   - Лимит записей (например, 100 000 для CSV, 50 000 для JSON) с header `X-Export-Truncated: true` если превышен.
+   - RBAC: доступ к данным только для участников проекта (viewer+).
+   - Rate limit: не более 5 запросов экспорта в минуту на пользователя.
+
+##### Этап 2: Frontend — UI экспорта телеметрии
+
+1. **RunDetail / capture session list:**
+   - Кнопка «Экспорт телеметрии» рядом с capture session → скачать CSV/JSON readings этой сессии.
+   - Кнопка «Экспорт всей телеметрии» на уровне run → скачать readings всех capture sessions.
+
+2. **Диалог настроек экспорта:**
+   - Выбор формата: CSV / JSON.
+   - Фильтр по датчикам (multi-select из sensor list).
+   - Фильтр по сигналам.
+   - Выбор данных: raw / physical / оба.
+   - Включать ли late data.
+   - Агрегация: сырые данные / 1-минутная агрегация.
+
+3. **TelemetryViewer (history mode):**
+   - Кнопка «Экспорт видимых данных» — экспортирует ровно то, что сейчас отображается на графиках (текущие фильтры, time range, выбранные датчики).
+
+##### Этап 3: Расширенный экспорт (backlog)
+
+- **Полный экспорт эксперимента:** одним архивом (ZIP): метаданные эксперимента + все runs + все capture sessions + все telemetry readings. Формат: директория `experiment_<id>/runs/<run_id>/sessions/<session_id>/telemetry.csv`.
+- **Формат Parquet:** для интеграции с pandas/PySpark; более компактный чем CSV для больших выгрузок.
+- **Асинхронный экспорт:** для больших объёмов (>100k записей) — создание задачи, фоновая генерация файла, уведомление о готовности, ссылка на скачивание.
+- **Шаблоны экспорта:** пользователь может сохранить конфигурацию экспорта (фильтры, колонки, формат) и переиспользовать.
+
+#### Зависимости
+
+- Этап 1 зависит от: доступа к `telemetry_records` из experiment-service или inter-service API к telemetry-ingest-service; continuous aggregate `telemetry_1m` (✅).
+- Этап 2 зависит от: API этапа 1, текущего UI RunDetail/TelemetryViewer.
+- Этап 3 зависит от: worker-инфраструктуры (✅ `BackgroundWorker`), object storage для файлов.
+
+#### Критерии готовности (минимум)
+
+- [ ] API: экспорт readings по capture session в CSV — работает с фильтрами sensor_id, raw/physical.
+- [ ] Frontend: кнопка экспорта в RunDetail, скачивание файла.
+- [ ] Стриминг: экспорт 50k+ записей без OOM на сервере.
+- [ ] Тесты: integration (создать session → ingest data → export → verify CSV содержит все readings).
 
 ### 5. Hardening & Launch (итерация 8+)
 - **SLO/SLI мониторинг:** ❌
-- **Трассировка (OpenTelemetry):** ⚠️ Частично (есть только конфиг/заготовки, без полноценной инструментализации)
+- **Трассировка (OpenTelemetry):** ✅ Реализовано: `TracerProvider` + OTLP HTTP exporter + авто-инструментализация aiohttp-server (`opentelemetry-instrumentation-aiohttp-server`); активируется при наличии `OTEL_EXPORTER_ENDPOINT`; `get_tracer()` доступен для ручных спанов в сервисном/репозиторном коде; graceful shutdown с flush спанов.
 - **Chaos-тесты и отказоустойчивость:** ❌
 - **Telemetry ingest disk spool:** ❌
 - **Документация:** ✅ (индекс `docs/README.md`, quickstart `docs/local-dev-docker-setup.md`, demo `docs/demo-flow.md`, E2E чеклист `docs/manual-testing.md`, дебаг `docs/ui-debugging.md`)

@@ -10,6 +10,7 @@ import SensorsList from './pages/SensorsList'
 import CreateSensor from './pages/CreateSensor'
 import ProjectsList from './pages/ProjectsList'
 import TelemetryViewer from './pages/TelemetryViewer'
+import Webhooks from './pages/Webhooks'
 import './App.scss'
 
 function App() {
@@ -31,6 +32,7 @@ function App() {
                 <Route path="/sensors" element={<SensorsList />} />
                 <Route path="/sensors/new" element={<CreateSensor />} />
                 <Route path="/telemetry" element={<TelemetryViewer />} />
+                <Route path="/webhooks" element={<Webhooks />} />
               </Routes>
             </Layout>
           </ProtectedRoute>

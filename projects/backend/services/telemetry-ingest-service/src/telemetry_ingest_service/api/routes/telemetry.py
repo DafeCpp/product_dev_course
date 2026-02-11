@@ -436,3 +436,154 @@ async def telemetry_query(request: web.Request) -> web.Response:
 
     next_since_id = points[-1]["id"] if len(points) == limit else None
     return web.json_response({"points": points, "next_since_id": next_since_id})
+
+
+# ---------------------------------------------------------------------------
+# Aggregated (downsampled) telemetry query — reads from telemetry_1m
+# ---------------------------------------------------------------------------
+
+
+def _serialize_aggregated_record(row: dict) -> dict:
+    """Serialize one row from the ``telemetry_1m`` continuous aggregate."""
+    bucket = row["bucket"]
+    if isinstance(bucket, datetime):
+        bucket_str = bucket.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    else:
+        bucket_str = str(bucket)
+
+    return {
+        "bucket": bucket_str,
+        "sensor_id": str(row["sensor_id"]) if row.get("sensor_id") else None,
+        "signal": row.get("signal"),
+        "capture_session_id": str(row["capture_session_id"]) if row.get("capture_session_id") else None,
+        "sample_count": int(row["sample_count"]),
+        "avg_raw": row["avg_raw"],
+        "min_raw": row["min_raw"],
+        "max_raw": row["max_raw"],
+        "avg_physical": row["avg_physical"],
+        "min_physical": row["min_physical"],
+        "max_physical": row["max_physical"],
+    }
+
+
+@routes.get("/api/v1/telemetry/aggregated")
+async def telemetry_aggregated(request: web.Request) -> web.Response:
+    """Return 1-minute downsampled telemetry from the ``telemetry_1m`` continuous aggregate.
+
+    Query parameters:
+      - capture_session_id (required)
+      - sensor_id           (optional, repeatable, max 50)
+      - signal              (optional, filter by signal name)
+      - time_from           (optional, ISO-8601, inclusive lower bound)
+      - time_to             (optional, ISO-8601, inclusive upper bound)
+      - limit               (optional, default 5000, max 20000)
+      - order               (optional, 'asc' | 'desc', default 'asc')
+    """
+    token = _extract_stream_token(request)
+    if not _looks_like_jwt(token):
+        raise web.HTTPUnauthorized(text="User token is required")
+
+    # --- capture_session_id (required) ---
+    cs_raw = request.rel_url.query.get("capture_session_id")
+    if not cs_raw:
+        raise web.HTTPBadRequest(text="capture_session_id is required")
+    try:
+        capture_session_id = UUID(cs_raw)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="Invalid capture_session_id") from exc
+
+    # --- sensor_ids (optional) ---
+    sensor_ids_raw = request.rel_url.query.getall("sensor_id", [])
+    sensor_ids: list[UUID] = []
+    for val in sensor_ids_raw:
+        if not val:
+            continue
+        try:
+            sensor_ids.append(UUID(val))
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="Invalid sensor_id") from exc
+    if len(sensor_ids) > settings.telemetry_query_max_sensors:
+        raise web.HTTPBadRequest(
+            text=f"Too many sensor_id values (max {settings.telemetry_query_max_sensors})"
+        )
+
+    # --- signal (optional) ---
+    signal_filter = request.rel_url.query.get("signal")
+
+    # --- time boundaries (optional) ---
+    time_from_raw = request.rel_url.query.get("time_from")
+    time_to_raw = request.rel_url.query.get("time_to")
+    time_from = _parse_since_ts(time_from_raw) if time_from_raw else None
+    time_to = _parse_since_ts(time_to_raw) if time_to_raw else None
+
+    # --- limit / order ---
+    limit = _parse_int(request.rel_url.query.get("limit"), default=5000)
+    if limit < 1:
+        raise web.HTTPBadRequest(text="limit must be >= 1")
+    limit = min(limit, settings.telemetry_query_max_limit)
+
+    order = (request.rel_url.query.get("order") or "asc").lower()
+    if order not in ("asc", "desc"):
+        raise web.HTTPBadRequest(text="Only order=asc or order=desc is supported")
+
+    # --- authorize ---
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT project_id FROM capture_sessions WHERE id = $1",
+            capture_session_id,
+        )
+        if row is None:
+            raise web.HTTPNotFound(text="Capture session not found")
+        project_id = UUID(str(row["project_id"]))
+
+    await _authorize_user_token(token=token, project_id=project_id)
+
+    # --- build query ---
+    conditions: list[str] = []
+    params: list[object] = []
+    idx = 1
+
+    conditions.append(f"capture_session_id = ${idx}")
+    params.append(capture_session_id)
+    idx += 1
+
+    if sensor_ids:
+        conditions.append(f"sensor_id = ANY(${idx}::uuid[])")
+        params.append(sensor_ids)
+        idx += 1
+
+    if signal_filter:
+        conditions.append(f"signal = ${idx}")
+        params.append(signal_filter)
+        idx += 1
+
+    if time_from is not None:
+        conditions.append(f"bucket >= ${idx}")
+        params.append(time_from)
+        idx += 1
+
+    if time_to is not None:
+        conditions.append(f"bucket <= ${idx}")
+        params.append(time_to)
+        idx += 1
+
+    where = " AND ".join(conditions)
+    order_sql = "ASC" if order == "asc" else "DESC"
+
+    sql = f"""
+        SELECT bucket, sensor_id, signal, capture_session_id,
+               sample_count, avg_raw, min_raw, max_raw,
+               avg_physical, min_physical, max_physical
+        FROM telemetry_1m
+        WHERE {where}
+        ORDER BY bucket {order_sql}
+        LIMIT ${idx}
+    """
+    params.append(limit)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, *params)
+
+    buckets = [_serialize_aggregated_record(dict(r)) for r in rows]
+    return web.json_response({"buckets": buckets, "bucket_interval": "1m"})

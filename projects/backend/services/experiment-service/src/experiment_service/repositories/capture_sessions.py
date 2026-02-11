@@ -1,6 +1,7 @@
 """Capture session repository."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List, Tuple
 from uuid import UUID
 
@@ -203,6 +204,24 @@ class CaptureSessionRepository(BaseRepository):
         if record is None:
             raise NotFoundError("Capture session not found")
         return self._to_model(record)
+
+    async def fail_stale_sessions(self, started_before: datetime) -> int:
+        """Mark running/backfilling sessions as ``failed`` if started before *started_before*.
+
+        Returns the number of updated rows.
+        """
+        result = await self._execute(
+            """
+            UPDATE capture_sessions
+            SET status = 'failed',
+                stopped_at = now(),
+                updated_at = now()
+            WHERE status IN ('running', 'backfilling')
+              AND started_at < $1
+            """,
+            started_before,
+        )
+        return int(result.split()[-1])
 
     async def delete(self, project_id: UUID, capture_session_id: UUID) -> None:
         record = await self._fetchrow(

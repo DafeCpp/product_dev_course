@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, within, waitFor } from '@testing-library/react'
 import type { UserEvent } from '@testing-library/user-event'
 
 /**
@@ -21,10 +21,14 @@ export async function pickMaterialSelectOption(
 
     await user.click(control)
 
-    const listbox = control.parentElement?.querySelector('[role="listbox"]') as HTMLElement | null
-    if (!listbox) {
-        throw new Error('MaterialSelect listbox not found')
-    }
+    const listboxId = control.getAttribute('aria-controls')
+    const listbox = listboxId
+        ? await waitFor(() => {
+              const el = document.getElementById(listboxId) as HTMLElement | null
+              if (!el) throw new Error('MaterialSelect listbox not found')
+              return el
+          })
+        : await screen.findByRole('listbox')
 
     const optionEl = within(listbox).getByRole('option', { name: option })
     await user.click(optionEl)

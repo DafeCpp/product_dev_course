@@ -1,13 +1,16 @@
 import {
     Children,
+    CSSProperties,
     ReactElement,
     ReactNode,
     isValidElement,
+    useCallback,
     useEffect,
     useMemo,
     useRef,
     useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import './MaterialSelect.scss'
 
 type MaterialSelectProps = {
@@ -44,6 +47,7 @@ function MaterialSelect({
     const [isOpen, setIsOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement | null>(null)
     const triggerRef = useRef<HTMLButtonElement | null>(null)
+    const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null)
 
     const options = useMemo(() => {
         return Children.toArray(children)
@@ -65,24 +69,118 @@ function MaterialSelect({
     const isDisabled = disabled && hasOptions
 
     const menuOptions = options
+    const listboxId = `${id}__listbox`
+
+    const updateMenuPosition = useCallback(() => {
+        if (typeof window === 'undefined') return
+        const triggerEl = triggerRef.current
+        if (!triggerEl) return
+
+        const rect = triggerEl.getBoundingClientRect()
+        const margin = 6
+        const viewportPadding = 8
+        const maxHeight = 240
+
+        const menuEl = menuRef.current
+        const measuredHeight = menuEl ? menuEl.getBoundingClientRect().height : 0
+        const menuHeight = Math.min(measuredHeight || maxHeight, maxHeight)
+
+        const spaceBelow = window.innerHeight - rect.bottom
+        const spaceAbove = rect.top
+
+        const shouldOpenUp = spaceBelow < menuHeight && spaceAbove > spaceBelow
+
+        let top = shouldOpenUp ? rect.top - margin - menuHeight : rect.bottom + margin
+
+        // Clamp to viewport (avoid rendering off-screen)
+        const minTop = viewportPadding
+        const maxTop = window.innerHeight - viewportPadding - menuHeight
+        top = Math.min(Math.max(top, minTop), Math.max(minTop, maxTop))
+
+        const width = rect.width
+        let left = rect.left
+        const minLeft = viewportPadding
+        const maxLeft = window.innerWidth - viewportPadding - width
+        left = Math.min(Math.max(left, minLeft), Math.max(minLeft, maxLeft))
+
+        setMenuStyle({
+            position: 'fixed',
+            top,
+            left,
+            width,
+            right: 'auto',
+            bottom: 'auto',
+    // Above ALL modal overlays including nested modals (z-index up to 2000+).
+                            zIndex: 10000,
+            visibility: 'visible',
+            pointerEvents: 'auto',
+        })
+    }, [])
 
     useEffect(() => {
         if (!isOpen) return
 
         const handleClickOutside = (event: MouseEvent) => {
-            if (
-                menuRef.current &&
-                !menuRef.current.contains(event.target as Node) &&
-                triggerRef.current &&
-                !triggerRef.current.contains(event.target as Node)
-            ) {
+            const target = event.target as Node
+            const triggerEl = triggerRef.current
+            const menuEl = menuRef.current
+
+            if (!triggerEl) return
+            if (triggerEl.contains(target)) return
+            if (menuEl?.contains(target)) return
+
+            setIsOpen(false)
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
                 setIsOpen(false)
             }
         }
 
         document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
+        document.addEventListener('keydown', handleKeyDown)
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside)
+            document.removeEventListener('keydown', handleKeyDown)
+        }
     }, [isOpen])
+
+    useEffect(() => {
+        if (!isOpen) {
+            setMenuStyle(null)
+            return
+        }
+        if (typeof window === 'undefined') return
+
+        // Render immediately near the trigger; we'll refine position after mount.
+        const triggerEl = triggerRef.current
+        const rect = triggerEl?.getBoundingClientRect()
+        setMenuStyle({
+            position: 'fixed',
+            top: rect ? rect.bottom + 6 : 0,
+            left: rect ? rect.left : 0,
+            width: rect ? rect.width : undefined,
+            right: 'auto',
+            bottom: 'auto',
+            zIndex: 10000,
+            visibility: 'visible',
+            pointerEvents: 'auto',
+        })
+
+        const raf = window.requestAnimationFrame(() => updateMenuPosition())
+        const handleScrollOrResize = () => updateMenuPosition()
+
+        window.addEventListener('resize', handleScrollOrResize)
+        // Capture scroll on all scroll containers (scroll doesn't bubble).
+        window.addEventListener('scroll', handleScrollOrResize, true)
+
+        return () => {
+            window.cancelAnimationFrame(raf)
+            window.removeEventListener('resize', handleScrollOrResize)
+            window.removeEventListener('scroll', handleScrollOrResize, true)
+        }
+    }, [isOpen, updateMenuPosition])
 
     const toggleMenu = () => {
         if (isDisabled) return
@@ -141,6 +239,7 @@ function MaterialSelect({
                             disabled={isDisabled}
                             aria-haspopup="listbox"
                             aria-expanded={isOpen}
+                            aria-controls={listboxId}
                         >
                             <span className={`md-select__value${selectedValue ? '' : ' is-placeholder'}`}>
                                 {selectedLabel || placeholder}
@@ -161,27 +260,44 @@ function MaterialSelect({
                                 />
                             </svg>
                         </button>
-                        <div
-                            ref={menuRef}
-                            className={`md-select__menu${isOpen ? ' is-open' : ''}`}
-                            role="listbox"
-                            aria-hidden={!isOpen}
-                        >
-                            {menuOptions.map((option) => (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    className={`md-select__option${option.value === selectedValue ? ' is-selected' : ''
-                                        }`}
-                                    onClick={() => handleSelect(option.value)}
-                                    disabled={option.disabled}
-                                    role="option"
-                                    aria-selected={option.value === selectedValue}
+                        {isOpen &&
+                            typeof document !== 'undefined' &&
+                            createPortal(
+                                <div
+                                    ref={menuRef}
+                                    id={listboxId}
+                                    className="md-select__menu is-open"
+                                    style={
+                                        menuStyle ?? {
+                                            position: 'fixed',
+                                            top: 0,
+                                            left: 0,
+                                            right: 'auto',
+                                            bottom: 'auto',
+                                            zIndex: 10000,
+                                            visibility: 'visible',
+                                            pointerEvents: 'auto',
+                                        }
+                                    }
+                                    role="listbox"
                                 >
-                                    {option.label}
-                                </button>
-                            ))}
-                        </div>
+                                    {menuOptions.map((option) => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            className={`md-select__option${option.value === selectedValue ? ' is-selected' : ''
+                                                }`}
+                                            onClick={() => handleSelect(option.value)}
+                                            disabled={option.disabled}
+                                            role="option"
+                                            aria-selected={option.value === selectedValue}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>,
+                                document.body
+                            )}
                         <select
                             className="md-select__native"
                             name={name}

@@ -31,6 +31,8 @@ routes = web.RouteTableDef()
 
 EVENT_CREATED = "capture_session.created"
 EVENT_STOPPED = "capture_session.stopped"
+EVENT_BACKFILL_STARTED = "capture_session.backfill_started"
+EVENT_BACKFILL_COMPLETED = "capture_session.backfill_completed"
 
 
 def _session_response(session: CaptureSession) -> dict:
@@ -231,6 +233,104 @@ async def list_capture_session_events(request: web.Request):
         total=total,
     )
     return web.json_response(payload)
+
+
+@routes.post("/api/v1/runs/{run_id}/capture-sessions/{session_id}/backfill/start")
+async def start_backfill(request: web.Request):
+    """Transition a succeeded capture session into backfilling mode.
+
+    While in backfilling status the telemetry-ingest-service treats incoming
+    data as normal (not late), so the sensor can re-send missing readings.
+    """
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    run_id = parse_uuid(request.match_info["run_id"], "run_id")
+    session_id = parse_uuid(request.match_info["session_id"], "session_id")
+    await _ensure_run(request, project_id, run_id)
+    service = await get_capture_session_service(request)
+    try:
+        session = await service.start_backfill(project_id, session_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    except InvalidStatusTransitionError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+
+    actor_role = user.project_roles.get(project_id)
+    if actor_role:
+        audit = await get_capture_session_event_service(request)
+        await audit.record_event(
+            capture_session_id=session.id,
+            event_type=EVENT_BACKFILL_STARTED,
+            actor_id=user.user_id,
+            actor_role=actor_role,
+            payload={
+                "run_id": str(run_id),
+                "status": session.status.value,
+            },
+        )
+        webhooks = await get_webhook_service(request)
+        await webhooks.emit(
+            project_id=project_id,
+            event_type=EVENT_BACKFILL_STARTED,
+            payload={
+                "run_id": str(run_id),
+                "capture_session_id": str(session.id),
+                "status": session.status.value,
+            },
+        )
+    return web.json_response(_session_response(session))
+
+
+@routes.post("/api/v1/runs/{run_id}/capture-sessions/{session_id}/backfill/complete")
+async def complete_backfill(request: web.Request):
+    """Finish backfill: attach late telemetry records and return to succeeded.
+
+    Response includes ``attached_records`` — the number of late telemetry rows
+    that were retroactively linked to the capture session.
+    """
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    run_id = parse_uuid(request.match_info["run_id"], "run_id")
+    session_id = parse_uuid(request.match_info["session_id"], "session_id")
+    await _ensure_run(request, project_id, run_id)
+    service = await get_capture_session_service(request)
+    try:
+        session, attached = await service.complete_backfill(project_id, session_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    except InvalidStatusTransitionError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+
+    actor_role = user.project_roles.get(project_id)
+    if actor_role:
+        audit = await get_capture_session_event_service(request)
+        await audit.record_event(
+            capture_session_id=session.id,
+            event_type=EVENT_BACKFILL_COMPLETED,
+            actor_id=user.user_id,
+            actor_role=actor_role,
+            payload={
+                "run_id": str(run_id),
+                "status": session.status.value,
+                "attached_records": attached,
+            },
+        )
+        webhooks = await get_webhook_service(request)
+        await webhooks.emit(
+            project_id=project_id,
+            event_type=EVENT_BACKFILL_COMPLETED,
+            payload={
+                "run_id": str(run_id),
+                "capture_session_id": str(session.id),
+                "status": session.status.value,
+                "attached_records": attached,
+            },
+        )
+    resp = _session_response(session)
+    resp["attached_records"] = attached
+    return web.json_response(resp)
 
 
 @routes.delete("/api/v1/runs/{run_id}/capture-sessions/{session_id}")

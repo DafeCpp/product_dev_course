@@ -22,6 +22,7 @@ import type {
   TelemetryIngest,
   TelemetryIngestResponse,
   TelemetryQueryResponse,
+  TelemetryAggregatedResponse,
   Project,
   ProjectCreate,
   ProjectUpdate,
@@ -30,6 +31,12 @@ import type {
   ProjectMemberAdd,
   ProjectMemberUpdate,
   ProjectMembersListResponse,
+  RunEventsListResponse,
+  CaptureSessionEventsListResponse,
+  WebhookSubscription,
+  WebhookSubscriptionCreate,
+  WebhooksListResponse,
+  WebhookDeliveriesListResponse,
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
@@ -231,6 +238,21 @@ export const experimentsApi = {
   }): Promise<ExperimentsListResponse> => {
     return await apiGet('/api/v1/experiments/search', { params })
   },
+
+  exportData: async (params: {
+    project_id?: string
+    format?: 'csv' | 'json'
+    status?: string
+    tags?: string
+    created_after?: string
+    created_before?: string
+  }): Promise<string> => {
+    const response = await apiClient.get('/api/v1/experiments/export', {
+      params: { ...params, project_id: params.project_id || getActiveProjectId() },
+      responseType: 'text',
+    })
+    return response.data
+  },
 }
 
 // Runs API
@@ -268,6 +290,23 @@ export const runsApi = {
     return await apiPatch(`/api/v1/runs/${id}`, { status: 'failed', reason })
   },
 
+  exportData: async (
+    experimentId: string,
+    params?: {
+      format?: 'csv' | 'json'
+      status?: string
+      tags?: string
+      created_after?: string
+      created_before?: string
+    }
+  ): Promise<string> => {
+    const response = await apiClient.get(`/api/v1/experiments/${experimentId}/runs/export`, {
+      params: { ...params, project_id: getActiveProjectId() || undefined },
+      responseType: 'text',
+    })
+    return response.data
+  },
+
   bulkTags: async (args: {
     run_ids: string[]
     set_tags?: string[]
@@ -283,6 +322,9 @@ export const sensorsApi = {
   list: async (params?: {
     project_id?: string
     status?: string
+    /** Backend pagination (preferred). */
+    limit?: number
+    offset?: number
     page?: number
     page_size?: number
   }): Promise<SensorsListResponse> => {
@@ -343,11 +385,22 @@ export const captureSessionsApi = {
   },
 
   stop: async (runId: string, sessionId: string): Promise<CaptureSession> => {
-    return await apiPost(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/stop`)
+    return await apiPost(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/stop`, {})
   },
 
   delete: async (runId: string, sessionId: string): Promise<void> => {
     await apiDelete(`/api/v1/runs/${runId}/capture-sessions/${sessionId}`)
+  },
+
+  startBackfill: async (runId: string, sessionId: string): Promise<CaptureSession> => {
+    return await apiPost(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/backfill/start`)
+  },
+
+  completeBackfill: async (
+    runId: string,
+    sessionId: string
+  ): Promise<CaptureSession & { attached_records: number }> => {
+    return await apiPost(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/backfill/complete`)
   },
 }
 
@@ -510,6 +563,64 @@ export const telemetryApi = {
 
     return (await resp.json()) as TelemetryQueryResponse
   },
+
+  aggregated: async (params: {
+    capture_session_id: string
+    sensor_id?: string[]
+    signal?: string
+    time_from?: string
+    time_to?: string
+    limit?: number
+    order?: 'asc' | 'desc'
+  }): Promise<TelemetryAggregatedResponse> => {
+    const TELEMETRY_BASE_URL =
+      import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
+    const url = new URL(`${TELEMETRY_BASE_URL}/api/v1/telemetry/aggregated`)
+    url.searchParams.set('capture_session_id', params.capture_session_id)
+    if (Array.isArray(params.sensor_id)) {
+      params.sensor_id.forEach((id) => {
+        if (id) url.searchParams.append('sensor_id', id)
+      })
+    }
+    if (params.signal) url.searchParams.set('signal', params.signal)
+    if (params.time_from) url.searchParams.set('time_from', params.time_from)
+    if (params.time_to) url.searchParams.set('time_to', params.time_to)
+    if (typeof params.limit === 'number') url.searchParams.set('limit', String(params.limit))
+    if (params.order === 'asc' || params.order === 'desc') {
+      url.searchParams.set('order', params.order)
+    }
+
+    const headers = {
+      'X-Trace-Id': getTraceId(),
+      'X-Request-Id': generateRequestId(),
+    }
+
+    const resp = await fetch(url.toString(), {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    })
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      const bodyText = truncateString(text || '')
+      maybeEmitHttpErrorToast(
+        buildHttpDebugInfoFromFetch({
+          message: text || `Ошибка запроса: HTTP ${resp.status}`,
+          request: { method: 'GET', url: url.toString(), headers },
+          response: {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: Object.fromEntries(resp.headers.entries()),
+            body: bodyText,
+          },
+        })
+      )
+      throw new Error(text || `Ошибка запроса: HTTP ${resp.status}`)
+    }
+
+    return (await resp.json()) as TelemetryAggregatedResponse
+  },
 }
 
 // Projects API
@@ -567,6 +678,56 @@ export const projectsApi = {
       data
     )
     return response.data
+  },
+}
+
+// Run Events (Audit Log) API
+export const runEventsApi = {
+  list: async (runId: string, params?: {
+    page?: number
+    page_size?: number
+  }): Promise<RunEventsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/events`, { params })
+  },
+}
+
+// Capture Session Events (Audit Log) API
+export const captureSessionEventsApi = {
+  list: async (runId: string, sessionId: string, params?: {
+    page?: number
+    page_size?: number
+  }): Promise<CaptureSessionEventsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/capture-sessions/${sessionId}/events`, { params })
+  },
+}
+
+// Webhooks API
+export const webhooksApi = {
+  list: async (params?: {
+    page?: number
+    page_size?: number
+  }): Promise<WebhooksListResponse> => {
+    return await apiGet('/api/v1/webhooks', { params })
+  },
+
+  create: async (data: WebhookSubscriptionCreate): Promise<WebhookSubscription> => {
+    return await apiPost('/api/v1/webhooks', data)
+  },
+
+  delete: async (webhookId: string): Promise<void> => {
+    await apiDelete(`/api/v1/webhooks/${webhookId}`)
+  },
+
+  listDeliveries: async (params?: {
+    status?: string
+    page?: number
+    page_size?: number
+  }): Promise<WebhookDeliveriesListResponse> => {
+    return await apiGet('/api/v1/webhooks/deliveries', { params })
+  },
+
+  retryDelivery: async (deliveryId: string): Promise<void> => {
+    await apiPost(`/api/v1/webhooks/deliveries/${deliveryId}:retry`)
   },
 }
 

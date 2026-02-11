@@ -237,6 +237,25 @@ export interface TelemetryQueryResponse {
   next_since_id: number | null
 }
 
+export interface TelemetryAggregatedRecord {
+  bucket: string
+  sensor_id: string | null
+  signal: string | null
+  capture_session_id: string | null
+  sample_count: number
+  avg_raw: number | null
+  min_raw: number | null
+  max_raw: number | null
+  avg_physical: number | null
+  min_physical: number | null
+  max_physical: number | null
+}
+
+export interface TelemetryAggregatedResponse {
+  buckets: TelemetryAggregatedRecord[]
+  bucket_interval: string
+}
+
 /** Типы для проектов */
 
 export interface Project {
@@ -281,5 +300,92 @@ export interface ProjectMemberUpdate {
 
 export interface ProjectMembersListResponse {
   members: ProjectMember[]
+}
+
+/** Типы для аудит-лога (events) */
+
+export interface RunEvent {
+  id: number
+  run_id: string
+  event_type: string
+  actor_id: string
+  actor_role: string
+  payload: Record<string, any>
+  created_at: string
+}
+
+export interface RunEventsListResponse {
+  events: RunEvent[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface CaptureSessionEvent {
+  id: number
+  capture_session_id: string
+  event_type: string
+  actor_id: string
+  actor_role: string
+  payload: Record<string, any>
+  created_at: string
+}
+
+export interface CaptureSessionEventsListResponse {
+  events: CaptureSessionEvent[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/** Типы для вебхуков */
+
+export interface WebhookSubscription {
+  id: string
+  project_id: string
+  target_url: string
+  secret: string | null
+  event_types: string[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WebhookSubscriptionCreate {
+  target_url: string
+  event_types: string[]
+  secret?: string
+}
+
+export interface WebhooksListResponse {
+  webhooks: WebhookSubscription[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface WebhookDelivery {
+  id: string
+  subscription_id: string
+  project_id: string
+  event_type: string
+  target_url: string
+  secret: string | null
+  request_body: Record<string, any>
+  status: string
+  attempt_count: number
+  last_error: string | null
+  dedup_key: string | null
+  locked_at: string | null
+  next_attempt_at: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WebhookDeliveriesListResponse {
+  deliveries: WebhookDelivery[]
+  total: number
+  page: number
+  page_size: number
 }
 

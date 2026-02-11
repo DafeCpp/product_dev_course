@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, List, Tuple
 from uuid import UUID
 
@@ -127,22 +128,47 @@ class RunRepository(BaseRepository):
         return items, total
 
     async def list_by_experiment(
-        self, project_id: UUID, experiment_id: UUID, *, limit: int = 50, offset: int = 0
+        self,
+        project_id: UUID,
+        experiment_id: UUID,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: RunStatus | None = None,
+        tags: list[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> Tuple[List[Run], int]:
-        records = await self._fetch(
-            """
+        conditions = ["project_id = $1", "experiment_id = $2"]
+        params: list[Any] = [project_id, experiment_id]
+        idx = 3
+        if status is not None:
+            conditions.append(f"status = ${idx}")
+            params.append(status.value)
+            idx += 1
+        if tags:
+            conditions.append(f"tags @> ${idx}")
+            params.append(tags)
+            idx += 1
+        if created_after is not None:
+            conditions.append(f"created_at >= ${idx}")
+            params.append(created_after)
+            idx += 1
+        if created_before is not None:
+            conditions.append(f"created_at <= ${idx}")
+            params.append(created_before)
+            idx += 1
+        where = " AND ".join(conditions)
+        params.extend([limit, offset])
+        query = f"""
             SELECT *,
                    COUNT(*) OVER() AS total_count
             FROM runs
-            WHERE project_id = $1 AND experiment_id = $2
+            WHERE {where}
             ORDER BY created_at DESC
-            LIMIT $3 OFFSET $4
-            """,
-            project_id,
-            experiment_id,
-            limit,
-            offset,
-        )
+            LIMIT ${idx} OFFSET ${idx + 1}
+        """
+        records = await self._fetch(query, *params)
         items: List[Run] = []
         total: int | None = None
         for rec in records:
@@ -156,7 +182,10 @@ class RunRepository(BaseRepository):
                     rec_dict[column] = json.loads(value)
             items.append(Run.model_validate(rec_dict))
         if total is None:
-            total = await self._count_by_experiment(project_id, experiment_id)
+            count_query = f"SELECT COUNT(*) AS total FROM runs WHERE {where}"
+            count_params = params[: -(2)]
+            record = await self._fetchrow(count_query, *count_params)
+            total = int(record["total"]) if record else 0
         return items, total
 
     async def _count_by_project(self, project_id: UUID) -> int:

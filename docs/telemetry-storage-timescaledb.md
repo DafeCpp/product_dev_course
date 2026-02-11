@@ -2,7 +2,7 @@
 
 Этот документ фиксирует рекомендации по хранению телеметрии датчиков (time-series) в Experiment Service на базе PostgreSQL + TimescaleDB.
 
-Статус: **дизайн принят, реализация ещё не выполнена** (см. roadmap Experiment Service).
+Статус: **реализовано** (см. roadmap Experiment Service).
 
 Контекст:
 - ingest принимает батчи readings через `POST /api/v1/telemetry` (см. `docs/telemetry-cli-ts.md`, `docs/telemetry-rc-stm32.md`);

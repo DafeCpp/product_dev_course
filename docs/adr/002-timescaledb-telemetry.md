@@ -2,7 +2,7 @@
 
 Статус: accepted
 Дата: 2026-01-13
-Реализация: ❌ ещё не выполнена (см. `docs/experiment-tracking-status-and-roadmap.md`)
+Реализация: ✅ выполнена (см. `docs/experiment-tracking-status-and-roadmap.md`)
 
 ## Контекст
 

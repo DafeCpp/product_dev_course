@@ -17,6 +17,8 @@ import {
 } from '../components/common'
 import CreateExperimentModal from '../components/CreateExperimentModal'
 import { setActiveProjectId } from '../utils/activeProject'
+import { downloadBlob } from '../utils/download'
+import { notifyError, notifySuccess } from '../utils/notify'
 import { IS_TEST } from '../utils/env'
 import './ExperimentsList.scss'
 
@@ -26,6 +28,7 @@ function ExperimentsList() {
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [page, setPage] = useState(1)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const pageSize = 20
 
   // Загружаем список проектов для автоматического выбора первого проекта
@@ -139,6 +142,57 @@ function ExperimentsList() {
                 <option value="failed">Ошибка</option>
                 <option value="archived">Архивирован</option>
               </MaterialSelect>
+              <div className="form-group export-actions">
+                <label>Экспорт</label>
+                <div className="export-btns">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={exporting || !projectId}
+                    onClick={async () => {
+                      setExporting(true)
+                      try {
+                        const csv = await experimentsApi.exportData({
+                          project_id: projectId,
+                          format: 'csv',
+                          status: status || undefined,
+                        })
+                        downloadBlob(csv, 'experiments.csv', 'text/csv')
+                        notifySuccess('CSV экспортирован')
+                      } catch {
+                        notifyError('Ошибка экспорта CSV')
+                      } finally {
+                        setExporting(false)
+                      }
+                    }}
+                  >
+                    {exporting ? 'Экспорт...' : 'CSV'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={exporting || !projectId}
+                    onClick={async () => {
+                      setExporting(true)
+                      try {
+                        const json = await experimentsApi.exportData({
+                          project_id: projectId,
+                          format: 'json',
+                          status: status || undefined,
+                        })
+                        downloadBlob(json, 'experiments.json', 'application/json')
+                        notifySuccess('JSON экспортирован')
+                      } catch {
+                        notifyError('Ошибка экспорта JSON')
+                      } finally {
+                        setExporting(false)
+                      }
+                    }}
+                  >
+                    JSON
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 

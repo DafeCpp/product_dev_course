@@ -17,6 +17,8 @@ from backend_common.logging_config import configure_logging
 
 from experiment_service.api.router import setup_routes
 from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
+from experiment_service.workers import start_background_worker, stop_background_worker
+from experiment_service.otel import setup_otel, shutdown_otel
 from experiment_service.settings import settings
 from experiment_service.webhooks_dispatcher import start_webhook_dispatcher, stop_webhook_dispatcher
 
@@ -46,10 +48,17 @@ def create_app() -> web.Application:
     add_healthcheck(app, settings)
     add_openapi_spec(app, OPENAPI_PATH)
     setup_routes(app)
+
+    # OpenTelemetry (auto-instruments aiohttp server; no-op when endpoint not set)
+    setup_otel(app)
+
     app.on_startup.append(init_pool)
     app.on_startup.append(apply_migrations_on_startup)
     app.on_startup.append(start_webhook_dispatcher)
+    app.on_startup.append(start_background_worker)
+    app.on_cleanup.append(stop_background_worker)
     app.on_cleanup.append(stop_webhook_dispatcher)
+    app.on_cleanup.append(shutdown_otel)
     app.on_cleanup.append(close_pool)
 
     # Add CORS to all routes

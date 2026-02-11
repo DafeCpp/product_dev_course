@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from asyncpg import Record  # type: ignore[import-untyped]
@@ -70,6 +71,14 @@ class IdempotencyRepository(BaseRepository):
             response_status,
             json.dumps(response_body, sort_keys=True, separators=(",", ":"), default=str),
         )
+
+    async def delete_expired(self, created_before: datetime) -> int:
+        """Delete idempotency records older than *created_before*. Returns count."""
+        result = await self._execute(
+            "DELETE FROM request_idempotency WHERE created_at < $1",
+            created_before,
+        )
+        return int(result.split()[-1])
 
     @staticmethod
     def _to_record(record: Record) -> IdempotencyRecord:

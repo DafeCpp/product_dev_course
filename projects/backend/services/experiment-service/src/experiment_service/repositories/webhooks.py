@@ -335,3 +335,33 @@ class WebhookDeliveryRepository(BaseRepository):
             next_attempt_at,
         )
 
+    async def reclaim_stuck(self, locked_before: datetime) -> int:
+        """Release deliveries stuck in ``in_progress`` (e.g. after crash).
+
+        Resets them to ``pending`` with ``next_attempt_at = now()`` so the
+        dispatcher picks them up on the next sweep.
+
+        Returns the number of reclaimed rows.
+        """
+        result = await self._execute(
+            """
+            UPDATE webhook_deliveries
+            SET status = 'pending',
+                locked_at = NULL,
+                next_attempt_at = now(),
+                updated_at = now()
+            WHERE status = 'in_progress'
+              AND locked_at < $1
+            """,
+            locked_before,
+        )
+        return int(result.split()[-1])
+
+    async def delete_old_succeeded(self, created_before: datetime) -> int:
+        """Purge succeeded deliveries older than *created_before*. Returns count."""
+        result = await self._execute(
+            "DELETE FROM webhook_deliveries WHERE status = 'succeeded' AND created_at < $1",
+            created_before,
+        )
+        return int(result.split()[-1])
+

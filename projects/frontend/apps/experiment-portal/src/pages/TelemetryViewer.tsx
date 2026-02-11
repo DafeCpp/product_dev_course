@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
 import { EmptyState, Error as ErrorComponent, FloatingActionButton, Loading, MaterialSelect } from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
-import type { CaptureSession, Sensor, TelemetryQueryRecord } from '../types'
+import { notifyError, notifySuccess } from '../utils/notify'
+import type { CaptureSession, Sensor, TelemetryQueryRecord, TelemetryAggregatedRecord } from '../types'
 import './TelemetryViewer.scss'
+
+function hexToRgba(hex: string, alpha: number): string {
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r},${g},${b},${alpha})`
+}
 
 type TelemetryViewerState = {
     projectId: string
@@ -57,9 +65,11 @@ function TelemetryViewer() {
     const [historyIncludeLate, setHistoryIncludeLate] = useState(true)
     const [historyMaxPoints, setHistoryMaxPoints] = useState(HISTORY_MAX_POINTS_DEFAULT)
     const [historyOrder, setHistoryOrder] = useState<'asc' | 'desc'>('asc')
+    const [historyUseAggregated, setHistoryUseAggregated] = useState(false)
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyError, setHistoryError] = useState<string | null>(null)
     const [historyPoints, setHistoryPoints] = useState<TelemetryQueryRecord[]>([])
+    const [historyAggBuckets, setHistoryAggBuckets] = useState<TelemetryAggregatedRecord[]>([])
     const [historyLoadedCount, setHistoryLoadedCount] = useState(0)
     const [historyWasTruncated, setHistoryWasTruncated] = useState(false)
     const [historySessionFilter, setHistorySessionFilter] = useState('')
@@ -216,7 +226,35 @@ function TelemetryViewer() {
 
     const { data: sensorsData, isLoading, error } = useQuery({
         queryKey: ['sensors', projectId],
-        queryFn: () => sensorsApi.list({ project_id: projectId }),
+        queryFn: async () => {
+            // The backend paginates with limit/offset and caps limit at 100.
+            // For Telemetry we want a complete sensor list for selection.
+            const limit = 100
+            let offset = 0
+            let total = 0
+            const collected: Sensor[] = []
+
+            // Safety guard: avoid an infinite loop if upstream misbehaves.
+            const maxTotalToFetch = 5000
+
+            while (collected.length < maxTotalToFetch) {
+                const resp = await sensorsApi.list({ project_id: projectId, limit, offset })
+                total = resp.total
+                collected.push(...resp.sensors)
+
+                if (resp.sensors.length === 0) break
+                offset += resp.sensors.length
+                if (resp.sensors.length < limit) break
+                if (total > 0 && collected.length >= total) break
+            }
+
+            return {
+                sensors: collected,
+                total,
+                page: 1,
+                page_size: collected.length,
+            }
+        },
         enabled: !!projectId,
     })
 
@@ -232,10 +270,22 @@ function TelemetryViewer() {
         enabled: !!experimentId,
     })
 
+    const { data: runDetail, isLoading: runDetailLoading } = useQuery({
+        queryKey: ['run', runId],
+        queryFn: () => runsApi.get(runId),
+        enabled: !!runId,
+    })
+
+    const { data: runExperiment } = useQuery({
+        queryKey: ['experiment', runDetail?.experiment_id],
+        queryFn: () => experimentsApi.get(runDetail!.experiment_id),
+        enabled: !!runDetail?.experiment_id,
+    })
+
     const { data: captureSessionsData, isLoading: captureSessionsLoading, error: captureSessionsError } = useQuery({
         queryKey: ['capture-sessions', runId],
         queryFn: () => captureSessionsApi.list(runId, { page_size: 200 }),
-        enabled: !!runId && viewMode === 'history',
+        enabled: !!runId,
     })
 
     useEffect(() => {
@@ -266,6 +316,105 @@ function TelemetryViewer() {
     const experiments = experimentsData?.experiments || []
     const runs = runsData?.runs || []
     const captureSessions = captureSessionsData?.capture_sessions || []
+    const activeCaptureSession = captureSessions.find(
+        (s: CaptureSession) => s.status === 'running' || s.status === 'backfilling'
+    )
+    const canManageCaptureSession =
+        !!runId &&
+        !!runDetail &&
+        !!runExperiment &&
+        (runDetail.status === 'draft' || runDetail.status === 'running')
+
+    const queryClient = useQueryClient()
+    const createSessionMutation = useMutation({
+        mutationFn: (notes?: string) => {
+            if (!runExperiment) throw new Error('Experiment not loaded')
+            const nextOrdinal =
+                captureSessions.length > 0
+                    ? Math.max(...captureSessions.map((s: CaptureSession) => s.ordinal_number)) + 1
+                    : 1
+            return captureSessionsApi.create(runId, {
+                project_id: runExperiment.project_id,
+                run_id: runId,
+                ordinal_number: nextOrdinal,
+                notes: notes || undefined,
+            }, { project_id: runExperiment.project_id })
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
+            notifySuccess('Отсчёт запущен')
+        },
+        onError: (err: unknown) => {
+            const msg =
+                (err as any)?.response?.data?.message ||
+                (err as any)?.response?.data?.error ||
+                (err as Error)?.message ||
+                'Не удалось запустить отсчёт'
+            notifyError(msg)
+        },
+    })
+
+    const stopSessionMutation = useMutation({
+        mutationFn: (sessionId: string) => captureSessionsApi.stop(runId, sessionId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
+            notifySuccess('Отсчёт остановлен')
+        },
+        onError: (err: unknown) => {
+            const msg =
+                (err as any)?.response?.data?.message ||
+                (err as any)?.response?.data?.error ||
+                (err as Error)?.message ||
+                'Не удалось остановить отсчёт'
+            notifyError(msg)
+        },
+    })
+
+    const startBackfillMutation = useMutation({
+        mutationFn: (sessionId: string) => captureSessionsApi.startBackfill(runId, sessionId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
+            notifySuccess('Догрузка запущена — сессия в режиме backfilling')
+        },
+        onError: (err: unknown) => {
+            const msg =
+                (err as any)?.response?.data?.message ||
+                (err as any)?.response?.data?.error ||
+                (err as Error)?.message ||
+                'Не удалось запустить догрузку'
+            notifyError(msg)
+        },
+    })
+
+    const completeBackfillMutation = useMutation({
+        mutationFn: (sessionId: string) => captureSessionsApi.completeBackfill(runId, sessionId),
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
+            const attached = (data as any)?.attached_records ?? 0
+            notifySuccess(`Догрузка завершена — привязано записей: ${attached}`)
+        },
+        onError: (err: unknown) => {
+            const msg =
+                (err as any)?.response?.data?.message ||
+                (err as any)?.response?.data?.error ||
+                (err as Error)?.message ||
+                'Не удалось завершить догрузку'
+            notifyError(msg)
+        },
+    })
+
+    const selectedHistorySession = captureSessions.find(
+        (s: CaptureSession) => s.id === historyCaptureSessionId
+    )
+    const canStartBackfill =
+        viewMode === 'history' &&
+        !!selectedHistorySession &&
+        selectedHistorySession.status === 'succeeded'
+    const canCompleteBackfill =
+        viewMode === 'history' &&
+        !!selectedHistorySession &&
+        selectedHistorySession.status === 'backfilling'
+
     const hasProjects = !!projectsData?.projects?.length
     const isLiveMode = viewMode === 'live'
     const canAddPanel =
@@ -369,6 +518,50 @@ function TelemetryViewer() {
         })
     }, [historyPoints, historySensorsById, historyValueMode])
 
+    // Aggregated series: group by sensor_id+signal, build avg / min / max arrays
+    const historyAggSeriesData = useMemo(() => {
+        type AggGroup = {
+            sensorId: string
+            signal: string | null
+            buckets: TelemetryAggregatedRecord[]
+        }
+        const key = (b: TelemetryAggregatedRecord) =>
+            `${b.sensor_id ?? ''}::${b.signal ?? ''}`
+        const groups = new Map<string, AggGroup>()
+        historyAggBuckets.forEach((b) => {
+            const k = key(b)
+            let g = groups.get(k)
+            if (!g) {
+                g = { sensorId: b.sensor_id ?? '', signal: b.signal, buckets: [] }
+                groups.set(k, g)
+            }
+            g.buckets.push(b)
+        })
+        return Array.from(groups.values()).map((g) => {
+            const ordered = g.buckets.slice().sort(
+                (a, b) => new Date(a.bucket).getTime() - new Date(b.bucket).getTime()
+            )
+            const sensor = historySensorsById.get(g.sensorId)
+            const label = `${sensor?.name || g.sensorId}${g.signal ? ` / ${g.signal}` : ''}`
+            return {
+                id: g.sensorId,
+                signal: g.signal,
+                name: label,
+                x: ordered.map((r) => r.bucket),
+                avg: ordered.map((r) =>
+                    historyValueMode === 'physical' ? r.avg_physical : r.avg_raw
+                ),
+                min: ordered.map((r) =>
+                    historyValueMode === 'physical' ? r.min_physical : r.min_raw
+                ),
+                max: ordered.map((r) =>
+                    historyValueMode === 'physical' ? r.max_physical : r.max_raw
+                ),
+                count: ordered.map((r) => r.sample_count),
+            }
+        })
+    }, [historyAggBuckets, historySensorsById, historyValueMode])
+
     const historyEffectiveSensorIds = useMemo(() => {
         if (historySensorIds.length > 0) return historySensorIds
         const unique = new Set<string>()
@@ -441,26 +634,71 @@ function TelemetryViewer() {
     }, [captureSessions, historySessionFilter])
 
     const historyHasData = useMemo(
-        () => historySeriesData.some((series) => series.y.length > 0),
-        [historySeriesData]
+        () =>
+            historyUseAggregated
+                ? historyAggSeriesData.some((s) => s.avg.length > 0)
+                : historySeriesData.some((series) => series.y.length > 0),
+        [historySeriesData, historyAggSeriesData, historyUseAggregated]
     )
 
-    const historyPlotlyData = useMemo(
-        () =>
-            historySeriesData.map((series, index) => ({
-                x: series.x,
-                y: series.y,
-                type: 'scattergl' as const,
-                mode: 'lines' as const,
-                name: series.name,
-                line: {
-                    color: ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#06b6d4', '#e11d48'][index % 6],
-                    width: 2,
-                },
-                hovertemplate: '%{x}<br>%{y:.3f}<extra></extra>',
-            })),
-        [historySeriesData]
-    )
+    const SERIES_COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#06b6d4', '#e11d48']
+
+    const historyPlotlyData = useMemo(() => {
+        if (historyUseAggregated) {
+            // For each sensor+signal group: min band (invisible base), max band (filled to min), avg line
+            const traces: any[] = []
+            historyAggSeriesData.forEach((series, index) => {
+                const color = SERIES_COLORS[index % SERIES_COLORS.length]
+                // min line — invisible lower bound for fill
+                traces.push({
+                    x: series.x,
+                    y: series.min,
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    name: `${series.name} min`,
+                    line: { color: 'transparent', width: 0 },
+                    showlegend: false,
+                    hoverinfo: 'skip' as const,
+                })
+                // max line — filled down to min
+                traces.push({
+                    x: series.x,
+                    y: series.max,
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    name: `${series.name} range`,
+                    line: { color: 'transparent', width: 0 },
+                    fill: 'tonexty' as const,
+                    fillcolor: hexToRgba(color, 0.15),
+                    showlegend: false,
+                    hovertemplate: `min: %{y:.3f}<extra>${series.name} max</extra>`,
+                })
+                // avg line
+                traces.push({
+                    x: series.x,
+                    y: series.avg,
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    name: `${series.name} avg`,
+                    line: { color, width: 2 },
+                    hovertemplate: `avg: %{y:.3f}<extra>${series.name}</extra>`,
+                })
+            })
+            return traces
+        }
+        return historySeriesData.map((series, index) => ({
+            x: series.x,
+            y: series.y,
+            type: 'scattergl' as const,
+            mode: 'lines' as const,
+            name: series.name,
+            line: {
+                color: SERIES_COLORS[index % SERIES_COLORS.length],
+                width: 2,
+            },
+            hovertemplate: '%{x}<br>%{y:.3f}<extra></extra>',
+        }))
+    }, [historySeriesData, historyAggSeriesData, historyUseAggregated])
 
     const historyPlotlyLayout = useMemo(
         () => ({
@@ -588,39 +826,60 @@ function TelemetryViewer() {
         }
         setHistoryLoading(true)
         setHistoryPoints([])
+        setHistoryAggBuckets([])
         setHistoryLoadedCount(0)
         setHistoryWasTruncated(false)
         try {
-            let sinceId = 0
-            const collected: TelemetryQueryRecord[] = []
-            const safeMaxPointsRaw =
-                Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
-            const safeMaxPoints = Math.min(HISTORY_MAX_POINTS_LIMIT, safeMaxPointsRaw)
-            let lastHasMore = false
-            while (collected.length < safeMaxPoints) {
-                const pageLimit = Math.min(HISTORY_PAGE_SIZE, safeMaxPoints - collected.length)
-                const resp = await telemetryApi.query({
+            if (historyUseAggregated) {
+                // --- Aggregated (1m buckets from continuous aggregate) ---
+                const safeLimit = Math.min(
+                    settings.telemetry_query_max_limit ?? HISTORY_MAX_POINTS_LIMIT,
+                    Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT,
+                )
+                const resp = await telemetryApi.aggregated({
                     capture_session_id: historyCaptureSessionId,
                     sensor_id: historySensorIds.length > 0 ? historySensorIds : undefined,
-                    since_id: sinceId,
-                    limit: pageLimit,
-                    include_late: historyIncludeLate,
+                    limit: safeLimit,
                     order: historyOrder,
                 })
-                collected.push(...resp.points)
-                setHistoryLoadedCount(collected.length)
-                lastHasMore = !!resp.next_since_id && resp.points.length > 0
-                if (!lastHasMore) break
-                sinceId = resp.next_since_id ?? sinceId
+                setHistoryAggBuckets(resp.buckets)
+                setHistoryLoadedCount(resp.buckets.length)
+            } else {
+                // --- Raw points ---
+                let sinceId = 0
+                const collected: TelemetryQueryRecord[] = []
+                const safeMaxPointsRaw =
+                    Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
+                const safeMaxPoints = Math.min(HISTORY_MAX_POINTS_LIMIT, safeMaxPointsRaw)
+                let lastHasMore = false
+                while (collected.length < safeMaxPoints) {
+                    const pageLimit = Math.min(HISTORY_PAGE_SIZE, safeMaxPoints - collected.length)
+                    const resp = await telemetryApi.query({
+                        capture_session_id: historyCaptureSessionId,
+                        sensor_id: historySensorIds.length > 0 ? historySensorIds : undefined,
+                        since_id: sinceId,
+                        limit: pageLimit,
+                        include_late: historyIncludeLate,
+                        order: historyOrder,
+                    })
+                    collected.push(...resp.points)
+                    setHistoryLoadedCount(collected.length)
+                    lastHasMore = !!resp.next_since_id && resp.points.length > 0
+                    if (!lastHasMore) break
+                    sinceId = resp.next_since_id ?? sinceId
+                }
+                setHistoryPoints(collected)
+                setHistoryWasTruncated(lastHasMore && collected.length >= safeMaxPoints)
             }
-            setHistoryPoints(collected)
-            setHistoryWasTruncated(lastHasMore && collected.length >= safeMaxPoints)
         } catch (err: any) {
             setHistoryError(err?.message || 'Ошибка загрузки истории')
         } finally {
             setHistoryLoading(false)
         }
     }
+
+    // Placeholder for settings object used above (avoids introducing a new dependency)
+    const settings = { telemetry_query_max_limit: HISTORY_MAX_POINTS_LIMIT }
 
     return (
         <div className="telemetry-view">
@@ -714,6 +973,47 @@ function TelemetryViewer() {
                                 ))}
                             </MaterialSelect>
 
+                            {canManageCaptureSession && (
+                                <div className="telemetry-view__capture-actions form-group">
+                                    <label className="telemetry-view__capture-actions-label">Отсчёт (capture session)</label>
+                                    <div className="telemetry-view__capture-actions-btns">
+                                        {activeCaptureSession ? (
+                                            <button
+                                                type="button"
+                                                className="btn btn-danger btn-sm"
+                                                onClick={() => {
+                                                    if (window.confirm('Остановить отсчёт?')) {
+                                                        stopSessionMutation.mutate(activeCaptureSession.id)
+                                                    }
+                                                }}
+                                                disabled={stopSessionMutation.isPending}
+                                            >
+                                                {stopSessionMutation.isPending ? 'Остановка...' : 'Остановить отсчёт'}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="btn btn-primary btn-sm"
+                                                onClick={() => {
+                                                    const notes = window.prompt('Заметки (опционально):')
+                                                    if (notes === null) return
+                                                    createSessionMutation.mutate(notes.trim() || undefined)
+                                                }}
+                                                disabled={
+                                                    createSessionMutation.isPending ||
+                                                    runDetailLoading ||
+                                                    !runExperiment
+                                                }
+                                            >
+                                                {createSessionMutation.isPending
+                                                    ? 'Создание...'
+                                                    : 'Старт отсчёта'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {viewMode === 'history' && (
                                 <div className="form-group">
                                     <label htmlFor="telemetry_capture_session_filter">Фильтр сессий</label>
@@ -750,6 +1050,52 @@ function TelemetryViewer() {
                                         </option>
                                     ))}
                                 </MaterialSelect>
+                            )}
+
+                            {(canStartBackfill || canCompleteBackfill) && (
+                                <div className="telemetry-view__backfill-actions form-group">
+                                    <label>Догрузка данных (backfill)</label>
+                                    <div className="telemetry-view__backfill-btns">
+                                        {canStartBackfill && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary btn-sm"
+                                                disabled={startBackfillMutation.isPending}
+                                                onClick={() => {
+                                                    if (window.confirm(
+                                                        'Перевести сессию в режим догрузки (backfilling)?\n\n' +
+                                                        'Новые данные от датчиков будут привязаны к этой сессии.'
+                                                    )) {
+                                                        startBackfillMutation.mutate(historyCaptureSessionId)
+                                                    }
+                                                }}
+                                            >
+                                                {startBackfillMutation.isPending
+                                                    ? 'Запуск...'
+                                                    : 'Начать догрузку'}
+                                            </button>
+                                        )}
+                                        {canCompleteBackfill && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-primary btn-sm"
+                                                disabled={completeBackfillMutation.isPending}
+                                                onClick={() => {
+                                                    if (window.confirm(
+                                                        'Завершить догрузку?\n\n' +
+                                                        'Все late-записи будут привязаны к сессии, статус вернётся в succeeded.'
+                                                    )) {
+                                                        completeBackfillMutation.mutate(historyCaptureSessionId)
+                                                    }
+                                                }}
+                                            >
+                                                {completeBackfillMutation.isPending
+                                                    ? 'Завершение...'
+                                                    : 'Завершить догрузку'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             )}
                         </div>
 
@@ -849,6 +1195,8 @@ function TelemetryViewer() {
                                 <TelemetryPanel
                                     panelId={panelId}
                                     sensors={sensors}
+                                    sensorsLoading={isLoading}
+                                    sensorsError={error ? (typeof error === 'string' ? error : (error as Error)?.message ?? 'Ошибка загрузки сенсоров') : null}
                                     title={`${panelTitleSeed} #${index + 1}`}
                                     onRemove={() => removePanel(panelId)}
                                     onSizeChange={(size) => handlePanelSizeChange(panelId, size)}
@@ -958,8 +1306,17 @@ function TelemetryViewer() {
                                     type="checkbox"
                                     checked={historyIncludeLate}
                                     onChange={(e) => setHistoryIncludeLate(e.target.checked)}
+                                    disabled={historyUseAggregated}
                                 />
                                 include late
+                            </label>
+                            <label className="telemetry-view__checkbox" title="Загрузить агрегированные данные (1-минутные бакеты: avg/min/max) вместо сырых точек">
+                                <input
+                                    type="checkbox"
+                                    checked={historyUseAggregated}
+                                    onChange={(e) => setHistoryUseAggregated(e.target.checked)}
+                                />
+                                агрегация 1m
                             </label>
                             <div className="telemetry-view__mode-toggle">
                                 <label>
@@ -1024,7 +1381,9 @@ function TelemetryViewer() {
                     {historyError && <div className="telemetry-view__error">{historyError}</div>}
                     {(historyLoadedCount > 0 || historyWasTruncated) && (
                         <div className="telemetry-view__history-summary">
-                            Загружено точек: {historyLoadedCount}
+                            {historyUseAggregated
+                                ? `Загружено бакетов (1m): ${historyLoadedCount}`
+                                : `Загружено точек: ${historyLoadedCount}`}
                             {historyWasTruncated &&
                                 ` (показаны ${historyOrder === 'desc' ? 'последние' : 'первые'} ${historyDisplayMaxPoints})`}
                         </div>

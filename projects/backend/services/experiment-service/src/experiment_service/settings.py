@@ -34,6 +34,13 @@ class Settings(BaseServiceSettings):
     webhook_dispatch_max_concurrency: int = 10
     webhook_target_max_concurrency: int = 1
 
+    # Background worker
+    worker_interval_seconds: float = 60.0  # how often the worker loop runs
+    idempotency_ttl_hours: int = 48  # delete idempotency keys older than this
+    stale_session_max_hours: int = 24  # auto-fail running sessions older than this
+    webhook_stuck_minutes: int = 10  # reclaim in_progress deliveries older than this
+    webhook_succeeded_retention_days: int = 30  # purge succeeded deliveries older than this
+
 
 @lru_cache
 def get_settings() -> Settings:

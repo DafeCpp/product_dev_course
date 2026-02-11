@@ -11,6 +11,10 @@ type TelemetryPanelProps = {
     panelId: string
     title: string
     sensors: Sensor[]
+    /** True when sensors are still loading (project-scoped query in progress). */
+    sensorsLoading?: boolean
+    /** Error message from sensors query, if any. */
+    sensorsError?: string | null
     onRemove: () => void
     dragHandleProps?: React.ButtonHTMLAttributes<HTMLButtonElement>
     onSizeChange?: (size: { width: number; height: number }) => void
@@ -25,13 +29,17 @@ type TelemetryPanelState = {
     title: string
     selectedSensorIds: string[]
     valueMode: ValueMode
-    maxPoints: number
+    /** @deprecated kept for backward compat with localStorage; no longer shown in UI */
+    maxPoints?: number
     timeWindowSeconds: TimeWindowSeconds
     useLatestAnchor: boolean
     startFromTimestamp?: string
     startFromCursorBySensor?: Record<string, StreamCursor>
     size?: { width: number; height: number }
 }
+
+/** Internal safety cap — prevents chart from rendering too many DOM elements. */
+const MAX_POINTS_CAP = 5000
 
 const SERIES_COLORS = [
     '#2563eb',
@@ -51,10 +59,6 @@ function formatWindow(seconds: number) {
     return `${seconds} сек`
 }
 
-function clamp(n: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, n))
-}
-
 function parseTimestampMs(value: string) {
     const parsed = Date.parse(value)
     return Number.isFinite(parsed) ? parsed : null
@@ -65,6 +69,8 @@ export default function TelemetryPanel({
     panelId,
     title,
     sensors,
+    sensorsLoading = false,
+    sensorsError = null,
     onRemove,
     dragHandleProps,
     onSizeChange,
@@ -73,7 +79,6 @@ export default function TelemetryPanel({
     const [selectedSensorIds, setSelectedSensorIds] = useState<string[]>([])
     const [status, setStatus] = useState<StreamStatus>('idle')
     const [valueMode, setValueMode] = useState<ValueMode>('physical')
-    const [maxPoints, setMaxPoints] = useState(200)
     const [timeWindowSeconds, setTimeWindowSeconds] = useState<TimeWindowSeconds>(300)
     const [useLatestAnchor, setUseLatestAnchor] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -88,6 +93,7 @@ export default function TelemetryPanel({
     const abortControllers = useRef<Record<string, AbortController>>({})
     const runningRef = useRef<Record<string, boolean>>({})
     const plotRef = useRef<HTMLDivElement | null>(null)
+    const scrollAnimRef = useRef<number | null>(null)
     const panelRef = useRef<HTMLDivElement | null>(null)
     const stateLoadedRef = useRef(false)
     const skipInitialSaveRef = useRef(true)
@@ -100,7 +106,6 @@ export default function TelemetryPanel({
             title: panelTitle,
             selectedSensorIds: nextSelectedSensorIds ?? selectedSensorIds,
             valueMode,
-            maxPoints,
             timeWindowSeconds,
             useLatestAnchor,
             startFromTimestamp: startFromTimestamp ?? undefined,
@@ -130,9 +135,6 @@ export default function TelemetryPanel({
                 setSelectedSensorIds(next)
             }
             if (parsed.valueMode === 'physical' || parsed.valueMode === 'raw') setValueMode(parsed.valueMode)
-            if (typeof parsed.maxPoints === 'number' && Number.isFinite(parsed.maxPoints)) {
-                setMaxPoints(clamp(parsed.maxPoints, 50, 2000))
-            }
             if (
                 typeof parsed.timeWindowSeconds === 'number' &&
                 TIME_WINDOWS_SECONDS.includes(parsed.timeWindowSeconds as TimeWindowSeconds)
@@ -216,7 +218,6 @@ export default function TelemetryPanel({
             title: panelTitle,
             selectedSensorIds,
             valueMode,
-            maxPoints,
             timeWindowSeconds,
             useLatestAnchor,
             startFromTimestamp: startFromTimestamp ?? undefined,
@@ -229,7 +230,6 @@ export default function TelemetryPanel({
         panelTitle,
         selectedSensorIds,
         valueMode,
-        maxPoints,
         timeWindowSeconds,
         useLatestAnchor,
         startFromTimestamp,
@@ -332,7 +332,7 @@ export default function TelemetryPanel({
                         const next = { ...prev }
                         const existing = next[sensorId] || []
                         const updated = [...existing, parsed]
-                        next[sensorId] = updated.length > maxPoints ? updated.slice(updated.length - maxPoints) : updated
+                        next[sensorId] = updated.length > MAX_POINTS_CAP ? updated.slice(updated.length - MAX_POINTS_CAP) : updated
                         return next
                     })
                 } catch (e: any) {
@@ -406,7 +406,7 @@ export default function TelemetryPanel({
                     if (!hasWindowAnchor) return true
                     return point.ts >= anchorMs - windowMs
                 })
-                .slice(-maxPoints)
+                .slice(-MAX_POINTS_CAP)
             return {
                 id: sensor.id,
                 name: sensor.name,
@@ -414,7 +414,7 @@ export default function TelemetryPanel({
                 y: points.map((point) => point.y),
             }
         })
-    }, [filteredSensors, recordsBySensor, valueMode, maxPoints, timeWindowSeconds, useLatestAnchor])
+    }, [filteredSensors, recordsBySensor, valueMode, timeWindowSeconds, useLatestAnchor])
 
     const plotlyData = useMemo(
         () =>
@@ -435,8 +435,12 @@ export default function TelemetryPanel({
 
     const hasData = useMemo(() => seriesData.some((series) => series.y.length > 0), [seriesData])
 
-    const plotlyLayout = useMemo(
-        () => ({
+    const plotlyLayout = useMemo(() => {
+        const isStreaming = status === 'streaming'
+        const nowMs = Date.now()
+        const windowMs = timeWindowSeconds * 1000
+
+        return {
             autosize: true,
             margin: { l: 42, r: 14, t: 12, b: 24 },
             showlegend: false,
@@ -449,6 +453,15 @@ export default function TelemetryPanel({
                 tickfont: { size: 10, color: '#475569' },
                 ticks: 'outside' as const,
                 tickcolor: 'rgba(15, 23, 42, 0.12)',
+                ...(isStreaming
+                    ? {
+                          range: [
+                              new Date(nowMs - windowMs).toISOString(),
+                              new Date(nowMs).toISOString(),
+                          ],
+                          autorange: false,
+                      }
+                    : { autorange: true }),
             },
             yaxis: {
                 showgrid: true,
@@ -458,9 +471,8 @@ export default function TelemetryPanel({
                 ticks: 'outside' as const,
                 tickcolor: 'rgba(15, 23, 42, 0.12)',
             },
-        }),
-        []
-    )
+        }
+    }, [status, timeWindowSeconds])
 
     const plotlyConfig = useMemo(
         () => ({
@@ -480,18 +492,67 @@ export default function TelemetryPanel({
 
     useEffect(() => {
         const element = plotRef.current
+        const panel = panelRef.current
         if (!element || typeof ResizeObserver === 'undefined') return
         const observer = new ResizeObserver(() => {
             Plotly.Plots.resize(element)
         })
         observer.observe(element)
+        if (panel) observer.observe(panel)
         return () => observer.disconnect()
     }, [])
+
+    // ---- Smooth x-axis scroll during live streaming ----
+    useEffect(() => {
+        if (status !== 'streaming') {
+            // When streaming stops, restore auto-range so the chart fits the data
+            if (scrollAnimRef.current !== null) {
+                cancelAnimationFrame(scrollAnimRef.current)
+                scrollAnimRef.current = null
+            }
+            const element = plotRef.current
+            if (element && hasData) {
+                Plotly.relayout(element, { 'xaxis.autorange': true })
+            }
+            return
+        }
+
+        const element = plotRef.current
+        if (!element) return
+
+        const FRAME_INTERVAL_MS = 50 // ~20 fps
+        let lastFrame = 0
+
+        const animate = (timestamp: number) => {
+            if (timestamp - lastFrame >= FRAME_INTERVAL_MS) {
+                lastFrame = timestamp
+                const nowMs = Date.now()
+                const windowMs = timeWindowSeconds * 1000
+                const startIso = new Date(nowMs - windowMs).toISOString()
+                const endIso = new Date(nowMs).toISOString()
+                Plotly.relayout(element, {
+                    'xaxis.range': [startIso, endIso],
+                    'xaxis.autorange': false,
+                })
+            }
+            scrollAnimRef.current = requestAnimationFrame(animate)
+        }
+
+        scrollAnimRef.current = requestAnimationFrame(animate)
+
+        return () => {
+            if (scrollAnimRef.current !== null) {
+                cancelAnimationFrame(scrollAnimRef.current)
+                scrollAnimRef.current = null
+            }
+        }
+    }, [status, timeWindowSeconds, hasData])
 
     useEffect(() => {
         return () => {
             const element = plotRef.current
             if (element) Plotly.purge(element)
+            if (scrollAnimRef.current !== null) cancelAnimationFrame(scrollAnimRef.current)
         }
     }, [])
 
@@ -545,7 +606,6 @@ export default function TelemetryPanel({
                     сенсоры: {selectedSensorIds.length || 'нет'}
                 </span>
                 <span className="telemetry-panel__meta-item">режим: {valueMode}</span>
-                <span className="telemetry-panel__meta-item">max points: {maxPoints}</span>
                 <span className="telemetry-panel__meta-item">окно: {formatWindow(timeWindowSeconds)}</span>
                 <span className="telemetry-panel__meta-item">якорь: {useLatestAnchor ? 'последние данные' : 'сейчас'}</span>
             </div>
@@ -585,6 +645,17 @@ export default function TelemetryPanel({
                 <div className="telemetry-panel__settings">
                     <div className="form-group">
                         <label>Сенсоры</label>
+                        {sensorsLoading && (
+                            <p className="telemetry-panel__hint telemetry-panel__hint--loading">Загрузка списка сенсоров…</p>
+                        )}
+                        {!sensorsLoading && sensorsError && (
+                            <p className="telemetry-panel__hint telemetry-panel__hint--error">{sensorsError}</p>
+                        )}
+                        {!sensorsLoading && !sensorsError && sensors.length === 0 && (
+                            <p className="telemetry-panel__hint telemetry-panel__hint--empty">
+                                Список сенсоров пуст. Выберите проект с сенсорами в фильтрах выше.
+                            </p>
+                        )}
                         <div className="telemetry-panel__sensor-picker">
                             <MaterialSelect
                                 id={`telemetry_panel_sensor_${panelId}`}
@@ -595,7 +666,7 @@ export default function TelemetryPanel({
                                         event.currentTarget.value = ''
                                     }
                                 }}
-                                disabled={availableSensors.length === 0}
+                                disabled={availableSensors.length === 0 || sensorsLoading}
                             >
                                 <option value="">Добавить сенсор</option>
                                 {availableSensors.map((sensor) => (
@@ -644,18 +715,7 @@ export default function TelemetryPanel({
                         </div>
 
                         <div className="form-group telemetry-panel__inline">
-                            <label>max points</label>
-                            <input
-                                type="number"
-                                value={maxPoints}
-                                min={50}
-                                max={2000}
-                                onChange={(e) => setMaxPoints(clamp(Number(e.target.value || 200), 50, 2000))}
-                            />
-                        </div>
-
-                        <div className="form-group telemetry-panel__inline">
-                            <label>Период</label>
+                            <label>Окно</label>
                             <MaterialSelect
                                 id={`telemetry_panel_window_${panelId}`}
                                 value={String(timeWindowSeconds)}

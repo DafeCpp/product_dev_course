@@ -5,6 +5,8 @@ import { runsApi } from '../api/client'
 import { format } from 'date-fns'
 import { StatusBadge, Loading, Error, EmptyState, runStatusMap } from './common'
 import { IS_TEST } from '../utils/env'
+import { downloadBlob } from '../utils/download'
+import { notifyError, notifySuccess } from '../utils/notify'
 import Tags from './common/Tags'
 import BulkRunTagsModal from './BulkRunTagsModal'
 import './RunsList.scss'
@@ -21,6 +23,22 @@ function RunsList({ experimentId }: RunsListProps) {
 
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [isBulkOpen, setIsBulkOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async (fmt: 'csv' | 'json') => {
+    setExporting(true)
+    try {
+      const data = await runsApi.exportData(experimentId, { format: fmt })
+      const ext = fmt === 'csv' ? 'csv' : 'json'
+      const mime = fmt === 'csv' ? 'text/csv' : 'application/json'
+      downloadBlob(data, `runs.${ext}`, mime)
+      notifySuccess(`${ext.toUpperCase()} экспортирован`)
+    } catch {
+      notifyError(`Ошибка экспорта ${fmt.toUpperCase()}`)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const runs = data?.runs ?? []
   const selectedRunIds = useMemo(
@@ -65,6 +83,22 @@ function RunsList({ experimentId }: RunsListProps) {
           disabled={selectedRunIds.length === 0}
         >
           Bulk tagging ({selectedRunIds.length})
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={exporting}
+          onClick={() => handleExport('csv')}
+        >
+          {exporting ? 'Экспорт...' : 'Экспорт CSV'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={exporting}
+          onClick={() => handleExport('json')}
+        >
+          Экспорт JSON
         </button>
       </div>
       <div className="runs-table">

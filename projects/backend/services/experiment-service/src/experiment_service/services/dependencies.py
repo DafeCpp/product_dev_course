@@ -182,7 +182,8 @@ async def get_capture_session_service(request: web.Request) -> CaptureSessionSer
         pool = await get_pool()
         run_repo = RunRepository(pool)
         capture_repo = CaptureSessionRepository(pool)
-        return CaptureSessionService(capture_repo, run_repo)
+        telemetry_repo = TelemetryRepository(pool)
+        return CaptureSessionService(capture_repo, run_repo, telemetry_repo)
 
     return await _get_or_create_service(request, _CAPTURE_SERVICE_KEY, builder)
 

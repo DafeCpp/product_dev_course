@@ -27,6 +27,7 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
     const queryClient = useQueryClient()
     const [showToken, setShowToken] = useState(false)
     const [newToken, setNewToken] = useState<string | null>(null)
+    const [sensorIdCopied, setSensorIdCopied] = useState(false)
     const [showTestTelemetryModal, setShowTestTelemetryModal] = useState(false)
     const [showTelemetryStreamModal, setShowTelemetryStreamModal] = useState(false)
     const [showAddProjectModal, setShowAddProjectModal] = useState(false)
@@ -124,6 +125,34 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
 
     const isPending = deleteMutation.isPending || rotateTokenMutation.isPending || addProjectMutation.isPending || removeProjectMutation.isPending
 
+    const copySensorId = async () => {
+        const text = (sensor?.id || sensorId || '').trim()
+        if (!text) return
+
+        try {
+            await navigator.clipboard.writeText(text)
+        } catch {
+            // Fallback: best-effort.
+            try {
+                const ta = document.createElement('textarea')
+                ta.value = text
+                ta.style.position = 'fixed'
+                ta.style.left = '-9999px'
+                document.body.appendChild(ta)
+                ta.select()
+                document.execCommand('copy')
+                document.body.removeChild(ta)
+            } catch {
+                notifyError('Не удалось скопировать ID датчика')
+                return
+            }
+        }
+
+        setSensorIdCopied(true)
+        window.setTimeout(() => setSensorIdCopied(false), 1200)
+        notifySuccess('ID датчика в буфере обмена', 'Скопировано')
+    }
+
     return (
         <>
             <Modal
@@ -219,7 +248,23 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
                             )}
 
                             <div className="sensor-info">
-                                <InfoRow label="ID" value={<span className="mono">{sensor.id}</span>} />
+                                <InfoRow
+                                    label="ID"
+                                    value={
+                                        <span className="sensor-detail-modal__id">
+                                            <span className="mono">{sensor.id}</span>
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => void copySensorId()}
+                                                disabled={isPending}
+                                                aria-label="Копировать ID датчика"
+                                            >
+                                                {sensorIdCopied ? 'Скопировано' : 'Копировать'}
+                                            </button>
+                                        </span>
+                                    }
+                                />
                                 <InfoRow label="Основной проект" value={<span className="mono">{sensor.project_id}</span>} />
                                 <InfoRow label="Тип" value={sensor.type} />
                                 <InfoRow label="Входная единица" value={sensor.input_unit} />
@@ -349,7 +394,7 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
 
             {/* Модальное окно для добавления проекта */}
             {showAddProjectModal && (
-                <div className="modal-overlay" onClick={() => setShowAddProjectModal(false)}>
+                <div className="modal-overlay sensor-detail-add-project-overlay" onClick={() => setShowAddProjectModal(false)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>Добавить проект</h2>

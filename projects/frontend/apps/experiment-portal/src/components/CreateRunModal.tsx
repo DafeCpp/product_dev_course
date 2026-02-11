@@ -56,12 +56,20 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             return
         }
 
-        // Парсим JSON для params
+        // Парсим JSON для params (должен быть объект)
         let params: Record<string, any> = {}
         if (parametersJson.trim()) {
             try {
-                params = JSON.parse(parametersJson)
-            } catch (err) {
+                const parsed = JSON.parse(parametersJson)
+                if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    params = parsed
+                } else {
+                    const msg = 'Параметры должны быть JSON-объектом (например, {})'
+                    setJsonError(msg)
+                    notifyError(msg)
+                    return
+                }
+            } catch {
                 const msg = 'Ошибка в формате JSON для параметров'
                 setJsonError(msg)
                 notifyError(msg)
@@ -69,12 +77,20 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             }
         }
 
-        // Парсим JSON для metadata
+        // Парсим JSON для metadata (должен быть объект)
         let metadata: Record<string, any> = {}
         if (metadataJson.trim()) {
             try {
-                metadata = JSON.parse(metadataJson)
-            } catch (err) {
+                const parsed = JSON.parse(metadataJson)
+                if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    metadata = parsed
+                } else {
+                    const msg = 'Метаданные должны быть JSON-объектом (например, {})'
+                    setJsonError(msg)
+                    notifyError(msg)
+                    return
+                }
+            } catch {
                 const msg = 'Ошибка в формате JSON для метаданных'
                 setJsonError(msg)
                 notifyError(msg)
