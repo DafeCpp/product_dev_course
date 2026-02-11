@@ -18,19 +18,10 @@ from telemetry_ingest_service.services.telemetry import TelemetryIngestService
 from telemetry_ingest_service.services.telemetry import hash_sensor_token
 from telemetry_ingest_service.settings import settings
 
+from backend_common.aiohttp_app import extract_bearer_token as _extract_bearer_token
 from backend_common.db.pool import get_pool_service as get_pool
 
 routes = web.RouteTableDef()
-
-
-def _extract_bearer_token(request: web.Request) -> str:
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise web.HTTPUnauthorized(reason="Authorization token is required")
-    token = auth_header[len("Bearer ") :].strip()
-    if not token:
-        raise web.HTTPUnauthorized(reason="Authorization token is required")
-    return token
 
 
 def _normalize_bearer(value: str | None) -> str | None:
@@ -128,8 +119,49 @@ def _parse_since_ts(value: str | None) -> datetime:
 
 
 def _looks_like_jwt(token: str) -> bool:
-    # JWT is "header.payload.signature" (3 dot-separated parts)
-    return token.count(".") == 2
+    """Heuristic check whether a token looks like a JWT.
+
+    JWTs have the form ``header.payload.signature`` where each part is
+    base64url-encoded.  We verify the structure (3 dot-separated parts)
+    and that each part only contains valid base64url characters to reduce
+    false positives from arbitrary sensor tokens that happen to contain
+    two dots.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return False
+    import re
+    _b64url_re = re.compile(r"^[A-Za-z0-9_-]+={0,2}$")
+    return all(_b64url_re.match(part) for part in parts)
+
+
+def _serialize_telemetry_record(row: dict) -> dict:
+    """Serialize a telemetry DB row into a JSON-safe dictionary.
+
+    This helper is shared between the SSE stream and the query endpoint
+    to avoid duplicating the same serialization logic.
+    """
+    meta = row["meta"]
+    if isinstance(meta, str):
+        meta = json.loads(meta)
+
+    ts = row["timestamp"]
+    if isinstance(ts, datetime):
+        ts_str = ts.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    else:
+        ts_str = str(ts)
+
+    return {
+        "id": int(row["id"]),
+        "project_id": str(row["project_id"]) if "project_id" in row else None,
+        "sensor_id": str(row["sensor_id"]) if "sensor_id" in row else None,
+        "timestamp": ts_str,
+        "raw_value": row["raw_value"],
+        "physical_value": row["physical_value"],
+        "run_id": str(row["run_id"]) if row.get("run_id") else None,
+        "capture_session_id": str(row["capture_session_id"]) if row.get("capture_session_id") else None,
+        "meta": meta,
+    }
 
 
 async def _authorize_user_token(*, token: str, project_id: UUID) -> None:
@@ -264,21 +296,11 @@ async def telemetry_stream(request: web.Request) -> web.StreamResponse:
                     cursor_id = int(r["id"])
                     if isinstance(r["timestamp"], datetime):
                         cursor_ts = r["timestamp"].astimezone(timezone.utc)
-                    payload = {
-                        "id": cursor_id,
-                        "sensor_id": str(sensor_id),
-                        "project_id": str(project_id),
-                        "timestamp": (
-                            r["timestamp"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-                            if isinstance(r["timestamp"], datetime)
-                            else str(r["timestamp"])
-                        ),
-                        "raw_value": r["raw_value"],
-                        "physical_value": r["physical_value"],
-                        "run_id": str(r["run_id"]) if r["run_id"] else None,
-                        "capture_session_id": str(r["capture_session_id"]) if r["capture_session_id"] else None,
-                        "meta": r["meta"] if isinstance(r["meta"], dict) else json.loads(r["meta"]),
-                    }
+                    # Enrich row with sensor/project context for serialization
+                    row_dict = dict(r)
+                    row_dict.setdefault("sensor_id", sensor_id)
+                    row_dict.setdefault("project_id", project_id)
+                    payload = _serialize_telemetry_record(row_dict)
                     data = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
                     await resp.write(b"event: telemetry\n")
                     await resp.write(b"data: " + data + b"\n\n")
@@ -410,28 +432,7 @@ async def telemetry_query(request: web.Request) -> web.Response:
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *params)
 
-    points = []
-    for r in rows:
-        meta = r["meta"]
-        if isinstance(meta, str):
-            meta = json.loads(meta)
-        points.append(
-            {
-                "id": int(r["id"]),
-                "project_id": str(r["project_id"]),
-                "sensor_id": str(r["sensor_id"]),
-                "timestamp": (
-                    r["timestamp"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-                    if isinstance(r["timestamp"], datetime)
-                    else str(r["timestamp"])
-                ),
-                "raw_value": r["raw_value"],
-                "physical_value": r["physical_value"],
-                "run_id": str(r["run_id"]) if r["run_id"] else None,
-                "capture_session_id": str(r["capture_session_id"]) if r["capture_session_id"] else None,
-                "meta": meta,
-            }
-        )
+    points = [_serialize_telemetry_record(dict(r)) for r in rows]
 
     next_since_id = points[-1]["id"] if len(points) == limit else None
     return web.json_response({"points": points, "next_since_id": next_since_id})

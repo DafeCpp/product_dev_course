@@ -393,7 +393,7 @@ async def test_change_password_invalid_new_password(service_client):
         "/auth/change-password",
         headers={"Authorization": f"Bearer {access_token}"},
         json={
-            "old_password": "oldpass123",
+            "old_password": "Oldpass123",
             "new_password": "short",
         },
     )

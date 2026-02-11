@@ -7,6 +7,16 @@ import sys
 import structlog
 
 
+def _sanitize_string(value: str) -> str:
+    """Escape control characters so the log entry stays on a single line."""
+    return (
+        value.replace("\\", "\\\\")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+
+
 def replace_newlines_processor(logger, method_name, event_dict):
     """
     Processor to replace newlines in string values with \\n.
@@ -15,38 +25,15 @@ def replace_newlines_processor(logger, method_name, event_dict):
     """
     for key, value in event_dict.items():
         if isinstance(value, str):
-            # Replace newlines with \\n, carriage returns with \\r, tabs with \\t
-            # This ensures the entire log entry stays on one line
-            event_dict[key] = (
-                value.replace("\\", "\\\\")  # Escape backslashes first
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-            )
+            event_dict[key] = _sanitize_string(value)
         elif isinstance(value, (list, tuple)):
-            # Process list/tuple items
             event_dict[key] = [
-                (
-                    item.replace("\\", "\\\\")
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r")
-                    .replace("\t", "\\t")
-                    if isinstance(item, str)
-                    else item
-                )
+                _sanitize_string(item) if isinstance(item, str) else item
                 for item in value
             ]
         elif isinstance(value, dict):
-            # Process nested dict values
             event_dict[key] = {
-                k: (
-                    v.replace("\\", "\\\\")
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r")
-                    .replace("\t", "\\t")
-                    if isinstance(v, str)
-                    else v
-                )
+                k: _sanitize_string(v) if isinstance(v, str) else v
                 for k, v in value.items()
             }
     return event_dict

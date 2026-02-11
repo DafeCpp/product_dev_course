@@ -5,6 +5,11 @@ from pathlib import Path
 import pytest
 from testsuite.databases.pgsql import discover
 
+# Disable password complexity validation for tests so that simple
+# passwords like "testpass123" are accepted without requiring uppercase.
+import auth_service.domain.dto as _dto_module
+_dto_module.PASSWORD_COMPLEXITY_ENABLED = False
+
 from auth_service.main import create_app
 from auth_service.settings import settings
 

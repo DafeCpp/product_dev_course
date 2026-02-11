@@ -1,7 +1,6 @@
 """Asyncpg connection pool helpers."""
 from __future__ import annotations
 
-import inspect
 import asyncpg  # type: ignore[import-untyped]
 
 from typing import Any, AsyncIterator, Protocol
@@ -16,30 +15,6 @@ class SettingsProtocol(Protocol):
 
     database_url: Any
     db_pool_size: int
-
-
-def _get_settings_from_caller() -> SettingsProtocol | None:
-    """Try to get settings object from the calling module.
-
-    Looks for 'settings' in the calling module's globals.
-    """
-    try:
-        frame = inspect.currentframe()
-        if frame is not None:
-            # Go up the call stack to find the caller
-            caller_frame = frame.f_back
-            if caller_frame is not None:
-                caller_frame = caller_frame.f_back  # Skip one more level for wrapper functions
-                if caller_frame is not None:
-                    caller_globals = caller_frame.f_globals
-                    if "settings" in caller_globals:
-                        settings_obj = caller_globals["settings"]
-                        # Check if it has the required attributes
-                        if hasattr(settings_obj, "database_url") and hasattr(settings_obj, "db_pool_size"):
-                            return settings_obj  # type: ignore[return-value]
-    except Exception:
-        pass
-    return None
 
 
 async def init_pool(database_url: str, pool_size: int, _app: Any = None) -> None:
@@ -110,19 +85,16 @@ def create_pool_wrappers(settings: SettingsProtocol) -> tuple[
 
 
 async def init_pool_service(_app: Any = None, settings: SettingsProtocol | None = None) -> None:
-    """Initialize pool using settings from calling module or provided settings.
+    """Initialize pool using provided settings.
 
     Args:
         _app: Optional application object (for compatibility with aiohttp lifecycle)
-        settings: Optional settings object. If not provided, tries to find it in calling module.
+        settings: Settings object with database_url and db_pool_size.
     """
     if settings is None:
-        settings = _get_settings_from_caller()
-        if settings is None:
-            raise RuntimeError(
-                "Could not find settings. Either provide settings parameter "
-                "or ensure 'settings' is available in the calling module."
-            )
+        raise RuntimeError(
+            "settings parameter is required. Pass the service settings explicitly."
+        )
     await init_pool(str(settings.database_url), settings.db_pool_size, _app)
 
 

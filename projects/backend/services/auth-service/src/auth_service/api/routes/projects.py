@@ -1,6 +1,7 @@
 """Project routes."""
 from __future__ import annotations
 
+import structlog
 from uuid import UUID
 
 from aiohttp import web
@@ -20,6 +21,8 @@ from auth_service.repositories.users import UserRepository
 from auth_service.services.auth import AuthService
 from auth_service.services.projects import ProjectService
 
+logger = structlog.get_logger(__name__)
+
 
 async def get_project_service(request: web.Request) -> ProjectService:
     """Get project service from request."""
@@ -36,12 +39,24 @@ async def get_user_id_from_token(request: web.Request) -> UUID:
         from auth_service.core.exceptions import InvalidCredentialsError
         raise InvalidCredentialsError("Unauthorized")
 
-    token = auth_header[7:]  # Remove "Bearer "
+    token = auth_header[7:].strip()
+    if not token:
+        from auth_service.core.exceptions import InvalidCredentialsError
+        raise InvalidCredentialsError("Unauthorized")
+
     pool = await get_pool()
     user_repo = UserRepository(pool)
     auth_service = AuthService(user_repo)
     user = await auth_service.get_user_by_token(token)
     return user.id
+
+
+def _parse_project_id(request: web.Request) -> UUID:
+    """Parse project_id from URL match info, raising 400 on invalid UUID."""
+    try:
+        return UUID(request.match_info["project_id"])
+    except ValueError:
+        raise web.HTTPBadRequest(text="Invalid project ID")
 
 
 async def create_project(request: web.Request) -> web.Response:
@@ -65,20 +80,13 @@ async def create_project(request: web.Request) -> web.Response:
             owner_id=user_id,
         )
         return web.json_response(
-            ProjectResponse(
-                id=str(project.id),
-                name=project.name,
-                description=project.description,
-                owner_id=str(project.owner_id),
-                created_at=project.created_at.isoformat(),
-                updated_at=project.updated_at.isoformat(),
-            ).model_dump(),
+            ProjectResponse.from_project(project).model_dump(),
             status=201,
         )
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Create project error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Create project error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -90,22 +98,15 @@ async def get_project(request: web.Request) -> web.Response:
         return handle_auth_error(request, e)
 
     try:
-        project_id = UUID(request.match_info["project_id"])
-    except ValueError:
+        project_id = _parse_project_id(request)
+    except web.HTTPBadRequest:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
         service = await get_project_service(request)
         project = await service.get_project(project_id, user_id)
         return web.json_response(
-            ProjectResponse(
-                id=str(project.id),
-                name=project.name,
-                description=project.description,
-                owner_id=str(project.owner_id),
-                created_at=project.created_at.isoformat(),
-                updated_at=project.updated_at.isoformat(),
-            ).model_dump(),
+            ProjectResponse.from_project(project).model_dump(),
             status=200,
         )
     except NotFoundError as e:
@@ -114,8 +115,8 @@ async def get_project(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=403)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Get project error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Get project error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -132,14 +133,7 @@ async def list_projects(request: web.Request) -> web.Response:
         return web.json_response(
             {
                 "projects": [
-                    ProjectResponse(
-                        id=str(p.id),
-                        name=p.name,
-                        description=p.description,
-                        owner_id=str(p.owner_id),
-                        created_at=p.created_at.isoformat(),
-                        updated_at=p.updated_at.isoformat(),
-                    ).model_dump()
+                    ProjectResponse.from_project(p).model_dump()
                     for p in projects
                 ]
             },
@@ -147,8 +141,8 @@ async def list_projects(request: web.Request) -> web.Response:
         )
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"List projects error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("List projects error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -160,8 +154,8 @@ async def update_project(request: web.Request) -> web.Response:
         return handle_auth_error(request, e)
 
     try:
-        project_id = UUID(request.match_info["project_id"])
-    except ValueError:
+        project_id = _parse_project_id(request)
+    except web.HTTPBadRequest:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
@@ -179,14 +173,7 @@ async def update_project(request: web.Request) -> web.Response:
             description=req.description,
         )
         return web.json_response(
-            ProjectResponse(
-                id=str(project.id),
-                name=project.name,
-                description=project.description,
-                owner_id=str(project.owner_id),
-                created_at=project.created_at.isoformat(),
-                updated_at=project.updated_at.isoformat(),
-            ).model_dump(),
+            ProjectResponse.from_project(project).model_dump(),
             status=200,
         )
     except NotFoundError as e:
@@ -195,8 +182,8 @@ async def update_project(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=403)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Update project error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Update project error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -208,8 +195,8 @@ async def delete_project(request: web.Request) -> web.Response:
         return handle_auth_error(request, e)
 
     try:
-        project_id = UUID(request.match_info["project_id"])
-    except ValueError:
+        project_id = _parse_project_id(request)
+    except web.HTTPBadRequest:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
@@ -222,8 +209,8 @@ async def delete_project(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=403)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Delete project error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Delete project error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -235,8 +222,8 @@ async def list_members(request: web.Request) -> web.Response:
         return handle_auth_error(request, e)
 
     try:
-        project_id = UUID(request.match_info["project_id"])
-    except ValueError:
+        project_id = _parse_project_id(request)
+    except web.HTTPBadRequest:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
@@ -263,8 +250,8 @@ async def list_members(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=403)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"List members error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("List members error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -276,8 +263,8 @@ async def add_member(request: web.Request) -> web.Response:
         return handle_auth_error(request, e)
 
     try:
-        project_id = UUID(request.match_info["project_id"])
-    except ValueError:
+        project_id = _parse_project_id(request)
+    except web.HTTPBadRequest:
         return web.json_response({"error": "Invalid project ID"}, status=400)
 
     try:
@@ -309,8 +296,8 @@ async def add_member(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=403)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Add member error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Add member error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -337,8 +324,8 @@ async def remove_member(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=403)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Remove member error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Remove member error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -379,8 +366,8 @@ async def update_member_role(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=403)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Update member role error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Update member role error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 

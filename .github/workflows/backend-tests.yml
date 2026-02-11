@@ -60,10 +60,24 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install PostgreSQL
+      - name: Install PostgreSQL + TimescaleDB
         run: |
+          # Determine the Ubuntu codename.
+          UBUNTU_CODENAME=$(lsb_release -cs)
+
+          # Add the official TimescaleDB APT repository.
+          echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ ${UBUNTU_CODENAME} main" \
+            | sudo tee /etc/apt/sources.list.d/timescaledb.list
+          curl -sL https://packagecloud.io/timescale/timescaledb/gpgkey | \
+            gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg >/dev/null
+
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql
+
+          # Detect installed PG major version (e.g. 16).
+          PG_MAJOR=$(pg_config --version | grep -oP '\d+' | head -1)
+
+          sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}"
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
@@ -74,6 +88,17 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
 
+      - name: Configure TimescaleDB for testsuite
+        run: |
+          # yandex-taxi-testsuite starts its own PostgreSQL instance using
+          # configs bundled inside the package.  We append shared_preload_libraries
+          # there so that CREATE EXTENSION timescaledb succeeds.
+          PG_CONF=$(poetry run python -c "
+          import testsuite.databases.pgsql.service as s
+          print(s.CONFIGS_DIR / 'postgresql.conf')
+          ")
+          echo "shared_preload_libraries = 'timescaledb'" >> "$PG_CONF"
+          echo ">> Appended timescaledb preload to $PG_CONF"
+
       - name: Run pytest
         run: poetry run pytest -q
-

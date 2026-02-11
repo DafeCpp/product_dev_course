@@ -1,6 +1,7 @@
 """Authentication routes."""
 from __future__ import annotations
 
+import structlog
 from aiohttp import web
 
 from auth_service.core.exceptions import AuthError, handle_auth_error
@@ -16,12 +17,22 @@ from auth_service.domain.dto import (
 from auth_service.repositories.users import UserRepository
 from auth_service.services.auth import AuthService
 
+logger = structlog.get_logger(__name__)
+
 
 async def get_auth_service(request: web.Request) -> AuthService:
     """Get auth service from request."""
     pool = await get_pool()
     user_repo = UserRepository(pool)
     return AuthService(user_repo)
+
+
+def _extract_bearer_token(request: web.Request) -> str | None:
+    """Extract Bearer token from Authorization header. Returns None if missing."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    return auth_header[7:].strip() or None
 
 
 async def register(request: web.Request) -> web.Response:
@@ -41,12 +52,7 @@ async def register(request: web.Request) -> web.Response:
         )
         return web.json_response(
             {
-                "user": UserResponse(
-                    id=str(user.id),
-                    username=user.username,
-                    email=user.email,
-                    password_change_required=user.password_change_required,
-                ).model_dump(),
+                "user": UserResponse.from_user(user).model_dump(),
                 "access_token": tokens.access_token,
                 "refresh_token": tokens.refresh_token,
             },
@@ -54,8 +60,8 @@ async def register(request: web.Request) -> web.Response:
         )
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Registration error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Registration error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -75,12 +81,7 @@ async def login(request: web.Request) -> web.Response:
         )
         return web.json_response(
             {
-                "user": UserResponse(
-                    id=str(user.id),
-                    username=user.username,
-                    email=user.email,
-                    password_change_required=user.password_change_required,
-                ).model_dump(),
+                "user": UserResponse.from_user(user).model_dump(),
                 "access_token": tokens.access_token,
                 "refresh_token": tokens.refresh_token,
             },
@@ -88,8 +89,8 @@ async def login(request: web.Request) -> web.Response:
         )
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Login error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Login error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -107,50 +108,42 @@ async def refresh(request: web.Request) -> web.Response:
         return web.json_response(tokens.model_dump(), status=200)
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Refresh error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Refresh error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
 async def me(request: web.Request) -> web.Response:
     """Get current user information."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    token = _extract_bearer_token(request)
+    if not token:
         return web.json_response({"error": "Unauthorized"}, status=401)
-
-    token = auth_header[7:]  # Remove "Bearer "
 
     try:
         auth_service = await get_auth_service(request)
         user = await auth_service.get_user_by_token(token)
         return web.json_response(
-            UserResponse(
-                id=str(user.id),
-                username=user.username,
-                email=user.email,
-                password_change_required=user.password_change_required,
-            ).model_dump(),
+            UserResponse.from_user(user).model_dump(),
             status=200,
         )
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Me error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Me error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
 async def logout(request: web.Request) -> web.Response:
     """Logout user (placeholder - in production would invalidate tokens)."""
+    # TODO: Implement token blacklisting / revocation for production use.
     return web.json_response({"ok": True}, status=200)
 
 
 async def change_password(request: web.Request) -> web.Response:
     """Change user password."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    token = _extract_bearer_token(request)
+    if not token:
         return web.json_response({"error": "Unauthorized"}, status=401)
-
-    token = auth_header[7:]  # Remove "Bearer "
 
     try:
         data = await request.json()
@@ -169,18 +162,13 @@ async def change_password(request: web.Request) -> web.Response:
             req.new_password,
         )
         return web.json_response(
-            UserResponse(
-                id=str(updated_user.id),
-                username=updated_user.username,
-                email=updated_user.email,
-                password_change_required=updated_user.password_change_required,
-            ).model_dump(),
+            UserResponse.from_user(updated_user).model_dump(),
             status=200,
         )
     except AuthError as e:
         return handle_auth_error(request, e)
-    except Exception as e:
-        request.app.logger.error(f"Change password error: {e}")  # type: ignore
+    except Exception:
+        logger.exception("Change password error")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
