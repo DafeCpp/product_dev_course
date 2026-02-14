@@ -404,6 +404,59 @@ export const captureSessionsApi = {
   },
 }
 
+// Telemetry Export API
+export const telemetryExportApi = {
+  /**
+   * Export telemetry readings for a single capture session.
+   */
+  exportSession: async (
+    runId: string,
+    sessionId: string,
+    params?: {
+      format?: 'csv' | 'json'
+      sensor_id?: string
+      signal?: string
+      include_late?: boolean
+      raw_or_physical?: 'raw' | 'physical' | 'both'
+      aggregation?: '1m'
+    }
+  ): Promise<string> => {
+    const response = await apiClient.get(
+      `/api/v1/runs/${runId}/capture-sessions/${sessionId}/telemetry/export`,
+      {
+        params: { ...params, project_id: getActiveProjectId() || undefined },
+        responseType: 'text',
+      },
+    )
+    return response.data
+  },
+
+  /**
+   * Export telemetry readings for all capture sessions of a run.
+   */
+  exportRun: async (
+    runId: string,
+    params?: {
+      format?: 'csv' | 'json'
+      capture_session_id?: string
+      sensor_id?: string
+      signal?: string
+      include_late?: boolean
+      raw_or_physical?: 'raw' | 'physical' | 'both'
+      aggregation?: '1m'
+    }
+  ): Promise<string> => {
+    const response = await apiClient.get(
+      `/api/v1/runs/${runId}/telemetry/export`,
+      {
+        params: { ...params, project_id: getActiveProjectId() || undefined },
+        responseType: 'text',
+      },
+    )
+    return response.data
+  },
+}
+
 // Telemetry API
 export const telemetryApi = {
   ingest: async (data: TelemetryIngest, sensorToken: string): Promise<TelemetryIngestResponse> => {

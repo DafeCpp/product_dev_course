@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
+import { runsApi, experimentsApi, captureSessionsApi, sensorsApi, telemetryExportApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
 import {
@@ -227,6 +227,49 @@ function RunDetail() {
     return formatDuration(seconds)
   }
 
+  const [exportingSession, setExportingSession] = useState<string | null>(null)
+  const [exportingRun, setExportingRun] = useState(false)
+
+  const downloadBlob = (data: string, filename: string, mime: string) => {
+    const blob = new Blob([data], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportSession = async (sessionId: string, ordinal: number) => {
+    setExportingSession(sessionId)
+    try {
+      const csv = await telemetryExportApi.exportSession(id!, sessionId, { format: 'csv' })
+      downloadBlob(csv, `telemetry_session_${ordinal}.csv`, 'text/csv')
+      notifySuccess('Телеметрия сессии экспортирована')
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Ошибка экспорта телеметрии'
+      notifyError(msg)
+    } finally {
+      setExportingSession(null)
+    }
+  }
+
+  const handleExportRunTelemetry = async () => {
+    setExportingRun(true)
+    try {
+      const csv = await telemetryExportApi.exportRun(id!, { format: 'csv' })
+      downloadBlob(csv, `telemetry_run_${run?.name || id}.csv`, 'text/csv')
+      notifySuccess('Телеметрия запуска экспортирована')
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Ошибка экспорта телеметрии'
+      notifyError(msg)
+    } finally {
+      setExportingRun(false)
+    }
+  }
+
   if (isLoading) {
     return <Loading />
   }
@@ -442,6 +485,15 @@ function RunDetail() {
       <div className="capture-sessions-section card">
         <div className="card-header">
           <h3>Сессии отсчёта</h3>
+          {sessions.length > 0 && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleExportRunTelemetry}
+              disabled={exportingRun}
+            >
+              {exportingRun ? 'Экспорт...' : 'Экспорт всей телеметрии'}
+            </button>
+          )}
         </div>
 
         {sessionsLoading ? (
@@ -521,19 +573,28 @@ function RunDetail() {
                       <h4>Сессия #{session.ordinal_number}</h4>
                       <StatusBadge status={session.status} statusMap={captureSessionStatusMap} />
                     </div>
-                    {session.status !== 'archived' && (
+                    <div className="session-actions">
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          if (confirm('Удалить сессию?')) {
-                            deleteSessionMutation.mutate(session.id)
-                          }
-                        }}
-                        disabled={deleteSessionMutation.isPending}
+                        onClick={() => handleExportSession(session.id, session.ordinal_number)}
+                        disabled={exportingSession === session.id}
                       >
-                        Удалить
+                        {exportingSession === session.id ? 'Экспорт...' : 'Экспорт телеметрии'}
                       </button>
-                    )}
+                      {session.status !== 'archived' && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            if (confirm('Удалить сессию?')) {
+                              deleteSessionMutation.mutate(session.id)
+                            }
+                          }}
+                          disabled={deleteSessionMutation.isPending}
+                        >
+                          Удалить
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="session-info">
                     {session.started_at && (

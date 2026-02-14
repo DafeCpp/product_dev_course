@@ -9,6 +9,7 @@ from . import (
     metrics,
     runs,
     sensors,
+    telemetry_export,
     webhooks,
 )
 
@@ -21,6 +22,7 @@ __all__ = [
     "metrics",
     "runs",
     "sensors",
+    "telemetry_export",
     "webhooks",
 ]
 

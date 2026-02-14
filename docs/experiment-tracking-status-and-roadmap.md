@@ -324,51 +324,53 @@
 - **Расширенные фильтры API:** ✅ Реализовано: `GET /api/v1/experiments` поддерживает `?status=`, `?tags=` (comma-separated, @> containment), `?created_after=`, `?created_before=` (ISO-8601); `GET /api/v1/experiments/{id}/runs` — те же фильтры; `GET /api/v1/sensors` — `?status=`, `?created_after=`, `?created_before=`; поиск по тексту — `GET /api/v1/experiments/search?q=`.
 - **Экспорт данных:** ✅ Частично реализовано.
   - ✅ **Метаданные:** `GET /api/v1/experiments/export?format=csv|json` и `GET /api/v1/experiments/{id}/runs/export?format=csv|json` с поддержкой фильтров (status, tags, created_after, created_before); до 5000 записей; на фронтенде кнопки «CSV» / «JSON» на списке экспериментов и списке запусков.
-  - ❌ **Экспорт с данными датчиков (телеметрия):** экспортировать не только метаданные запусков, но и собранные показания сенсоров (telemetry readings) из capture sessions. Подробный план ниже.
+  - ✅ **Экспорт с данными датчиков (телеметрия) — Этап 1+2:** Backend API + Frontend UI для экспорта telemetry readings из capture sessions. Подробный план и статус ниже.
 - **Подписки на события:** ❌
 
 ### 4.5 Экспорт данных с телеметрией датчиков
 
-> **Статус:** ❌ Не реализовано.
+> **Статус:** ✅ Этапы 1 и 2 реализованы (backend API + frontend UI). Этап 3 (расширенный экспорт) — backlog.
 > **Приоритет:** Средний — важно для анализа данных вне платформы (Jupyter, MATLAB, Excel).
 
 #### Текущее состояние
 
-Экспорт выгружает только метаданные экспериментов и запусков (название, статус, теги, даты). Фактические показания датчиков (telemetry readings) из capture sessions не включаются.
+Реализованы два API-эндпоинта для экспорта телеметрии и кнопки экспорта в RunDetail.
 
 #### Что нужно реализовать
 
-##### Этап 1: Backend — API экспорта телеметрии
+##### Этап 1: Backend — API экспорта телеметрии ✅
 
 **Цель:** API для выгрузки readings привязанных к конкретным capture sessions / runs.
 
-1. **Экспорт по capture session:**
+**Реализовано в** `experiment_service/api/routes/telemetry_export.py`.
+
+1. **Экспорт по capture session:** ✅
    - `GET /api/v1/runs/{run_id}/capture-sessions/{session_id}/telemetry/export`
    - Query params: `format=csv|json`, `sensor_id` (опционально, фильтр), `signal` (опционально), `include_late=true|false`, `raw_or_physical=raw|physical|both`.
-   - CSV-формат: `timestamp, sensor_id, signal, raw_value, physical_value, conversion_status`.
-   - Стриминговая отдача (chunked transfer) для больших выгрузок.
+   - CSV-формат: `timestamp, sensor_id, signal, raw_value, physical_value, conversion_status, capture_session_id`.
+   - TODO: стриминговая отдача (chunked transfer) для больших выгрузок (текущая реализация — in-memory, лимит 100 000 записей).
 
-2. **Экспорт по run (все capture sessions):**
+2. **Экспорт по run (все capture sessions):** ✅
    - `GET /api/v1/runs/{run_id}/telemetry/export`
    - Аналогичные query params + `capture_session_id` (опционально, фильтр).
-   - CSV добавляет колонку `capture_session_id`, `capture_session_ordinal`.
+   - CSV добавляет колонку `capture_session_id`.
 
-3. **Агрегированный экспорт:**
+3. **Агрегированный экспорт:** ✅
    - `GET /api/v1/runs/{run_id}/telemetry/export?aggregation=1m` — использует continuous aggregate `telemetry_1m`.
-   - CSV-формат: `bucket, sensor_id, signal, avg_raw, min_raw, max_raw, avg_physical, min_physical, max_physical, sample_count`.
+   - CSV-формат: `bucket, sensor_id, signal, capture_session_id, sample_count, avg_raw, min_raw, max_raw, avg_physical, min_physical, max_physical`.
 
-4. **Ограничения и безопасность:**
-   - Лимит записей (например, 100 000 для CSV, 50 000 для JSON) с header `X-Export-Truncated: true` если превышен.
-   - RBAC: доступ к данным только для участников проекта (viewer+).
-   - Rate limit: не более 5 запросов экспорта в минуту на пользователя.
+4. **Ограничения и безопасность:** ✅ (частично)
+   - ✅ Лимит записей: 100 000 с header `X-Export-Truncated: true` если превышен.
+   - ✅ RBAC: доступ к данным только для участников проекта (через `resolve_project_id` + `ensure_project_access`).
+   - ❌ Rate limit: не реализован (backlog).
 
-##### Этап 2: Frontend — UI экспорта телеметрии
+##### Этап 2: Frontend — UI экспорта телеметрии ✅ (базовый)
 
-1. **RunDetail / capture session list:**
-   - Кнопка «Экспорт телеметрии» рядом с capture session → скачать CSV/JSON readings этой сессии.
+1. **RunDetail / capture session list:** ✅
+   - Кнопка «Экспорт телеметрии» рядом с каждой capture session → скачать CSV readings этой сессии.
    - Кнопка «Экспорт всей телеметрии» на уровне run → скачать readings всех capture sessions.
 
-2. **Диалог настроек экспорта:**
+2. **Диалог настроек экспорта:** ❌ (backlog)
    - Выбор формата: CSV / JSON.
    - Фильтр по датчикам (multi-select из sensor list).
    - Фильтр по сигналам.
@@ -376,7 +378,7 @@
    - Включать ли late data.
    - Агрегация: сырые данные / 1-минутная агрегация.
 
-3. **TelemetryViewer (history mode):**
+3. **TelemetryViewer (history mode):** ❌ (backlog)
    - Кнопка «Экспорт видимых данных» — экспортирует ровно то, что сейчас отображается на графиках (текущие фильтры, time range, выбранные датчики).
 
 ##### Этап 3: Расширенный экспорт (backlog)
@@ -394,10 +396,11 @@
 
 #### Критерии готовности (минимум)
 
-- [ ] API: экспорт readings по capture session в CSV — работает с фильтрами sensor_id, raw/physical.
-- [ ] Frontend: кнопка экспорта в RunDetail, скачивание файла.
-- [ ] Стриминг: экспорт 50k+ записей без OOM на сервере.
-- [ ] Тесты: integration (создать session → ingest data → export → verify CSV содержит все readings).
+- [x] API: экспорт readings по capture session в CSV с фильтрами sensor_id, signal, raw/physical, include_late, aggregation.
+- [x] API: экспорт readings по run (все capture sessions) в CSV/JSON.
+- [x] Frontend: кнопка экспорта в RunDetail, скачивание файла.
+- [ ] Стриминг: экспорт 50k+ записей без OOM (текущий лимит 100k in-memory, достаточно для MVP).
+- [ ] Тесты: integration (создать session -> ingest data -> export -> verify CSV).
 
 ### 5. Hardening & Launch (итерация 8+)
 - **SLO/SLI мониторинг:** ❌

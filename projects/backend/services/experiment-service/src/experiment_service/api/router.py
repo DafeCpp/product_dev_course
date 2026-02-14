@@ -12,11 +12,13 @@ from experiment_service.api.routes import (
     metrics,
     runs,
     sensors,
+    telemetry_export,
     webhooks,
 )
 
 ROUTE_MODULES = [
     export,
+    telemetry_export,
     experiments,
     runs,
     capture_sessions,
