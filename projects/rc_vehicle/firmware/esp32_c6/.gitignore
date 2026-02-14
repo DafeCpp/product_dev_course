@@ -1,0 +1,54 @@
+# ESP-IDF build artifacts
+build/
+*.bin
+*.elf
+*.map
+
+# Ninja build files
+.ninja_deps
+.ninja_log
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+!CMakeLists.txt
+
+# SDK configuration (keep defaults, ignore generated)
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults.old
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Cache
+.cache/
+
+# ESP-IDF Component Manager
+managed_components/
+

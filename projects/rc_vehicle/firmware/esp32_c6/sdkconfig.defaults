@@ -1,0 +1,8 @@
+# WebSocket support for esp_http_server (required for /ws handler)
+CONFIG_HTTPD_WS_SUPPORT=y
+
+# We don't use TLS/HTTPS in the RC vehicle firmware, so the built-in certificate
+# bundle is unnecessary. Disabling it also avoids generating/assembling the huge
+# `x509_crt_bundle.S` during the build.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+
