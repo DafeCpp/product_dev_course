@@ -87,3 +87,7 @@ bool UartBridgeIsMcuConnected(void) {
   if (s_last_pong_tick == 0) return false;
   return (xTaskGetTickCount() - s_last_pong_tick) < PONG_TIMEOUT_TICKS;
 }
+
+int UartBridgeReceiveLog(char *buf, size_t max_len) {
+  return s_bridge.ReceiveLog(buf, max_len);
+}

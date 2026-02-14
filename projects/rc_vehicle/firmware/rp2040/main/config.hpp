@@ -13,7 +13,7 @@
 #define PWM_STEERING_PIN 3   // GPIO3 для серво (настраивается по схеме)
 
 // RC-in конфигурация (чтение сигналов с RC приёмника)
-#define RC_IN_THROTTLE_PIN 4  // GPIO4 для канал газа (настраивается по схеме)
+#define RC_IN_THROTTLE_PIN 9  // GPIO9 для канал газа (настраивается по схеме)
 #define RC_IN_STEERING_PIN 5  // GPIO5 для канал руля (настраивается по схеме)
 #define RC_IN_PULSE_MIN_US 1000      // Минимальная ширина импульса (1 мс)
 #define RC_IN_PULSE_MAX_US 2000      // Максимальная ширина импульса (2 мс)
@@ -21,12 +21,14 @@
 #define RC_IN_TIMEOUT_MS 250         // Таймаут потери сигнала (250 мс)
 
 // IMU конфигурация (SPI, MPU-6050). Пины не пересекаются с UART(0,1), PWM(2,3),
-// RC-in(4,5)
+// RC-in(9,5)
+// ВАЖНО: SPI0 RX (MISO) может быть только на GPIO 0, 4, 16, 20.
+// GPIO9 — это SPI1 CSn, не SPI0 RX! Поэтому MISO = GPIO4.
 #define SPI_ID spi0
-#define SPI_CS_PIN 8         // Chip Select (настраивается по схеме)
-#define SPI_SCK_PIN 6        // SPI SCK
-#define SPI_MOSI_PIN 7       // SPI MOSI
-#define SPI_MISO_PIN 9       // SPI MISO
+#define SPI_CS_PIN 8         // Chip Select (любой GPIO)
+#define SPI_SCK_PIN 6        // SPI0 SCK (GPIO 2,6,18)
+#define SPI_MOSI_PIN 7       // SPI0 TX  (GPIO 3,7,19)
+#define SPI_MISO_PIN 4       // SPI0 RX  (GPIO 0,4,16,20)
 #define SPI_BAUD_HZ 1000000  // 1 MHz для MPU-6050
 
 // Тайминги (в миллисекундах)

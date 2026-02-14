@@ -31,16 +31,7 @@
 #define PING_INTERVAL_MS 5000         // Интервал PING для проверки связи с MCU (5 с)
 #define PONG_TIMEOUT_MS 6000          // Таймаут «связь есть» после PONG (> PING_INTERVAL_MS)
 
-// Протокол UART
-#define UART_FRAME_PREFIX_0 0xAA
-#define UART_FRAME_PREFIX_1 0x55
-#define UART_PROTOCOL_VERSION 0x01
-
-// Типы сообщений UART
-#define UART_MSG_TYPE_COMMAND 0x01
-#define UART_MSG_TYPE_TELEM 0x02
-#define UART_MSG_TYPE_PING 0x03
-#define UART_MSG_TYPE_PONG 0x04
+// Протокол UART — константы в common/protocol.hpp
 
 // Размеры буферов (RX — входящие команды от браузера; «WS Message too long» при малом буфере)
 #define WS_RX_BUFFER_SIZE 1024

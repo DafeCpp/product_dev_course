@@ -42,3 +42,11 @@ esp_err_t UartBridgeReceivePong(void);
  * @return true если PONG получен в последние ~1.5 с
  */
 bool UartBridgeIsMcuConnected(void);
+
+/**
+ * Получить LOG-сообщение от MCU (неблокирующий вызов).
+ * @param buf буфер для текста
+ * @param max_len размер буфера
+ * @return длина сообщения (>0) или 0 если нет данных
+ */
+int UartBridgeReceiveLog(char *buf, size_t max_len);

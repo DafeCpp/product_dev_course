@@ -205,9 +205,9 @@ idf.py set-target esp32s3   # или esp32c6
       │                                        │
       │                                        ├──► PWM GPIO2 ──► ESC (Throttle)
       │                                        ├──► PWM GPIO3 ──► Servo (Steering)
-      │                                        ├──► GPIO4 ──► RC Receiver CH1 (Throttle)
+      │                                        ├──► SPI GPIO4,6–8 ──► MPU-6050/MPU-6500 (IMU)
+      │                                        ├──► GPIO9 ──► RC Receiver CH1 (Throttle)
       │                                        ├──► GPIO5 ──► RC Receiver CH2 (Steering)
-      │                                        ├──► SPI GPIO6–9 ──► MPU-6050/MPU-6500 (IMU)
       │                                        │
       └──► Wi-Fi AP (для веб-интерфейса)
 ```
@@ -245,7 +245,7 @@ idf.py set-target esp32s3   # или esp32c6
 - `GND` → общая земля с ESC/Servo
 
 **RC-in входы (чтение PWM с приёмника):**
-- `GPIO4` → Signal канал CH1 (Throttle) с RC приёмника
+- `GPIO9` → Signal канал CH1 (Throttle) с RC приёмника
 - `GPIO5` → Signal канал CH2 (Steering) с RC приёмника
 - `GND` → общая земля с RC приёмником
 
@@ -256,14 +256,21 @@ idf.py set-target esp32s3   # или esp32c6
 
 **SPI к MPU-6050 / MPU-6500 (IMU)** — в прошивке используется **только SPI** (`firmware/common/mpu6050_spi.cpp`):
 
-| RP2040       | MPU-6050/MPU-6500 | Надпись на плате   | Назначение        |
-|--------------|-------------------|--------------------|-------------------|
-| GPIO8 (CS)   | NCS / CS          | **NCS**            | Chip Select       |
-| GPIO6 (SCK)  | SCLK              | **SCL / SCLK**     | Тактирование SPI  |
-| GPIO7 (MOSI) | MOSI              | **SDA / SDI**      | Данные к датчику  |
-| GPIO9 (MISO) | MISO              | **ADO / SDO**      | Данные от датчика |
-| 3V3          | VCC               | **VCC**            | Питание 3.3 V     |
-| GND          | GND               | **GND**            | Земля             |
+| RP2040        | MPU-6050/MPU-6500 | Надпись на плате модуля | Назначение        |
+|---------------|-------------------|------------------------|-------------------|
+| 3V3           | VCC               | VCC                    | Питание 3.3 V     |
+| GND           | GND               | GND                    | Земля             |
+| GPIO6 (SCK)   | SCLK              | SCL / SCLK             | Тактирование SPI |
+| GPIO7 (MOSI)  | MOSI              | SDA / SDI              | Данные к датчику  |
+| —             | —                 | EDA                    | не подключать     |
+| —             | —                 | ECL                    | не подключать     |
+| GPIO4 (MISO)  | MISO              | ADO / SDO              | Данные от датчика |
+| —             | (опционально)     | INT                    | прерывание (не используется) |
+| GPIO8 (CS)    | NCS               | NCS                    | Chip Select (любой GPIO) |
+| —             | (опционально)     | FSYNC                  | не подключать     |
+
+**⚠️ ВАЖНО:** SPI0 RX (MISO) на RP2040 работает **только** на GPIO 0, 4, 16, 20.
+GPIO9 — это SPI**1** CSn, а не SPI0 RX!
 
 Конфигурация пинов: `firmware/rp2040/main/config.hpp` (SPI_CS_PIN, SPI_SCK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN).
 
@@ -273,14 +280,14 @@ idf.py set-target esp32s3   # или esp32c6
 
 #### RP2040 (Pico)
 
-| MPU-6050 / MPU-6500 | Надпись на плате   | RP2040    | Назначение        |
-|--------------------|--------------------|-----------|-------------------|
-| VCC                | **VCC**            | 3V3       | Питание 3.3 V     |
-| GND                | **GND**            | GND       | Земля             |
-| NCS / CS           | **NCS**            | GPIO8     | Chip Select       |
-| SCLK               | **SCL / SCLK**     | GPIO6     | SPI SCK           |
-| MOSI               | **SDA / SDI**      | GPIO7     | SPI MOSI          |
-| MISO               | **ADO / SDO**      | GPIO9     | SPI MISO          |
+| MPU-6050 / MPU-6500 | RP2040    | Назначение        |
+|--------------------|-----------|-------------------|
+| VCC                | 3V3       | Питание 3.3 V     |
+| GND                | GND       | Земля             |
+| NCS / CS           | GPIO8     | Chip Select       |
+| SCLK               | GPIO6     | SPI SCK           |
+| MOSI               | GPIO7     | SPI MOSI          |
+| MISO               | GPIO4     | SPI MISO (SPI0 RX)|
 
 #### STM32 (Blue Pill / Black Pill / G4)
 
@@ -305,9 +312,9 @@ idf.py set-target esp32s3   # или esp32c6
 | GND              | Земля        | GND      | GND      | GND    | GND    |
 | **SCL / SCLK**   | Такт SPI     | GPIO12   | GPIO6    | GPIO6  | PB13   |
 | **SDA / SDI**    | MOSI (вход данных датчика) | GPIO11 | GPIO7 | GPIO7 | PB15   |
-| EDA              | —            | н/п      | н/п      | н/п    | —      |
-| ECL              | —            | н/п      | н/п      | н/п    | —      |
-| **ADO / SDO**    | MISO (выход данных датчика) | GPIO13 | GPIO2 | GPIO9 | PB14   |
+| EDA              | —            | н/п      | н/п      | не подключать | —      |
+| ECL              | —            | н/п      | н/п      | не подключать | —      |
+| **ADO / SDO**    | MISO (выход данных датчика) | GPIO13 | GPIO2 | GPIO4 | PB14   |
 | INT              | Прерывание   | по желанию | по желанию | по желанию | —   |
 | **NCS**          | Chip Select  | GPIO10   | GPIO10   | GPIO8  | PB12   |
 | FSYNC            | Синхронизация| по желанию | по желанию | по желанию | —   |
@@ -325,7 +332,7 @@ idf.py set-target esp32s3   # или esp32c6
 ### 4. RC Приёмник (Himoto 2.4GHz 4CH)
 
 **Подключение:**
-- `CH1 (Signal)` → GPIO4 на RP2040 (через делитель, если 5V)
+- `CH1 (Signal)` → GPIO9 на RP2040 (через делитель, если 5V)
 - `CH2 (Signal)` → GPIO5 на RP2040 (через делитель, если 5V)
 - `+` → 5V от BEC (если требуется питание приёмника)
 - `-` → GND
@@ -371,12 +378,12 @@ idf.py set-target esp32s3   # или esp32c6
 | ESP32-C3 | GPIO5 (RX) | RP2040 GPIO0 (TX) | UART |
 | ESC | Signal | RP2040 GPIO2 | PWM, 50Hz |
 | Servo | Signal | RP2040 GPIO3 | PWM, 50Hz |
-| RC RX | CH1 | RP2040 GPIO4 | Через делитель если 5V |
+| RC RX | CH1 | RP2040 GPIO9 | Через делитель если 5V |
 | RC RX | CH2 | RP2040 GPIO5 | Через делитель если 5V |
 | MPU-6050/MPU-6500 | NCS | RP2040 GPIO8 | SPI CS |
 | MPU-6050/MPU-6500 | SCK | RP2040 GPIO6 | SPI SCK |
 | MPU-6050/MPU-6500 | MOSI | RP2040 GPIO7 | SPI MOSI |
-| MPU-6050/MPU-6500 | MISO | RP2040 GPIO9 | SPI MISO |
+| MPU-6050/MPU-6500 | MISO | RP2040 GPIO4 | SPI0 RX (MISO) |
 | MPU-6050/MPU-6500 | VCC | RP2040 3V3 | Питание |
 | Все | GND | Общая земля | ⚠️ Важно! |
 
@@ -385,7 +392,7 @@ idf.py set-target esp32s3   # или esp32c6
 Если RC приёмник выдаёт 5V логику, а ESP32 / RP2040 работает на 3.3V:
 
 ```
-RC Signal (5V) ──[10kΩ]──┬── GPIO RC-in (3.3V max)
+RC Signal (5V) ──[10kΩ]──┬── GPIO9/GPIO5 (3.3V max)
                           │
                          [20kΩ]
                           │

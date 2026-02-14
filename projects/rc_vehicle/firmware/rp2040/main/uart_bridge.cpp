@@ -48,3 +48,7 @@ std::optional<UartBridgeCommand> UartBridgeReceiveCommand() {
 bool UartBridgeReceivePing(void) { return s_bridge.ReceivePing(); }
 
 int UartBridgeSendPong(void) { return s_bridge.SendPong(); }
+
+int UartBridgeSendLog(const char *msg, size_t len) {
+  return s_bridge.SendLog(msg, len);
+}

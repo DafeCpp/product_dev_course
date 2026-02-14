@@ -116,7 +116,7 @@ Makefile сам создаёт `build/`, при необходимости за�
 - `UART_TX_PIN` / `UART_RX_PIN`: UART для связи с ESP32
 - `PWM_THROTTLE_PIN` / `PWM_STEERING_PIN`: PWM для ESC и серво
 - `RC_IN_THROTTLE_PIN` / `RC_IN_STEERING_PIN`: Входы для RC сигналов
-- `SPI_CS_PIN`, `SPI_SCK_PIN`, `SPI_MOSI_PIN`, `SPI_MISO_PIN`: SPI для IMU (MPU-6050/6500)
+- `SPI_CS_PIN`, `SPI_SCK_PIN`, `SPI_MOSI_PIN`, `SPI_MISO_PIN`: SPI для IMU (MPU-6050/6500). **MISO должен быть на пине SPI0 RX: GPIO 0, 4, 16 или 20.**
 
 ### Частоты и тайминги
 - `PWM_FREQUENCY_HZ`: 50 Hz (стандарт для RC)
@@ -182,10 +182,10 @@ screen /dev/cu.usbmodem101 115200
 1. **Подключите Pico по USB** и откройте Serial (115200). При старте смотрите:
    - `Failed to initialize IMU` — датчик не отвечает по SPI.
    - `WHO_AM_I=0x68` или `0x70` — чип отвечает; если при этом init всё равно failed, значит не тот чип (в коде ожидаются MPU-6050/6500).
-   - `SPI read failed` — обмена по SPI нет: проверьте проводку (CS=GPIO8, SCK=6, MOSI=7, MISO=9, 3V3, GND). См. `docs/wiring_diagram.md`.
+   - `SPI read failed` — обмена по SPI нет: проверьте проводку (CS=GPIO8, SCK=6, MOSI=7, MISO=4, 3V3, GND). См. `docs/wiring_diagram.md`.
 
 2. **Проводка SPI (MPU-6050/6500):**
-   - RP2040: GPIO8 → NCS/CS, GPIO6 → SCLK, GPIO7 → MOSI, GPIO9 → MISO, 3V3 → VCC, GND → GND.
+   - RP2040: GPIO8 → NCS/CS, GPIO6 → SCLK, GPIO7 → MOSI, GPIO4 → MISO, 3V3 → VCC, GND → GND.
    - На модулях с одной колодкой: SCL/SCLK, SDA/SDI (MOSI), ADO/SDO (MISO), NCS. Не перепутайте MOSI и MISO.
 
 3. **Данные на веб-странице:**

@@ -1,4 +1,5 @@
-#include <stdio.h>
+#include <cstdarg>
+#include <cstdio>
 
 #include "config.hpp"
 #include "failsafe.hpp"
@@ -12,6 +13,28 @@
 #include "uart_bridge.hpp"
 
 static const char *TAG = "main";
+static bool s_uart_ready = false;
+
+/**
+ * printf + отправка по UART на ESP32 (если мост инициализирован).
+ * Формат вызова как у printf.
+ */
+static void log_remote(const char *fmt, ...) {
+  char buf[201];
+  va_list args;
+  va_start(args, fmt);
+  int n = vsnprintf(buf, sizeof(buf), fmt, args);
+  va_end(args);
+  if (n <= 0) return;
+  size_t len =
+      static_cast<size_t>(n) < sizeof(buf) - 1 ? static_cast<size_t>(n) : sizeof(buf) - 1;
+  // Локальный USB Serial
+  printf("%.*s", static_cast<int>(len), buf);
+  // Удалённо на ESP32
+  if (s_uart_ready) {
+    UartBridgeSendLog(buf, len);
+  }
+}
 
 // commanded_* — что хотим (RC/Wi‑Fi), applied_* — что реально подаём на PWM
 // (slew-rate)
@@ -28,55 +51,63 @@ int main() {
 
   printf("[%s] RC Vehicle RP2040 firmware starting...\n", TAG);
 
-  // Инициализация PWM
-  printf("[%s] Initializing PWM...\n", TAG);
-  if (PwmControlInit() != 0) {
-    printf("[%s] ERROR: Failed to initialize PWM\n", TAG);
-    return -1;
-  }
-
-  // Инициализация RC-in
-  printf("[%s] Initializing RC input...\n", TAG);
-  if (RcInputInit() != 0) {
-    printf("[%s] ERROR: Failed to initialize RC input\n", TAG);
-    return -1;
-  }
-
-  // Инициализация IMU
-  printf("[%s] Initializing IMU...\n", TAG);
-  if (ImuInit() != 0) {
-    int who = ImuGetLastWhoAmI();
-    printf("[%s] WARNING: Failed to initialize IMU (continuing without IMU)\n",
-           TAG);
-    if (who >= 0) {
-      printf(
-          "[%s] IMU WHO_AM_I=0x%02X (expected 0x68 MPU-6050 or 0x70 "
-          "MPU-6500)\n",
-          TAG, who);
-    } else {
-      printf(
-          "[%s] IMU SPI read failed — check wiring: CS=GPIO8, SCK=6, MOSI=7, "
-          "MISO=9, 3V3/GND\n",
-          TAG);
-    }
-  }
-
-  // Инициализация UART моста
+  // Инициализация UART моста ПЕРВЫМ — чтобы дальнейшие логи шли на ESP32
   printf("[%s] Initializing UART bridge...\n", TAG);
   if (UartBridgeInit() != 0) {
     printf("[%s] ERROR: Failed to initialize UART bridge\n", TAG);
     return -1;
   }
+  s_uart_ready = true;
+  log_remote("[%s] UART bridge OK, remote logging enabled\n", TAG);
+
+  // Инициализация PWM
+  log_remote("[%s] Initializing PWM...\n", TAG);
+  if (PwmControlInit() != 0) {
+    log_remote("[%s] ERROR: Failed to initialize PWM\n", TAG);
+    return -1;
+  }
+
+  // Инициализация RC-in
+  log_remote("[%s] Initializing RC input...\n", TAG);
+  if (RcInputInit() != 0) {
+    log_remote("[%s] ERROR: Failed to initialize RC input\n", TAG);
+    return -1;
+  }
+
+  // Инициализация IMU
+  // MPU-6050/6500 требует ~100 мс после подачи питания (даташит: start-up time).
+  sleep_ms(100);
+  log_remote("[%s] Initializing IMU...\n", TAG);
+  if (ImuInit() != 0) {
+    int who = ImuGetLastWhoAmI();
+    log_remote(
+        "[%s] WARNING: Failed to initialize IMU (continuing without IMU)\n",
+        TAG);
+    if (who >= 0) {
+      log_remote(
+          "[%s] IMU WHO_AM_I=0x%02X (expected 0x68 MPU-6050 or 0x70 "
+          "MPU-6500)\n",
+          TAG, who);
+    } else {
+      log_remote(
+          "[%s] IMU SPI read failed — check wiring: CS=GPIO8, SCK=6, MOSI=7, "
+          "MISO=4, 3V3/GND\n",
+          TAG);
+    }
+  } else {
+    log_remote("[%s] IMU initialized OK (WHO_AM_I=0x%02X)\n", TAG,
+               ImuGetLastWhoAmI());
+  }
 
   // Инициализация failsafe
-  printf("[%s] Initializing failsafe...\n", TAG);
+  log_remote("[%s] Initializing failsafe...\n", TAG);
   FailsafeInit();
 
   // Встроенный светодиод — индикатор работы
   gpio_init(PICO_DEFAULT_LED_PIN);
   gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
-  printf("[%s] All systems initialized. Starting main loop.\n", TAG);
+  log_remote("[%s] All systems initialized. Starting main loop.\n", TAG);
 
   // Таймеры для периодических задач
   uint32_t last_pwm_update = time_us_32() / 1000;
@@ -130,10 +161,29 @@ int main() {
     }
 
     // Ответ на PING от ESP32 (проверка связи); светодиод переключается при
-    // каждом PING
+    // каждом PING.  При первом PING шлём сводку инициализации (стартовые логи
+    // теряются, т.к. ESP32 ещё не готов принимать).
     while (UartBridgeReceivePing()) {
       UartBridgeSendPong();
       gpio_put(PICO_DEFAULT_LED_PIN, !gpio_get(PICO_DEFAULT_LED_PIN));
+
+      static bool first_ping = true;
+      if (first_ping) {
+        first_ping = false;
+        int who = ImuGetLastWhoAmI();
+        if (who == 0x68 || who == 0x70) {
+          log_remote("[%s] INIT OK: IMU WHO_AM_I=0x%02X\n", TAG, who);
+        } else if (who >= 0) {
+          log_remote(
+              "[%s] INIT FAIL: IMU WHO_AM_I=0x%02X (expected 0x68 or 0x70)\n",
+              TAG, who);
+        } else {
+          log_remote(
+              "[%s] INIT FAIL: IMU SPI no response — check wiring: "
+              "CS=GPIO8, SCK=6, MOSI=7, MISO=4, 3V3/GND\n",
+              TAG);
+        }
+      }
     }
 
     // Чтение команд от ESP32 (Wi-Fi)
@@ -152,7 +202,16 @@ int main() {
     // Чтение IMU (50 Hz)
     if (now - last_imu_read >= IMU_READ_INTERVAL_MS) {
       last_imu_read = now;
-      ImuRead(imu_data);
+      int imu_rc = ImuRead(imu_data);
+
+      // Периодический лог IMU (каждые 2 с) для отладки
+      static uint32_t last_imu_dbg = 0;
+      if (now - last_imu_dbg >= 2000) {
+        last_imu_dbg = now;
+        log_remote("[imu] rc=%d ax=%.3f ay=%.3f az=%.3f gx=%.1f gy=%.1f gz=%.1f\n",
+                   imu_rc, imu_data.ax, imu_data.ay, imu_data.az,
+                   imu_data.gx, imu_data.gy, imu_data.gz);
+      }
     }
 
     // Обновление failsafe

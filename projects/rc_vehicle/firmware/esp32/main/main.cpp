@@ -46,10 +46,27 @@ static void uart_bridge_task(void* arg) {
       ESP_LOGI(TAG, "PING отправлен");
     }
 
-    // Приём PONG и телеметрии (неблокирующий)
+    // Приём PONG (неблокирующий)
     if (UartBridgeReceivePong() == ESP_OK) {
       ESP_LOGI(TAG, "PONG получен");
     }
+
+    // Приём LOG-сообщений от MCU (все накопившиеся)
+    {
+      char log_buf[201];
+      int log_len;
+      while ((log_len = UartBridgeReceiveLog(log_buf, sizeof(log_buf) - 1)) >
+             0) {
+        log_buf[log_len] = '\0';
+        // Убираем завершающий \n если есть (ESP_LOGI добавляет свой)
+        if (log_len > 0 && log_buf[log_len - 1] == '\n') {
+          log_buf[log_len - 1] = '\0';
+        }
+        ESP_LOGI("rp2040", "%s", log_buf);
+      }
+    }
+
+    // Приём телеметрии (неблокирующий)
 
     if (auto telem = UartBridgeReceiveTelem()) {
       const TelemetryData& telem_data = *telem;

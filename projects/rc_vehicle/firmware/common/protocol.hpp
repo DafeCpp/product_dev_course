@@ -13,6 +13,10 @@
 #define UART_MSG_TYPE_TELEM 0x02
 #define UART_MSG_TYPE_PING 0x03
 #define UART_MSG_TYPE_PONG 0x04
+#define UART_MSG_TYPE_LOG 0x05
+
+/** Максимальная длина payload LOG-сообщения. */
+constexpr size_t PROTOCOL_LOG_MAX_PAYLOAD = 200;
 
 // Структура данных телеметрии (тот же формат для RP2040 и STM32)
 struct TelemetryData {
@@ -33,6 +37,14 @@ size_t ProtocolBuildCommand(std::span<uint8_t> buffer, float throttle,
 /** TELEM (MCU → ESP32): парсинг в TelemetryData. Для ESP32. */
 size_t ProtocolParseTelem(std::span<const uint8_t> buffer,
                           TelemetryData &telem_data);
+
+/** LOG (MCU → ESP32): текстовое сообщение. */
+size_t ProtocolBuildLog(std::span<uint8_t> buffer, const char *msg,
+                        size_t msg_len);
+/** Распарсить LOG-кадр. Заполняет msg (до max_msg_len байт), пишет длину в
+ * msg_len. Возврат: длина кадра или 0. */
+size_t ProtocolParseLog(std::span<const uint8_t> buffer, char *msg,
+                        size_t max_msg_len, size_t &msg_len);
 
 uint16_t ProtocolCrc16(std::span<const uint8_t> data);
 int ProtocolFindFrameStart(std::span<const uint8_t> buffer);

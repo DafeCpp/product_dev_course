@@ -35,3 +35,11 @@ std::optional<UartBridgeCommand> UartBridgeReceiveCommand();
 bool UartBridgeReceivePing(void);
 /** Отправить PONG в ответ на PING. */
 int UartBridgeSendPong(void);
+
+/**
+ * Отправить текстовое LOG-сообщение на ESP32 (для удалённой отладки).
+ * @param msg текст сообщения
+ * @param len длина сообщения (до 200 байт)
+ * @return 0 при успехе, -1 при ошибке
+ */
+int UartBridgeSendLog(const char *msg, size_t len);
