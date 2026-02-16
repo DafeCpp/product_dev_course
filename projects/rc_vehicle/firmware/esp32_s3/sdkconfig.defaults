@@ -6,3 +6,6 @@ CONFIG_HTTPD_WS_SUPPORT=y
 # `x509_crt_bundle.S` during the build.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 
+# FreeRTOS tick rate 1000 Hz (1 мс/тик) — нужно для control loop 500 Гц (период 2 мс)
+CONFIG_FREERTOS_HZ=1000
+

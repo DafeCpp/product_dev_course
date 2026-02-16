@@ -19,8 +19,8 @@
 
 static const char* TAG = "vehicle_control";
 
-static constexpr uint32_t CONTROL_TASK_STACK = 6144;
-static constexpr UBaseType_t CONTROL_TASK_PRIORITY = 5;
+static constexpr uint32_t CONTROL_TASK_STACK = 8192;
+static constexpr UBaseType_t CONTROL_TASK_PRIORITY = configMAX_PRIORITIES - 1;
 
 struct WifiCmd {
   float throttle{0.0f};
@@ -56,8 +56,20 @@ static void vehicle_control_task(void* arg) {
 
   ImuData imu_data = {0};
 
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  const TickType_t xPeriod = pdMS_TO_TICKS(CONTROL_LOOP_PERIOD_MS);
+
+  // Диагностика: счётчики для замера реальной частоты
+  uint32_t diag_loop_count = 0;
+  uint32_t diag_imu_count = 0;
+  uint32_t diag_start_ms = NowMs();
+  uint32_t diag_max_dt_us = 0;
+
   while (1) {
+    const uint64_t iter_start_us = esp_timer_get_time();
+    vTaskDelayUntil(&xLastWakeTime, xPeriod ? xPeriod : 1);
     const uint32_t now = NowMs();
+    ++diag_loop_count;
 
     // Опрос RC-in (50 Hz)
     if (s_rc_enabled && (now - last_rc_poll >= RC_IN_POLL_INTERVAL_MS)) {
@@ -91,10 +103,29 @@ static void vehicle_control_task(void* arg) {
     wifi_active = (!rc_active) && (last_wifi_cmd_ms != 0) &&
                   ((now - last_wifi_cmd_ms) < WIFI_CMD_TIMEOUT_MS);
 
-    // Чтение IMU (50 Hz)
+    // Чтение IMU (500 Hz — каждую итерацию control loop)
     if (s_imu_enabled && (now - last_imu_read >= IMU_READ_INTERVAL_MS)) {
       last_imu_read = now;
-      (void)ImuRead(imu_data);  // IMU опционален; ошибок не фаталим
+      if (ImuRead(imu_data) == 0) ++diag_imu_count;
+    }
+
+    // Диагностика: вывод реальной частоты каждые 5 секунд
+    {
+      const uint32_t elapsed = now - diag_start_ms;
+      if (elapsed >= 5000) {
+        const uint32_t loop_hz = diag_loop_count * 1000 / elapsed;
+        const uint32_t imu_hz = diag_imu_count * 1000 / elapsed;
+        ESP_LOGI(TAG,
+                 "DIAG: loop=%lu Hz, imu=%lu Hz, max_dt=%lu us, "
+                 "iters=%lu in %lu ms",
+                 (unsigned long)loop_hz, (unsigned long)imu_hz,
+                 (unsigned long)diag_max_dt_us, (unsigned long)diag_loop_count,
+                 (unsigned long)elapsed);
+        diag_loop_count = 0;
+        diag_imu_count = 0;
+        diag_max_dt_us = 0;
+        diag_start_ms = now;
+      }
     }
 
     // Обновление failsafe
@@ -130,7 +161,6 @@ static void vehicle_control_task(void* arg) {
 
       // Если клиентов нет — не аллоцируем JSON зря.
       if (WebSocketGetClientCount() == 0) {
-        vTaskDelay(pdMS_TO_TICKS(1));
         continue;
       }
 
@@ -178,7 +208,10 @@ static void vehicle_control_task(void* arg) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // Замер длительности итерации (jitter)
+    const uint32_t iter_dt_us =
+        (uint32_t)(esp_timer_get_time() - iter_start_us);
+    if (iter_dt_us > diag_max_dt_us) diag_max_dt_us = iter_dt_us;
   }
 }
 
@@ -227,8 +260,9 @@ esp_err_t VehicleControlInit(void) {
   }
 
   BaseType_t created =
-      xTaskCreate(vehicle_control_task, "vehicle_ctrl", CONTROL_TASK_STACK,
-                  NULL, CONTROL_TASK_PRIORITY, NULL);
+      xTaskCreatePinnedToCore(vehicle_control_task, "vehicle_ctrl",
+                              CONTROL_TASK_STACK, NULL, CONTROL_TASK_PRIORITY,
+                              NULL, 1);
   if (created != pdPASS) {
     ESP_LOGE(TAG, "Failed to create vehicle control task");
     return ESP_FAIL;

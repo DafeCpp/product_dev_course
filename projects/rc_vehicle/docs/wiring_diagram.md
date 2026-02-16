@@ -65,18 +65,18 @@
 
 ### Таблица подключений ESP32-S3
 
-| Компонент         | Контакт   | ESP32-S3 GPIO | Примечание             |
-|-------------------|-----------|---------------|------------------------|
-| MPU-6500          | NCS       | GPIO10        | SPI2 CS                |
-| MPU-6500          | SCLK      | GPIO12        | SPI2 SCK               |
-| MPU-6500          | MOSI      | GPIO11        | SPI2 MOSI              |
-| MPU-6500          | MISO      | GPIO13        | SPI2 MISO              |
-| MPU-6500          | VCC       | 3V3           | Питание                |
-| ESC               | Signal    | GPIO14        | MCPWM0, 50Hz           |
-| Servo             | Signal    | GPIO21        | MCPWM0, 50Hz           |
-| RC RX             | CH1       | GPIO16        | Через делитель если 5V |
-| RC RX             | CH2       | GPIO17        | Через делитель если 5V |
-| Все               | GND       | Общая земля   | ⚠️ Важно!              |
+| Компонент         | Контакт   | Надпись на плате   | ESP32-S3 GPIO | Примечание             |
+|-------------------|-----------|--------------------|--------------:|------------------------|
+| MPU-6500          | NCS       | **NCS**            | GPIO10        | SPI2 CS                |
+| MPU-6500          | SCLK      | **SCL / SCLK**     | GPIO12        | SPI2 SCK               |
+| MPU-6500          | MOSI      | **SDA / SDI**      | GPIO11        | SPI2 MOSI              |
+| MPU-6500          | MISO      | **ADO / SDO**      | GPIO13        | SPI2 MISO              |
+| MPU-6500          | VCC       | **VCC**            | 3V3           | Питание                |
+| ESC               | Signal    |                    | GPIO14        | MCPWM0, 50Hz           |
+| Servo             | Signal    |                    | GPIO21        | MCPWM0, 50Hz           |
+| RC RX             | CH1       |                    | GPIO16        | Через делитель если 5V |
+| RC RX             | CH2       |                    | GPIO17        | Через делитель если 5V |
+| Все               | GND       | **GND**            | Общая земля   | ⚠️ Важно!              |
 
 ### Свободные GPIO ESP32-S3 (для расширения)
 
