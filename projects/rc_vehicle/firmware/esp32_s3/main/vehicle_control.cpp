@@ -11,6 +11,8 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "imu.hpp"
+#include "imu_calibration.hpp"
+#include "imu_calibration_nvs.hpp"
 #include "pwm_control.hpp"
 #include "rc_input.hpp"
 #include "rc_vehicle_common.hpp"
@@ -31,6 +33,12 @@ static QueueHandle_t s_cmd_queue = nullptr;
 static bool s_rc_enabled = false;
 static bool s_imu_enabled = false;
 static bool s_inited = false;
+
+// --- IMU Calibration ---
+static ImuCalibration s_imu_calib;
+// Запрос на ручную калибровку из другого потока (WebSocket, Core 0).
+// Чтение/запись volatile int атомарны на ESP32.
+static volatile int s_calib_request = 0;  // 0=none, 1=GyroOnly, 2=Full
 
 static uint32_t NowMs() { return (uint32_t)(esp_timer_get_time() / 1000); }
 
@@ -103,10 +111,51 @@ static void vehicle_control_task(void* arg) {
     wifi_active = (!rc_active) && (last_wifi_cmd_ms != 0) &&
                   ((now - last_wifi_cmd_ms) < WIFI_CMD_TIMEOUT_MS);
 
+    // Проверка запроса на ручную калибровку (от WebSocket / Core 0)
+    {
+      int req = s_calib_request;
+      if (req != 0) {
+        s_calib_request = 0;
+        CalibMode mode = (req == 2) ? CalibMode::Full : CalibMode::GyroOnly;
+        int samples = (req == 2) ? 2000 : 1000;
+        s_imu_calib.StartCalibration(mode, samples);
+        ESP_LOGI(TAG, "Manual calibration started (mode=%d, samples=%d)", req, samples);
+      }
+    }
+
     // Чтение IMU (500 Hz — каждую итерацию control loop)
     if (s_imu_enabled && (now - last_imu_read >= IMU_READ_INTERVAL_MS)) {
       last_imu_read = now;
-      if (ImuRead(imu_data) == 0) ++diag_imu_count;
+      if (ImuRead(imu_data) == 0) {
+        ++diag_imu_count;
+
+        // Подача семпла в калибровку (если идёт сбор)
+        if (s_imu_calib.GetStatus() == CalibStatus::Collecting) {
+          s_imu_calib.FeedSample(imu_data);
+
+          // Проверяем завершение калибровки
+          CalibStatus st = s_imu_calib.GetStatus();
+          if (st == CalibStatus::Done) {
+            ESP_LOGI(TAG, "IMU calibration DONE — gyro bias: [%.3f, %.3f, %.3f]",
+                     s_imu_calib.GetData().gyro_bias[0],
+                     s_imu_calib.GetData().gyro_bias[1],
+                     s_imu_calib.GetData().gyro_bias[2]);
+            // Сохраняем в NVS
+            if (imu_nvs::Save(s_imu_calib.GetData()) == ESP_OK) {
+              ESP_LOGI(TAG, "Calibration saved to NVS");
+            }
+          } else if (st == CalibStatus::Failed) {
+            ESP_LOGW(TAG, "IMU calibration FAILED (motion detected)");
+            // Если есть ранее загруженные данные из NVS — они остаются активны
+            if (s_imu_calib.IsValid()) {
+              ESP_LOGI(TAG, "Using previously saved calibration data");
+            }
+          }
+        }
+
+        // Применяем компенсацию bias (если калибровка валидна)
+        s_imu_calib.Apply(imu_data);
+      }
     }
 
     // Диагностика: вывод реальной частоты каждые 5 секунд
@@ -190,6 +239,34 @@ static void vehicle_control_task(void* arg) {
             cJSON_AddNumberToObject(imu, "gz", imu_data.gz);
             cJSON_AddItemToObject(root, "imu", imu);
           }
+
+          // Статус калибровки IMU
+          cJSON* calib = cJSON_CreateObject();
+          if (calib) {
+            const char* status_str = "unknown";
+            switch (s_imu_calib.GetStatus()) {
+              case CalibStatus::Idle:       status_str = "idle"; break;
+              case CalibStatus::Collecting: status_str = "collecting"; break;
+              case CalibStatus::Done:       status_str = "done"; break;
+              case CalibStatus::Failed:     status_str = "failed"; break;
+            }
+            cJSON_AddStringToObject(calib, "status", status_str);
+            cJSON_AddBoolToObject(calib, "valid", s_imu_calib.IsValid());
+            if (s_imu_calib.IsValid()) {
+              const auto& d = s_imu_calib.GetData();
+              cJSON* bias = cJSON_CreateObject();
+              if (bias) {
+                cJSON_AddNumberToObject(bias, "gx", d.gyro_bias[0]);
+                cJSON_AddNumberToObject(bias, "gy", d.gyro_bias[1]);
+                cJSON_AddNumberToObject(bias, "gz", d.gyro_bias[2]);
+                cJSON_AddNumberToObject(bias, "ax", d.accel_bias[0]);
+                cJSON_AddNumberToObject(bias, "ay", d.accel_bias[1]);
+                cJSON_AddNumberToObject(bias, "az", d.accel_bias[2]);
+                cJSON_AddItemToObject(calib, "bias", bias);
+              }
+            }
+            cJSON_AddItemToObject(root, "calib", calib);
+          }
         }
 
         cJSON* act = cJSON_CreateObject();
@@ -234,6 +311,20 @@ esp_err_t VehicleControlInit(void) {
   // IMU опционален
   if (ImuInit() == 0) {
     s_imu_enabled = true;
+
+    // Попытка загрузить калибровку из NVS
+    ImuCalibData nvs_data{};
+    if (imu_nvs::Load(nvs_data) == ESP_OK) {
+      s_imu_calib.SetData(nvs_data);
+      ESP_LOGI(TAG, "IMU calibration loaded from NVS (valid=%d)", nvs_data.valid);
+    } else {
+      ESP_LOGI(TAG, "No saved IMU calibration — will auto-calibrate at start");
+    }
+
+    // Запуск автокалибровки гироскопа при старте (1000 семплов ≈ 2 сек при 500 Гц).
+    // Если машина неподвижна — обновим bias, иначе используем NVS данные.
+    s_imu_calib.StartCalibration(CalibMode::GyroOnly, 1000);
+    ESP_LOGI(TAG, "IMU auto-calibration started (GyroOnly, 1000 samples)");
   } else {
     s_imu_enabled = false;
     const int who = ImuGetLastWhoAmI();
@@ -283,4 +374,19 @@ void VehicleControlOnWifiCommand(float throttle, float steering) {
 
   // Перезаписываем последнюю команду (частота ~50 Hz).
   (void)xQueueOverwrite(s_cmd_queue, &cmd);
+}
+
+void VehicleControlStartCalibration(bool full) {
+  // Устанавливаем флаг запроса — control loop подхватит на следующей итерации.
+  s_calib_request = full ? 2 : 1;
+}
+
+const char* VehicleControlGetCalibStatus(void) {
+  switch (s_imu_calib.GetStatus()) {
+    case CalibStatus::Idle:       return "idle";
+    case CalibStatus::Collecting: return "collecting";
+    case CalibStatus::Done:       return "done";
+    case CalibStatus::Failed:     return "failed";
+  }
+  return "unknown";
 }

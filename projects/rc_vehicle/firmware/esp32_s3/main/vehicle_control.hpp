@@ -14,3 +14,15 @@ esp_err_t VehicleControlInit(void);
  */
 void VehicleControlOnWifiCommand(float throttle, float steering);
 
+/**
+ * Запуск ручной калибровки IMU (вызывается из WebSocket-обработчика, Core 0).
+ * @param full  true — полная (gyro + accel), false — только гироскоп
+ */
+void VehicleControlStartCalibration(bool full);
+
+/**
+ * Получить строковый статус калибровки IMU.
+ * Возвращает: "idle", "collecting", "done", "failed".
+ */
+const char* VehicleControlGetCalibStatus(void);
+
