@@ -5,6 +5,7 @@
 #include "cJSON.h"
 #include "config.hpp"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "failsafe.hpp"
 #include "freertos/FreeRTOS.h"
@@ -56,7 +57,10 @@ static void vehicle_control_task(void* arg) {
 
   ImuData imu_data = {0};
 
+  esp_task_wdt_add(NULL);
+
   while (1) {
+    esp_task_wdt_reset();
     const uint32_t now = NowMs();
 
     // Опрос RC-in (50 Hz)
@@ -130,7 +134,7 @@ static void vehicle_control_task(void* arg) {
 
       // Если клиентов нет — не аллоцируем JSON зря.
       if (WebSocketGetClientCount() == 0) {
-        vTaskDelay(pdMS_TO_TICKS(1));
+        vTaskDelay(1);
         continue;
       }
 
@@ -178,7 +182,7 @@ static void vehicle_control_task(void* arg) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(1);
   }
 }
 
