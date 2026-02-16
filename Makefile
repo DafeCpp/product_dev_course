@@ -570,6 +570,32 @@ experiment-migrate:
 		docker-compose exec experiment-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}"
 	@echo "✅ Миграции применены"
 
+# ============================================
+# Production Deploy (Yandex Cloud)
+# ============================================
+
+.PHONY: infra-init infra-plan infra-apply infra-destroy deploy deploy-manual
+
+infra-init:
+	@cd infrastructure/yandex-cloud && terraform init
+
+infra-plan:
+	@cd infrastructure/yandex-cloud && terraform plan
+
+infra-apply:
+	@cd infrastructure/yandex-cloud && terraform apply
+
+infra-destroy:
+	@echo "ВНИМАНИЕ: удалит ВСЮ инфраструктуру в Yandex Cloud!"
+	@cd infrastructure/yandex-cloud && terraform destroy
+
+deploy:
+	@if [ -z "$(VM_HOST)" ] || [ -z "$(REGISTRY_ID)" ]; then \
+		echo "Usage: make deploy VM_HOST=<ip> REGISTRY_ID=<id> [IMAGE_TAG=<tag>]"; \
+		exit 1; \
+	fi
+	@./scripts/deploy.sh $(IMAGE_TAG)
+
 .PHONY: mvp-demo-check
 mvp-demo-check: dev-up auth-init experiment-migrate
 	@bash scripts/mvp_demo_check.sh

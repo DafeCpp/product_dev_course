@@ -1,0 +1,30 @@
+# ============================================
+# Пример конфигурации — скопируйте в terraform.tfvars
+# ============================================
+# cp terraform.tfvars.example terraform.tfvars
+# Затем заполните значения
+
+# --- Yandex Cloud ---
+cloud_id  = "b1g..."       # yc config get cloud-id
+folder_id = "b1g..."       # yc config get folder-id
+zone      = "ru-central1-a"
+
+# --- VM ---
+vm_cores             = 2
+vm_memory_gb         = 4
+vm_core_fraction     = 50    # 50% для dev/staging, 100% для production
+vm_disk_size_gb      = 30
+vm_user              = "deploy"
+vm_ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+vm_preemptible       = false  # true = прерываемая VM (дешевле, но может быть остановлена)
+
+# --- PostgreSQL ---
+pg_resource_preset        = "s2.micro"  # 2 vCPU, 8 GB RAM
+pg_disk_size_gb           = 20
+pg_admin_password         = "CHANGE_ME_strong_password_1"
+pg_auth_db_password       = "CHANGE_ME_strong_password_2"
+pg_experiment_db_password = "CHANGE_ME_strong_password_3"
+
+# --- Application ---
+jwt_secret  = "CHANGE_ME_random_secret_at_least_32_chars"
+domain_name = ""  # Оставить пустым, если нет домена; заполнить, если есть (example.com)
