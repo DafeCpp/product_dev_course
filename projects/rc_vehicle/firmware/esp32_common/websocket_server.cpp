@@ -10,9 +10,14 @@
 static const char* TAG = "websocket";
 static httpd_handle_t ws_server_handle = NULL;
 static WebSocketCommandHandler s_cmd_handler = nullptr;
+static WebSocketJsonHandler s_json_handler = nullptr;
 
 void WebSocketSetCommandHandler(WebSocketCommandHandler handler) {
   s_cmd_handler = handler;
+}
+
+void WebSocketSetJsonHandler(WebSocketJsonHandler handler) {
+  s_json_handler = handler;
 }
 
 // Обработчик WebSocket: вызывается один раз на каждый фрейм (как в
@@ -51,16 +56,20 @@ static esp_err_t ws_handler(httpd_req_t* req) {
   }
 
   cJSON* type = cJSON_GetObjectItem(json, "type");
-  if (type && strcmp(type->valuestring, "cmd") == 0) {
-    cJSON* throttle = cJSON_GetObjectItem(json, "throttle");
-    cJSON* steer = cJSON_GetObjectItem(json, "steering");
-    if (!throttle) throttle = cJSON_GetObjectItem(json, "thr");
-    if (!steer) steer = cJSON_GetObjectItem(json, "steer");
+  if (type && cJSON_IsString(type)) {
+    if (strcmp(type->valuestring, "cmd") == 0) {
+      cJSON* throttle = cJSON_GetObjectItem(json, "throttle");
+      cJSON* steer = cJSON_GetObjectItem(json, "steering");
+      if (!throttle) throttle = cJSON_GetObjectItem(json, "thr");
+      if (!steer) steer = cJSON_GetObjectItem(json, "steer");
 
-    if (throttle && steer && s_cmd_handler) {
-      float thr = static_cast<float>(throttle->valuedouble);
-      float str = static_cast<float>(steer->valuedouble);
-      s_cmd_handler(thr, str);
+      if (throttle && steer && s_cmd_handler) {
+        float thr = static_cast<float>(throttle->valuedouble);
+        float str = static_cast<float>(steer->valuedouble);
+        s_cmd_handler(thr, str);
+      }
+    } else if (s_json_handler) {
+      s_json_handler(type->valuestring, json, req);
     }
   }
 
@@ -77,22 +86,20 @@ static const httpd_uri_t ws_uri = {.uri = "/ws",
                                    .handle_ws_control_frames = false,
                                    .supported_subprotocol = NULL};
 
-esp_err_t WebSocketServerInit(void) {
-  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.server_port = WEBSOCKET_SERVER_PORT;
-  config.ctrl_port =
-      ESP_HTTPD_DEF_CTRL_PORT + 1;  // Отличается от HTTP-сервера (порт 80)
-
-  ESP_LOGI(TAG, "Starting WebSocket server on port %d", config.server_port);
-
-  if (httpd_start(&ws_server_handle, &config) == ESP_OK) {
-    httpd_register_uri_handler(ws_server_handle, &ws_uri);
-    ESP_LOGI(TAG, "WebSocket server started");
-    return ESP_OK;
+esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
+  if (server == NULL) {
+    ESP_LOGE(TAG, "Cannot register WS URI: server handle is NULL");
+    return ESP_ERR_INVALID_ARG;
   }
 
-  ESP_LOGE(TAG, "Failed to start WebSocket server");
-  return ESP_FAIL;
+  ws_server_handle = server;
+  esp_err_t ret = httpd_register_uri_handler(ws_server_handle, &ws_uri);
+  if (ret == ESP_OK) {
+    ESP_LOGI(TAG, "WebSocket URI /ws registered");
+  } else {
+    ESP_LOGE(TAG, "Failed to register WebSocket URI: %s", esp_err_to_name(ret));
+  }
+  return ret;
 }
 
 esp_err_t WebSocketSendTelem(const char* telem_json) {

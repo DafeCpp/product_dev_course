@@ -136,10 +136,10 @@ extern "C" void app_main(void) {
     return;
   }
 
-  // Инициализация WebSocket сервера
-  ESP_LOGI(TAG, "Initializing WebSocket server...");
-  if (WebSocketServerInit() != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to initialize WebSocket server");
+  // Регистрация WebSocket URI на HTTP-сервере (один httpd на порту 80)
+  ESP_LOGI(TAG, "Registering WebSocket handler...");
+  if (WebSocketRegisterUri(HttpServerGetHandle()) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to register WebSocket handler");
     return;
   }
 
@@ -150,7 +150,7 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "----------------------------------------");
     ESP_LOGI(TAG, "  Подключитесь к Wi-Fi и откройте в браузере:");
     ESP_LOGI(TAG, "  http://%s", ap_ip);
-    ESP_LOGI(TAG, "  WebSocket: ws://%s:%d/ws", ap_ip, WEBSOCKET_SERVER_PORT);
+    ESP_LOGI(TAG, "  WebSocket: ws://%s/ws", ap_ip);
     ESP_LOGI(TAG, "----------------------------------------");
   }
 

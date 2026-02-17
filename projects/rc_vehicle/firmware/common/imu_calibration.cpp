@@ -65,11 +65,13 @@ bool ImuCalibration::Finalize() {
   data_.gyro_bias[1] = static_cast<float>(mean[1]);
   data_.gyro_bias[2] = static_cast<float>(mean[2]);
 
-  // Accel bias = отклонение от идеального g-вектора (0, 0, +1.0g)
+  // Accel bias = отклонение от идеального g-вектора.
+  // Z-ось: определяем знак gravity по среднему az (датчик может быть перевёрнут).
   if (mode_ == CalibMode::Full) {
-    data_.accel_bias[0] = static_cast<float>(mean[3]);         // ideal = 0
-    data_.accel_bias[1] = static_cast<float>(mean[4]);         // ideal = 0
-    data_.accel_bias[2] = static_cast<float>(mean[5] - 1.0);  // ideal = 1.0g
+    const double expected_az = (mean[5] >= 0.0) ? 1.0 : -1.0;
+    data_.accel_bias[0] = static_cast<float>(mean[3]);                  // ideal = 0
+    data_.accel_bias[1] = static_cast<float>(mean[4]);                  // ideal = 0
+    data_.accel_bias[2] = static_cast<float>(mean[5] - expected_az);    // ideal = ±1.0g
   }
 
   data_.valid = true;

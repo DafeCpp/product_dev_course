@@ -1,7 +1,7 @@
 // WebSocket подключение
 let ws = null;
 let wsReconnectInterval = null;
-const WS_URL = `ws://${window.location.hostname}:81/ws`;
+const WS_URL = `ws://${window.location.hostname}/ws`;
 
 // Элементы UI
 const wsStatusEl = document.getElementById('ws-status');
@@ -25,6 +25,13 @@ const staPassInput = document.getElementById('sta-pass-input');
 const btnStaConnect = document.getElementById('btn-sta-connect');
 const btnStaDisconnect = document.getElementById('btn-sta-disconnect');
 const btnStaForget = document.getElementById('btn-sta-forget');
+
+// Калибровка IMU UI
+const calibStatusEl = document.getElementById('calib-status');
+const calibValidEl = document.getElementById('calib-valid');
+const calibBiasEl = document.getElementById('calib-bias');
+const btnCalibGyro = document.getElementById('btn-calib-gyro');
+const btnCalibFull = document.getElementById('btn-calib-full');
 
 // Состояние
 let lastCommandSeq = 0;
@@ -55,9 +62,13 @@ function connectWebSocket() {
                 const data = JSON.parse(event.data);
                 if (data.type === 'telem') {
                     updateTelem(data);
+                } else if (data.type === 'calibrate_imu_ack') {
+                    updateCalibStatus(data.status, null);
+                } else if (data.type === 'calib_status') {
+                    updateCalibStatus(data.status, null);
                 }
             } catch (e) {
-                console.error('Failed to parse telem:', e);
+                console.error('Failed to parse message:', e);
             }
         };
 
@@ -264,6 +275,53 @@ async function scanWifiNetworks() {
     btnStaScan.textContent = prevText;
 }
 
+// Обновление статуса калибровки IMU
+function updateCalibStatus(status, calib) {
+    if (calibStatusEl && status) {
+        const labels = {
+            idle: 'Ожидание',
+            collecting: 'Сбор данных...',
+            done: 'Завершена',
+            failed: 'Ошибка (движение)'
+        };
+        calibStatusEl.textContent = labels[status] || status;
+        calibStatusEl.className = 'status-value ' + (status || 'unknown');
+
+        const collecting = (status === 'collecting');
+        if (btnCalibGyro) btnCalibGyro.disabled = collecting;
+        if (btnCalibFull) btnCalibFull.disabled = collecting;
+    }
+
+    if (calib) {
+        if (calibValidEl) {
+            calibValidEl.textContent = calib.valid ? 'Валидны' : 'Нет данных';
+            calibValidEl.className = 'status-value ' + (calib.valid ? 'done' : 'idle');
+        }
+
+        if (calib.bias && calibBiasEl) {
+            calibBiasEl.style.display = 'block';
+            const set = (id, v) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = (typeof v === 'number') ? v.toFixed(4) : '—';
+            };
+            set('calib-gx', calib.bias.gx);
+            set('calib-gy', calib.bias.gy);
+            set('calib-gz', calib.bias.gz);
+            set('calib-ax', calib.bias.ax);
+            set('calib-ay', calib.bias.ay);
+            set('calib-az', calib.bias.az);
+        } else if (calibBiasEl && !calib.valid) {
+            calibBiasEl.style.display = 'none';
+        }
+    }
+}
+
+// Отправка команды калибровки
+function sendCalibrate(mode) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'calibrate_imu', mode: mode }));
+}
+
 // Обновление телеметрии (статус Pico/STM: по mcu_pong_ok с ESP32 или по факту прихода телеметрии)
 function updateTelem(data) {
     lastTelemTime = Date.now();
@@ -312,6 +370,11 @@ function updateTelem(data) {
     }
 
     telemDataEl.innerHTML = html || '<p>Нет данных</p>';
+
+    // Обновление панели калибровки из телеметрии
+    if (data.calib) {
+        updateCalibStatus(data.calib.status, data.calib);
+    }
 }
 
 // Обработчики событий
@@ -334,6 +397,14 @@ btnStop.addEventListener('click', () => {
     throttleSlider.value = 0;
     throttleValueEl.textContent = '0.00';
 });
+
+// Кнопки калибровки IMU
+if (btnCalibGyro) {
+    btnCalibGyro.addEventListener('click', () => sendCalibrate('gyro'));
+}
+if (btnCalibFull) {
+    btnCalibFull.addEventListener('click', () => sendCalibrate('full'));
+}
 
 if (staScanList) {
     staScanList.addEventListener('change', async () => {

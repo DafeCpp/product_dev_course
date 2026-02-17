@@ -12,6 +12,8 @@
 static const char* TAG = "http_server";
 static httpd_handle_t server_handle = NULL;
 
+httpd_handle_t HttpServerGetHandle(void) { return server_handle; }
+
 // Веб-ресурсы (HTML/CSS/JS) вшиваются в прошивку через #embed.
 // Требование: GCC с поддержкой C23 #embed (обычно GCC 15+).
 static const unsigned char INDEX_HTML[] = {
@@ -593,9 +595,9 @@ static esp_err_t wifi_sta_connect_handler(httpd_req_t* req) {
   bool save_cfg = true;
   if (save && cJSON_IsBool(save)) save_cfg = cJSON_IsTrue(save);
 
+  (void)WiFiStaConnect(ssid_str, pass_str, save_cfg);
   cJSON_Delete(json);
 
-  (void)WiFiStaConnect(ssid_str, pass_str, save_cfg);
   return SendWifiStatusJson(req);
 }
 
@@ -694,6 +696,9 @@ esp_err_t HttpServerInit(void) {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = HTTP_SERVER_PORT;
   config.max_uri_handlers = 16;
+  config.stack_size = 8192;
+  config.max_open_sockets = 7;
+  config.lru_purge_enable = true;  // Автозакрытие старых соединений при нехватке
 
   ESP_LOGI(TAG, "Starting HTTP server on port %d", config.server_port);
 

@@ -8,11 +8,8 @@
 #define WIFI_AP_CHANNEL 1
 #define WIFI_AP_MAX_CONNECTIONS 4
 
-// HTTP сервер
+// HTTP сервер (HTTP + WebSocket на одном порту)
 #define HTTP_SERVER_PORT 80
-
-// WebSocket сервер
-#define WEBSOCKET_SERVER_PORT 81
 #define WEBSOCKET_MAX_CLIENTS 4
 
 // UART конфигурация (ESP32-C3 ↔ RP2040)

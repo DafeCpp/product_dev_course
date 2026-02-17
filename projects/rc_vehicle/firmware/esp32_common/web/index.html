@@ -90,6 +90,37 @@
             </div>
         </div>
 
+        <div class="control-panel">
+            <h2>Калибровка IMU</h2>
+
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">Статус:</span>
+                    <span id="calib-status" class="status-value unknown">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Данные:</span>
+                    <span id="calib-valid" class="status-value unknown">—</span>
+                </div>
+            </div>
+
+            <div id="calib-bias" class="calib-bias" style="display:none">
+                <div class="telem-item"><span class="telem-label">Gyro bias X:</span><span id="calib-gx" class="telem-value">—</span></div>
+                <div class="telem-item"><span class="telem-label">Gyro bias Y:</span><span id="calib-gy" class="telem-value">—</span></div>
+                <div class="telem-item"><span class="telem-label">Gyro bias Z:</span><span id="calib-gz" class="telem-value">—</span></div>
+                <div class="telem-item"><span class="telem-label">Accel bias X:</span><span id="calib-ax" class="telem-value">—</span></div>
+                <div class="telem-item"><span class="telem-label">Accel bias Y:</span><span id="calib-ay" class="telem-value">—</span></div>
+                <div class="telem-item"><span class="telem-label">Accel bias Z:</span><span id="calib-az" class="telem-value">—</span></div>
+            </div>
+
+            <p class="calib-hint">Поставьте машину на ровную поверхность и не трогайте во время калибровки.</p>
+
+            <div class="button-group">
+                <button id="btn-calib-gyro" class="btn-calib">Гироскоп</button>
+                <button id="btn-calib-full" class="btn-calib">Полная</button>
+            </div>
+        </div>
+
         <div class="telem-panel">
             <h2>Телеметрия</h2>
             <div id="telem-data">

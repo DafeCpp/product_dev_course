@@ -21,7 +21,7 @@
 
 static const char* TAG = "vehicle_control";
 
-static constexpr uint32_t CONTROL_TASK_STACK = 8192;
+static constexpr uint32_t CONTROL_TASK_STACK = 12288;
 static constexpr UBaseType_t CONTROL_TASK_PRIORITY = configMAX_PRIORITIES - 1;
 
 struct WifiCmd {
@@ -170,6 +170,35 @@ static void vehicle_control_task(void* arg) {
                  (unsigned long)loop_hz, (unsigned long)imu_hz,
                  (unsigned long)diag_max_dt_us, (unsigned long)diag_loop_count,
                  (unsigned long)elapsed);
+
+        // Информация о калибровке IMU
+        const char* calib_str = "off";
+        switch (s_imu_calib.GetStatus()) {
+          case CalibStatus::Idle:       calib_str = "idle"; break;
+          case CalibStatus::Collecting: calib_str = "collecting"; break;
+          case CalibStatus::Done:       calib_str = "done"; break;
+          case CalibStatus::Failed:     calib_str = "failed"; break;
+        }
+        if (s_imu_calib.IsValid()) {
+          const auto& d = s_imu_calib.GetData();
+          ESP_LOGI(TAG,
+                   "CALIB: status=%s valid=YES gyro_bias=[%.3f, %.3f, %.3f] "
+                   "accel_bias=[%.4f, %.4f, %.4f]",
+                   calib_str,
+                   d.gyro_bias[0], d.gyro_bias[1], d.gyro_bias[2],
+                   d.accel_bias[0], d.accel_bias[1], d.accel_bias[2]);
+        } else {
+          ESP_LOGI(TAG, "CALIB: status=%s valid=NO", calib_str);
+        }
+
+        // Вывод текущих (откалиброванных) значений IMU
+        if (s_imu_enabled) {
+          ESP_LOGI(TAG,
+                   "IMU: ax=%.3f ay=%.3f az=%.3f gx=%.2f gy=%.2f gz=%.2f",
+                   imu_data.ax, imu_data.ay, imu_data.az,
+                   imu_data.gx, imu_data.gy, imu_data.gz);
+        }
+
         diag_loop_count = 0;
         diag_imu_count = 0;
         diag_max_dt_us = 0;
