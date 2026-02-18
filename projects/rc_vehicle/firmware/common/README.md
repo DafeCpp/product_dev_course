@@ -6,7 +6,7 @@
 
 - **context.hpp** — контекст с регистрацией компонентов по типу (compile-time): `Context<UartBridgeBase, SpiDevice, ...>` — список типов задаётся при объявлении; `Set<T>(ref)` регистрирует по ссылке, `Get<T>()` возвращает компонент по типу T; опционально `get_time_ms`.
 - **base_component.hpp** — базовый класс компонента: `BaseComponent` с виртуальными `Init()` (0/-1) и `Name()` для логов. Компоненты могут наследовать его и при необходимости принимать `Context&` в конструкторе.
-- **protocol.hpp / protocol.cpp** — протокол UART (ESP32 ↔ MCU): структура `TelemetryData`, константы (AA 55, типы сообщений), `ProtocolBuildTelem`, `ProtocolParseCommand`, `ProtocolBuildCommand`, `ProtocolParseTelem`, CRC16, поиск начала кадра.
+- **protocol.hpp / protocol.cpp** — протокол UART (ESP32 ↔ MCU): namespace `rc_vehicle::protocol`, структуры `TelemetryData` и `CommandData` с методами, enum class `MessageType` и `ParseError`, классы `FrameBuilder`, `FrameParser` и `Protocol` для сериализации/десериализации кадров. Возврат `Result<T>` (std::variant) вместо 0 при ошибке. Старый API (deprecated) сохранён для обратной совместимости. Подробнее: [PROTOCOL_REFACTORING.md](PROTOCOL_REFACTORING.md).
 - **uart_bridge_base.hpp** — абстрактный базовый класс UART-моста:
   - чисто виртуальные: `Init()`, `Write(data, len)`, `ReadAvailable(buf, max_len)`;
   - реализованы в базе (через протокол и буфер приёма): `SendTelem`, `ReceiveCommand` (для MCU), `SendCommand`, `ReceiveTelem` (для ESP32).

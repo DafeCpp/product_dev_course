@@ -5,6 +5,9 @@
 #include "esp_err.h"
 #include "protocol.hpp"
 
+// Используем новый API протокола
+using rc_vehicle::protocol::TelemetryData;
+
 /**
  * Инициализация UART моста к RP2040
  * @return ESP_OK при успехе, иначе код ошибки
@@ -23,7 +26,7 @@ esp_err_t UartBridgeSendCommand(float throttle, float steering);
  * Получить телеметрию от RP2040 (неблокирующий вызов)
  * @return данные телеметрии или std::nullopt, если нет данных
  */
-std::optional<TelemetryData> UartBridgeReceiveTelem(void);
+std::optional<rc_vehicle::protocol::TelemetryData> UartBridgeReceiveTelem(void);
 
 /**
  * Отправить PING на MCU (Pico/STM32)

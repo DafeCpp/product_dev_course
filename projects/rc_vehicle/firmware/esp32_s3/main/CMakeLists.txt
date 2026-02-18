@@ -13,6 +13,7 @@ idf_component_register(
         "../../common/mpu6050_spi.cpp"
         "../../common/failsafe_core.cpp"
         "../../common/imu_calibration.cpp"
+        "../../common/madgwick_filter.cpp"
         "../../esp32_common/imu_calibration_nvs.cpp"
     INCLUDE_DIRS
         "."

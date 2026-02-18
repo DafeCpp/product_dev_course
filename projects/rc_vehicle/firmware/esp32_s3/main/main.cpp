@@ -38,25 +38,41 @@ static void ws_send_reply(httpd_req_t* req, cJSON* reply) {
  * Обработчик произвольных JSON-команд через WebSocket.
  *
  * Протокол:
- *   → {"type":"calibrate_imu","mode":"gyro"}   — запуск калибровки гироскопа
- *   → {"type":"calibrate_imu","mode":"full"}    — полная калибровка
- *   ← {"type":"calibrate_imu_ack","status":"collecting"}
+ *   → {"type":"calibrate_imu","mode":"gyro"}    — этап 1: только гироскоп
+ *   → {"type":"calibrate_imu","mode":"full"}    — этап 1: стояние на месте (bias + вектор g)
+ *   → {"type":"calibrate_imu","mode":"forward"} — этап 2: движение вперёд/назад с прямыми колёсами
+ *   ← {"type":"calibrate_imu_ack","status":"collecting","stage":1|2,"ok":true|false}
  *
  *   → {"type":"get_calib_status"}
  *   ← {"type":"calib_status","status":"done","valid":true}
+ *
+ *   → {"type":"set_forward_direction","vec":[fx,fy,fz]}  — единичный вектор «вперёд» в СК датчика (нормализуется)
+ *   ← {"type":"set_forward_direction_ack","ok":true}
  */
 static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
   if (strcmp(type, "calibrate_imu") == 0) {
-    cJSON* mode = cJSON_GetObjectItem(json, "mode");
-    bool full = (mode && cJSON_IsString(mode) && strcmp(mode->valuestring, "full") == 0);
-    VehicleControlStartCalibration(full);
-    ESP_LOGI(TAG, "WS: calibrate_imu (mode=%s)", full ? "full" : "gyro");
+    cJSON* mode_item = cJSON_GetObjectItem(json, "mode");
+    const char* mode_str = (mode_item && cJSON_IsString(mode_item)) ? mode_item->valuestring : "gyro";
+    bool is_forward = (strcmp(mode_str, "forward") == 0);
+    bool full = (strcmp(mode_str, "full") == 0);
 
     cJSON* reply = cJSON_CreateObject();
     if (reply) {
       cJSON_AddStringToObject(reply, "type", "calibrate_imu_ack");
-      cJSON_AddStringToObject(reply, "status", "collecting");
-      cJSON_AddStringToObject(reply, "mode", full ? "full" : "gyro");
+      if (is_forward) {
+        bool ok = VehicleControlStartForwardCalibration();
+        cJSON_AddStringToObject(reply, "status", ok ? "collecting" : "failed");
+        cJSON_AddNumberToObject(reply, "stage", 2);
+        cJSON_AddBoolToObject(reply, "ok", ok);
+        ESP_LOGI(TAG, "WS: calibrate_imu mode=forward -> %s", ok ? "stage 2 started" : "failed (need stage 1 full)");
+      } else {
+        VehicleControlStartCalibration(full);
+        cJSON_AddStringToObject(reply, "status", "collecting");
+        cJSON_AddNumberToObject(reply, "stage", 1);
+        cJSON_AddBoolToObject(reply, "ok", true);
+        cJSON_AddStringToObject(reply, "mode", full ? "full" : "gyro");
+        ESP_LOGI(TAG, "WS: calibrate_imu (stage 1, mode=%s)", full ? "full" : "gyro");
+      }
       ws_send_reply(req, reply);
       cJSON_Delete(reply);
     }
@@ -65,6 +81,26 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
     if (reply) {
       cJSON_AddStringToObject(reply, "type", "calib_status");
       cJSON_AddStringToObject(reply, "status", VehicleControlGetCalibStatus());
+      cJSON_AddNumberToObject(reply, "stage", VehicleControlGetCalibStage());
+      ws_send_reply(req, reply);
+      cJSON_Delete(reply);
+    }
+  } else if (strcmp(type, "set_forward_direction") == 0) {
+    cJSON* vec_arr = cJSON_GetObjectItem(json, "vec");
+    float fx = 1.f, fy = 0.f, fz = 0.f;
+    if (cJSON_IsArray(vec_arr) && cJSON_GetArraySize(vec_arr) >= 3) {
+      cJSON* ex = cJSON_GetArrayItem(vec_arr, 0);
+      cJSON* ey = cJSON_GetArrayItem(vec_arr, 1);
+      cJSON* ez = cJSON_GetArrayItem(vec_arr, 2);
+      if (cJSON_IsNumber(ex)) fx = (float)ex->valuedouble;
+      if (cJSON_IsNumber(ey)) fy = (float)ey->valuedouble;
+      if (cJSON_IsNumber(ez)) fz = (float)ez->valuedouble;
+    }
+    VehicleControlSetForwardDirection(fx, fy, fz);
+    cJSON* reply = cJSON_CreateObject();
+    if (reply) {
+      cJSON_AddStringToObject(reply, "type", "set_forward_direction_ack");
+      cJSON_AddBoolToObject(reply, "ok", true);
       ws_send_reply(req, reply);
       cJSON_Delete(reply);
     }

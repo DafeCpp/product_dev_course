@@ -1,184 +1,224 @@
 #include "uart_bridge_base.hpp"
 
 #include <cstring>
-#include <span>
 
-void UartBridgeBase::PumpRx() {
-  int n = ReadAvailable(rx_buffer_.data() + rx_pos_, RX_BUF_SIZE - rx_pos_);
-  if (n > 0) rx_pos_ += static_cast<size_t>(n);
+namespace rc_vehicle {
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RxBuffer - реализация
+// ═══════════════════════════════════════════════════════════════════════════
+
+void RxBuffer::Consume(size_t n) noexcept {
+  if (n == 0 || n > pos_) return;
+
+  std::memmove(data_.data(), data_.data() + n, pos_ - n);
+  pos_ -= n;
 }
 
-/**
- * Общий хелпер: PumpRx → найти AA 55 → выровнять буфер → подглядеть тип.
- * Возвращает тип сообщения (0x01–0x05…) или -1 если кадра нет / мало данных.
- */
-static int AlignAndPeekType(std::array<uint8_t, UartBridgeBase::RX_BUF_SIZE> &buf,
-                            size_t &pos) {
-  std::span<const uint8_t> rx_span(buf.data(), pos);
-  int start = ProtocolFindFrameStart(rx_span);
+bool RxBuffer::Align() noexcept {
+  int start = protocol::Protocol::FindFrameStart(Data());
+
   if (start < 0) {
     // Нет AA 55 — если буфер почти полон, сбросить
-    if (pos >= UartBridgeBase::RX_BUF_SIZE - 1) pos = 0;
+    if (IsFull()) {
+      Reset();
+    }
+    return false;
+  }
+
+  if (start > 0) {
+    Consume(static_cast<size_t>(start));
+  }
+
+  return true;
+}
+
+void RxBuffer::SkipOne() noexcept {
+  if (pos_ > 0) {
+    Consume(1);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UartBridgeBase - реализация
+// ═══════════════════════════════════════════════════════════════════════════
+
+void UartBridgeBase::PumpRx() {
+  auto available = rx_buffer_.Available();
+  int n = ReadAvailable(available.data(), available.size());
+  if (n > 0) {
+    rx_buffer_.Advance(static_cast<size_t>(n));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Шаблонный метод для приёма кадров (устраняет дублирование)
+// ─────────────────────────────────────────────────────────────────────────
+
+template <typename T>
+std::optional<T> UartBridgeBase::ReceiveFrame(
+    protocol::MessageType expected_type,
+    protocol::Result<T> (*parse_func)(std::span<const uint8_t>)) {
+  PumpRx();
+
+  // Выравниваем буфер (ищем AA 55)
+  if (!rx_buffer_.Align()) {
+    return std::nullopt;
+  }
+
+  auto data = rx_buffer_.Data();
+
+  // Проверяем минимальный размер для заголовка
+  if (data.size() < 4) {
+    return std::nullopt;
+  }
+
+  // Проверяем тип сообщения
+  auto type_result = protocol::FrameParser::ValidateHeader(data);
+  if (protocol::IsError(type_result)) {
+    return std::nullopt;
+  }
+
+  if (protocol::GetValue(type_result) != expected_type) {
+    // Чужой кадр — не трогаем, вернём nullopt
+    return std::nullopt;
+  }
+
+  // Пытаемся распарсить
+  auto parse_result = parse_func(data);
+
+  if (protocol::IsOk(parse_result)) {
+    // Успешно распарсили — потребляем кадр
+    auto payload_len_result = protocol::FrameParser::GetPayloadLength(data);
+    if (protocol::IsOk(payload_len_result)) {
+      size_t frame_size = protocol::HEADER_SIZE +
+                          protocol::GetValue(payload_len_result) +
+                          protocol::CRC_SIZE;
+      rx_buffer_.Consume(frame_size);
+    }
+    return protocol::GetValue(parse_result);
+  }
+
+  // Ошибка парсинга (вероятно CRC) — пропускаем 1 байт (ложный AA 55)
+  rx_buffer_.SkipOne();
+  return std::nullopt;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// API для MCU: отправка телеметрии, приём команд
+// ─────────────────────────────────────────────────────────────────────────
+
+int UartBridgeBase::SendTelem(const protocol::TelemetryData &telem_data) {
+  std::array<uint8_t, 32> frame{};
+  auto result = protocol::Protocol::BuildTelemetry(frame, telem_data);
+
+  if (protocol::IsError(result)) {
     return -1;
   }
-  if (start > 0) {
-    memmove(buf.data(), buf.data() + start, pos - start);
-    pos -= static_cast<size_t>(start);
-  }
-  // Нужно минимум 4 байта: prefix(2) + ver(1) + type(1)
-  if (pos < 4) return -1;
-  return buf[3];
-}
 
-/** Сдвинуть буфер на 1 байт (пропуск ложного AA 55). */
-static void SkipOneByte(std::array<uint8_t, UartBridgeBase::RX_BUF_SIZE> &buf,
-                        size_t &pos) {
-  if (pos > 0) {
-    memmove(buf.data(), buf.data() + 1, pos - 1);
-    pos--;
-  }
-}
-
-/** Потребить parsed байт из начала буфера. */
-static void ConsumeFront(std::array<uint8_t, UartBridgeBase::RX_BUF_SIZE> &buf,
-                         size_t &pos, size_t parsed) {
-  if (parsed > 0 && parsed <= pos) {
-    memmove(buf.data(), buf.data() + parsed, pos - parsed);
-    pos -= parsed;
-  }
-}
-
-// ── MCU → ESP32: телеметрия ─────────────────────────────────────────────────
-
-int UartBridgeBase::SendTelem(const TelemetryData &telem_data) {
-  std::array<uint8_t, 32> frame{};
-  size_t len = ProtocolBuildTelem(frame, telem_data);
-  if (len == 0) return -1;
+  size_t len = protocol::GetValue(result);
   return Write(frame.data(), len);
 }
 
 std::optional<UartCommand> UartBridgeBase::ReceiveCommand() {
-  PumpRx();
-  int type = AlignAndPeekType(rx_buffer_, rx_pos_);
-  if (type < 0) return std::nullopt;
-  if (type != UART_MSG_TYPE_COMMAND) return std::nullopt;  // чужой кадр — не трогаем
+  auto result = ReceiveFrame<protocol::CommandData>(
+      protocol::MessageType::Command, protocol::Protocol::ParseCommand);
 
-  if (rx_pos_ < 16) return std::nullopt;
-  float throttle = 0.f, steering = 0.f;
-  size_t parsed = ProtocolParseCommand(
-      std::span<const uint8_t>(rx_buffer_.data(), rx_pos_), throttle, steering);
-  if (parsed > 0) {
-    ConsumeFront(rx_buffer_, rx_pos_, parsed);
-    return UartCommand{throttle, steering};
+  if (!result.has_value()) {
+    return std::nullopt;
   }
-  // Наш тип, но CRC не сошлась — ложный AA 55, пропускаем 1 байт
-  SkipOneByte(rx_buffer_, rx_pos_);
-  return std::nullopt;
+
+  const auto &cmd = *result;
+  return UartCommand{cmd.throttle, cmd.steering};
 }
 
-// ── MCU: PING/PONG ─────────────────────────────────────────────────────────
-
 bool UartBridgeBase::ReceivePing() {
-  PumpRx();
-  int type = AlignAndPeekType(rx_buffer_, rx_pos_);
-  if (type < 0) return false;
-  if (type != UART_MSG_TYPE_PING) return false;
+  auto result = ReceiveFrame<bool>(protocol::MessageType::Ping,
+                                   protocol::Protocol::ParsePing);
 
-  if (rx_pos_ < 8) return false;
-  size_t parsed =
-      ProtocolParsePing(std::span<const uint8_t>(rx_buffer_.data(), rx_pos_));
-  if (parsed > 0) {
-    ConsumeFront(rx_buffer_, rx_pos_, parsed);
-    return true;
-  }
-  SkipOneByte(rx_buffer_, rx_pos_);
-  return false;
+  return result.has_value();
 }
 
 int UartBridgeBase::SendPong() {
   std::array<uint8_t, 16> frame{};
-  size_t len = ProtocolBuildPong(frame);
-  if (len == 0) return -1;
+  auto result = protocol::Protocol::BuildPong(frame);
+
+  if (protocol::IsError(result)) {
+    return -1;
+  }
+
+  size_t len = protocol::GetValue(result);
   return Write(frame.data(), len);
 }
 
-// ── MCU → ESP32: LOG ────────────────────────────────────────────────────────
-
 int UartBridgeBase::SendLog(const char *msg, size_t len) {
-  std::array<uint8_t, 6 + PROTOCOL_LOG_MAX_PAYLOAD + 2> frame{};
-  size_t frame_len = ProtocolBuildLog(frame, msg, len);
-  if (frame_len == 0) return -1;
+  std::array<uint8_t, protocol::HEADER_SIZE + protocol::LOG_MAX_PAYLOAD +
+                          protocol::CRC_SIZE>
+      frame{};
+  auto result = protocol::Protocol::BuildLog(frame, std::string_view(msg, len));
+
+  if (protocol::IsError(result)) {
+    return -1;
+  }
+
+  size_t frame_len = protocol::GetValue(result);
   return Write(frame.data(), frame_len);
 }
 
-// ── ESP32: отправка команд, приём телеметрии ────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// API для ESP32: отправка команд, приём телеметрии
+// ─────────────────────────────────────────────────────────────────────────
 
 int UartBridgeBase::SendCommand(float throttle, float steering) {
   std::array<uint8_t, 32> frame{};
-  size_t len = ProtocolBuildCommand(frame, throttle, steering);
-  if (len == 0) return -1;
+  protocol::CommandData cmd{0, throttle, steering};
+  auto result = protocol::Protocol::BuildCommand(frame, cmd);
+
+  if (protocol::IsError(result)) {
+    return -1;
+  }
+
+  size_t len = protocol::GetValue(result);
   return Write(frame.data(), len);
 }
 
-std::optional<TelemetryData> UartBridgeBase::ReceiveTelem() {
-  PumpRx();
-  int type = AlignAndPeekType(rx_buffer_, rx_pos_);
-  if (type < 0) return std::nullopt;
-  if (type != UART_MSG_TYPE_TELEM) return std::nullopt;
-
-  if (rx_pos_ < 20) return std::nullopt;
-  TelemetryData telem_data{};
-  size_t parsed = ProtocolParseTelem(
-      std::span<const uint8_t>(rx_buffer_.data(), rx_pos_), telem_data);
-  if (parsed > 0) {
-    ConsumeFront(rx_buffer_, rx_pos_, parsed);
-    return telem_data;
-  }
-  SkipOneByte(rx_buffer_, rx_pos_);
-  return std::nullopt;
+std::optional<protocol::TelemetryData> UartBridgeBase::ReceiveTelem() {
+  return ReceiveFrame<protocol::TelemetryData>(
+      protocol::MessageType::Telemetry, protocol::Protocol::ParseTelemetry);
 }
 
 int UartBridgeBase::ReceiveLog(char *buf, size_t max_len) {
-  PumpRx();
-  int type = AlignAndPeekType(rx_buffer_, rx_pos_);
-  if (type < 0) return 0;
-  if (type != UART_MSG_TYPE_LOG) return 0;
+  auto result = ReceiveFrame<std::string_view>(protocol::MessageType::Log,
+                                               protocol::Protocol::ParseLog);
 
-  if (rx_pos_ < 8) return 0;
-  size_t msg_len = 0;
-  size_t parsed = ProtocolParseLog(
-      std::span<const uint8_t>(rx_buffer_.data(), rx_pos_), buf, max_len,
-      msg_len);
-  if (parsed > 0) {
-    ConsumeFront(rx_buffer_, rx_pos_, parsed);
-    return static_cast<int>(msg_len);
+  if (!result.has_value()) {
+    return 0;
   }
-  SkipOneByte(rx_buffer_, rx_pos_);
-  return 0;
-}
 
-// ── ESP32: PING/PONG ───────────────────────────────────────────────────────
+  const auto &log_msg = *result;
+  size_t copy_len = log_msg.size() < max_len ? log_msg.size() : max_len;
+  std::memcpy(buf, log_msg.data(), copy_len);
+
+  return static_cast<int>(copy_len);
+}
 
 int UartBridgeBase::SendPing() {
   std::array<uint8_t, 16> frame{};
-  size_t len = ProtocolBuildPing(frame);
-  if (len == 0) return -1;
+  auto result = protocol::Protocol::BuildPing(frame);
+
+  if (protocol::IsError(result)) {
+    return -1;
+  }
+
+  size_t len = protocol::GetValue(result);
   return Write(frame.data(), len);
 }
 
 bool UartBridgeBase::ReceivePong() {
-  PumpRx();
-  int type = AlignAndPeekType(rx_buffer_, rx_pos_);
-  if (type < 0) return false;
-  if (type != UART_MSG_TYPE_PONG) return false;
+  auto result = ReceiveFrame<bool>(protocol::MessageType::Pong,
+                                   protocol::Protocol::ParsePong);
 
-  if (rx_pos_ < 8) return false;
-  size_t parsed =
-      ProtocolParsePong(std::span<const uint8_t>(rx_buffer_.data(), rx_pos_));
-  if (parsed > 0) {
-    ConsumeFront(rx_buffer_, rx_pos_, parsed);
-    return true;
-  }
-  SkipOneByte(rx_buffer_, rx_pos_);
-  return false;
+  return result.has_value();
 }
+
+}  // namespace rc_vehicle

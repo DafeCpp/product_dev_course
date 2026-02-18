@@ -6,6 +6,10 @@
 
 #include "protocol.hpp"
 
+// Используем новый API протокола
+using rc_vehicle::UartCommand;
+using rc_vehicle::protocol::TelemetryData;
+
 /**
  * Инициализация UART моста к ESP32
  * @return 0 при успехе, -1 при ошибке
@@ -17,13 +21,10 @@ int UartBridgeInit(void);
  * @param telem_data данные телеметрии
  * @return 0 при успехе, -1 при ошибке
  */
-int UartBridgeSendTelem(const TelemetryData &telem_data);
+int UartBridgeSendTelem(const rc_vehicle::protocol::TelemetryData &telem_data);
 
-/** Команда от ESP32: газ и руль. */
-struct UartBridgeCommand {
-  float throttle{0.f};
-  float steering{0.f};
-};
+/** Команда от ESP32: газ и руль (алиас для совместимости). */
+using UartBridgeCommand = rc_vehicle::UartCommand;
 
 /**
  * Попытка принять команду от ESP32

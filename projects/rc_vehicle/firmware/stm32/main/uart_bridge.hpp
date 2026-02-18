@@ -6,14 +6,15 @@
 
 #include "protocol.hpp"
 
-/** Команда от ESP32: газ и руль. */
-struct UartBridgeCommand {
-  float throttle{0.f};
-  float steering{0.f};
-};
+// Используем новый API протокола
+using rc_vehicle::UartCommand;
+using rc_vehicle::protocol::TelemetryData;
+
+/** Команда от ESP32: газ и руль (алиас для совместимости). */
+using UartBridgeCommand = rc_vehicle::UartCommand;
 
 int UartBridgeInit(void);
-int UartBridgeSendTelem(const TelemetryData &telem_data);
+int UartBridgeSendTelem(const rc_vehicle::protocol::TelemetryData &telem_data);
 std::optional<UartBridgeCommand> UartBridgeReceiveCommand(void);
 bool UartBridgeReceivePing(void);
 int UartBridgeSendPong(void);

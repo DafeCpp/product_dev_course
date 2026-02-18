@@ -2,176 +2,132 @@
 
 #include <cstring>
 
-size_t ProtocolBuildTelem(std::span<uint8_t> buffer,
-                          const TelemetryData &telem_data) {
-  constexpr size_t kMinTelemFrameSize = 6 + 15 + 2;  // header + payload + CRC
-  if (buffer.size() < kMinTelemFrameSize) {
-    return 0;
-  }
-  buffer[0] = UART_FRAME_PREFIX_0;
-  buffer[1] = UART_FRAME_PREFIX_1;
-  buffer[2] = UART_PROTOCOL_VERSION;
-  buffer[3] = UART_MSG_TYPE_TELEM;
-  uint16_t payload_len = 15;
+namespace rc_vehicle::protocol {
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Статические переменные
+// ═══════════════════════════════════════════════════════════════════════════
+
+uint16_t Protocol::next_command_seq_ = 0;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FrameBuilder - построение кадров
+// ═══════════════════════════════════════════════════════════════════════════
+
+void FrameBuilder::WriteHeader(std::span<uint8_t> buffer,
+                               uint16_t payload_len) const noexcept {
+  buffer[0] = FRAME_PREFIX_0;
+  buffer[1] = FRAME_PREFIX_1;
+  buffer[2] = PROTOCOL_VERSION;
+  buffer[3] = static_cast<uint8_t>(type_);
   buffer[4] = payload_len & 0xFF;
   buffer[5] = (payload_len >> 8) & 0xFF;
-  buffer[6] = telem_data.seq & 0xFF;
-  buffer[7] = (telem_data.seq >> 8) & 0xFF;
-  buffer[8] = telem_data.status;
-  buffer[9] = telem_data.ax & 0xFF;
-  buffer[10] = (telem_data.ax >> 8) & 0xFF;
-  buffer[11] = telem_data.ay & 0xFF;
-  buffer[12] = (telem_data.ay >> 8) & 0xFF;
-  buffer[13] = telem_data.az & 0xFF;
-  buffer[14] = (telem_data.az >> 8) & 0xFF;
-  buffer[15] = telem_data.gx & 0xFF;
-  buffer[16] = (telem_data.gx >> 8) & 0xFF;
-  buffer[17] = telem_data.gy & 0xFF;
-  buffer[18] = (telem_data.gy >> 8) & 0xFF;
-  buffer[19] = telem_data.gz & 0xFF;
-  buffer[20] = (telem_data.gz >> 8) & 0xFF;
-  uint16_t crc =
-      ProtocolCrc16(buffer.subspan(2, 4 + payload_len));
-  size_t crc_pos = 6 + payload_len;
+}
+
+void FrameBuilder::WriteCrc(std::span<uint8_t> buffer,
+                            size_t payload_len) const noexcept {
+  // CRC вычисляется от версии до конца payload (исключая prefix)
+  uint16_t crc = Protocol::CalculateCrc16(buffer.subspan(2, 4 + payload_len));
+  size_t crc_pos = HEADER_SIZE + payload_len;
   buffer[crc_pos] = crc & 0xFF;
   buffer[crc_pos + 1] = (crc >> 8) & 0xFF;
-  return crc_pos + 2;
 }
 
-size_t ProtocolParseCommand(std::span<const uint8_t> buffer, float &throttle,
-                            float &steering) {
-  if (buffer.size() < 16) {
-    return 0;
-  }
-  if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1) {
-    return 0;
-  }
-  if (buffer[2] != UART_PROTOCOL_VERSION ||
-      buffer[3] != UART_MSG_TYPE_COMMAND) {
-    return 0;
-  }
-  uint16_t payload_len = buffer[4] | (buffer[5] << 8);
-  if (payload_len != 7 || buffer.size() < 6 + payload_len + 2) {
-    return 0;
-  }
-  uint16_t recv_crc =
-      buffer[6 + payload_len] | (buffer[6 + payload_len + 1] << 8);
-  if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4 + payload_len))) {
-    return 0;
-  }
-  int16_t thr_i16 = static_cast<int16_t>(buffer[8] | (buffer[9] << 8));
-  int16_t steer_i16 = static_cast<int16_t>(buffer[10] | (buffer[11] << 8));
-  throttle = static_cast<float>(thr_i16) / 32767.0f;
-  steering = static_cast<float>(steer_i16) / 32767.0f;
-  // Защита от -32768 (получается чуть меньше -1.0) и любых выбросов.
-  if (throttle > 1.0f) throttle = 1.0f;
-  if (throttle < -1.0f) throttle = -1.0f;
-  if (steering > 1.0f) steering = 1.0f;
-  if (steering < -1.0f) steering = -1.0f;
-  return 6 + payload_len + 2;
-}
+Result<size_t> FrameBuilder::Build(
+    std::span<uint8_t> buffer,
+    std::span<const uint8_t> payload) const noexcept {
+  const size_t frame_size = HEADER_SIZE + payload.size() + CRC_SIZE;
 
-static uint16_t s_command_seq = 0;
+  if (buffer.size() < frame_size) {
+    return ParseError::BufferTooSmall;
+  }
 
-size_t ProtocolBuildCommand(std::span<uint8_t> buffer, float throttle,
-                            float steering) {
-  if (buffer.size() < 16) {
-    return 0;
-  }
-  buffer[0] = UART_FRAME_PREFIX_0;
-  buffer[1] = UART_FRAME_PREFIX_1;
-  buffer[2] = UART_PROTOCOL_VERSION;
-  buffer[3] = UART_MSG_TYPE_COMMAND;
-  uint16_t payload_len = 7;
-  buffer[4] = payload_len & 0xFF;
-  buffer[5] = (payload_len >> 8) & 0xFF;
-  buffer[6] = s_command_seq & 0xFF;
-  buffer[7] = (s_command_seq >> 8) & 0xFF;
-  s_command_seq++;
-  int16_t thr_i16 = static_cast<int16_t>(throttle * 32767.0f);
-  int16_t steer_i16 = static_cast<int16_t>(steering * 32767.0f);
-  buffer[8] = thr_i16 & 0xFF;
-  buffer[9] = (thr_i16 >> 8) & 0xFF;
-  buffer[10] = steer_i16 & 0xFF;
-  buffer[11] = (steer_i16 >> 8) & 0xFF;
-  buffer[12] = 0;
-  uint16_t crc = ProtocolCrc16(buffer.subspan(2, 4 + payload_len));
-  size_t crc_pos = 6 + payload_len;
-  buffer[crc_pos] = crc & 0xFF;
-  buffer[crc_pos + 1] = (crc >> 8) & 0xFF;
-  return crc_pos + 2;
-}
+  WriteHeader(buffer, static_cast<uint16_t>(payload.size()));
 
-size_t ProtocolParseTelem(std::span<const uint8_t> buffer,
-                          TelemetryData &telem_data) {
-  constexpr size_t kMinTelemFrameSize = 6 + 15 + 2;  // header + payload + CRC
-  if (buffer.size() < kMinTelemFrameSize) {
-    return 0;
+  // Копируем payload
+  if (!payload.empty()) {
+    std::memcpy(buffer.data() + HEADER_SIZE, payload.data(), payload.size());
   }
-  if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1) {
-    return 0;
-  }
-  if (buffer[2] != UART_PROTOCOL_VERSION || buffer[3] != UART_MSG_TYPE_TELEM) {
-    return 0;
-  }
-  uint16_t payload_len = buffer[4] | (buffer[5] << 8);
-  if (payload_len != 15 || buffer.size() < 6 + payload_len + 2) {
-    return 0;
-  }
-  uint16_t recv_crc =
-      buffer[6 + payload_len] | (buffer[6 + payload_len + 1] << 8);
-  if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4 + payload_len))) {
-    return 0;
-  }
-  telem_data.seq = buffer[6] | (buffer[7] << 8);
-  telem_data.status = buffer[8];
-  telem_data.ax = static_cast<int16_t>(buffer[9] | (buffer[10] << 8));
-  telem_data.ay = static_cast<int16_t>(buffer[11] | (buffer[12] << 8));
-  telem_data.az = static_cast<int16_t>(buffer[13] | (buffer[14] << 8));
-  telem_data.gx = static_cast<int16_t>(buffer[15] | (buffer[16] << 8));
-  telem_data.gy = static_cast<int16_t>(buffer[17] | (buffer[18] << 8));
-  telem_data.gz = static_cast<int16_t>(buffer[19] | (buffer[20] << 8));
-  return 6 + payload_len + 2;
-}
 
-size_t ProtocolBuildLog(std::span<uint8_t> buffer, const char *msg,
-                        size_t msg_len) {
-  if (msg_len > PROTOCOL_LOG_MAX_PAYLOAD) msg_len = PROTOCOL_LOG_MAX_PAYLOAD;
-  size_t frame_size = 6 + msg_len + 2;
-  if (buffer.size() < frame_size) return 0;
-  buffer[0] = UART_FRAME_PREFIX_0;
-  buffer[1] = UART_FRAME_PREFIX_1;
-  buffer[2] = UART_PROTOCOL_VERSION;
-  buffer[3] = UART_MSG_TYPE_LOG;
-  buffer[4] = static_cast<uint8_t>(msg_len & 0xFF);
-  buffer[5] = static_cast<uint8_t>((msg_len >> 8) & 0xFF);
-  memcpy(buffer.data() + 6, msg, msg_len);
-  uint16_t crc = ProtocolCrc16(buffer.subspan(2, 4 + msg_len));
-  buffer[6 + msg_len] = crc & 0xFF;
-  buffer[6 + msg_len + 1] = (crc >> 8) & 0xFF;
+  WriteCrc(buffer, payload.size());
+
   return frame_size;
 }
 
-size_t ProtocolParseLog(std::span<const uint8_t> buffer, char *msg,
-                        size_t max_msg_len, size_t &msg_len) {
-  if (buffer.size() < 8) return 0;
-  if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1)
-    return 0;
-  if (buffer[2] != UART_PROTOCOL_VERSION || buffer[3] != UART_MSG_TYPE_LOG)
-    return 0;
-  uint16_t payload_len = buffer[4] | (buffer[5] << 8);
-  if (payload_len > PROTOCOL_LOG_MAX_PAYLOAD) return 0;
-  size_t frame_size = 6 + payload_len + 2;
-  if (buffer.size() < frame_size) return 0;
-  uint16_t recv_crc =
-      buffer[6 + payload_len] | (buffer[6 + payload_len + 1] << 8);
-  if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4 + payload_len))) return 0;
-  msg_len = payload_len < max_msg_len ? payload_len : max_msg_len;
-  memcpy(msg, buffer.data() + 6, msg_len);
-  return frame_size;
+// ═══════════════════════════════════════════════════════════════════════════
+// FrameParser - парсинг кадров
+// ═══════════════════════════════════════════════════════════════════════════
+
+Result<MessageType> FrameParser::ValidateHeader(
+    std::span<const uint8_t> buffer) noexcept {
+  if (buffer.size() < 4) {
+    return ParseError::InsufficientData;
+  }
+
+  if (buffer[0] != FRAME_PREFIX_0 || buffer[1] != FRAME_PREFIX_1) {
+    return ParseError::InvalidPrefix;
+  }
+
+  if (buffer[2] != PROTOCOL_VERSION) {
+    return ParseError::InvalidVersion;
+  }
+
+  return static_cast<MessageType>(buffer[3]);
 }
 
-uint16_t ProtocolCrc16(std::span<const uint8_t> data) {
+Result<uint16_t> FrameParser::GetPayloadLength(
+    std::span<const uint8_t> buffer) noexcept {
+  if (buffer.size() < HEADER_SIZE) {
+    return ParseError::InsufficientData;
+  }
+
+  return static_cast<uint16_t>(buffer[4] | (buffer[5] << 8));
+}
+
+bool FrameParser::ValidateCrc(std::span<const uint8_t> buffer) noexcept {
+  if (buffer.size() < MIN_FRAME_SIZE) {
+    return false;
+  }
+
+  auto payload_len_result = GetPayloadLength(buffer);
+  if (IsError(payload_len_result)) {
+    return false;
+  }
+
+  uint16_t payload_len = GetValue(payload_len_result);
+  size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
+
+  if (buffer.size() < frame_size) {
+    return false;
+  }
+
+  uint16_t recv_crc = buffer[HEADER_SIZE + payload_len] |
+                      (buffer[HEADER_SIZE + payload_len + 1] << 8);
+  uint16_t calc_crc =
+      Protocol::CalculateCrc16(buffer.subspan(2, 4 + payload_len));
+
+  return recv_crc == calc_crc;
+}
+
+int FrameParser::FindFrameStart(std::span<const uint8_t> buffer) noexcept {
+  if (buffer.size() < 2) {
+    return -1;
+  }
+
+  for (size_t i = 0; i < buffer.size() - 1; i++) {
+    if (buffer[i] == FRAME_PREFIX_0 && buffer[i + 1] == FRAME_PREFIX_1) {
+      return static_cast<int>(i);
+    }
+  }
+
+  return -1;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Protocol - основной API
+// ═══════════════════════════════════════════════════════════════════════════
+
+uint16_t Protocol::CalculateCrc16(std::span<const uint8_t> data) noexcept {
   uint16_t crc = 0xFFFF;
   for (size_t i = 0; i < data.size(); i++) {
     crc ^= static_cast<uint16_t>(data[i]);
@@ -186,69 +142,283 @@ uint16_t ProtocolCrc16(std::span<const uint8_t> data) {
   return crc;
 }
 
-int ProtocolFindFrameStart(std::span<const uint8_t> buffer) {
-  if (buffer.size() < 2) {
-    return -1;
+// ─────────────────────────────────────────────────────────────────────────
+// Сборка кадров
+// ─────────────────────────────────────────────────────────────────────────
+
+Result<size_t> Protocol::BuildTelemetry(std::span<uint8_t> buffer,
+                                        const TelemetryData& data) noexcept {
+  // Сериализуем payload
+  std::array<uint8_t, TelemetryData::PAYLOAD_SIZE> payload{};
+  payload[0] = data.seq & 0xFF;
+  payload[1] = (data.seq >> 8) & 0xFF;
+  payload[2] = data.status;
+  payload[3] = data.ax & 0xFF;
+  payload[4] = (data.ax >> 8) & 0xFF;
+  payload[5] = data.ay & 0xFF;
+  payload[6] = (data.ay >> 8) & 0xFF;
+  payload[7] = data.az & 0xFF;
+  payload[8] = (data.az >> 8) & 0xFF;
+  payload[9] = data.gx & 0xFF;
+  payload[10] = (data.gx >> 8) & 0xFF;
+  payload[11] = data.gy & 0xFF;
+  payload[12] = (data.gy >> 8) & 0xFF;
+  payload[13] = data.gz & 0xFF;
+  payload[14] = (data.gz >> 8) & 0xFF;
+
+  FrameBuilder builder(MessageType::Telemetry);
+  return builder.Build(buffer, payload);
+}
+
+Result<size_t> Protocol::BuildCommand(std::span<uint8_t> buffer,
+                                      const CommandData& data) noexcept {
+  // Ограничиваем значения
+  CommandData clamped = data.Clamped();
+
+  // Сериализуем payload
+  std::array<uint8_t, CommandData::PAYLOAD_SIZE> payload{};
+  payload[0] = next_command_seq_ & 0xFF;
+  payload[1] = (next_command_seq_ >> 8) & 0xFF;
+  next_command_seq_++;
+
+  int16_t thr_i16 = static_cast<int16_t>(clamped.throttle * 32767.0f);
+  int16_t steer_i16 = static_cast<int16_t>(clamped.steering * 32767.0f);
+
+  payload[2] = thr_i16 & 0xFF;
+  payload[3] = (thr_i16 >> 8) & 0xFF;
+  payload[4] = steer_i16 & 0xFF;
+  payload[5] = (steer_i16 >> 8) & 0xFF;
+  payload[6] = 0;  // reserved
+
+  FrameBuilder builder(MessageType::Command);
+  return builder.Build(buffer, payload);
+}
+
+Result<size_t> Protocol::BuildLog(std::span<uint8_t> buffer,
+                                  std::string_view msg) noexcept {
+  size_t msg_len = msg.size();
+  if (msg_len > LOG_MAX_PAYLOAD) {
+    msg_len = LOG_MAX_PAYLOAD;
   }
-  for (size_t i = 0; i < buffer.size() - 1; i++) {
-    if (buffer[i] == UART_FRAME_PREFIX_0 &&
-        buffer[i + 1] == UART_FRAME_PREFIX_1) {
-      return static_cast<int>(i);
-    }
+
+  std::span<const uint8_t> payload(reinterpret_cast<const uint8_t*>(msg.data()),
+                                   msg_len);
+
+  FrameBuilder builder(MessageType::Log);
+  return builder.Build(buffer, payload);
+}
+
+Result<size_t> Protocol::BuildPing(std::span<uint8_t> buffer) noexcept {
+  FrameBuilder builder(MessageType::Ping);
+  return builder.Build(buffer, std::span<const uint8_t>());
+}
+
+Result<size_t> Protocol::BuildPong(std::span<uint8_t> buffer) noexcept {
+  FrameBuilder builder(MessageType::Pong);
+  return builder.Build(buffer, std::span<const uint8_t>());
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Парсинг кадров
+// ─────────────────────────────────────────────────────────────────────────
+
+Result<TelemetryData> Protocol::ParseTelemetry(
+    std::span<const uint8_t> buffer) noexcept {
+  // Валидация заголовка
+  auto type_result = FrameParser::ValidateHeader(buffer);
+  if (IsError(type_result)) {
+    return GetError(type_result);
   }
-  return -1;
+
+  if (GetValue(type_result) != MessageType::Telemetry) {
+    return ParseError::InvalidType;
+  }
+
+  // Проверка длины payload
+  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
+  if (IsError(payload_len_result)) {
+    return GetError(payload_len_result);
+  }
+
+  uint16_t payload_len = GetValue(payload_len_result);
+  if (payload_len != TelemetryData::PAYLOAD_SIZE) {
+    return ParseError::InvalidPayloadLength;
+  }
+
+  size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
+  if (buffer.size() < frame_size) {
+    return ParseError::InsufficientData;
+  }
+
+  // Проверка CRC
+  if (!FrameParser::ValidateCrc(buffer)) {
+    return ParseError::CrcMismatch;
+  }
+
+  // Десериализация
+  TelemetryData data;
+  data.seq = buffer[6] | (buffer[7] << 8);
+  data.status = buffer[8];
+  data.ax = static_cast<int16_t>(buffer[9] | (buffer[10] << 8));
+  data.ay = static_cast<int16_t>(buffer[11] | (buffer[12] << 8));
+  data.az = static_cast<int16_t>(buffer[13] | (buffer[14] << 8));
+  data.gx = static_cast<int16_t>(buffer[15] | (buffer[16] << 8));
+  data.gy = static_cast<int16_t>(buffer[17] | (buffer[18] << 8));
+  data.gz = static_cast<int16_t>(buffer[19] | (buffer[20] << 8));
+
+  return data;
 }
 
-static constexpr size_t kPingPongFrameSize = 6 + 0 + 2;  // header + 0 payload + CRC
+Result<CommandData> Protocol::ParseCommand(
+    std::span<const uint8_t> buffer) noexcept {
+  // Валидация заголовка
+  auto type_result = FrameParser::ValidateHeader(buffer);
+  if (IsError(type_result)) {
+    return GetError(type_result);
+  }
 
-size_t ProtocolBuildPing(std::span<uint8_t> buffer) {
-  if (buffer.size() < kPingPongFrameSize) return 0;
-  buffer[0] = UART_FRAME_PREFIX_0;
-  buffer[1] = UART_FRAME_PREFIX_1;
-  buffer[2] = UART_PROTOCOL_VERSION;
-  buffer[3] = UART_MSG_TYPE_PING;
-  buffer[4] = 0;
-  buffer[5] = 0;
-  uint16_t crc = ProtocolCrc16(buffer.subspan(2, 4));
-  buffer[6] = crc & 0xFF;
-  buffer[7] = (crc >> 8) & 0xFF;
-  return kPingPongFrameSize;
+  if (GetValue(type_result) != MessageType::Command) {
+    return ParseError::InvalidType;
+  }
+
+  // Проверка длины payload
+  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
+  if (IsError(payload_len_result)) {
+    return GetError(payload_len_result);
+  }
+
+  uint16_t payload_len = GetValue(payload_len_result);
+  if (payload_len != CommandData::PAYLOAD_SIZE) {
+    return ParseError::InvalidPayloadLength;
+  }
+
+  size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
+  if (buffer.size() < frame_size) {
+    return ParseError::InsufficientData;
+  }
+
+  // Проверка CRC
+  if (!FrameParser::ValidateCrc(buffer)) {
+    return ParseError::CrcMismatch;
+  }
+
+  // Десериализация
+  CommandData data;
+  data.seq = buffer[6] | (buffer[7] << 8);
+
+  int16_t thr_i16 = static_cast<int16_t>(buffer[8] | (buffer[9] << 8));
+  int16_t steer_i16 = static_cast<int16_t>(buffer[10] | (buffer[11] << 8));
+
+  data.throttle = static_cast<float>(thr_i16) / 32767.0f;
+  data.steering = static_cast<float>(steer_i16) / 32767.0f;
+
+  // Ограничиваем значения (защита от -32768 и выбросов)
+  return data.Clamped();
 }
 
-size_t ProtocolParsePing(std::span<const uint8_t> buffer) {
-  if (buffer.size() < kPingPongFrameSize) return 0;
-  if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1)
-    return 0;
-  if (buffer[2] != UART_PROTOCOL_VERSION || buffer[3] != UART_MSG_TYPE_PING)
-    return 0;
-  if (buffer[4] != 0 || buffer[5] != 0) return 0;
-  uint16_t recv_crc = buffer[6] | (buffer[7] << 8);
-  if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4))) return 0;
-  return kPingPongFrameSize;
+Result<std::string_view> Protocol::ParseLog(
+    std::span<const uint8_t> buffer) noexcept {
+  // Валидация заголовка
+  auto type_result = FrameParser::ValidateHeader(buffer);
+  if (IsError(type_result)) {
+    return GetError(type_result);
+  }
+
+  if (GetValue(type_result) != MessageType::Log) {
+    return ParseError::InvalidType;
+  }
+
+  // Проверка длины payload
+  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
+  if (IsError(payload_len_result)) {
+    return GetError(payload_len_result);
+  }
+
+  uint16_t payload_len = GetValue(payload_len_result);
+  if (payload_len > LOG_MAX_PAYLOAD) {
+    return ParseError::InvalidPayloadLength;
+  }
+
+  size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
+  if (buffer.size() < frame_size) {
+    return ParseError::InsufficientData;
+  }
+
+  // Проверка CRC
+  if (!FrameParser::ValidateCrc(buffer)) {
+    return ParseError::CrcMismatch;
+  }
+
+  // Возвращаем view на payload
+  const char* msg_ptr =
+      reinterpret_cast<const char*>(buffer.data() + HEADER_SIZE);
+  return std::string_view(msg_ptr, payload_len);
 }
 
-size_t ProtocolBuildPong(std::span<uint8_t> buffer) {
-  if (buffer.size() < kPingPongFrameSize) return 0;
-  buffer[0] = UART_FRAME_PREFIX_0;
-  buffer[1] = UART_FRAME_PREFIX_1;
-  buffer[2] = UART_PROTOCOL_VERSION;
-  buffer[3] = UART_MSG_TYPE_PONG;
-  buffer[4] = 0;
-  buffer[5] = 0;
-  uint16_t crc = ProtocolCrc16(buffer.subspan(2, 4));
-  buffer[6] = crc & 0xFF;
-  buffer[7] = (crc >> 8) & 0xFF;
-  return kPingPongFrameSize;
+Result<bool> Protocol::ParsePing(std::span<const uint8_t> buffer) noexcept {
+  // Валидация заголовка
+  auto type_result = FrameParser::ValidateHeader(buffer);
+  if (IsError(type_result)) {
+    return GetError(type_result);
+  }
+
+  if (GetValue(type_result) != MessageType::Ping) {
+    return ParseError::InvalidType;
+  }
+
+  // Проверка длины payload (должна быть 0)
+  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
+  if (IsError(payload_len_result)) {
+    return GetError(payload_len_result);
+  }
+
+  if (GetValue(payload_len_result) != 0) {
+    return ParseError::InvalidPayloadLength;
+  }
+
+  if (buffer.size() < MIN_FRAME_SIZE) {
+    return ParseError::InsufficientData;
+  }
+
+  // Проверка CRC
+  if (!FrameParser::ValidateCrc(buffer)) {
+    return ParseError::CrcMismatch;
+  }
+
+  return true;
 }
 
-size_t ProtocolParsePong(std::span<const uint8_t> buffer) {
-  if (buffer.size() < kPingPongFrameSize) return 0;
-  if (buffer[0] != UART_FRAME_PREFIX_0 || buffer[1] != UART_FRAME_PREFIX_1)
-    return 0;
-  if (buffer[2] != UART_PROTOCOL_VERSION || buffer[3] != UART_MSG_TYPE_PONG)
-    return 0;
-  if (buffer[4] != 0 || buffer[5] != 0) return 0;
-  uint16_t recv_crc = buffer[6] | (buffer[7] << 8);
-  if (recv_crc != ProtocolCrc16(buffer.subspan(2, 4))) return 0;
-  return kPingPongFrameSize;
+Result<bool> Protocol::ParsePong(std::span<const uint8_t> buffer) noexcept {
+  // Валидация заголовка
+  auto type_result = FrameParser::ValidateHeader(buffer);
+  if (IsError(type_result)) {
+    return GetError(type_result);
+  }
+
+  if (GetValue(type_result) != MessageType::Pong) {
+    return ParseError::InvalidType;
+  }
+
+  // Проверка длины payload (должна быть 0)
+  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
+  if (IsError(payload_len_result)) {
+    return GetError(payload_len_result);
+  }
+
+  if (GetValue(payload_len_result) != 0) {
+    return ParseError::InvalidPayloadLength;
+  }
+
+  if (buffer.size() < MIN_FRAME_SIZE) {
+    return ParseError::InsufficientData;
+  }
+
+  // Проверка CRC
+  if (!FrameParser::ValidateCrc(buffer)) {
+    return ParseError::CrcMismatch;
+  }
+
+  return true;
 }
+
+}  // namespace rc_vehicle::protocol

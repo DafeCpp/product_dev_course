@@ -13,6 +13,7 @@
 #include "imu.hpp"
 #include "imu_calibration.hpp"
 #include "imu_calibration_nvs.hpp"
+#include "madgwick_filter.hpp"
 #include "pwm_control.hpp"
 #include "rc_input.hpp"
 #include "rc_vehicle_common.hpp"
@@ -29,22 +30,19 @@ struct WifiCmd {
   float steering{0.0f};
 };
 
-static QueueHandle_t s_cmd_queue = nullptr;
-static bool s_rc_enabled = false;
-static bool s_imu_enabled = false;
-static bool s_inited = false;
-
-// --- IMU Calibration ---
-static ImuCalibration s_imu_calib;
-// Запрос на ручную калибровку из другого потока (WebSocket, Core 0).
-// Чтение/запись volatile int атомарны на ESP32.
-static volatile int s_calib_request = 0;  // 0=none, 1=GyroOnly, 2=Full
-
 static uint32_t NowMs() { return (uint32_t)(esp_timer_get_time() / 1000); }
 
-static void vehicle_control_task(void* arg) {
-  (void)arg;
+VehicleControl& VehicleControl::Instance() {
+  static VehicleControl s_instance;
+  return s_instance;
+}
 
+void VehicleControl::ControlTaskEntry(void* arg) {
+  auto* self = static_cast<VehicleControl*>(arg);
+  if (self) self->ControlTaskLoop();
+}
+
+void VehicleControl::ControlTaskLoop() {
   // commanded_* — что хотим (RC/Wi‑Fi), applied_* — что реально подаём на PWM
   // (slew-rate)
   float commanded_throttle = 0.0f;
@@ -80,7 +78,7 @@ static void vehicle_control_task(void* arg) {
     ++diag_loop_count;
 
     // Опрос RC-in (50 Hz)
-    if (s_rc_enabled && (now - last_rc_poll >= RC_IN_POLL_INTERVAL_MS)) {
+    if (rc_enabled_ && (now - last_rc_poll >= RC_IN_POLL_INTERVAL_MS)) {
       last_rc_poll = now;
 
       auto rc_throttle = RcInputReadThrottle();
@@ -92,13 +90,13 @@ static void vehicle_control_task(void* arg) {
         commanded_throttle = *rc_throttle;
         commanded_steering = *rc_steering;
       }
-    } else if (!s_rc_enabled) {
+    } else if (!rc_enabled_) {
       rc_active = false;
     }
 
     // Чтение команд от Wi‑Fi (WebSocket)
     WifiCmd cmd;
-    if (s_cmd_queue && xQueueReceive(s_cmd_queue, &cmd, 0) == pdTRUE) {
+    if (cmd_queue_ && xQueueReceive(cmd_queue_, &cmd, 0) == pdTRUE) {
       // Wi‑Fi команды принимаются только если RC не активен
       if (!rc_active) {
         commanded_throttle = cmd.throttle;
@@ -111,50 +109,71 @@ static void vehicle_control_task(void* arg) {
     wifi_active = (!rc_active) && (last_wifi_cmd_ms != 0) &&
                   ((now - last_wifi_cmd_ms) < WIFI_CMD_TIMEOUT_MS);
 
-    // Проверка запроса на ручную калибровку (от WebSocket / Core 0)
+    // Запрос на калибровку этапа 1 (от WebSocket; этап 2 запускается напрямую
+    // из main)
     {
-      int req = s_calib_request;
+      int req = calib_request_;
       if (req != 0) {
-        s_calib_request = 0;
+        calib_request_ = 0;
         CalibMode mode = (req == 2) ? CalibMode::Full : CalibMode::GyroOnly;
         int samples = (req == 2) ? 2000 : 1000;
-        s_imu_calib.StartCalibration(mode, samples);
-        ESP_LOGI(TAG, "Manual calibration started (mode=%d, samples=%d)", req, samples);
+        imu_calib_.StartCalibration(mode, samples);
+        ESP_LOGI(TAG, "Calibration stage 1 started (mode=%d, samples=%d)", req,
+                 samples);
       }
     }
 
     // Чтение IMU (500 Hz — каждую итерацию control loop)
-    if (s_imu_enabled && (now - last_imu_read >= IMU_READ_INTERVAL_MS)) {
+    if (imu_enabled_ && (now - last_imu_read >= IMU_READ_INTERVAL_MS)) {
       last_imu_read = now;
       if (ImuRead(imu_data) == 0) {
         ++diag_imu_count;
 
         // Подача семпла в калибровку (если идёт сбор)
-        if (s_imu_calib.GetStatus() == CalibStatus::Collecting) {
-          s_imu_calib.FeedSample(imu_data);
+        if (imu_calib_.GetStatus() == CalibStatus::Collecting) {
+          imu_calib_.FeedSample(imu_data);
 
           // Проверяем завершение калибровки
-          CalibStatus st = s_imu_calib.GetStatus();
+          CalibStatus st = imu_calib_.GetStatus();
           if (st == CalibStatus::Done) {
-            ESP_LOGI(TAG, "IMU calibration DONE — gyro bias: [%.3f, %.3f, %.3f]",
-                     s_imu_calib.GetData().gyro_bias[0],
-                     s_imu_calib.GetData().gyro_bias[1],
-                     s_imu_calib.GetData().gyro_bias[2]);
-            // Сохраняем в NVS
-            if (imu_nvs::Save(s_imu_calib.GetData()) == ESP_OK) {
+            const auto& d = imu_calib_.GetData();
+            ESP_LOGI(TAG,
+                     "IMU calibration DONE — gyro bias: [%.3f, %.3f, %.3f] "
+                     "accel bias: [%.4f, %.4f, %.4f] gravity_vec: [%.3f, %.3f, "
+                     "%.3f] forward_vec: [%.3f, %.3f, %.3f]",
+                     d.gyro_bias[0], d.gyro_bias[1], d.gyro_bias[2],
+                     d.accel_bias[0], d.accel_bias[1], d.accel_bias[2],
+                     d.gravity_vec[0], d.gravity_vec[1], d.gravity_vec[2],
+                     d.accel_forward_vec[0], d.accel_forward_vec[1],
+                     d.accel_forward_vec[2]);
+            if (imu_nvs::Save(imu_calib_.GetData()) == ESP_OK) {
               ESP_LOGI(TAG, "Calibration saved to NVS");
             }
           } else if (st == CalibStatus::Failed) {
-            ESP_LOGW(TAG, "IMU calibration FAILED (motion detected)");
-            // Если есть ранее загруженные данные из NVS — они остаются активны
-            if (s_imu_calib.IsValid()) {
+            ESP_LOGW(TAG,
+                     "IMU calibration FAILED (motion detected or insufficient "
+                     "data)");
+            if (imu_calib_.IsValid()) {
               ESP_LOGI(TAG, "Using previously saved calibration data");
             }
           }
         }
 
         // Применяем компенсацию bias (если калибровка валидна)
-        s_imu_calib.Apply(imu_data);
+        imu_calib_.Apply(imu_data);
+
+        // Опорная СК фильтра: по умолчанию NED; при валидной калибровке — СК
+        // машины (g + «вперёд»)
+        if (imu_calib_.IsValid()) {
+          const auto& d = imu_calib_.GetData();
+          madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+        } else {
+          madgwick_.SetVehicleFrame(nullptr, nullptr, false);
+        }
+
+        // Обновление фильтра Madgwick (ориентация по gyro + accel)
+        const float dt_sec = IMU_READ_INTERVAL_MS / 1000.f;
+        madgwick_.Update(imu_data, dt_sec);
       }
     }
 
@@ -173,30 +192,40 @@ static void vehicle_control_task(void* arg) {
 
         // Информация о калибровке IMU
         const char* calib_str = "off";
-        switch (s_imu_calib.GetStatus()) {
-          case CalibStatus::Idle:       calib_str = "idle"; break;
-          case CalibStatus::Collecting: calib_str = "collecting"; break;
-          case CalibStatus::Done:       calib_str = "done"; break;
-          case CalibStatus::Failed:     calib_str = "failed"; break;
+        switch (imu_calib_.GetStatus()) {
+          case CalibStatus::Idle:
+            calib_str = "idle";
+            break;
+          case CalibStatus::Collecting:
+            calib_str = "collecting";
+            break;
+          case CalibStatus::Done:
+            calib_str = "done";
+            break;
+          case CalibStatus::Failed:
+            calib_str = "failed";
+            break;
         }
-        if (s_imu_calib.IsValid()) {
-          const auto& d = s_imu_calib.GetData();
+        if (imu_calib_.IsValid()) {
+          const auto& d = imu_calib_.GetData();
           ESP_LOGI(TAG,
                    "CALIB: status=%s valid=YES gyro_bias=[%.3f, %.3f, %.3f] "
                    "accel_bias=[%.4f, %.4f, %.4f]",
-                   calib_str,
-                   d.gyro_bias[0], d.gyro_bias[1], d.gyro_bias[2],
+                   calib_str, d.gyro_bias[0], d.gyro_bias[1], d.gyro_bias[2],
                    d.accel_bias[0], d.accel_bias[1], d.accel_bias[2]);
         } else {
           ESP_LOGI(TAG, "CALIB: status=%s valid=NO", calib_str);
         }
 
-        // Вывод текущих (откалиброванных) значений IMU
-        if (s_imu_enabled) {
+        // Вывод текущих (откалиброванных) значений IMU и ориентации Madgwick
+        if (imu_enabled_) {
+          float pitch_deg = 0.f, roll_deg = 0.f, yaw_deg = 0.f;
+          madgwick_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
           ESP_LOGI(TAG,
-                   "IMU: ax=%.3f ay=%.3f az=%.3f gx=%.2f gy=%.2f gz=%.2f",
-                   imu_data.ax, imu_data.ay, imu_data.az,
-                   imu_data.gx, imu_data.gy, imu_data.gz);
+                   "IMU: ax=%.3f ay=%.3f az=%.3f gx=%.2f gy=%.2f gz=%.2f | "
+                   "orientation pitch=%.1f roll=%.1f yaw=%.1f deg",
+                   imu_data.ax, imu_data.ay, imu_data.az, imu_data.gx,
+                   imu_data.gy, imu_data.gz, pitch_deg, roll_deg, yaw_deg);
         }
 
         diag_loop_count = 0;
@@ -257,7 +286,7 @@ static void vehicle_control_task(void* arg) {
           cJSON_AddItemToObject(root, "link", link);
         }
 
-        if (s_imu_enabled) {
+        if (imu_enabled_) {
           cJSON* imu = cJSON_CreateObject();
           if (imu) {
             cJSON_AddNumberToObject(imu, "ax", imu_data.ax);
@@ -266,6 +295,17 @@ static void vehicle_control_task(void* arg) {
             cJSON_AddNumberToObject(imu, "gx", imu_data.gx);
             cJSON_AddNumberToObject(imu, "gy", imu_data.gy);
             cJSON_AddNumberToObject(imu, "gz", imu_data.gz);
+            cJSON_AddNumberToObject(imu, "forward_accel",
+                                    imu_calib_.GetForwardAccel(imu_data));
+            float pitch_deg = 0.f, roll_deg = 0.f, yaw_deg = 0.f;
+            madgwick_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
+            cJSON* orient = cJSON_CreateObject();
+            if (orient) {
+              cJSON_AddNumberToObject(orient, "pitch", pitch_deg);
+              cJSON_AddNumberToObject(orient, "roll", roll_deg);
+              cJSON_AddNumberToObject(orient, "yaw", yaw_deg);
+              cJSON_AddItemToObject(imu, "orientation", orient);
+            }
             cJSON_AddItemToObject(root, "imu", imu);
           }
 
@@ -273,16 +313,25 @@ static void vehicle_control_task(void* arg) {
           cJSON* calib = cJSON_CreateObject();
           if (calib) {
             const char* status_str = "unknown";
-            switch (s_imu_calib.GetStatus()) {
-              case CalibStatus::Idle:       status_str = "idle"; break;
-              case CalibStatus::Collecting: status_str = "collecting"; break;
-              case CalibStatus::Done:       status_str = "done"; break;
-              case CalibStatus::Failed:     status_str = "failed"; break;
+            switch (imu_calib_.GetStatus()) {
+              case CalibStatus::Idle:
+                status_str = "idle";
+                break;
+              case CalibStatus::Collecting:
+                status_str = "collecting";
+                break;
+              case CalibStatus::Done:
+                status_str = "done";
+                break;
+              case CalibStatus::Failed:
+                status_str = "failed";
+                break;
             }
             cJSON_AddStringToObject(calib, "status", status_str);
-            cJSON_AddBoolToObject(calib, "valid", s_imu_calib.IsValid());
-            if (s_imu_calib.IsValid()) {
-              const auto& d = s_imu_calib.GetData();
+            cJSON_AddNumberToObject(calib, "stage", GetCalibStage());
+            cJSON_AddBoolToObject(calib, "valid", imu_calib_.IsValid());
+            if (imu_calib_.IsValid()) {
+              const auto& d = imu_calib_.GetData();
               cJSON* bias = cJSON_CreateObject();
               if (bias) {
                 cJSON_AddNumberToObject(bias, "gx", d.gyro_bias[0]);
@@ -292,6 +341,26 @@ static void vehicle_control_task(void* arg) {
                 cJSON_AddNumberToObject(bias, "ay", d.accel_bias[1]);
                 cJSON_AddNumberToObject(bias, "az", d.accel_bias[2]);
                 cJSON_AddItemToObject(calib, "bias", bias);
+              }
+              cJSON* gvec = cJSON_CreateArray();
+              if (gvec) {
+                cJSON_AddItemToArray(gvec,
+                                     cJSON_CreateNumber(d.gravity_vec[0]));
+                cJSON_AddItemToArray(gvec,
+                                     cJSON_CreateNumber(d.gravity_vec[1]));
+                cJSON_AddItemToArray(gvec,
+                                     cJSON_CreateNumber(d.gravity_vec[2]));
+                cJSON_AddItemToObject(calib, "gravity_vec", gvec);
+              }
+              cJSON* fvec = cJSON_CreateArray();
+              if (fvec) {
+                cJSON_AddItemToArray(
+                    fvec, cJSON_CreateNumber(d.accel_forward_vec[0]));
+                cJSON_AddItemToArray(
+                    fvec, cJSON_CreateNumber(d.accel_forward_vec[1]));
+                cJSON_AddItemToArray(
+                    fvec, cJSON_CreateNumber(d.accel_forward_vec[2]));
+                cJSON_AddItemToObject(calib, "forward_vec", fvec);
               }
             }
             cJSON_AddItemToObject(root, "calib", calib);
@@ -321,41 +390,40 @@ static void vehicle_control_task(void* arg) {
   }
 }
 
-esp_err_t VehicleControlInit(void) {
-  if (s_inited) return ESP_OK;
+esp_err_t VehicleControl::Init() {
+  if (inited_) return ESP_OK;
 
   if (PwmControlInit() != 0) {
     ESP_LOGE(TAG, "Failed to initialize PWM");
     return ESP_FAIL;
   }
 
-  // RC-in опционален
   if (RcInputInit() == 0) {
-    s_rc_enabled = true;
+    rc_enabled_ = true;
   } else {
-    s_rc_enabled = false;
+    rc_enabled_ = false;
     ESP_LOGW(TAG, "RC input init failed — continuing without RC-in");
   }
 
-  // IMU опционален
   if (ImuInit() == 0) {
-    s_imu_enabled = true;
-
-    // Попытка загрузить калибровку из NVS
+    imu_enabled_ = true;
     ImuCalibData nvs_data{};
     if (imu_nvs::Load(nvs_data) == ESP_OK) {
-      s_imu_calib.SetData(nvs_data);
-      ESP_LOGI(TAG, "IMU calibration loaded from NVS (valid=%d)", nvs_data.valid);
+      imu_calib_.SetData(nvs_data);
+      if (imu_calib_.IsValid()) {
+        const auto& d = imu_calib_.GetData();
+        madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+      }
+      ESP_LOGI(TAG, "IMU calibration loaded from NVS (valid=%d)",
+               nvs_data.valid);
     } else {
       ESP_LOGI(TAG, "No saved IMU calibration — will auto-calibrate at start");
     }
-
-    // Запуск автокалибровки гироскопа при старте (1000 семплов ≈ 2 сек при 500 Гц).
-    // Если машина неподвижна — обновим bias, иначе используем NVS данные.
-    s_imu_calib.StartCalibration(CalibMode::GyroOnly, 1000);
-    ESP_LOGI(TAG, "IMU auto-calibration started (GyroOnly, 1000 samples)");
+    imu_calib_.StartCalibration(CalibMode::Full, 1000);
+    ESP_LOGI(TAG,
+             "IMU auto-calibration started (Full: gyro + accel, 1000 samples)");
   } else {
-    s_imu_enabled = false;
+    imu_enabled_ = false;
     const int who = ImuGetLastWhoAmI();
     ESP_LOGW(TAG, "IMU init failed — continuing without IMU");
     if (who >= 0) {
@@ -373,49 +441,63 @@ esp_err_t VehicleControlInit(void) {
 
   FailsafeInit();
 
-  s_cmd_queue = xQueueCreate(1, sizeof(WifiCmd));
-  if (s_cmd_queue == nullptr) {
+  cmd_queue_ = xQueueCreate(1, sizeof(WifiCmd));
+  if (cmd_queue_ == nullptr) {
     ESP_LOGE(TAG, "Failed to create Wi-Fi command queue");
     return ESP_FAIL;
   }
 
-  BaseType_t created =
-      xTaskCreatePinnedToCore(vehicle_control_task, "vehicle_ctrl",
-                              CONTROL_TASK_STACK, NULL, CONTROL_TASK_PRIORITY,
-                              NULL, 1);
+  BaseType_t created = xTaskCreatePinnedToCore(ControlTaskEntry, "vehicle_ctrl",
+                                               CONTROL_TASK_STACK, this,
+                                               CONTROL_TASK_PRIORITY, NULL, 1);
   if (created != pdPASS) {
     ESP_LOGE(TAG, "Failed to create vehicle control task");
     return ESP_FAIL;
   }
 
-  s_inited = true;
+  inited_ = true;
   ESP_LOGI(TAG, "Vehicle control started");
   return ESP_OK;
 }
 
-void VehicleControlOnWifiCommand(float throttle, float steering) {
-  if (s_cmd_queue == nullptr) return;
-
+void VehicleControl::OnWifiCommand(float throttle, float steering) {
+  if (cmd_queue_ == nullptr) return;
   WifiCmd cmd = {
       .throttle = rc_vehicle::ClampNormalized(throttle),
       .steering = rc_vehicle::ClampNormalized(steering),
   };
-
-  // Перезаписываем последнюю команду (частота ~50 Hz).
-  (void)xQueueOverwrite(s_cmd_queue, &cmd);
+  (void)xQueueOverwrite(cmd_queue_, &cmd);
 }
 
-void VehicleControlStartCalibration(bool full) {
-  // Устанавливаем флаг запроса — control loop подхватит на следующей итерации.
-  s_calib_request = full ? 2 : 1;
+void VehicleControl::StartCalibration(bool full) {
+  calib_request_ = full ? 2 : 1;
 }
 
-const char* VehicleControlGetCalibStatus(void) {
-  switch (s_imu_calib.GetStatus()) {
-    case CalibStatus::Idle:       return "idle";
-    case CalibStatus::Collecting: return "collecting";
-    case CalibStatus::Done:       return "done";
-    case CalibStatus::Failed:     return "failed";
+bool VehicleControl::StartForwardCalibration() {
+  return imu_calib_.StartForwardCalibration(2000);
+}
+
+const char* VehicleControl::GetCalibStatus() const {
+  switch (imu_calib_.GetStatus()) {
+    case CalibStatus::Idle:
+      return "idle";
+    case CalibStatus::Collecting:
+      return "collecting";
+    case CalibStatus::Done:
+      return "done";
+    case CalibStatus::Failed:
+      return "failed";
   }
   return "unknown";
+}
+
+int VehicleControl::GetCalibStage() const { return imu_calib_.GetCalibStage(); }
+
+void VehicleControl::SetForwardDirection(float fx, float fy, float fz) {
+  imu_calib_.SetForwardDirection(fx, fy, fz);
+  if (imu_nvs::Save(imu_calib_.GetData()) == ESP_OK) {
+    const auto& v = imu_calib_.GetData().accel_forward_vec;
+    ESP_LOGI(TAG, "Forward direction set: vec=[%.3f, %.3f, %.3f], saved to NVS",
+             v[0], v[1], v[2]);
+  }
 }
