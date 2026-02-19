@@ -29,32 +29,28 @@ CLI/агент для отправки телеметрии в Experiment Servic
 - (вне проекта) `docs/telemetry-rc-stm32.md` — рекомендации по формату телеметрии для Experiment Service, если будем экспортировать данные в ingest.
 
 ## Структура проекта
-- `firmware/rp2040/` — прошивка RP2040 (PWM, RC‑in, IMU, failsafe, UART протокол) — *в разработке*
-- `firmware/esp32/` — прошивка ESP32‑S3 (AP + web UI + WS + UART мост) — *в разработке*
+- `firmware/esp32_s3/` — прошивка ESP32-S3 (AP + web UI + WebSocket + PWM/RC/IMU/failsafe + стабилизация)
+- `firmware/common/` — общий код (протокол, калибровка IMU, Madgwick, control loop)
+- `firmware/esp32_common/` — общий код для ESP32 (Wi‑Fi, HTTP, WebSocket, NVS)
 - `docs/` — спецификации и схемы
   - `firmware_timing.md` — тайминги и частоты для прошивок
 
-## Сборка прошивок
+## Сборка прошивки
 
-Для удобной сборки обеих прошивок используется Makefile в корне проекта:
+Сборка выполняется из корня проекта или из `firmware/`:
 
 ```bash
-# Показать все доступные команды
+# Показать команды
 make help
 
-# Собрать обе прошивки
-make all
+# Собрать прошивку (требуется активированный ESP-IDF)
+make build
 
-# Собрать только ESP32
-make esp32-build
-
-# Собрать только RP2040
-make rp2040-build
-
-# Очистить все проекты
+# Очистить сборку
 make clean
+
+# Залить и открыть монитор
+make flash-monitor
 ```
 
-Подробные инструкции по сборке каждой прошивки:
-- ESP32: см. `firmware/esp32/README.md`
-- RP2040: см. `firmware/rp2040/README.md`
+Подробнее: `firmware/README.md` и `firmware/esp32_s3/README.md`.
