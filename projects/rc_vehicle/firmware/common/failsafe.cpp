@@ -1,4 +1,4 @@
-#include "failsafe_v2.hpp"
+#include "failsafe.hpp"
 
 namespace rc_vehicle {
 

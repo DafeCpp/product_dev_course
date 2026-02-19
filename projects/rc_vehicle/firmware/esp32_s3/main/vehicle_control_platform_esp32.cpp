@@ -1,4 +1,4 @@
-#include "vehicle_control_platform_esp32_v2.hpp"
+#include "vehicle_control_platform_esp32.hpp"
 
 #include <cstring>
 
@@ -19,11 +19,16 @@ namespace rc_vehicle {
 
 static const char* TAG = "platform_esp32";
 
+// Константы для задачи control loop
+static constexpr uint32_t CONTROL_TASK_STACK = 12288;
+static constexpr UBaseType_t CONTROL_TASK_PRIORITY = configMAX_PRIORITIES - 1;
+
 // ─────────────────────────────────────────────────────────────────────────
 // Конструктор / Деструктор
 // ─────────────────────────────────────────────────────────────────────────
 
-VehicleControlPlatformEsp32::VehicleControlPlatformEsp32() {
+VehicleControlPlatformEsp32::VehicleControlPlatformEsp32()
+    : failsafe_(FAILSAFE_TIMEOUT_MS) {
   cmd_queue_ = xQueueCreate(1, sizeof(WifiCmd));
 }
 
@@ -51,7 +56,7 @@ PlatformError VehicleControlPlatformEsp32::InitImu() {
 }
 
 PlatformError VehicleControlPlatformEsp32::InitFailsafe() {
-  FailsafeInit();
+  // Failsafe инициализируется в конструкторе
   return PlatformError::Ok;
 }
 
@@ -158,11 +163,13 @@ void VehicleControlPlatformEsp32::SetPwmNeutral() noexcept {
 
 bool VehicleControlPlatformEsp32::FailsafeUpdate(bool rc_active,
                                                  bool wifi_active) {
-  return ::FailsafeUpdate(rc_active, wifi_active);
+  uint32_t now_ms = GetTimeMs();
+  auto state = failsafe_.Update(now_ms, rc_active, wifi_active);
+  return state == FailsafeState::Active;
 }
 
 bool VehicleControlPlatformEsp32::FailsafeIsActive() const noexcept {
-  return ::FailsafeIsActive();
+  return failsafe_.IsActive();
 }
 
 // ─────────────────────────────────────────────────────────────────────────

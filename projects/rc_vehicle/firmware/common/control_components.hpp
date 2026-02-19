@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <optional>
 
-#include "vehicle_control_platform_v2.hpp"
+#include "imu_calibration.hpp"
+#include "madgwick_filter.hpp"
+#include "vehicle_control_platform.hpp"
 
 namespace rc_vehicle {
 
@@ -119,12 +121,8 @@ class WifiCommandHandler : public ControlComponent {
 };
 
 // ═════════════════════════════════════════════════════════════════════════
-// IMU Handler
+// IMU Handler (ImuCalibration, MadgwickFilter — из imu_calibration.hpp, madgwick_filter.hpp, глобальный namespace)
 // ═════════════════════════════════════════════════════════════════════════
-
-// Forward declarations
-class ImuCalibration;
-class MadgwickFilter;
 
 /**
  * @brief Обработчик IMU
