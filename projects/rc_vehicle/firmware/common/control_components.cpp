@@ -70,6 +70,13 @@ void ImuHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
   // Применить компенсацию bias (если калибровка валидна)
   calib_.Apply(data_);
 
+  // LPF Butterworth 2-го порядка для gyro Z (подготовка к yaw rate PID)
+  if (!lpf_gyro_z_.IsConfigured()) {
+    const float fs_hz = 1000.f / static_cast<float>(read_interval_ms_);
+    lpf_gyro_z_.SetParams(25.f, fs_hz);  // 25 Hz cutoff при 500 Hz
+  }
+  filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
+
   // Настроить опорную СК фильтра
   if (calib_.IsValid()) {
     const auto& calib_data = calib_.GetData();
@@ -131,6 +138,7 @@ std::string TelemetryHandler::BuildTelemJson() const {
     oss << "\"gx\":" << data.gx << ",";
     oss << "\"gy\":" << data.gy << ",";
     oss << "\"gz\":" << data.gz << ",";
+    oss << "\"gyro_z_filtered\":" << imu_.GetFilteredGyroZ() << ",";
     oss << "\"forward_accel\":" << calib_.GetForwardAccel(data) << ",";
 
     // Orientation (Madgwick)

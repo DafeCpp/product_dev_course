@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "imu_calibration.hpp"
+#include "lpf_butterworth.hpp"
 #include "madgwick_filter.hpp"
 #include "vehicle_control_platform.hpp"
 
@@ -128,8 +129,9 @@ class WifiCommandHandler : public ControlComponent {
  * @brief Обработчик IMU
  *
  * Читает данные IMU с заданной частотой, применяет калибровку
- * и обновляет фильтр ориентации.
- */
+ * и обновляет фильтр ориентации. Gyro Z фильтруется LPF Butterworth 2-го
+   * порядка для последующего использования в ПИД контроля рыскания.
+   */
 class ImuHandler : public ControlComponent {
  public:
   /**
@@ -156,6 +158,12 @@ class ImuHandler : public ControlComponent {
   [[nodiscard]] const ImuData& GetData() const noexcept { return data_; }
 
   /**
+   * @brief Отфильтрованная угловая скорость по оси Z (dps), LPF Butterworth 2-го порядка.
+   * @return Значение после калибровки и LPF; 0 если IMU выключен или фильтр не настроен.
+   */
+  [[nodiscard]] float GetFilteredGyroZ() const noexcept { return filtered_gz_; }
+
+  /**
    * @brief Проверить, включен ли IMU
    * @return true, если IMU инициализирован и работает
    */
@@ -175,6 +183,8 @@ class ImuHandler : public ControlComponent {
   uint32_t last_read_ms_{0};
   ImuData data_{};
   bool enabled_{false};
+  LpfButterworth2 lpf_gyro_z_{};
+  float filtered_gz_{0.f};
 };
 
 // ═════════════════════════════════════════════════════════════════════════
