@@ -122,7 +122,8 @@ class WifiCommandHandler : public ControlComponent {
 };
 
 // ═════════════════════════════════════════════════════════════════════════
-// IMU Handler (ImuCalibration, MadgwickFilter — из imu_calibration.hpp, madgwick_filter.hpp, глобальный namespace)
+// IMU Handler (ImuCalibration, MadgwickFilter — из imu_calibration.hpp,
+// madgwick_filter.hpp, глобальный namespace)
 // ═════════════════════════════════════════════════════════════════════════
 
 /**
@@ -130,8 +131,8 @@ class WifiCommandHandler : public ControlComponent {
  *
  * Читает данные IMU с заданной частотой, применяет калибровку
  * и обновляет фильтр ориентации. Gyro Z фильтруется LPF Butterworth 2-го
-   * порядка для последующего использования в ПИД контроля рыскания.
-   */
+ * порядка для последующего использования в ПИД контроля рыскания.
+ */
 class ImuHandler : public ControlComponent {
  public:
   /**
@@ -152,14 +153,22 @@ class ImuHandler : public ControlComponent {
   void Update(uint32_t now_ms, uint32_t dt_ms) override;
 
   /**
+   * @brief Установить частоту среза LPF для gyro Z
+   * @param cutoff_hz Частота среза в Hz (5-100)
+   */
+  void SetLpfCutoff(float cutoff_hz);
+
+  /**
    * @brief Получить последние данные IMU
    * @return Данные акселерометра и гироскопа
    */
   [[nodiscard]] const ImuData& GetData() const noexcept { return data_; }
 
   /**
-   * @brief Отфильтрованная угловая скорость по оси Z (dps), LPF Butterworth 2-го порядка.
-   * @return Значение после калибровки и LPF; 0 если IMU выключен или фильтр не настроен.
+   * @brief Отфильтрованная угловая скорость по оси Z (dps), LPF Butterworth
+   * 2-го порядка.
+   * @return Значение после калибровки и LPF; 0 если IMU выключен или фильтр не
+   * настроен.
    */
   [[nodiscard]] float GetFilteredGyroZ() const noexcept { return filtered_gz_; }
 

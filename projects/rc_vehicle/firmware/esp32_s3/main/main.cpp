@@ -39,20 +39,32 @@ static void ws_send_reply(httpd_req_t* req, cJSON* reply) {
  *
  * Протокол:
  *   → {"type":"calibrate_imu","mode":"gyro"}    — этап 1: только гироскоп
- *   → {"type":"calibrate_imu","mode":"full"}    — этап 1: стояние на месте (bias + вектор g)
- *   → {"type":"calibrate_imu","mode":"forward"} — этап 2: движение вперёд/назад с прямыми колёсами
- *   ← {"type":"calibrate_imu_ack","status":"collecting","stage":1|2,"ok":true|false}
+ *   → {"type":"calibrate_imu","mode":"full"}    — этап 1: стояние на месте
+ * (bias + вектор g) → {"type":"calibrate_imu","mode":"forward"} — этап 2:
+ * движение вперёд/назад с прямыми колёсами ←
+ * {"type":"calibrate_imu_ack","status":"collecting","stage":1|2,"ok":true|false}
  *
  *   → {"type":"get_calib_status"}
  *   ← {"type":"calib_status","status":"done","valid":true}
  *
- *   → {"type":"set_forward_direction","vec":[fx,fy,fz]}  — единичный вектор «вперёд» в СК датчика (нормализуется)
- *   ← {"type":"set_forward_direction_ack","ok":true}
+ *   → {"type":"set_forward_direction","vec":[fx,fy,fz]}  — единичный вектор
+ * «вперёд» в СК датчика (нормализуется) ←
+ * {"type":"set_forward_direction_ack","ok":true}
+ *
+ *   → {"type":"get_stab_config"}
+ *   ←
+ * {"type":"stab_config","enabled":false,"madgwick_beta":0.1,"lpf_cutoff_hz":30.0,"mode":0}
+ *
+ *   →
+ * {"type":"set_stab_config","enabled":true,"madgwick_beta":0.15,"lpf_cutoff_hz":25.0}
+ *   ← {"type":"set_stab_config_ack","ok":true}
  */
 static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
   if (strcmp(type, "calibrate_imu") == 0) {
     cJSON* mode_item = cJSON_GetObjectItem(json, "mode");
-    const char* mode_str = (mode_item && cJSON_IsString(mode_item)) ? mode_item->valuestring : "gyro";
+    const char* mode_str = (mode_item && cJSON_IsString(mode_item))
+                               ? mode_item->valuestring
+                               : "gyro";
     bool is_forward = (strcmp(mode_str, "forward") == 0);
     bool full = (strcmp(mode_str, "full") == 0);
 
@@ -64,14 +76,16 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
         cJSON_AddStringToObject(reply, "status", ok ? "collecting" : "failed");
         cJSON_AddNumberToObject(reply, "stage", 2);
         cJSON_AddBoolToObject(reply, "ok", ok);
-        ESP_LOGI(TAG, "WS: calibrate_imu mode=forward -> %s", ok ? "stage 2 started" : "failed (need stage 1 full)");
+        ESP_LOGI(TAG, "WS: calibrate_imu mode=forward -> %s",
+                 ok ? "stage 2 started" : "failed (need stage 1 full)");
       } else {
         VehicleControlStartCalibration(full);
         cJSON_AddStringToObject(reply, "status", "collecting");
         cJSON_AddNumberToObject(reply, "stage", 1);
         cJSON_AddBoolToObject(reply, "ok", true);
         cJSON_AddStringToObject(reply, "mode", full ? "full" : "gyro");
-        ESP_LOGI(TAG, "WS: calibrate_imu (stage 1, mode=%s)", full ? "full" : "gyro");
+        ESP_LOGI(TAG, "WS: calibrate_imu (stage 1, mode=%s)",
+                 full ? "full" : "gyro");
       }
       ws_send_reply(req, reply);
       cJSON_Delete(reply);
@@ -104,6 +118,65 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
       ws_send_reply(req, reply);
       cJSON_Delete(reply);
     }
+  } else if (strcmp(type, "get_stab_config") == 0) {
+    const auto& cfg = VehicleControlGetStabilizationConfig();
+    cJSON* reply = cJSON_CreateObject();
+    if (reply) {
+      cJSON_AddStringToObject(reply, "type", "stab_config");
+      cJSON_AddBoolToObject(reply, "enabled", cfg.enabled);
+      cJSON_AddNumberToObject(reply, "madgwick_beta", cfg.madgwick_beta);
+      cJSON_AddNumberToObject(reply, "lpf_cutoff_hz", cfg.lpf_cutoff_hz);
+      cJSON_AddNumberToObject(reply, "imu_sample_rate_hz",
+                              cfg.imu_sample_rate_hz);
+      cJSON_AddNumberToObject(reply, "mode", cfg.mode);
+      ws_send_reply(req, reply);
+      cJSON_Delete(reply);
+    }
+  } else if (strcmp(type, "set_stab_config") == 0) {
+    StabilizationConfig cfg = VehicleControlGetStabilizationConfig();
+
+    // Обновить параметры из JSON (если указаны)
+    cJSON* enabled = cJSON_GetObjectItem(json, "enabled");
+    if (enabled && cJSON_IsBool(enabled)) {
+      cfg.enabled = cJSON_IsTrue(enabled);
+    }
+
+    cJSON* beta = cJSON_GetObjectItem(json, "madgwick_beta");
+    if (beta && cJSON_IsNumber(beta)) {
+      cfg.madgwick_beta = (float)beta->valuedouble;
+    }
+
+    cJSON* cutoff = cJSON_GetObjectItem(json, "lpf_cutoff_hz");
+    if (cutoff && cJSON_IsNumber(cutoff)) {
+      cfg.lpf_cutoff_hz = (float)cutoff->valuedouble;
+    }
+
+    cJSON* mode = cJSON_GetObjectItem(json, "mode");
+    if (mode && cJSON_IsNumber(mode)) {
+      cfg.mode = (uint8_t)mode->valueint;
+    }
+
+    bool ok = VehicleControlSetStabilizationConfig(cfg, true);
+
+    cJSON* reply = cJSON_CreateObject();
+    if (reply) {
+      cJSON_AddStringToObject(reply, "type", "set_stab_config_ack");
+      cJSON_AddBoolToObject(reply, "ok", ok);
+      if (ok) {
+        cJSON_AddBoolToObject(reply, "enabled", cfg.enabled);
+        cJSON_AddNumberToObject(reply, "madgwick_beta", cfg.madgwick_beta);
+        cJSON_AddNumberToObject(reply, "lpf_cutoff_hz", cfg.lpf_cutoff_hz);
+        cJSON_AddNumberToObject(reply, "mode", cfg.mode);
+      }
+      ws_send_reply(req, reply);
+      cJSON_Delete(reply);
+    }
+
+    ESP_LOGI(
+        TAG,
+        "WS: set_stab_config -> %s (enabled=%d beta=%.3f cutoff=%.1f mode=%d)",
+        ok ? "OK" : "FAILED", cfg.enabled, cfg.madgwick_beta, cfg.lpf_cutoff_hz,
+        cfg.mode);
   }
 }
 

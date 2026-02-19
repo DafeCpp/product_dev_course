@@ -6,6 +6,7 @@
 
 #include "imu_calibration.hpp"
 #include "mpu6050_spi.hpp"
+#include "stabilization_config.hpp"
 
 namespace rc_vehicle {
 
@@ -139,6 +140,25 @@ class VehicleControlPlatform {
    * @return true при успешном сохранении
    */
   [[nodiscard]] virtual bool SaveCalib(const ImuCalibData& data) = 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Stabilization Config
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * @brief Загрузить конфигурацию стабилизации из энергонезависимой памяти
+   * @return Конфигурация стабилизации, если найдена и валидна
+   */
+  [[nodiscard]] virtual std::optional<StabilizationConfig>
+  LoadStabilizationConfig() = 0;
+
+  /**
+   * @brief Сохранить конфигурацию стабилизации в энергонезависимую память
+   * @param config Конфигурация стабилизации
+   * @return true при успешном сохранении
+   */
+  [[nodiscard]] virtual bool SaveStabilizationConfig(
+      const StabilizationConfig& config) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // RC Input

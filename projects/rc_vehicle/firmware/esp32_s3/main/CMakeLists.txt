@@ -17,6 +17,7 @@ idf_component_register(
         "../../common/madgwick_filter.cpp"
         "../../common/lpf_butterworth.cpp"
         "../../esp32_common/imu_calibration_nvs.cpp"
+        "../../esp32_common/stabilization_config_nvs.cpp"
     INCLUDE_DIRS
         "."
         "../../common"

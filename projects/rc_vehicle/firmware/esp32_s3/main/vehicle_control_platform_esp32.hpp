@@ -52,6 +52,12 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   [[nodiscard]] std::optional<ImuCalibData> LoadCalib() override;
   [[nodiscard]] bool SaveCalib(const ImuCalibData& data) override;
 
+  // Stabilization Config
+  [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig()
+      override;
+  [[nodiscard]] bool SaveStabilizationConfig(
+      const StabilizationConfig& config) override;
+
   // RC Input
   [[nodiscard]] std::optional<RcCommand> GetRc() override;
 

@@ -5,6 +5,7 @@
 #include "esp_err.h"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
+#include "stabilization_config.hpp"
 
 // Forward declarations
 namespace rc_vehicle {
@@ -75,6 +76,23 @@ class VehicleControl {
    */
   void SetForwardDirection(float fx, float fy, float fz);
 
+  /**
+   * @brief Получить текущую конфигурацию стабилизации
+   * @return Конфигурация стабилизации
+   */
+  const StabilizationConfig& GetStabilizationConfig() const {
+    return stab_config_;
+  }
+
+  /**
+   * @brief Установить конфигурацию стабилизации
+   * @param config Новая конфигурация
+   * @param save_to_nvs Сохранить в NVS (по умолчанию true)
+   * @return true при успехе
+   */
+  bool SetStabilizationConfig(const StabilizationConfig& config,
+                              bool save_to_nvs = true);
+
   VehicleControl(const VehicleControl&) = delete;
   VehicleControl& operator=(const VehicleControl&) = delete;
 
@@ -88,9 +106,10 @@ class VehicleControl {
   // Платформа (HAL)
   std::unique_ptr<rc_vehicle::VehicleControlPlatform> platform_;
 
-  // Калибровка и фильтр (общие для всех компонентов)
+  // Калибровка, фильтр и конфигурация стабилизации
   ImuCalibration imu_calib_;
   MadgwickFilter madgwick_;
+  StabilizationConfig stab_config_;
 
   // Control components
   std::unique_ptr<rc_vehicle::RcInputHandler> rc_handler_;
@@ -137,4 +156,13 @@ inline int VehicleControlGetCalibStage(void) {
 
 inline void VehicleControlSetForwardDirection(float fx, float fy, float fz) {
   VehicleControl::Instance().SetForwardDirection(fx, fy, fz);
+}
+
+inline const StabilizationConfig& VehicleControlGetStabilizationConfig(void) {
+  return VehicleControl::Instance().GetStabilizationConfig();
+}
+
+inline bool VehicleControlSetStabilizationConfig(
+    const StabilizationConfig& config, bool save_to_nvs = true) {
+  return VehicleControl::Instance().SetStabilizationConfig(config, save_to_nvs);
 }

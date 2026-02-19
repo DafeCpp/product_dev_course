@@ -13,6 +13,7 @@
 #include "pwm_control.hpp"
 #include "rc_input.hpp"
 #include "rc_vehicle_common.hpp"
+#include "stabilization_config_nvs.hpp"
 #include "websocket_server.hpp"
 
 namespace rc_vehicle {
@@ -127,6 +128,24 @@ std::optional<ImuCalibData> VehicleControlPlatformEsp32::LoadCalib() {
 
 bool VehicleControlPlatformEsp32::SaveCalib(const ImuCalibData& data) {
   return imu_nvs::Save(data) == ESP_OK;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Stabilization Config
+// ─────────────────────────────────────────────────────────────────────────
+
+std::optional<StabilizationConfig>
+VehicleControlPlatformEsp32::LoadStabilizationConfig() {
+  StabilizationConfig config{};
+  if (stab_config_nvs::Load(config) == ESP_OK && config.IsValid()) {
+    return config;
+  }
+  return std::nullopt;
+}
+
+bool VehicleControlPlatformEsp32::SaveStabilizationConfig(
+    const StabilizationConfig& config) {
+  return stab_config_nvs::Save(config) == ESP_OK;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

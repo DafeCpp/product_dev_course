@@ -71,9 +71,10 @@ void ImuHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
   calib_.Apply(data_);
 
   // LPF Butterworth 2-го порядка для gyro Z (подготовка к yaw rate PID)
+  // Инициализация с дефолтными параметрами, если ещё не настроен
   if (!lpf_gyro_z_.IsConfigured()) {
     const float fs_hz = 1000.f / static_cast<float>(read_interval_ms_);
-    lpf_gyro_z_.SetParams(25.f, fs_hz);  // 25 Hz cutoff при 500 Hz
+    lpf_gyro_z_.SetParams(30.f, fs_hz);  // 30 Hz cutoff по умолчанию
   }
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
@@ -91,6 +92,15 @@ void ImuHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
                            ? (read_interval_ms_ / 1000.0f)
                            : ((now_ms - prev_read_ms) / 1000.0f);
   filter_.Update(data_, dt_sec);
+}
+
+void ImuHandler::SetLpfCutoff(float cutoff_hz) {
+  if (cutoff_hz < 5.f || cutoff_hz > 100.f) {
+    return;  // Игнорировать невалидные значения
+  }
+  const float fs_hz = 1000.f / static_cast<float>(read_interval_ms_);
+  lpf_gyro_z_.SetParams(cutoff_hz, fs_hz);
+  lpf_gyro_z_.Reset();  // Сброс состояния при изменении параметров
 }
 
 // ═════════════════════════════════════════════════════════════════════════

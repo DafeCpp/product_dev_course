@@ -254,6 +254,25 @@ esp_err_t VehicleControl::Init() {
       ESP_LOGI(TAG, "No saved IMU calibration — will auto-calibrate at start");
     }
 
+    // Загрузка конфигурации стабилизации из NVS
+    auto stab_cfg = platform_->LoadStabilizationConfig();
+    if (stab_cfg) {
+      stab_config_ = *stab_cfg;
+      ESP_LOGI(TAG,
+               "Stabilization config loaded: enabled=%d beta=%.3f "
+               "lpf_cutoff=%.1f Hz",
+               stab_config_.enabled, stab_config_.madgwick_beta,
+               stab_config_.lpf_cutoff_hz);
+    } else {
+      // Использовать значения по умолчанию
+      stab_config_.Reset();
+      ESP_LOGI(TAG, "Using default stabilization config");
+    }
+
+    // Применить конфигурацию к фильтрам
+    madgwick_.SetBeta(stab_config_.madgwick_beta);
+    // LPF cutoff будет применён при создании ImuHandler ниже
+
     // Автокалибровка при старте
     imu_calib_.StartCalibration(CalibMode::Full, 1000);
     ESP_LOGI(TAG, "IMU auto-calibration started (Full, 1000 samples)");
@@ -284,6 +303,8 @@ esp_err_t VehicleControl::Init() {
     imu_handler_.reset(new rc_vehicle::ImuHandler(
         *platform_, imu_calib_, madgwick_, IMU_READ_INTERVAL_MS));
     imu_handler_->SetEnabled(true);
+    // Применить LPF cutoff из конфигурации
+    imu_handler_->SetLpfCutoff(stab_config_.lpf_cutoff_hz);
   }
 
   // Создаём пустые handlers если они не были созданы (для телеметрии)
@@ -299,8 +320,8 @@ esp_err_t VehicleControl::Init() {
   telem_handler_.reset(new rc_vehicle::TelemetryHandler(
       *platform_, static_cast<const rc_vehicle::RcInputHandler&>(*rc_handler_),
       static_cast<const rc_vehicle::WifiCommandHandler&>(*wifi_handler_),
-      static_cast<const rc_vehicle::ImuHandler&>(*imu_handler_),
-      imu_calib_, madgwick_, TELEM_SEND_INTERVAL_MS));
+      static_cast<const rc_vehicle::ImuHandler&>(*imu_handler_), imu_calib_,
+      madgwick_, TELEM_SEND_INTERVAL_MS));
 
   // ───────────────────────────────────────────────────────────────────────
   // Запуск control loop
@@ -351,4 +372,44 @@ void VehicleControl::SetForwardDirection(float fx, float fy, float fz) {
     ESP_LOGI(TAG, "Forward direction set: vec=[%.3f, %.3f, %.3f], saved to NVS",
              v[0], v[1], v[2]);
   }
+}
+
+bool VehicleControl::SetStabilizationConfig(const StabilizationConfig& config,
+                                            bool save_to_nvs) {
+  // Валидация и ограничение параметров
+  StabilizationConfig validated_config = config;
+  validated_config.Clamp();
+
+  if (!validated_config.IsValid()) {
+    ESP_LOGE(TAG, "Invalid stabilization config");
+    return false;
+  }
+
+  // Применить к фильтрам
+  madgwick_.SetBeta(validated_config.madgwick_beta);
+
+  // Применить к LPF (если IMU включен)
+  if (imu_handler_) {
+    imu_handler_->SetLpfCutoff(validated_config.lpf_cutoff_hz);
+    ESP_LOGI(TAG, "LPF cutoff updated to %.1f Hz",
+             validated_config.lpf_cutoff_hz);
+  }
+
+  // Сохранить конфигурацию
+  stab_config_ = validated_config;
+
+  if (save_to_nvs) {
+    if (platform_->SaveStabilizationConfig(stab_config_)) {
+      ESP_LOGI(TAG,
+               "Stabilization config saved: enabled=%d beta=%.3f "
+               "lpf_cutoff=%.1f Hz mode=%d",
+               stab_config_.enabled, stab_config_.madgwick_beta,
+               stab_config_.lpf_cutoff_hz, stab_config_.mode);
+    } else {
+      ESP_LOGW(TAG, "Failed to save stabilization config to NVS");
+      return false;
+    }
+  }
+
+  return true;
 }
