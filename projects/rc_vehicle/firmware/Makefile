@@ -4,6 +4,8 @@
 
 FIRMWARE_DIR   := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 ESP32_S3_DIR   := $(FIRMWARE_DIR)esp32_s3
+TESTS_DIR      := $(FIRMWARE_DIR)tests
+TESTS_BUILD    := $(TESTS_DIR)/build
 
 # Порт (опционально): задайте при заливке/мониторе, если автоопределение не подходит
 # make flash ESP32_S3_PORT=/dev/cu.usbserial-0002
@@ -12,7 +14,7 @@ ESP32_S3_PORT ?=
 # ESP-IDF: если задан IDF_PATH, make подгрузит окружение (export.sh) перед вызовом idf.py
 IDF_PATH ?=
 
-.PHONY: all build clean flash monitor flash-monitor help
+.PHONY: all build clean flash monitor flash-monitor test test-build test-clean help
 
 # По умолчанию — справка
 all: help
@@ -34,6 +36,11 @@ help:
 	@echo ""
 	@echo "Заливка + монитор:"
 	@echo "  make flash-monitor"
+	@echo ""
+	@echo "Тесты (host, GTest):"
+	@echo "  make test        — собрать и запустить все тесты"
+	@echo "  make test-build  — только собрать тесты"
+	@echo "  make test-clean  — удалить build тестов"
 	@echo ""
 	@echo "Переменные: IDF_PATH, ESP32_S3_PORT"
 
@@ -69,3 +76,16 @@ monitor:
 
 flash-monitor: flash
 	@$(call run_idf,$(if $(ESP32_S3_PORT),-p $(ESP32_S3_PORT),) monitor)
+
+# --- Тесты (unit + integration, запуск на хосте) ---
+test-build:
+	@echo ">>> Сборка тестов..."
+	@cd "$(TESTS_DIR)" && cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build
+
+test: test-build
+	@echo ">>> Запуск тестов..."
+	@cd "$(TESTS_BUILD)" && ctest --output-on-failure
+
+test-clean:
+	@echo ">>> Очистка сборки тестов..."
+	@rm -rf "$(TESTS_BUILD)"
