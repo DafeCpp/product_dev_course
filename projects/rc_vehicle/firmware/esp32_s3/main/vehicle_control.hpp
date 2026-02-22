@@ -1,72 +1,80 @@
 #pragma once
 
-#include <memory>
+/**
+ * @file vehicle_control.hpp
+ * @brief Обёртка над унифицированной версией VehicleControl
+ *
+ * Этот файл предоставляет совместимый API для ESP32, делегируя
+ * все вызовы к VehicleControlUnified из common/.
+ */
 
 #include "esp_err.h"
-#include "imu_calibration.hpp"
-#include "madgwick_filter.hpp"
-#include "stabilization_config.hpp"
-
-// Forward declarations
-namespace rc_vehicle {
-class VehicleControlPlatform;
-class RcInputHandler;
-class WifiCommandHandler;
-class ImuHandler;
-class TelemetryHandler;
-}  // namespace rc_vehicle
+#include "vehicle_control_platform_esp32.hpp"
+#include "vehicle_control_unified.hpp"
 
 /**
- * @brief Управление машиной с использованием модульной архитектуры
+ * @brief Управление машиной (ESP32 обёртка)
  *
- * Использует:
- * - VehicleControlPlatform для HAL (PWM, RC, IMU, NVS, WebSocket)
- * - Control Components для модульной обработки (RC, Wi-Fi, IMU, телеметрия)
- * - Failsafe для защиты от потери управления
- *
- * Singleton, control loop работает в отдельной задаче FreeRTOS на Core 1.
+ * Делегирует все вызовы к rc_vehicle::VehicleControlUnified,
+ * предоставляя совместимый API с esp_err_t.
  */
 class VehicleControl {
  public:
   /** Единственный экземпляр */
-  static VehicleControl& Instance();
+  static VehicleControl& Instance() {
+    static VehicleControl s_instance;
+    return s_instance;
+  }
 
   /**
    * @brief Инициализация (PWM, RC, IMU, NVS, запуск control loop)
    * @return ESP_OK при успехе
    */
-  esp_err_t Init();
+  esp_err_t Init() {
+    // Создать и установить платформу при первом вызове
+    if (!platform_set_) {
+      auto platform =
+          std::make_unique<rc_vehicle::VehicleControlPlatformEsp32>();
+      unified_.SetPlatform(std::move(platform));
+      platform_set_ = true;
+    }
+
+    auto result = unified_.Init();
+    return (result == rc_vehicle::PlatformError::Ok) ? ESP_OK : ESP_FAIL;
+  }
 
   /**
    * @brief Команда по Wi‑Fi (WebSocket)
    * @param throttle Газ [-1..1]
    * @param steering Руль [-1..1]
    */
-  void OnWifiCommand(float throttle, float steering);
+  void OnWifiCommand(float throttle, float steering) {
+    unified_.OnWifiCommand(throttle, steering);
+  }
 
   /**
    * @brief Запуск калибровки IMU, этап 1
    * @param full true — полная (gyro+accel+g), false — только гироскоп
    */
-  void StartCalibration(bool full);
+  void StartCalibration(bool full) { unified_.StartCalibration(full); }
 
   /**
    * @brief Запуск этапа 2 калибровки (движение вперёд/назад)
    * @return true при успешном запуске
    */
-  bool StartForwardCalibration();
+  bool StartForwardCalibration() { return unified_.StartForwardCalibration(); }
 
   /**
    * @brief Строковый статус калибровки
    * @return "idle", "collecting", "done", "failed"
    */
-  const char* GetCalibStatus() const;
+  const char* GetCalibStatus() const { return unified_.GetCalibStatus(); }
 
   /**
    * @brief Текущий этап калибровки
    * @return 0, 1 (стояние), 2 (вперёд/назад)
    */
-  int GetCalibStage() const;
+  int GetCalibStage() const { return unified_.GetCalibStage(); }
 
   /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
@@ -74,14 +82,16 @@ class VehicleControl {
    * @param fy Y компонента вектора
    * @param fz Z компонента вектора
    */
-  void SetForwardDirection(float fx, float fy, float fz);
+  void SetForwardDirection(float fx, float fy, float fz) {
+    unified_.SetForwardDirection(fx, fy, fz);
+  }
 
   /**
    * @brief Получить текущую конфигурацию стабилизации
    * @return Конфигурация стабилизации
    */
   const StabilizationConfig& GetStabilizationConfig() const {
-    return stab_config_;
+    return unified_.GetStabilizationConfig();
   }
 
   /**
@@ -91,39 +101,20 @@ class VehicleControl {
    * @return true при успехе
    */
   bool SetStabilizationConfig(const StabilizationConfig& config,
-                              bool save_to_nvs = true);
+                              bool save_to_nvs = true) {
+    return unified_.SetStabilizationConfig(config, save_to_nvs);
+  }
 
   VehicleControl(const VehicleControl&) = delete;
   VehicleControl& operator=(const VehicleControl&) = delete;
 
  private:
-  VehicleControl();
-  ~VehicleControl();
+  VehicleControl() = default;
+  ~VehicleControl() = default;
 
-  static void ControlTaskEntry(void* arg);
-  void ControlTaskLoop();
-
-  // Платформа (HAL)
-  std::unique_ptr<rc_vehicle::VehicleControlPlatform> platform_;
-
-  // Калибровка, фильтр и конфигурация стабилизации
-  ImuCalibration imu_calib_;
-  MadgwickFilter madgwick_;
-  StabilizationConfig stab_config_;
-
-  // Control components
-  std::unique_ptr<rc_vehicle::RcInputHandler> rc_handler_;
-  std::unique_ptr<rc_vehicle::WifiCommandHandler> wifi_handler_;
-  std::unique_ptr<rc_vehicle::ImuHandler> imu_handler_;
-  std::unique_ptr<rc_vehicle::TelemetryHandler> telem_handler_;
-
-  // Флаги состояния
-  bool rc_enabled_{false};
-  bool imu_enabled_{false};
-  bool inited_{false};
-
-  // Запрос калибровки (из WebSocket)
-  volatile int calib_request_{0};
+  rc_vehicle::VehicleControlUnified& unified_ =
+      rc_vehicle::VehicleControlUnified::Instance();
+  bool platform_set_{false};
 };
 
 // ═════════════════════════════════════════════════════════════════════════

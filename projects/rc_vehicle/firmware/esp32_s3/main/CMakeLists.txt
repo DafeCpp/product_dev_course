@@ -4,7 +4,7 @@ idf_component_register(
         "../../esp32_common/wifi_ap.cpp"
         "../../esp32_common/http_server.cpp"
         "../../esp32_common/websocket_server.cpp"
-        "vehicle_control.cpp"
+        "../../common/vehicle_control_unified.cpp"
         "vehicle_control_platform_esp32.cpp"
         "pwm_control.cpp"
         "rc_input.cpp"
