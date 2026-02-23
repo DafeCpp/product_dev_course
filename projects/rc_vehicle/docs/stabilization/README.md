@@ -430,6 +430,7 @@ echo '{"type":"set_stab_config","enabled":true,"madgwick_beta":0.15}' | \
 
 ## Дополнительные ресурсы
 
+- [Физика стабилизации](physics.md) — подробное описание физических моделей, математики фильтров, PID, EKF, модели шин
 - [Роудмап стабилизации](roadmap_ru.md) — план разработки
 - [Реализация конфигурации](../../firmware/STABILIZATION_CONFIG_IMPLEMENTATION.md) — технические детали
 - [Madgwick Filter](../../firmware/common/madgwick_filter.hpp) — исходный код фильтра
