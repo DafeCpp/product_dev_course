@@ -20,6 +20,7 @@ from experiment_service.repositories import (
     SensorRepository,
     TelemetryRepository,
 )
+from experiment_service.repositories.backfill_tasks import BackfillTaskRepository
 from experiment_service.repositories.webhooks import WebhookDeliveryRepository, WebhookSubscriptionRepository
 from experiment_service.repositories.idempotency import IdempotencyRepository
 from experiment_service.services import (
@@ -34,6 +35,7 @@ from experiment_service.services import (
     TelemetryService,
     WebhookService,
 )
+from experiment_service.services.backfill import BackfillService
 from experiment_service.services.idempotency import (
     IDEMPOTENCY_HEADER,
     IdempotencyService,
@@ -52,6 +54,7 @@ _SENSOR_SERVICE_KEY = "sensor_service"
 _PROFILE_SERVICE_KEY = "conversion_profile_service"
 _TELEMETRY_SERVICE_KEY = "telemetry_service"
 _METRICS_SERVICE_KEY = "metrics_service"
+_BACKFILL_SERVICE_KEY = "backfill_service"
 
 USER_ID_HEADER = "X-User-Id"
 PROJECT_ID_HEADER = "X-Project-Id"
@@ -257,3 +260,14 @@ async def get_metrics_service(request: web.Request) -> MetricsService:
         return MetricsService(run_repo, metrics_repo)
 
     return await _get_or_create_service(request, _METRICS_SERVICE_KEY, builder)
+
+
+async def get_backfill_service(request: web.Request) -> BackfillService:
+    async def builder(_: web.Request) -> BackfillService:
+        pool = await get_pool()
+        backfill_repo = BackfillTaskRepository(pool)
+        profile_repo = ConversionProfileRepository(pool)
+        sensor_repo = SensorRepository(pool)
+        return BackfillService(backfill_repo, profile_repo, sensor_repo)
+
+    return await _get_or_create_service(request, _BACKFILL_SERVICE_KEY, builder)

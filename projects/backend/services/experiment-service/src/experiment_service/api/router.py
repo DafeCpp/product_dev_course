@@ -5,6 +5,7 @@ from aiohttp import web
 
 from experiment_service.api.routes import (
     artifacts,
+    backfill,
     capture_sessions,
     conversion_profiles,
     experiments,
@@ -26,6 +27,7 @@ ROUTE_MODULES = [
     metrics,
     sensors,
     conversion_profiles,
+    backfill,
     artifacts,
 ]
 
