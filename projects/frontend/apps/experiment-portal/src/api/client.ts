@@ -37,6 +37,11 @@ import type {
   WebhookSubscriptionCreate,
   WebhooksListResponse,
   WebhookDeliveriesListResponse,
+  ConversionProfile,
+  ConversionProfileInput,
+  ConversionProfilesListResponse,
+  BackfillTask,
+  BackfillTasksListResponse,
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
@@ -364,6 +369,42 @@ export const sensorsApi = {
   removeProject: async (id: string, projectId: string): Promise<void> => {
     // Use explicit project_id context for permission checks in that project
     await apiDelete(`/api/v1/sensors/${id}/projects/${projectId}`, { params: { project_id: projectId } })
+  },
+}
+
+// Conversion Profiles API
+export const conversionProfilesApi = {
+  list: async (sensorId: string, params?: {
+    limit?: number
+    offset?: number
+  }): Promise<ConversionProfilesListResponse> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/conversion-profiles`, { params })
+  },
+
+  create: async (sensorId: string, data: ConversionProfileInput): Promise<ConversionProfile> => {
+    return await apiPost(`/api/v1/sensors/${sensorId}/conversion-profiles`, data)
+  },
+
+  publish: async (sensorId: string, profileId: string): Promise<ConversionProfile> => {
+    return await apiPost(`/api/v1/sensors/${sensorId}/conversion-profiles/${profileId}/publish`, {})
+  },
+}
+
+// Backfill API
+export const backfillApi = {
+  start: async (sensorId: string): Promise<BackfillTask> => {
+    return await apiPost(`/api/v1/sensors/${sensorId}/backfill`, {})
+  },
+
+  list: async (sensorId: string, params?: {
+    limit?: number
+    offset?: number
+  }): Promise<BackfillTasksListResponse> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/backfill`, { params })
+  },
+
+  get: async (sensorId: string, taskId: string): Promise<BackfillTask> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/backfill/${taskId}`)
   },
 }
 

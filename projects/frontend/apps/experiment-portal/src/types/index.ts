@@ -157,6 +157,55 @@ export interface ConversionProfileInput {
   valid_to?: string
 }
 
+export type ConversionProfileStatus = 'draft' | 'scheduled' | 'active' | 'deprecated'
+
+export interface ConversionProfile {
+  id: string
+  sensor_id: string
+  project_id: string
+  version: string
+  kind: string
+  payload: Record<string, any>
+  status: ConversionProfileStatus
+  valid_from?: string | null
+  valid_to?: string | null
+  created_by: string
+  published_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversionProfilesListResponse {
+  conversion_profiles: ConversionProfile[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type BackfillTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface BackfillTask {
+  id: string
+  sensor_id: string
+  project_id: string
+  conversion_profile_id: string
+  status: BackfillTaskStatus
+  total_records: number | null
+  processed_records: number
+  error_message: string | null
+  created_by: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface BackfillTasksListResponse {
+  backfill_tasks: BackfillTask[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface SensorRegisterResponse {
   sensor: Sensor
   token: string
