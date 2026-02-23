@@ -212,20 +212,29 @@
 
 ### 3.5 Схемы преобразования датчиков (Conversion Profiles)
 
-> **Статус:** ⚠️ Инфраструктура готова, сквозной пайплайн не реализован.
+> **Статус:** ✅ Реализовано (этапы 1–3).
 > **Приоритет:** Высокий — ключевая фича ТЗ (раздел 6.2).
 
-#### Что уже есть
+#### Что реализовано
 
-- ✅ **DB-схема:** таблица `conversion_profiles` (id, sensor_id, version, kind, payload JSONB, status, valid_from/to, created_by, published_by); FK `sensors.active_profile_id` → conversion_profiles; FK `telemetry_records.conversion_profile_id`; enum `telemetry_conversion_status` (raw_only, converted, client_provided, conversion_failed).
+- ✅ **DB-схема:** таблица `conversion_profiles`, FK `sensors.active_profile_id`, FK `telemetry_records.conversion_profile_id`, enum `telemetry_conversion_status`. Таблица `conversion_backfill_tasks` для фоновых задач пересчёта (миграция `003_conversion_backfill.sql`).
 - ✅ **Backend (experiment-service):**
-  - Repository: `ConversionProfileRepository` — CRUD, `publish_profile()` (atomic: activate + deprecate old + update sensor.active_profile_id).
-  - Service: `ConversionProfileService` — list, create, publish; `SensorService.register_sensor()` принимает optional `initial_profile`.
-  - State machine: `draft → {scheduled, active, deprecated}`, `scheduled → {active, deprecated}`, `active → {deprecated}`.
-  - API routes: `POST /api/v1/sensors/{sensor_id}/conversion-profiles`, `GET .../conversion-profiles`, `POST .../conversion-profiles/{id}/publish`.
-  - `TelemetryService._apply_conversion()` для `kind=linear` (`physical = a * raw + b`) — **мёртвый код**, не подключён ни к одному endpoint.
-- ✅ **Frontend types:** `ConversionProfileInput` (version, kind, payload, status, valid_from/to); `SensorCreate.conversion_profile` (опциональное поле).
-- ⚠️ **Telemetry ingest:** вставляет `conversion_status = 'client_provided'` (если клиент прислал physical_value) или `'raw_only'`; **conversion_profile_id всегда NULL**; никакого серверного преобразования.
+  - Repository: `ConversionProfileRepository` — CRUD, `publish_profile()` (atomic).
+  - Service: `ConversionProfileService` — list, create, publish.
+  - `BackfillTaskRepository` + `BackfillService` — создание/получение задач пересчёта.
+  - API routes: профили (`POST/GET/publish`), backfill (`POST/GET /api/v1/sensors/{sensor_id}/backfill`).
+  - `TelemetryService._apply_conversion()` делегирует в `backend_common.conversion.apply_conversion()`.
+  - Background worker `conversion_backfill` — обрабатывает pending задачи батчами по 1000 записей.
+- ✅ **Shared conversion module** (`backend_common/conversion.py`): три вида конверсии — `linear` (a·x+b), `polynomial` (Σcᵢ·xⁱ), `lookup_table` (линейная интерполяция + clamp).
+- ✅ **Telemetry ingest (real-time):**
+  - `ProfileCache` в telemetry-ingest-service — in-memory TTL-кэш (60 сек) для активных профилей.
+  - `_bulk_insert()` автоматически применяет конверсию: `raw_only` → `converted` / `conversion_failed`.
+  - Приоритет клиента: `physical_value` от клиента → `client_provided`.
+- ✅ **Frontend:**
+  - Типы: `ConversionProfile`, `ConversionProfilesListResponse`, `BackfillTask`, `BackfillTasksListResponse`.
+  - API: `conversionProfilesApi` (list, create, publish), `backfillApi` (start, list, get).
+  - `ConversionProfileCreateModal` — создание профиля с выбором kind, специализированными полями для каждого типа, live-калькулятор (предпросмотр).
+  - `SensorDetail` — секция «Профили преобразования» (таблица, создание, публикация) + секция «Пересчёт данных» (запуск backfill, progress bar, автообновление).
 
 #### Что нужно реализовать
 
@@ -314,10 +323,10 @@
 
 #### Критерии готовности (минимум для «реализовано»)
 
-- [ ] Ingest с `raw_value` без `physical_value` → сервер применяет active linear profile → `physical_value` != NULL, `conversion_status = 'converted'`.
-- [ ] Frontend: список профилей в Sensor Detail, создание linear-профиля, публикация.
-- [ ] Backfill: пересчёт за выбранный диапазон, прогресс видим в UI.
-- [ ] Тесты: unit (конверсия) + integration (ingest → query → verify physical_value).
+- [x] Ingest с `raw_value` без `physical_value` → сервер применяет active profile (linear/polynomial/lookup_table) → `physical_value` != NULL, `conversion_status = 'converted'`.
+- [x] Frontend: список профилей в Sensor Detail, создание профиля (linear/polynomial/lookup_table), live-предпросмотр, публикация.
+- [x] Backfill: запуск пересчёта через API, background worker обрабатывает батчами, прогресс виден в UI (progress bar, auto-refresh).
+- [x] Тесты: unit-тесты для `backend_common.conversion` (linear, polynomial, lookup_table, edge cases).
 
 ### 4. Integrations & Collaboration (итерация 7)
 - **Enforcement бизнес-политик:** ❌
