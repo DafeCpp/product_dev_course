@@ -34,6 +34,9 @@ class Settings(BaseServiceSettings):
     telemetry_stream_poll_interval_seconds: float = 0.2
     telemetry_stream_heartbeat_seconds: float = 10.0
 
+    # Conversion profile cache TTL (seconds)
+    conversion_profile_cache_ttl_seconds: float = 60.0
+
     # Auth-service (for user-authenticated telemetry stream access)
     auth_service_url: str = "http://auth-service:8001"
 

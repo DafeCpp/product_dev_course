@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import structlog
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Sequence, cast
 from uuid import UUID
 
+from backend_common.conversion import apply_conversion
 from backend_common.db.pool import get_pool_service as get_pool
 
 from telemetry_ingest_service.core.exceptions import (
@@ -16,7 +18,10 @@ from telemetry_ingest_service.core.exceptions import (
     UnauthorizedError,
 )
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO, TelemetryReadingDTO
+from telemetry_ingest_service.services.profile_cache import profile_cache
 from telemetry_ingest_service.settings import settings
+
+logger = structlog.get_logger(__name__)
 
 
 def hash_sensor_token(token: str) -> bytes:
@@ -268,21 +273,49 @@ class TelemetryIngestService:
                 return {**meta, "__system": {**sys_meta, "late": True}}
             return {**meta, "__system": {"late": True}}
 
-        items = [
-            (
+        # Load active conversion profile for this sensor (cached).
+        active_profile = await profile_cache.get_active_profile(conn, payload.sensor_id)
+
+        items = []
+        for reading in payload.readings:
+            physical_value = reading.physical_value
+            conversion_status = "client_provided" if physical_value is not None else "raw_only"
+            conversion_profile_id = None
+
+            if physical_value is None and active_profile is not None:
+                try:
+                    result = apply_conversion(
+                        active_profile.kind, active_profile.payload, reading.raw_value,
+                    )
+                    if result is not None:
+                        physical_value = result
+                        conversion_status = "converted"
+                    else:
+                        conversion_status = "conversion_failed"
+                    conversion_profile_id = active_profile.profile_id
+                except Exception:
+                    logger.warning(
+                        "conversion_apply_error",
+                        sensor_id=str(payload.sensor_id),
+                        kind=active_profile.kind,
+                    )
+                    conversion_status = "conversion_failed"
+                    conversion_profile_id = active_profile.profile_id
+            elif physical_value is not None and active_profile is not None:
+                conversion_profile_id = active_profile.profile_id
+
+            items.append((
                 project_id,
                 payload.sensor_id,
                 run_id,
                 capture_session_id,
                 reading.timestamp,
                 reading.raw_value,
-                reading.physical_value,
+                physical_value,
                 json.dumps(_with_late_marker({**batch_meta, **reading.meta})),
-                "client_provided" if reading.physical_value is not None else "raw_only",
-                None,  # conversion_profile_id (MVP: not computed here)
-            )
-            for reading in payload.readings
-        ]
+                conversion_status,
+                conversion_profile_id,
+            ))
         query = """
             INSERT INTO telemetry_records (
                 project_id,
