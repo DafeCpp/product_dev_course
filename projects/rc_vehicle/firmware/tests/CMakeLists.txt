@@ -33,6 +33,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/imu_calibration.cpp
     ${COMMON_DIR}/control_components.cpp
     ${COMMON_DIR}/uart_bridge_base.cpp
+    ${COMMON_DIR}/pid_controller.cpp
 )
 
 # Include directories
@@ -47,6 +48,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# Windows: define _USE_MATH_DEFINES so M_PI and friends are available
+if(WIN32)
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
 # Unit tests executable
 add_executable(unit_tests
     ${COMMON_SOURCES}
@@ -54,6 +60,7 @@ add_executable(unit_tests
     unit/test_madgwick.cpp
     unit/test_failsafe.cpp
     unit/test_lpf.cpp
+    unit/test_pid.cpp
 )
 
 target_link_libraries(unit_tests

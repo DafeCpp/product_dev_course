@@ -45,6 +45,44 @@ struct StabilizationConfig {
    */
   uint8_t mode{0};
 
+  // ── ПИД-регулятор yaw rate ──────────────────────────────────────────────
+
+  /** Пропорциональный коэффициент ПИД */
+  float pid_kp{0.1f};
+
+  /** Интегральный коэффициент ПИД */
+  float pid_ki{0.0f};
+
+  /** Дифференциальный коэффициент ПИД */
+  float pid_kd{0.005f};
+
+  /**
+   * Anti-windup: ограничение накопителя интегратора.
+   * Единицы: deg/s (т.к. ошибка в deg/s).
+   */
+  float pid_max_integral{0.5f};
+
+  /**
+   * Максимальная поправка руля от ПИД [-1..1].
+   * Ограничивает влияние регулятора на команду руления.
+   */
+  float pid_max_correction{0.3f};
+
+  /**
+   * Масштаб: steer_command [-1..1] → желаемая угловая скорость (deg/s).
+   * При steer=1.0 желаемая угловая скорость = steer_to_yaw_rate_dps.
+   * Диапазон: 10–360 deg/s.
+   */
+  float steer_to_yaw_rate_dps{90.0f};
+
+  /**
+   * Время нарастания/спада веса стабилизации (мс).
+   * При включении/выключении стабилизации поправка руля плавно
+   * нарастает/убывает за это время. 0 = мгновенное переключение.
+   * Диапазон: 0–5000 мс, по умолчанию 500 мс.
+   */
+  uint32_t fade_ms{500};
+
   /** Валидность конфигурации (magic number для проверки NVS) */
   uint32_t magic{0x53544142};  // 'STAB'
 
@@ -55,7 +93,9 @@ struct StabilizationConfig {
   [[nodiscard]] bool IsValid() const noexcept {
     return magic == 0x53544142 && madgwick_beta > 0.0f &&
            madgwick_beta <= 1.0f && lpf_cutoff_hz >= 5.0f &&
-           lpf_cutoff_hz <= 100.0f && imu_sample_rate_hz > 0.0f;
+           lpf_cutoff_hz <= 100.0f && imu_sample_rate_hz > 0.0f &&
+           pid_kp >= 0.0f && pid_ki >= 0.0f && pid_kd >= 0.0f &&
+           pid_max_correction > 0.0f && steer_to_yaw_rate_dps > 0.0f;
   }
 
   /**
@@ -67,6 +107,13 @@ struct StabilizationConfig {
     lpf_cutoff_hz = 30.0f;
     imu_sample_rate_hz = 500.0f;
     mode = 0;
+    pid_kp = 0.1f;
+    pid_ki = 0.0f;
+    pid_kd = 0.005f;
+    pid_max_integral = 0.5f;
+    pid_max_correction = 0.3f;
+    steer_to_yaw_rate_dps = 90.0f;
+    fade_ms = 500;
     magic = 0x53544142;
   }
 
@@ -80,6 +127,15 @@ struct StabilizationConfig {
     if (lpf_cutoff_hz > 100.0f) lpf_cutoff_hz = 100.0f;
     if (imu_sample_rate_hz < 100.0f) imu_sample_rate_hz = 100.0f;
     if (mode > 2) mode = 0;
+    if (pid_kp < 0.0f) pid_kp = 0.0f;
+    if (pid_ki < 0.0f) pid_ki = 0.0f;
+    if (pid_kd < 0.0f) pid_kd = 0.0f;
+    if (pid_max_integral < 0.0f) pid_max_integral = 0.0f;
+    if (pid_max_correction < 0.0f) pid_max_correction = 0.0f;
+    if (pid_max_correction > 1.0f) pid_max_correction = 1.0f;
+    if (steer_to_yaw_rate_dps < 10.0f) steer_to_yaw_rate_dps = 10.0f;
+    if (steer_to_yaw_rate_dps > 360.0f) steer_to_yaw_rate_dps = 360.0f;
+    if (fade_ms > 5000) fade_ms = 5000;
   }
 };
 

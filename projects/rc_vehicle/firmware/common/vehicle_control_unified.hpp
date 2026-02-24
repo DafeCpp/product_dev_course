@@ -6,6 +6,7 @@
 #include "control_components.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
+#include "pid_controller.hpp"
 #include "stabilization_config.hpp"
 #include "vehicle_control_platform.hpp"
 
@@ -176,6 +177,9 @@ class VehicleControlUnified {
   MadgwickFilter madgwick_;
   StabilizationConfig stab_config_;
 
+  // ПИД-регулятор yaw rate
+  PidController yaw_pid_;
+
   // Control components
   std::unique_ptr<RcInputHandler> rc_handler_;
   std::unique_ptr<WifiCommandHandler> wifi_handler_;
@@ -186,6 +190,9 @@ class VehicleControlUnified {
   bool rc_enabled_{false};
   bool imu_enabled_{false};
   bool inited_{false};
+
+  // Плавное включение/выключение стабилизации
+  float stab_weight_{0.0f};  // Текущий вес [0..1]: 0 = выкл, 1 = полностью вкл
 
   // Запрос калибровки (атомарный для потокобезопасности)
   std::atomic<int> calib_request_{0};

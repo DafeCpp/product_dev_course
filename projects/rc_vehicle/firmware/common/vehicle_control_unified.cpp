@@ -1,5 +1,7 @@
 #include "vehicle_control_unified.hpp"
 
+#include <algorithm>
+
 #include "rc_vehicle_common.hpp"
 #include "slew_rate.hpp"
 
@@ -91,6 +93,41 @@ void VehicleControlUnified::ControlTaskLoop() {
     SelectControlSource(commanded_throttle, commanded_steering);
 
     // ─────────────────────────────────────────────────────────────────────
+    // Плавное нарастание/спад веса стабилизации
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (dt_ms > 0) {
+      const float target_weight = stab_config_.enabled ? 1.0f : 0.0f;
+      if (stab_config_.fade_ms == 0) {
+        stab_weight_ = target_weight;
+      } else {
+        const float fade_rate_per_sec =
+            1000.0f / static_cast<float>(stab_config_.fade_ms);
+        stab_weight_ = ApplySlewRate(target_weight, stab_weight_,
+                                     fade_rate_per_sec, dt_ms);
+      }
+      // Сброс ПИД при полном отключении — убирает накопленный интегратор
+      if (stab_weight_ == 0.0f) {
+        yaw_pid_.Reset();
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Yaw rate PID stabilization
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (stab_weight_ > 0.0f && imu_handler_ && imu_handler_->IsEnabled() &&
+        dt_ms > 0) {
+      const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
+      const float omega_desired =
+          stab_config_.steer_to_yaw_rate_dps * commanded_steering;
+      const float omega_actual = imu_handler_->GetFilteredGyroZ();
+      const float pid_out = yaw_pid_.Step(omega_desired - omega_actual, dt_sec);
+      commanded_steering =
+          std::clamp(commanded_steering + pid_out * stab_weight_, -1.0f, 1.0f);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Failsafe
     // ─────────────────────────────────────────────────────────────────────
 
@@ -103,6 +140,8 @@ void VehicleControlUnified::ControlTaskLoop() {
       commanded_steering = 0.0f;
       applied_throttle = 0.0f;
       applied_steering = 0.0f;
+      yaw_pid_.Reset();
+      stab_weight_ = 0.0f;  // Плавный re-fade при восстановлении управления
       platform_->SetPwmNeutral();
     }
 
@@ -197,6 +236,11 @@ PlatformError VehicleControlUnified::Init() {
 
     // Применить конфигурацию к фильтрам
     madgwick_.SetBeta(stab_config_.madgwick_beta);
+
+    // Инициализировать коэффициенты ПИД
+    yaw_pid_.SetGains({stab_config_.pid_kp, stab_config_.pid_ki,
+                       stab_config_.pid_kd, stab_config_.pid_max_integral,
+                       stab_config_.pid_max_correction});
 
     // Автокалибровка при старте
     imu_calib_.StartCalibration(CalibMode::Full, 1000);
@@ -418,6 +462,17 @@ bool VehicleControlUnified::SetStabilizationConfig(
   // Применить к LPF (если IMU включен)
   if (imu_handler_) {
     imu_handler_->SetLpfCutoff(validated_config.lpf_cutoff_hz);
+  }
+
+  // Обновить коэффициенты ПИД
+  yaw_pid_.SetGains({validated_config.pid_kp, validated_config.pid_ki,
+                     validated_config.pid_kd, validated_config.pid_max_integral,
+                     validated_config.pid_max_correction});
+  // Сброс ПИД при мгновенном отключении (fade_ms == 0).
+  // При плавном fade сброс произойдёт в control loop когда stab_weight_ → 0.
+  if (!validated_config.enabled && validated_config.fade_ms == 0) {
+    yaw_pid_.Reset();
+    stab_weight_ = 0.0f;
   }
 
   // Сохранить конфигурацию

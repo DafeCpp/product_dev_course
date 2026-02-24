@@ -13,6 +13,7 @@ idf_component_register(
         "../../common/mpu6050_spi.cpp"
         "../../common/failsafe.cpp"
         "../../common/control_components.cpp"
+        "../../common/pid_controller.cpp"
         "../../common/imu_calibration.cpp"
         "../../common/madgwick_filter.cpp"
         "../../common/lpf_butterworth.cpp"
