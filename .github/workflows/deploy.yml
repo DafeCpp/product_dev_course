@@ -285,19 +285,25 @@ jobs:
             echo "=== experiment-service logs (last 100 lines) ==="
             docker compose -f docker-compose.prod.yml logs --tail=100 experiment-service || true
 
-      - name: Health check
-        run: |
-          for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${{ secrets.VM_HOST }}/") || true
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
-              exit 0
-            fi
-            echo "Attempt $i: status=$STATUS, retrying in 10s..."
-            sleep 10
-          done
-          echo "Health check failed after 10 attempts"
-          exit 1
+      - name: Health check (via SSH on VM — avoids dependency on public reachability from GitHub)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+          command_timeout: 2m
+          script: |
+            for i in $(seq 1 12); do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:80/" 2>/dev/null || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "Health check passed (attempt $i): portal on :80 returned 200"
+                exit 0
+              fi
+              echo "Attempt $i: status=$STATUS, retrying in 10s..."
+              sleep 10
+            done
+            echo "Health check failed: portal did not return 200 within 2 minutes"
+            exit 1
 
   # ==========================================
   # 4. Создание GitHub Release
