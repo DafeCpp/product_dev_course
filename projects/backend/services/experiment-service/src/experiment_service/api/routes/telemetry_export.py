@@ -363,7 +363,7 @@ async def export_run_telemetry(request: web.Request):
         session_ids = [parse_uuid(cs_filter_raw, "capture_session_id")]
     else:
         cs_service = await get_capture_session_service(request)
-        sessions, _total = await cs_service.list_sessions(
+        sessions, _total = await cs_service.list_sessions_for_run(
             project_id, run_id, limit=500, offset=0,
         )
         session_ids = [s.id for s in sessions]
