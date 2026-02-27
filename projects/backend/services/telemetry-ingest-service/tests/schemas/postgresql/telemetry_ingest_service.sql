@@ -12,6 +12,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'telemetry_conversion_status') THEN
         CREATE TYPE telemetry_conversion_status AS ENUM ('raw_only', 'converted', 'client_provided', 'conversion_failed');
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'conversion_profile_status') THEN
+        CREATE TYPE conversion_profile_status AS ENUM ('draft', 'active', 'scheduled', 'deprecated');
+    END IF;
 END$$;
 
 CREATE TABLE IF NOT EXISTS sensors (
@@ -30,6 +33,37 @@ CREATE TABLE IF NOT EXISTS sensors (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS conversion_profiles (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    sensor_id uuid NOT NULL,
+    project_id uuid NOT NULL,
+    version text NOT NULL DEFAULT '1',
+    kind text NOT NULL DEFAULT 'passthrough',
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status conversion_profile_status NOT NULL DEFAULT 'active',
+    valid_from timestamptz,
+    valid_to timestamptz,
+    created_by uuid NOT NULL DEFAULT gen_random_uuid(),
+    published_by uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (sensor_id, version),
+    FOREIGN KEY (sensor_id) REFERENCES sensors (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS conversion_profiles_project_status_idx ON conversion_profiles (project_id, status);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'sensors_active_profile_fk'
+    ) THEN
+        ALTER TABLE sensors
+            ADD CONSTRAINT sensors_active_profile_fk
+            FOREIGN KEY (active_profile_id) REFERENCES conversion_profiles (id) ON DELETE SET NULL;
+    END IF;
+END$$;
 
 CREATE TABLE IF NOT EXISTS runs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
