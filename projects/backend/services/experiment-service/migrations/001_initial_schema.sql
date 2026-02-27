@@ -290,16 +290,21 @@ CREATE INDEX telemetry_records_capture_ts_idx
 CREATE INDEX telemetry_records_sensor_signal_ts_idx
     ON telemetry_records (sensor_id, signal, timestamp DESC, id DESC);
 
--- TimescaleDB compression + retention policies for raw points.
-ALTER TABLE telemetry_records
-    SET (
-        timescaledb.compress,
-        timescaledb.compress_segmentby = 'sensor_id, signal',
-        timescaledb.compress_orderby = 'timestamp DESC'
-    );
-
-SELECT add_compression_policy('telemetry_records', INTERVAL '7 days');
-SELECT add_retention_policy('telemetry_records', INTERVAL '90 days');
+-- TimescaleDB compression + retention (only in Community/TSL; skipped on Apache 2.0, e.g. Yandex MDB).
+DO $$
+BEGIN
+    ALTER TABLE telemetry_records
+        SET (
+            timescaledb.compress,
+            timescaledb.compress_segmentby = 'sensor_id, signal',
+            timescaledb.compress_orderby = 'timestamp DESC'
+        );
+    PERFORM add_compression_policy('telemetry_records', INTERVAL '7 days');
+    PERFORM add_retention_policy('telemetry_records', INTERVAL '90 days');
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'TimescaleDB compression/retention skipped (e.g. Apache 2.0 edition): %', SQLERRM;
+END $$;
 
 -- Webhooks schema (final, hardened).
 CREATE TABLE webhook_subscriptions (
