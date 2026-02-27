@@ -201,6 +201,7 @@ function CreateSensor() {
                                 multiple
                                 value={selectedProjectIds}
                                 onChange={(_, event) => {
+                                    if (!event) return
                                     const ids = Array.from(event.target.selectedOptions)
                                         .map((o) => o.value)
                                         .filter(Boolean)
