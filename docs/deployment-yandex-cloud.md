@@ -220,15 +220,37 @@ curl http://<VM_IP>:8003/health  # Telemetry Ingest
 
 ### Настройка GitHub Secrets
 
-Добавьте в Settings > Secrets and Variables > Actions:
+Секреты используются в workflow «Release (Build & Deploy)»: часть — для входа в Container Registry и пуша образов, часть — для SSH-деплоя на VM.
 
-| Secret | Откуда | Описание |
-|--------|--------|----------|
-| `YC_REGISTRY_ID` | `terraform output container_registry_id` | ID Container Registry |
-| `YC_SA_JSON_KEY` | `terraform output -json ci_sa_key_private` | JSON-ключ SA для пуша образов |
-| `VM_HOST` | `terraform output vm_public_ip` | IP-адрес VM |
-| `VM_USER` | `deploy` | SSH пользователь |
-| `VM_SSH_PRIVATE_KEY` | Содержимое `~/.ssh/id_ed25519` | SSH приватный ключ |
+**Где добавлять:**
+
+- **Repository secrets** (Settings → Secrets and variables → Actions): удобнее всего добавить **все** пять секретов сюда — тогда они доступны workflow без настройки Environment. Имена: `YC_REGISTRY_ID`, `YC_SA_JSON_KEY`, `VM_HOST`, `VM_USER`, `VM_SSH_PRIVATE_KEY`.
+- **Либо** секреты для реестра — в **Environment secrets** окружения `production` (Settings → Environments → создать `production` → Environment secrets): `YC_REGISTRY_ID`, `YC_SA_JSON_KEY`. Остальные (`VM_HOST`, `VM_USER`, `VM_SSH_PRIVATE_KEY`) — в Repository secrets.
+
+| Secret | Откуда | Формат и примечания |
+|--------|--------|----------------------|
+| **YC_REGISTRY_ID** | Локально в каталоге Terraform: `terraform output -raw container_registry_id` | Одна строка, например `crpj69t4sk1kem3mb9er`. Repository secrets или Environment `production`. |
+| **YC_SA_JSON_KEY** | Локально: `terraform output -raw ci_sa_key_private` | **Весь** вывод команды — JSON одной строкой (содержит `id`, `service_account_id`, `private_key`, `created_at`). Копировать целиком. Используется как пароль для входа в `cr.yandex` (логин `json_key`). Repository secrets или Environment `production`. Если при логине появляется *Password required* — см. [ниже](#github-actions-error-password-required). |
+| **VM_HOST** | Локально: `terraform output -raw vm_public_ip` | Публичный IP VM, например `84.201.xxx.xxx`. Добавить в **Repository secrets**. |
+| **VM_USER** | Фиксированное значение | Строка `deploy` — пользователь на VM, созданный Terraform. Добавить в **Repository secrets**. |
+| **VM_SSH_PRIVATE_KEY** | Файл приватного ключа, которым подключаетесь к VM по SSH | **Содержимое** файла (не путь). Обычно `cat ~/.ssh/id_ed25519` — скопировать весь вывод, включая строки `-----BEGIN ... KEY-----` и `-----END ... KEY-----`. Если ключ создавался по шагу «Быстрый старт» (ssh-keygen), используйте тот же ключ, публичная часть которого передана в `ssh_public_key` в Terraform. Добавить в **Repository secrets**. |
+
+**Как получить значения из Terraform (после `terraform apply`):**
+
+```bash
+cd infrastructure/yandex-cloud
+
+# ID реестра (одна строка)
+terraform output -raw container_registry_id
+
+# Приватный ключ SA (JSON одной строкой — скопировать полностью в секрет YC_SA_JSON_KEY)
+terraform output -raw ci_sa_key_private
+
+# Публичный IP VM
+terraform output -raw vm_public_ip
+```
+
+**Проверка:** после добавления секретов создание тега `v*` на `main` должно запускать workflow; шаг «Login to Yandex Container Registry» использует `YC_REGISTRY_ID` и `YC_SA_JSON_KEY`, шаг деплоя по SSH — `VM_HOST`, `VM_USER`, `VM_SSH_PRIVATE_KEY`.
 
 ### Как работает пайплайн
 
@@ -396,7 +418,24 @@ yc managed-postgresql cluster restore \
 | Нет места на диске | `docker system prune -a` |
 | **docker pull: "unable to get credentials" / "error getting credentials"** (образы cr.yandex) | На VM не настроена авторизация в Container Registry. См. ниже [Docker: авторизация в CR на VM](#docker-авторизация-в-cr-на-vm). |
 | **docker pull: "repository ... not found"** (cr.yandex/...) | Образы ещё не загружены в реестр. Нужно один раз собрать и отправить их: с **локальной машины** (где есть исходный код и Docker) выполнить `VM_HOST=<IP> REGISTRY_ID=<id> ./scripts/deploy.sh`. На локальной машине предварительно: `yc container registry configure-docker` (авторизация для пуша). |
+| **GitHub Actions: "Error: Password required"** (docker/login-action, cr.yandex) | Секрет `YC_SA_JSON_KEY` пустой или не виден job'у. См. ниже [GitHub Actions: Error Password required](#github-actions-error-password-required). |
 | Образы не пуллятся | После настройки авторизации: `yc container registry configure-docker` (на VM под пользователем, для которого настроен yc). |
+
+### GitHub Actions: Error Password required
+
+Ошибка **"Error: Password required"** в шаге «Login to Yandex Container Registry» означает, что в `docker/login-action` приходит пустой пароль — секрет `YC_SA_JSON_KEY` не подставлен или пуст.
+
+**Что проверить:**
+
+1. **Имя секрета** — ровно `YC_SA_JSON_KEY` (регистр важен).
+2. **Где лежит секрет:** job «Build & Push» использует `environment: production`. Секрет должен быть либо в **Repository secrets** (Settings → Secrets and variables → Actions), либо в **Environment secrets** окружения **production** (Settings → Environments → production → Environment secrets). Если окружение `production` только создали и секреты добавляли в Environment — убедитесь, что сохранили именно в Environment secrets этого окружения. Проще всего добавить `YC_SA_JSON_KEY` и `YC_REGISTRY_ID` в **Repository secrets** — тогда они точно доступны.
+3. **Значение не пустое:** заново скопировать ключ и вставить в секрет:
+   ```bash
+   cd infrastructure/yandex-cloud
+   terraform output -raw ci_sa_key_private
+   ```
+   Вывод — одна строка JSON (начинается с `{"id":...`). Скопировать **целиком** и вставить в значение секрета `YC_SA_JSON_KEY` (без лишних пробелов/переносов в начале).
+4. **Обновить секрет:** после правки в GitHub нажмите «Update secret». Затем перезапустите failed workflow (Re-run all jobs) или создайте тег заново.
 
 ### Docker: авторизация в CR на VM
 

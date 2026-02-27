@@ -95,6 +95,7 @@ jobs:
     name: Build & Push Images
     needs: [test-auth-service, test-experiment-service, test-frontend]
     runs-on: ubuntu-latest
+    environment: production  # нужен для доступа к YC_SA_JSON_KEY и YC_REGISTRY_ID (environment secrets)
     strategy:
       matrix:
         include:
@@ -118,6 +119,18 @@ jobs:
             dockerfile: Dockerfile
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check Yandex Registry secrets
+        run: |
+          if [ -z "${{ secrets.YC_REGISTRY_ID }}" ]; then
+            echo "::error::YC_REGISTRY_ID is not set. Add it in Settings → Secrets and variables → Actions (Repository secrets) or in Environment 'production' → Environment secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.YC_SA_JSON_KEY }}" ]; then
+            echo "::error::YC_SA_JSON_KEY is not set. Add it in Settings → Secrets and variables → Actions (Repository secrets) or in Environment 'production' → Environment secrets. Value = full JSON from: terraform output -raw ci_sa_key_private"
+            exit 1
+          fi
+          echo "YC_REGISTRY_ID and YC_SA_JSON_KEY are set."
 
       - name: Login to Yandex Container Registry
         uses: docker/login-action@v3
