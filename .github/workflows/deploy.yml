@@ -225,6 +225,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy via SSH
+        id: deploy
         uses: appleboy/ssh-action@v1
         env:
           IMAGE_TAG: ${{ env.RELEASE_TAG }}
@@ -260,6 +261,21 @@ jobs:
 
             # Чистим старые образы
             docker image prune -f
+
+      - name: Show auth-service logs on deploy failure
+        if: failure() && steps.deploy.outcome == 'failure'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+          command_timeout: 1m
+          script: |
+            cd /opt/experiment-tracking
+            echo "=== docker compose ps ==="
+            docker compose -f docker-compose.prod.yml ps -a
+            echo "=== auth-service logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 auth-service || true
 
       - name: Health check
         run: |

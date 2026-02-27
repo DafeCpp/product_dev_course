@@ -423,6 +423,7 @@ yc managed-postgresql cluster restore \
 | **terraform apply: "Failed to Update IAM Policy" / "Permission denied"** | Либо выдать учётной записи Terraform роль **Администратор** в каталоге (Права доступа). Либо отключить создание IAM-привязок: в `terraform.tfvars` задать `manage_folder_iam = false`, затем вручную в консоли выдать SA `container-registry.images.puller` (для VM) и `container-registry.images.pusher`/`puller` (для CI). |
 | **user name 'postgres' is not allowed** | В Yandex Managed PostgreSQL имя `postgres` зарезервировано. Используется переменная `pg_admin_username` (по умолчанию `cluster_admin`). Если в state уже был пользователь с именем postgres: `terraform state rm yandex_mdb_postgresql_user.admin`, затем снова `terraform apply`. |
 | Контейнер не стартует | `docker compose logs <service>` |
+| **dependency failed: container auth-service is unhealthy** | На VM проверить: 1) `AUTH_DATABASE_URL` в `.env` и доступность БД (Security Group, сертификат `./certs/yandex-ca.pem`); 2) `JWT_SECRET` задан; 3) `docker compose -f docker-compose.prod.yml logs auth-service` — по логам увидеть ошибку (подключение к БД, SSL и т.д.). При падении деплоя в CI шаг «Show auth-service logs on deploy failure» выведет логи. |
 | Нет подключения к БД | Проверить Security Group, `sslmode=verify-full`, сертификат |
 | 502 Bad Gateway | Подождать 30-60 сек, проверить healthcheck |
 | Нет места на диске | `docker system prune -a` |
