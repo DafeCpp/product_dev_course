@@ -218,6 +218,15 @@ curl http://<VM_IP>:8003/health  # Telemetry Ingest
 
 Используется модель веток **main** и **develop**: разработка ведётся в `develop`, релизы выходят из `main` по тегам. Подробнее: [branching-model.md](branching-model.md).
 
+### Аутентификация в Container Registry: сервисный аккаунт (SA)
+
+В [документации Yandex Cloud](https://cloud.yandex.ru/docs/container-registry/operations/authentication) в основном описана аутентификация **как пользователь**: OAuth-токен, IAM-токен, Docker Credential helper (`yc container registry configure-docker`). Для **CI/CD и для VM** в этом проекте используется аутентификация **по ключу сервисного аккаунта (SA)** — без браузера и без хранения пользовательского OAuth.
+
+- **Где используется:** GitHub Actions (пуш образов в реестр), при необходимости — на VM для `docker pull` (если настроен `yc` с ключом SA).
+- **Как работает:** вход в реестр `cr.yandex` с логином **`json_key`** и паролем — **полным JSON-ключом** сервисного аккаунта (поля `id`, `service_account_id`, `private_key`, `created_at`). В Terraform для этого есть output **`ci_sa_key_json`** (`terraform output -raw ci_sa_key_json`). Output `ci_sa_key_private` выдаёт ключ в формате PEM — для логина в реестр он не подходит. Альтернатива: создать ключ вручную и взять JSON: `yc iam key create --service-account-name <name> --output key.json`.
+- **Роли:** сервисному аккаунту CI нужна роль **Пользователь образа** (push/pull) на реестр или каталог; SA VM — только **Пользователь образа** (pull). Подробнее: [Управление доступом в Container Registry](https://cloud.yandex.ru/docs/container-registry/security/).
+- **Официальная инструкция по входу по ключу SA:** [Аутентификация с помощью ключа сервисного аккаунта](https://cloud.yandex.ru/docs/container-registry/operations/authentication#sa-json) (раздел *sa-json* на странице аутентификации).
+
 ### Настройка GitHub Secrets
 
 Секреты используются в workflow «Release (Build & Deploy)»: часть — для входа в Container Registry и пуша образов, часть — для SSH-деплоя на VM.
@@ -230,7 +239,7 @@ curl http://<VM_IP>:8003/health  # Telemetry Ingest
 | Secret | Откуда | Формат и примечания |
 |--------|--------|----------------------|
 | **YC_REGISTRY_ID** | Локально в каталоге Terraform: `terraform output -raw container_registry_id` | Одна строка, например `crpj69t4sk1kem3mb9er`. Repository secrets или Environment `production`. |
-| **YC_SA_JSON_KEY** | Локально: `terraform output -raw ci_sa_key_private` | **Весь** вывод команды — JSON одной строкой (содержит `id`, `service_account_id`, `private_key`, `created_at`). Копировать целиком. Используется как пароль для входа в `cr.yandex` (логин `json_key`). Repository secrets или Environment `production`. Если при логине появляется *Password required* — см. [ниже](#github-actions-error-password-required). |
+| **YC_SA_JSON_KEY** | Локально: `terraform output -raw ci_sa_key_json` | **Важно:** нужен именно **JSON** ключа, не PEM. Команда `terraform output -raw ci_sa_key_private` выдаёт ключ в формате PEM (текст с `-----BEGIN PRIVATE KEY-----`) — для логина в реестр он **не подходит**. Используйте `terraform output -raw ci_sa_key_json` — вывод будет в формате JSON одной строкой (`id`, `service_account_id`, `created_at`, `private_key`). Скопировать целиком в значение секрета. Если при логине появляется *Password required* или *Password is invalid - must be JSON key* — см. [ниже](#github-actions-error-password-required). |
 | **VM_HOST** | Локально: `terraform output -raw vm_public_ip` | Публичный IP VM, например `84.201.xxx.xxx`. Добавить в **Repository secrets**. |
 | **VM_USER** | Фиксированное значение | Строка `deploy` — пользователь на VM, созданный Terraform. Добавить в **Repository secrets**. |
 | **VM_SSH_PRIVATE_KEY** | Файл приватного ключа, которым подключаетесь к VM по SSH | **Содержимое** файла (не путь). Обычно `cat ~/.ssh/id_ed25519` — скопировать весь вывод, включая строки `-----BEGIN ... KEY-----` и `-----END ... KEY-----`. Если ключ создавался по шагу «Быстрый старт» (ssh-keygen), используйте тот же ключ, публичная часть которого передана в `ssh_public_key` в Terraform. Добавить в **Repository secrets**. |
@@ -243,8 +252,9 @@ cd infrastructure/yandex-cloud
 # ID реестра (одна строка)
 terraform output -raw container_registry_id
 
-# Приватный ключ SA (JSON одной строкой — скопировать полностью в секрет YC_SA_JSON_KEY)
-terraform output -raw ci_sa_key_private
+# Ключ SA в формате JSON для реестра (скопировать полностью в секрет YC_SA_JSON_KEY)
+# Не использовать ci_sa_key_private — это PEM, для docker login json_key нужен именно JSON
+terraform output -raw ci_sa_key_json
 
 # Публичный IP VM
 terraform output -raw vm_public_ip
@@ -419,6 +429,7 @@ yc managed-postgresql cluster restore \
 | **docker pull: "unable to get credentials" / "error getting credentials"** (образы cr.yandex) | На VM не настроена авторизация в Container Registry. См. ниже [Docker: авторизация в CR на VM](#docker-авторизация-в-cr-на-vm). |
 | **docker pull: "repository ... not found"** (cr.yandex/...) | Образы ещё не загружены в реестр. Нужно один раз собрать и отправить их: с **локальной машины** (где есть исходный код и Docker) выполнить `VM_HOST=<IP> REGISTRY_ID=<id> ./scripts/deploy.sh`. На локальной машине предварительно: `yc container registry configure-docker` (авторизация для пуша). |
 | **GitHub Actions: "Error: Password required"** (docker/login-action, cr.yandex) | Секрет `YC_SA_JSON_KEY` пустой или не виден job'у. См. ниже [GitHub Actions: Error Password required](#github-actions-error-password-required). |
+| **GitHub Actions: "Password is invalid - must be JSON key"** (cr.yandex) | В `YC_SA_JSON_KEY` должен быть **полный** JSON ключа SA (одна строка). См. [GitHub Actions: Password is invalid (JSON key)](#github-actions-password-is-invalid-json-key). |
 | Образы не пуллятся | После настройки авторизации: `yc container registry configure-docker` (на VM под пользователем, для которого настроен yc). |
 
 ### GitHub Actions: Error Password required
@@ -429,13 +440,35 @@ yc managed-postgresql cluster restore \
 
 1. **Имя секрета** — ровно `YC_SA_JSON_KEY` (регистр важен).
 2. **Где лежит секрет:** job «Build & Push» использует `environment: production`. Секрет должен быть либо в **Repository secrets** (Settings → Secrets and variables → Actions), либо в **Environment secrets** окружения **production** (Settings → Environments → production → Environment secrets). Если окружение `production` только создали и секреты добавляли в Environment — убедитесь, что сохранили именно в Environment secrets этого окружения. Проще всего добавить `YC_SA_JSON_KEY` и `YC_REGISTRY_ID` в **Repository secrets** — тогда они точно доступны.
-3. **Значение не пустое:** заново скопировать ключ и вставить в секрет:
+3. **Значение не пустое и именно JSON:** использовать `terraform output -raw ci_sa_key_json` (не `ci_sa_key_private` — тот выдаёт PEM, реестр его не принимает):
    ```bash
    cd infrastructure/yandex-cloud
-   terraform output -raw ci_sa_key_private
+   terraform output -raw ci_sa_key_json
    ```
-   Вывод — одна строка JSON (начинается с `{"id":...`). Скопировать **целиком** и вставить в значение секрета `YC_SA_JSON_KEY` (без лишних пробелов/переносов в начале).
+   Вывод — одна строка JSON (начинается с `{"id":...`). Скопировать **целиком** и вставить в значение секрета `YC_SA_JSON_KEY`.
 4. **Обновить секрет:** после правки в GitHub нажмите «Update secret». Затем перезапустите failed workflow (Re-run all jobs) или создайте тег заново.
+
+### GitHub Actions: Password is invalid (JSON key)
+
+Ошибка **"Password is invalid - must be JSON key"** при логине в `cr.yandex` означает, что реестр не принимает значение секрета `YC_SA_JSON_KEY`: нужен именно **полный JSON ключа** сервисного аккаунта в формате Yandex ([документация](https://cloud.yandex.ru/docs/container-registry/operations/authentication#sa-json)).
+
+**Типичные причины:**
+
+1. **Вставлен не весь ключ** — только поле `private_key` (PEM) или обрезанный JSON. Нужен **целиком** объект с полями `id`, `service_account_id`, `private_key`, `created_at`.
+2. **Ключ с переносами строк** — при копировании из файла или «красивого» JSON реестр может отклонить формат. Нужна **одна строка** без переносов внутри.
+
+**Как исправить:**
+
+Заново получить ключ **в формате JSON** (не PEM) и вставить его в секрет:
+
+```bash
+cd infrastructure/yandex-cloud
+terraform output -raw ci_sa_key_json
+```
+
+Команда `ci_sa_key_private` выдаёт ключ в формате PEM (строки `-----BEGIN PRIVATE KEY-----` и т.д.) — для входа в реестр с логином `json_key` нужен **полный JSON**, его даёт только `ci_sa_key_json`. Скопировать **весь** вывод (начинается с `{"id":"...`, заканчивается `...}`) и вставить в значение секрета `YC_SA_JSON_KEY` в GitHub. Не добавлять переводы строк в начале/конце.
+
+После обновления секрета перезапустить workflow (Re-run all jobs).
 
 ### Docker: авторизация в CR на VM
 
