@@ -4,10 +4,14 @@ on:
   push:
     branches:
       - main
+      - develop
     paths:
       - projects/backend/**
       - .github/workflows/backend-tests.yml
   pull_request:
+    branches:
+      - main
+      - develop
     paths:
       - projects/backend/**
       - .github/workflows/backend-tests.yml

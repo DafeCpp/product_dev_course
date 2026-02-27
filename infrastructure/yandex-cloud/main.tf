@@ -4,10 +4,11 @@
 #
 # Использование:
 #   1. Установить Yandex Cloud CLI и Terraform
-#   2. Заполнить terraform.tfvars (скопировать из terraform.tfvars.example)
-#   3. terraform init
-#   4. terraform plan
-#   5. terraform apply
+#   2. (При недоступности registry.terraform.io) Настроить ~/.terraformrc с network_mirror
+#      https://terraform-mirror.yandexcloud.net/ — см. docs/deployment-yandex-cloud.md
+#   3. Заполнить terraform.tfvars (скопировать из terraform.tfvars.example)
+#   4. terraform init
+#   5. terraform plan && terraform apply
 #
 # Создаёт:
 #   - VPC + подсеть

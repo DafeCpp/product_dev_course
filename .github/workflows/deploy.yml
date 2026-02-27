@@ -1,17 +1,14 @@
-name: Build & Deploy
+name: Release (Build & Deploy)
 
+# Сборка и деплой выполняются только при создании релизного тега v* (например v1.0.0).
+# См. docs/branching-model.md и docs/deployment-yandex-cloud.md.
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      services:
-        description: "Services to build (comma-separated, or 'all')"
-        required: false
-        default: "all"
+    tags: ["v*"]
 
 env:
   CR_REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
+  RELEASE_TAG: ${{ github.ref_name }}
 
 jobs:
   # ==========================================
@@ -134,8 +131,8 @@ jobs:
         with:
           images: ${{ env.CR_REGISTRY }}/${{ matrix.service }}
           tags: |
-            type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ env.RELEASE_TAG }}
+            type=raw,value=latest
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -162,11 +159,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set IMAGE_TAG
-        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          IMAGE_TAG: ${{ env.RELEASE_TAG }}
+          CR_REGISTRY: ${{ env.CR_REGISTRY }}
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
@@ -210,3 +207,25 @@ jobs:
           done
           echo "Health check failed after 10 attempts"
           exit 1
+
+  # ==========================================
+  # 4. Создание GitHub Release
+  # ==========================================
+  create-release:
+    name: Create GitHub Release
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Release ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          draft: false

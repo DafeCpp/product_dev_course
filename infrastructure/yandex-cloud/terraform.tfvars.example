@@ -21,9 +21,13 @@ vm_preemptible       = false  # true = прерываемая VM (дешевле
 # --- PostgreSQL ---
 pg_resource_preset        = "s2.micro"  # 2 vCPU, 8 GB RAM
 pg_disk_size_gb           = 20
+pg_admin_username        = "cluster_admin"  # не используйте "postgres" — зарезервировано в Yandex
 pg_admin_password         = "CHANGE_ME_strong_password_1"
 pg_auth_db_password       = "CHANGE_ME_strong_password_2"
 pg_experiment_db_password = "CHANGE_ME_strong_password_3"
+
+# --- IAM (если Terraform не имеет прав на управление IAM каталога — см. Troubleshooting) ---
+# manage_folder_iam = false
 
 # --- Application ---
 jwt_secret  = "CHANGE_ME_random_secret_at_least_32_chars"

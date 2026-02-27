@@ -14,6 +14,12 @@ variable "folder_id" {
   type        = string
 }
 
+variable "manage_folder_iam" {
+  description = "Create folder IAM bindings for VM and CI service accounts. Set to false if Terraform identity has no permission to manage folder IAM (then grant container-registry.images.puller/pusher to SAs manually)."
+  type        = bool
+  default     = true
+}
+
 variable "zone" {
   description = "Yandex Cloud availability zone"
   type        = string
@@ -128,8 +134,14 @@ variable "pg_disk_type" {
   default     = "network-ssd"
 }
 
+variable "pg_admin_username" {
+  description = "PostgreSQL admin username. Do not use 'postgres' — it is reserved in Yandex Managed PostgreSQL."
+  type        = string
+  default     = "cluster_admin"
+}
+
 variable "pg_admin_password" {
-  description = "PostgreSQL admin (postgres) password"
+  description = "PostgreSQL admin user password"
   type        = string
   sensitive   = true
 }

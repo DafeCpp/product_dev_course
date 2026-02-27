@@ -89,6 +89,18 @@ cmake -B build && cmake --build build
 ./build/tests
 ```
 
+### Релизы (main / develop)
+
+Ветки **main** (продакшен) и **develop** (интеграция). Деплой в Yandex Cloud — только по тегу `v*` на main:
+
+```bash
+git checkout main && git pull origin main
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+Подробнее: `docs/branching-model.md`, `docs/deployment-yandex-cloud.md`.
+
 ---
 
 ## Tech Stack
@@ -130,6 +142,8 @@ cmake -B build && cmake --build build
 | `Makefile` | Все команды сборки/тестирования |
 | `docker-compose.yml` | Конфигурация сервисов (порты, переменные) |
 | `.env.example` | Шаблон переменных окружения |
+| `docs/branching-model.md` | Модель веток main/develop и процесс релизов |
+| `docs/deployment-yandex-cloud.md` | Деплой в Yandex Cloud, CI/CD, первый релиз |
 
 ---
 

@@ -36,10 +36,11 @@ resource "yandex_mdb_postgresql_cluster" "main" {
 }
 
 # --- Users ---
+# Имя "postgres" в Yandex Managed PostgreSQL зарезервировано; используем var.pg_admin_username (по умолчанию cluster_admin).
 
 resource "yandex_mdb_postgresql_user" "admin" {
   cluster_id = yandex_mdb_postgresql_cluster.main.id
-  name       = "postgres"
+  name       = var.pg_admin_username
   password   = var.pg_admin_password
 }
 
