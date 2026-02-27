@@ -51,9 +51,22 @@ output "ci_sa_key_id" {
 }
 
 output "ci_sa_key_private" {
-  description = "CI service account private key (for GitHub Secrets)"
+  description = "CI service account private key (PEM format, not for docker login json_key)"
   value       = yandex_iam_service_account_key.ci_sa_key.private_key
   sensitive   = true
+}
+
+# Полный JSON ключа в формате, который ожидает Container Registry (логин json_key).
+# Используйте этот output для секрета YC_SA_JSON_KEY в GitHub Actions.
+output "ci_sa_key_json" {
+  description = "CI SA key as full JSON for Container Registry (username json_key). Use for GitHub secret YC_SA_JSON_KEY."
+  value = jsonencode({
+    id                 = yandex_iam_service_account_key.ci_sa_key.id
+    service_account_id = yandex_iam_service_account_key.ci_sa_key.service_account_id
+    created_at         = yandex_iam_service_account_key.ci_sa_key.created_at
+    private_key        = yandex_iam_service_account_key.ci_sa_key.private_key
+  })
+  sensitive = true
 }
 
 output "ssh_connect_command" {

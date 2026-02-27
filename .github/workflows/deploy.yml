@@ -95,6 +95,7 @@ jobs:
     name: Build & Push Images
     needs: [test-auth-service, test-experiment-service, test-frontend]
     runs-on: ubuntu-latest
+    environment: production  # нужен для доступа к YC_SA_JSON_KEY и YC_REGISTRY_ID (environment secrets)
     strategy:
       matrix:
         include:
@@ -119,12 +120,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check Yandex Registry secrets
+        run: |
+          if [ -z "${{ secrets.YC_REGISTRY_ID }}" ]; then
+            echo "::error::YC_REGISTRY_ID is not set. Add it in Settings → Secrets and variables → Actions (Repository secrets) or in Environment 'production' → Environment secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.YC_SA_JSON_KEY }}" ]; then
+            echo "::error::YC_SA_JSON_KEY is not set. Add it in Settings → Secrets and variables → Actions (Repository secrets) or in Environment 'production' → Environment secrets. Value = full JSON from: terraform output -raw ci_sa_key_json"
+            exit 1
+          fi
+          echo "YC_REGISTRY_ID and YC_SA_JSON_KEY are set."
+
+      - name: Normalize YC_SA_JSON_KEY to single line
+        run: |
+          COMPACT=$(python3 -c "import json,os; d=json.loads(os.environ['KEY']); print(json.dumps(d, separators=(',', ':')))")
+          echo "YC_SA_JSON_KEY_COMPACT<<EOF" >> $GITHUB_ENV
+          echo "$COMPACT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          KEY: ${{ secrets.YC_SA_JSON_KEY }}
+
       - name: Login to Yandex Container Registry
         uses: docker/login-action@v3
         with:
           registry: cr.yandex
           username: json_key
-          password: ${{ secrets.YC_SA_JSON_KEY }}
+          password: ${{ env.YC_SA_JSON_KEY_COMPACT }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
