@@ -151,6 +151,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build backend base image
+        run: |
+          docker buildx build \
+            --file ./projects/backend/Dockerfile.base \
+            --tag backend-base:local \
+            --cache-from type=gha --cache-to type=gha,mode=max \
+            ./projects/backend
+        if: ${{ matrix.service == 'auth-service' || matrix.service == 'experiment-service' || matrix.service == 'telemetry-ingest-service' }}
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
