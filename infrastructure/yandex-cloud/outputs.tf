@@ -57,13 +57,16 @@ output "ci_sa_key_private" {
 }
 
 # Полный JSON ключа в формате, который ожидает Container Registry (логин json_key).
-# Используйте этот output для секрета YC_SA_JSON_KEY в GitHub Actions.
+# Формат совпадает с выводом `yc iam key create --output key.json`: id, service_account_id,
+# created_at, key_algorithm, public_key, private_key (все поля обязательны для CR).
 output "ci_sa_key_json" {
   description = "CI SA key as full JSON for Container Registry (username json_key). Use for GitHub secret YC_SA_JSON_KEY."
   value = jsonencode({
     id                 = yandex_iam_service_account_key.ci_sa_key.id
     service_account_id = yandex_iam_service_account_key.ci_sa_key.service_account_id
     created_at         = yandex_iam_service_account_key.ci_sa_key.created_at
+    key_algorithm      = yandex_iam_service_account_key.ci_sa_key.key_algorithm
+    public_key         = yandex_iam_service_account_key.ci_sa_key.public_key
     private_key        = yandex_iam_service_account_key.ci_sa_key.private_key
   })
   sensitive = true

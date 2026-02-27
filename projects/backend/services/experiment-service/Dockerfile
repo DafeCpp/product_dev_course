@@ -1,4 +1,4 @@
-FROM backend-base:local AS base
+FROM backend-base:local AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
