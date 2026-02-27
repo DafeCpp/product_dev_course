@@ -98,6 +98,14 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space (runner)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af 2>/dev/null || true
+          df -h
       - name: Normalize YC_SA_JSON_KEY
         run: |
           COMPACT=$(python3 -c "import json,os; d=json.loads(os.environ['KEY']); print(json.dumps(d, separators=(',', ':')))")
@@ -156,7 +164,14 @@ jobs:
             dockerfile: Dockerfile
     steps:
       - uses: actions/checkout@v4
-
+      - name: Free disk space (runner)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af 2>/dev/null || true
+          df -h
       - name: Check Yandex Registry secrets
         run: |
           if [ -z "${{ secrets.YC_REGISTRY_ID }}" ]; then

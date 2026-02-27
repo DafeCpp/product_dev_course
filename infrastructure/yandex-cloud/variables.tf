@@ -73,9 +73,9 @@ variable "vm_core_fraction" {
 }
 
 variable "vm_disk_size_gb" {
-  description = "Boot disk size in GB"
+  description = "Boot disk size in GB (Docker images + logs)"
   type        = number
-  default     = 30
+  default     = 90
 }
 
 variable "vm_image_id" {

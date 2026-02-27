@@ -81,9 +81,9 @@ yc config list
 
 **Terraform (>= 1.5):**
 
-- **Вариант A — APT (Ubuntu/Debian):**  
+- **Вариант A — APT (Ubuntu/Debian):**
   [Официальная инструкция](https://developer.hashicorp.com/terraform/install) — добавьте репозиторий HashiCorp и установите `terraform`.
-- **Вариант B — бинарник:**  
+- **Вариант B — бинарник:**
   Скачайте архив для Linux AMD64 с [releases.hashicorp.com/terraform](https://releases.hashicorp.com/terraform/), распакуйте и поместите `terraform` в каталог из `PATH` (например `~/bin` или `/usr/local/bin`).
 
 ```bash
@@ -113,7 +113,7 @@ yc config list
 
 ### 2. Создание инфраструктуры (Terraform)
 
-**Настройка провайдера (рекомендуется, если registry.terraform.io недоступен по гео).**  
+**Настройка провайдера (рекомендуется, если registry.terraform.io недоступен по гео).**
 Файл `~/.terraformrc` должен лежать в домашнем каталоге пользователя (например `/home/user/` или `C:\Users\user\`). Если раньше был конфиг с реестром HashiCorp, сохраните его: `mv ~/.terraformrc ~/.terraformrc.old`. Затем создайте или откройте `~/.terraformrc` и добавьте:
 
 ```hcl
@@ -428,7 +428,7 @@ yc managed-postgresql cluster restore \
 | **experiment-service: functionality not supported under the current "apache" license** (TimescaleDB) | В Yandex MDB используется TimescaleDB с лицензией Apache 2.0: компрессия и continuous aggregates недоступны. Миграции 001/002 принудительно пропускают эти шаги (DO ... EXCEPTION). Сервис должен стартовать; экспорт телеметрии с агрегацией 1m на Yandex недоступен (нет материализованного представления `telemetry_1m`). |
 | Нет подключения к БД | Проверить Security Group, `sslmode=verify-full`, сертификат |
 | 502 Bad Gateway | Подождать 30-60 сек, проверить healthcheck |
-| Нет места на диске | `docker system prune -a` |
+| Нет места на диске | Краткосрочно: на VM `docker system prune -a`. Надолго: увеличить диск ВМ — в `terraform.tfvars` задать `vm_disk_size_gb = 90` (или больше), затем `terraform apply` (ВМ может перезапуститься). По умолчанию теперь 50 ГБ. |
 | **docker pull: "unable to get credentials" / "error getting credentials"** (образы cr.yandex) | На VM не настроена авторизация в Container Registry. См. ниже [Docker: авторизация в CR на VM](#docker-авторизация-в-cr-на-vm). |
 | **docker pull: "repository ... not found"** (cr.yandex/...) | Образы ещё не загружены в реестр. Нужно один раз собрать и отправить их: с **локальной машины** (где есть исходный код и Docker) выполнить `VM_HOST=<IP> REGISTRY_ID=<id> ./scripts/deploy.sh`. На локальной машине предварительно: `yc container registry configure-docker` (авторизация для пуша). |
 | **GitHub Actions: "Error: Password required"** (docker/login-action, cr.yandex) | Секрет `YC_SA_JSON_KEY` пустой или не виден job'у. См. ниже [GitHub Actions: Error Password required](#github-actions-error-password-required). |
@@ -481,7 +481,7 @@ terraform output -raw ci_sa_key_json
 
 1. **Проверить права SA VM.** В консоли Yandex Cloud убедиться, что сервисному аккаунту VM (имя вида `experiment-tracking-vm-sa`) выдана роль **Пользователь образа** (или `container-registry.images.puller`) на реестр или каталог (если при `manage_folder_iam = false` вы давали права вручную).
 
-2. **Создать ключ сервисного аккаунта VM и настроить yc на VM.**  
+2. **Создать ключ сервисного аккаунта VM и настроить yc на VM.**
    На своей машине (где есть `yc` с правами на каталог):
    ```bash
    # Узнать ID сервисного аккаунта VM (из Terraform или консоли)
