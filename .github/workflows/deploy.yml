@@ -259,10 +259,16 @@ jobs:
             # Проверяем статус
             docker compose -f docker-compose.prod.yml ps
 
+            # Падаем, если какой-то контейнер в Restarting (тогда CI покажет логи)
+            if docker compose -f docker-compose.prod.yml ps -a 2>/dev/null | grep -q "Restarting"; then
+              echo "One or more containers are Restarting; failing deploy so logs are printed."
+              exit 1
+            fi
+
             # Чистим старые образы
             docker image prune -f
 
-      - name: Show auth-service logs on deploy failure
+      - name: Show service logs on deploy failure
         if: failure() && steps.deploy.outcome == 'failure'
         uses: appleboy/ssh-action@v1
         with:
@@ -276,6 +282,8 @@ jobs:
             docker compose -f docker-compose.prod.yml ps -a
             echo "=== auth-service logs (last 100 lines) ==="
             docker compose -f docker-compose.prod.yml logs --tail=100 auth-service || true
+            echo "=== experiment-service logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 experiment-service || true
 
       - name: Health check
         run: |
