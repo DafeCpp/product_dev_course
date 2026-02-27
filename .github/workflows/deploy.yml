@@ -56,8 +56,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql
           PG_MAJOR=$(pg_config --version | grep -oP '\d+' | head -1)
-          # Pin TimescaleDB to 2.24.x: 2.25+ requires postgresql-16 >= 16.13 (Ubuntu 24.04 has 16.12).
-          sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}=2.24.0"
+          # Pin TimescaleDB to 2.19.x: newer versions require postgresql-16 >= 16.13 (Ubuntu 24.04 has 16.12).
+          sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}=2.19.0~ubuntu24.04"
       - uses: snok/install-poetry@v1
         with:
           version: 1.8.3
