@@ -31,8 +31,9 @@ psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     GRANT ALL PRIVILEGES ON DATABASE auth_db TO $AUTH_DB_USER;
 EOSQL
 
-# Grant privileges on auth_db schema (connect to auth_db first)
+# Grant privileges on auth_db schema and create pgcrypto (superuser only)
 psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "auth_db" <<-EOSQL
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
     GRANT ALL ON SCHEMA public TO $AUTH_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $AUTH_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $AUTH_DB_USER;
@@ -57,8 +58,9 @@ psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     GRANT ALL PRIVILEGES ON DATABASE experiment_db TO $EXPERIMENT_DB_USER;
 EOSQL
 
-# Grant privileges on experiment_db schema
+# Grant privileges on experiment_db schema and create pgcrypto (superuser only)
 psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "experiment_db" <<-EOSQL
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
     GRANT ALL ON SCHEMA public TO $EXPERIMENT_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $EXPERIMENT_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $EXPERIMENT_DB_USER;

@@ -424,6 +424,7 @@ yc managed-postgresql cluster restore \
 | **user name 'postgres' is not allowed** | В Yandex Managed PostgreSQL имя `postgres` зарезервировано. Используется переменная `pg_admin_username` (по умолчанию `cluster_admin`). Если в state уже был пользователь с именем postgres: `terraform state rm yandex_mdb_postgresql_user.admin`, затем снова `terraform apply`. |
 | Контейнер не стартует | `docker compose logs <service>` |
 | **dependency failed: container auth-service is unhealthy** | На VM проверить: 1) `AUTH_DATABASE_URL` в `.env` и доступность БД (Security Group, сертификат `./certs/yandex-ca.pem`); 2) `JWT_SECRET` задан; 3) `docker compose -f docker-compose.prod.yml logs auth-service` — по логам увидеть ошибку (подключение к БД, SSL и т.д.). При падении деплоя в CI шаг «Show auth-service logs on deploy failure» выведет логи. |
+| **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db` и `experiment_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db). |
 | Нет подключения к БД | Проверить Security Group, `sslmode=verify-full`, сертификат |
 | 502 Bad Gateway | Подождать 30-60 сек, проверить healthcheck |
 | Нет места на диске | `docker system prune -a` |

@@ -65,6 +65,10 @@ resource "yandex_mdb_postgresql_database" "auth_db" {
   name       = "auth_db"
   owner      = yandex_mdb_postgresql_user.auth_user.name
 
+  extension {
+    name = "pgcrypto"
+  }
+
   depends_on = [yandex_mdb_postgresql_user.auth_user]
 }
 
@@ -75,6 +79,9 @@ resource "yandex_mdb_postgresql_database" "experiment_db" {
 
   extension {
     name = "timescaledb"
+  }
+  extension {
+    name = "pgcrypto"
   }
 
   depends_on = [yandex_mdb_postgresql_user.experiment_user]

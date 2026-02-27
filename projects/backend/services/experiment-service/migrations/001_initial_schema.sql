@@ -1,10 +1,8 @@
 -- 001_initial_schema.sql
 -- Initial Experiment Service schema (single init; includes TimescaleDB telemetry + later additive migrations).
 
+-- pgcrypto и timescaledb создаются при создании БД (Terraform / init script), не миграцией.
 BEGIN;
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$

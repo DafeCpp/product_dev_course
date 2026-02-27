@@ -1,9 +1,8 @@
 -- 001_initial_schema.sql
 -- Initial Auth Service schema with default admin user.
 
+-- pgcrypto создаётся при создании БД (Terraform / init script), не миграцией (нет прав у app user).
 BEGIN;
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
