@@ -49,15 +49,18 @@ jobs:
       - name: Install PostgreSQL + TimescaleDB
         run: |
           UBUNTU_CODENAME=$(lsb_release -cs)
+          # Use PGDG for postgresql-16 >= 16.13 (TimescaleDB loader requires it; Ubuntu has 16.12).
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+            sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${UBUNTU_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
           echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ ${UBUNTU_CODENAME} main" \
             | sudo tee /etc/apt/sources.list.d/timescaledb.list
           curl -sL https://packagecloud.io/timescale/timescaledb/gpgkey | \
             gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg >/dev/null
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql
-          PG_MAJOR=$(pg_config --version | grep -oP '\d+' | head -1)
-          # Pin TimescaleDB to 2.24.x: 2.25+ requires postgresql-16 >= 16.13 (Ubuntu 24.04 has 16.12).
-          sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}=2.24.0"
+          sudo apt-get install -y --no-install-recommends postgresql-16
+          sudo apt-get install -y --no-install-recommends timescaledb-2-postgresql-16
       - uses: snok/install-poetry@v1
         with:
           version: 1.8.3
