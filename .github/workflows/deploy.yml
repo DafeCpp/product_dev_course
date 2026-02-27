@@ -241,7 +241,8 @@ jobs:
             # Обновляем тег образа
             sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 
-            # Логинимся в Container Registry
+            # Логинимся в Container Registry (yc часто в $HOME/yandex-cloud/bin при неинтерактивном SSH)
+            export PATH="${HOME}/yandex-cloud/bin:${PATH}"
             yc container registry configure-docker
 
             # Пуллим новые образы
