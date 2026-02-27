@@ -1,4 +1,5 @@
-FROM backend-base:local AS production
+ARG BACKEND_BASE_IMAGE=backend-base:local
+FROM ${BACKEND_BASE_IMAGE} AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

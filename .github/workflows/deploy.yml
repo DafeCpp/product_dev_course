@@ -89,11 +89,48 @@ jobs:
       - run: npm test -- --run
 
   # ==========================================
-  # 2. Сборка и пуш Docker-образов
+  # 2a. Базовый образ бэкенда (нужен для auth/experiment/telemetry-ingest)
+  # ==========================================
+  build-backend-base:
+    name: Build Backend Base
+    needs: [test-auth-service, test-experiment-service, test-frontend]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Normalize YC_SA_JSON_KEY
+        run: |
+          COMPACT=$(python3 -c "import json,os; d=json.loads(os.environ['KEY']); print(json.dumps(d, separators=(',', ':')))")
+          echo "YC_SA_JSON_KEY_COMPACT<<EOF" >> $GITHUB_ENV
+          echo "$COMPACT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          KEY: ${{ secrets.YC_SA_JSON_KEY }}
+      - name: Login to Yandex Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: cr.yandex
+          username: json_key
+          password: ${{ env.YC_SA_JSON_KEY_COMPACT }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push backend base
+        uses: docker/build-push-action@v6
+        with:
+          context: ./projects/backend
+          file: ./projects/backend/Dockerfile.base
+          target: base
+          push: true
+          tags: ${{ env.CR_REGISTRY }}/backend-base:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================
+  # 2b. Сборка и пуш Docker-образов сервисов
   # ==========================================
   build-and-push:
     name: Build & Push Images
-    needs: [test-auth-service, test-experiment-service, test-frontend]
+    needs: [build-backend-base]
     runs-on: ubuntu-latest
     environment: production  # нужен для доступа к YC_SA_JSON_KEY и YC_REGISTRY_ID (environment secrets)
     strategy:
@@ -151,15 +188,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build backend base image
-        run: |
-          docker buildx build \
-            --file ./projects/backend/Dockerfile.base \
-            --tag backend-base:local \
-            --cache-from type=gha --cache-to type=gha,mode=max \
-            ./projects/backend
-        if: ${{ matrix.service == 'auth-service' || matrix.service == 'experiment-service' || matrix.service == 'telemetry-ingest-service' }}
-
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -177,6 +205,8 @@ jobs:
           target: production
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            BACKEND_BASE_IMAGE=${{ env.CR_REGISTRY }}/backend-base:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
