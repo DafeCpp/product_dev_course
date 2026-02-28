@@ -244,9 +244,12 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" "test -f /opt/experiment-tracking/.env" && echo ".env already exists" && exit 0
-          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key env.production.example "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/.env"
-          echo "Created .env from env.production.example — edit it on the VM and re-run deploy if needed."
+          if ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" "test -f /opt/experiment-tracking/.env"; then
+            echo ".env already exists"
+          else
+            scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key env.production.example "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/.env"
+            echo "Created .env from env.production.example — edit it on the VM and re-run deploy if needed."
+          fi
 
       - name: Deploy via SSH
         id: deploy
