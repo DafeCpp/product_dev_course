@@ -2,7 +2,7 @@
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
-.PHONY: dev dev-up dev-down dev-restart dev-rebuild dev-rebuild-changed dev-logs dev-fix dev-clean grafana-reset-password
+.PHONY: dev dev-up dev-down dev-restart dev-rebuild dev-rebuild-changed dev-logs dev-status dev-fix dev-clean grafana-reset-password
 
 BACKEND_SERVICES_DIR := projects/backend/services
 BACKEND_DIR := projects/backend/services/experiment-service
@@ -23,6 +23,8 @@ FRONTEND_NODE_IMAGE ?= node:24-alpine
 DOCKER_BUILDKIT ?= 1
 COMPOSE_DOCKER_CLI_BUILD ?= 1
 DOCKER_BUILD_ENV := DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) COMPOSE_DOCKER_CLI_BUILD=$(COMPOSE_DOCKER_CLI_BUILD)
+# Таймаут HTTP-запросов к Docker daemon (секунды). Увеличьте при медленной сборке/запуске контейнеров.
+COMPOSE_HTTP_TIMEOUT ?= 120
 BACKEND_BASE_DOCKERFILE := projects/backend/Dockerfile.base
 BACKEND_BASE_HASH := $(shell sha256sum $(BACKEND_BASE_DOCKERFILE) 2>/dev/null | awk '{print $$1}')
 BACKEND_DEV_SERVICES := auth-service experiment-service telemetry-ingest-service
@@ -283,7 +285,7 @@ dev-up:
 		echo "⚠️  Файл .env не найден. Создаю из примера..."; \
 		cp env.docker.example .env 2>/dev/null || true; \
 	fi
-	docker-compose up -d postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+	COMPOSE_HTTP_TIMEOUT=$(COMPOSE_HTTP_TIMEOUT) docker-compose up -d postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
 	@echo ""
 	@echo "✅ Сервисы запущены!"
 	@echo "🌐 Фронтенд доступен на http://localhost:3000"
@@ -473,6 +475,11 @@ backend-base-check:
 dev-logs:
 	@echo "Просмотр логов всех dev-сервисов (Ctrl+C для выхода)"
 	docker-compose logs -f --tail=50 postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+
+# Статус dev-сервисов (какие контейнеры запущены)
+dev-status:
+	@echo "Статус dev-сервисов:"
+	@docker-compose ps postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || docker-compose ps
 
 # Исправление ошибки ContainerConfig (удаление проблемных контейнеров и пересоздание)
 dev-fix:
