@@ -129,6 +129,21 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
       cJSON_AddNumberToObject(reply, "imu_sample_rate_hz",
                               cfg.imu_sample_rate_hz);
       cJSON_AddNumberToObject(reply, "mode", cfg.mode);
+      // PID-коэффициенты
+      cJSON_AddNumberToObject(reply, "pid_kp", cfg.pid_kp);
+      cJSON_AddNumberToObject(reply, "pid_ki", cfg.pid_ki);
+      cJSON_AddNumberToObject(reply, "pid_kd", cfg.pid_kd);
+      cJSON_AddNumberToObject(reply, "pid_max_integral", cfg.pid_max_integral);
+      cJSON_AddNumberToObject(reply, "pid_max_correction",
+                              cfg.pid_max_correction);
+      cJSON_AddNumberToObject(reply, "steer_to_yaw_rate_dps",
+                              cfg.steer_to_yaw_rate_dps);
+      cJSON_AddNumberToObject(reply, "fade_ms", cfg.fade_ms);
+      // Pitch compensation (slope stabilization)
+      cJSON_AddBoolToObject(reply, "pitch_comp_enabled", cfg.pitch_comp_enabled);
+      cJSON_AddNumberToObject(reply, "pitch_comp_gain", cfg.pitch_comp_gain);
+      cJSON_AddNumberToObject(reply, "pitch_comp_max_correction",
+                              cfg.pitch_comp_max_correction);
       ws_send_reply(req, reply);
       cJSON_Delete(reply);
     }
@@ -137,46 +152,95 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
 
     // Обновить параметры из JSON (если указаны)
     cJSON* enabled = cJSON_GetObjectItem(json, "enabled");
-    if (enabled && cJSON_IsBool(enabled)) {
-      cfg.enabled = cJSON_IsTrue(enabled);
-    }
+    if (enabled && cJSON_IsBool(enabled)) cfg.enabled = cJSON_IsTrue(enabled);
 
     cJSON* beta = cJSON_GetObjectItem(json, "madgwick_beta");
-    if (beta && cJSON_IsNumber(beta)) {
-      cfg.madgwick_beta = (float)beta->valuedouble;
-    }
+    if (beta && cJSON_IsNumber(beta)) cfg.madgwick_beta = (float)beta->valuedouble;
 
     cJSON* cutoff = cJSON_GetObjectItem(json, "lpf_cutoff_hz");
-    if (cutoff && cJSON_IsNumber(cutoff)) {
-      cfg.lpf_cutoff_hz = (float)cutoff->valuedouble;
-    }
+    if (cutoff && cJSON_IsNumber(cutoff)) cfg.lpf_cutoff_hz = (float)cutoff->valuedouble;
 
     cJSON* mode = cJSON_GetObjectItem(json, "mode");
-    if (mode && cJSON_IsNumber(mode)) {
-      cfg.mode = (uint8_t)mode->valueint;
-    }
+    if (mode && cJSON_IsNumber(mode)) cfg.mode = (uint8_t)mode->valueint;
+
+    // PID-коэффициенты (опциональные)
+    cJSON* kp = cJSON_GetObjectItem(json, "pid_kp");
+    if (kp && cJSON_IsNumber(kp)) cfg.pid_kp = (float)kp->valuedouble;
+
+    cJSON* ki = cJSON_GetObjectItem(json, "pid_ki");
+    if (ki && cJSON_IsNumber(ki)) cfg.pid_ki = (float)ki->valuedouble;
+
+    cJSON* kd = cJSON_GetObjectItem(json, "pid_kd");
+    if (kd && cJSON_IsNumber(kd)) cfg.pid_kd = (float)kd->valuedouble;
+
+    cJSON* max_integral = cJSON_GetObjectItem(json, "pid_max_integral");
+    if (max_integral && cJSON_IsNumber(max_integral))
+      cfg.pid_max_integral = (float)max_integral->valuedouble;
+
+    cJSON* max_corr = cJSON_GetObjectItem(json, "pid_max_correction");
+    if (max_corr && cJSON_IsNumber(max_corr))
+      cfg.pid_max_correction = (float)max_corr->valuedouble;
+
+    cJSON* steer_dps = cJSON_GetObjectItem(json, "steer_to_yaw_rate_dps");
+    if (steer_dps && cJSON_IsNumber(steer_dps))
+      cfg.steer_to_yaw_rate_dps = (float)steer_dps->valuedouble;
+
+    cJSON* fade = cJSON_GetObjectItem(json, "fade_ms");
+    if (fade && cJSON_IsNumber(fade))
+      cfg.fade_ms = (uint32_t)fade->valueint;
+
+    // Pitch compensation (slope stabilization)
+    cJSON* pitch_en = cJSON_GetObjectItem(json, "pitch_comp_enabled");
+    if (pitch_en && cJSON_IsBool(pitch_en))
+      cfg.pitch_comp_enabled = cJSON_IsTrue(pitch_en);
+
+    cJSON* pitch_gain = cJSON_GetObjectItem(json, "pitch_comp_gain");
+    if (pitch_gain && cJSON_IsNumber(pitch_gain))
+      cfg.pitch_comp_gain = (float)pitch_gain->valuedouble;
+
+    cJSON* pitch_max = cJSON_GetObjectItem(json, "pitch_comp_max_correction");
+    if (pitch_max && cJSON_IsNumber(pitch_max))
+      cfg.pitch_comp_max_correction = (float)pitch_max->valuedouble;
 
     bool ok = VehicleControlSetStabilizationConfig(cfg, true);
 
+    // Получить применённую конфигурацию (могут применяться mode defaults)
+    const auto& applied = VehicleControlGetStabilizationConfig();
     cJSON* reply = cJSON_CreateObject();
     if (reply) {
       cJSON_AddStringToObject(reply, "type", "set_stab_config_ack");
       cJSON_AddBoolToObject(reply, "ok", ok);
       if (ok) {
-        cJSON_AddBoolToObject(reply, "enabled", cfg.enabled);
-        cJSON_AddNumberToObject(reply, "madgwick_beta", cfg.madgwick_beta);
-        cJSON_AddNumberToObject(reply, "lpf_cutoff_hz", cfg.lpf_cutoff_hz);
-        cJSON_AddNumberToObject(reply, "mode", cfg.mode);
+        cJSON_AddBoolToObject(reply, "enabled", applied.enabled);
+        cJSON_AddNumberToObject(reply, "madgwick_beta", applied.madgwick_beta);
+        cJSON_AddNumberToObject(reply, "lpf_cutoff_hz", applied.lpf_cutoff_hz);
+        cJSON_AddNumberToObject(reply, "mode", applied.mode);
+        cJSON_AddNumberToObject(reply, "pid_kp", applied.pid_kp);
+        cJSON_AddNumberToObject(reply, "pid_ki", applied.pid_ki);
+        cJSON_AddNumberToObject(reply, "pid_kd", applied.pid_kd);
+        cJSON_AddNumberToObject(reply, "pid_max_correction",
+                                applied.pid_max_correction);
+        cJSON_AddNumberToObject(reply, "steer_to_yaw_rate_dps",
+                                applied.steer_to_yaw_rate_dps);
+        cJSON_AddNumberToObject(reply, "fade_ms", applied.fade_ms);
+        cJSON_AddBoolToObject(reply, "pitch_comp_enabled",
+                              applied.pitch_comp_enabled);
+        cJSON_AddNumberToObject(reply, "pitch_comp_gain",
+                                applied.pitch_comp_gain);
+        cJSON_AddNumberToObject(reply, "pitch_comp_max_correction",
+                                applied.pitch_comp_max_correction);
       }
       ws_send_reply(req, reply);
       cJSON_Delete(reply);
     }
 
-    ESP_LOGI(
-        TAG,
-        "WS: set_stab_config -> %s (enabled=%d beta=%.3f cutoff=%.1f mode=%d)",
-        ok ? "OK" : "FAILED", cfg.enabled, cfg.madgwick_beta, cfg.lpf_cutoff_hz,
-        cfg.mode);
+    ESP_LOGI(TAG,
+             "WS: set_stab_config -> %s "
+             "(enabled=%d beta=%.3f cutoff=%.1f mode=%d kp=%.3f ki=%.3f "
+             "kd=%.4f)",
+             ok ? "OK" : "FAILED", applied.enabled, applied.madgwick_beta,
+             applied.lpf_cutoff_hz, applied.mode, applied.pid_kp,
+             applied.pid_ki, applied.pid_kd);
   }
 }
 
