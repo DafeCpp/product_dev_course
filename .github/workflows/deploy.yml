@@ -257,11 +257,12 @@ jobs:
         env:
           IMAGE_TAG: ${{ env.RELEASE_TAG }}
           CR_REGISTRY: ${{ env.CR_REGISTRY }}
+          YC_SA_JSON_KEY: ${{ secrets.YC_SA_JSON_KEY }}
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
-          envs: IMAGE_TAG,CR_REGISTRY
+          envs: IMAGE_TAG,CR_REGISTRY,YC_SA_JSON_KEY
           command_timeout: 20m
           script: |
             set -euo pipefail
@@ -270,9 +271,8 @@ jobs:
             # Обновляем тег образа ( .env уже есть — создан выше при отсутствии)
             sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 
-            # Логинимся в Container Registry (yc часто в $HOME/yandex-cloud/bin при неинтерактивном SSH)
-            export PATH="${HOME}/yandex-cloud/bin:${PATH}"
-            yc container registry configure-docker
+            # Логинимся в Container Registry через ключ SA (без yc CLI)
+            echo "$YC_SA_JSON_KEY" | docker login cr.yandex -u json_key --password-stdin
 
             # Пуллим новые образы
             docker compose -f docker-compose.prod.yml pull
