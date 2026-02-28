@@ -239,6 +239,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Ensure .env exists on VM (copy template if missing)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" "test -f /opt/experiment-tracking/.env" && echo ".env already exists" && exit 0
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key env.production.example "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/.env"
+          echo "Created .env from env.production.example — edit it on the VM and re-run deploy if needed."
+
       - name: Deploy via SSH
         id: deploy
         uses: appleboy/ssh-action@v1
@@ -255,7 +264,7 @@ jobs:
             set -euo pipefail
             cd /opt/experiment-tracking
 
-            # Обновляем тег образа
+            # Обновляем тег образа ( .env уже есть — создан выше при отсутствии)
             sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 
             # Логинимся в Container Registry (yc часто в $HOME/yandex-cloud/bin при неинтерактивном SSH)
