@@ -12,7 +12,7 @@ namespace rc_vehicle {
 // RcInputHandler
 // ═════════════════════════════════════════════════════════════════════════
 
-void RcInputHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
+void RcInputHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Опрос RC с заданной частотой
   if (now_ms - last_poll_ms_ < poll_interval_ms_) {
     return;
@@ -28,7 +28,7 @@ void RcInputHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
 // WifiCommandHandler
 // ═════════════════════════════════════════════════════════════════════════
 
-void WifiCommandHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
+void WifiCommandHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Попытаться получить команду из очереди
   auto cmd = platform_.TryReceiveWifiCommand();
   if (cmd) {
@@ -43,7 +43,7 @@ void WifiCommandHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
 // ImuHandler
 // ═════════════════════════════════════════════════════════════════════════
 
-void ImuHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
+void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   if (!enabled_) {
     return;
   }
@@ -107,7 +107,7 @@ void ImuHandler::SetLpfCutoff(float cutoff_hz) {
 // TelemetryHandler
 // ═════════════════════════════════════════════════════════════════════════
 
-void TelemetryHandler::Update(uint32_t now_ms, uint32_t dt_ms) {
+void TelemetryHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Отправка телеметрии с заданной частотой
   if (now_ms - last_send_ms_ < send_interval_ms_) {
     return;

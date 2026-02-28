@@ -1,6 +1,7 @@
 #include "vehicle_control_unified.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "rc_vehicle_common.hpp"
 #include "slew_rate.hpp"
@@ -125,6 +126,23 @@ void VehicleControlUnified::ControlTaskLoop() {
       const float pid_out = yaw_pid_.Step(omega_desired - omega_actual, dt_sec);
       commanded_steering =
           std::clamp(commanded_steering + pid_out * stab_weight_, -1.0f, 1.0f);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Pitch compensation (stabilization on slopes)
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (stab_config_.pitch_comp_enabled && stab_weight_ > 0.0f &&
+        imu_handler_ && imu_handler_->IsEnabled()) {
+      float pitch_deg = 0.f, roll_deg = 0.f, yaw_deg = 0.f;
+      madgwick_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
+      float correction = stab_config_.pitch_comp_gain * pitch_deg;
+      if (correction > stab_config_.pitch_comp_max_correction)
+        correction = stab_config_.pitch_comp_max_correction;
+      if (correction < -stab_config_.pitch_comp_max_correction)
+        correction = -stab_config_.pitch_comp_max_correction;
+      commanded_throttle = std::clamp(
+          commanded_throttle + correction * stab_weight_, -1.0f, 1.0f);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -323,14 +341,22 @@ void VehicleControlUnified::ProcessCalibrationRequest(uint32_t now_ms) {
 }
 
 void VehicleControlUnified::ProcessCalibrationCompletion() {
-  if (imu_calib_.GetStatus() == CalibStatus::Done) {
-    const auto& d = imu_calib_.GetData();
+  const CalibStatus status = imu_calib_.GetStatus();
+  if (status == prev_calib_status_) {
+    return;  // Статус не изменился — ничего не делаем
+  }
+  prev_calib_status_ = status;
+
+  if (status == CalibStatus::Done) {
     if (platform_->SaveCalib(imu_calib_.GetData())) {
-      platform_->Log(LogLevel::Info, "Calibration saved to NVS");
+      platform_->Log(LogLevel::Info, "Calibration done, saved to NVS");
+    } else {
+      platform_->Log(LogLevel::Warning, "Calibration done, NVS save FAILED");
     }
-    // Сбросить статус чтобы не логировать каждую итерацию
-    // (в текущей реализации ImuCalibration нет метода сброса статуса)
-  } else if (imu_calib_.GetStatus() == CalibStatus::Failed) {
+    // Обновить vehicle frame фильтра Madgwick
+    const auto& d = imu_calib_.GetData();
+    madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+  } else if (status == CalibStatus::Failed) {
     platform_->Log(LogLevel::Warning, "IMU calibration FAILED");
   }
 }
@@ -383,20 +409,21 @@ void VehicleControlUnified::PrintDiagnostics(uint32_t now_ms,
                                              uint32_t& diag_start_ms) {
   const uint32_t elapsed = now_ms - diag_start_ms;
   if (elapsed >= DIAG_INTERVAL_MS) {
-    const uint32_t loop_hz = diag_loop_count * 1000 / elapsed;
-    // Логирование диагностики (упрощённое, без ESP_LOGI)
-    platform_->Log(LogLevel::Info, "DIAG: control loop running");
+    const uint32_t loop_hz =
+        (elapsed > 0) ? (diag_loop_count * 1000u / elapsed) : 0u;
 
-    // Статус калибровки
-    if (imu_calib_.IsValid()) {
-      platform_->Log(LogLevel::Info, "CALIB: valid");
-    }
+    char buf[80];
+    snprintf(buf, sizeof(buf), "DIAG: loop=%u Hz  stab=%s (w=%.2f)",
+             static_cast<unsigned>(loop_hz),
+             stab_config_.enabled ? "ON" : "OFF", stab_weight_);
+    platform_->Log(LogLevel::Info, buf);
 
-    // Ориентация
     if (imu_handler_ && imu_handler_->IsEnabled()) {
       float pitch_deg = 0.f, roll_deg = 0.f, yaw_deg = 0.f;
       madgwick_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
-      // Логирование ориентации
+      snprintf(buf, sizeof(buf), "IMU: P=%.1f R=%.1f Y=%.1f deg  gz=%.1f dps",
+               pitch_deg, roll_deg, yaw_deg, imu_handler_->GetFilteredGyroZ());
+      platform_->Log(LogLevel::Info, buf);
     }
 
     diag_loop_count = 0;
@@ -454,6 +481,17 @@ bool VehicleControlUnified::SetStabilizationConfig(
       platform_->Log(LogLevel::Error, "Invalid stabilization config");
     }
     return false;
+  }
+
+  // При смене режима автоматически применить предустановки PID для нового режима
+  if (validated_config.mode != stab_config_.mode) {
+    validated_config.ApplyModeDefaults();
+    if (platform_) {
+      char buf[48];
+      snprintf(buf, sizeof(buf), "Mode changed to %u, defaults applied",
+               static_cast<unsigned>(validated_config.mode));
+      platform_->Log(LogLevel::Info, buf);
+    }
   }
 
   // Применить к фильтрам

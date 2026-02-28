@@ -83,6 +83,28 @@ struct StabilizationConfig {
    */
   uint32_t fade_ms{500};
 
+  // ── Pitch compensation (стабилизация на склонах) ───────────────────────
+
+  /**
+   * Включена ли компенсация наклона (pitch).
+   * При включении корректирует газ в зависимости от угла наклона.
+   */
+  bool pitch_comp_enabled{false};
+
+  /**
+   * Коэффициент pitch → throttle (дельта газа на градус наклона).
+   * Положительное значение: наклон носом вверх (подъём) → увеличить газ.
+   * Диапазон: 0.0–0.05, по умолчанию 0.01 (1% газа на градус).
+   */
+  float pitch_comp_gain{0.01f};
+
+  /**
+   * Максимальная поправка газа от компенсации наклона [0..1].
+   * Ограничивает влияние алгоритма на команду газа.
+   * Диапазон: 0.0–0.5, по умолчанию 0.25.
+   */
+  float pitch_comp_max_correction{0.25f};
+
   /** Валидность конфигурации (magic number для проверки NVS) */
   uint32_t magic{0x53544142};  // 'STAB'
 
@@ -114,7 +136,56 @@ struct StabilizationConfig {
     pid_max_correction = 0.3f;
     steer_to_yaw_rate_dps = 90.0f;
     fade_ms = 500;
+    pitch_comp_enabled = false;
+    pitch_comp_gain = 0.01f;
+    pitch_comp_max_correction = 0.25f;
     magic = 0x53544142;
+  }
+
+  /**
+   * @brief Применить предустановки PID для текущего режима (mode).
+   *
+   * Устанавливает pid_kp/ki/kd, pid_max_correction, steer_to_yaw_rate_dps
+   * в зависимости от mode:
+   *   0 = normal  — консервативный контроль рыскания
+   *   1 = sport   — агрессивные параметры, высокая отзывчивость
+   *   2 = drift   — мягкий контроль, допускает занос
+   *
+   * Не изменяет: enabled, madgwick_beta, lpf_cutoff_hz, fade_ms, magic.
+   */
+  void ApplyModeDefaults() noexcept {
+    switch (mode) {
+      case 1:  // Sport: быстрый отклик, сильная коррекция
+        pid_kp = 0.20f;
+        pid_ki = 0.01f;
+        pid_kd = 0.010f;
+        pid_max_integral = 1.0f;
+        pid_max_correction = 0.40f;
+        steer_to_yaw_rate_dps = 120.0f;
+        pitch_comp_gain = 0.02f;
+        pitch_comp_max_correction = 0.30f;
+        break;
+      case 2:  // Drift: мягкая коррекция, допускает управляемый занос
+        pid_kp = 0.05f;
+        pid_ki = 0.00f;
+        pid_kd = 0.002f;
+        pid_max_integral = 0.3f;
+        pid_max_correction = 0.20f;
+        steer_to_yaw_rate_dps = 60.0f;
+        pitch_comp_gain = 0.005f;
+        pitch_comp_max_correction = 0.15f;
+        break;
+      default:  // Normal (0): базовые параметры
+        pid_kp = 0.10f;
+        pid_ki = 0.00f;
+        pid_kd = 0.005f;
+        pid_max_integral = 0.5f;
+        pid_max_correction = 0.30f;
+        steer_to_yaw_rate_dps = 90.0f;
+        pitch_comp_gain = 0.01f;
+        pitch_comp_max_correction = 0.25f;
+        break;
+    }
   }
 
   /**
@@ -136,6 +207,10 @@ struct StabilizationConfig {
     if (steer_to_yaw_rate_dps < 10.0f) steer_to_yaw_rate_dps = 10.0f;
     if (steer_to_yaw_rate_dps > 360.0f) steer_to_yaw_rate_dps = 360.0f;
     if (fade_ms > 5000) fade_ms = 5000;
+    if (pitch_comp_gain < 0.0f) pitch_comp_gain = 0.0f;
+    if (pitch_comp_gain > 0.05f) pitch_comp_gain = 0.05f;
+    if (pitch_comp_max_correction < 0.0f) pitch_comp_max_correction = 0.0f;
+    if (pitch_comp_max_correction > 0.5f) pitch_comp_max_correction = 0.5f;
   }
 };
 

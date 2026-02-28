@@ -196,6 +196,9 @@ class VehicleControlUnified {
 
   // Запрос калибровки (атомарный для потокобезопасности)
   std::atomic<int> calib_request_{0};
+
+  // Предыдущий статус калибровки (для логирования только при переходах)
+  CalibStatus prev_calib_status_{CalibStatus::Idle};
 };
 
 }  // namespace rc_vehicle
