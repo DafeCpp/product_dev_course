@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(du:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(find /home/lostpointer/product_dev_course/projects/rc_vehicle/firmware -name \"*.md\" -type f | xargs ls -lh)",
+      "Bash(cd /home/lostpointer/product_dev_course/projects/rc_vehicle/firmware/tests && cmake -B build -DCMAKE_BUILD_TYPE=Debug 2>&1 | tail -20)",
+      "Bash(cd /home/lostpointer/product_dev_course/projects/rc_vehicle/firmware/tests && ./build/unit_tests && ./build/integration_tests 2>&1 | tail -20)",
+      "Bash(./build/unit_tests --gtest_brief=1 && ./build/integration_tests --gtest_brief=1 2>&1 | tail -8)",
+      "Bash(./build/unit_tests --gtest_brief=1 && ./build/integration_tests --gtest_brief=1 2>&1)",
+      "Bash(./build/unit_tests 2>&1 | tail -10)",
+      "Bash(./build/integration_tests 2>&1 | tail -10)"
     ]
   }
 }
