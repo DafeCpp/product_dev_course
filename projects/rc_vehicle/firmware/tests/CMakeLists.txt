@@ -61,6 +61,7 @@ add_executable(unit_tests
     unit/test_failsafe.cpp
     unit/test_lpf.cpp
     unit/test_pid.cpp
+    unit/test_stabilization_config.cpp
 )
 
 target_link_libraries(unit_tests

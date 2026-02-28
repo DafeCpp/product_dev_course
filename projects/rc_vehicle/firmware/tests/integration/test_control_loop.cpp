@@ -1060,3 +1060,304 @@ TEST(ControlLoopIntegrationTest, MockWithMatchers) {
 
   // Verification happens automatically in destructor
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Yaw-Rate PID Stabilization Integration Tests
+//
+// Tests the full yaw stabilization loop:
+//   steering command → desired yaw rate → PID(error) → steering correction
+// ═══════════════════════════════════════════════════════════════════════════
+
+#include "pid_controller.hpp"
+#include "stabilization_config.hpp"
+
+using rc_vehicle::PidController;
+
+namespace {
+
+// Simulate one stabilization tick: given commanded_steering and actual_gz,
+// return the corrected steering value produced by the PID controller.
+float RunStabTick(PidController& pid, float commanded_steering,
+                  float actual_gz_dps, float steer_to_yaw_rate_dps,
+                  float stab_weight, float dt_sec) {
+  const float omega_desired = steer_to_yaw_rate_dps * commanded_steering;
+  const float pid_out = pid.Step(omega_desired - actual_gz_dps, dt_sec);
+  float corrected = commanded_steering + pid_out * stab_weight;
+  if (corrected > 1.0f) corrected = 1.0f;
+  if (corrected < -1.0f) corrected = -1.0f;
+  return corrected;
+}
+
+}  // namespace
+
+TEST(ControlLoopIntegrationTest, YawPid_ZeroError_NoCorrectionApplied) {
+  // When actual yaw rate matches desired exactly → PID output = 0
+  PidController pid({.kp = 0.1f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 0.3f});
+  const float commanded = 0.5f;
+  const float steer_to_dps = 90.0f;
+  const float actual_gz = steer_to_dps * commanded;  // exact match
+
+  float corrected = RunStabTick(pid, commanded, actual_gz, steer_to_dps, 1.0f, 0.002f);
+  EXPECT_FLOAT_EQ(corrected, commanded) << "No error → no correction";
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_ActualTooFast_SteeringReduced) {
+  // Vehicle turns too fast (overshoot) → PID corrects by reducing steering
+  PidController pid({.kp = 0.1f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 1.0f});
+  const float commanded = 0.5f;
+  const float steer_to_dps = 90.0f;
+  const float desired_gz = steer_to_dps * commanded;  // 45 dps
+  const float actual_gz = desired_gz + 20.0f;         // 65 dps (too fast)
+
+  float corrected = RunStabTick(pid, commanded, actual_gz, steer_to_dps, 1.0f, 0.002f);
+  EXPECT_LT(corrected, commanded) << "Too fast → steering reduced";
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_ActualTooSlow_SteeringIncreased) {
+  // Vehicle turns too slow (undershoot) → PID corrects by increasing steering
+  PidController pid({.kp = 0.1f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 1.0f});
+  const float commanded = 0.5f;
+  const float steer_to_dps = 90.0f;
+  const float desired_gz = steer_to_dps * commanded;  // 45 dps
+  const float actual_gz = desired_gz - 20.0f;         // 25 dps (too slow)
+
+  float corrected = RunStabTick(pid, commanded, actual_gz, steer_to_dps, 1.0f, 0.002f);
+  EXPECT_GT(corrected, commanded) << "Too slow → steering increased";
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_ZeroWeight_NoEffect) {
+  // stab_weight = 0 → stabilization disabled, commanded steering unchanged
+  PidController pid({.kp = 10.0f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 1.0f});
+  const float commanded = 0.6f;
+  float corrected =
+      RunStabTick(pid, commanded, 0.0f, 90.0f, /*weight=*/0.0f, 0.002f);
+  EXPECT_FLOAT_EQ(corrected, commanded) << "Zero weight → no effect";
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_CorrectionClampedAtPlusOne) {
+  // Very large correction must not exceed +1.0
+  PidController pid({.kp = 10.0f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 10.0f});
+  // commanded = 0.9, actual_gz = 0 (desired = 81 dps error = 81 dps)
+  float corrected = RunStabTick(pid, 0.9f, 0.0f, 90.0f, 1.0f, 0.002f);
+  EXPECT_LE(corrected, 1.0f);
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_CorrectionClampedAtMinusOne) {
+  // Large negative error must not go below -1.0
+  PidController pid({.kp = 10.0f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 10.0f});
+  float corrected = RunStabTick(pid, -0.9f, 0.0f, 90.0f, 1.0f, 0.002f);
+  EXPECT_GE(corrected, -1.0f);
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_Convergence_ClosedLoopDecayError) {
+  // Simulate a closed-loop system with a first-order plant model:
+  //   gz_next = gz + (plant_gain * corrected - gz) * (dt / plant_tau)
+  // PI controller achieves zero steady-state error.
+  PidController pid({.kp = 0.05f, .ki = 0.01f, .kd = 0.0f,
+                     .max_integral = 5.0f, .max_output = 0.5f});
+  const float commanded = 0.5f;
+  const float steer_to_dps = 90.0f;
+  const float plant_gain = 80.0f;  // dps per steering unit (steady state)
+  const float plant_tau = 0.1f;    // 100ms first-order time constant
+
+  float gz = 0.0f;
+  const float dt = 0.002f;
+
+  // Simulate 4 seconds (2000 steps at 500 Hz)
+  for (int i = 0; i < 2000; ++i) {
+    float corrected =
+        RunStabTick(pid, commanded, gz, steer_to_dps, 1.0f, dt);
+    // First-order plant dynamics: gz tracks plant_gain*corrected with tau
+    gz += (plant_gain * corrected - gz) * (dt / plant_tau);
+  }
+
+  // After 4 seconds, PI controller should eliminate steady-state error
+  const float desired_gz = steer_to_dps * commanded;
+  EXPECT_NEAR(gz, desired_gz, 5.0f) << "PI controller should converge to desired yaw rate";
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_ResetOnFailsafe_ClearsIntegral) {
+  // When failsafe activates, PID should be reset to prevent windup
+  PidController pid({.kp = 0.0f, .ki = 1.0f, .kd = 0.0f,
+                     .max_integral = 10.0f, .max_output = 1.0f});
+  const float dt = 0.002f;
+
+  // Accumulate integral error
+  for (int i = 0; i < 100; ++i) {
+    pid.Step(50.0f, dt);  // Large constant error
+  }
+  EXPECT_GT(pid.GetIntegral(), 0.0f) << "Integral should have accumulated";
+
+  // Failsafe activates → reset PID
+  pid.Reset();
+  EXPECT_FLOAT_EQ(pid.GetIntegral(), 0.0f) << "Integral should be zero after reset";
+
+  // Next step should behave as first step (no D component)
+  const float out = pid.Step(10.0f, dt);
+  EXPECT_NEAR(out, 1.0f * (10.0f * dt), 1e-5f) << "After reset, only I contributes";
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_ModePresets_SportHasHigherGain) {
+  // Sport mode should produce stronger correction than normal mode
+  // for the same error.
+  StabilizationConfig normal{};
+  normal.mode = 0;
+  normal.ApplyModeDefaults();
+
+  StabilizationConfig sport{};
+  sport.mode = 1;
+  sport.ApplyModeDefaults();
+
+  PidController pid_normal({.kp = normal.pid_kp, .ki = normal.pid_ki,
+                             .kd = normal.pid_kd,
+                             .max_integral = normal.pid_max_integral,
+                             .max_output = normal.pid_max_correction});
+  PidController pid_sport({.kp = sport.pid_kp, .ki = sport.pid_ki,
+                            .kd = sport.pid_kd,
+                            .max_integral = sport.pid_max_integral,
+                            .max_output = sport.pid_max_correction});
+
+  const float error = 20.0f;  // 20 dps error
+  const float dt = 0.002f;
+
+  const float out_normal = pid_normal.Step(error, dt);
+  const float out_sport = pid_sport.Step(error, dt);
+
+  EXPECT_GT(std::abs(out_sport), std::abs(out_normal))
+      << "Sport mode should produce stronger correction";
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_SteeringSignPreserved_PositiveCmd) {
+  // Positive steering + actual_gz too slow → correction should be positive
+  PidController pid({.kp = 0.1f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 1.0f});
+  const float corrected = RunStabTick(pid, 0.8f, 10.0f, 90.0f, 1.0f, 0.002f);
+  // desired = 72 dps, actual = 10 dps → error = +62 → PID positive → increases steering
+  EXPECT_GT(corrected, 0.8f);
+  EXPECT_LE(corrected, 1.0f);
+}
+
+TEST(ControlLoopIntegrationTest, YawPid_SteeringSignPreserved_NegativeCmd) {
+  // Negative steering + actual_gz too slow (less negative) → steering more negative
+  PidController pid({.kp = 0.1f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 1.0f});
+  const float corrected = RunStabTick(pid, -0.8f, -10.0f, 90.0f, 1.0f, 0.002f);
+  // desired = -72 dps, actual = -10 dps → error = -62 → PID negative → more left
+  EXPECT_LT(corrected, -0.8f);
+  EXPECT_GE(corrected, -1.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pitch Compensation Integration Tests
+//
+// Tests the pitch compensation logic:
+//   pitch_deg → throttle correction (scaled by stab_weight)
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+// Simulate one pitch compensation tick: given commanded_throttle and pitch_deg,
+// return the corrected throttle value.
+float ApplyPitchComp(float commanded_throttle, float pitch_deg,
+                     float pitch_comp_gain, float pitch_comp_max_correction,
+                     float stab_weight) {
+  float correction = pitch_comp_gain * pitch_deg;
+  if (correction > pitch_comp_max_correction)
+    correction = pitch_comp_max_correction;
+  if (correction < -pitch_comp_max_correction)
+    correction = -pitch_comp_max_correction;
+  float result = commanded_throttle + correction * stab_weight;
+  if (result > 1.0f) result = 1.0f;
+  if (result < -1.0f) result = -1.0f;
+  return result;
+}
+
+}  // namespace
+
+TEST(ControlLoopIntegrationTest, PitchComp_ZeroPitch_NoCorrection) {
+  // Flat surface → no throttle correction
+  const float throttle = 0.5f;
+  const float result =
+      ApplyPitchComp(throttle, 0.0f, 0.01f, 0.25f, 1.0f);
+  EXPECT_FLOAT_EQ(result, throttle);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_PositivePitch_MoreThrottle) {
+  // Nose up (uphill) → add throttle
+  const float result = ApplyPitchComp(0.5f, 10.0f, 0.01f, 0.25f, 1.0f);
+  // correction = 0.01 * 10 = 0.1 → throttle = 0.6
+  EXPECT_FLOAT_EQ(result, 0.6f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_NegativePitch_LessThrottle) {
+  // Nose down (downhill) → reduce throttle
+  const float result = ApplyPitchComp(0.5f, -10.0f, 0.01f, 0.25f, 1.0f);
+  // correction = 0.01 * (-10) = -0.1 → throttle = 0.4
+  EXPECT_FLOAT_EQ(result, 0.4f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_ExceedsMax_ClampedToMax) {
+  // Large pitch → correction capped at pitch_comp_max_correction
+  // correction = 0.01 * 30 = 0.3 > 0.25 → capped to 0.25
+  const float result = ApplyPitchComp(0.5f, 30.0f, 0.01f, 0.25f, 1.0f);
+  EXPECT_FLOAT_EQ(result, 0.75f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_ExceedsMaxNeg_ClampedToNegMax) {
+  // Large negative pitch → correction capped at -pitch_comp_max_correction
+  const float result = ApplyPitchComp(0.5f, -30.0f, 0.01f, 0.25f, 1.0f);
+  EXPECT_FLOAT_EQ(result, 0.25f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_ZeroWeight_NoEffect) {
+  // stab_weight = 0 → no correction even if pitch is non-zero
+  const float result = ApplyPitchComp(0.5f, 15.0f, 0.01f, 0.25f, 0.0f);
+  EXPECT_FLOAT_EQ(result, 0.5f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_HalfWeight_HalfCorrection) {
+  // stab_weight = 0.5 → correction * 0.5
+  // correction = 0.01 * 10 = 0.1, scaled by 0.5 → 0.05
+  const float result = ApplyPitchComp(0.5f, 10.0f, 0.01f, 0.25f, 0.5f);
+  EXPECT_NEAR(result, 0.55f, 1e-5f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_ClampThrottleTo1) {
+  // Even after adding correction, throttle must not exceed 1.0
+  const float result = ApplyPitchComp(0.9f, 20.0f, 0.01f, 0.25f, 1.0f);
+  EXPECT_LE(result, 1.0f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_ClampThrottleToNeg1) {
+  // Even after subtracting correction, throttle must not go below -1.0
+  const float result = ApplyPitchComp(-0.9f, -20.0f, 0.01f, 0.25f, 1.0f);
+  EXPECT_GE(result, -1.0f);
+}
+
+TEST(ControlLoopIntegrationTest, PitchComp_ModeDefaultsGainDifference) {
+  // Sport mode has higher gain than normal → stronger correction for same pitch
+  StabilizationConfig normal{};
+  normal.mode = 0;
+  normal.ApplyModeDefaults();
+
+  StabilizationConfig sport{};
+  sport.mode = 1;
+  sport.ApplyModeDefaults();
+
+  const float pitch = 10.0f;
+  const float result_normal = ApplyPitchComp(
+      0.5f, pitch, normal.pitch_comp_gain, normal.pitch_comp_max_correction,
+      1.0f);
+  const float result_sport = ApplyPitchComp(
+      0.5f, pitch, sport.pitch_comp_gain, sport.pitch_comp_max_correction,
+      1.0f);
+
+  EXPECT_GT(result_sport, result_normal)
+      << "Sport mode should apply stronger pitch correction";
+}

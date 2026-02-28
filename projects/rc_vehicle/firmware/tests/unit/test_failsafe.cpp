@@ -136,7 +136,7 @@ TEST(FailsafeTest, RecoveryFromFailsafe) {
   uint32_t time = 0;
 
   // Activate failsafe - first call initializes last_active_ms_
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 110;
   auto state = fs.Update(time, false, false);
   EXPECT_EQ(state, FailsafeState::Active);
@@ -164,7 +164,7 @@ TEST(FailsafeTest, CustomTimeout) {
   EXPECT_EQ(fs.GetTimeout(), 500u) << "Timeout should be 500ms";
 
   uint32_t time = 0;
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   // Lose control
   time = 400;
@@ -193,15 +193,15 @@ TEST(FailsafeTest, GetTimeSinceLastActive) {
   uint32_t time = 1000;
 
   // Active control
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   time += 50;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   EXPECT_EQ(fs.GetTimeSinceLastActive(time), 50u)
       << "Should be 50ms since last active";
 
   time += 30;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   EXPECT_EQ(fs.GetTimeSinceLastActive(time), 80u)
       << "Should be 80ms since last active";
 }
@@ -215,9 +215,9 @@ TEST(FailsafeTest, Reset) {
   uint32_t time = 0;
 
   // Activate failsafe
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 110;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   EXPECT_TRUE(fs.IsActive());
 
   // Reset
@@ -247,11 +247,11 @@ TEST(FailsafeTest, TimeWrapAround) {
   uint32_t time = UINT32_MAX - 50;  // Near wrap-around
 
   // Active control
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   // Wrap around
   time = 60;  // Wrapped around, total elapsed ~110ms
-  auto state = fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   // Note: This test may fail if failsafe doesn't handle wrap-around correctly
   // The implementation should use proper time difference calculation
 }
@@ -270,14 +270,14 @@ TEST(FailsafeTest, RapidUpdates) {
 
   // Now lose control
   for (int i = 0; i < 50; ++i) {
-    fs.Update(time, false, false);
+    (void)fs.Update(time, false, false);
     time += 1;
   }
   EXPECT_FALSE(fs.IsActive()) << "Should not activate within timeout";
 
   // Exceed timeout
   for (int i = 0; i < 60; ++i) {
-    fs.Update(time, false, false);
+    (void)fs.Update(time, false, false);
     time += 1;
   }
   EXPECT_TRUE(fs.IsActive()) << "Should activate after timeout";
@@ -292,7 +292,7 @@ TEST(FailsafeTest, StateTransitionSequence) {
   uint32_t time = 0;
 
   // Inactive -> Active
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
   time = 110;
   auto state = fs.Update(time, false, false);
   EXPECT_EQ(state, FailsafeState::Active)
@@ -316,9 +316,9 @@ TEST(FailsafeTest, RecoveringStateWithWiFi) {
   uint32_t time = 0;
 
   // Activate failsafe
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 110;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   EXPECT_EQ(fs.GetState(), FailsafeState::Active);
 
   // Recover with WiFi instead of RC
@@ -338,9 +338,9 @@ TEST(FailsafeTest, RecoveringStateWithBothSources) {
   uint32_t time = 0;
 
   // Activate failsafe
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 110;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   EXPECT_TRUE(fs.IsActive());
 
   // Recover with both sources
@@ -358,9 +358,9 @@ TEST(FailsafeTest, LoseControlDuringRecovery) {
   uint32_t time = 0;
 
   // Activate failsafe
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 110;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   EXPECT_TRUE(fs.IsActive());
 
   // Start recovery
@@ -389,7 +389,7 @@ TEST(FailsafeTest, ExactTimeoutBoundary) {
   Failsafe fs(100);
   uint32_t time = 0;
 
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   // Exactly at timeout boundary
   time = 100;
@@ -402,7 +402,7 @@ TEST(FailsafeTest, JustBeforeTimeout) {
   Failsafe fs(100);
   uint32_t time = 0;
 
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   // Just before timeout (99ms)
   time = 99;
@@ -421,7 +421,7 @@ TEST(FailsafeTest, VeryLargeTimeout) {
   Failsafe fs(UINT32_MAX / 2);  // Very large timeout
   uint32_t time = 0;
 
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   time += 1000000;  // 1 million ms
   auto state = fs.Update(time, false, false);
@@ -433,7 +433,7 @@ TEST(FailsafeTest, MinimalTimeout) {
   Failsafe fs(1);  // 1ms timeout
   uint32_t time = 0;
 
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   time = 1;
   auto state = fs.Update(time, false, false);
@@ -450,14 +450,14 @@ TEST(FailsafeTest, MultipleActivationCycles) {
   uint32_t time = 0;
 
   // First cycle
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
   time = 110;
   auto state = fs.Update(time, false, false);
   EXPECT_EQ(state, FailsafeState::Active) << "First activation";
 
   // Recover
   time = 120;
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
   time = 130;
   state = fs.Update(time, true, false);
   EXPECT_EQ(state, FailsafeState::Inactive) << "First recovery";
@@ -469,7 +469,7 @@ TEST(FailsafeTest, MultipleActivationCycles) {
 
   // Recover again
   time = 250;
-  fs.Update(time, false, true);  // WiFi this time
+  (void)fs.Update(time, false, true);  // WiFi this time
   time = 260;
   state = fs.Update(time, false, true);
   EXPECT_EQ(state, FailsafeState::Inactive) << "Second recovery";
@@ -489,12 +489,12 @@ TEST(FailsafeTest, IntermittentControl) {
   uint32_t time = 0;
 
   // Start with control
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   // Intermittent control - on/off every 40ms
   for (int i = 0; i < 5; ++i) {
     time += 40;
-    fs.Update(time, false, false);  // Off for 40ms
+    (void)fs.Update(time, false, false);  // Off for 40ms
 
     time += 40;
     auto state = fs.Update(time, true, false);  // On for 40ms
@@ -507,7 +507,7 @@ TEST(FailsafeTest, IntermittentControlExceedsTimeout) {
   Failsafe fs(100);
   uint32_t time = 0;
 
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   // Control off for 60ms
   time += 60;
@@ -601,7 +601,7 @@ TEST(FailsafeTest, GetTimeSinceLastActiveWithActiveControl) {
   uint32_t time = 1000;
 
   // Active control
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
 
   // Check immediately
   EXPECT_EQ(fs.GetTimeSinceLastActive(time), 0u)
@@ -609,7 +609,7 @@ TEST(FailsafeTest, GetTimeSinceLastActiveWithActiveControl) {
 
   // Continue with active control
   time += 50;
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
   EXPECT_EQ(fs.GetTimeSinceLastActive(time), 0u)
       << "Should remain 0 with continued active control";
 }
@@ -618,9 +618,9 @@ TEST(FailsafeTest, GetTimeSinceLastActiveAfterReset) {
   Failsafe fs(100);
   uint32_t time = 1000;
 
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
   time += 50;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
 
   EXPECT_GT(fs.GetTimeSinceLastActive(time), 0u);
 
@@ -636,7 +636,7 @@ TEST(FailsafeTest, ChangeTimeoutWhileInactive) {
   Failsafe fs(100);
   uint32_t time = 0;
 
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
   fs.SetTimeout(200);
 
   time = 150;
@@ -655,9 +655,9 @@ TEST(FailsafeTest, ChangeTimeoutWhileActive) {
   uint32_t time = 0;
 
   // Activate failsafe
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 110;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   EXPECT_TRUE(fs.IsActive());
 
   // Change timeout while active
@@ -709,7 +709,7 @@ TEST(FailsafeTest, HighFrequencyUpdates) {
 
   // Now lose control
   for (int i = 0; i < 100; ++i) {
-    fs.Update(time, false, false);
+    (void)fs.Update(time, false, false);
     time += 1;
   }
 
@@ -727,11 +727,11 @@ TEST(FailsafeTest, ResetDuringRecovery) {
   uint32_t time = 0;
 
   // Activate and start recovery
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 110;
-  fs.Update(time, false, false);
+  (void)fs.Update(time, false, false);
   time = 120;
-  fs.Update(time, true, false);
+  (void)fs.Update(time, true, false);
   EXPECT_EQ(fs.GetState(), FailsafeState::Recovering);
 
   // Reset during recovery
@@ -756,9 +756,9 @@ TEST(FailsafeTest, MultipleResets) {
 
   for (int i = 0; i < 5; ++i) {
     // Activate
-    fs.Update(time, false, false);
+    (void)fs.Update(time, false, false);
     time = 110 + i * 200;
-    fs.Update(time, false, false);
+    (void)fs.Update(time, false, false);
     EXPECT_TRUE(fs.IsActive()) << "Should be active at iteration " << i;
 
     // Reset
@@ -781,7 +781,7 @@ TEST(FailsafeTest, RcSignalDropout) {
 
   // Normal RC operation
   for (int i = 0; i < 10; ++i) {
-    fs.Update(time, true, false);
+    (void)fs.Update(time, true, false);
     time += 20;  // 50 Hz update rate
   }
 
@@ -806,7 +806,7 @@ TEST(FailsafeTest, WiFiConnectionLoss) {
   uint32_t time = 0;
 
   // Normal WiFi operation
-  fs.Update(time, false, true);
+  (void)fs.Update(time, false, true);
 
   // WiFi connection lost
   time = 400;
@@ -825,7 +825,7 @@ TEST(FailsafeTest, DualControlWithPrimaryFailure) {
   uint32_t time = 0;
 
   // Both RC and WiFi active
-  fs.Update(time, true, true);
+  (void)fs.Update(time, true, true);
 
   // RC fails, WiFi continues
   time += 100;
