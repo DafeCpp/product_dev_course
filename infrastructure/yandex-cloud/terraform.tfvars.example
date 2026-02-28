@@ -13,7 +13,7 @@ zone      = "ru-central1-a"
 vm_cores             = 2
 vm_memory_gb         = 4
 vm_core_fraction     = 50    # 50% для dev/staging, 100% для production
-vm_disk_size_gb      = 50
+vm_disk_size_gb      = 90
 vm_user              = "deploy"
 vm_ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 vm_preemptible       = false  # true = прерываемая VM (дешевле, но может быть остановлена)
