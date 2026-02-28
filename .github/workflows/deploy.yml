@@ -271,8 +271,12 @@ jobs:
             # Обновляем тег образа ( .env уже есть — создан выше при отсутствии)
             sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 
-            # Логинимся в Container Registry через ключ SA (без yc CLI)
-            echo "$YC_SA_JSON_KEY" | docker login cr.yandex -u json_key --password-stdin
+            # Логинимся в Container Registry через ключ SA.
+            # Используем временный DOCKER_CONFIG, чтобы обойти docker-credential-ycr,
+            # который может быть настроен на VM и блокирует docker login.
+            _DCF=$(mktemp -d)
+            echo "$YC_SA_JSON_KEY" | docker --config "$_DCF" login cr.yandex -u json_key --password-stdin
+            export DOCKER_CONFIG="$_DCF"
 
             # Пуллим новые образы
             docker compose -f docker-compose.prod.yml pull
