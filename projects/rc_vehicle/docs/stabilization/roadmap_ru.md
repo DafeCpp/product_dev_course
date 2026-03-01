@@ -151,12 +151,13 @@ IMU (MPU-6500, SPI, 500 Гц)
 **Цель**: Поддержание заданного угла заноса в повороте, упрощение управления в скольжении.
 
 **Задачи**:
-- [ ] Реализовать оценку угла заноса (slip angle) через EKF (Extended Kalman Filter)
-- [ ] Интегрировать данные IMU (Madgwick orientation + gyro_z) в EKF
-- [ ] Реализовать bicycle model для предсказания динамики автомобиля
-- [ ] Добавить ПИД/контроллер для поддержания целевого slip angle
-- [ ] Реализовать режим "drift mode" — стабилизация удерживает заданный угол заноса вместо подавления
-- [ ] Добавить плавный переход между обычным режимом и drift mode
+- [x] Реализовать оценку угла заноса (slip angle) через EKF (Extended Kalman Filter)
+- [x] Интегрировать данные IMU (Madgwick orientation + gyro_z) в EKF (в control loop)
+- [x] Реализовать bicycle model для предсказания динамики автомобиля (в шаге Predict EKF)
+- [x] Добавить ПИД/контроллер для поддержания целевого slip angle
+- [x] Реализовать режим "drift mode" — стабилизация удерживает заданный угол заноса вместо подавления
+- [x] Добавить плавный переход между обычным режимом и drift mode
+- [ ] Отправлять данные напрямую в систему сбора данных (projects/backend)
 
 **Технические детали**:
 - EKF state vector: `[vx, vy, yaw_rate, slip_angle]` (4-state, IMU-only)
@@ -340,6 +341,10 @@ IMU (MPU-6500, SPI, 500 Гц)
 
 ## История изменений
 
+- **2026-03-01**: Фаза 3.6 завершена: плавный переход между режимами через `mode_transition_weight_` (float [0..1]); сбрасывается в 0 при смене режима, нарастает к 1 за `fade_ms`; оба PID (yaw и slip) масштабируются на `stab_weight_ * mode_transition_weight_`; failsafe сбрасывает в 1.0; 9 новых интеграционных тестов (ModeSwitchFadeTest); всего 399 тестов, все зелёные
+- **2026-03-01**: Фаза 3.5 завершена: в drift mode (mode==2) yaw PID отключён — slip PID становится единственным регулятором стабилизации; сброс обоих PID при смене режима в SetStabilizationConfig; 7 новых интеграционных тестов; всего 390 тестов, все зелёные
+- **2026-03-01**: Фаза 3.4 завершена: slip angle PID (drift assist) — StabilizationConfig slip_* поля, slip_pid_ в control loop (mode==2, масштаб на stab_weight_), WebSocket API, предустановки per-mode; 22 новых теста (14 unit + 8 integration); всего 383 теста, все зелёные
+- **2026-03-01**: Фаза 3 пункты 1+2+3 завершены: реализован `VehicleEkf` (`common/vehicle_ekf.hpp/cpp`) — 3-state EKF [vx, vy, r] с bicycle model в Predict, gyro_z measurement update, β = atan2(vy,vx); EKF интегрирован в control loop 500 Гц (`VehicleControlUnified`): Predict(ax*G, ay*G, dt) + UpdateGyroZ(gz_dps*deg2rad) после IMU update, ekf_.Reset() при failsafe, slip_angle/vx/vy/yaw_rate/speed_ms добавлены в WebSocket телеметрию; 7 новых интеграционных тестов; всего 362 теста, все зелёные
 - **2026-02-28**: Фаза 2 завершена (pitch compensation): добавлены `pitch_comp_enabled/gain/max_correction` в `StabilizationConfig`; логика компенсации наклона интегрирована в control loop 500 Гц (после yaw PID, перед failsafe); параметры доступны через WebSocket API и хранятся в NVS; предустановки по режимам (normal/sport/drift); 14 новых тестов (unit + integration); всего 324 теста, все зелёные
 - **2026-02-24**: Фаза 1 завершена: реализован `PidController` (`common/pid_controller.hpp/cpp`), ПИД-коэффициенты добавлены в `StabilizationConfig` (NVS), коррекция руля интегрирована в control loop 500 Гц с `pid_max_correction` safety limit; плавное включение/выключение стабилизации через `StabilizationConfig.fade_ms` (slew rate на `stab_weight_`): PID-поправка масштабируется на вес [0..1], сброс ПИД при достижении нуля, также при failsafe; все 194 теста зелёные
 - **2026-02-17**: Отмечены выполненные пункты Фазы 0: чтение IMU 500 Гц на Core 1, калибровка (ручная + авто гиро при старте), NVS, валидация, WebSocket API калибровки, режим «стабилизация выключена», control loop Core 1; критерии готовности обновлены
