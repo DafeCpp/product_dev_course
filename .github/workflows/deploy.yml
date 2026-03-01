@@ -265,7 +265,10 @@ jobs:
           ssh $O "$D" "sudo rm -rf /opt/experiment-tracking/infrastructure/logging" || true
           ssh $O "$D" "sudo mkdir -p /opt/experiment-tracking/infrastructure && sudo chown \$(id -u):\$(id -g) /opt/experiment-tracking/infrastructure"
           scp -r $O infrastructure/logging "$D:/opt/experiment-tracking/infrastructure/"
-          echo "Copied docker-compose.prod.yml and infrastructure/logging to VM"
+
+          # Yandex Cloud CA certificate for managed PostgreSQL (SSL verify-full)
+          ssh $O "$D" "sudo rm -rf /opt/experiment-tracking/certs && mkdir -p /opt/experiment-tracking/certs && curl -sL https://storage.yandexcloud.net/cloud-certs/CA.pem -o /opt/experiment-tracking/certs/yandex-ca.pem"
+          echo "Copied docker-compose.prod.yml, infrastructure/logging, and Yandex CA cert to VM"
 
       - name: Deploy via SSH
         id: deploy
