@@ -447,3 +447,112 @@ TEST(StabilizationConfigTest, DriftPitchGainSofterThanNormal) {
   EXPECT_LT(drift.pitch_comp_gain, normal.pitch_comp_gain);
   EXPECT_LT(drift.pitch_comp_max_correction, normal.pitch_comp_max_correction);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slip PID Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(StabilizationConfigTest, DefaultSlipTargetIsZero) {
+  StabilizationConfig cfg{};
+  EXPECT_FLOAT_EQ(cfg.slip_target_deg, 0.0f);
+}
+
+TEST(StabilizationConfigTest, DefaultSlipKpIsZero) {
+  StabilizationConfig cfg{};
+  EXPECT_FLOAT_EQ(cfg.slip_kp, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.slip_ki, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.slip_kd, 0.0f);
+}
+
+TEST(StabilizationConfigTest, DefaultSlipMaxCorrectionIsZero) {
+  StabilizationConfig cfg{};
+  EXPECT_FLOAT_EQ(cfg.slip_max_correction, 0.0f);
+}
+
+TEST(StabilizationConfigTest, ResetRestoresSlipDefaults) {
+  StabilizationConfig cfg{};
+  cfg.slip_target_deg = 20.0f;
+  cfg.slip_kp = 0.1f;
+  cfg.slip_max_correction = 0.5f;
+  cfg.Reset();
+  EXPECT_FLOAT_EQ(cfg.slip_target_deg, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.slip_kp, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.slip_max_correction, 0.0f);
+}
+
+TEST(StabilizationConfigTest, Clamp_SlipKpNegative_ClampedToZero) {
+  StabilizationConfig cfg{};
+  cfg.slip_kp = -0.5f;
+  cfg.Clamp();
+  EXPECT_FLOAT_EQ(cfg.slip_kp, 0.0f);
+}
+
+TEST(StabilizationConfigTest, Clamp_SlipKpTooHigh_ClampedTo1) {
+  StabilizationConfig cfg{};
+  cfg.slip_kp = 5.0f;
+  cfg.Clamp();
+  EXPECT_FLOAT_EQ(cfg.slip_kp, 1.0f);
+}
+
+TEST(StabilizationConfigTest, Clamp_SlipTargetTooHigh_ClampedTo45) {
+  StabilizationConfig cfg{};
+  cfg.slip_target_deg = 90.0f;
+  cfg.Clamp();
+  EXPECT_FLOAT_EQ(cfg.slip_target_deg, 45.0f);
+}
+
+TEST(StabilizationConfigTest, Clamp_SlipTargetTooLow_ClampedToNeg45) {
+  StabilizationConfig cfg{};
+  cfg.slip_target_deg = -90.0f;
+  cfg.Clamp();
+  EXPECT_FLOAT_EQ(cfg.slip_target_deg, -45.0f);
+}
+
+TEST(StabilizationConfigTest, Clamp_SlipMaxCorrTooHigh_ClampedTo1) {
+  StabilizationConfig cfg{};
+  cfg.slip_max_correction = 2.0f;
+  cfg.Clamp();
+  EXPECT_FLOAT_EQ(cfg.slip_max_correction, 1.0f);
+}
+
+TEST(StabilizationConfigTest, ApplyModeDefaults_Normal_SlipPidDisabled) {
+  StabilizationConfig cfg{};
+  cfg.mode = 0;
+  cfg.ApplyModeDefaults();
+  EXPECT_FLOAT_EQ(cfg.slip_kp, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.slip_max_correction, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.slip_target_deg, 0.0f);
+}
+
+TEST(StabilizationConfigTest, ApplyModeDefaults_Drift_SlipPidEnabled) {
+  StabilizationConfig cfg{};
+  cfg.mode = 2;
+  cfg.ApplyModeDefaults();
+  EXPECT_GT(cfg.slip_kp, 0.0f) << "Drift mode must have non-zero slip_kp";
+  EXPECT_GT(cfg.slip_max_correction, 0.0f) << "Drift mode must allow slip correction";
+  EXPECT_GT(cfg.slip_target_deg, 0.0f) << "Drift mode must have non-zero target slip";
+}
+
+TEST(StabilizationConfigTest, ApplyModeDefaults_DriftSlipStrongerThanSport) {
+  StabilizationConfig sport{};
+  sport.mode = 1;
+  sport.ApplyModeDefaults();
+
+  StabilizationConfig drift{};
+  drift.mode = 2;
+  drift.ApplyModeDefaults();
+
+  EXPECT_GT(drift.slip_kp, sport.slip_kp)
+      << "Drift mode should have stronger slip PID than sport";
+  EXPECT_GT(drift.slip_target_deg, sport.slip_target_deg)
+      << "Drift mode should have larger target slip angle than sport";
+}
+
+TEST(StabilizationConfigTest, ApplyModeDefaults_Sport_SlipPidLight) {
+  StabilizationConfig cfg{};
+  cfg.mode = 1;
+  cfg.ApplyModeDefaults();
+  // Sport имеет небольшой slip kp (лёгкий ассист)
+  EXPECT_GT(cfg.slip_kp, 0.0f);
+  EXPECT_LT(cfg.slip_kp, 0.01f) << "Sport slip kp should be small";
+}

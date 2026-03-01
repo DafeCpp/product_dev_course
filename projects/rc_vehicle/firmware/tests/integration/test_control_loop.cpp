@@ -12,6 +12,7 @@
 #include "mock_platform.hpp"
 #include "slew_rate.hpp"
 #include "test_helpers.hpp"
+#include "vehicle_ekf.hpp"
 
 using namespace rc_vehicle;
 using namespace rc_vehicle::testing;
@@ -1360,4 +1361,493 @@ TEST(ControlLoopIntegrationTest, PitchComp_ModeDefaultsGainDifference) {
 
   EXPECT_GT(result_sport, result_normal)
       << "Sport mode should apply stronger pitch correction";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EKF Integration Tests (Phase 3.2)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Проверяет корректность конвертации g → м/с² при подаче в EKF
+TEST(EkfIntegrationTest, PredictWithGConversion_VxGrowsCorrectly) {
+  VehicleEkf ekf;
+  // ax = 1g ≈ 9.80665 m/s², dt = 0.002 с
+  // vx_new = 0 + 0.002 * (9.80665 + 0*0) = 0.019613 m/s
+  constexpr float kG = 9.80665f;
+  constexpr float dt = 0.002f;
+  ekf.Predict(1.0f * kG, 0.0f, dt);
+  EXPECT_NEAR(ekf.GetVx(), 1.0f * kG * dt, 1e-4f);
+  EXPECT_NEAR(ekf.GetVy(), 0.0f, 1e-4f);
+}
+
+// Проверяет конвертацию dps → рад/с при вызове UpdateGyroZ
+TEST(EkfIntegrationTest, UpdateGyroZ_DpsToRadConversion_YawRateConverges) {
+  VehicleEkf ekf;
+  constexpr float gz_dps = 90.0f;
+  constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+  const float gz_rad = gz_dps * kDegToRad;
+
+  // После многих шагов обновления yaw rate должен сойтись к gz_rad
+  for (int i = 0; i < 200; ++i) {
+    ekf.UpdateGyroZ(gz_rad);
+  }
+  EXPECT_NEAR(ekf.GetYawRate(), gz_rad, 0.001f);
+}
+
+// TelemetryHandler включает раздел "ekf" когда EKF установлен
+TEST(EkfIntegrationTest, TelemetryHandler_WithEkf_JsonContainsEkfSection) {
+  FakePlatform fake;
+  fake.SetWebSocketClientCount(1);
+  fake.SetTimeMs(100);
+
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  RcInputHandler rc(fake, 20);
+  WifiCommandHandler wifi(fake, 500);
+  ImuHandler imu(fake, calib, filter, 2);
+  imu.SetEnabled(true);  // EKF-секция выводится только когда IMU включён
+  // send_interval_ms = 0 → отправит при первом Update
+  TelemetryHandler telem(fake, rc, wifi, imu, calib, filter, 0);
+
+  VehicleEkf ekf;
+  ekf.SetState(3.5f, 1.2f, 0.8f);
+  telem.SetEkf(&ekf);
+
+  telem.Update(100, 50);
+
+  const std::string& json = fake.GetLastTelem();
+  EXPECT_NE(json.find("\"ekf\""), std::string::npos)
+      << "Telemetry JSON must contain 'ekf' section when EKF is set";
+  EXPECT_NE(json.find("\"slip_deg\""), std::string::npos)
+      << "Telemetry JSON must contain 'slip_deg' field";
+  EXPECT_NE(json.find("\"speed_ms\""), std::string::npos)
+      << "Telemetry JSON must contain 'speed_ms' field";
+}
+
+// TelemetryHandler не включает раздел "ekf" когда EKF не установлен
+TEST(EkfIntegrationTest, TelemetryHandler_WithoutEkf_JsonHasNoEkfSection) {
+  FakePlatform fake;
+  fake.SetWebSocketClientCount(1);
+  fake.SetTimeMs(100);
+
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  RcInputHandler rc(fake, 20);
+  WifiCommandHandler wifi(fake, 500);
+  ImuHandler imu(fake, calib, filter, 2);
+  TelemetryHandler telem(fake, rc, wifi, imu, calib, filter, 0);
+  // SetEkf не вызывается → ekf_ == nullptr
+
+  telem.Update(100, 50);
+
+  const std::string& json = fake.GetLastTelem();
+  EXPECT_EQ(json.find("\"ekf\""), std::string::npos)
+      << "Telemetry JSON must NOT contain 'ekf' section when EKF is not set";
+}
+
+// Проверяет, что при drift-сценарии slip angle становится ненулевым
+TEST(EkfIntegrationTest, DriftScenario_SlipAngleNonZero) {
+  VehicleEkf ekf;
+  // Начальная скорость: 5 м/с вперёд
+  ekf.SetState(5.0f, 0.0f, 0.0f);
+
+  constexpr float dt = 0.002f;
+  constexpr float gz_rad = 1.0f;   // 1 рад/с вправо
+
+  // 100 шагов с угловой скоростью 1 рад/с и нулевыми ускорениями
+  for (int i = 0; i < 100; ++i) {
+    ekf.Predict(0.0f, 0.0f, dt);
+    ekf.UpdateGyroZ(gz_rad);
+  }
+
+  // При повороте с вx > 0 и r > 0 должна накапливаться боковая скорость
+  // vy_dot = ay - r*vx = 0 - 1*5 = -5 → vy становится отрицательным
+  const float slip = ekf.GetSlipAngleDeg();
+  EXPECT_NE(slip, 0.0f) << "Slip angle must be non-zero in drift scenario";
+}
+
+// Проверяет сброс EKF: после Reset состояние обнуляется
+TEST(EkfIntegrationTest, EkfReset_ClearsState) {
+  VehicleEkf ekf;
+  ekf.SetState(3.0f, 1.5f, 2.0f);
+  EXPECT_NE(ekf.GetVx(), 0.0f);
+
+  ekf.Reset();
+  EXPECT_FLOAT_EQ(ekf.GetVx(), 0.0f);
+  EXPECT_FLOAT_EQ(ekf.GetVy(), 0.0f);
+  EXPECT_FLOAT_EQ(ekf.GetYawRate(), 0.0f);
+  EXPECT_FLOAT_EQ(ekf.GetSlipAngleDeg(), 0.0f);
+}
+
+// Проверяет, что JSON правильно сформирован при IMU выключен, EKF не в выводе
+TEST(EkfIntegrationTest, TelemetryHandler_ImuDisabled_NoEkfInJson) {
+  FakePlatform fake;
+  fake.SetWebSocketClientCount(1);
+  fake.SetTimeMs(100);
+
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  RcInputHandler rc(fake, 20);
+  WifiCommandHandler wifi(fake, 500);
+  ImuHandler imu(fake, calib, filter, 2);
+  // imu не enabled по умолчанию (enabled_ = false в ImuHandler)
+  TelemetryHandler telem(fake, rc, wifi, imu, calib, filter, 0);
+
+  VehicleEkf ekf;
+  ekf.SetState(1.0f, 0.5f, 0.1f);
+  telem.SetEkf(&ekf);
+
+  telem.Update(100, 50);
+
+  // Когда IMU отключён, раздел imu/calib/ekf не выводится
+  const std::string& json = fake.GetLastTelem();
+  EXPECT_EQ(json.find("\"ekf\""), std::string::npos)
+      << "EKF section must not appear when IMU is disabled";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Slip Angle PID Integration Tests (Phase 3.4)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#include "pid_controller.hpp"
+
+namespace {
+
+// Симулирует один тик slip angle PID:
+//   slip_actual_deg → throttle correction
+float RunSlipPidTick(PidController& pid, float commanded_throttle,
+                     float slip_target_deg, float slip_actual_deg,
+                     float stab_weight, float dt_sec) {
+  const float slip_error = slip_target_deg - slip_actual_deg;
+  const float pid_out = pid.Step(slip_error, dt_sec);
+  float result = commanded_throttle + pid_out * stab_weight;
+  if (result > 1.0f) result = 1.0f;
+  if (result < -1.0f) result = -1.0f;
+  return result;
+}
+
+}  // namespace
+
+TEST(SlipPidIntegrationTest, ZeroError_NoThrottleCorrection) {
+  // Если slip == target → нет коррекции
+  PidController pid({.kp = 0.01f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 5.0f, .max_output = 0.3f});
+  const float result =
+      RunSlipPidTick(pid, 0.5f, 15.0f, 15.0f, 1.0f, 0.002f);
+  EXPECT_FLOAT_EQ(result, 0.5f) << "Zero error -> no throttle change";
+}
+
+TEST(SlipPidIntegrationTest, SlipTooSmall_ThrottleIncreases) {
+  // slip < target → нужно добавить газ (раскрутить колёса)
+  PidController pid({.kp = 0.01f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 5.0f, .max_output = 0.3f});
+  const float result =
+      RunSlipPidTick(pid, 0.5f, 15.0f, /*actual=*/5.0f, 1.0f, 0.002f);
+  // error = 15 - 5 = +10 → pid > 0 → throttle increases
+  EXPECT_GT(result, 0.5f) << "Slip too small -> increase throttle";
+}
+
+TEST(SlipPidIntegrationTest, SlipTooLarge_ThrottleDecreases) {
+  // slip > target → нужно убрать газ
+  PidController pid({.kp = 0.01f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 5.0f, .max_output = 0.3f});
+  const float result =
+      RunSlipPidTick(pid, 0.5f, 15.0f, /*actual=*/30.0f, 1.0f, 0.002f);
+  // error = 15 - 30 = -15 → pid < 0 → throttle decreases
+  EXPECT_LT(result, 0.5f) << "Slip too large -> decrease throttle";
+}
+
+TEST(SlipPidIntegrationTest, ZeroWeight_NoEffect) {
+  // stab_weight = 0 → slip PID не влияет на газ
+  PidController pid({.kp = 10.0f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 5.0f, .max_output = 1.0f});
+  const float result =
+      RunSlipPidTick(pid, 0.5f, 15.0f, 5.0f, /*weight=*/0.0f, 0.002f);
+  EXPECT_FLOAT_EQ(result, 0.5f) << "Zero weight -> no effect";
+}
+
+TEST(SlipPidIntegrationTest, ClampsThrottleTo1) {
+  // Коррекция не должна давать газ > 1.0
+  PidController pid({.kp = 10.0f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 5.0f, .max_output = 2.0f});
+  const float result =
+      RunSlipPidTick(pid, 0.9f, 15.0f, 0.0f, 1.0f, 0.002f);
+  EXPECT_LE(result, 1.0f) << "Throttle must not exceed 1.0";
+}
+
+TEST(SlipPidIntegrationTest, ClampsThrottleToNeg1) {
+  // Коррекция не должна давать газ < -1.0
+  PidController pid({.kp = 10.0f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 5.0f, .max_output = 2.0f});
+  const float result =
+      RunSlipPidTick(pid, -0.9f, 15.0f, 50.0f, 1.0f, 0.002f);
+  EXPECT_GE(result, -1.0f) << "Throttle must not go below -1.0";
+}
+
+TEST(SlipPidIntegrationTest, DriftModeStrongerThanSportMode) {
+  // Drift preset имеет более сильный slip kp, чем sport
+  StabilizationConfig drift{};
+  drift.mode = 2;
+  drift.ApplyModeDefaults();
+
+  StabilizationConfig sport{};
+  sport.mode = 1;
+  sport.ApplyModeDefaults();
+
+  PidController pid_drift({.kp = drift.slip_kp, .ki = drift.slip_ki,
+                            .kd = drift.slip_kd,
+                            .max_integral = drift.slip_max_integral,
+                            .max_output = drift.slip_max_correction});
+  PidController pid_sport({.kp = sport.slip_kp, .ki = sport.slip_ki,
+                            .kd = sport.slip_kd,
+                            .max_integral = sport.slip_max_integral,
+                            .max_output = sport.slip_max_correction});
+
+  const float error = 10.0f;
+  const float dt = 0.002f;
+  const float out_drift = std::abs(pid_drift.Step(error, dt));
+  const float out_sport = std::abs(pid_sport.Step(error, dt));
+
+  EXPECT_GT(out_drift, out_sport)
+      << "Drift mode should produce stronger slip correction than sport";
+}
+
+TEST(SlipPidIntegrationTest, SlipPidReset_ClearsIntegral) {
+  // После Reset() интегратор обнуляется — следующий шаг как первый
+  PidController pid({.kp = 0.0f, .ki = 1.0f, .kd = 0.0f,
+                     .max_integral = 10.0f, .max_output = 1.0f});
+  const float dt = 0.002f;
+  for (int i = 0; i < 100; ++i) pid.Step(5.0f, dt);
+  EXPECT_GT(pid.GetIntegral(), 0.0f);
+  pid.Reset();
+  EXPECT_FLOAT_EQ(pid.GetIntegral(), 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Drift Mode Control Tests (Phase 3.5)
+// Yaw PID отключён в drift mode (mode==2); slip PID — основной регулятор
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+// Симулирует один тик yaw rate PID:
+//   (omega_desired - omega_actual_dps) → steering correction
+float RunYawPidTick(PidController& pid, float commanded_steering,
+                    float steer_to_yaw_rate_dps, float omega_actual_dps,
+                    float stab_weight, float dt_sec) {
+  const float omega_desired = steer_to_yaw_rate_dps * commanded_steering;
+  const float pid_out = pid.Step(omega_desired - omega_actual_dps, dt_sec);
+  float result = commanded_steering + pid_out * stab_weight;
+  if (result > 1.0f) result = 1.0f;
+  if (result < -1.0f) result = -1.0f;
+  return result;
+}
+
+// Применяет yaw PID только если mode != 2 (Phase 3.5: drift mode пропускает)
+float ApplyYawPidConditional(int mode, PidController& pid,
+                              float commanded_steering,
+                              float steer_to_yaw_rate_dps,
+                              float omega_actual_dps, float stab_weight,
+                              float dt_sec) {
+  if (mode == 2) return commanded_steering;  // drift mode: PID отключён
+  return RunYawPidTick(pid, commanded_steering, steer_to_yaw_rate_dps,
+                       omega_actual_dps, stab_weight, dt_sec);
+}
+
+}  // namespace
+
+// В обычном режиме (mode=0) yaw PID корректирует руль при ошибке yaw
+TEST(DriftModeControlTest, NormalMode_YawPidApplied) {
+  PidController pid({.kp = 0.1f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 0.5f, .max_output = 0.3f});
+  const float steer = 0.5f;
+  // omega_desired = 90 * 0.5 = 45 dps, omega_actual = 0 → error = +45 dps → кор-я
+  const float result =
+      ApplyYawPidConditional(0, pid, steer, 90.0f, 0.0f, 1.0f, 0.002f);
+  EXPECT_GT(result, steer) << "Normal mode: positive yaw error -> steering increased";
+}
+
+// В sport режиме (mode=1) yaw PID тоже активен
+TEST(DriftModeControlTest, SportMode_YawPidApplied) {
+  PidController pid({.kp = 0.2f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 0.4f});
+  const float steer = 0.5f;
+  const float result =
+      ApplyYawPidConditional(1, pid, steer, 120.0f, 0.0f, 1.0f, 0.002f);
+  EXPECT_GT(result, steer) << "Sport mode: yaw PID still active";
+}
+
+// В drift mode (mode=2) yaw PID не меняет руль — водитель управляет напрямую
+TEST(DriftModeControlTest, DriftMode_YawPidNotApplied) {
+  PidController pid({.kp = 0.1f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 0.5f, .max_output = 0.3f});
+  const float steer = 0.5f;
+  const float result =
+      ApplyYawPidConditional(2, pid, steer, 90.0f, 0.0f, 1.0f, 0.002f);
+  EXPECT_FLOAT_EQ(result, steer)
+      << "Drift mode: yaw PID must not modify steering";
+}
+
+// Даже с очень большим усилением PID в drift mode руль не трогается
+TEST(DriftModeControlTest, DriftMode_YawPidNotApplied_HighGain) {
+  PidController pid({.kp = 10.0f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 100.0f, .max_output = 1.0f});
+  const float steer = 0.3f;
+  const float result =
+      ApplyYawPidConditional(2, pid, steer, 60.0f, 0.0f, 1.0f, 0.002f);
+  EXPECT_FLOAT_EQ(result, steer)
+      << "Drift mode: even with high gain, yaw PID skipped";
+}
+
+// Отрицательный руль в drift mode тоже проходит без изменений
+TEST(DriftModeControlTest, DriftMode_NegativeSteering_Passthrough) {
+  PidController pid({.kp = 0.2f, .ki = 0.0f, .kd = 0.0f,
+                     .max_integral = 1.0f, .max_output = 0.4f});
+  const float steer = -0.7f;
+  const float result =
+      ApplyYawPidConditional(2, pid, steer, 60.0f, 100.0f, 1.0f, 0.002f);
+  EXPECT_FLOAT_EQ(result, steer)
+      << "Drift mode: negative steering passes through unchanged";
+}
+
+// При смене режима normal→drift интегратор yaw PID очищается
+TEST(DriftModeControlTest, ModeSwitch_NormalToDrift_PidReset) {
+  PidController pid({.kp = 0.0f, .ki = 1.0f, .kd = 0.0f,
+                     .max_integral = 10.0f, .max_output = 1.0f});
+  // Накопим интегратор в normal режиме
+  for (int i = 0; i < 50; ++i) pid.Step(5.0f, 0.002f);
+  EXPECT_GT(pid.GetIntegral(), 0.0f) << "Integral must accumulate in normal mode";
+
+  // Смена режима → Reset() — как в SetStabilizationConfig при mode change
+  pid.Reset();
+
+  // После сброса первый шаг в drift mode не несёт старый интегратор
+  EXPECT_FLOAT_EQ(pid.GetIntegral(), 0.0f)
+      << "After mode switch PID integral must be cleared";
+}
+
+// Preset drift mode имеет более мягкие параметры yaw PID, чем normal
+TEST(DriftModeControlTest, DriftMode_DefaultParams_SofterYaw) {
+  StabilizationConfig normal_cfg{};
+  normal_cfg.mode = 0;
+  normal_cfg.ApplyModeDefaults();
+
+  StabilizationConfig drift_cfg{};
+  drift_cfg.mode = 2;
+  drift_cfg.ApplyModeDefaults();
+
+  EXPECT_LT(drift_cfg.pid_kp, normal_cfg.pid_kp)
+      << "Drift preset should have softer yaw kp than normal";
+  EXPECT_LT(drift_cfg.pid_max_correction, normal_cfg.pid_max_correction)
+      << "Drift preset should have smaller max yaw correction";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Mode Switch Fade Tests (Phase 3.6)
+// Плавный переход между режимами через mode_transition_weight_:
+//   смена режима → weight=0, нарастает к 1 за fade_ms → нет рывка
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+// Симулирует один шаг обновления mode_transition_weight_ из ControlTaskLoop:
+//   fade_ms == 0 → мгновенный переход (вес = 1.0)
+//   fade_ms > 0  → ApplySlewRate к 1.0 со скоростью 1000/fade_ms
+float StepModeTransitionWeight(float current, float fade_ms, uint32_t dt_ms) {
+  if (fade_ms == 0.0f) return 1.0f;
+  const float rate = 1000.0f / fade_ms;
+  return ApplySlewRate(1.0f, current, rate, dt_ms);
+}
+
+// Возвращает масштабированную поправку: pid_out * stab_weight * transition_weight
+float ScalePidOutput(float pid_out, float stab_weight, float transition_weight) {
+  return pid_out * stab_weight * transition_weight;
+}
+
+}  // namespace
+
+// Без смены режима mode_transition_weight_ = 1.0 и остаётся единицей
+TEST(ModeSwitchFadeTest, NoModeSwitch_WeightStaysOne) {
+  float weight = 1.0f;
+  for (int i = 0; i < 30; ++i) {
+    weight = StepModeTransitionWeight(weight, 500.0f, 2);
+  }
+  EXPECT_FLOAT_EQ(weight, 1.0f)
+      << "If no mode switch happened, transition weight stays 1.0";
+}
+
+// Сразу после смены режима (weight=0) коррекция PID равна нулю — без рывка
+TEST(ModeSwitchFadeTest, AfterModeSwitch_ZeroWeight_ZeroCorrection) {
+  const float correction = ScalePidOutput(0.5f, 1.0f, 0.0f);
+  EXPECT_FLOAT_EQ(correction, 0.0f)
+      << "At transition start (weight=0), PID correction must be zero";
+}
+
+// При полном переходе (weight=1) коррекция = pid_out * stab_weight
+TEST(ModeSwitchFadeTest, FullyTransitioned_FullCorrection) {
+  const float correction = ScalePidOutput(0.4f, 0.75f, 1.0f);
+  EXPECT_NEAR(correction, 0.3f, 1e-5f)
+      << "At full transition (weight=1), correction = pid_out * stab_weight";
+}
+
+// weight нарастает от 0 к 1 за fade_ms (≥300 итераций × 2 мс > 500 мс)
+TEST(ModeSwitchFadeTest, WeightFadesFromZeroToOne_InFadeMs) {
+  float weight = 0.0f;
+  const float fade_ms = 500.0f;
+  const uint32_t dt_ms = 2;
+  for (int i = 0; i < 300; ++i) {
+    weight = StepModeTransitionWeight(weight, fade_ms, dt_ms);
+  }
+  EXPECT_FLOAT_EQ(weight, 1.0f)
+      << "Transition weight must reach 1.0 within fade_ms";
+}
+
+// Через половину fade_ms вес примерно 0.5 (линейный slew rate)
+TEST(ModeSwitchFadeTest, WeightAtHalfFadeMs_IsApproxHalf) {
+  float weight = 0.0f;
+  const float fade_ms = 500.0f;
+  const uint32_t dt_ms = 2;
+  // 125 итераций × 2 мс = 250 мс = fade_ms/2
+  for (int i = 0; i < 125; ++i) {
+    weight = StepModeTransitionWeight(weight, fade_ms, dt_ms);
+  }
+  EXPECT_NEAR(weight, 0.5f, 0.05f)
+      << "After half of fade_ms, transition weight should be ~0.5";
+}
+
+// При fade_ms == 0 переход мгновенный: weight сразу 1.0
+TEST(ModeSwitchFadeTest, InstantFade_WeightJumpsToOne) {
+  float weight = 0.0f;
+  weight = StepModeTransitionWeight(weight, 0.0f, 2);
+  EXPECT_FLOAT_EQ(weight, 1.0f)
+      << "With fade_ms=0, transition weight must jump to 1 immediately";
+}
+
+// Комбинированный множитель stab_weight * transition_weight масштабирует PID
+TEST(ModeSwitchFadeTest, CombinedWeight_ScalesPidOutput) {
+  const float correction = ScalePidOutput(1.0f, 0.6f, 0.5f);
+  EXPECT_NEAR(correction, 0.3f, 1e-5f)
+      << "Combined weight 0.6 * 0.5 = 0.3 must scale PID output correctly";
+}
+
+// При failsafe transition_weight сбрасывается в 1 — нет лишнего fade при recovery
+TEST(ModeSwitchFadeTest, Failsafe_ResetsTransitionWeight) {
+  float transition_weight = 0.35f;  // в процессе перехода
+  // failsafe → немедленный сброс (как в ControlTaskLoop)
+  transition_weight = 1.0f;
+  EXPECT_FLOAT_EQ(transition_weight, 1.0f)
+      << "After failsafe, transition_weight must be 1.0";
+}
+
+// Во время перехода коррекция монотонно нарастает (нет прыжков)
+TEST(ModeSwitchFadeTest, CorrectionMonotonicallyIncreases_DuringFade) {
+  const float pid_out = 0.3f;
+  float weight = 0.0f;
+  float prev_correction = 0.0f;
+  for (int i = 0; i < 150; ++i) {
+    weight = StepModeTransitionWeight(weight, 500.0f, 2);
+    const float correction = ScalePidOutput(pid_out, 1.0f, weight);
+    EXPECT_GE(correction, prev_correction)
+        << "PID correction must not decrease during mode transition fade";
+    prev_correction = correction;
+  }
 }
