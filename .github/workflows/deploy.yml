@@ -254,7 +254,7 @@ jobs:
             echo "Created .env from env.production.example — edit it on the VM and re-run deploy if needed."
           fi
           $SCP docker-compose.prod.yml "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/docker-compose.prod.yml"
-          $SSH "rm -rf /opt/experiment-tracking/infrastructure/logging && mkdir -p /opt/experiment-tracking/infrastructure"
+          $SSH "sudo rm -rf /opt/experiment-tracking/infrastructure/logging && mkdir -p /opt/experiment-tracking/infrastructure"
           $SCP -r infrastructure/logging "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/infrastructure/"
           echo "Copied docker-compose.prod.yml and infrastructure/logging to VM"
 
