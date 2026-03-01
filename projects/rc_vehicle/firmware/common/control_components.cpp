@@ -198,6 +198,17 @@ std::string TelemetryHandler::BuildTelemJson() const {
           << cd.accel_forward_vec[1] << "," << cd.accel_forward_vec[2] << "]";
     }
     oss << "},";
+
+    // EKF: динамическое состояние (vx, vy, r, slip angle)
+    if (ekf_) {
+      oss << "\"ekf\":{";
+      oss << "\"vx\":" << ekf_->GetVx() << ",";
+      oss << "\"vy\":" << ekf_->GetVy() << ",";
+      oss << "\"yaw_rate\":" << ekf_->GetYawRate() << ",";
+      oss << "\"slip_deg\":" << ekf_->GetSlipAngleDeg() << ",";
+      oss << "\"speed_ms\":" << ekf_->GetSpeedMs();
+      oss << "},";
+    }
   }
 
   // Actuators

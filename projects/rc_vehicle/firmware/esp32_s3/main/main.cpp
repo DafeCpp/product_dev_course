@@ -144,6 +144,14 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
       cJSON_AddNumberToObject(reply, "pitch_comp_gain", cfg.pitch_comp_gain);
       cJSON_AddNumberToObject(reply, "pitch_comp_max_correction",
                               cfg.pitch_comp_max_correction);
+      // Slip angle PID (drift mode)
+      cJSON_AddNumberToObject(reply, "slip_target_deg", cfg.slip_target_deg);
+      cJSON_AddNumberToObject(reply, "slip_kp", cfg.slip_kp);
+      cJSON_AddNumberToObject(reply, "slip_ki", cfg.slip_ki);
+      cJSON_AddNumberToObject(reply, "slip_kd", cfg.slip_kd);
+      cJSON_AddNumberToObject(reply, "slip_max_integral", cfg.slip_max_integral);
+      cJSON_AddNumberToObject(reply, "slip_max_correction",
+                              cfg.slip_max_correction);
       ws_send_reply(req, reply);
       cJSON_Delete(reply);
     }
@@ -202,6 +210,27 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
     if (pitch_max && cJSON_IsNumber(pitch_max))
       cfg.pitch_comp_max_correction = (float)pitch_max->valuedouble;
 
+    // Slip angle PID (drift mode)
+    cJSON* slip_target = cJSON_GetObjectItem(json, "slip_target_deg");
+    if (slip_target && cJSON_IsNumber(slip_target))
+      cfg.slip_target_deg = (float)slip_target->valuedouble;
+
+    cJSON* slip_kp_j = cJSON_GetObjectItem(json, "slip_kp");
+    if (slip_kp_j && cJSON_IsNumber(slip_kp_j))
+      cfg.slip_kp = (float)slip_kp_j->valuedouble;
+
+    cJSON* slip_ki_j = cJSON_GetObjectItem(json, "slip_ki");
+    if (slip_ki_j && cJSON_IsNumber(slip_ki_j))
+      cfg.slip_ki = (float)slip_ki_j->valuedouble;
+
+    cJSON* slip_kd_j = cJSON_GetObjectItem(json, "slip_kd");
+    if (slip_kd_j && cJSON_IsNumber(slip_kd_j))
+      cfg.slip_kd = (float)slip_kd_j->valuedouble;
+
+    cJSON* slip_max_corr = cJSON_GetObjectItem(json, "slip_max_correction");
+    if (slip_max_corr && cJSON_IsNumber(slip_max_corr))
+      cfg.slip_max_correction = (float)slip_max_corr->valuedouble;
+
     bool ok = VehicleControlSetStabilizationConfig(cfg, true);
 
     // Получить применённую конфигурацию (могут применяться mode defaults)
@@ -229,6 +258,13 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
                                 applied.pitch_comp_gain);
         cJSON_AddNumberToObject(reply, "pitch_comp_max_correction",
                                 applied.pitch_comp_max_correction);
+        cJSON_AddNumberToObject(reply, "slip_target_deg",
+                                applied.slip_target_deg);
+        cJSON_AddNumberToObject(reply, "slip_kp", applied.slip_kp);
+        cJSON_AddNumberToObject(reply, "slip_ki", applied.slip_ki);
+        cJSON_AddNumberToObject(reply, "slip_kd", applied.slip_kd);
+        cJSON_AddNumberToObject(reply, "slip_max_correction",
+                                applied.slip_max_correction);
       }
       ws_send_reply(req, reply);
       cJSON_Delete(reply);

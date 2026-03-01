@@ -105,6 +105,33 @@ struct StabilizationConfig {
    */
   float pitch_comp_max_correction{0.25f};
 
+  // ── Slip angle PID (управление дрифтом, mode=2) ─────────────────────────
+
+  /**
+   * Целевой угол заноса (градусы).
+   * Диапазон: -45..45, по умолчанию 0 (нет заноса).
+   * Активен только в drift mode (mode=2).
+   */
+  float slip_target_deg{0.0f};
+
+  /** Пропорциональный коэффициент ПИД slip angle → throttle */
+  float slip_kp{0.0f};
+
+  /** Интегральный коэффициент ПИД slip angle */
+  float slip_ki{0.0f};
+
+  /** Дифференциальный коэффициент ПИД slip angle */
+  float slip_kd{0.0f};
+
+  /** Anti-windup: ограничение накопителя интегратора (градусы·с) */
+  float slip_max_integral{5.0f};
+
+  /**
+   * Максимальная поправка газа от slip PID [0..1].
+   * По умолчанию 0 — PID выключен.
+   */
+  float slip_max_correction{0.0f};
+
   /** Валидность конфигурации (magic number для проверки NVS) */
   uint32_t magic{0x53544142};  // 'STAB'
 
@@ -139,6 +166,12 @@ struct StabilizationConfig {
     pitch_comp_enabled = false;
     pitch_comp_gain = 0.01f;
     pitch_comp_max_correction = 0.25f;
+    slip_target_deg = 0.0f;
+    slip_kp = 0.0f;
+    slip_ki = 0.0f;
+    slip_kd = 0.0f;
+    slip_max_integral = 5.0f;
+    slip_max_correction = 0.0f;
     magic = 0x53544142;
   }
 
@@ -155,7 +188,7 @@ struct StabilizationConfig {
    */
   void ApplyModeDefaults() noexcept {
     switch (mode) {
-      case 1:  // Sport: быстрый отклик, сильная коррекция
+      case 1:  // Sport: быстрый отклик, лёгкий slip assist
         pid_kp = 0.20f;
         pid_ki = 0.01f;
         pid_kd = 0.010f;
@@ -164,8 +197,14 @@ struct StabilizationConfig {
         steer_to_yaw_rate_dps = 120.0f;
         pitch_comp_gain = 0.02f;
         pitch_comp_max_correction = 0.30f;
+        slip_target_deg = 5.0f;
+        slip_kp = 0.003f;
+        slip_ki = 0.0f;
+        slip_kd = 0.001f;
+        slip_max_integral = 5.0f;
+        slip_max_correction = 0.15f;
         break;
-      case 2:  // Drift: мягкая коррекция, допускает управляемый занос
+      case 2:  // Drift: мягкая коррекция yaw, slip angle PID включён
         pid_kp = 0.05f;
         pid_ki = 0.00f;
         pid_kd = 0.002f;
@@ -174,8 +213,14 @@ struct StabilizationConfig {
         steer_to_yaw_rate_dps = 60.0f;
         pitch_comp_gain = 0.005f;
         pitch_comp_max_correction = 0.15f;
+        slip_target_deg = 15.0f;
+        slip_kp = 0.008f;
+        slip_ki = 0.0f;
+        slip_kd = 0.002f;
+        slip_max_integral = 5.0f;
+        slip_max_correction = 0.25f;
         break;
-      default:  // Normal (0): базовые параметры
+      default:  // Normal (0): базовые параметры, slip PID выключен
         pid_kp = 0.10f;
         pid_ki = 0.00f;
         pid_kd = 0.005f;
@@ -184,6 +229,12 @@ struct StabilizationConfig {
         steer_to_yaw_rate_dps = 90.0f;
         pitch_comp_gain = 0.01f;
         pitch_comp_max_correction = 0.25f;
+        slip_target_deg = 0.0f;
+        slip_kp = 0.0f;
+        slip_ki = 0.0f;
+        slip_kd = 0.0f;
+        slip_max_integral = 5.0f;
+        slip_max_correction = 0.0f;
         break;
     }
   }
@@ -211,6 +262,15 @@ struct StabilizationConfig {
     if (pitch_comp_gain > 0.05f) pitch_comp_gain = 0.05f;
     if (pitch_comp_max_correction < 0.0f) pitch_comp_max_correction = 0.0f;
     if (pitch_comp_max_correction > 0.5f) pitch_comp_max_correction = 0.5f;
+    if (slip_target_deg < -45.0f) slip_target_deg = -45.0f;
+    if (slip_target_deg > 45.0f) slip_target_deg = 45.0f;
+    if (slip_kp < 0.0f) slip_kp = 0.0f;
+    if (slip_kp > 1.0f) slip_kp = 1.0f;
+    if (slip_ki < 0.0f) slip_ki = 0.0f;
+    if (slip_kd < 0.0f) slip_kd = 0.0f;
+    if (slip_max_integral < 0.0f) slip_max_integral = 0.0f;
+    if (slip_max_correction < 0.0f) slip_max_correction = 0.0f;
+    if (slip_max_correction > 1.0f) slip_max_correction = 1.0f;
   }
 };
 

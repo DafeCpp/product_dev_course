@@ -81,6 +81,21 @@ void VehicleControlUnified::ControlTaskLoop() {
     if (imu_handler_) imu_handler_->Update(now, dt_ms);
 
     // ─────────────────────────────────────────────────────────────────────
+    // EKF: оценка динамического состояния (vx, vy, r → slip angle)
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (imu_handler_ && imu_handler_->IsEnabled() && dt_ms > 0) {
+      const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
+      const auto& imu_data = imu_handler_->GetData();
+      // ax, ay в IMU после калибровки в g → конвертируем в м/с²
+      constexpr float kG = 9.80665f;
+      ekf_.Predict(imu_data.ax * kG, imu_data.ay * kG, dt_sec);
+      // gz отфильтрован LPF (dps) → рад/с для EKF
+      constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+      ekf_.UpdateGyroZ(imu_handler_->GetFilteredGyroZ() * kDegToRad);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Обработка запроса калибровки
     // ─────────────────────────────────────────────────────────────────────
 
@@ -110,22 +125,42 @@ void VehicleControlUnified::ControlTaskLoop() {
       // Сброс ПИД при полном отключении — убирает накопленный интегратор
       if (stab_weight_ == 0.0f) {
         yaw_pid_.Reset();
+        slip_pid_.Reset();
       }
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Yaw rate PID stabilization
+    // Плавный переход между режимами (mode transition fade, Phase 3.6)
+    // mode_transition_weight_ сбрасывается в 0 при смене режима и
+    // нарастает к 1 за fade_ms, убирая рывок при переключении normal↔drift.
     // ─────────────────────────────────────────────────────────────────────
 
-    if (stab_weight_ > 0.0f && imu_handler_ && imu_handler_->IsEnabled() &&
-        dt_ms > 0) {
+    if (dt_ms > 0 && mode_transition_weight_ < 1.0f) {
+      if (stab_config_.fade_ms == 0) {
+        mode_transition_weight_ = 1.0f;
+      } else {
+        const float fade_rate =
+            1000.0f / static_cast<float>(stab_config_.fade_ms);
+        mode_transition_weight_ =
+            ApplySlewRate(1.0f, mode_transition_weight_, fade_rate, dt_ms);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Yaw rate PID stabilization (не активен в drift mode — slip PID первичен)
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (stab_config_.mode != 2 && stab_weight_ > 0.0f && imu_handler_ &&
+        imu_handler_->IsEnabled() && dt_ms > 0) {
       const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
       const float omega_desired =
           stab_config_.steer_to_yaw_rate_dps * commanded_steering;
       const float omega_actual = imu_handler_->GetFilteredGyroZ();
       const float pid_out = yaw_pid_.Step(omega_desired - omega_actual, dt_sec);
-      commanded_steering =
-          std::clamp(commanded_steering + pid_out * stab_weight_, -1.0f, 1.0f);
+      commanded_steering = std::clamp(
+          commanded_steering +
+              pid_out * stab_weight_ * mode_transition_weight_,
+          -1.0f, 1.0f);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -146,6 +181,22 @@ void VehicleControlUnified::ControlTaskLoop() {
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Slip angle PID (только в drift mode, mode=2)
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (stab_config_.mode == 2 && stab_weight_ > 0.0f &&
+        imu_handler_ && imu_handler_->IsEnabled() && dt_ms > 0) {
+      const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
+      const float slip_error =
+          stab_config_.slip_target_deg - ekf_.GetSlipAngleDeg();
+      const float pid_out = slip_pid_.Step(slip_error, dt_sec);
+      commanded_throttle = std::clamp(
+          commanded_throttle +
+              pid_out * stab_weight_ * mode_transition_weight_,
+          -1.0f, 1.0f);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Failsafe
     // ─────────────────────────────────────────────────────────────────────
 
@@ -159,7 +210,10 @@ void VehicleControlUnified::ControlTaskLoop() {
       applied_throttle = 0.0f;
       applied_steering = 0.0f;
       yaw_pid_.Reset();
-      stab_weight_ = 0.0f;  // Плавный re-fade при восстановлении управления
+      slip_pid_.Reset();
+      ekf_.Reset();
+      stab_weight_ = 0.0f;           // Плавный re-fade при восстановлении управления
+      mode_transition_weight_ = 1.0f;  // Нет незавершённого перехода после failsafe
       platform_->SetPwmNeutral();
     }
 
@@ -255,10 +309,14 @@ PlatformError VehicleControlUnified::Init() {
     // Применить конфигурацию к фильтрам
     madgwick_.SetBeta(stab_config_.madgwick_beta);
 
-    // Инициализировать коэффициенты ПИД
+    // Инициализировать коэффициенты ПИД yaw rate
     yaw_pid_.SetGains({stab_config_.pid_kp, stab_config_.pid_ki,
                        stab_config_.pid_kd, stab_config_.pid_max_integral,
                        stab_config_.pid_max_correction});
+    // Инициализировать коэффициенты ПИД slip angle
+    slip_pid_.SetGains({stab_config_.slip_kp, stab_config_.slip_ki,
+                        stab_config_.slip_kd, stab_config_.slip_max_integral,
+                        stab_config_.slip_max_correction});
 
     // Автокалибровка при старте
     imu_calib_.StartCalibration(CalibMode::Full, 1000);
@@ -326,6 +384,7 @@ bool VehicleControlUnified::InitializeComponents() {
       static_cast<const WifiCommandHandler&>(*wifi_handler_),
       static_cast<const ImuHandler&>(*imu_handler_), imu_calib_, madgwick_,
       TELEM_SEND_INTERVAL_MS));
+  telem_handler_->SetEkf(&ekf_);
 
   return true;
 }
@@ -424,6 +483,9 @@ void VehicleControlUnified::PrintDiagnostics(uint32_t now_ms,
       snprintf(buf, sizeof(buf), "IMU: P=%.1f R=%.1f Y=%.1f deg  gz=%.1f dps",
                pitch_deg, roll_deg, yaw_deg, imu_handler_->GetFilteredGyroZ());
       platform_->Log(LogLevel::Info, buf);
+      snprintf(buf, sizeof(buf), "EKF: vx=%.2f vy=%.2f m/s  slip=%.1f deg",
+               ekf_.GetVx(), ekf_.GetVy(), ekf_.GetSlipAngleDeg());
+      platform_->Log(LogLevel::Info, buf);
     }
 
     diag_loop_count = 0;
@@ -486,6 +548,11 @@ bool VehicleControlUnified::SetStabilizationConfig(
   // При смене режима автоматически применить предустановки PID для нового режима
   if (validated_config.mode != stab_config_.mode) {
     validated_config.ApplyModeDefaults();
+    // Сброс ПИД при смене режима — очищает интегратор предыдущего режима,
+    // предотвращая рывок при переходе (особенно при переходе в/из drift mode)
+    yaw_pid_.Reset();
+    slip_pid_.Reset();
+    mode_transition_weight_ = 0.0f;  // Запустить плавный переход (Phase 3.6)
     if (platform_) {
       char buf[48];
       snprintf(buf, sizeof(buf), "Mode changed to %u, defaults applied",
@@ -502,14 +569,20 @@ bool VehicleControlUnified::SetStabilizationConfig(
     imu_handler_->SetLpfCutoff(validated_config.lpf_cutoff_hz);
   }
 
-  // Обновить коэффициенты ПИД
+  // Обновить коэффициенты ПИД yaw rate
   yaw_pid_.SetGains({validated_config.pid_kp, validated_config.pid_ki,
                      validated_config.pid_kd, validated_config.pid_max_integral,
                      validated_config.pid_max_correction});
+  // Обновить коэффициенты ПИД slip angle
+  slip_pid_.SetGains({validated_config.slip_kp, validated_config.slip_ki,
+                      validated_config.slip_kd,
+                      validated_config.slip_max_integral,
+                      validated_config.slip_max_correction});
   // Сброс ПИД при мгновенном отключении (fade_ms == 0).
   // При плавном fade сброс произойдёт в control loop когда stab_weight_ → 0.
   if (!validated_config.enabled && validated_config.fade_ms == 0) {
     yaw_pid_.Reset();
+    slip_pid_.Reset();
     stab_weight_ = 0.0f;
   }
 

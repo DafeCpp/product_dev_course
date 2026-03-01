@@ -9,6 +9,7 @@
 #include "pid_controller.hpp"
 #include "stabilization_config.hpp"
 #include "vehicle_control_platform.hpp"
+#include "vehicle_ekf.hpp"
 
 namespace rc_vehicle {
 
@@ -180,6 +181,12 @@ class VehicleControlUnified {
   // ПИД-регулятор yaw rate
   PidController yaw_pid_;
 
+  // ПИД-регулятор slip angle (drift mode, mode=2)
+  PidController slip_pid_;
+
+  // EKF оценки динамического состояния (vx, vy, r → slip angle)
+  VehicleEkf ekf_;
+
   // Control components
   std::unique_ptr<RcInputHandler> rc_handler_;
   std::unique_ptr<WifiCommandHandler> wifi_handler_;
@@ -193,6 +200,11 @@ class VehicleControlUnified {
 
   // Плавное включение/выключение стабилизации
   float stab_weight_{0.0f};  // Текущий вес [0..1]: 0 = выкл, 1 = полностью вкл
+
+  // Плавный переход между режимами (mode transition fade, Phase 3.6).
+  // Сбрасывается в 0 при смене режима, нарастает к 1 за fade_ms.
+  // Применяется как множитель к обоим PID (yaw и slip).
+  float mode_transition_weight_{1.0f};
 
   // Запрос калибровки (атомарный для потокобезопасности)
   std::atomic<int> calib_request_{0};

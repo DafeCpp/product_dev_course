@@ -7,6 +7,7 @@
 #include "lpf_butterworth.hpp"
 #include "madgwick_filter.hpp"
 #include "vehicle_control_platform.hpp"
+#include "vehicle_ekf.hpp"
 
 namespace rc_vehicle {
 
@@ -243,6 +244,12 @@ class TelemetryHandler : public ControlComponent {
     applied_steering_ = steering;
   }
 
+  /**
+   * @brief Подключить EKF для включения в телеметрию (опционально)
+   * @param ekf Указатель на EKF или nullptr для отключения
+   */
+  void SetEkf(const VehicleEkf* ekf) noexcept { ekf_ = ekf; }
+
  private:
   VehicleControlPlatform& platform_;
   const RcInputHandler& rc_;
@@ -254,6 +261,7 @@ class TelemetryHandler : public ControlComponent {
   uint32_t last_send_ms_{0};
   float applied_throttle_{0.0f};
   float applied_steering_{0.0f};
+  const VehicleEkf* ekf_{nullptr};
 
   /**
    * @brief Построить JSON-строку с телеметрией
