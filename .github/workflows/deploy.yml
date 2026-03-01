@@ -240,22 +240,31 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Ensure .env exists on VM (copy template if missing)
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          SSH="ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}"
-          SCP="scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key"
-          $SSH "mkdir -p /opt/experiment-tracking"
-          if $SSH "test -f /opt/experiment-tracking/.env"; then
+          O="-o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key"
+          D="${VM_USER}@${VM_HOST}"
+
+          ssh $O "$D" "mkdir -p /opt/experiment-tracking"
+
+          if ssh $O "$D" "test -f /opt/experiment-tracking/.env"; then
             echo ".env already exists"
           else
-            $SCP env.production.example "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/.env"
+            scp $O env.production.example "$D:/opt/experiment-tracking/.env"
             echo "Created .env from env.production.example — edit it on the VM and re-run deploy if needed."
           fi
-          $SCP docker-compose.prod.yml "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/docker-compose.prod.yml"
-          $SSH "sudo rm -rf /opt/experiment-tracking/infrastructure/logging && mkdir -p /opt/experiment-tracking/infrastructure"
-          $SCP -r infrastructure/logging "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/experiment-tracking/infrastructure/"
+
+          scp $O docker-compose.prod.yml "$D:/opt/experiment-tracking/docker-compose.prod.yml"
+
+          # Remove Docker-auto-created stub dirs (owned by root) and ensure deploy user owns the dir
+          ssh $O "$D" "sudo rm -rf /opt/experiment-tracking/infrastructure/logging" || true
+          ssh $O "$D" "sudo mkdir -p /opt/experiment-tracking/infrastructure && sudo chown \$(id -u):\$(id -g) /opt/experiment-tracking/infrastructure"
+          scp -r $O infrastructure/logging "$D:/opt/experiment-tracking/infrastructure/"
           echo "Copied docker-compose.prod.yml and infrastructure/logging to VM"
 
       - name: Deploy via SSH
