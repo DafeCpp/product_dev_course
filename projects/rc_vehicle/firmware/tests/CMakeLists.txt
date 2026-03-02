@@ -35,6 +35,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/uart_bridge_base.cpp
     ${COMMON_DIR}/pid_controller.cpp
     ${COMMON_DIR}/vehicle_ekf.cpp
+    ${COMMON_DIR}/telemetry_log.cpp
 )
 
 # Include directories
@@ -64,6 +65,7 @@ add_executable(unit_tests
     unit/test_pid.cpp
     unit/test_stabilization_config.cpp
     unit/test_vehicle_ekf.cpp
+    unit/test_telemetry_log.cpp
 )
 
 target_link_libraries(unit_tests
