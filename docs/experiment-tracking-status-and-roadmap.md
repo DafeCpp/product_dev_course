@@ -130,8 +130,11 @@
 - ✅ **Восстановление пароля (self-service):** `POST /auth/password-reset/request` → reset-токен в ответе (dev/учебный режим, без email); `POST /auth/password-reset/confirm` → новый JWT.
 - ✅ **Принудительный сброс пароля (admin):** `POST /auth/admin/users/{user_id}/reset` — admin задаёт новый временный пароль, устанавливает `password_change_required = true`; требует поля `is_admin` (миграция `004_password_reset.sql`).
 - ✅ **Инвайт-система:** `POST /auth/admin/invites` / `GET /auth/admin/invites` / `DELETE /auth/admin/invites/{token}` (только admin); конфигурационный флаг `REGISTRATION_MODE=open|invite`; при `invite` — `POST /auth/register` принимает обязательный `invite_token`, проверяет активность (не истёк, не использован), помечает `used_at`; миграция `005_invite_system.sql`.
+- ✅ **Управление пользователями admin'ом (backend):** поле `is_active` в таблице `users` (миграция `006_user_is_active.sql`); логин и доступ по токену блокируется для деактивированных аккаунтов.
+  - `GET /auth/admin/users?search=&is_active=` — список всех пользователей с фильтрацией.
+  - `PATCH /auth/admin/users/{user_id}` — изменить `is_active` / `is_admin`; нельзя трогать собственный аккаунт; защита от разжалования/удаления последнего активного admin'а (409).
+  - `DELETE /auth/admin/users/{user_id}` — удалить пользователя; те же защиты.
 - ⚠️ **Начальный admin:** hardcode в миграции `001_initial_schema.sql` (логин `admin`, пароль `admin123`, `password_change_required = true`) — не подходит для продакшена.
-- ❌ **Управление пользователями** admin'ом (список, деактивация, удаление).
 
 ---
 
@@ -176,10 +179,8 @@
 
 #### Управление пользователями (admin UI)
 
-- `GET /auth/admin/users` — список всех пользователей (только superadmin).
-- `PATCH /auth/admin/users/{user_id}` — изменить статус (активен / деактивирован).
-- `DELETE /auth/admin/users/{user_id}` — удалить пользователя (с проверкой на активные ресурсы).
-- Frontend: страница `/admin/users` с таблицей пользователей, кнопками инвайта и сброса пароля.
+- ✅ **Backend:** `GET /auth/admin/users`, `PATCH /auth/admin/users/{user_id}` (is_active / is_admin), `DELETE /auth/admin/users/{user_id}`; защита последнего admin'а; `is_active` блокирует логин и token lookup.
+- ❌ **Frontend:** страница `/admin/users` с таблицей пользователей, кнопками инвайта и сброса пароля.
 
 #### Опционально: отдельный сервис управления доступами
 

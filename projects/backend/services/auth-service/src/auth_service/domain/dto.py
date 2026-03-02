@@ -76,6 +76,7 @@ class UserResponse(BaseModel):
     email: str
     password_change_required: bool = False
     is_admin: bool = False
+    is_active: bool = True
 
     @classmethod
     def from_user(cls, user: "User") -> "UserResponse":
@@ -86,6 +87,7 @@ class UserResponse(BaseModel):
             email=user.email,
             password_change_required=user.password_change_required,
             is_admin=user.is_admin,
+            is_active=user.is_active,
         )
 
 
@@ -111,6 +113,13 @@ class AdminUserResetRequest(BaseModel):
     """Admin reset of another user's password."""
 
     new_password: str | None = None
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """Admin update of user fields (is_active, is_admin)."""
+
+    is_active: bool | None = None
+    is_admin: bool | None = None
 
 
 class PasswordChangeRequest(BaseModel):

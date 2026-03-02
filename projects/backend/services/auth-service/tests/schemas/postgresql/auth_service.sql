@@ -32,6 +32,7 @@ CREATE TABLE users (
     hashed_password text NOT NULL,
     password_change_required BOOLEAN NOT NULL DEFAULT false,
     is_admin BOOLEAN NOT NULL DEFAULT false,
+    is_active BOOLEAN NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -39,6 +40,7 @@ CREATE TABLE users (
 CREATE INDEX users_username_idx ON users (username);
 CREATE INDEX users_email_idx ON users (email);
 CREATE INDEX users_username_lower_idx ON users (lower(username));
+CREATE INDEX users_is_active_idx ON users (is_active);
 
 CREATE TRIGGER users_set_updated_at
     BEFORE UPDATE ON users

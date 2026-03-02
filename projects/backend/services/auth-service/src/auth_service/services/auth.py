@@ -140,6 +140,10 @@ class AuthService:
         if not verify_password(password, user.hashed_password):
             raise InvalidCredentialsError()
 
+        # Проверка активности аккаунта
+        if not user.is_active:
+            raise ForbiddenError("Account is deactivated")
+
         # Generate tokens
         tokens = self._create_tokens(str(user.id))
 
@@ -230,6 +234,9 @@ class AuthService:
         if not user:
             raise UserNotFoundError()
 
+        if not user.is_active:
+            raise ForbiddenError("Account is deactivated")
+
         return user
 
     async def request_password_reset(self, email: str) -> tuple[str, datetime]:
@@ -279,6 +286,74 @@ class AuthService:
             password_change_required=True,
         )
         return updated_user, pwd
+
+    async def list_users(
+        self,
+        requester_token: str,
+        search: str | None = None,
+    ) -> list[User]:
+        """List all users. Requires admin privileges."""
+        requester = await self.get_user_by_token(requester_token)
+        if not requester.is_admin:
+            raise ForbiddenError()
+        return await self._user_repo.list_all(search)
+
+    async def update_user(
+        self,
+        requester_token: str,
+        target_user_id: UUID,
+        is_active: bool | None,
+        is_admin: bool | None,
+    ) -> User:
+        """Update user is_active/is_admin flags. Requires admin privileges."""
+        requester = await self.get_user_by_token(requester_token)
+        if not requester.is_admin:
+            raise ForbiddenError()
+
+        if requester.id == target_user_id:
+            raise ForbiddenError("Cannot modify your own account")
+
+        target = await self._user_repo.get_by_id(target_user_id)
+        if not target:
+            raise UserNotFoundError()
+
+        # Защита от разжалования последнего admin'а
+        if is_admin is False and target.is_admin:
+            if await self._user_repo.count_admins() < 2:
+                raise ConflictError("Cannot remove the last admin")
+
+        if is_active is not None:
+            target = await self._user_repo.set_active(target_user_id, is_active)
+        if is_admin is not None:
+            target = await self._user_repo.set_admin(target_user_id, is_admin)
+
+        return target
+
+    async def delete_user(
+        self,
+        requester_token: str,
+        target_user_id: UUID,
+    ) -> bool:
+        """Delete a user. Requires admin privileges."""
+        requester = await self.get_user_by_token(requester_token)
+        if not requester.is_admin:
+            raise ForbiddenError()
+
+        if requester.id == target_user_id:
+            raise ForbiddenError("Cannot delete your own account")
+
+        target = await self._user_repo.get_by_id(target_user_id)
+        if not target:
+            raise NotFoundError("User not found")
+
+        if target.is_admin:
+            if await self._user_repo.count_admins() < 2:
+                raise ConflictError("Cannot delete the last admin")
+
+        deleted = await self._user_repo.delete(target_user_id)
+        if not deleted:
+            raise NotFoundError("User not found")
+        return True
 
     def _create_tokens(self, user_id: str) -> AuthTokensResponse:
         """Create access and refresh tokens."""

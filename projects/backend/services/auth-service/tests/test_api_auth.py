@@ -890,3 +890,275 @@ async def test_delete_used_invite_forbidden(service_client, admin_token, monkeyp
     payload = await response.json()
     assert "error" in payload
 
+
+# ---------------------------------------------------------------------------
+# Admin user management tests
+# ---------------------------------------------------------------------------
+
+
+async def _admin_list_users(client, admin_token, **params):
+    """Helper: GET /auth/admin/users с опциональными query params."""
+    url = "/auth/admin/users"
+    if params:
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        url = f"{url}?{qs}"
+    return await client.get(url, headers={"Authorization": f"Bearer {admin_token}"})
+
+
+async def _admin_update_user(client, admin_token, user_id, **fields):
+    """Helper: PATCH /auth/admin/users/{user_id}."""
+    return await client.patch(
+        f"/auth/admin/users/{user_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=fields,
+    )
+
+
+async def _admin_delete_user(client, admin_token, user_id):
+    """Helper: DELETE /auth/admin/users/{user_id}."""
+    return await client.delete(
+        f"/auth/admin/users/{user_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_list_users_success(service_client, admin_token):
+    """Admin получает список пользователей → 200, список содержит зарегистрированных."""
+    reg = await _register(service_client, "listuser1", "listuser1@example.com")
+    assert reg.status == 201
+
+    response = await _admin_list_users(service_client, admin_token)
+    assert response.status == 200
+    payload = await response.json()
+    assert isinstance(payload, list)
+    usernames = [u["username"] for u in payload]
+    assert "listuser1" in usernames
+    # Все поля присутствуют
+    for user in payload:
+        assert "id" in user
+        assert "username" in user
+        assert "email" in user
+        assert "is_active" in user
+        assert "is_admin" in user
+
+
+@pytest.mark.asyncio
+async def test_admin_list_users_forbidden(service_client):
+    """Обычный пользователь не может получить список → 403."""
+    reg = await _register(service_client, "listforbidden", "listforbidden@example.com")
+    assert reg.status == 201
+    token = (await reg.json())["access_token"]
+
+    response = await service_client.get(
+        "/auth/admin/users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_list_users_search(service_client, admin_token):
+    """Фильтр ?search= возвращает только совпадающих пользователей."""
+    await _register(service_client, "searchalpha", "searchalpha@example.com")
+    await _register(service_client, "searchbeta", "searchbeta@example.com")
+    await _register(service_client, "othergamma", "othergamma@example.com")
+
+    response = await _admin_list_users(service_client, admin_token, search="search")
+    assert response.status == 200
+    payload = await response.json()
+    usernames = [u["username"] for u in payload]
+    assert "searchalpha" in usernames
+    assert "searchbeta" in usernames
+    assert "othergamma" not in usernames
+
+
+@pytest.mark.asyncio
+async def test_admin_deactivate_user_success(service_client, admin_token):
+    """Admin деактивирует пользователя → 200, is_active=false."""
+    reg = await _register(service_client, "deactuser", "deactuser@example.com")
+    assert reg.status == 201
+    user_id = (await reg.json())["user"]["id"]
+
+    response = await _admin_update_user(service_client, admin_token, user_id, is_active=False)
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["is_active"] is False
+    assert payload["id"] == user_id
+
+
+@pytest.mark.asyncio
+async def test_admin_deactivated_user_cannot_login(service_client, admin_token):
+    """Деактивированный пользователь не может войти → 403."""
+    reg = await _register(service_client, "cantlogin", "cantlogin@example.com", password="Cantlogin1")
+    assert reg.status == 201
+    user_id = (await reg.json())["user"]["id"]
+
+    deact = await _admin_update_user(service_client, admin_token, user_id, is_active=False)
+    assert deact.status == 200
+
+    login_resp = await service_client.post(
+        "/auth/login",
+        json={"username": "cantlogin", "password": "Cantlogin1"},
+    )
+    assert login_resp.status == 403
+    payload = await login_resp.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_admin_reactivate_user_success(service_client, admin_token):
+    """Admin реактивирует пользователя → логин снова работает."""
+    reg = await _register(service_client, "reactuser", "reactuser@example.com", password="Reactuser1")
+    assert reg.status == 201
+    user_id = (await reg.json())["user"]["id"]
+
+    # Деактивируем
+    await _admin_update_user(service_client, admin_token, user_id, is_active=False)
+
+    # Реактивируем
+    resp = await _admin_update_user(service_client, admin_token, user_id, is_active=True)
+    assert resp.status == 200
+    assert (await resp.json())["is_active"] is True
+
+    # Логин работает
+    login_resp = await service_client.post(
+        "/auth/login",
+        json={"username": "reactuser", "password": "Reactuser1"},
+    )
+    assert login_resp.status == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_update_self_forbidden(service_client, admin_token):
+    """Admin не может изменить собственный аккаунт → 403."""
+    # Получаем свой id
+    me_resp = await service_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert me_resp.status == 200
+    admin_id = (await me_resp.json())["id"]
+
+    response = await _admin_update_user(service_client, admin_token, admin_id, is_active=False)
+    assert response.status == 403
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_admin_grant_admin_success(service_client, admin_token):
+    """Admin повышает пользователя до admin → 200, is_admin=true."""
+    reg = await _register(service_client, "newadmin", "newadmin@example.com")
+    assert reg.status == 201
+    user_id = (await reg.json())["user"]["id"]
+
+    response = await _admin_update_user(service_client, admin_token, user_id, is_admin=True)
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["is_admin"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_revoke_last_admin_forbidden(service_client, admin_token):
+    """Нельзя разжаловать единственного активного admin'а → 409."""
+    # Создаём второго пользователя и повышаем до admin
+    reg = await _register(service_client, "revoke409user", "revoke409user@example.com")
+    assert reg.status == 201
+    target_id = (await reg.json())["user"]["id"]
+
+    grant = await _admin_update_user(service_client, admin_token, target_id, is_admin=True)
+    assert grant.status == 200
+
+    # Деактивируем target → count_admins() == 1 (только admin_token)
+    deact = await _admin_update_user(service_client, admin_token, target_id, is_active=False)
+    assert deact.status == 200
+
+    # Попытка разжаловать target (is_admin=True, но is_active=False) → 409
+    response = await _admin_update_user(service_client, admin_token, target_id, is_admin=False)
+    assert response.status == 409
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_user_success(service_client, admin_token):
+    """Admin удаляет пользователя → 204, пользователь исчезает из списка."""
+    reg = await _register(service_client, "deleteuser", "deleteuser@example.com")
+    assert reg.status == 201
+    user_id = (await reg.json())["user"]["id"]
+
+    response = await _admin_delete_user(service_client, admin_token, user_id)
+    assert response.status == 204
+
+    # Проверяем что пользователь исчез
+    list_resp = await _admin_list_users(service_client, admin_token, search="deleteuser")
+    assert list_resp.status == 200
+    payload = await list_resp.json()
+    assert all(u["id"] != user_id for u in payload)
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_user_not_found(service_client, admin_token):
+    """Удаление несуществующего пользователя → 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await _admin_delete_user(service_client, admin_token, fake_id)
+    assert response.status == 404
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_self_forbidden(service_client, admin_token):
+    """Admin не может удалить собственный аккаунт → 403."""
+    me_resp = await service_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert me_resp.status == 200
+    admin_id = (await me_resp.json())["id"]
+
+    response = await _admin_delete_user(service_client, admin_token, admin_id)
+    assert response.status == 403
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_last_admin_forbidden(service_client, admin_token):
+    """Нельзя удалить единственного активного admin'а → 409."""
+    # Создаём второго admin'а
+    reg = await _register(service_client, "del409admin", "del409admin@example.com")
+    assert reg.status == 201
+    target_id = (await reg.json())["user"]["id"]
+
+    await _admin_update_user(service_client, admin_token, target_id, is_admin=True)
+
+    # Деактивируем → count_admins == 1 (только admin_token)
+    await _admin_update_user(service_client, admin_token, target_id, is_active=False)
+
+    # Попытка удалить target (admin, inactive) → 409
+    response = await _admin_delete_user(service_client, admin_token, target_id)
+    assert response.status == 409
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_user_forbidden_non_admin(service_client):
+    """Обычный пользователь не может удалить другого → 403."""
+    reg_actor = await _register(service_client, "delactor", "delactor@example.com")
+    assert reg_actor.status == 201
+    actor_token = (await reg_actor.json())["access_token"]
+
+    reg_victim = await _register(service_client, "delvictim", "delvictim@example.com")
+    assert reg_victim.status == 201
+    victim_id = (await reg_victim.json())["user"]["id"]
+
+    response = await service_client.delete(
+        f"/auth/admin/users/{victim_id}",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert response.status == 403
+    payload = await response.json()
+    assert "error" in payload

@@ -10,6 +10,7 @@ from auth_service.core.exceptions import AuthError, handle_auth_error
 from backend_common.db.pool import get_pool_service as get_pool
 from auth_service.domain.dto import (
     AdminUserResetRequest,
+    AdminUserUpdateRequest,
     AuthTokensResponse,
     InviteCreateRequest,
     InviteResponse,
@@ -352,6 +353,85 @@ async def revoke_invite(request: web.Request) -> web.Response:
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
+async def list_users(request: web.Request) -> web.Response:
+    """List all users (admin only)."""
+    token = _extract_bearer_token(request)
+    if not token:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    search = request.rel_url.query.get("search") or None
+    is_active_str = request.rel_url.query.get("is_active")
+
+    try:
+        auth_service = await get_auth_service(request)
+        users = await auth_service.list_users(token, search=search)
+        # Фильтр по is_active применяем в Python
+        if is_active_str is not None:
+            filter_active = is_active_str.lower() in ("true", "1", "yes")
+            users = [u for u in users if u.is_active == filter_active]
+        return web.json_response(
+            [UserResponse.from_user(u).model_dump() for u in users],
+            status=200,
+        )
+    except AuthError as e:
+        return handle_auth_error(request, e)
+    except Exception:
+        logger.exception("List users error")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def update_user(request: web.Request) -> web.Response:
+    """Update user flags (admin only)."""
+    token = _extract_bearer_token(request)
+    if not token:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    user_id_str = request.match_info.get("user_id", "")
+    try:
+        target_user_id = UUID(user_id_str)
+    except ValueError:
+        return web.json_response({"error": "Invalid user_id"}, status=400)
+
+    try:
+        data = await request.json()
+        req = AdminUserUpdateRequest(**data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid request: {e}"}, status=400)
+
+    try:
+        auth_service = await get_auth_service(request)
+        user = await auth_service.update_user(token, target_user_id, req.is_active, req.is_admin)
+        return web.json_response(UserResponse.from_user(user).model_dump(), status=200)
+    except AuthError as e:
+        return handle_auth_error(request, e)
+    except Exception:
+        logger.exception("Update user error")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def delete_user(request: web.Request) -> web.Response:
+    """Delete user (admin only)."""
+    token = _extract_bearer_token(request)
+    if not token:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    user_id_str = request.match_info.get("user_id", "")
+    try:
+        target_user_id = UUID(user_id_str)
+    except ValueError:
+        return web.json_response({"error": "Invalid user_id"}, status=400)
+
+    try:
+        auth_service = await get_auth_service(request)
+        await auth_service.delete_user(token, target_user_id)
+        return web.Response(status=204)
+    except AuthError as e:
+        return handle_auth_error(request, e)
+    except Exception:
+        logger.exception("Delete user error")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
 def setup_routes(app: web.Application) -> None:
     """Setup authentication routes."""
     app.router.add_post("/auth/login", login)
@@ -366,4 +446,7 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_post("/auth/admin/invites", create_invite)
     app.router.add_get("/auth/admin/invites", list_invites)
     app.router.add_delete("/auth/admin/invites/{token}", revoke_invite)
+    app.router.add_get("/auth/admin/users", list_users)
+    app.router.add_patch("/auth/admin/users/{user_id}", update_user)
+    app.router.add_delete("/auth/admin/users/{user_id}", delete_user)
 
