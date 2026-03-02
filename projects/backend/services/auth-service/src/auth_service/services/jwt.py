@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from typing import Any
 
 import jwt  # type: ignore[import-untyped]
@@ -27,6 +28,7 @@ def create_refresh_token(user_id: str) -> str:
     payload: dict[str, Any] = {
         "sub": user_id,
         "type": "refresh",
+        "jti": str(uuid.uuid4()),
         "iat": now,
         "exp": now + settings.refresh_token_ttl_sec,
     }
@@ -55,4 +57,13 @@ def get_user_id_from_token(token: str) -> str:
     if not user_id:
         raise ValueError("Token missing user ID")
     return str(user_id)
+
+
+def get_jti_from_token(token: str) -> str:
+    """Extract jti claim from token."""
+    payload = decode_token(token)
+    jti = payload.get("jti")
+    if not jti:
+        raise ValueError("Token missing jti")
+    return str(jti)
 

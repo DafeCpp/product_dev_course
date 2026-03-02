@@ -282,11 +282,81 @@ async def test_me_invalid_token(service_client):
 
 @pytest.mark.asyncio
 async def test_logout(service_client):
-    """Test logout endpoint."""
-    response = await service_client.post("/auth/logout")
+    """Test logout с валидным refresh-токеном."""
+    # Регистрируемся, чтобы получить токен
+    register_response = await service_client.post(
+        "/auth/register",
+        json={
+            "username": "logoutuser",
+            "email": "logout@example.com",
+            "password": "logoutpass123",
+        },
+    )
+    assert register_response.status == 201
+    register_payload = await register_response.json()
+    refresh_token = register_payload["refresh_token"]
+
+    response = await service_client.post(
+        "/auth/logout",
+        json={"refresh_token": refresh_token},
+    )
     assert response.status == 200
     payload = await response.json()
     assert payload["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_logout_missing_body(service_client):
+    """Test logout без тела запроса → 400."""
+    response = await service_client.post("/auth/logout")
+    assert response.status == 400
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_logout_invalid_token(service_client):
+    """Test logout с невалидным токеном → 401."""
+    response = await service_client.post(
+        "/auth/logout",
+        json={"refresh_token": "not.a.valid.token"},
+    )
+    assert response.status == 401
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_refresh_token(service_client):
+    """Test: после logout refresh-токен больше не принимается."""
+    # Регистрируемся
+    register_response = await service_client.post(
+        "/auth/register",
+        json={
+            "username": "revokeuser",
+            "email": "revoke@example.com",
+            "password": "revokepass123",
+        },
+    )
+    assert register_response.status == 201
+    register_payload = await register_response.json()
+    refresh_token = register_payload["refresh_token"]
+
+    # Logout — отзываем токен
+    logout_response = await service_client.post(
+        "/auth/logout",
+        json={"refresh_token": refresh_token},
+    )
+    assert logout_response.status == 200
+
+    # Попытка обновить токен должна вернуть 401
+    refresh_response = await service_client.post(
+        "/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert refresh_response.status == 401
+    payload = await refresh_response.json()
+    assert "error" in payload
 
 
 @pytest.mark.asyncio

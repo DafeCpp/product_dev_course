@@ -52,6 +52,12 @@ class TokenRefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """Logout request."""
+
+    refresh_token: str
+
+
 class AuthTokensResponse(BaseModel):
     """Authentication tokens response."""
 

@@ -1,6 +1,7 @@
 """Authentication service."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 from auth_service.core.exceptions import (
@@ -10,6 +11,7 @@ from auth_service.core.exceptions import (
 )
 from auth_service.domain.dto import AuthTokensResponse, UserResponse
 from auth_service.domain.models import User
+from auth_service.repositories.revoked_tokens import RevokedTokenRepository
 from auth_service.repositories.users import UserRepository
 from auth_service.services.jwt import (
     create_access_token,
@@ -23,8 +25,9 @@ from auth_service.services.password import hash_password, verify_password
 class AuthService:
     """Service for authentication operations."""
 
-    def __init__(self, user_repository: UserRepository):
+    def __init__(self, user_repository: UserRepository, revoked_repo: RevokedTokenRepository):
         self._user_repo = user_repository
+        self._revoked_repo = revoked_repo
 
     async def register(
         self,
@@ -92,17 +95,43 @@ class AuthService:
 
         return updated_user
 
+    async def logout(self, refresh_token: str) -> None:
+        """Revoke a refresh token."""
+        try:
+            payload = decode_token(refresh_token)
+            if payload.get("type") != "refresh":
+                raise ValueError("Invalid token type")
+            jti = payload.get("jti")
+            if not jti:
+                raise ValueError("Token missing jti")
+            user_id = payload.get("sub")
+            if not user_id:
+                raise ValueError("Token missing user ID")
+            exp: int = payload["exp"]
+        except ValueError as e:
+            raise InvalidCredentialsError(str(e)) from e
+
+        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+        await self._revoked_repo.revoke(UUID(jti), UUID(user_id), expires_at)
+
     async def refresh_token(self, refresh_token: str) -> AuthTokensResponse:
         """Refresh access token using refresh token."""
         try:
             payload = decode_token(refresh_token)
             if payload.get("type") != "refresh":
                 raise ValueError("Invalid token type")
+            jti = payload.get("jti")
+            if not jti:
+                raise ValueError("Token missing jti")
             user_id = payload.get("sub")
             if not user_id:
                 raise ValueError("Token missing user ID")
         except ValueError as e:
             raise InvalidCredentialsError(str(e)) from e
+
+        # Проверяем blacklist
+        if await self._revoked_repo.is_revoked(UUID(jti)):
+            raise InvalidCredentialsError("Token has been revoked")
 
         # Verify user exists
         user = await self._user_repo.get_by_id(UUID(user_id))

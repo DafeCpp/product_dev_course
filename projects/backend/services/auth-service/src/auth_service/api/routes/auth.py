@@ -8,12 +8,14 @@ from auth_service.core.exceptions import AuthError, handle_auth_error
 from backend_common.db.pool import get_pool_service as get_pool
 from auth_service.domain.dto import (
     AuthTokensResponse,
+    LogoutRequest,
     PasswordChangeRequest,
     TokenRefreshRequest,
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
 )
+from auth_service.repositories.revoked_tokens import RevokedTokenRepository
 from auth_service.repositories.users import UserRepository
 from auth_service.services.auth import AuthService
 
@@ -24,7 +26,8 @@ async def get_auth_service(request: web.Request) -> AuthService:
     """Get auth service from request."""
     pool = await get_pool()
     user_repo = UserRepository(pool)
-    return AuthService(user_repo)
+    revoked_repo = RevokedTokenRepository(pool)
+    return AuthService(user_repo, revoked_repo)
 
 
 def _extract_bearer_token(request: web.Request) -> str | None:
@@ -134,9 +137,22 @@ async def me(request: web.Request) -> web.Response:
 
 
 async def logout(request: web.Request) -> web.Response:
-    """Logout user (placeholder - in production would invalidate tokens)."""
-    # TODO: Implement token blacklisting / revocation for production use.
-    return web.json_response({"ok": True}, status=200)
+    """Logout user — revokes the provided refresh token."""
+    try:
+        data = await request.json()
+        req = LogoutRequest(**data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid request: {e}"}, status=400)
+
+    try:
+        auth_service = await get_auth_service(request)
+        await auth_service.logout(req.refresh_token)
+        return web.json_response({"ok": True}, status=200)
+    except AuthError as e:
+        return handle_auth_error(request, e)
+    except Exception:
+        logger.exception("Logout error")
+        return web.json_response({"error": "Internal server error"}, status=500)
 
 
 async def change_password(request: web.Request) -> web.Response:

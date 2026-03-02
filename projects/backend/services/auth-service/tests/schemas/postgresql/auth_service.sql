@@ -4,6 +4,7 @@
 BEGIN;
 DROP TABLE IF EXISTS project_members CASCADE;
 DROP TABLE IF EXISTS projects CASCADE;
+DROP TABLE IF EXISTS revoked_tokens CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS schema_migrations CASCADE;
 DROP FUNCTION IF EXISTS set_updated_at() CASCADE;
@@ -47,6 +48,18 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     checksum text NOT NULL,
     applied_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Migration: 003_add_token_blacklist.sql
+-- Таблица для хранения отозванных refresh-токенов (JWT blacklist).
+
+CREATE TABLE revoked_tokens (
+    jti        uuid        PRIMARY KEY,
+    user_id    uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at timestamptz NOT NULL,
+    revoked_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX revoked_tokens_expires_at_idx ON revoked_tokens (expires_at);
 
 -- Migration: 002_add_projects.sql
 -- Add projects and project members tables.
