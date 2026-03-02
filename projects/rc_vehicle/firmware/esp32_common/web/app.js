@@ -3,6 +3,13 @@ let ws = null;
 let wsReconnectInterval = null;
 const WS_URL = `ws://${window.location.hostname}/ws`;
 
+// Функция для отправки JSON-команды через WebSocket
+function wsSend(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(obj));
+    }
+}
+
 // Элементы UI
 const wsStatusEl = document.getElementById('ws-status');
 const mcuStatusEl = document.getElementById('mcu-status');
@@ -66,6 +73,35 @@ function connectWebSocket() {
                     updateCalibStatus(data.status, null);
                 } else if (data.type === 'calib_status') {
                     updateCalibStatus(data.status, null);
+                } else if (data.type === 'stab_config' || data.type === 'set_stab_config_ack') {
+                    if (data.type === 'stab_config') {
+                        applyStabConfig(data);
+                    } else if (data.ok) {
+                        applyStabConfig(data);
+                        showStabSaveStatus('Сохранено', 'connected');
+                    } else {
+                        showStabSaveStatus('Ошибка сохранения', 'disconnected');
+                    }
+                } else if (data.type === 'log_info') {
+                    updateLogInfo(data.count, data.capacity);
+                    // Если ожидается CSV — запросить данные
+                    if (pendingLogTotal === -2) {
+                        const total = data.count || 0;
+                        const want = Math.min(500, total);
+                        const offset = total > want ? total - want : 0;
+                        pendingLogTotal = want;
+                        pendingLogOffset = offset;
+                        pendingLogFrames = [];
+                        if (want > 0) {
+                            wsSend({ type: 'get_log_data', offset: offset, count: Math.min(200, want) });
+                        } else {
+                            exportLogCsv([]);
+                        }
+                    }
+                } else if (data.type === 'log_data') {
+                    handleLogData(data.frames || []);
+                } else if (data.type === 'clear_log_ack') {
+                    wsSend({ type: 'get_log_info' });
                 }
             } catch (e) {
                 console.error('Failed to parse message:', e);
@@ -369,12 +405,204 @@ function updateTelem(data) {
         </div>`;
     }
 
+    // EKF блок (Phase 4.1/4.2)
+    if (data.ekf) {
+        html += `<div class="telem-item">
+            <span class="telem-label">EKF Slip:</span>
+            <span class="telem-value">${data.ekf.slip_deg?.toFixed(1) || 'N/A'} °</span>
+        </div>`;
+        html += `<div class="telem-item">
+            <span class="telem-label">EKF Speed:</span>
+            <span class="telem-value">${data.ekf.speed_ms?.toFixed(2) || 'N/A'} m/s</span>
+        </div>`;
+        html += `<div class="telem-item">
+            <span class="telem-label">EKF Vx/Vy:</span>
+            <span class="telem-value">${data.ekf.vx?.toFixed(2) || 'N/A'} / ${data.ekf.vy?.toFixed(2) || 'N/A'} m/s</span>
+        </div>`;
+    }
+
     telemDataEl.innerHTML = html || '<p>Нет данных</p>';
 
     // Обновление панели калибровки из телеметрии
     if (data.calib) {
         updateCalibStatus(data.calib.status, data.calib);
     }
+
+    // Oversteer индикатор (Phase 4.2)
+    const owIndicator = document.getElementById('oversteer-indicator');
+    const owStatus = document.getElementById('oversteer-status');
+    if (owIndicator && owStatus && data.warn !== undefined) {
+        owIndicator.style.display = 'flex';
+        if (data.warn.oversteer) {
+            owStatus.textContent = 'ЗАНОС!';
+            owStatus.className = 'status-value oversteer-active';
+        } else {
+            owStatus.textContent = 'OK';
+            owStatus.className = 'status-value oversteer-ok';
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Стабилизация (Phase 4.1/4.2/4.4)
+// ═══════════════════════════════════════════════════════════════════
+
+let currentMode = 0;  // 0=normal, 1=sport, 2=drift
+
+function applyStabConfig(cfg) {
+    const set = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.value = val;
+    };
+    const setChk = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!val;
+    };
+
+    currentMode = cfg.mode ?? 0;
+    updateModeButtons(currentMode);
+
+    setChk('stab-enabled', cfg.enabled);
+    set('stab-kp', cfg.pid_kp ?? '');
+    set('stab-ki', cfg.pid_ki ?? '');
+    set('stab-kd', cfg.pid_kd ?? '');
+    set('stab-max-corr', cfg.pid_max_correction ?? '');
+    setChk('adapt-pid-enabled', cfg.adaptive_pid_enabled);
+    set('adapt-speed-ref', cfg.adaptive_speed_ref_ms ?? '');
+    setChk('pitch-comp-enabled', cfg.pitch_comp_enabled);
+    set('pitch-gain', cfg.pitch_comp_gain ?? '');
+    set('pitch-max-corr', cfg.pitch_comp_max_correction ?? '');
+    setChk('oversteer-enabled', cfg.oversteer_warn_enabled);
+    set('ow-slip-thresh', cfg.oversteer_slip_thresh_deg ?? '');
+    set('ow-rate-thresh', cfg.oversteer_rate_thresh_deg_s ?? '');
+    set('ow-throttle-red', cfg.oversteer_throttle_reduction ?? '');
+}
+
+function updateModeButtons(mode) {
+    const ids = ['btn-mode-normal', 'btn-mode-sport', 'btn-mode-drift'];
+    ids.forEach((id, idx) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (idx === mode) {
+            el.classList.add('btn-mode-active');
+        } else {
+            el.classList.remove('btn-mode-active');
+        }
+    });
+}
+
+function loadStabConfig() {
+    wsSend({ type: 'get_stab_config' });
+}
+
+function saveStabConfig() {
+    const getF = (id) => {
+        const el = document.getElementById(id);
+        return el ? parseFloat(el.value) : undefined;
+    };
+    const getChk = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.checked : false;
+    };
+
+    const cfg = {
+        type: 'set_stab_config',
+        mode: currentMode,
+        enabled: getChk('stab-enabled'),
+        pid_kp: getF('stab-kp'),
+        pid_ki: getF('stab-ki'),
+        pid_kd: getF('stab-kd'),
+        pid_max_correction: getF('stab-max-corr'),
+        adaptive_pid_enabled: getChk('adapt-pid-enabled'),
+        adaptive_speed_ref_ms: getF('adapt-speed-ref'),
+        pitch_comp_enabled: getChk('pitch-comp-enabled'),
+        pitch_comp_gain: getF('pitch-gain'),
+        pitch_comp_max_correction: getF('pitch-max-corr'),
+        oversteer_warn_enabled: getChk('oversteer-enabled'),
+        oversteer_slip_thresh_deg: getF('ow-slip-thresh'),
+        oversteer_rate_thresh_deg_s: getF('ow-rate-thresh'),
+        oversteer_throttle_reduction: getF('ow-throttle-red'),
+    };
+    wsSend(cfg);
+}
+
+function showStabSaveStatus(msg, cssClass) {
+    const statusEl = document.getElementById('stab-save-status');
+    const msgEl = document.getElementById('stab-save-msg');
+    if (!statusEl || !msgEl) return;
+    statusEl.style.display = 'flex';
+    msgEl.textContent = msg;
+    msgEl.className = 'status-value ' + cssClass;
+    setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Лог телеметрии (Phase 4.3/4.4)
+// ═══════════════════════════════════════════════════════════════════
+
+let pendingLogFrames = [];
+let pendingLogTotal = 0;
+let pendingLogOffset = 0;
+
+function updateLogInfo(count, capacity) {
+    const countEl = document.getElementById('log-count');
+    const capEl = document.getElementById('log-capacity');
+    if (countEl) countEl.textContent = count ?? '—';
+    if (capEl) capEl.textContent = capacity ?? '—';
+}
+
+function getLogInfo() {
+    wsSend({ type: 'get_log_info' });
+}
+
+function clearLog() {
+    wsSend({ type: 'clear_log' });
+}
+
+function downloadLogCsv() {
+    // Запрашиваем последние 500 кадров через get_log_data
+    pendingLogFrames = [];
+    // Сначала узнаём текущее количество кадров
+    wsSend({ type: 'get_log_info' });
+    // Загрузка будет инициирована после получения log_info
+    pendingLogTotal = -1;  // сигнал что нужна выгрузка
+}
+
+function handleLogData(frames) {
+    if (!Array.isArray(frames)) return;
+    pendingLogFrames = pendingLogFrames.concat(frames);
+
+    if (pendingLogTotal > 0) {
+        if (pendingLogFrames.length >= pendingLogTotal) {
+            // Все кадры получены
+            exportLogCsv(pendingLogFrames);
+            pendingLogFrames = [];
+            pendingLogTotal = 0;
+        } else {
+            // Запросить следующую порцию
+            const nextOffset = pendingLogOffset + pendingLogFrames.length;
+            const remaining = pendingLogTotal - pendingLogFrames.length;
+            wsSend({ type: 'get_log_data', offset: nextOffset, count: Math.min(200, remaining) });
+        }
+    }
+}
+
+function exportLogCsv(frames) {
+    if (!frames || frames.length === 0) {
+        alert('Нет данных для скачивания');
+        return;
+    }
+    const header = 'ts_ms,vx,vy,slip_deg,speed_ms,throttle,steering\n';
+    const rows = frames.map(f =>
+        `${f.ts_ms},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering}`
+    ).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'telemetry_log.csv';
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 // Обработчики событий
@@ -502,6 +730,30 @@ btnStaForget.addEventListener('click', async () => {
     if (staSsidInput) staSsidInput.value = '';
     if (staPassInput) staPassInput.value = '';
     setTimeout(fetchWifiStatus, 300);
+});
+
+// Кнопки стабилизации (Phase 4.4)
+const btnLoadStab = document.getElementById('btn-load-stab');
+const btnSaveStab = document.getElementById('btn-save-stab');
+const btnModeNormal = document.getElementById('btn-mode-normal');
+const btnModeSport = document.getElementById('btn-mode-sport');
+const btnModeDrift = document.getElementById('btn-mode-drift');
+const btnLogInfo = document.getElementById('btn-log-info');
+const btnLogClear = document.getElementById('btn-log-clear');
+const btnLogCsv = document.getElementById('btn-log-csv');
+
+if (btnLoadStab) btnLoadStab.addEventListener('click', loadStabConfig);
+if (btnSaveStab) btnSaveStab.addEventListener('click', saveStabConfig);
+if (btnModeNormal) btnModeNormal.addEventListener('click', () => { currentMode = 0; updateModeButtons(0); });
+if (btnModeSport) btnModeSport.addEventListener('click', () => { currentMode = 1; updateModeButtons(1); });
+if (btnModeDrift) btnModeDrift.addEventListener('click', () => { currentMode = 2; updateModeButtons(2); });
+if (btnLogInfo) btnLogInfo.addEventListener('click', getLogInfo);
+if (btnLogClear) btnLogClear.addEventListener('click', clearLog);
+if (btnLogCsv) btnLogCsv.addEventListener('click', () => {
+    // Сначала запрашиваем количество, затем скачиваем последние 500 кадров
+    pendingLogFrames = [];
+    pendingLogTotal = -2;  // маркер "нужен CSV после log_info"
+    wsSend({ type: 'get_log_info' });
 });
 
 // Инициализация при загрузке страницы

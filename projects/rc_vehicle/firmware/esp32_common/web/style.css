@@ -269,3 +269,53 @@ h2 {
     50% { opacity: 0.6; }
 }
 
+/* Стабилизация — кнопки режимов */
+.btn-mode {
+    background: #e0e0e0 !important;
+    color: #555 !important;
+}
+.btn-mode:hover {
+    background: #c8c8c8 !important;
+}
+.btn-mode-active {
+    background: #667eea !important;
+    color: white !important;
+}
+
+/* Строки параметров стабилизации */
+.param-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+}
+.param-row label {
+    display: inline !important;
+    margin: 0 !important;
+    font-size: 0.85em;
+    color: #777;
+    font-weight: 400 !important;
+}
+.param-row input[type="text"] {
+    width: auto !important;
+    padding: 4px 6px !important;
+    font-size: 0.9em !important;
+}
+
+.section-label {
+    font-weight: 600;
+    color: #555;
+}
+
+/* Oversteer индикатор */
+.status-value.oversteer-active {
+    background: #f44336;
+    color: white;
+    animation: pulse 0.5s ease-in-out infinite;
+}
+.status-value.oversteer-ok {
+    background: #4caf50;
+    color: white;
+}
+

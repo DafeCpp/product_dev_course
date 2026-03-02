@@ -121,6 +121,110 @@
             </div>
         </div>
 
+        <div class="control-panel">
+            <h2>Стабилизация</h2>
+
+            <div class="control-group">
+                <label>Режим:</label>
+                <div class="button-group">
+                    <button id="btn-mode-normal" class="btn-mode btn-mode-active">Normal</button>
+                    <button id="btn-mode-sport" class="btn-mode">Sport</button>
+                    <button id="btn-mode-drift" class="btn-mode">Drift</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="stab-enabled"> Стабилизация включена
+                </label>
+            </div>
+
+            <div class="control-group">
+                <span class="section-label">Yaw PID:</span>
+                <div class="param-row">
+                    <label for="stab-kp">Kp:</label>
+                    <input type="text" id="stab-kp" size="6">
+                    <label for="stab-ki">Ki:</label>
+                    <input type="text" id="stab-ki" size="6">
+                    <label for="stab-kd">Kd:</label>
+                    <input type="text" id="stab-kd" size="6">
+                    <label for="stab-max-corr">MaxCorr:</label>
+                    <input type="text" id="stab-max-corr" size="6">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="adapt-pid-enabled"> Адаптивный ПИД
+                </label>
+                <div class="param-row">
+                    <label for="adapt-speed-ref">SpeedRef (m/s):</label>
+                    <input type="text" id="adapt-speed-ref" size="6">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="pitch-comp-enabled"> Pitch compensation
+                </label>
+                <div class="param-row">
+                    <label for="pitch-gain">Gain:</label>
+                    <input type="text" id="pitch-gain" size="6">
+                    <label for="pitch-max-corr">MaxCorr:</label>
+                    <input type="text" id="pitch-max-corr" size="6">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="oversteer-enabled"> Oversteer warn
+                </label>
+                <div class="param-row">
+                    <label for="ow-slip-thresh">SlipThresh (°):</label>
+                    <input type="text" id="ow-slip-thresh" size="6">
+                    <label for="ow-rate-thresh">RateThresh (°/s):</label>
+                    <input type="text" id="ow-rate-thresh" size="6">
+                    <label for="ow-throttle-red">ThrottleRed:</label>
+                    <input type="text" id="ow-throttle-red" size="6">
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button id="btn-load-stab">Загрузить с устройства</button>
+                <button id="btn-save-stab">Сохранить на устройстве</button>
+            </div>
+
+            <div id="stab-save-status" class="status-item" style="display:none">
+                <span id="stab-save-msg" class="status-value unknown">—</span>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <h2>Лог телеметрии</h2>
+
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">Кадров:</span>
+                    <span id="log-count" class="status-value unknown">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Вместимость:</span>
+                    <span id="log-capacity" class="status-value unknown">—</span>
+                </div>
+            </div>
+
+            <div id="oversteer-indicator" class="status-item" style="display:none">
+                <span class="status-label">Oversteer:</span>
+                <span id="oversteer-status" class="status-value unknown">—</span>
+            </div>
+
+            <div class="button-group">
+                <button id="btn-log-info">Статистика</button>
+                <button id="btn-log-clear">Очистить лог</button>
+                <button id="btn-log-csv">Скачать CSV (500)</button>
+            </div>
+        </div>
+
         <div class="telem-panel">
             <h2>Телеметрия</h2>
             <div id="telem-data">
