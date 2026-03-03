@@ -418,7 +418,13 @@ class ImuCalibration { ... };
    - NVS storage continues to work with binary serialization (no migration needed as structure size unchanged)
 
 ### Phase 3: Architecture Improvements (1 week)
-1. Extract `CalibrationManager`, `StabilizationManager`, `TelemetryManager`
+1. ✅ Extract `CalibrationManager`, `StabilizationManager`, `TelemetryManager`
+   - Created [`CalibrationManager`](common/calibration_manager.hpp:17) class to handle IMU calibration
+   - Created [`StabilizationManager`](common/stabilization_manager.hpp:17) class to manage stabilization configuration
+   - Created [`TelemetryManager`](common/telemetry_manager.hpp:17) class to manage telemetry logging
+   - Updated [`VehicleControlUnified`](common/vehicle_control_unified.hpp:30) to use manager classes
+   - Reduced [`VehicleControlUnified`](common/vehicle_control_unified.cpp:1) from ~600 lines to ~510 lines
+   - Improved Single Responsibility Principle compliance
 2. ~~Remove `VehicleControl` wrapper~~ ✅ **Already completed** (commit `657182d`)
 3. Implement command registry for WebSocket handlers
 

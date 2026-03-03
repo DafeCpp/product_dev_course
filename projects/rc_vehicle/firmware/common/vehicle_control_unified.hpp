@@ -3,12 +3,14 @@
 #include <atomic>
 #include <memory>
 
+#include "calibration_manager.hpp"
 #include "control_components.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 #include "stabilization_config.hpp"
+#include "stabilization_manager.hpp"
 #include "stabilization_pipeline.hpp"
-#include "telemetry_log.hpp"
+#include "telemetry_manager.hpp"
 #include "vehicle_control_platform.hpp"
 #include "vehicle_ekf.hpp"
 
@@ -55,25 +57,29 @@ class VehicleControlUnified {
    * @brief Запуск калибровки IMU, этап 1
    * @param full true — полная (gyro+accel+g), false — только гироскоп
    */
-  void StartCalibration(bool full);
+  void StartCalibration(bool full) { calib_mgr_->StartCalibration(full); }
 
   /**
    * @brief Запуск этапа 2 калибровки (движение вперёд/назад)
    * @return true при успешном запуске
    */
-  bool StartForwardCalibration();
+  bool StartForwardCalibration() {
+    return calib_mgr_->StartForwardCalibration();
+  }
 
   /**
    * @brief Строковый статус калибровки
    * @return "idle", "collecting", "done", "failed"
    */
-  [[nodiscard]] const char* GetCalibStatus() const;
+  [[nodiscard]] const char* GetCalibStatus() const {
+    return calib_mgr_->GetStatus();
+  }
 
   /**
    * @brief Текущий этап калибровки
    * @return 0, 1 (стояние), 2 (вперёд/назад)
    */
-  [[nodiscard]] int GetCalibStage() const;
+  [[nodiscard]] int GetCalibStage() const { return calib_mgr_->GetStage(); }
 
   /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
@@ -81,14 +87,16 @@ class VehicleControlUnified {
    * @param fy Y компонента вектора
    * @param fz Z компонента вектора
    */
-  void SetForwardDirection(float fx, float fy, float fz);
+  void SetForwardDirection(float fx, float fy, float fz) {
+    calib_mgr_->SetForwardDirection(fx, fy, fz);
+  }
 
   /**
    * @brief Получить текущую конфигурацию стабилизации
    * @return Конфигурация стабилизации
    */
   [[nodiscard]] const StabilizationConfig& GetStabilizationConfig() const {
-    return stab_config_;
+    return stab_mgr_->GetConfig();
   }
 
   /**
@@ -98,7 +106,9 @@ class VehicleControlUnified {
    * @return true при успехе
    */
   bool SetStabilizationConfig(const StabilizationConfig& config,
-                              bool save_to_nvs = true);
+                              bool save_to_nvs = true) {
+    return stab_mgr_->SetConfig(config, save_to_nvs);
+  }
 
   /**
    * @brief Получить информацию о буфере телеметрии
@@ -106,8 +116,7 @@ class VehicleControlUnified {
    * @param cap_out   Ёмкость буфера
    */
   void GetLogInfo(size_t& count_out, size_t& cap_out) const {
-    count_out = telem_log_.Count();
-    cap_out = telem_log_.Capacity();
+    telem_mgr_->GetLogInfo(count_out, cap_out);
   }
 
   /**
@@ -117,13 +126,13 @@ class VehicleControlUnified {
    * @return true если idx < Count()
    */
   bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const {
-    return telem_log_.GetFrame(idx, out);
+    return telem_mgr_->GetLogFrame(idx, out);
   }
 
   /**
    * @brief Очистить буфер телеметрии
    */
-  void ClearLog() { telem_log_.Clear(); }
+  void ClearLog() { telem_mgr_->Clear(); }
 
   VehicleControlUnified(const VehicleControlUnified&) = delete;
   VehicleControlUnified& operator=(const VehicleControlUnified&) = delete;
@@ -148,17 +157,6 @@ class VehicleControlUnified {
    * @return true при успехе
    */
   bool InitializeComponents();
-
-  /**
-   * @brief Обработка запроса калибровки
-   * @param now_ms Текущее время
-   */
-  void ProcessCalibrationRequest(uint32_t now_ms);
-
-  /**
-   * @brief Обработка завершения калибровки
-   */
-  void ProcessCalibrationCompletion();
 
   /**
    * @brief Выбор источника управления (RC приоритетнее Wi-Fi)
@@ -199,10 +197,9 @@ class VehicleControlUnified {
   // Платформа (HAL)
   std::unique_ptr<VehicleControlPlatform> platform_;
 
-  // Калибровка, фильтр и конфигурация стабилизации
+  // Калибровка, фильтр
   ImuCalibration imu_calib_;
   MadgwickFilter madgwick_;
-  StabilizationConfig stab_config_;
 
   // Стратегии стабилизации (pipeline)
   YawRateController yaw_ctrl_;
@@ -224,25 +221,10 @@ class VehicleControlUnified {
   bool imu_enabled_{false};
   bool inited_{false};
 
-  // Плавное включение/выключение стабилизации
-  float stab_weight_{0.0f};  // Текущий вес [0..1]: 0 = выкл, 1 = полностью вкл
-
-  // Плавный переход между режимами (mode transition fade, Phase 3.6).
-  // Сбрасывается в 0 при смене режима, нарастает к 1 за fade_ms.
-  // Применяется как множитель к обоим PID (yaw и slip).
-  float mode_transition_weight_{1.0f};
-
-  // Fix #7 (REFACTORING.md): static local → member (сбрасывается в failsafe)
-  uint32_t last_log_ms_{0};
-
-  // PSRAM кольцевой буфер телеметрии (Phase 4.3)
-  TelemetryLog telem_log_;
-
-  // Запрос калибровки (атомарный для потокобезопасности)
-  std::atomic<int> calib_request_{0};
-
-  // Предыдущий статус калибровки (для логирования только при переходах)
-  CalibStatus prev_calib_status_{CalibStatus::Idle};
+  // Менеджеры (управление отдельными аспектами системы)
+  std::unique_ptr<CalibrationManager> calib_mgr_;
+  std::unique_ptr<StabilizationManager> stab_mgr_;
+  std::unique_ptr<TelemetryManager> telem_mgr_;
 };
 
 }  // namespace rc_vehicle
