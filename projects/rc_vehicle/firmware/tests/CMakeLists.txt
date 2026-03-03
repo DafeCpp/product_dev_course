@@ -19,6 +19,16 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+FetchContent_Declare(
+  cjson
+  GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
+  GIT_TAG v1.7.18
+)
+set(ENABLE_CJSON_TEST OFF CACHE BOOL "" FORCE)
+set(ENABLE_CJSON_UTILS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cjson)
+
 include(GoogleTest)
 
 # Common source files from the firmware
@@ -45,6 +55,7 @@ include_directories(
     ${COMMON_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/mocks
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
+    ${cjson_SOURCE_DIR}
 )
 
 # Compiler flags
@@ -75,6 +86,7 @@ target_link_libraries(unit_tests
     gtest
     gtest_main
     gmock
+    cjson
 )
 
 # Discover tests
@@ -90,6 +102,7 @@ target_link_libraries(integration_tests
     gtest
     gtest_main
     gmock
+    cjson
 )
 
 gtest_discover_tests(integration_tests)

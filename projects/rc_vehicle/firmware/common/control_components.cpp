@@ -1,8 +1,10 @@
 #include "control_components.hpp"
 
+#include <cstdlib>
 #include <cstring>
-#include <sstream>
+#include <string>
 
+#include "cJSON.h"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 
@@ -125,105 +127,124 @@ void TelemetryHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) 
 }
 
 std::string TelemetryHandler::BuildTelemJson() const {
-  std::ostringstream oss;
-  oss << "{\"type\":\"telem\",";
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return "{}";
 
+  cJSON_AddStringToObject(root, "type", "telem");
   // Для совместимости: "mcu_pong_ok" = "контроллер жив"
-  oss << "\"mcu_pong_ok\":true,";
+  cJSON_AddBoolToObject(root, "mcu_pong_ok", true);
 
   // Link status
-  oss << "\"link\":{";
-  oss << "\"rc_ok\":" << (rc_.IsActive() ? "true" : "false") << ",";
-  oss << "\"wifi_ok\":" << (wifi_.IsActive() ? "true" : "false") << ",";
-  oss << "\"failsafe\":" << (platform_.FailsafeIsActive() ? "true" : "false");
-  oss << "},";
+  cJSON* link = cJSON_AddObjectToObject(root, "link");
+  if (link) {
+    cJSON_AddBoolToObject(link, "rc_ok", rc_.IsActive());
+    cJSON_AddBoolToObject(link, "wifi_ok", wifi_.IsActive());
+    cJSON_AddBoolToObject(link, "failsafe", platform_.FailsafeIsActive());
+  }
 
   // IMU data (если включен)
   if (imu_.IsEnabled()) {
     const auto& data = imu_.GetData();
-    oss << "\"imu\":{";
-    oss << "\"ax\":" << data.ax << ",";
-    oss << "\"ay\":" << data.ay << ",";
-    oss << "\"az\":" << data.az << ",";
-    oss << "\"gx\":" << data.gx << ",";
-    oss << "\"gy\":" << data.gy << ",";
-    oss << "\"gz\":" << data.gz << ",";
-    oss << "\"gyro_z_filtered\":" << imu_.GetFilteredGyroZ() << ",";
-    oss << "\"forward_accel\":" << calib_.GetForwardAccel(data) << ",";
 
-    // Orientation (Madgwick)
-    float pitch_deg = 0.0f, roll_deg = 0.0f, yaw_deg = 0.0f;
-    filter_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
-    oss << "\"orientation\":{";
-    oss << "\"pitch\":" << pitch_deg << ",";
-    oss << "\"roll\":" << roll_deg << ",";
-    oss << "\"yaw\":" << yaw_deg;
-    oss << "}";
-    oss << "},";
+    cJSON* imu = cJSON_AddObjectToObject(root, "imu");
+    if (imu) {
+      cJSON_AddNumberToObject(imu, "ax", data.ax);
+      cJSON_AddNumberToObject(imu, "ay", data.ay);
+      cJSON_AddNumberToObject(imu, "az", data.az);
+      cJSON_AddNumberToObject(imu, "gx", data.gx);
+      cJSON_AddNumberToObject(imu, "gy", data.gy);
+      cJSON_AddNumberToObject(imu, "gz", data.gz);
+      cJSON_AddNumberToObject(imu, "gyro_z_filtered", imu_.GetFilteredGyroZ());
+      cJSON_AddNumberToObject(imu, "forward_accel", calib_.GetForwardAccel(data));
+
+      // Orientation (Madgwick)
+      float pitch_deg = 0.0f, roll_deg = 0.0f, yaw_deg = 0.0f;
+      filter_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
+      cJSON* orientation = cJSON_AddObjectToObject(imu, "orientation");
+      if (orientation) {
+        cJSON_AddNumberToObject(orientation, "pitch", pitch_deg);
+        cJSON_AddNumberToObject(orientation, "roll", roll_deg);
+        cJSON_AddNumberToObject(orientation, "yaw", yaw_deg);
+      }
+    }
 
     // Calibration status
-    oss << "\"calib\":{";
-    const char* status_str = "unknown";
-    switch (calib_.GetStatus()) {
-      case CalibStatus::Idle:
-        status_str = "idle";
-        break;
-      case CalibStatus::Collecting:
-        status_str = "collecting";
-        break;
-      case CalibStatus::Done:
-        status_str = "done";
-        break;
-      case CalibStatus::Failed:
-        status_str = "failed";
-        break;
-    }
-    oss << "\"status\":\"" << status_str << "\",";
-    oss << "\"stage\":" << calib_.GetCalibStage() << ",";
-    oss << "\"valid\":" << (calib_.IsValid() ? "true" : "false");
+    cJSON* calib = cJSON_AddObjectToObject(root, "calib");
+    if (calib) {
+      const char* status_str = "unknown";
+      switch (calib_.GetStatus()) {
+        case CalibStatus::Idle:       status_str = "idle";       break;
+        case CalibStatus::Collecting: status_str = "collecting"; break;
+        case CalibStatus::Done:       status_str = "done";       break;
+        case CalibStatus::Failed:     status_str = "failed";     break;
+      }
+      cJSON_AddStringToObject(calib, "status", status_str);
+      cJSON_AddNumberToObject(calib, "stage", calib_.GetCalibStage());
+      cJSON_AddBoolToObject(calib, "valid", calib_.IsValid());
 
-    if (calib_.IsValid()) {
-      const auto& cd = calib_.GetData();
-      oss << ",\"bias\":{";
-      oss << "\"gx\":" << cd.gyro_bias[0] << ",";
-      oss << "\"gy\":" << cd.gyro_bias[1] << ",";
-      oss << "\"gz\":" << cd.gyro_bias[2] << ",";
-      oss << "\"ax\":" << cd.accel_bias[0] << ",";
-      oss << "\"ay\":" << cd.accel_bias[1] << ",";
-      oss << "\"az\":" << cd.accel_bias[2];
-      oss << "},";
-      oss << "\"gravity_vec\":[" << cd.gravity_vec[0] << ","
-          << cd.gravity_vec[1] << "," << cd.gravity_vec[2] << "],";
-      oss << "\"forward_vec\":[" << cd.accel_forward_vec[0] << ","
-          << cd.accel_forward_vec[1] << "," << cd.accel_forward_vec[2] << "]";
+      if (calib_.IsValid()) {
+        const auto& cd = calib_.GetData();
+        cJSON* bias = cJSON_AddObjectToObject(calib, "bias");
+        if (bias) {
+          cJSON_AddNumberToObject(bias, "gx", cd.gyro_bias[0]);
+          cJSON_AddNumberToObject(bias, "gy", cd.gyro_bias[1]);
+          cJSON_AddNumberToObject(bias, "gz", cd.gyro_bias[2]);
+          cJSON_AddNumberToObject(bias, "ax", cd.accel_bias[0]);
+          cJSON_AddNumberToObject(bias, "ay", cd.accel_bias[1]);
+          cJSON_AddNumberToObject(bias, "az", cd.accel_bias[2]);
+        }
+        cJSON* gravity = cJSON_AddArrayToObject(calib, "gravity_vec");
+        if (gravity) {
+          cJSON_AddItemToArray(gravity, cJSON_CreateNumber(cd.gravity_vec[0]));
+          cJSON_AddItemToArray(gravity, cJSON_CreateNumber(cd.gravity_vec[1]));
+          cJSON_AddItemToArray(gravity, cJSON_CreateNumber(cd.gravity_vec[2]));
+        }
+        cJSON* forward = cJSON_AddArrayToObject(calib, "forward_vec");
+        if (forward) {
+          cJSON_AddItemToArray(forward,
+                               cJSON_CreateNumber(cd.accel_forward_vec[0]));
+          cJSON_AddItemToArray(forward,
+                               cJSON_CreateNumber(cd.accel_forward_vec[1]));
+          cJSON_AddItemToArray(forward,
+                               cJSON_CreateNumber(cd.accel_forward_vec[2]));
+        }
+      }
     }
-    oss << "},";
 
     // EKF: динамическое состояние (vx, vy, r, slip angle)
     if (ekf_) {
-      oss << "\"ekf\":{";
-      oss << "\"vx\":" << ekf_->GetVx() << ",";
-      oss << "\"vy\":" << ekf_->GetVy() << ",";
-      oss << "\"yaw_rate\":" << ekf_->GetYawRate() << ",";
-      oss << "\"slip_deg\":" << ekf_->GetSlipAngleDeg() << ",";
-      oss << "\"speed_ms\":" << ekf_->GetSpeedMs();
-      oss << "},";
+      cJSON* ekf = cJSON_AddObjectToObject(root, "ekf");
+      if (ekf) {
+        cJSON_AddNumberToObject(ekf, "vx", ekf_->GetVx());
+        cJSON_AddNumberToObject(ekf, "vy", ekf_->GetVy());
+        cJSON_AddNumberToObject(ekf, "yaw_rate", ekf_->GetYawRate());
+        cJSON_AddNumberToObject(ekf, "slip_deg", ekf_->GetSlipAngleDeg());
+        cJSON_AddNumberToObject(ekf, "speed_ms", ekf_->GetSpeedMs());
+      }
     }
+
     // Oversteer warning (Phase 4.2)
     if (oversteer_warn_ptr_) {
-      oss << "\"warn\":{\"oversteer\":"
-          << (*oversteer_warn_ptr_ ? "true" : "false") << "},";
+      cJSON* warn = cJSON_AddObjectToObject(root, "warn");
+      if (warn) {
+        cJSON_AddBoolToObject(warn, "oversteer", *oversteer_warn_ptr_);
+      }
     }
   }
 
   // Actuators
-  oss << "\"act\":{";
-  oss << "\"throttle\":" << applied_throttle_ << ",";
-  oss << "\"steering\":" << applied_steering_;
-  oss << "}";
+  cJSON* act = cJSON_AddObjectToObject(root, "act");
+  if (act) {
+    cJSON_AddNumberToObject(act, "throttle", applied_throttle_);
+    cJSON_AddNumberToObject(act, "steering", applied_steering_);
+  }
 
-  oss << "}";
-  return oss.str();
+  char* str = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  if (!str) return "{}";
+  std::string result(str);
+  free(str);
+  return result;
 }
 
 }  // namespace rc_vehicle
