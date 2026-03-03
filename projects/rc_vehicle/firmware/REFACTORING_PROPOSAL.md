@@ -417,7 +417,7 @@ class ImuCalibration { ... };
    - Updated [`vehicle_control_unified.cpp`](common/vehicle_control_unified.cpp:1) to use `cfg.filter.*` instead of flat fields
    - NVS storage continues to work with binary serialization (no migration needed as structure size unchanged)
 
-### Phase 3: Architecture Improvements (1 week)
+### Phase 3: Architecture Improvements (1 week) ✅ **COMPLETED**
 1. ✅ Extract `CalibrationManager`, `StabilizationManager`, `TelemetryManager`
    - Created [`CalibrationManager`](common/calibration_manager.hpp:17) class to handle IMU calibration
    - Created [`StabilizationManager`](common/stabilization_manager.hpp:17) class to manage stabilization configuration
@@ -426,7 +426,13 @@ class ImuCalibration { ... };
    - Reduced [`VehicleControlUnified`](common/vehicle_control_unified.cpp:1) from ~600 lines to ~510 lines
    - Improved Single Responsibility Principle compliance
 2. ~~Remove `VehicleControl` wrapper~~ ✅ **Already completed** (commit `657182d`)
-3. Implement command registry for WebSocket handlers
+3. ✅ Implement command registry for WebSocket handlers
+   - Created [`WsCommandRegistry`](esp32_s3/main/ws_command_registry.hpp:35) class for command pattern implementation
+   - Created [`WsCommandHandlers`](esp32_s3/main/ws_command_handlers.hpp:1) with individual handler functions
+   - Refactored [`ws_json_handler()`](esp32_s3/main/main.cpp:31) from 156-line if-else chain to registry-based dispatch
+   - Reduced [`main.cpp`](esp32_s3/main/main.cpp:1) from 273 lines to 110 lines (-60%)
+   - Improved extensibility and testability
+   - Each command handler is now independently testable
 
 ### Phase 4: Error Handling Standardization (3-4 days)
 1. Extract `Result<T>` to separate header
