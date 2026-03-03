@@ -6,7 +6,8 @@
 #include <optional>
 #include <span>
 #include <string_view>
-#include <variant>
+
+#include "result.hpp"
 
 namespace rc_vehicle::protocol {
 
@@ -51,31 +52,19 @@ enum class ParseError {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Result type (альтернатива std::expected для C++23)
+// Result type for protocol parsing (uses generic Result<T, E> from result.hpp)
 // ═══════════════════════════════════════════════════════════════════════════
 
 template <typename T>
-using Result = std::variant<T, ParseError>;
+using Result = rc_vehicle::Result<T, ParseError>;
 
-template <typename T>
-[[nodiscard]] inline bool IsOk(const Result<T>& r) noexcept {
-  return std::holds_alternative<T>(r);
-}
-
-template <typename T>
-[[nodiscard]] inline bool IsError(const Result<T>& r) noexcept {
-  return std::holds_alternative<ParseError>(r);
-}
-
-template <typename T>
-[[nodiscard]] inline const T& GetValue(const Result<T>& r) noexcept {
-  return std::get<T>(r);
-}
-
-template <typename T>
-[[nodiscard]] inline ParseError GetError(const Result<T>& r) noexcept {
-  return std::get<ParseError>(r);
-}
+// Helper functions are inherited from rc_vehicle namespace:
+// - IsOk(result)
+// - IsError(result)
+// - GetValue(result)
+// - GetError(result)
+// - Ok<T, ParseError>(value)
+// - Err<T, ParseError>(error)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Структуры данных
