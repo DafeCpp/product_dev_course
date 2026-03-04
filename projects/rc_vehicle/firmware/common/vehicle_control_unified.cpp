@@ -221,21 +221,21 @@ PlatformError VehicleControlUnified::Init() {
   // Инициализация платформы
   // ───────────────────────────────────────────────────────────────────────
 
-  auto err = platform_->InitPwm();
-  if (err != PlatformError::Ok) {
+  auto pwm_result = platform_->InitPwm();
+  if (IsError(pwm_result)) {
     platform_->Log(LogLevel::Error, "Failed to initialize PWM");
-    return err;
+    return GetError(pwm_result);
   }
 
-  err = platform_->InitFailsafe();
-  if (err != PlatformError::Ok) {
+  auto failsafe_result = platform_->InitFailsafe();
+  if (IsError(failsafe_result)) {
     platform_->Log(LogLevel::Error, "Failed to initialize failsafe");
-    return err;
+    return GetError(failsafe_result);
   }
 
   // RC input (опционально)
-  err = platform_->InitRc();
-  if (err == PlatformError::Ok) {
+  auto rc_result = platform_->InitRc();
+  if (IsOk(rc_result)) {
     rc_enabled_ = true;
   } else {
     rc_enabled_ = false;
@@ -244,8 +244,8 @@ PlatformError VehicleControlUnified::Init() {
   }
 
   // IMU (опционально)
-  err = platform_->InitImu();
-  if (err == PlatformError::Ok) {
+  auto imu_result = platform_->InitImu();
+  if (IsOk(imu_result)) {
     imu_enabled_ = true;
 
     // Создание менеджеров (должно быть до загрузки конфигурации)
@@ -298,9 +298,10 @@ PlatformError VehicleControlUnified::Init() {
   // Запуск control loop
   // ───────────────────────────────────────────────────────────────────────
 
-  if (!platform_->CreateTask(ControlTaskEntry, this)) {
+  auto task_result = platform_->CreateTask(ControlTaskEntry, this);
+  if (IsError(task_result)) {
     platform_->Log(LogLevel::Error, "Failed to create vehicle control task");
-    return PlatformError::TaskCreateFailed;
+    return GetError(task_result);
   }
 
   inited_ = true;

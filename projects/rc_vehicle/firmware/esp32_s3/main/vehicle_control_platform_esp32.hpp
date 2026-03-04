@@ -32,10 +32,10 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   ~VehicleControlPlatformEsp32() override;
 
   // Инициализация
-  [[nodiscard]] PlatformError InitPwm() override;
-  [[nodiscard]] PlatformError InitRc() override;
-  [[nodiscard]] PlatformError InitImu() override;
-  [[nodiscard]] PlatformError InitFailsafe() override;
+  [[nodiscard]] Result<Unit, PlatformError> InitPwm() override;
+  [[nodiscard]] Result<Unit, PlatformError> InitRc() override;
+  [[nodiscard]] Result<Unit, PlatformError> InitImu() override;
+  [[nodiscard]] Result<Unit, PlatformError> InitFailsafe() override;
 
   // Время
   [[nodiscard]] uint32_t GetTimeMs() const noexcept override;
@@ -50,12 +50,13 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
 
   // Калибровка
   [[nodiscard]] std::optional<ImuCalibData> LoadCalib() override;
-  [[nodiscard]] bool SaveCalib(const ImuCalibData& data) override;
+  [[nodiscard]] Result<Unit, PlatformError> SaveCalib(
+      const ImuCalibData& data) override;
 
   // Stabilization Config
   [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig()
       override;
-  [[nodiscard]] bool SaveStabilizationConfig(
+  [[nodiscard]] Result<Unit, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig& config) override;
 
   // RC Input
@@ -78,7 +79,8 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   void SendWifiCommand(float throttle, float steering) override;
 
   // Задачи
-  [[nodiscard]] bool CreateTask(void (*entry)(void*), void* arg) override;
+  [[nodiscard]] Result<Unit, PlatformError> CreateTask(void (*entry)(void*),
+                                                       void* arg) override;
   void DelayUntilNextTick(uint32_t period_ms) override;
 
  private:

@@ -68,7 +68,8 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
   config_ = validated_config;
 
   if (save_to_nvs) {
-    if (platform_.SaveStabilizationConfig(config_)) {
+    auto result = platform_.SaveStabilizationConfig(config_);
+    if (IsOk(result)) {
       platform_.Log(LogLevel::Info, "Stabilization config saved to NVS");
     } else {
       platform_.Log(LogLevel::Warning,

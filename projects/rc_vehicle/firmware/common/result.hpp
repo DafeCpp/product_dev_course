@@ -7,6 +7,11 @@
 namespace rc_vehicle {
 
 /**
+ * @brief Unit type for Result<Unit, E> (represents successful void operation)
+ */
+struct Unit {};
+
+/**
  * @brief Result type for error handling (alternative to std::expected for
  * C++23)
  *

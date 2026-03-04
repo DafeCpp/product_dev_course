@@ -435,8 +435,26 @@ class ImuCalibration { ... };
    - Each command handler is now independently testable
 
 ### Phase 4: Error Handling Standardization (3-4 days)
-1. Extract `Result<T>` to separate header
-2. Update platform interface to use `Result<T>`
+1. ✅ Extract `Result<T>` to separate header
+   - Created [`result.hpp`](common/result.hpp:1) with generic `Result<T, E>` type
+   - Based on `std::variant` for C++17 compatibility
+   - Provides helper functions: `IsOk`, `IsError`, `GetValue`, `GetError`
+   - Provides factory functions: `Ok<T,E>`, `Err<T,E>`
+   - Provides monadic operations: `Map`, `MapErr`, `AndThen`, `ValueOr`
+   - Updated [`protocol.hpp`](common/protocol.hpp:59) to use generic `Result` type
+   - Maintains backward compatibility with existing protocol code
+2. ✅ Update platform interface to use `Result<T>`
+   - Added `Unit` type for `Result<Unit, E>` pattern (represents successful void operation)
+   - Updated [`VehicleControlPlatform`](common/vehicle_control_platform.hpp:1) interface:
+     - `InitPwm()`, `InitRc()`, `InitImu()`, `InitFailsafe()` now return `Result<Unit, PlatformError>`
+     - `SaveCalib()`, `SaveStabilizationConfig()` now return `Result<Unit, PlatformError>`
+     - `CreateTask()` now returns `Result<Unit, PlatformError>`
+   - Updated [`VehicleControlPlatformEsp32`](esp32_s3/main/vehicle_control_platform_esp32.cpp:1) implementation
+   - Updated all call sites in [`VehicleControlUnified`](common/vehicle_control_unified.cpp:1)
+   - Updated [`CalibrationManager`](common/calibration_manager.cpp:1) to use Result-based API
+   - Updated [`StabilizationManager`](common/stabilization_manager.cpp:1) to use Result-based API
+   - Kept `std::optional<T>` for methods that represent "no data available" (not errors)
+   - Kept `bool` for state queries like `FailsafeIsActive()`
 3. Add error conversion utilities
 
 ### Phase 5: Dependency Injection (1 week)

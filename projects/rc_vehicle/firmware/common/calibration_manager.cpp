@@ -17,7 +17,8 @@ bool CalibrationManager::StartForwardCalibration() {
 
 void CalibrationManager::SetForwardDirection(float fx, float fy, float fz) {
   imu_calib_.SetForwardDirection(fx, fy, fz);
-  if (platform_.SaveCalib(imu_calib_.GetData())) {
+  auto result = platform_.SaveCalib(imu_calib_.GetData());
+  if (IsOk(result)) {
     platform_.Log(LogLevel::Info, "Forward direction set and saved to NVS");
   }
 }
@@ -57,7 +58,8 @@ void CalibrationManager::ProcessCompletion() {
   prev_calib_status_ = status;
 
   if (status == CalibStatus::Done) {
-    if (platform_.SaveCalib(imu_calib_.GetData())) {
+    auto result = platform_.SaveCalib(imu_calib_.GetData());
+    if (IsOk(result)) {
       platform_.Log(LogLevel::Info, "Calibration done, saved to NVS");
     } else {
       platform_.Log(LogLevel::Warning, "Calibration done, NVS save FAILED");
