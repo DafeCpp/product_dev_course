@@ -9,213 +9,28 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "http_server.hpp"
-#include "stabilization_config_json.hpp"
-#include "telemetry_log.hpp"
 #include "vehicle_control.hpp"
 #include "websocket_server.hpp"
 #include "wifi_ap.hpp"
+#include "ws_command_handlers.hpp"
+#include "ws_command_registry.hpp"
 
 static const char* TAG = "main";
+
+// Global command registry
+static rc_vehicle::WsCommandRegistry g_command_registry;
 
 static void ws_cmd_handler(float throttle, float steering) {
   VehicleControlOnWifiCommand(throttle, steering);
 }
 
-/** Отправить JSON-ответ обратно в тот же WebSocket-фрейм. */
-static void ws_send_reply(httpd_req_t* req, cJSON* reply) {
-  char* str = cJSON_PrintUnformatted(reply);
-  if (str) {
-    httpd_ws_frame_t pkt = {};
-    pkt.final = true;
-    pkt.fragmented = false;
-    pkt.type = HTTPD_WS_TYPE_TEXT;
-    pkt.payload = reinterpret_cast<uint8_t*>(str);
-    pkt.len = strlen(str);
-    httpd_ws_send_frame(req, &pkt);
-    free(str);
-  }
-}
-
 /**
  * Обработчик произвольных JSON-команд через WebSocket.
- *
- * Протокол:
- *   → {"type":"calibrate_imu","mode":"gyro"}    — этап 1: только гироскоп
- *   → {"type":"calibrate_imu","mode":"full"}    — этап 1: стояние на месте
- * (bias + вектор g) → {"type":"calibrate_imu","mode":"forward"} — этап 2:
- * движение вперёд/назад с прямыми колёсами ←
- * {"type":"calibrate_imu_ack","status":"collecting","stage":1|2,"ok":true|false}
- *
- *   → {"type":"get_calib_status"}
- *   ← {"type":"calib_status","status":"done","valid":true}
- *
- *   → {"type":"set_forward_direction","vec":[fx,fy,fz]}  — единичный вектор
- * «вперёд» в СК датчика (нормализуется) ←
- * {"type":"set_forward_direction_ack","ok":true}
- *
- *   → {"type":"get_stab_config"}
- *   ←
- * {"type":"stab_config","enabled":false,"madgwick_beta":0.1,"lpf_cutoff_hz":30.0,"mode":0}
- *
- *   →
- * {"type":"set_stab_config","enabled":true,"madgwick_beta":0.15,"lpf_cutoff_hz":25.0}
- *   ← {"type":"set_stab_config_ack","ok":true}
+ * Использует registry pattern для диспетчеризации команд.
  */
 static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
-  if (strcmp(type, "calibrate_imu") == 0) {
-    cJSON* mode_item = cJSON_GetObjectItem(json, "mode");
-    const char* mode_str = (mode_item && cJSON_IsString(mode_item))
-                               ? mode_item->valuestring
-                               : "gyro";
-    bool is_forward = (strcmp(mode_str, "forward") == 0);
-    bool full = (strcmp(mode_str, "full") == 0);
-
-    cJSON* reply = cJSON_CreateObject();
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "calibrate_imu_ack");
-      if (is_forward) {
-        bool ok = VehicleControlStartForwardCalibration();
-        cJSON_AddStringToObject(reply, "status", ok ? "collecting" : "failed");
-        cJSON_AddNumberToObject(reply, "stage", 2);
-        cJSON_AddBoolToObject(reply, "ok", ok);
-        ESP_LOGI(TAG, "WS: calibrate_imu mode=forward -> %s",
-                 ok ? "stage 2 started" : "failed (need stage 1 full)");
-      } else {
-        VehicleControlStartCalibration(full);
-        cJSON_AddStringToObject(reply, "status", "collecting");
-        cJSON_AddNumberToObject(reply, "stage", 1);
-        cJSON_AddBoolToObject(reply, "ok", true);
-        cJSON_AddStringToObject(reply, "mode", full ? "full" : "gyro");
-        ESP_LOGI(TAG, "WS: calibrate_imu (stage 1, mode=%s)",
-                 full ? "full" : "gyro");
-      }
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
-  } else if (strcmp(type, "get_calib_status") == 0) {
-    cJSON* reply = cJSON_CreateObject();
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "calib_status");
-      cJSON_AddStringToObject(reply, "status", VehicleControlGetCalibStatus());
-      cJSON_AddNumberToObject(reply, "stage", VehicleControlGetCalibStage());
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
-  } else if (strcmp(type, "set_forward_direction") == 0) {
-    cJSON* vec_arr = cJSON_GetObjectItem(json, "vec");
-    float fx = 1.f, fy = 0.f, fz = 0.f;
-    if (cJSON_IsArray(vec_arr) && cJSON_GetArraySize(vec_arr) >= 3) {
-      cJSON* ex = cJSON_GetArrayItem(vec_arr, 0);
-      cJSON* ey = cJSON_GetArrayItem(vec_arr, 1);
-      cJSON* ez = cJSON_GetArrayItem(vec_arr, 2);
-      if (cJSON_IsNumber(ex)) fx = (float)ex->valuedouble;
-      if (cJSON_IsNumber(ey)) fy = (float)ey->valuedouble;
-      if (cJSON_IsNumber(ez)) fz = (float)ez->valuedouble;
-    }
-    VehicleControlSetForwardDirection(fx, fy, fz);
-    cJSON* reply = cJSON_CreateObject();
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "set_forward_direction_ack");
-      cJSON_AddBoolToObject(reply, "ok", true);
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
-  } else if (strcmp(type, "get_stab_config") == 0) {
-    const auto& cfg = VehicleControlGetStabilizationConfig();
-    cJSON* reply = StabilizationConfigToJson(cfg);
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "stab_config");
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
-  } else if (strcmp(type, "set_stab_config") == 0) {
-    StabilizationConfig cfg = VehicleControlGetStabilizationConfig();
-    StabilizationConfigFromJson(cfg, json);
-    bool ok = VehicleControlSetStabilizationConfig(cfg, true);
-
-    // Получить применённую конфигурацию (могут применяться mode defaults)
-    const auto& applied = VehicleControlGetStabilizationConfig();
-    cJSON* reply = ok ? StabilizationConfigToJson(applied) : cJSON_CreateObject();
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "set_stab_config_ack");
-      cJSON_AddBoolToObject(reply, "ok", ok);
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
-
-    ESP_LOGI(TAG,
-             "WS: set_stab_config -> %s "
-             "(enabled=%d beta=%.3f cutoff=%.1f mode=%d kp=%.3f ki=%.3f "
-             "kd=%.4f)",
-             ok ? "OK" : "FAILED", applied.enabled, applied.madgwick_beta,
-             applied.lpf_cutoff_hz, applied.mode, applied.pid_kp,
-             applied.pid_ki, applied.pid_kd);
-  } else if (strcmp(type, "get_log_info") == 0) {
-    // Phase 4.3: информация о буфере телеметрии
-    size_t count = 0, cap = 0;
-    VehicleControlGetLogInfo(&count, &cap);
-    cJSON* reply = cJSON_CreateObject();
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "log_info");
-      cJSON_AddNumberToObject(reply, "count", (double)count);
-      cJSON_AddNumberToObject(reply, "capacity", (double)cap);
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
-  } else if (strcmp(type, "get_log_data") == 0) {
-    // Phase 4.3: выгрузка кадров телеметрии
-    size_t total_count = 0, cap = 0;
-    VehicleControlGetLogInfo(&total_count, &cap);
-
-    cJSON* offset_j = cJSON_GetObjectItem(json, "offset");
-    cJSON* count_j = cJSON_GetObjectItem(json, "count");
-    size_t offset = (offset_j && cJSON_IsNumber(offset_j))
-                        ? (size_t)offset_j->valueint
-                        : 0;
-    size_t req_count = (count_j && cJSON_IsNumber(count_j))
-                           ? (size_t)count_j->valueint
-                           : 100;
-    // Ограничить до 200 кадров за запрос
-    if (req_count > 200) req_count = 200;
-    if (offset >= total_count) req_count = 0;
-    if (offset + req_count > total_count) req_count = total_count - offset;
-
-    cJSON* reply = cJSON_CreateObject();
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "log_data");
-      cJSON* frames_arr = cJSON_CreateArray();
-      if (frames_arr) {
-        for (size_t i = 0; i < req_count; ++i) {
-          TelemetryLogFrame frame;
-          if (VehicleControlGetLogFrame(offset + i, &frame)) {
-            cJSON* f = cJSON_CreateObject();
-            if (f) {
-              cJSON_AddNumberToObject(f, "ts_ms", frame.ts_ms);
-              cJSON_AddNumberToObject(f, "vx", frame.vx);
-              cJSON_AddNumberToObject(f, "vy", frame.vy);
-              cJSON_AddNumberToObject(f, "slip_deg", frame.slip_deg);
-              cJSON_AddNumberToObject(f, "speed_ms", frame.speed_ms);
-              cJSON_AddNumberToObject(f, "throttle", frame.throttle);
-              cJSON_AddNumberToObject(f, "steering", frame.steering);
-              cJSON_AddItemToArray(frames_arr, f);
-            }
-          }
-        }
-        cJSON_AddItemToObject(reply, "frames", frames_arr);
-      }
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
-  } else if (strcmp(type, "clear_log") == 0) {
-    // Phase 4.3: очистка буфера телеметрии
-    VehicleControlClearLog();
-    cJSON* reply = cJSON_CreateObject();
-    if (reply) {
-      cJSON_AddStringToObject(reply, "type", "clear_log_ack");
-      cJSON_AddBoolToObject(reply, "ok", true);
-      ws_send_reply(req, reply);
-      cJSON_Delete(reply);
-    }
+  if (!g_command_registry.Handle(type, json, req)) {
+    ESP_LOGW(TAG, "Unknown WebSocket command type: %s", type);
   }
 }
 
@@ -242,6 +57,23 @@ extern "C" void app_main(void) {
     ESP_LOGE(TAG, "Failed to initialize vehicle control");
     return;
   }
+
+  // Регистрация обработчиков WebSocket команд
+  ESP_LOGI(TAG, "Registering WebSocket command handlers...");
+  g_command_registry.Register("calibrate_imu", rc_vehicle::HandleCalibrateImu);
+  g_command_registry.Register("get_calib_status",
+                              rc_vehicle::HandleGetCalibStatus);
+  g_command_registry.Register("set_forward_direction",
+                              rc_vehicle::HandleSetForwardDirection);
+  g_command_registry.Register("get_stab_config",
+                              rc_vehicle::HandleGetStabConfig);
+  g_command_registry.Register("set_stab_config",
+                              rc_vehicle::HandleSetStabConfig);
+  g_command_registry.Register("get_log_info", rc_vehicle::HandleGetLogInfo);
+  g_command_registry.Register("get_log_data", rc_vehicle::HandleGetLogData);
+  g_command_registry.Register("clear_log", rc_vehicle::HandleClearLog);
+  ESP_LOGI(TAG, "Registered %zu command handlers",
+           g_command_registry.GetHandlerCount());
 
   // WebSocket команды управления → local control loop
   WebSocketSetCommandHandler(&ws_cmd_handler);

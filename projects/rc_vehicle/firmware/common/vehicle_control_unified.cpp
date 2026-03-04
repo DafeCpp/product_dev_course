@@ -83,8 +83,8 @@ void VehicleControlUnified::ControlTaskLoop() {
     // Обработка запроса калибровки
     // ─────────────────────────────────────────────────────────────────────
 
-    ProcessCalibrationRequest(now);
-    ProcessCalibrationCompletion();
+    calib_mgr_->ProcessRequest(now);
+    calib_mgr_->ProcessCompletion();
 
     // ─────────────────────────────────────────────────────────────────────
     // Выбор источника управления (RC приоритетнее Wi-Fi)
@@ -93,52 +93,21 @@ void VehicleControlUnified::ControlTaskLoop() {
     SelectControlSource(commanded_throttle, commanded_steering);
 
     // ─────────────────────────────────────────────────────────────────────
-    // Плавное нарастание/спад веса стабилизации
+    // Плавное нарастание/спад веса стабилизации и переход между режимами
     // ─────────────────────────────────────────────────────────────────────
 
-    if (dt_ms > 0) {
-      const float target_weight = stab_config_.enabled ? 1.0f : 0.0f;
-      if (stab_config_.fade_ms == 0) {
-        stab_weight_ = target_weight;
-      } else {
-        const float fade_rate_per_sec =
-            1000.0f / static_cast<float>(stab_config_.fade_ms);
-        stab_weight_ = ApplySlewRate(target_weight, stab_weight_,
-                                     fade_rate_per_sec, dt_ms);
-      }
-      // Сброс ПИД при полном отключении — убирает накопленный интегратор
-      if (stab_weight_ == 0.0f) {
-        yaw_ctrl_.Reset();
-        slip_ctrl_.Reset();
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Плавный переход между режимами (mode transition fade, Phase 3.6)
-    // mode_transition_weight_ сбрасывается в 0 при смене режима и
-    // нарастает к 1 за fade_ms, убирая рывок при переключении normal↔drift.
-    // ─────────────────────────────────────────────────────────────────────
-
-    if (dt_ms > 0 && mode_transition_weight_ < 1.0f) {
-      if (stab_config_.fade_ms == 0) {
-        mode_transition_weight_ = 1.0f;
-      } else {
-        const float fade_rate =
-            1000.0f / static_cast<float>(stab_config_.fade_ms);
-        mode_transition_weight_ =
-            ApplySlewRate(1.0f, mode_transition_weight_, fade_rate, dt_ms);
-      }
-    }
+    stab_mgr_->UpdateWeights(dt_ms);
 
     // ─────────────────────────────────────────────────────────────────────
     // Стабилизационный pipeline (стратегии, Phase 1 refactoring)
     // ─────────────────────────────────────────────────────────────────────
 
-    yaw_ctrl_.Process(commanded_steering, stab_weight_,
-                      mode_transition_weight_, dt_ms);
-    pitch_ctrl_.Process(commanded_throttle, stab_weight_);
-    slip_ctrl_.Process(commanded_throttle, stab_weight_,
-                       mode_transition_weight_, dt_ms);
+    const float stab_weight = stab_mgr_->GetStabilizationWeight();
+    const float mode_weight = stab_mgr_->GetModeTransitionWeight();
+
+    yaw_ctrl_.Process(commanded_steering, stab_weight, mode_weight, dt_ms);
+    pitch_ctrl_.Process(commanded_throttle, stab_weight);
+    slip_ctrl_.Process(commanded_throttle, stab_weight, mode_weight, dt_ms);
     oversteer_guard_.Process(commanded_throttle, dt_ms);
 
     // ─────────────────────────────────────────────────────────────────────
@@ -158,9 +127,8 @@ void VehicleControlUnified::ControlTaskLoop() {
       slip_ctrl_.Reset();
       oversteer_guard_.Reset();
       ekf_.Reset();
-      stab_weight_ = 0.0f;           // Плавный re-fade при восстановлении управления
-      mode_transition_weight_ = 1.0f;  // Нет незавершённого перехода после failsafe
-      last_log_ms_ = 0;              // Сброс таймера лога (Fix #7)
+      stab_mgr_->ResetWeights();       // Сброс весов стабилизации
+      telem_mgr_->ResetLastLogTime();  // Сброс таймера лога
       platform_->SetPwmNeutral();
     }
 
@@ -210,7 +178,8 @@ void VehicleControlUnified::ControlTaskLoop() {
     // ─────────────────────────────────────────────────────────────────────
 
     if (imu_handler_ && imu_handler_->IsEnabled()) {
-      if (now - last_log_ms_ >= config::TelemetryConfig::kSendIntervalMs) {
+      const uint32_t last_log = telem_mgr_->GetLastLogTime();
+      if (now - last_log >= config::TelemetryConfig::kSendIntervalMs) {
         TelemetryLogFrame frame;
         frame.ts_ms = now;
         const auto& d = imu_handler_->GetData();
@@ -226,8 +195,8 @@ void VehicleControlUnified::ControlTaskLoop() {
         frame.speed_ms = ekf_.GetSpeedMs();
         frame.throttle = applied_throttle;
         frame.steering = applied_steering;
-        telem_log_.Push(frame);
-        last_log_ms_ = now;
+        telem_mgr_->Push(frame);
+        telem_mgr_->SetLastLogTime(now);
       }
     }
 
@@ -252,21 +221,21 @@ PlatformError VehicleControlUnified::Init() {
   // Инициализация платформы
   // ───────────────────────────────────────────────────────────────────────
 
-  auto err = platform_->InitPwm();
-  if (err != PlatformError::Ok) {
+  auto pwm_result = platform_->InitPwm();
+  if (IsError(pwm_result)) {
     platform_->Log(LogLevel::Error, "Failed to initialize PWM");
-    return err;
+    return GetError(pwm_result);
   }
 
-  err = platform_->InitFailsafe();
-  if (err != PlatformError::Ok) {
+  auto failsafe_result = platform_->InitFailsafe();
+  if (IsError(failsafe_result)) {
     platform_->Log(LogLevel::Error, "Failed to initialize failsafe");
-    return err;
+    return GetError(failsafe_result);
   }
 
   // RC input (опционально)
-  err = platform_->InitRc();
-  if (err == PlatformError::Ok) {
+  auto rc_result = platform_->InitRc();
+  if (IsOk(rc_result)) {
     rc_enabled_ = true;
   } else {
     rc_enabled_ = false;
@@ -275,42 +244,27 @@ PlatformError VehicleControlUnified::Init() {
   }
 
   // IMU (опционально)
-  err = platform_->InitImu();
-  if (err == PlatformError::Ok) {
+  auto imu_result = platform_->InitImu();
+  if (IsOk(imu_result)) {
     imu_enabled_ = true;
 
+    // Создание менеджеров (должно быть до загрузки конфигурации)
+    calib_mgr_.reset(new CalibrationManager(*platform_, imu_calib_, madgwick_));
+    stab_mgr_.reset(new StabilizationManager(*platform_, madgwick_, yaw_ctrl_,
+                                             slip_ctrl_, nullptr));
+    telem_mgr_.reset(new TelemetryManager());
+
     // Загрузка калибровки из NVS
-    auto calib_data = platform_->LoadCalib();
-    if (calib_data) {
-      imu_calib_.SetData(*calib_data);
-      if (imu_calib_.IsValid()) {
-        const auto& d = imu_calib_.GetData();
-        madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
-      }
-      platform_->Log(LogLevel::Info, "IMU calibration loaded from NVS");
-    } else {
-      platform_->Log(LogLevel::Info,
-                     "No saved IMU calibration — will auto-calibrate at start");
-    }
+    calib_mgr_->LoadFromNvs();
 
     // Загрузка конфигурации стабилизации из NVS
-    auto stab_cfg = platform_->LoadStabilizationConfig();
-    if (stab_cfg) {
-      stab_config_ = *stab_cfg;
-      platform_->Log(LogLevel::Info, "Stabilization config loaded from NVS");
-    } else {
-      // Использовать значения по умолчанию
-      stab_config_.Reset();
-      platform_->Log(LogLevel::Info, "Using default stabilization config");
-    }
+    stab_mgr_->LoadFromNvs();
 
     // Применить конфигурацию к фильтрам
-    madgwick_.SetBeta(stab_config_.madgwick_beta);
+    stab_mgr_->ApplyConfig();
 
     // Автокалибровка при старте
-    imu_calib_.StartCalibration(CalibMode::Full, 1000);
-    platform_->Log(LogLevel::Info,
-                   "IMU auto-calibration started (Full, 1000 samples)");
+    calib_mgr_->StartAutoCalibration();
   } else {
     imu_enabled_ = false;
     const int who = platform_->GetImuLastWhoAmI();
@@ -326,9 +280,10 @@ PlatformError VehicleControlUnified::Init() {
   // 5000 кадров × ~60 байт ≈ 293 КБ → выделяется из PSRAM
   // ───────────────────────────────────────────────────────────────────────
 
-  if (!telem_log_.Init(5000)) {
-    platform_->Log(LogLevel::Warning,
-                   "TelemetryLog: failed to allocate (no PSRAM?), log disabled");
+  if (!telem_mgr_->Init(config::TelemetryLogConfig::kCapacityFrames)) {
+    platform_->Log(
+        LogLevel::Warning,
+        "TelemetryLog: failed to allocate (no PSRAM?), log disabled");
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -343,9 +298,10 @@ PlatformError VehicleControlUnified::Init() {
   // Запуск control loop
   // ───────────────────────────────────────────────────────────────────────
 
-  if (!platform_->CreateTask(ControlTaskEntry, this)) {
+  auto task_result = platform_->CreateTask(ControlTaskEntry, this);
+  if (IsError(task_result)) {
     platform_->Log(LogLevel::Error, "Failed to create vehicle control task");
-    return PlatformError::TaskCreateFailed;
+    return GetError(task_result);
   }
 
   inited_ = true;
@@ -356,17 +312,24 @@ PlatformError VehicleControlUnified::Init() {
 
 bool VehicleControlUnified::InitializeComponents() {
   if (rc_enabled_) {
-    rc_handler_.reset(new RcInputHandler(*platform_, config::RcInputConfig::kPollIntervalMs));
+    rc_handler_.reset(
+        new RcInputHandler(*platform_, config::RcInputConfig::kPollIntervalMs));
   }
 
-  wifi_handler_.reset(new WifiCommandHandler(*platform_, config::WifiConfig::kCommandTimeoutMs));
+  wifi_handler_.reset(new WifiCommandHandler(
+      *platform_, config::WifiConfig::kCommandTimeoutMs));
 
   if (imu_enabled_) {
     imu_handler_.reset(new ImuHandler(*platform_, imu_calib_, madgwick_,
                                       config::ImuConfig::kReadIntervalMs));
     imu_handler_->SetEnabled(true);
     // Применить LPF cutoff из конфигурации
-    imu_handler_->SetLpfCutoff(stab_config_.lpf_cutoff_hz);
+    imu_handler_->SetLpfCutoff(stab_mgr_->GetConfig().filter.lpf_cutoff_hz);
+    // Обновить указатель на imu_handler в stab_mgr
+    stab_mgr_.reset(new StabilizationManager(*platform_, madgwick_, yaw_ctrl_,
+                                             slip_ctrl_, imu_handler_.get()));
+    stab_mgr_->LoadFromNvs();
+    stab_mgr_->ApplyConfig();
   }
 
   // Создаём пустые handlers если они не были созданы (для телеметрии)
@@ -378,46 +341,17 @@ bool VehicleControlUnified::InitializeComponents() {
   }
 
   // Инициализация стратегий стабилизации
-  yaw_ctrl_.Init(stab_config_, ekf_, imu_handler_.get());
-  pitch_ctrl_.Init(stab_config_, madgwick_, imu_handler_.get());
-  slip_ctrl_.Init(stab_config_, ekf_, imu_handler_.get());
-  oversteer_guard_.Init(stab_config_, ekf_, imu_handler_.get());
+  const auto& cfg = stab_mgr_->GetConfig();
+  yaw_ctrl_.Init(cfg, ekf_, imu_handler_.get());
+  pitch_ctrl_.Init(cfg, madgwick_, imu_handler_.get());
+  slip_ctrl_.Init(cfg, ekf_, imu_handler_.get());
+  oversteer_guard_.Init(cfg, ekf_, imu_handler_.get());
 
   // Телеметрия
-  telem_handler_.reset(new TelemetryHandler(*platform_, config::TelemetryConfig::kSendIntervalMs));
+  telem_handler_.reset(new TelemetryHandler(
+      *platform_, config::TelemetryConfig::kSendIntervalMs));
 
   return true;
-}
-
-void VehicleControlUnified::ProcessCalibrationRequest(uint32_t now_ms) {
-  int req = calib_request_.exchange(0);  // Атомарное чтение и сброс
-  if (req != 0) {
-    CalibMode mode = (req == 2) ? CalibMode::Full : CalibMode::GyroOnly;
-    int samples = (req == 2) ? 2000 : 1000;
-    imu_calib_.StartCalibration(mode, samples);
-    platform_->Log(LogLevel::Info, "Calibration stage 1 started");
-  }
-}
-
-void VehicleControlUnified::ProcessCalibrationCompletion() {
-  const CalibStatus status = imu_calib_.GetStatus();
-  if (status == prev_calib_status_) {
-    return;  // Статус не изменился — ничего не делаем
-  }
-  prev_calib_status_ = status;
-
-  if (status == CalibStatus::Done) {
-    if (platform_->SaveCalib(imu_calib_.GetData())) {
-      platform_->Log(LogLevel::Info, "Calibration done, saved to NVS");
-    } else {
-      platform_->Log(LogLevel::Warning, "Calibration done, NVS save FAILED");
-    }
-    // Обновить vehicle frame фильтра Madgwick
-    const auto& d = imu_calib_.GetData();
-    madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
-  } else if (status == CalibStatus::Failed) {
-    platform_->Log(LogLevel::Warning, "IMU calibration FAILED");
-  }
 }
 
 bool VehicleControlUnified::SelectControlSource(float& commanded_throttle,
@@ -454,10 +388,12 @@ void VehicleControlUnified::UpdatePwmWithSlewRate(uint32_t now_ms,
     const uint32_t pwm_dt_ms = now_ms - last_pwm_update;
     last_pwm_update = now_ms;
 
-    applied_throttle = ApplySlewRate(commanded_throttle, applied_throttle,
-                                     config::SlewRateConfig::kThrottleMaxPerSec, pwm_dt_ms);
-    applied_steering = ApplySlewRate(commanded_steering, applied_steering,
-                                     config::SlewRateConfig::kSteeringMaxPerSec, pwm_dt_ms);
+    applied_throttle =
+        ApplySlewRate(commanded_throttle, applied_throttle,
+                      config::SlewRateConfig::kThrottleMaxPerSec, pwm_dt_ms);
+    applied_steering =
+        ApplySlewRate(commanded_steering, applied_steering,
+                      config::SlewRateConfig::kSteeringMaxPerSec, pwm_dt_ms);
 
     platform_->SetPwm(applied_throttle, applied_steering);
   }
@@ -471,10 +407,13 @@ void VehicleControlUnified::PrintDiagnostics(uint32_t now_ms,
     const uint32_t loop_hz =
         (elapsed > 0) ? (diag_loop_count * 1000u / elapsed) : 0u;
 
+    const auto& cfg = stab_mgr_->GetConfig();
+    const float stab_weight = stab_mgr_->GetStabilizationWeight();
+
     char buf[80];
     snprintf(buf, sizeof(buf), "DIAG: loop=%u Hz  stab=%s (w=%.2f)",
-             static_cast<unsigned>(loop_hz),
-             stab_config_.enabled ? "ON" : "OFF", stab_weight_);
+             static_cast<unsigned>(loop_hz), cfg.enabled ? "ON" : "OFF",
+             stab_weight);
     platform_->Log(LogLevel::Info, buf);
 
     if (imu_handler_ && imu_handler_->IsEnabled()) {
@@ -497,104 +436,6 @@ void VehicleControlUnified::OnWifiCommand(float throttle, float steering) {
   if (platform_) {
     platform_->SendWifiCommand(throttle, steering);
   }
-}
-
-void VehicleControlUnified::StartCalibration(bool full) {
-  calib_request_.store(full ? 2 : 1);
-}
-
-bool VehicleControlUnified::StartForwardCalibration() {
-  return imu_calib_.StartForwardCalibration(2000);
-}
-
-const char* VehicleControlUnified::GetCalibStatus() const {
-  switch (imu_calib_.GetStatus()) {
-    case CalibStatus::Idle:
-      return "idle";
-    case CalibStatus::Collecting:
-      return "collecting";
-    case CalibStatus::Done:
-      return "done";
-    case CalibStatus::Failed:
-      return "failed";
-  }
-  return "unknown";
-}
-
-int VehicleControlUnified::GetCalibStage() const {
-  return imu_calib_.GetCalibStage();
-}
-
-void VehicleControlUnified::SetForwardDirection(float fx, float fy, float fz) {
-  imu_calib_.SetForwardDirection(fx, fy, fz);
-  if (platform_ && platform_->SaveCalib(imu_calib_.GetData())) {
-    platform_->Log(LogLevel::Info, "Forward direction set and saved to NVS");
-  }
-}
-
-bool VehicleControlUnified::SetStabilizationConfig(
-    const StabilizationConfig& config, bool save_to_nvs) {
-  // Валидация и ограничение параметров
-  StabilizationConfig validated_config = config;
-  validated_config.Clamp();
-
-  if (!validated_config.IsValid()) {
-    if (platform_) {
-      platform_->Log(LogLevel::Error, "Invalid stabilization config");
-    }
-    return false;
-  }
-
-  // При смене режима автоматически применить предустановки PID для нового режима
-  if (validated_config.mode != stab_config_.mode) {
-    validated_config.ApplyModeDefaults();
-    // Сброс ПИД при смене режима — очищает интегратор предыдущего режима,
-    // предотвращая рывок при переходе (особенно при переходе в/из drift mode)
-    yaw_ctrl_.Reset();
-    slip_ctrl_.Reset();
-    mode_transition_weight_ = 0.0f;  // Запустить плавный переход (Phase 3.6)
-    if (platform_) {
-      char buf[48];
-      snprintf(buf, sizeof(buf), "Mode changed to %u, defaults applied",
-               static_cast<unsigned>(validated_config.mode));
-      platform_->Log(LogLevel::Info, buf);
-    }
-  }
-
-  // Применить к фильтрам
-  madgwick_.SetBeta(validated_config.madgwick_beta);
-
-  // Применить к LPF (если IMU включен)
-  if (imu_handler_) {
-    imu_handler_->SetLpfCutoff(validated_config.lpf_cutoff_hz);
-  }
-
-  // Обновить коэффициенты ПИД yaw rate и slip angle
-  yaw_ctrl_.SetGains(validated_config);
-  slip_ctrl_.SetGains(validated_config);
-
-  // Сброс ПИД при мгновенном отключении (fade_ms == 0).
-  // При плавном fade сброс произойдёт в control loop когда stab_weight_ → 0.
-  if (!validated_config.enabled && validated_config.fade_ms == 0) {
-    yaw_ctrl_.Reset();
-    slip_ctrl_.Reset();
-    stab_weight_ = 0.0f;
-  }
-
-  // Сохранить конфигурацию
-  stab_config_ = validated_config;
-
-  if (save_to_nvs && platform_) {
-    if (platform_->SaveStabilizationConfig(stab_config_)) {
-      platform_->Log(LogLevel::Info, "Stabilization config saved to NVS");
-    } else {
-      platform_->Log(LogLevel::Warning,
-                     "Failed to save stabilization config to NVS");
-      return false;
-    }
-  }
-
-  return true;
 }
 
 }  // namespace rc_vehicle

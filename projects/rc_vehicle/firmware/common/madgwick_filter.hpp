@@ -21,6 +21,8 @@
 
 struct ImuData;
 
+namespace rc_vehicle {
+
 class MadgwickFilter : public IOrientationFilter {
  public:
   MadgwickFilter();
@@ -60,3 +62,5 @@ class MadgwickFilter : public IOrientationFilter {
                       float& oy, float& oz);
   static float InvSqrt(float x);
 };
+
+}  // namespace rc_vehicle

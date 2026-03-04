@@ -9,111 +9,175 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
 
   // Общие параметры
   cJSON_AddBoolToObject(obj, "enabled", cfg.enabled);
-  cJSON_AddNumberToObject(obj, "madgwick_beta", cfg.madgwick_beta);
-  cJSON_AddNumberToObject(obj, "lpf_cutoff_hz", cfg.lpf_cutoff_hz);
-  cJSON_AddNumberToObject(obj, "imu_sample_rate_hz", cfg.imu_sample_rate_hz);
   cJSON_AddNumberToObject(obj, "mode", static_cast<uint8_t>(cfg.mode));
-
-  // Yaw rate PID
-  cJSON_AddNumberToObject(obj, "pid_kp", cfg.pid_kp);
-  cJSON_AddNumberToObject(obj, "pid_ki", cfg.pid_ki);
-  cJSON_AddNumberToObject(obj, "pid_kd", cfg.pid_kd);
-  cJSON_AddNumberToObject(obj, "pid_max_integral", cfg.pid_max_integral);
-  cJSON_AddNumberToObject(obj, "pid_max_correction", cfg.pid_max_correction);
-  cJSON_AddNumberToObject(obj, "steer_to_yaw_rate_dps", cfg.steer_to_yaw_rate_dps);
   cJSON_AddNumberToObject(obj, "fade_ms", cfg.fade_ms);
 
-  // Pitch compensation (slope stabilization)
-  cJSON_AddBoolToObject(obj, "pitch_comp_enabled", cfg.pitch_comp_enabled);
-  cJSON_AddNumberToObject(obj, "pitch_comp_gain", cfg.pitch_comp_gain);
-  cJSON_AddNumberToObject(obj, "pitch_comp_max_correction",
-                          cfg.pitch_comp_max_correction);
+  // Filter config
+  cJSON* filter = cJSON_AddObjectToObject(obj, "filter");
+  if (filter) {
+    cJSON_AddNumberToObject(filter, "madgwick_beta", cfg.filter.madgwick_beta);
+    cJSON_AddNumberToObject(filter, "lpf_cutoff_hz", cfg.filter.lpf_cutoff_hz);
+    cJSON_AddNumberToObject(filter, "imu_sample_rate_hz",
+                            cfg.filter.imu_sample_rate_hz);
+  }
 
-  // Slip angle PID (drift mode)
-  cJSON_AddNumberToObject(obj, "slip_target_deg", cfg.slip_target_deg);
-  cJSON_AddNumberToObject(obj, "slip_kp", cfg.slip_kp);
-  cJSON_AddNumberToObject(obj, "slip_ki", cfg.slip_ki);
-  cJSON_AddNumberToObject(obj, "slip_kd", cfg.slip_kd);
-  cJSON_AddNumberToObject(obj, "slip_max_integral", cfg.slip_max_integral);
-  cJSON_AddNumberToObject(obj, "slip_max_correction", cfg.slip_max_correction);
+  // Yaw rate config
+  cJSON* yaw_rate = cJSON_AddObjectToObject(obj, "yaw_rate");
+  if (yaw_rate) {
+    cJSON* pid = cJSON_AddObjectToObject(yaw_rate, "pid");
+    if (pid) {
+      cJSON_AddNumberToObject(pid, "kp", cfg.yaw_rate.pid.kp);
+      cJSON_AddNumberToObject(pid, "ki", cfg.yaw_rate.pid.ki);
+      cJSON_AddNumberToObject(pid, "kd", cfg.yaw_rate.pid.kd);
+      cJSON_AddNumberToObject(pid, "max_integral",
+                              cfg.yaw_rate.pid.max_integral);
+      cJSON_AddNumberToObject(pid, "max_correction",
+                              cfg.yaw_rate.pid.max_correction);
+    }
+    cJSON_AddNumberToObject(yaw_rate, "steer_to_yaw_rate_dps",
+                            cfg.yaw_rate.steer_to_yaw_rate_dps);
+  }
 
-  // Adaptive PID (Phase 4.1)
-  cJSON_AddBoolToObject(obj, "adaptive_pid_enabled", cfg.adaptive_pid_enabled);
-  cJSON_AddNumberToObject(obj, "adaptive_speed_ref_ms", cfg.adaptive_speed_ref_ms);
-  cJSON_AddNumberToObject(obj, "adaptive_scale_min", cfg.adaptive_scale_min);
-  cJSON_AddNumberToObject(obj, "adaptive_scale_max", cfg.adaptive_scale_max);
+  // Slip angle config
+  cJSON* slip_angle = cJSON_AddObjectToObject(obj, "slip_angle");
+  if (slip_angle) {
+    cJSON* pid = cJSON_AddObjectToObject(slip_angle, "pid");
+    if (pid) {
+      cJSON_AddNumberToObject(pid, "kp", cfg.slip_angle.pid.kp);
+      cJSON_AddNumberToObject(pid, "ki", cfg.slip_angle.pid.ki);
+      cJSON_AddNumberToObject(pid, "kd", cfg.slip_angle.pid.kd);
+      cJSON_AddNumberToObject(pid, "max_integral",
+                              cfg.slip_angle.pid.max_integral);
+      cJSON_AddNumberToObject(pid, "max_correction",
+                              cfg.slip_angle.pid.max_correction);
+    }
+    cJSON_AddNumberToObject(slip_angle, "target_deg",
+                            cfg.slip_angle.target_deg);
+  }
 
-  // Oversteer warning (Phase 4.2)
-  cJSON_AddBoolToObject(obj, "oversteer_warn_enabled", cfg.oversteer_warn_enabled);
-  cJSON_AddNumberToObject(obj, "oversteer_slip_thresh_deg",
-                          cfg.oversteer_slip_thresh_deg);
-  cJSON_AddNumberToObject(obj, "oversteer_rate_thresh_deg_s",
-                          cfg.oversteer_rate_thresh_deg_s);
-  cJSON_AddNumberToObject(obj, "oversteer_throttle_reduction",
-                          cfg.oversteer_throttle_reduction);
+  // Adaptive config
+  cJSON* adaptive = cJSON_AddObjectToObject(obj, "adaptive");
+  if (adaptive) {
+    cJSON_AddBoolToObject(adaptive, "enabled", cfg.adaptive.enabled);
+    cJSON_AddNumberToObject(adaptive, "speed_ref_ms",
+                            cfg.adaptive.speed_ref_ms);
+    cJSON_AddNumberToObject(adaptive, "scale_min", cfg.adaptive.scale_min);
+    cJSON_AddNumberToObject(adaptive, "scale_max", cfg.adaptive.scale_max);
+  }
+
+  // Oversteer config
+  cJSON* oversteer = cJSON_AddObjectToObject(obj, "oversteer");
+  if (oversteer) {
+    cJSON_AddBoolToObject(oversteer, "warn_enabled",
+                          cfg.oversteer.warn_enabled);
+    cJSON_AddNumberToObject(oversteer, "slip_thresh_deg",
+                            cfg.oversteer.slip_thresh_deg);
+    cJSON_AddNumberToObject(oversteer, "rate_thresh_deg_s",
+                            cfg.oversteer.rate_thresh_deg_s);
+    cJSON_AddNumberToObject(oversteer, "throttle_reduction",
+                            cfg.oversteer.throttle_reduction);
+  }
+
+  // Pitch compensation config
+  cJSON* pitch_comp = cJSON_AddObjectToObject(obj, "pitch_comp");
+  if (pitch_comp) {
+    cJSON_AddBoolToObject(pitch_comp, "enabled", cfg.pitch_comp.enabled);
+    cJSON_AddNumberToObject(pitch_comp, "gain", cfg.pitch_comp.gain);
+    cJSON_AddNumberToObject(pitch_comp, "max_correction",
+                            cfg.pitch_comp.max_correction);
+  }
 
   return obj;
 }
 
 void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
-  auto get_bool = [json](const char* key, bool& field) {
-    cJSON* item = cJSON_GetObjectItem(json, key);
+  auto get_bool = [](const cJSON* parent, const char* key, bool& field) {
+    cJSON* item = cJSON_GetObjectItem(parent, key);
     if (item && cJSON_IsBool(item)) field = cJSON_IsTrue(item);
   };
-  auto get_float = [json](const char* key, float& field) {
-    cJSON* item = cJSON_GetObjectItem(json, key);
+  auto get_float = [](const cJSON* parent, const char* key, float& field) {
+    cJSON* item = cJSON_GetObjectItem(parent, key);
     if (item && cJSON_IsNumber(item))
       field = static_cast<float>(item->valuedouble);
   };
-  auto get_drive_mode = [json](const char* key, DriveMode& field) {
-    cJSON* item = cJSON_GetObjectItem(json, key);
+  auto get_drive_mode = [](const cJSON* parent, const char* key,
+                           DriveMode& field) {
+    cJSON* item = cJSON_GetObjectItem(parent, key);
     if (item && cJSON_IsNumber(item))
       field = static_cast<DriveMode>(item->valueint);
   };
-  auto get_uint32 = [json](const char* key, uint32_t& field) {
-    cJSON* item = cJSON_GetObjectItem(json, key);
+  auto get_uint32 = [](const cJSON* parent, const char* key, uint32_t& field) {
+    cJSON* item = cJSON_GetObjectItem(parent, key);
     if (item && cJSON_IsNumber(item))
       field = static_cast<uint32_t>(item->valueint);
   };
 
   // Общие параметры
-  get_bool("enabled", cfg.enabled);
-  get_float("madgwick_beta", cfg.madgwick_beta);
-  get_float("lpf_cutoff_hz", cfg.lpf_cutoff_hz);
-  get_float("imu_sample_rate_hz", cfg.imu_sample_rate_hz);
-  get_drive_mode("mode", cfg.mode);
+  get_bool(json, "enabled", cfg.enabled);
+  get_drive_mode(json, "mode", cfg.mode);
+  get_uint32(json, "fade_ms", cfg.fade_ms);
 
-  // Yaw rate PID
-  get_float("pid_kp", cfg.pid_kp);
-  get_float("pid_ki", cfg.pid_ki);
-  get_float("pid_kd", cfg.pid_kd);
-  get_float("pid_max_integral", cfg.pid_max_integral);
-  get_float("pid_max_correction", cfg.pid_max_correction);
-  get_float("steer_to_yaw_rate_dps", cfg.steer_to_yaw_rate_dps);
-  get_uint32("fade_ms", cfg.fade_ms);
+  // Filter config
+  cJSON* filter = cJSON_GetObjectItem(json, "filter");
+  if (filter) {
+    get_float(filter, "madgwick_beta", cfg.filter.madgwick_beta);
+    get_float(filter, "lpf_cutoff_hz", cfg.filter.lpf_cutoff_hz);
+    get_float(filter, "imu_sample_rate_hz", cfg.filter.imu_sample_rate_hz);
+  }
 
-  // Pitch compensation
-  get_bool("pitch_comp_enabled", cfg.pitch_comp_enabled);
-  get_float("pitch_comp_gain", cfg.pitch_comp_gain);
-  get_float("pitch_comp_max_correction", cfg.pitch_comp_max_correction);
+  // Yaw rate config
+  cJSON* yaw_rate = cJSON_GetObjectItem(json, "yaw_rate");
+  if (yaw_rate) {
+    cJSON* pid = cJSON_GetObjectItem(yaw_rate, "pid");
+    if (pid) {
+      get_float(pid, "kp", cfg.yaw_rate.pid.kp);
+      get_float(pid, "ki", cfg.yaw_rate.pid.ki);
+      get_float(pid, "kd", cfg.yaw_rate.pid.kd);
+      get_float(pid, "max_integral", cfg.yaw_rate.pid.max_integral);
+      get_float(pid, "max_correction", cfg.yaw_rate.pid.max_correction);
+    }
+    get_float(yaw_rate, "steer_to_yaw_rate_dps",
+              cfg.yaw_rate.steer_to_yaw_rate_dps);
+  }
 
-  // Slip angle PID
-  get_float("slip_target_deg", cfg.slip_target_deg);
-  get_float("slip_kp", cfg.slip_kp);
-  get_float("slip_ki", cfg.slip_ki);
-  get_float("slip_kd", cfg.slip_kd);
-  get_float("slip_max_integral", cfg.slip_max_integral);
-  get_float("slip_max_correction", cfg.slip_max_correction);
+  // Slip angle config
+  cJSON* slip_angle = cJSON_GetObjectItem(json, "slip_angle");
+  if (slip_angle) {
+    cJSON* pid = cJSON_GetObjectItem(slip_angle, "pid");
+    if (pid) {
+      get_float(pid, "kp", cfg.slip_angle.pid.kp);
+      get_float(pid, "ki", cfg.slip_angle.pid.ki);
+      get_float(pid, "kd", cfg.slip_angle.pid.kd);
+      get_float(pid, "max_integral", cfg.slip_angle.pid.max_integral);
+      get_float(pid, "max_correction", cfg.slip_angle.pid.max_correction);
+    }
+    get_float(slip_angle, "target_deg", cfg.slip_angle.target_deg);
+  }
 
-  // Adaptive PID
-  get_bool("adaptive_pid_enabled", cfg.adaptive_pid_enabled);
-  get_float("adaptive_speed_ref_ms", cfg.adaptive_speed_ref_ms);
-  get_float("adaptive_scale_min", cfg.adaptive_scale_min);
-  get_float("adaptive_scale_max", cfg.adaptive_scale_max);
+  // Adaptive config
+  cJSON* adaptive = cJSON_GetObjectItem(json, "adaptive");
+  if (adaptive) {
+    get_bool(adaptive, "enabled", cfg.adaptive.enabled);
+    get_float(adaptive, "speed_ref_ms", cfg.adaptive.speed_ref_ms);
+    get_float(adaptive, "scale_min", cfg.adaptive.scale_min);
+    get_float(adaptive, "scale_max", cfg.adaptive.scale_max);
+  }
 
-  // Oversteer warning
-  get_bool("oversteer_warn_enabled", cfg.oversteer_warn_enabled);
-  get_float("oversteer_slip_thresh_deg", cfg.oversteer_slip_thresh_deg);
-  get_float("oversteer_rate_thresh_deg_s", cfg.oversteer_rate_thresh_deg_s);
-  get_float("oversteer_throttle_reduction", cfg.oversteer_throttle_reduction);
+  // Oversteer config
+  cJSON* oversteer = cJSON_GetObjectItem(json, "oversteer");
+  if (oversteer) {
+    get_bool(oversteer, "warn_enabled", cfg.oversteer.warn_enabled);
+    get_float(oversteer, "slip_thresh_deg", cfg.oversteer.slip_thresh_deg);
+    get_float(oversteer, "rate_thresh_deg_s", cfg.oversteer.rate_thresh_deg_s);
+    get_float(oversteer, "throttle_reduction",
+              cfg.oversteer.throttle_reduction);
+  }
+
+  // Pitch compensation config
+  cJSON* pitch_comp = cJSON_GetObjectItem(json, "pitch_comp");
+  if (pitch_comp) {
+    get_bool(pitch_comp, "enabled", cfg.pitch_comp.enabled);
+    get_float(pitch_comp, "gain", cfg.pitch_comp.gain);
+    get_float(pitch_comp, "max_correction", cfg.pitch_comp.max_correction);
+  }
 }

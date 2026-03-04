@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstring>
 
+namespace rc_vehicle {
+
 void ImuCalibration::ResetAccumulators() {
   collected_ = 0;
   std::memset(sum_, 0, sizeof(sum_));
@@ -136,7 +138,8 @@ bool ImuCalibration::Finalize() {
 }
 
 bool ImuCalibration::FinalizeForward() {
-  double n2 = sum_linear_[0] * sum_linear_[0] + sum_linear_[1] * sum_linear_[1] + sum_linear_[2] * sum_linear_[2];
+  double n2 = sum_linear_[0] * sum_linear_[0] +
+              sum_linear_[1] * sum_linear_[1] + sum_linear_[2] * sum_linear_[2];
   constexpr double kMinNorm2 = 1e-8;
   if (n2 < kMinNorm2) return false;
   double n = std::sqrt(n2);
@@ -145,7 +148,8 @@ bool ImuCalibration::FinalizeForward() {
   float fz = static_cast<float>(sum_linear_[2] / n);
   // Знак: совпадаем с первым значимым ускорением (считаем его «вперёд»)
   if (first_linear_set_) {
-    float dot = fx * first_linear_[0] + fy * first_linear_[1] + fz * first_linear_[2];
+    float dot =
+        fx * first_linear_[0] + fy * first_linear_[1] + fz * first_linear_[2];
     if (dot < 0.f) {
       fx = -fx;
       fy = -fy;
@@ -177,7 +181,8 @@ float ImuCalibration::GetForwardAccel(const ImuData& data) const {
 }
 
 void ImuCalibration::SetForwardDirection(float fx, float fy, float fz) {
-  double n2 = static_cast<double>(fx) * fx + static_cast<double>(fy) * fy + static_cast<double>(fz) * fz;
+  double n2 = static_cast<double>(fx) * fx + static_cast<double>(fy) * fy +
+              static_cast<double>(fz) * fz;
   constexpr double kMinNorm2 = 1e-6;
   if (n2 < kMinNorm2) {
     data_.accel_forward_vec[0] = 1.f;
@@ -206,27 +211,37 @@ void ImuCalibration::SetData(const ImuCalibData& data) {
 
   data_ = data;
   auto normalize_forward = [](float* v) {
-    double n2 = static_cast<double>(v[0]) * v[0] + static_cast<double>(v[1]) * v[1] + static_cast<double>(v[2]) * v[2];
+    double n2 = static_cast<double>(v[0]) * v[0] +
+                static_cast<double>(v[1]) * v[1] +
+                static_cast<double>(v[2]) * v[2];
     if (n2 >= 1e-6) {
       double n = std::sqrt(n2);
       v[0] = static_cast<float>(v[0] / n);
       v[1] = static_cast<float>(v[1] / n);
       v[2] = static_cast<float>(v[2] / n);
     } else {
-      v[0] = 1.f; v[1] = 0.f; v[2] = 0.f;
+      v[0] = 1.f;
+      v[1] = 0.f;
+      v[2] = 0.f;
     }
   };
   auto normalize_gravity = [](float* v) {
-    double n2 = static_cast<double>(v[0]) * v[0] + static_cast<double>(v[1]) * v[1] + static_cast<double>(v[2]) * v[2];
+    double n2 = static_cast<double>(v[0]) * v[0] +
+                static_cast<double>(v[1]) * v[1] +
+                static_cast<double>(v[2]) * v[2];
     if (n2 >= 1e-6) {
       double n = std::sqrt(n2);
       v[0] = static_cast<float>(v[0] / n);
       v[1] = static_cast<float>(v[1] / n);
       v[2] = static_cast<float>(v[2] / n);
     } else {
-      v[0] = 0.f; v[1] = 0.f; v[2] = 1.f;
+      v[0] = 0.f;
+      v[1] = 0.f;
+      v[2] = 1.f;
     }
   };
   normalize_forward(data_.accel_forward_vec);
   normalize_gravity(data_.gravity_vec);
 }
+
+}  // namespace rc_vehicle

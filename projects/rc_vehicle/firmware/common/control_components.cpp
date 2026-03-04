@@ -5,6 +5,7 @@
 #include <string>
 
 #include "cJSON.h"
+#include "config.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 
@@ -30,7 +31,8 @@ void RcInputHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
 // WifiCommandHandler
 // ═════════════════════════════════════════════════════════════════════════
 
-void WifiCommandHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
+void WifiCommandHandler::Update(uint32_t now_ms,
+                                [[maybe_unused]] uint32_t dt_ms) {
   // Попытаться получить команду из очереди
   auto cmd = platform_.TryReceiveWifiCommand();
   if (cmd) {
@@ -76,7 +78,7 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Инициализация с дефолтными параметрами, если ещё не настроен
   if (!lpf_gyro_z_.IsConfigured()) {
     const float fs_hz = 1000.f / static_cast<float>(read_interval_ms_);
-    lpf_gyro_z_.SetParams(30.f, fs_hz);  // 30 Hz cutoff по умолчанию
+    lpf_gyro_z_.SetParams(config::LpfConfig::kDefaultCutoffHz, fs_hz);
   }
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
@@ -97,7 +99,8 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
 }
 
 void ImuHandler::SetLpfCutoff(float cutoff_hz) {
-  if (cutoff_hz < 5.f || cutoff_hz > 100.f) {
+  if (cutoff_hz < config::LpfConfig::kMinCutoffHz ||
+      cutoff_hz > config::LpfConfig::kMaxCutoffHz) {
     return;  // Игнорировать невалидные значения
   }
   const float fs_hz = 1000.f / static_cast<float>(read_interval_ms_);
@@ -123,7 +126,8 @@ void TelemetryHandler::Update(uint32_t now_ms, const TelemetrySnapshot& snap) {
   platform_.SendTelem(json);
 }
 
-std::string TelemetryHandler::BuildTelemJson(const TelemetrySnapshot& snap) const {
+std::string TelemetryHandler::BuildTelemJson(
+    const TelemetrySnapshot& snap) const {
   cJSON* root = cJSON_CreateObject();
   if (!root) return "{}";
 
@@ -166,10 +170,18 @@ std::string TelemetryHandler::BuildTelemJson(const TelemetrySnapshot& snap) cons
     if (calib) {
       const char* status_str = "unknown";
       switch (snap.calib_status) {
-        case CalibStatus::Idle:       status_str = "idle";       break;
-        case CalibStatus::Collecting: status_str = "collecting"; break;
-        case CalibStatus::Done:       status_str = "done";       break;
-        case CalibStatus::Failed:     status_str = "failed";     break;
+        case CalibStatus::Idle:
+          status_str = "idle";
+          break;
+        case CalibStatus::Collecting:
+          status_str = "collecting";
+          break;
+        case CalibStatus::Done:
+          status_str = "done";
+          break;
+        case CalibStatus::Failed:
+          status_str = "failed";
+          break;
       }
       cJSON_AddStringToObject(calib, "status", status_str);
       cJSON_AddNumberToObject(calib, "stage", snap.calib_stage);

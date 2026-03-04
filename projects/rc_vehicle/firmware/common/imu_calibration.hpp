@@ -4,13 +4,16 @@
 
 #include "mpu6050_spi.hpp"  // ImuData
 
+namespace rc_vehicle {
+
 /** Калибровочные данные IMU: bias, вектор g при покое, направление «вперёд». */
 struct ImuCalibData {
   float gyro_bias[3]{0.f, 0.f, 0.f};   // gx, gy, gz offset (dps)
   float accel_bias[3]{0.f, 0.f, 0.f};  // ax, ay, az offset (g)
   /** Единичный вектор g в СК датчика (этап 1: стояние на месте). */
   float gravity_vec[3]{0.f, 0.f, 1.f};
-  /** Единичный вектор «вперёд» в СК датчика (этап 2: движение вперёд/назад). Продольное ускорение = dot(accel, vec). */
+  /** Единичный вектор «вперёд» в СК датчика (этап 2: движение вперёд/назад).
+   * Продольное ускорение = dot(accel, vec). */
   float accel_forward_vec[3]{1.f, 0.f, 0.f};
   bool valid{false};
 };
@@ -19,7 +22,8 @@ struct ImuCalibData {
 enum class CalibMode {
   GyroOnly,  // только гироскоп (быстро, ~2 сек)
   Full,      // этап 1: стояние на месте — gyro/accel bias + вектор g
-  Forward,   // этап 2: движение вперёд/назад с прямыми колёсами — вектор «вперёд»
+  Forward,  // этап 2: движение вперёд/назад с прямыми колёсами — вектор
+            // «вперёд»
 };
 
 /** Состояние процесса калибровки. */
@@ -47,13 +51,16 @@ class ImuCalibration {
   /** Запустить этап 1 (Full) или GyroOnly. num_samples — количество семплов. */
   void StartCalibration(CalibMode mode, int num_samples = 1000);
 
-  /** Запустить этап 2 (Forward): требует валидную калибровку с gravity_vec. num_samples — сбор при движении вперёд/назад. */
+  /** Запустить этап 2 (Forward): требует валидную калибровку с gravity_vec.
+   * num_samples — сбор при движении вперёд/назад. */
   bool StartForwardCalibration(int num_samples = 2000);
 
-  /** Подать очередной семпл (вызывать каждую итерацию control loop при Collecting). */
+  /** Подать очередной семпл (вызывать каждую итерацию control loop при
+   * Collecting). */
   void FeedSample(const ImuData& raw);
 
-  /** Текущий этап калибровки: 0 = нет, 1 = стояние на месте, 2 = движение вперёд/назад. */
+  /** Текущий этап калибровки: 0 = нет, 1 = стояние на месте, 2 = движение
+   * вперёд/назад. */
   int GetCalibStage() const;
 
   /** Применить компенсацию bias к данным (вычитание). */
@@ -62,11 +69,13 @@ class ImuCalibration {
   /**
    * Продольное ускорение (вперёд/назад) в g.
    * Вызывать после Apply(data). Положительное = ускорение вперёд.
-   * Считается как скалярное произведение (ax,ay,az) на единичный вектор направления.
+   * Считается как скалярное произведение (ax,ay,az) на единичный вектор
+   * направления.
    */
   float GetForwardAccel(const ImuData& data) const;
 
-  /** Задать направление «вперёд» единичным вектором в СК датчика (fx,fy,fz). Нормализуется. */
+  /** Задать направление «вперёд» единичным вектором в СК датчика (fx,fy,fz).
+   * Нормализуется. */
   void SetForwardDirection(float fx, float fy, float fz);
 
   /** Текущий статус калибровки. */
@@ -83,11 +92,11 @@ class ImuCalibration {
 
   // Пороги для детекции движения (variance по оси)
   static constexpr float kGyroVarianceThreshold = 0.5f;    // (dps)^2
-  static constexpr float kAccelVarianceThreshold = 0.01f;   // (g)^2
+  static constexpr float kAccelVarianceThreshold = 0.01f;  // (g)^2
 
   // Максимально допустимый bias (для валидации данных из NVS)
-  static constexpr float kMaxGyroBias = 20.0f;   // dps
-  static constexpr float kMaxAccelBias = 0.5f;    // g
+  static constexpr float kMaxGyroBias = 20.0f;  // dps
+  static constexpr float kMaxAccelBias = 0.5f;  // g
 
  private:
   ImuCalibData data_{};
@@ -105,9 +114,12 @@ class ImuCalibration {
   float first_linear_[3]{};
   bool first_linear_set_{false};
 
-  static constexpr float kLinearAccelThreshold = 0.05f;  // (g) порог для учёта семпла
+  static constexpr float kLinearAccelThreshold =
+      0.05f;  // (g) порог для учёта семпла
 
   void ResetAccumulators();
   bool Finalize();
   bool FinalizeForward();
 };
+
+}  // namespace rc_vehicle

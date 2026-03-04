@@ -6,6 +6,7 @@
 
 #include "imu_calibration.hpp"
 #include "mpu6050_spi.hpp"
+#include "result.hpp"
 #include "stabilization_config.hpp"
 
 namespace rc_vehicle {
@@ -59,27 +60,27 @@ class VehicleControlPlatform {
 
   /**
    * @brief Инициализация PWM-выходов (throttle, steering)
-   * @return PlatformError::Ok при успехе
+   * @return Result with Unit on success or PlatformError on failure
    */
-  [[nodiscard]] virtual PlatformError InitPwm() = 0;
+  [[nodiscard]] virtual Result<Unit, PlatformError> InitPwm() = 0;
 
   /**
    * @brief Инициализация RC-входов (PWM capture)
-   * @return PlatformError::Ok при успехе
+   * @return Result with Unit on success or PlatformError on failure
    */
-  [[nodiscard]] virtual PlatformError InitRc() = 0;
+  [[nodiscard]] virtual Result<Unit, PlatformError> InitRc() = 0;
 
   /**
    * @brief Инициализация IMU (SPI, I2C)
-   * @return PlatformError::Ok при успехе
+   * @return Result with Unit on success or PlatformError on failure
    */
-  [[nodiscard]] virtual PlatformError InitImu() = 0;
+  [[nodiscard]] virtual Result<Unit, PlatformError> InitImu() = 0;
 
   /**
    * @brief Инициализация failsafe
-   * @return PlatformError::Ok при успехе
+   * @return Result with Unit on success or PlatformError on failure
    */
-  [[nodiscard]] virtual PlatformError InitFailsafe() = 0;
+  [[nodiscard]] virtual Result<Unit, PlatformError> InitFailsafe() = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Время
@@ -137,9 +138,10 @@ class VehicleControlPlatform {
   /**
    * @brief Сохранить калибровку IMU в энергонезависимую память
    * @param data Данные калибровки
-   * @return true при успешном сохранении
+   * @return Result with Unit on success or PlatformError on failure
    */
-  [[nodiscard]] virtual bool SaveCalib(const ImuCalibData& data) = 0;
+  [[nodiscard]] virtual Result<Unit, PlatformError> SaveCalib(
+      const ImuCalibData& data) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Stabilization Config
@@ -155,9 +157,9 @@ class VehicleControlPlatform {
   /**
    * @brief Сохранить конфигурацию стабилизации в энергонезависимую память
    * @param config Конфигурация стабилизации
-   * @return true при успешном сохранении
+   * @return Result with Unit on success or PlatformError on failure
    */
-  [[nodiscard]] virtual bool SaveStabilizationConfig(
+  [[nodiscard]] virtual Result<Unit, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig& config) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -246,9 +248,10 @@ class VehicleControlPlatform {
    * @brief Создать задачу control loop
    * @param entry Функция-точка входа задачи
    * @param arg Аргумент для передачи в entry
-   * @return true при успешном создании задачи
+   * @return Result with Unit on success or PlatformError on failure
    */
-  [[nodiscard]] virtual bool CreateTask(void (*entry)(void*), void* arg) = 0;
+  [[nodiscard]] virtual Result<Unit, PlatformError> CreateTask(
+      void (*entry)(void*), void* arg) = 0;
 
   /**
    * @brief Задержка до следующего тика (для периодических задач)
