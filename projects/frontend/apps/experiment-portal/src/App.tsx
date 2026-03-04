@@ -11,6 +11,7 @@ import CreateSensor from './pages/CreateSensor'
 import ProjectsList from './pages/ProjectsList'
 import TelemetryViewer from './pages/TelemetryViewer'
 import Webhooks from './pages/Webhooks'
+import AdminUsers from './pages/AdminUsers'
 import './App.scss'
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
                 <Route path="/sensors/new" element={<CreateSensor />} />
                 <Route path="/telemetry" element={<TelemetryViewer />} />
                 <Route path="/webhooks" element={<Webhooks />} />
+                <Route path="/admin/users" element={<AdminUsers />} />
               </Routes>
             </Layout>
           </ProtectedRoute>

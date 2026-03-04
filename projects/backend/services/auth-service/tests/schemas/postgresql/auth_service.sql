@@ -128,14 +128,6 @@ CREATE TRIGGER projects_add_owner_member
     FOR EACH ROW
     EXECUTE FUNCTION add_project_owner_as_member();
 
-INSERT INTO users (username, email, hashed_password, password_change_required, is_admin)
-VALUES (
-    'admin', 'admin@example.com',
-    '$2b$12$0QfCvOcgNkygw/I79ieV5eOIwAjWXUjdFUr/QvRgDMewN1OfENrmG',
-    false, true
-)
-ON CONFLICT (username) DO NOTHING;
-
 -- Migration: 005_invite_system.sql
 -- Таблица инвайт-токенов для закрытой регистрации.
 

@@ -50,6 +50,7 @@ function Layout({ children }: LayoutProps) {
     '/sensors': 'Датчики',
     '/telemetry': 'Телеметрия',
     '/webhooks': 'Webhooks',
+    '/admin': 'Администрирование',
   }
   const pageTitle =
     Object.entries(pageTitleMap).find(([path]) => location.pathname.startsWith(path))?.[1] || ''
@@ -93,6 +94,14 @@ function Layout({ children }: LayoutProps) {
             >
               Webhooks
             </Link>
+            {user?.is_admin && (
+              <Link
+                to="/admin/users"
+                className={location.pathname.startsWith('/admin') ? 'active' : ''}
+              >
+                Администрирование
+              </Link>
+            )}
           </nav>
         </div>
       </div>

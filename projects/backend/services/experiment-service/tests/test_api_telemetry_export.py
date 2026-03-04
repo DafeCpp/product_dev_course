@@ -15,7 +15,7 @@ Covered:
   - run with no capture sessions
   - RBAC: viewer has access, unauthorized has not
   - invalid format / invalid UUID
-  - X-Export-Truncated header (monkeypatched limit)
+  - streaming: all rows returned, no X-Export-Truncated header
 """
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ import io
 import json
 import uuid
 from datetime import datetime, timezone
-from unittest import mock
 
 import asyncpg
 import pytest
@@ -837,16 +836,12 @@ async def test_export_run_not_found(service_client, pgsql):
 
 
 # ---------------------------------------------------------------------------
-# X-Export-Truncated header
+# Streaming — no truncation
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_export_truncated_header_set(service_client, pgsql):
-    """When result exceeds limit, X-Export-Truncated: true must be set.
-
-    Mock _fetch_telemetry_rows to return truncated=True so we don't need
-    to insert 100k rows in a test.
-    """
+async def test_export_all_rows_returned_no_truncation(service_client, pgsql):
+    """Streaming export returns all rows without any row limit or truncation header."""
     ctx = await _setup_context(service_client)
     project_id = ctx["project_id"]
     run_id = ctx["run_id"]
@@ -854,35 +849,28 @@ async def test_export_truncated_header_set(service_client, pgsql):
     sensor_uuid = ctx["sensor_uuid"]
     headers = ctx["headers"]
 
-    import experiment_service.api.routes.telemetry_export as te_module
+    row_count = 50
+    await _insert_telemetry(
+        pgsql,
+        project_id=project_id,
+        sensor_id=sensor_uuid,
+        run_id=uuid.UUID(run_id),
+        capture_session_id=uuid.UUID(session_id),
+        records=[
+            {"timestamp": _ts(i), "raw_value": float(i), "conversion_status": "raw_only"}
+            for i in range(row_count)
+        ],
+    )
 
-    # Build 3 fake row dicts that match the shape returned by asyncpg
-    fake_rows = [
-        {
-            "timestamp": _ts(i),
-            "sensor_id": sensor_uuid,
-            "signal": "temp",
-            "raw_value": float(i),
-            "physical_value": None,
-            "conversion_status": "raw_only",
-            "capture_session_id": uuid.UUID(session_id),
-        }
-        for i in range(3)
-    ]
-
-    async def _fake_fetch(pool, capture_session_ids, **kwargs):
-        return fake_rows, True  # truncated
-
-    with mock.patch.object(te_module, "_fetch_telemetry_rows", new=_fake_fetch):
-        resp = await service_client.get(
-            f"/api/v1/runs/{run_id}/capture-sessions/{session_id}/telemetry/export"
-            f"?format=json&project_id={project_id}",
-            headers=headers,
-        )
+    resp = await service_client.get(
+        f"/api/v1/runs/{run_id}/capture-sessions/{session_id}/telemetry/export"
+        f"?format=json&project_id={project_id}",
+        headers=headers,
+    )
     assert resp.status == 200
-    assert resp.headers.get("X-Export-Truncated") == "true"
+    assert "X-Export-Truncated" not in resp.headers
     data = json.loads(await resp.text())
-    assert len(data) == 3
+    assert len(data) == row_count
 
 
 @pytest.mark.asyncio

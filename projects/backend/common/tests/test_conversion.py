@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend_common.conversion import apply_conversion
+from backend_common.conversion import apply_conversion, validate_conversion_payload
 
 
 # ---------------------------------------------------------------------------
@@ -140,3 +140,113 @@ class TestUnknownKind:
 
     def test_empty_string(self):
         assert apply_conversion("", {}, 5.0) is None
+
+
+# ---------------------------------------------------------------------------
+# validate_conversion_payload
+# ---------------------------------------------------------------------------
+
+class TestValidateLinear:
+    def test_valid(self):
+        validate_conversion_payload("linear", {"a": 2.0, "b": 1.0})  # no exception
+
+    def test_integer_coefficients(self):
+        validate_conversion_payload("linear", {"a": 2, "b": 0})  # no exception
+
+    def test_missing_a(self):
+        with pytest.raises(ValueError, match="'a'"):
+            validate_conversion_payload("linear", {"b": 1.0})
+
+    def test_missing_b(self):
+        with pytest.raises(ValueError, match="'b'"):
+            validate_conversion_payload("linear", {"a": 1.0})
+
+    def test_empty_payload(self):
+        with pytest.raises(ValueError):
+            validate_conversion_payload("linear", {})
+
+    def test_string_a(self):
+        with pytest.raises(ValueError, match="'a'"):
+            validate_conversion_payload("linear", {"a": "two", "b": 1.0})
+
+
+class TestValidatePolynomial:
+    def test_valid(self):
+        validate_conversion_payload("polynomial", {"coefficients": [1.0, 2.0, 3.0]})
+
+    def test_single_coefficient(self):
+        validate_conversion_payload("polynomial", {"coefficients": [5.0]})
+
+    def test_missing_key(self):
+        with pytest.raises(ValueError, match="coefficients"):
+            validate_conversion_payload("polynomial", {})
+
+    def test_empty_coefficients(self):
+        with pytest.raises(ValueError, match="empty"):
+            validate_conversion_payload("polynomial", {"coefficients": []})
+
+    def test_not_a_list(self):
+        with pytest.raises(ValueError, match="coefficients"):
+            validate_conversion_payload("polynomial", {"coefficients": 1.0})
+
+    def test_non_numeric_element(self):
+        with pytest.raises(ValueError, match="coefficients"):
+            validate_conversion_payload("polynomial", {"coefficients": [1.0, "bad"]})
+
+
+class TestValidateLookupTable:
+    VALID_TABLE = [{"raw": 0.0, "physical": 0.0}, {"raw": 10.0, "physical": 100.0}]
+
+    def test_valid(self):
+        validate_conversion_payload("lookup_table", {"table": self.VALID_TABLE})
+
+    def test_three_points(self):
+        table = [{"raw": i * 5.0, "physical": float(i)} for i in range(3)]
+        validate_conversion_payload("lookup_table", {"table": table})
+
+    def test_missing_table_key(self):
+        with pytest.raises(ValueError, match="table"):
+            validate_conversion_payload("lookup_table", {})
+
+    def test_not_a_list(self):
+        with pytest.raises(ValueError, match="table"):
+            validate_conversion_payload("lookup_table", {"table": "data"})
+
+    def test_single_point(self):
+        with pytest.raises(ValueError, match="at least 2"):
+            validate_conversion_payload("lookup_table", {"table": [{"raw": 0.0, "physical": 0.0}]})
+
+    def test_empty_table(self):
+        with pytest.raises(ValueError, match="at least 2"):
+            validate_conversion_payload("lookup_table", {"table": []})
+
+    def test_missing_raw_key(self):
+        with pytest.raises(ValueError, match="'raw'"):
+            validate_conversion_payload(
+                "lookup_table",
+                {"table": [{"physical": 0.0}, {"raw": 10.0, "physical": 100.0}]},
+            )
+
+    def test_missing_physical_key(self):
+        with pytest.raises(ValueError, match="'physical'"):
+            validate_conversion_payload(
+                "lookup_table",
+                {"table": [{"raw": 0.0}, {"raw": 10.0, "physical": 100.0}]},
+            )
+
+    def test_non_numeric_raw(self):
+        with pytest.raises(ValueError, match="raw"):
+            validate_conversion_payload(
+                "lookup_table",
+                {"table": [{"raw": "zero", "physical": 0.0}, {"raw": 10.0, "physical": 100.0}]},
+            )
+
+
+class TestValidateUnknownKind:
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError, match="kind"):
+            validate_conversion_payload("custom_formula", {})
+
+    def test_empty_kind_raises(self):
+        with pytest.raises(ValueError, match="kind"):
+            validate_conversion_payload("", {})

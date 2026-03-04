@@ -46,6 +46,31 @@ class AuthService:
         self._invite_repo = invite_repo
         self._registration_mode = registration_mode
 
+    async def bootstrap_admin(
+        self,
+        bootstrap_secret: str,
+        expected_secret: str | None,
+        username: str,
+        email: str,
+        password: str,
+    ) -> tuple[User, AuthTokensResponse]:
+        """Создаёт первого admin-пользователя. Работает только если ни одного admin ещё нет."""
+        if not expected_secret or bootstrap_secret != expected_secret:
+            raise ForbiddenError("Invalid bootstrap secret")
+
+        if await self._user_repo.count_admins() > 0:
+            raise ConflictError("Admin user already exists")
+
+        if await self._user_repo.user_exists(username, email):
+            raise UserAlreadyExistsError("User with this username or email already exists")
+
+        hashed_password = hash_password(password)
+        user = await self._user_repo.create(username, email, hashed_password, password_change_required=False)
+        user = await self._user_repo.set_admin(user.id, True)
+
+        tokens = self._create_tokens(str(user.id))
+        return user, tokens
+
     async def register(
         self,
         username: str,

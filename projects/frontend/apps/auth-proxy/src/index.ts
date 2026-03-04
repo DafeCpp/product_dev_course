@@ -656,6 +656,43 @@ export async function buildServer(config: Config) {
         return res.json().catch(() => ({}))
     })
 
+    // Admin routes proxy — forward /auth/admin/* to Auth Service with access token from cookie
+    await app.register(httpProxy, {
+        prefix: '/auth/admin',
+        upstream: config.authUrl,
+        rewritePrefix: '/auth/admin',
+        http2: false,
+        replyOptions: {
+            rewriteRequestHeaders: (req, headers) => {
+                const cookies = parseCookies(req.headers.cookie as string | undefined)
+                const access = cookies[config.accessCookieName]
+                const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+                const newHeaders: Record<string, string> = {}
+                for (const [key, value] of Object.entries(headers)) {
+                    if (typeof value === 'string') {
+                        newHeaders[key] = value
+                    } else if (Array.isArray(value) && value.length > 0) {
+                        newHeaders[key] = String(value[0])
+                    }
+                }
+                if (
+                    !newHeaders['content-type'] &&
+                    (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')
+                ) {
+                    newHeaders['content-type'] = 'application/json'
+                }
+                newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+                if (access) {
+                    newHeaders['authorization'] = `Bearer ${access}`
+                }
+                return newHeaders
+            },
+        },
+    })
+
     /**
      * Декодирует JWT токен и извлекает user_id
      */

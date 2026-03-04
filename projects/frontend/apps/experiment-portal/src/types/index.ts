@@ -85,8 +85,31 @@ export interface User {
   username: string
   email: string
   is_active: boolean
+  is_admin?: boolean
   password_change_required?: boolean
   created_at: string
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  email: string
+  is_active: boolean
+  is_admin: boolean
+  password_change_required: boolean
+  created_at: string
+}
+
+export interface AdminInviteToken {
+  id: string
+  token: string
+  created_by: string
+  email_hint: string | null
+  expires_at: string
+  used_at: string | null
+  used_by: string | null
+  created_at: string
+  is_active: boolean
 }
 
 export interface LoginRequest {

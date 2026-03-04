@@ -12,6 +12,7 @@ from auth_service.domain.dto import (
     AdminUserResetRequest,
     AdminUserUpdateRequest,
     AuthTokensResponse,
+    BootstrapAdminRequest,
     InviteCreateRequest,
     InviteResponse,
     LogoutRequest,
@@ -55,6 +56,41 @@ def _extract_bearer_token(request: web.Request) -> str | None:
     if not auth_header or not auth_header.startswith("Bearer "):
         return None
     return auth_header[7:].strip() or None
+
+
+async def bootstrap_admin(request: web.Request) -> web.Response:
+    """Создаёт первого admin-пользователя. Требует ADMIN_BOOTSTRAP_SECRET. Только пока нет ни одного admin."""
+    if not settings.admin_bootstrap_secret:
+        return web.json_response({"error": "Bootstrap is disabled"}, status=404)
+
+    try:
+        data = await request.json()
+        req = BootstrapAdminRequest(**data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid request: {e}"}, status=400)
+
+    try:
+        auth_service = await get_auth_service(request)
+        user, tokens = await auth_service.bootstrap_admin(
+            bootstrap_secret=req.bootstrap_secret,
+            expected_secret=settings.admin_bootstrap_secret,
+            username=req.username,
+            email=req.email,
+            password=req.password,
+        )
+        return web.json_response(
+            {
+                "user": UserResponse.from_user(user).model_dump(),
+                "access_token": tokens.access_token,
+                "refresh_token": tokens.refresh_token,
+            },
+            status=201,
+        )
+    except AuthError as e:
+        return handle_auth_error(request, e)
+    except Exception:
+        logger.exception("Bootstrap admin error")
+        return web.json_response({"error": "Internal server error"}, status=500)
 
 
 async def register(request: web.Request) -> web.Response:
@@ -434,6 +470,7 @@ async def delete_user(request: web.Request) -> web.Response:
 
 def setup_routes(app: web.Application) -> None:
     """Setup authentication routes."""
+    app.router.add_post("/auth/admin/bootstrap", bootstrap_admin)
     app.router.add_post("/auth/login", login)
     app.router.add_post("/auth/register", register)
     app.router.add_post("/auth/refresh", refresh)

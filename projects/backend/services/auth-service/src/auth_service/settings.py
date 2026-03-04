@@ -36,6 +36,10 @@ class Settings(BaseServiceSettings):
 
     registration_mode: Literal["open", "invite"] = "open"
 
+    # Секрет для одноразового создания первого admin-пользователя.
+    # Если не задан — endpoint POST /auth/admin/bootstrap отключён (404).
+    admin_bootstrap_secret: str | None = Field(default=None)
+
     @model_validator(mode="after")
     def _warn_insecure_jwt_secret(self) -> "Settings":
         """Emit a loud warning when the JWT secret is a known insecure default."""

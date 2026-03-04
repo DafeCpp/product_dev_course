@@ -28,6 +28,20 @@ def _check_password_complexity(value: str) -> str:
     return value
 
 
+class BootstrapAdminRequest(BaseModel):
+    """Bootstrap first admin user request."""
+
+    bootstrap_secret: str
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=100)
+
+    @field_validator("password")
+    @classmethod
+    def _password_complexity(cls, value: str) -> str:
+        return _check_password_complexity(value)
+
+
 class UserRegisterRequest(BaseModel):
     """User registration request."""
 

@@ -4,6 +4,14 @@ import pytest
 
 from auth_service.settings import settings
 
+_BOOTSTRAP_SECRET = "test-bootstrap-secret-xyz"
+
+
+@pytest.fixture
+def bootstrap_settings(monkeypatch):
+    """Enable bootstrap endpoint for tests."""
+    monkeypatch.setattr(settings, "admin_bootstrap_secret", _BOOTSTRAP_SECRET)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1162,3 +1170,86 @@ async def test_admin_delete_user_forbidden_non_admin(service_client):
     assert response.status == 403
     payload = await response.json()
     assert "error" in payload
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap admin tests
+# ---------------------------------------------------------------------------
+
+
+async def _bootstrap(client, secret, username="superadmin", email="superadmin@example.com", password="Superadmin1"):
+    return await client.post(
+        "/auth/admin/bootstrap",
+        json={
+            "bootstrap_secret": secret,
+            "username": username,
+            "email": email,
+            "password": password,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_success(service_client, bootstrap_settings):
+    """Успешный bootstrap → 201, admin создан, можно войти."""
+    response = await _bootstrap(service_client, _BOOTSTRAP_SECRET)
+    assert response.status == 201
+    payload = await response.json()
+    assert payload["user"]["username"] == "superadmin"
+    assert payload["user"]["is_admin"] is True
+    assert "access_token" in payload
+    assert "refresh_token" in payload
+
+    # Проверяем, что можно войти с этими данными
+    login_resp = await service_client.post(
+        "/auth/login",
+        json={"username": "superadmin", "password": "Superadmin1"},
+    )
+    assert login_resp.status == 200
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_wrong_secret(service_client, bootstrap_settings):
+    """Неверный секрет → 403."""
+    response = await _bootstrap(service_client, "wrong-secret")
+    assert response.status == 403
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_disabled(service_client):
+    """Если ADMIN_BOOTSTRAP_SECRET не задан — endpoint отключён (404)."""
+    response = await _bootstrap(service_client, "any-secret")
+    assert response.status == 404
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_already_exists(service_client, admin_token, bootstrap_settings):
+    """Если admin уже есть — 409."""
+    response = await _bootstrap(service_client, _BOOTSTRAP_SECRET)
+    assert response.status == 409
+    payload = await response.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_duplicate_username(service_client, bootstrap_settings):
+    """Повторный bootstrap с тем же username → 409."""
+    r1 = await _bootstrap(service_client, _BOOTSTRAP_SECRET)
+    assert r1.status == 201
+
+    # Пробуем ещё раз — admin уже есть
+    r2 = await _bootstrap(service_client, _BOOTSTRAP_SECRET, username="superadmin2", email="superadmin2@example.com")
+    assert r2.status == 409
+    payload = await r2.json()
+    assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_invalid_password(service_client, bootstrap_settings):
+    """Слишком короткий пароль → 400."""
+    response = await _bootstrap(service_client, _BOOTSTRAP_SECRET, password="short")
+    assert response.status == 400
