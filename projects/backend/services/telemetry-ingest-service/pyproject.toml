@@ -14,7 +14,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.12"
-aiohttp = "^3.10.5"
+aiohttp = "^3.13.3"
 aiohttp-cors = "^0.7.0"
 asyncpg = "^0.31.0"
 pydantic-settings = "^2.4.0"
