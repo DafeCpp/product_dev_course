@@ -1,6 +1,7 @@
 #include "telemetry_log.hpp"
 
 #include <cstdlib>
+#include <mutex>
 
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
@@ -9,7 +10,7 @@
 TelemetryLog::~TelemetryLog() {
   if (buf_) {
 #ifdef ESP_PLATFORM
-    free(buf_);
+    heap_caps_free(buf_);
 #else
     free(buf_);
 #endif
@@ -40,9 +41,14 @@ bool TelemetryLog::Init(size_t capacity_frames) {
   }
 
   capacity_ = capacity_frames;
-  count_.store(0);
-  write_pos_.store(0);
+  count_ = 0;
+  write_pos_ = 0;
   return true;
+}
+
+size_t TelemetryLog::Count() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return count_;
 }
 
 void TelemetryLog::Push(const TelemetryLogFrame& frame) {
@@ -50,30 +56,31 @@ void TelemetryLog::Push(const TelemetryLogFrame& frame) {
     return;
   }
 
-  const size_t pos = write_pos_.fetch_add(1) % capacity_;
-  buf_[pos] = frame;
-
-  // Увеличиваем count до capacity_ максимум
-  size_t current = count_.load();
-  if (current < capacity_) {
-    count_.fetch_add(1);
+  std::lock_guard<std::mutex> lock(mutex_);
+  buf_[write_pos_ % capacity_] = frame;
+  write_pos_++;
+  if (count_ < capacity_) {
+    count_++;
   }
 }
 
 bool TelemetryLog::GetFrame(size_t idx, TelemetryLogFrame& out) const {
-  if (!buf_ || idx >= count_.load()) {
+  if (!buf_) {
     return false;
   }
 
-  const size_t cnt = count_.load();
-  const size_t wpos = write_pos_.load();
-  // Oldest frame находится по индексу: (wpos - cnt + idx) % capacity_
-  const size_t real_pos = (wpos - cnt + idx) % capacity_;
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (idx >= count_) {
+    return false;
+  }
+  // Oldest frame находится по индексу: (write_pos_ - count_ + idx) % capacity_
+  const size_t real_pos = (write_pos_ - count_ + idx) % capacity_;
   out = buf_[real_pos];
   return true;
 }
 
 void TelemetryLog::Clear() {
-  count_.store(0);
-  write_pos_.store(0);
+  std::lock_guard<std::mutex> lock(mutex_);
+  count_ = 0;
+  write_pos_ = 0;
 }

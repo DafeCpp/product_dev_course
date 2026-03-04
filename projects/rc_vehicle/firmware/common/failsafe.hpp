@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 
 namespace rc_vehicle {
 
@@ -60,15 +61,13 @@ class Failsafe {
    * @brief Проверить, активен ли failsafe
    * @return true, если failsafe активен (нет управления)
    */
-  [[nodiscard]] bool IsActive() const noexcept {
-    return state_ == FailsafeState::Active;
-  }
+  [[nodiscard]] bool IsActive() const noexcept;
 
   /**
    * @brief Получить текущее состояние
    * @return Состояние failsafe
    */
-  [[nodiscard]] FailsafeState GetState() const noexcept { return state_; }
+  [[nodiscard]] FailsafeState GetState() const noexcept;
 
   /**
    * @brief Получить время с момента последнего активного источника
@@ -76,22 +75,19 @@ class Failsafe {
    * @return Время в миллисекундах с момента последнего активного источника
    */
   [[nodiscard]] uint32_t GetTimeSinceLastActive(
-      uint32_t now_ms) const noexcept {
-    if (last_active_ms_ == 0) return 0;
-    return now_ms - last_active_ms_;
-  }
+      uint32_t now_ms) const noexcept;
 
   /**
    * @brief Установить таймаут
    * @param timeout_ms Новый таймаут в миллисекундах
    */
-  void SetTimeout(uint32_t timeout_ms) noexcept { timeout_ms_ = timeout_ms; }
+  void SetTimeout(uint32_t timeout_ms) noexcept;
 
   /**
    * @brief Получить текущий таймаут
    * @return Таймаут в миллисекундах
    */
-  [[nodiscard]] uint32_t GetTimeout() const noexcept { return timeout_ms_; }
+  [[nodiscard]] uint32_t GetTimeout() const noexcept;
 
   /**
    * @brief Сбросить состояние failsafe
@@ -99,17 +95,15 @@ class Failsafe {
    * Переводит failsafe в состояние Inactive и сбрасывает таймеры.
    * Используется при ручном восстановлении или перезапуске системы.
    */
-  void Reset() noexcept {
-    state_ = FailsafeState::Inactive;
-    last_active_ms_ = 0;
-    last_update_ms_ = 0;
-  }
+  void Reset() noexcept;
 
  private:
+  mutable std::mutex mutex_;
   FailsafeState state_{FailsafeState::Inactive};
   uint32_t last_active_ms_{0};
   uint32_t last_update_ms_{0};
   uint32_t timeout_ms_;
+  bool initialized_{false};
 };
 
 }  // namespace rc_vehicle

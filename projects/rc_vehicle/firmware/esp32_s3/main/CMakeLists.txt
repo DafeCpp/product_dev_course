@@ -45,7 +45,7 @@ idf_component_register(
 )
 
 # C++26 (если поддерживается компилятором), иначе C++23.
-set(RC_VEHICLE_CXX_STANDARD 23)
+set(RC_VEHICLE_CXX_STANDARD 26)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
    CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
     set(RC_VEHICLE_CXX_STANDARD 26)

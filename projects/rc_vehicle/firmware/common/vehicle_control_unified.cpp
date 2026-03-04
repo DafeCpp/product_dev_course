@@ -271,7 +271,10 @@ PlatformError VehicleControlUnified::Init() {
     platform_->Log(LogLevel::Warning,
                    "IMU init failed — continuing without IMU");
     if (who >= 0) {
-      // Логирование WHO_AM_I для диагностики
+      char buf[64];
+      snprintf(buf, sizeof(buf), "IMU WHO_AM_I = 0x%02X",
+               static_cast<unsigned>(who));
+      platform_->Log(LogLevel::Debug, buf);
     }
   }
 

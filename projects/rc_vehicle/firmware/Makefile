@@ -13,6 +13,13 @@ ESP32_S3_PORT ?=
 
 # ESP-IDF: если задан IDF_PATH, make подгрузит окружение (export.sh) перед вызовом idf.py
 IDF_PATH ?=
+# Опционально: интерпретатор Python для ESP-IDF (например python3.12). Если текущий python3
+# не совпадает с тем, с которым ставили ESP-IDF, укажите сюда бинарник — его каталог будет
+# добавлен в PATH перед вызовом export.sh. Или выполните в каталоге IDF: ./install.sh
+IDF_PYTHON ?=
+
+# Каталог с бинарником IDF_PYTHON (для подстановки в PATH)
+IDF_PYTHON_PREFIX := $(if $(IDF_PYTHON),$(dir $(shell which $(IDF_PYTHON) 2>/dev/null)),)
 
 .PHONY: all build clean flash monitor flash-monitor test test-build test-clean help
 
@@ -42,12 +49,16 @@ help:
 	@echo "  make test-build  — только собрать тесты"
 	@echo "  make test-clean  — удалить build тестов"
 	@echo ""
-	@echo "Переменные: IDF_PATH, ESP32_S3_PORT"
+	@echo "Переменные: IDF_PATH, ESP32_S3_PORT, IDF_PYTHON"
+	@echo ""
+	@echo "Если при сборке ошибка про idf6.0_py3.*_env: задайте IDF_PYTHON=python3.12"
+	@echo "  (или тот Python, с которым запускали install.sh) либо выполните ./install.sh в каталоге IDF."
 
 # Подгрузить ESP-IDF (если IDF_PATH задан) и выполнить idf.py
 define run_idf
-	export IDF_PATH="$(IDF_PATH)"; \
+	export IDF_PATH="$(IDF_PATH)"; export IDF_PYTHON_PREFIX="$(IDF_PYTHON_PREFIX)"; \
 	cd "$(ESP32_S3_DIR)" && bash -c '\
+	[ -n "$$IDF_PYTHON_PREFIX" ] && export PATH="$$IDF_PYTHON_PREFIX:$$PATH"; \
 	if [ -n "$$IDF_PATH" ] && [ -f "$$IDF_PATH/export.sh" ]; then . "$$IDF_PATH/export.sh"; fi; \
 	if ! command -v idf.py >/dev/null 2>&1; then \
 		echo ">>> idf.py не найден. Задайте путь к ESP-IDF:"; \
@@ -64,7 +75,8 @@ build:
 
 clean:
 	@echo ">>> Очистка ESP32-S3..."
-	@export IDF_PATH="$(IDF_PATH)"; cd "$(ESP32_S3_DIR)" && bash -c 'if [ -n "$$IDF_PATH" ] && [ -f "$$IDF_PATH/export.sh" ]; then . "$$IDF_PATH/export.sh"; fi; idf.py fullclean 2>/dev/null' || true
+	@export IDF_PATH="$(IDF_PATH)"; export IDF_PYTHON_PREFIX="$(IDF_PYTHON_PREFIX)"; \
+	cd "$(ESP32_S3_DIR)" && bash -c '[ -n "$$IDF_PYTHON_PREFIX" ] && export PATH="$$IDF_PYTHON_PREFIX:$$PATH"; if [ -n "$$IDF_PATH" ] && [ -f "$$IDF_PATH/export.sh" ]; then . "$$IDF_PATH/export.sh"; fi; idf.py fullclean 2>/dev/null' || true
 
 flash: build
 	@echo ">>> Заливка ESP32-S3..."

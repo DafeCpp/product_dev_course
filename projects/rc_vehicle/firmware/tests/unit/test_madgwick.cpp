@@ -6,6 +6,7 @@
 #include "mpu6050_spi.hpp"
 #include "test_helpers.hpp"
 
+using namespace rc_vehicle;
 using namespace rc_vehicle::testing;
 
 // ═══════════════════════════════════════════════════════════════════════════

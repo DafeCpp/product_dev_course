@@ -7,6 +7,7 @@ namespace rc_vehicle {
 namespace {
 constexpr float kPi = 3.14159265358979f;
 constexpr float kRadToDeg = 180.0f / kPi;
+constexpr float kMinSpeedThreshold = 0.05f;  // м/с: ниже этого atan2 нестабилен
 }  // namespace
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -84,6 +85,7 @@ void VehicleEkf::Predict(float ax, float ay, float dt) noexcept {
 
   memcpy(P_, FPFt, sizeof(P_));
   SymmetrizeP(P_);
+  ClampP();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -129,6 +131,7 @@ void VehicleEkf::UpdateGyroZ(float gz) noexcept {
   }
 
   SymmetrizeP(P_);
+  ClampP();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -136,7 +139,9 @@ void VehicleEkf::UpdateGyroZ(float gz) noexcept {
 // ═════════════════════════════════════════════════════════════════════════
 
 float VehicleEkf::GetSlipAngleRad() const noexcept {
-  // При нулевой скорости (стояние) atan2(0,0) = 0 — корректно
+  if (GetSpeedMs() < kMinSpeedThreshold) {
+    return 0.0f;
+  }
   return std::atan2(x_[1], x_[0]);
 }
 
@@ -166,6 +171,22 @@ void VehicleEkf::MatTranspose3x3(const float A[9], float At[9]) noexcept {
     for (int j = 0; j < 3; ++j) {
       At[j * 3 + i] = A[i * 3 + j];
     }
+  }
+}
+
+void VehicleEkf::ClampP() noexcept {
+  // Если хоть один элемент P не конечен — сброс к InitP()
+  for (int i = 0; i < 9; ++i) {
+    if (!std::isfinite(P_[i])) {
+      InitP();
+      return;
+    }
+  }
+  // Ограничить диагональные элементы [kPDiagMin, kPDiagMax]
+  for (int i = 0; i < 3; ++i) {
+    const int d = i * 3 + i;
+    if (P_[d] > kPDiagMax) P_[d] = kPDiagMax;
+    if (P_[d] < kPDiagMin) P_[d] = kPDiagMin;
   }
 }
 

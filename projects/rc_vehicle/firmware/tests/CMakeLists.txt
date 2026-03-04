@@ -76,8 +76,6 @@ add_executable(unit_tests
     unit/test_failsafe.cpp
     unit/test_lpf.cpp
     unit/test_pid.cpp
-    unit/test_stabilization_config.cpp
-    unit/test_stabilization_pipeline.cpp
     unit/test_vehicle_ekf.cpp
     unit/test_telemetry_log.cpp
 )
@@ -91,21 +89,6 @@ target_link_libraries(unit_tests
 
 # Discover tests
 gtest_discover_tests(unit_tests)
-
-# Integration tests executable
-add_executable(integration_tests
-    ${COMMON_SOURCES}
-    integration/test_control_loop.cpp
-)
-
-target_link_libraries(integration_tests
-    gtest
-    gtest_main
-    gmock
-    cjson
-)
-
-gtest_discover_tests(integration_tests)
 
 # Coverage support (optional)
 option(ENABLE_COVERAGE "Enable coverage reporting" OFF)

@@ -75,11 +75,11 @@ std::optional<T> UartBridgeBase::ReceiveFrame(
 
   // Проверяем тип сообщения
   auto type_result = protocol::FrameParser::ValidateHeader(data);
-  if (protocol::IsError(type_result)) {
+  if (IsError(type_result)) {
     return std::nullopt;
   }
 
-  if (protocol::GetValue(type_result) != expected_type) {
+  if (GetValue(type_result) != expected_type) {
     // Чужой кадр — не трогаем, вернём nullopt
     return std::nullopt;
   }
@@ -87,16 +87,16 @@ std::optional<T> UartBridgeBase::ReceiveFrame(
   // Пытаемся распарсить
   auto parse_result = parse_func(data);
 
-  if (protocol::IsOk(parse_result)) {
+  if (IsOk(parse_result)) {
     // Успешно распарсили — потребляем кадр
     auto payload_len_result = protocol::FrameParser::GetPayloadLength(data);
-    if (protocol::IsOk(payload_len_result)) {
+    if (IsOk(payload_len_result)) {
       size_t frame_size = protocol::HEADER_SIZE +
-                          protocol::GetValue(payload_len_result) +
+                          GetValue(payload_len_result) +
                           protocol::CRC_SIZE;
       rx_buffer_.Consume(frame_size);
     }
-    return protocol::GetValue(parse_result);
+    return GetValue(parse_result);
   }
 
   // Ошибка парсинга (вероятно CRC) — пропускаем 1 байт (ложный AA 55)
@@ -112,11 +112,11 @@ int UartBridgeBase::SendTelem(const protocol::TelemetryData &telem_data) {
   std::array<uint8_t, 32> frame{};
   auto result = protocol::Protocol::BuildTelemetry(frame, telem_data);
 
-  if (protocol::IsError(result)) {
+  if (IsError(result)) {
     return -1;
   }
 
-  size_t len = protocol::GetValue(result);
+  size_t len = GetValue(result);
   return Write(frame.data(), len);
 }
 
@@ -143,11 +143,11 @@ int UartBridgeBase::SendPong() {
   std::array<uint8_t, 16> frame{};
   auto result = protocol::Protocol::BuildPong(frame);
 
-  if (protocol::IsError(result)) {
+  if (IsError(result)) {
     return -1;
   }
 
-  size_t len = protocol::GetValue(result);
+  size_t len = GetValue(result);
   return Write(frame.data(), len);
 }
 
@@ -157,11 +157,11 @@ int UartBridgeBase::SendLog(const char *msg, size_t len) {
       frame{};
   auto result = protocol::Protocol::BuildLog(frame, std::string_view(msg, len));
 
-  if (protocol::IsError(result)) {
+  if (IsError(result)) {
     return -1;
   }
 
-  size_t frame_len = protocol::GetValue(result);
+  size_t frame_len = GetValue(result);
   return Write(frame.data(), frame_len);
 }
 
@@ -174,11 +174,11 @@ int UartBridgeBase::SendCommand(float throttle, float steering) {
   protocol::CommandData cmd{0, throttle, steering};
   auto result = protocol::Protocol::BuildCommand(frame, cmd);
 
-  if (protocol::IsError(result)) {
+  if (IsError(result)) {
     return -1;
   }
 
-  size_t len = protocol::GetValue(result);
+  size_t len = GetValue(result);
   return Write(frame.data(), len);
 }
 
@@ -206,11 +206,11 @@ int UartBridgeBase::SendPing() {
   std::array<uint8_t, 16> frame{};
   auto result = protocol::Protocol::BuildPing(frame);
 
-  if (protocol::IsError(result)) {
+  if (IsError(result)) {
     return -1;
   }
 
-  size_t len = protocol::GetValue(result);
+  size_t len = GetValue(result);
   return Write(frame.data(), len);
 }
 

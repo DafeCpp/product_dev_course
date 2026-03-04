@@ -5,6 +5,7 @@
 #include "protocol.hpp"
 #include "test_helpers.hpp"
 
+using namespace rc_vehicle;
 using namespace rc_vehicle::protocol;
 using namespace rc_vehicle::testing;
 

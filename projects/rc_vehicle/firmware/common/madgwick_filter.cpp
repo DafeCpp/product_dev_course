@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstring>
 
-#include "mpu6050_spi.hpp"
+#include "mpu6050_spi.hpp"  // ImuData definition
 
 namespace {
 

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 
 /**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 56 байт (13 × float + uint32_t).
+ * Размер: 52 байта (12 × float4 + uint32_t).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
  */
 struct TelemetryLogFrame {
@@ -19,7 +19,11 @@ struct TelemetryLogFrame {
   float speed_ms{0};           // EKF: полная скорость |v| [м/с]
   float throttle{0};           // Команда газа [-1..1]
   float steering{0};           // Команда руля [-1..1]
-};  // sizeof == 60 bytes (uint32_t + 14 × float)
+};  // sizeof == 52 bytes (uint32_t + 12 × float)
+
+// Compile-time проверка размера структуры
+static_assert(sizeof(TelemetryLogFrame) == 52,
+              "TelemetryLogFrame size mismatch");
 
 /**
  * @brief Потокобезопасный кольцевой буфер кадров телеметрии
@@ -54,7 +58,7 @@ class TelemetryLog {
   /**
    * @brief Текущее количество сохранённых кадров
    */
-  [[nodiscard]] size_t Count() const { return count_.load(); }
+  [[nodiscard]] size_t Count() const;
 
   /**
    * @brief Ёмкость буфера (количество кадров)
@@ -77,6 +81,7 @@ class TelemetryLog {
  private:
   TelemetryLogFrame* buf_{nullptr};
   size_t capacity_{0};
-  std::atomic<size_t> write_pos_{0};
-  std::atomic<size_t> count_{0};
+  size_t write_pos_{0};
+  size_t count_{0};
+  mutable std::mutex mutex_;
 };

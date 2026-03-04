@@ -149,10 +149,21 @@ class VehicleEkf {
   // Вспомогательные методы
   void InitP() noexcept;
 
+  /**
+   * Проверяет P на NaN/Inf (→ сброс к InitP) и ограничивает диагональные
+   * элементы отрезком [kPDiagMin, kPDiagMax], предотвращая расходимость
+   * ковариации при отсутствии измерений скорости.
+   */
+  void ClampP() noexcept;
+
   static void MatMul3x3(const float A[9], const float B[9],
                         float C[9]) noexcept;
   static void MatTranspose3x3(const float A[9], float At[9]) noexcept;
   static void SymmetrizeP(float P[9]) noexcept;
+
+  // Границы диагональных элементов P: RC-машина, скорость ≤ 10 м/с, r ≤ 10 рад/с
+  static constexpr float kPDiagMax = 1e3f;   // Верхний предел дисперсии
+  static constexpr float kPDiagMin = 1e-6f;  // Нижний предел (защита от вырождения)
 };
 
 }  // namespace rc_vehicle

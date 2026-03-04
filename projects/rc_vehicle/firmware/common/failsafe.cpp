@@ -1,21 +1,21 @@
 #include "failsafe.hpp"
 
+#include <mutex>
+
 namespace rc_vehicle {
 
 FailsafeState Failsafe::Update(uint32_t now_ms, bool rc_active,
                                bool wifi_active) noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+
   // Проверка наличия активных источников
   bool has_active = rc_active || wifi_active;
 
   // Инициализация при первом вызове
-  if (last_update_ms_ == 0 && last_active_ms_ == 0) {
+  if (!initialized_) {
+    initialized_ = true;
+    last_active_ms_ = now_ms;
     last_update_ms_ = now_ms;
-    // Устанавливаем last_active_ms_ только если есть активное управление
-    if (has_active) {
-      last_active_ms_ = now_ms;
-    }
-    // Если нет активного управления при первом вызове, last_active_ms_ остается
-    // 0 и failsafe может активироваться сразу при достижении таймаута
   }
 
   if (has_active) {
@@ -32,8 +32,10 @@ FailsafeState Failsafe::Update(uint32_t now_ms, bool rc_active,
     }
   } else {
     // Нет активных источников - проверяем таймаут
+    // Защита от переполнения: если last_active_ms_ > now_ms, считаем таймаут
+    // истёкшим
     uint32_t time_since_active =
-        (last_active_ms_ == 0) ? now_ms : (now_ms - last_active_ms_);
+        (last_active_ms_ > now_ms) ? timeout_ms_ : (now_ms - last_active_ms_);
 
     if (time_since_active >= timeout_ms_) {
       // Таймаут истёк - активируем failsafe
@@ -45,6 +47,40 @@ FailsafeState Failsafe::Update(uint32_t now_ms, bool rc_active,
 
   last_update_ms_ = now_ms;
   return state_;
+}
+
+bool Failsafe::IsActive() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return state_ == FailsafeState::Active;
+}
+
+FailsafeState Failsafe::GetState() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return state_;
+}
+
+uint32_t Failsafe::GetTimeSinceLastActive(uint32_t now_ms) const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (last_active_ms_ == 0) return 0;
+  return now_ms - last_active_ms_;
+}
+
+void Failsafe::SetTimeout(uint32_t timeout_ms) noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  timeout_ms_ = timeout_ms;
+}
+
+uint32_t Failsafe::GetTimeout() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return timeout_ms_;
+}
+
+void Failsafe::Reset() noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_ = FailsafeState::Inactive;
+  last_active_ms_ = 0;
+  last_update_ms_ = 0;
+  initialized_ = false;
 }
 
 }  // namespace rc_vehicle
