@@ -1,11 +1,17 @@
 #include "calibration_manager.hpp"
 
+#include "vehicle_ekf.hpp"
+
 namespace rc_vehicle {
 
 CalibrationManager::CalibrationManager(VehicleControlPlatform& platform,
                                        ImuCalibration& imu_calib,
-                                       MadgwickFilter& madgwick)
-    : platform_(platform), imu_calib_(imu_calib), madgwick_(madgwick) {}
+                                       MadgwickFilter& madgwick,
+                                       VehicleEkf* ekf)
+    : platform_(platform),
+      imu_calib_(imu_calib),
+      madgwick_(madgwick),
+      ekf_(ekf) {}
 
 void CalibrationManager::StartCalibration(bool full) {
   calib_request_.store(full ? 2 : 1);
@@ -67,6 +73,12 @@ void CalibrationManager::ProcessCompletion() {
     // Обновить vehicle frame фильтра Madgwick
     const auto& d = imu_calib_.GetData();
     madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+
+    // Сбросить EKF, чтобы скорость обнулилась после калибровки
+    if (ekf_) {
+      ekf_->Reset();
+      platform_.Log(LogLevel::Info, "EKF state reset after calibration");
+    }
   } else if (status == CalibStatus::Failed) {
     platform_.Log(LogLevel::Warning, "IMU calibration FAILED");
   }

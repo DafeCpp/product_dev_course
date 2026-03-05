@@ -9,6 +9,9 @@
 
 namespace rc_vehicle {
 
+// Forward declaration
+class VehicleEkf;
+
 /**
  * @brief Менеджер калибровки IMU
  *
@@ -16,6 +19,7 @@ namespace rc_vehicle {
  * - Запуск и управление процессом калибровки IMU
  * - Сохранение/загрузку калибровочных данных через платформу
  * - Обновление фильтра Madgwick при завершении калибровки
+ * - Сброс EKF при завершении калибровки (опционально)
  * - Предоставление статуса калибровки
  *
  * Извлечён из VehicleControlUnified для соблюдения Single Responsibility
@@ -28,9 +32,11 @@ class CalibrationManager {
    * @param platform Платформа для логирования и NVS
    * @param imu_calib Ссылка на объект калибровки IMU
    * @param madgwick Ссылка на фильтр Madgwick
+   * @param ekf Указатель на EKF (опционально, для сброса после калибровки)
    */
   CalibrationManager(VehicleControlPlatform& platform,
-                     ImuCalibration& imu_calib, MadgwickFilter& madgwick);
+                     ImuCalibration& imu_calib, MadgwickFilter& madgwick,
+                     VehicleEkf* ekf = nullptr);
 
   /**
    * @brief Запуск калибровки IMU, этап 1
@@ -90,6 +96,7 @@ class CalibrationManager {
   VehicleControlPlatform& platform_;
   ImuCalibration& imu_calib_;
   MadgwickFilter& madgwick_;
+  VehicleEkf* ekf_;  // Опциональная ссылка на EKF для сброса после калибровки
 
   // Запрос калибровки (атомарный для потокобезопасности)
   std::atomic<int> calib_request_{0};

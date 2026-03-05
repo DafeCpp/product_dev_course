@@ -13,6 +13,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "log_format.hpp"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -72,8 +73,9 @@ static void StaStatusSetConnected(bool connected) {
 
 static void StaStatusSetIp(const esp_netif_ip_info_t& ip_info) {
   portENTER_CRITICAL(&s_wifi_mux);
-  snprintf(s_sta_status.ip, sizeof(s_sta_status.ip), IPSTR,
-           IP2STR(&ip_info.ip));
+  const std::string ip_str = rc_vehicle::FormatIp(ip_info.ip.addr);
+  strncpy(s_sta_status.ip, ip_str.c_str(), sizeof(s_sta_status.ip) - 1);
+  s_sta_status.ip[sizeof(s_sta_status.ip) - 1] = '\0';
   s_sta_status.connected = true;
   portEXIT_CRITICAL(&s_wifi_mux);
 }
@@ -244,8 +246,12 @@ esp_err_t WiFiApInit(void) {
   // Получить MAC адрес для уникального SSID
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-  snprintf(s_ap_ssid, sizeof(s_ap_ssid), "%s-%02X%02X", WIFI_AP_SSID_PREFIX,
-           mac[4], mac[5]);
+  rc_vehicle::LogFormat fmt;
+  fmt << WIFI_AP_SSID_PREFIX << "-" << std::hex << std::setw(2)
+      << std::setfill('0') << std::uppercase << static_cast<unsigned>(mac[4])
+      << std::setw(2) << std::setfill('0') << static_cast<unsigned>(mac[5]);
+  strncpy(s_ap_ssid, fmt.str().c_str(), sizeof(s_ap_ssid) - 1);
+  s_ap_ssid[sizeof(s_ap_ssid) - 1] = '\0';
 
   // Настройка AP
   wifi_config_t ap_cfg = {};
@@ -262,7 +268,8 @@ esp_err_t WiFiApInit(void) {
   ap_cfg.ap.max_connection = WIFI_AP_MAX_CONNECTIONS;
   ap_cfg.ap.beacon_interval = 100;
 
-  // TODO: одноразовая очистка мусорных STA creds из NVS (удалить после прошивки)
+  // TODO: одноразовая очистка мусорных STA creds из NVS (удалить после
+  // прошивки)
   ClearStaCreds();
   ESP_LOGW(TAG, "STA creds cleared (one-time cleanup)");
 
@@ -273,8 +280,8 @@ esp_err_t WiFiApInit(void) {
       LoadStaCreds(sta_ssid, sizeof(sta_ssid), sta_pass, sizeof(sta_pass));
 
   if (have_sta) {
-    ESP_LOGI(TAG, "NVS STA creds: SSID=[%s] (len=%d), pass_len=%d",
-             sta_ssid, (int)strlen(sta_ssid), (int)strlen(sta_pass));
+    ESP_LOGI(TAG, "NVS STA creds: SSID=[%s] (len=%d), pass_len=%d", sta_ssid,
+             (int)strlen(sta_ssid), (int)strlen(sta_pass));
   } else {
     ESP_LOGI(TAG, "No STA creds in NVS");
   }
@@ -346,7 +353,9 @@ esp_err_t WiFiApGetIp(char* ip_str, size_t len) {
     return ESP_FAIL;
   }
 
-  snprintf(ip_str, len, IPSTR, IP2STR(&ip_info.ip));
+  const std::string formatted_ip = rc_vehicle::FormatIp(ip_info.ip.addr);
+  strncpy(ip_str, formatted_ip.c_str(), len - 1);
+  ip_str[len - 1] = '\0';
   return ESP_OK;
 }
 

@@ -1,0 +1,68 @@
+#pragma once
+
+#include "control_components.hpp"
+#include "stabilization_config.hpp"
+#include "vehicle_ekf.hpp"
+
+namespace rc_vehicle {
+
+/**
+ * @brief Процессор детского режима (Kids Mode)
+ *
+ * Применяет ограничения газа, руля и slew rate,
+ * а также усиленную защиту от заноса (anti-spin).
+ *
+ * Работает в control loop после SelectControlSource,
+ * применяя лимиты к командам от любого источника (RC или Wi-Fi).
+ */
+class KidsModeProcessor {
+ public:
+  KidsModeProcessor() = default;
+
+  /**
+   * @brief Инициализация процессора
+   * @param cfg Конфигурация стабилизации (содержит kids_mode)
+   * @param ekf EKF для получения угла заноса (anti-spin)
+   * @param imu IMU handler (может быть nullptr если IMU не включён)
+   */
+  void Init(const StabilizationConfig& cfg, const VehicleEkf& ekf,
+            const ImuHandler* imu);
+
+  /**
+   * @brief Применить ограничения Kids Mode
+   * @param throttle Команда газа [in/out]
+   * @param steering Команда руля [in/out]
+   * @param dt_ms Шаг времени в миллисекундах
+   */
+  void Process(float& throttle, float& steering, uint32_t dt_ms) noexcept;
+
+  /**
+   * @brief Проверить, активен ли Kids Mode
+   * @return true если текущий режим == DriveMode::Kids
+   */
+  [[nodiscard]] bool IsActive() const noexcept;
+
+  /**
+   * @brief Проверить, сработала ли защита anti-spin
+   * @return true если anti-spin активен
+   */
+  [[nodiscard]] bool IsAntiSpinActive() const noexcept {
+    return anti_spin_active_;
+  }
+
+  /**
+   * @brief Сбросить состояние процессора
+   */
+  void Reset() noexcept;
+
+ private:
+  const StabilizationConfig* cfg_{nullptr};
+  const VehicleEkf* ekf_{nullptr};
+  const ImuHandler* imu_{nullptr};
+
+  float smoothed_throttle_{0.0f};
+  float smoothed_steering_{0.0f};
+  bool anti_spin_active_{false};
+};
+
+}  // namespace rc_vehicle

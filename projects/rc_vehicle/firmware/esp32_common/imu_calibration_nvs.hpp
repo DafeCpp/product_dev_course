@@ -15,11 +15,11 @@
 namespace imu_nvs {
 
 /** Сохранить калибровочные данные в NVS. */
-esp_err_t Save(const ImuCalibData& data);
+esp_err_t Save(const rc_vehicle::ImuCalibData& data);
 
 /** Загрузить калибровочные данные из NVS.
  *  Возвращает ESP_ERR_NOT_FOUND если данных нет или формат устарел. */
-esp_err_t Load(ImuCalibData& data);
+esp_err_t Load(rc_vehicle::ImuCalibData& data);
 
 /** Удалить калибровочные данные из NVS (сброс). */
 esp_err_t Erase();

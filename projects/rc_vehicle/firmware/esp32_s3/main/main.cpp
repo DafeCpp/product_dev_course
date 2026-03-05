@@ -72,6 +72,10 @@ extern "C" void app_main(void) {
   g_command_registry.Register("get_log_info", rc_vehicle::HandleGetLogInfo);
   g_command_registry.Register("get_log_data", rc_vehicle::HandleGetLogData);
   g_command_registry.Register("clear_log", rc_vehicle::HandleClearLog);
+  g_command_registry.Register("set_kids_preset",
+                              rc_vehicle::HandleSetKidsPreset);
+  g_command_registry.Register("get_kids_presets",
+                              rc_vehicle::HandleGetKidsPresets);
   ESP_LOGI(TAG, "Registered %zu command handlers",
            g_command_registry.GetHandlerCount());
 

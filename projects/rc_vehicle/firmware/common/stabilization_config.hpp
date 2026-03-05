@@ -12,9 +12,26 @@ static constexpr uint32_t kStabilizationConfigMagic = 0x53544232;
  * 0 = Normal    — базовый контроль рыскания
  * 1 = Sport     — агрессивные параметры, высокая отзывчивость
  * 2 = Drift     — мягкий контроль, управление заносом
- * 3 = DirectLaw — прямое управление без стабилизации и ограничения скорости изменения
+ * 3 = Kids      — детский режим с ограничениями скорости и усиленной помощью
+ * 4 = DirectLaw — прямое управление без стабилизации и ограничения скорости изменения
  */
-enum class DriveMode : uint8_t { Normal = 0, Sport = 1, Drift = 2, DirectLaw = 3 };
+enum class DriveMode : uint8_t {
+  Normal = 0,
+  Sport = 1,
+  Drift = 2,
+  Kids = 3,
+  DirectLaw = 4
+};
+
+/**
+ * @brief Возрастные пресеты для Kids Mode
+ */
+enum class KidsPreset : uint8_t {
+  Custom = 0,   // Пользовательские настройки
+  Toddler = 1,  // 3-5 лет: очень медленно, максимальная помощь
+  Child = 2,    // 6-9 лет: умеренно, хорошая помощь
+  Preteen = 3   // 10-12 лет: быстрее, базовая помощь
+};
 
 /**
  * @brief Конфигурация ПИД-регулятора
@@ -280,6 +297,60 @@ struct PitchCompensationConfig {
 };
 
 /**
+ * @brief Конфигурация детского режима (Kids Mode)
+ */
+struct KidsModeConfig {
+  /** Максимальный газ вперёд [0.1..1.0] */
+  float throttle_limit{0.3f};
+
+  /** Максимальный задний ход [0.1..1.0] */
+  float reverse_limit{0.2f};
+
+  /** Максимальный угол поворота [0.3..1.0] */
+  float steering_limit{0.7f};
+
+  /** Скорость изменения газа [/сек] */
+  float slew_throttle{0.3f};
+
+  /** Скорость изменения руля [/сек] */
+  float slew_steering{0.5f};
+
+  /** Включить защиту от заноса */
+  bool anti_spin_enabled{true};
+
+  /** Порог угла заноса для anti-spin [градусы] */
+  float anti_spin_threshold_deg{10.0f};
+
+  /** Снижение газа при anti-spin [0..1] */
+  float anti_spin_reduction{0.7f};
+
+  /**
+   * @brief Проверить валидность конфигурации Kids Mode
+   */
+  [[nodiscard]] bool IsValid() const noexcept {
+    return throttle_limit >= 0.1f && throttle_limit <= 1.0f &&
+           reverse_limit >= 0.1f && reverse_limit <= 1.0f &&
+           steering_limit >= 0.3f && steering_limit <= 1.0f &&
+           slew_throttle >= 0.1f && slew_throttle <= 2.0f &&
+           slew_steering >= 0.2f && slew_steering <= 3.0f &&
+           anti_spin_threshold_deg >= 5.0f &&
+           anti_spin_threshold_deg <= 45.0f && anti_spin_reduction >= 0.0f &&
+           anti_spin_reduction <= 1.0f;
+  }
+
+  /**
+   * @brief Применить ограничения к параметрам
+   */
+  void Clamp() noexcept;
+
+  /**
+   * @brief Применить возрастной пресет
+   * @param preset Пресет для применения
+   */
+  void ApplyPreset(KidsPreset preset) noexcept;
+};
+
+/**
  * @brief Конфигурация системы стабилизации
  *
  * Улучшенная структура с группировкой связанных параметров в подструктуры.
@@ -325,8 +396,11 @@ struct StabilizationConfig {
   /** Конфигурация pitch compensation */
   PitchCompensationConfig pitch_comp;
 
+  /** Конфигурация детского режима */
+  KidsModeConfig kids_mode;
+
   /** Версия структуры для NVS-миграции */
-  uint8_t version{2};
+  uint8_t version{3};
 
   /** Валидность конфигурации (magic number для проверки NVS) */
   uint32_t magic{kStabilizationConfigMagic};

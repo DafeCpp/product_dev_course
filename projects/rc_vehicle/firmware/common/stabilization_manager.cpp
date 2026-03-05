@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <mutex>
 
+#include "log_format.hpp"
 #include "slew_rate.hpp"
 
 namespace rc_vehicle {
@@ -51,10 +52,12 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     yaw_ctrl_.Reset();
     slip_ctrl_.Reset();
     mode_transition_weight_ = 0.0f;  // Запустить плавный переход
-    char buf[48];
-    snprintf(buf, sizeof(buf), "Mode changed to %u, defaults applied",
-             static_cast<unsigned>(validated_config.mode));
-    platform_.Log(LogLevel::Info, buf);
+    {
+      LogFormat fmt;
+      fmt << "Mode changed to " << static_cast<unsigned>(validated_config.mode)
+          << ", defaults applied";
+      platform_.Log(LogLevel::Info, fmt.str());
+    }
   }
 
   // Применить к фильтрам

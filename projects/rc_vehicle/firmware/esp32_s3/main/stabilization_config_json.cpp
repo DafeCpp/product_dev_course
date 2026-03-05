@@ -1,6 +1,7 @@
 #include "stabilization_config_json.hpp"
 
 using rc_vehicle::DriveMode;
+using rc_vehicle::KidsPreset;
 using rc_vehicle::StabilizationConfig;
 
 cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
@@ -85,6 +86,27 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
     cJSON_AddNumberToObject(pitch_comp, "gain", cfg.pitch_comp.gain);
     cJSON_AddNumberToObject(pitch_comp, "max_correction",
                             cfg.pitch_comp.max_correction);
+  }
+
+  // Kids mode config
+  cJSON* kids_mode = cJSON_AddObjectToObject(obj, "kids_mode");
+  if (kids_mode) {
+    cJSON_AddNumberToObject(kids_mode, "throttle_limit",
+                            cfg.kids_mode.throttle_limit);
+    cJSON_AddNumberToObject(kids_mode, "reverse_limit",
+                            cfg.kids_mode.reverse_limit);
+    cJSON_AddNumberToObject(kids_mode, "steering_limit",
+                            cfg.kids_mode.steering_limit);
+    cJSON_AddNumberToObject(kids_mode, "slew_throttle",
+                            cfg.kids_mode.slew_throttle);
+    cJSON_AddNumberToObject(kids_mode, "slew_steering",
+                            cfg.kids_mode.slew_steering);
+    cJSON_AddBoolToObject(kids_mode, "anti_spin_enabled",
+                          cfg.kids_mode.anti_spin_enabled);
+    cJSON_AddNumberToObject(kids_mode, "anti_spin_threshold_deg",
+                            cfg.kids_mode.anti_spin_threshold_deg);
+    cJSON_AddNumberToObject(kids_mode, "anti_spin_reduction",
+                            cfg.kids_mode.anti_spin_reduction);
   }
 
   return obj;
@@ -179,5 +201,20 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_bool(pitch_comp, "enabled", cfg.pitch_comp.enabled);
     get_float(pitch_comp, "gain", cfg.pitch_comp.gain);
     get_float(pitch_comp, "max_correction", cfg.pitch_comp.max_correction);
+  }
+
+  // Kids mode config
+  cJSON* kids_mode = cJSON_GetObjectItem(json, "kids_mode");
+  if (kids_mode) {
+    get_float(kids_mode, "throttle_limit", cfg.kids_mode.throttle_limit);
+    get_float(kids_mode, "reverse_limit", cfg.kids_mode.reverse_limit);
+    get_float(kids_mode, "steering_limit", cfg.kids_mode.steering_limit);
+    get_float(kids_mode, "slew_throttle", cfg.kids_mode.slew_throttle);
+    get_float(kids_mode, "slew_steering", cfg.kids_mode.slew_steering);
+    get_bool(kids_mode, "anti_spin_enabled", cfg.kids_mode.anti_spin_enabled);
+    get_float(kids_mode, "anti_spin_threshold_deg",
+              cfg.kids_mode.anti_spin_threshold_deg);
+    get_float(kids_mode, "anti_spin_reduction",
+              cfg.kids_mode.anti_spin_reduction);
   }
 }

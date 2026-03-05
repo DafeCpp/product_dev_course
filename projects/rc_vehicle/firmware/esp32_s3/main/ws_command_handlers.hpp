@@ -85,4 +85,21 @@ void HandleGetLogData(cJSON* json, httpd_req_t* req);
  */
 void HandleClearLog(cJSON* json, httpd_req_t* req);
 
+/**
+ * @brief Set Kids Mode preset
+ *
+ * Request: {"type":"set_kids_preset","preset":0|1|2|3}
+ * Presets: 0=Custom, 1=Toddler(3-5y), 2=Child(6-9y), 3=Preteen(10-12y)
+ * Response: {"type":"set_kids_preset_ack","ok":true,...applied config...}
+ */
+void HandleSetKidsPreset(cJSON* json, httpd_req_t* req);
+
+/**
+ * @brief Get available Kids Mode presets
+ *
+ * Request: {"type":"get_kids_presets"}
+ * Response: {"type":"kids_presets","presets":[...]}
+ */
+void HandleGetKidsPresets(cJSON* json, httpd_req_t* req);
+
 }  // namespace rc_vehicle

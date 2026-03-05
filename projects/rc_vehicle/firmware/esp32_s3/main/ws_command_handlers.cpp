@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "esp_log.h"
+#include "stabilization_config.hpp"
 #include "stabilization_config_json.hpp"
 #include "telemetry_log.hpp"
 #include "vehicle_control.hpp"
@@ -182,6 +183,109 @@ void HandleClearLog(cJSON* json, httpd_req_t* req) {
   if (reply) {
     cJSON_AddStringToObject(reply, "type", "clear_log_ack");
     cJSON_AddBoolToObject(reply, "ok", true);
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+}
+
+void HandleSetKidsPreset(cJSON* json, httpd_req_t* req) {
+  cJSON* preset_item = cJSON_GetObjectItem(json, "preset");
+  if (!preset_item || !cJSON_IsNumber(preset_item)) {
+    cJSON* reply = cJSON_CreateObject();
+    if (reply) {
+      cJSON_AddStringToObject(reply, "type", "set_kids_preset_ack");
+      cJSON_AddBoolToObject(reply, "ok", false);
+      cJSON_AddStringToObject(reply, "error", "missing or invalid preset");
+      WsSendJsonReply(req, reply);
+      cJSON_Delete(reply);
+    }
+    return;
+  }
+
+  int preset_val = preset_item->valueint;
+  if (preset_val < 0 || preset_val > 3) {
+    cJSON* reply = cJSON_CreateObject();
+    if (reply) {
+      cJSON_AddStringToObject(reply, "type", "set_kids_preset_ack");
+      cJSON_AddBoolToObject(reply, "ok", false);
+      cJSON_AddStringToObject(reply, "error", "preset out of range (0-3)");
+      WsSendJsonReply(req, reply);
+      cJSON_Delete(reply);
+    }
+    return;
+  }
+
+  StabilizationConfig cfg = VehicleControlGetStabilizationConfig();
+  cfg.kids_mode.ApplyPreset(static_cast<KidsPreset>(preset_val));
+  bool ok = VehicleControlSetStabilizationConfig(cfg, true);
+
+  const auto& applied = VehicleControlGetStabilizationConfig();
+  cJSON* reply = ok ? StabilizationConfigToJson(applied) : cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "set_kids_preset_ack");
+    cJSON_AddBoolToObject(reply, "ok", ok);
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+
+  ESP_LOGI(TAG, "set_kids_preset preset=%d -> %s", preset_val,
+           ok ? "OK" : "FAILED");
+}
+
+void HandleGetKidsPresets(cJSON* json, httpd_req_t* req) {
+  (void)json;  // Unused parameter
+
+  cJSON* reply = cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "kids_presets");
+
+    cJSON* presets = cJSON_CreateArray();
+    if (presets) {
+      // Preset 0: Custom
+      cJSON* custom = cJSON_CreateObject();
+      if (custom) {
+        cJSON_AddNumberToObject(custom, "id", 0);
+        cJSON_AddStringToObject(custom, "name", "Custom");
+        cJSON_AddStringToObject(custom, "description", "User-defined settings");
+        cJSON_AddItemToArray(presets, custom);
+      }
+
+      // Preset 1: Toddler (3-5 years)
+      cJSON* toddler = cJSON_CreateObject();
+      if (toddler) {
+        cJSON_AddNumberToObject(toddler, "id", 1);
+        cJSON_AddStringToObject(toddler, "name", "Toddler");
+        cJSON_AddStringToObject(toddler, "description", "3-5 years old");
+        cJSON_AddNumberToObject(toddler, "throttle_limit", 0.2f);
+        cJSON_AddNumberToObject(toddler, "steering_limit", 0.5f);
+        cJSON_AddItemToArray(presets, toddler);
+      }
+
+      // Preset 2: Child (6-9 years)
+      cJSON* child = cJSON_CreateObject();
+      if (child) {
+        cJSON_AddNumberToObject(child, "id", 2);
+        cJSON_AddStringToObject(child, "name", "Child");
+        cJSON_AddStringToObject(child, "description", "6-9 years old");
+        cJSON_AddNumberToObject(child, "throttle_limit", 0.3f);
+        cJSON_AddNumberToObject(child, "steering_limit", 0.7f);
+        cJSON_AddItemToArray(presets, child);
+      }
+
+      // Preset 3: Preteen (10-12 years)
+      cJSON* preteen = cJSON_CreateObject();
+      if (preteen) {
+        cJSON_AddNumberToObject(preteen, "id", 3);
+        cJSON_AddStringToObject(preteen, "name", "Preteen");
+        cJSON_AddStringToObject(preteen, "description", "10-12 years old");
+        cJSON_AddNumberToObject(preteen, "throttle_limit", 0.5f);
+        cJSON_AddNumberToObject(preteen, "steering_limit", 0.85f);
+        cJSON_AddItemToArray(presets, preteen);
+      }
+
+      cJSON_AddItemToObject(reply, "presets", presets);
+    }
+
     WsSendJsonReply(req, reply);
     cJSON_Delete(reply);
   }

@@ -2,9 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
+#include <iomanip>
 
 #include "config.hpp"
+#include "log_format.hpp"
 #include "rc_vehicle_common.hpp"
 #include "slew_rate.hpp"
 
@@ -93,6 +94,12 @@ void VehicleControlUnified::ControlTaskLoop() {
     SelectControlSource(commanded_throttle, commanded_steering);
 
     // ─────────────────────────────────────────────────────────────────────
+    // Kids Mode: применить ограничения газа/руля и anti-spin
+    // ─────────────────────────────────────────────────────────────────────
+
+    kids_processor_.Process(commanded_throttle, commanded_steering, dt_ms);
+
+    // ─────────────────────────────────────────────────────────────────────
     // Плавное нарастание/спад веса стабилизации и переход между режимами
     // ─────────────────────────────────────────────────────────────────────
 
@@ -130,6 +137,7 @@ void VehicleControlUnified::ControlTaskLoop() {
       yaw_ctrl_.Reset();
       slip_ctrl_.Reset();
       oversteer_guard_.Reset();
+      kids_processor_.Reset();
       ekf_.Reset();
       stab_mgr_->ResetWeights();       // Сброс весов стабилизации
       telem_mgr_->ResetLastLogTime();  // Сброс таймера лога
@@ -160,6 +168,13 @@ void VehicleControlUnified::ControlTaskLoop() {
       snap.wifi_ok = wifi_handler_ && wifi_handler_->IsActive();
       snap.throttle = applied_throttle;
       snap.steering = applied_steering;
+
+      // Kids Mode status
+      snap.kids_mode_active = kids_processor_.IsActive();
+      snap.kids_anti_spin_active = kids_processor_.IsAntiSpinActive();
+      snap.kids_throttle_limit =
+          stab_mgr_->GetConfig().kids_mode.throttle_limit;
+
       if (imu_handler_ && imu_handler_->IsEnabled()) {
         snap.imu_enabled = true;
         snap.imu_data = imu_handler_->GetData();
@@ -260,7 +275,8 @@ PlatformError VehicleControlUnified::Init() {
     imu_enabled_ = true;
 
     // Создание менеджеров (должно быть до загрузки конфигурации)
-    calib_mgr_.reset(new CalibrationManager(*platform_, imu_calib_, madgwick_));
+    calib_mgr_.reset(
+        new CalibrationManager(*platform_, imu_calib_, madgwick_, &ekf_));
     stab_mgr_.reset(new StabilizationManager(*platform_, madgwick_, yaw_ctrl_,
                                              slip_ctrl_, nullptr));
     telem_mgr_.reset(new TelemetryManager());
@@ -282,10 +298,10 @@ PlatformError VehicleControlUnified::Init() {
     platform_->Log(LogLevel::Warning,
                    "IMU init failed — continuing without IMU");
     if (who >= 0) {
-      char buf[64];
-      snprintf(buf, sizeof(buf), "IMU WHO_AM_I = 0x%02X",
-               static_cast<unsigned>(who));
-      platform_->Log(LogLevel::Debug, buf);
+      LogFormat fmt;
+      fmt << "IMU WHO_AM_I = 0x" << std::hex << std::setw(2)
+          << std::setfill('0') << static_cast<unsigned>(who);
+      platform_->Log(LogLevel::Info, fmt.str());
     }
   }
 
@@ -360,6 +376,7 @@ bool VehicleControlUnified::InitializeComponents() {
   pitch_ctrl_.Init(cfg, madgwick_, imu_handler_.get());
   slip_ctrl_.Init(cfg, ekf_, imu_handler_.get());
   oversteer_guard_.Init(cfg, ekf_, imu_handler_.get());
+  kids_processor_.Init(cfg, ekf_, imu_handler_.get());
 
   // Телеметрия
   telem_handler_.reset(new TelemetryHandler(
@@ -424,21 +441,33 @@ void VehicleControlUnified::PrintDiagnostics(uint32_t now_ms,
     const auto& cfg = stab_mgr_->GetConfig();
     const float stab_weight = stab_mgr_->GetStabilizationWeight();
 
-    char buf[80];
-    snprintf(buf, sizeof(buf), "DIAG: loop=%u Hz  stab=%s (w=%.2f)",
-             static_cast<unsigned>(loop_hz), cfg.enabled ? "ON" : "OFF",
-             stab_weight);
-    platform_->Log(LogLevel::Info, buf);
+    {
+      LogFormat fmt;
+      fmt << "DIAG: loop=" << static_cast<unsigned>(loop_hz)
+          << " Hz  stab=" << (cfg.enabled ? "ON" : "OFF")
+          << " (w=" << std::fixed << std::setprecision(2) << stab_weight << ")";
+      platform_->Log(LogLevel::Info, fmt.str());
+    }
 
     if (imu_handler_ && imu_handler_->IsEnabled()) {
       float pitch_deg = 0.f, roll_deg = 0.f, yaw_deg = 0.f;
       madgwick_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
-      snprintf(buf, sizeof(buf), "IMU: P=%.1f R=%.1f Y=%.1f deg  gz=%.1f dps",
-               pitch_deg, roll_deg, yaw_deg, imu_handler_->GetFilteredGyroZ());
-      platform_->Log(LogLevel::Info, buf);
-      snprintf(buf, sizeof(buf), "EKF: vx=%.2f vy=%.2f m/s  slip=%.1f deg",
-               ekf_.GetVx(), ekf_.GetVy(), ekf_.GetSlipAngleDeg());
-      platform_->Log(LogLevel::Info, buf);
+
+      {
+        LogFormat fmt;
+        fmt << "IMU: P=" << std::fixed << std::setprecision(1) << pitch_deg
+            << " R=" << roll_deg << " Y=" << yaw_deg
+            << " deg  gz=" << imu_handler_->GetFilteredGyroZ() << " dps";
+        platform_->Log(LogLevel::Info, fmt.str());
+      }
+
+      {
+        LogFormat fmt;
+        fmt << "EKF: vx=" << std::fixed << std::setprecision(2) << ekf_.GetVx()
+            << " vy=" << ekf_.GetVy() << " m/s  slip=" << std::setprecision(1)
+            << ekf_.GetSlipAngleDeg() << " deg";
+        platform_->Log(LogLevel::Info, fmt.str());
+      }
     }
 
     diag_loop_count = 0;

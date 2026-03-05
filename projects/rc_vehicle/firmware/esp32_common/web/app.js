@@ -453,7 +453,7 @@ function updateTelem(data) {
 // Стабилизация (Phase 4.1/4.2/4.4)
 // ═══════════════════════════════════════════════════════════════════
 
-let currentMode = 0;  // 0=normal, 1=sport, 2=drift, 3=direct
+let currentMode = 0;  // 0=normal, 1=sport, 2=drift, 3=kids, 4=direct
 let kidsThrottleLimit = 0.50;  // 50%
 let kidsSteeringLimit = 0.70;  // 70%
 let kidsMode = false;
@@ -488,7 +488,7 @@ function applyStabConfig(cfg) {
 }
 
 function updateModeButtons(mode) {
-    const ids = ['btn-mode-normal', 'btn-mode-sport', 'btn-mode-drift', 'btn-mode-direct'];
+    const ids = ['btn-mode-normal', 'btn-mode-sport', 'btn-mode-drift', 'btn-mode-kids', 'btn-mode-direct'];
     ids.forEach((id, idx) => {
         const el = document.getElementById(id);
         if (!el) return;
@@ -503,7 +503,7 @@ function updateModeButtons(mode) {
     const directBanner = document.getElementById('direct-law-banner');
     const controlPanel = document.getElementById('control-panel');
 
-    if (mode === 3) {
+    if (mode === 4) {
         if (directBanner) directBanner.style.display = 'block';
         if (controlPanel) controlPanel.classList.add('direct-active');
     } else {
@@ -524,7 +524,7 @@ function updateKidsModeUI() {
     if (kidsMode) {
         if (kidsSettings) kidsSettings.style.display = 'block';
         if (kidsBanner) kidsBanner.style.display = 'block';
-        if (controlPanel && currentMode !== 3) controlPanel.classList.add('kids-active');
+        if (controlPanel && currentMode !== 3) controlPanel.classList.add('kids-active');  // 3 = Kids drive mode
         if (toggleBtn) toggleBtn.textContent = 'Детский режим: ВКЛ';
         if (toggleBtn) toggleBtn.classList.add('btn-kids-active');
     } else {
@@ -783,6 +783,7 @@ const btnSaveStab = document.getElementById('btn-save-stab');
 const btnModeNormal = document.getElementById('btn-mode-normal');
 const btnModeSport = document.getElementById('btn-mode-sport');
 const btnModeDrift = document.getElementById('btn-mode-drift');
+const btnModeKids = document.getElementById('btn-mode-kids');
 const btnModeDirect = document.getElementById('btn-mode-direct');
 const btnKidsToggle = document.getElementById('btn-kids-toggle');
 const btnLogInfo = document.getElementById('btn-log-info');
@@ -799,7 +800,8 @@ const kidsSteeringValueEl = document.getElementById('kids-steering-value');
 if (btnModeNormal) btnModeNormal.addEventListener('click', () => { currentMode = 0; updateModeButtons(0); });
 if (btnModeSport) btnModeSport.addEventListener('click', () => { currentMode = 1; updateModeButtons(1); });
 if (btnModeDrift) btnModeDrift.addEventListener('click', () => { currentMode = 2; updateModeButtons(2); });
-if (btnModeDirect) btnModeDirect.addEventListener('click', () => { currentMode = 3; updateModeButtons(3); });
+if (btnModeKids) btnModeKids.addEventListener('click', () => { currentMode = 3; updateModeButtons(3); });
+if (btnModeDirect) btnModeDirect.addEventListener('click', () => { currentMode = 4; updateModeButtons(4); });
 if (btnKidsToggle) btnKidsToggle.addEventListener('click', () => {
     kidsMode = !kidsMode;
     updateKidsModeUI();

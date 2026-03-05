@@ -77,14 +77,65 @@ void PitchCompensationConfig::Clamp() noexcept {
 }
 
 // ============================================================================
+// KidsModeConfig
+// ============================================================================
+
+void KidsModeConfig::Clamp() noexcept {
+  throttle_limit = std::clamp(throttle_limit, 0.1f, 1.0f);
+  reverse_limit = std::clamp(reverse_limit, 0.1f, 1.0f);
+  steering_limit = std::clamp(steering_limit, 0.3f, 1.0f);
+  slew_throttle = std::clamp(slew_throttle, 0.1f, 2.0f);
+  slew_steering = std::clamp(slew_steering, 0.2f, 3.0f);
+  anti_spin_threshold_deg = std::clamp(anti_spin_threshold_deg, 5.0f, 45.0f);
+  anti_spin_reduction = std::clamp(anti_spin_reduction, 0.0f, 1.0f);
+}
+
+void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
+  switch (preset) {
+    case KidsPreset::Toddler:
+      throttle_limit = 0.15f;
+      reverse_limit = 0.10f;
+      steering_limit = 0.5f;
+      slew_throttle = 0.2f;
+      slew_steering = 0.3f;
+      anti_spin_threshold_deg = 5.0f;
+      anti_spin_reduction = 0.8f;
+      break;
+
+    case KidsPreset::Child:
+      throttle_limit = 0.30f;
+      reverse_limit = 0.20f;
+      steering_limit = 0.7f;
+      slew_throttle = 0.3f;
+      slew_steering = 0.5f;
+      anti_spin_threshold_deg = 10.0f;
+      anti_spin_reduction = 0.7f;
+      break;
+
+    case KidsPreset::Preteen:
+      throttle_limit = 0.50f;
+      reverse_limit = 0.35f;
+      steering_limit = 0.85f;
+      slew_throttle = 0.4f;
+      slew_steering = 0.7f;
+      anti_spin_threshold_deg = 15.0f;
+      anti_spin_reduction = 0.5f;
+      break;
+
+    default:
+      break;  // Custom — не меняем
+  }
+}
+
+// ============================================================================
 // StabilizationConfig
 // ============================================================================
 
 bool StabilizationConfig::IsValid() const noexcept {
   return magic == kStabilizationConfigMagic && filter.IsValid() &&
          yaw_rate.IsValid() && slip_angle.IsValid() && adaptive.IsValid() &&
-         oversteer.IsValid() && pitch_comp.IsValid() &&
-         static_cast<uint8_t>(mode) <= 3;
+         oversteer.IsValid() && pitch_comp.IsValid() && kids_mode.IsValid() &&
+         static_cast<uint8_t>(mode) <= 4;
 }
 
 void StabilizationConfig::Reset() noexcept {
@@ -130,7 +181,17 @@ void StabilizationConfig::Reset() noexcept {
   pitch_comp.gain = 0.01f;
   pitch_comp.max_correction = 0.25f;
 
-  version = 2;
+  // Kids mode defaults
+  kids_mode.throttle_limit = 0.3f;
+  kids_mode.reverse_limit = 0.2f;
+  kids_mode.steering_limit = 0.7f;
+  kids_mode.slew_throttle = 0.3f;
+  kids_mode.slew_steering = 0.5f;
+  kids_mode.anti_spin_enabled = true;
+  kids_mode.anti_spin_threshold_deg = 10.0f;
+  kids_mode.anti_spin_reduction = 0.7f;
+
+  version = 3;
   magic = kStabilizationConfigMagic;
 }
 
@@ -174,6 +235,41 @@ void StabilizationConfig::ApplyModeDefaults() noexcept {
       slip_angle.pid.max_correction = 0.25f;
       break;
 
+    case DriveMode::Kids:  // усиленная стабилизация, помощь в управлении
+      // Yaw rate: увеличенный kp для лучшего контроля
+      yaw_rate.pid.kp = 0.15f;
+      yaw_rate.pid.ki = 0.005f;
+      yaw_rate.pid.kd = 0.008f;
+      yaw_rate.pid.max_integral = 0.8f;
+      yaw_rate.pid.max_correction = 0.35f;
+      yaw_rate.steer_to_yaw_rate_dps = 75.0f;
+
+      // Pitch compensation: включена для помощи на склонах
+      pitch_comp.enabled = true;
+      pitch_comp.gain = 0.015f;
+      pitch_comp.max_correction = 0.30f;
+
+      // Slip angle: выключен (не нужен в Kids Mode)
+      slip_angle.target_deg = 0.0f;
+      slip_angle.pid.kp = 0.0f;
+      slip_angle.pid.ki = 0.0f;
+      slip_angle.pid.kd = 0.0f;
+      slip_angle.pid.max_integral = 5.0f;
+      slip_angle.pid.max_correction = 0.0f;
+
+      // Oversteer guard: агрессивное снижение газа
+      oversteer.warn_enabled = true;
+      oversteer.slip_thresh_deg = kids_mode.anti_spin_threshold_deg;
+      oversteer.rate_thresh_deg_s = 30.0f;
+      oversteer.throttle_reduction = kids_mode.anti_spin_reduction;
+
+      // Adaptive PID: включён для лучшего контроля на разных скоростях
+      adaptive.enabled = true;
+      adaptive.speed_ref_ms = 1.0f;
+      adaptive.scale_min = 0.6f;
+      adaptive.scale_max = 1.5f;
+      break;
+
     case DriveMode::DirectLaw:  // прямое управление: стабилизация не используется
       enabled = false;
       yaw_rate.pid.kp = 0.0f;
@@ -212,7 +308,7 @@ void StabilizationConfig::ApplyModeDefaults() noexcept {
 
 void StabilizationConfig::Clamp() noexcept {
   if (fade_ms > 5000) fade_ms = 5000;
-  if (static_cast<uint8_t>(mode) > 3) mode = DriveMode::Normal;
+  if (static_cast<uint8_t>(mode) > 4) mode = DriveMode::Normal;
 
   filter.Clamp();
   yaw_rate.Clamp();
@@ -220,6 +316,7 @@ void StabilizationConfig::Clamp() noexcept {
   adaptive.Clamp();
   oversteer.Clamp();
   pitch_comp.Clamp();
+  kids_mode.Clamp();
 }
 
 }  // namespace rc_vehicle

@@ -238,6 +238,11 @@ struct TelemetrySnapshot {
   bool oversteer_available{false};
   bool oversteer_active{false};
 
+  // Kids Mode
+  bool kids_mode_active{false};
+  bool kids_anti_spin_active{false};
+  float kids_throttle_limit{0.0f};
+
   // Actuators
   float throttle{0.0f};
   float steering{0.0f};
@@ -265,7 +270,8 @@ class TelemetryHandler : public ControlComponent {
                    uint32_t send_interval_ms = 50)
       : platform_(platform), send_interval_ms_(send_interval_ms) {}
 
-  // Удовлетворяет интерфейсу ControlComponent; использовать перегрузку со snapshot.
+  // Удовлетворяет интерфейсу ControlComponent; использовать перегрузку со
+  // snapshot.
   void Update(uint32_t /*now_ms*/, uint32_t /*dt_ms*/) override {}
 
   /**

@@ -16,7 +16,7 @@ static const char* NVS_KEY = "config";
 static constexpr uint8_t kCurrentStabConfigVersion = 1;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
-struct __attribute__((packed)) StabConfigBlob {
+struct StabConfigBlob {
   uint8_t version;
   uint8_t reserved[3];
   StabilizationConfig config;
@@ -59,8 +59,8 @@ esp_err_t Load(StabilizationConfig& config) {
     ESP_LOGI(TAG,
              "Loaded stabilization config: enabled=%d beta=%.3f "
              "lpf_cutoff=%.1f Hz mode=%d",
-             config.enabled, config.madgwick_beta, config.lpf_cutoff_hz,
-             static_cast<int>(config.mode));
+             config.enabled, config.filter.madgwick_beta,
+             config.filter.lpf_cutoff_hz, static_cast<int>(config.mode));
     return ESP_OK;
   } else if (err != ESP_ERR_NVS_NOT_FOUND) {
     ESP_LOGW(TAG, "Failed to read config from NVS: %s", esp_err_to_name(err));
@@ -93,8 +93,8 @@ esp_err_t Save(const StabilizationConfig& config) {
       ESP_LOGI(TAG,
                "Saved stabilization config: enabled=%d beta=%.3f "
                "lpf_cutoff=%.1f Hz mode=%d",
-               config.enabled, config.madgwick_beta, config.lpf_cutoff_hz,
-               static_cast<int>(config.mode));
+               config.enabled, config.filter.madgwick_beta,
+               config.filter.lpf_cutoff_hz, static_cast<int>(config.mode));
     } else {
       ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(err));
     }

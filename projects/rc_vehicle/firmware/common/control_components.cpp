@@ -237,6 +237,17 @@ std::string TelemetryHandler::BuildTelemJson(
     }
   }
 
+  // Kids Mode status
+  if (snap.kids_mode_active) {
+    cJSON* kids = cJSON_AddObjectToObject(root, "kids_mode");
+    if (kids) {
+      cJSON_AddBoolToObject(kids, "active", true);
+      cJSON_AddBoolToObject(kids, "anti_spin_active",
+                            snap.kids_anti_spin_active);
+      cJSON_AddNumberToObject(kids, "throttle_limit", snap.kids_throttle_limit);
+    }
+  }
+
   // Actuators
   cJSON* act = cJSON_AddObjectToObject(root, "act");
   if (act) {
