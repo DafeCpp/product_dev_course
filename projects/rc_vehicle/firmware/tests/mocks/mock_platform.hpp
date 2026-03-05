@@ -16,7 +16,7 @@ namespace testing {
  * Example usage:
  * @code
  * MockPlatform mock;
- * EXPECT_CALL(mock, InitPwm()).WillOnce(Return(PlatformError::Ok));
+ * EXPECT_CALL(mock, InitPwm()).WillOnce(Return(Result<Unit, PlatformError>{Unit{}}));
  * EXPECT_CALL(mock, SetPwm(0.5f, 0.0f)).Times(1);
  * @endcode
  */
@@ -26,10 +26,10 @@ class MockPlatform : public VehicleControlPlatform {
   // Инициализация
   // ─────────────────────────────────────────────────────────────────────────
 
-  MOCK_METHOD(PlatformError, InitPwm, (), (override));
-  MOCK_METHOD(PlatformError, InitRc, (), (override));
-  MOCK_METHOD(PlatformError, InitImu, (), (override));
-  MOCK_METHOD(PlatformError, InitFailsafe, (), (override));
+  MOCK_METHOD((Result<Unit, PlatformError>), InitPwm, (), (override));
+  MOCK_METHOD((Result<Unit, PlatformError>), InitRc, (), (override));
+  MOCK_METHOD((Result<Unit, PlatformError>), InitImu, (), (override));
+  MOCK_METHOD((Result<Unit, PlatformError>), InitFailsafe, (), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
   // Время
@@ -57,7 +57,7 @@ class MockPlatform : public VehicleControlPlatform {
   // ─────────────────────────────────────────────────────────────────────────
 
   MOCK_METHOD(std::optional<ImuCalibData>, LoadCalib, (), (override));
-  MOCK_METHOD(bool, SaveCalib, (const ImuCalibData& data), (override));
+  MOCK_METHOD((Result<Unit, PlatformError>), SaveCalib, (const ImuCalibData& data), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
   // Stabilization Config
@@ -65,7 +65,7 @@ class MockPlatform : public VehicleControlPlatform {
 
   MOCK_METHOD(std::optional<StabilizationConfig>, LoadStabilizationConfig, (),
               (override));
-  MOCK_METHOD(bool, SaveStabilizationConfig,
+  MOCK_METHOD((Result<Unit, PlatformError>), SaveStabilizationConfig,
               (const StabilizationConfig& config), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ class MockPlatform : public VehicleControlPlatform {
   // Задачи и синхронизация
   // ─────────────────────────────────────────────────────────────────────────
 
-  MOCK_METHOD(bool, CreateTask, (void (*entry)(void*), void* arg), (override));
+  MOCK_METHOD((Result<Unit, PlatformError>), CreateTask, (void (*entry)(void*), void* arg), (override));
   MOCK_METHOD(void, DelayUntilNextTick, (uint32_t period_ms), (override));
 };
 
@@ -137,10 +137,10 @@ class FakePlatform : public VehicleControlPlatform {
   // Инициализация
   // ─────────────────────────────────────────────────────────────────────────
 
-  PlatformError InitPwm() override { return PlatformError::Ok; }
-  PlatformError InitRc() override { return PlatformError::Ok; }
-  PlatformError InitImu() override { return PlatformError::Ok; }
-  PlatformError InitFailsafe() override { return PlatformError::Ok; }
+  Result<Unit, PlatformError> InitPwm() override { return Unit{}; }
+  Result<Unit, PlatformError> InitRc() override { return Unit{}; }
+  Result<Unit, PlatformError> InitImu() override { return Unit{}; }
+  Result<Unit, PlatformError> InitFailsafe() override { return Unit{}; }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Время
@@ -178,9 +178,9 @@ class FakePlatform : public VehicleControlPlatform {
   // ─────────────────────────────────────────────────────────────────────────
 
   std::optional<ImuCalibData> LoadCalib() override { return calib_data_; }
-  bool SaveCalib(const ImuCalibData& data) override {
+  Result<Unit, PlatformError> SaveCalib(const ImuCalibData& data) override {
     calib_data_ = data;
-    return true;
+    return Unit{};
   }
 
   void SetCalibData(const ImuCalibData& data) { calib_data_ = data; }
@@ -193,9 +193,9 @@ class FakePlatform : public VehicleControlPlatform {
     return stab_config_;
   }
 
-  bool SaveStabilizationConfig(const StabilizationConfig& config) override {
+  Result<Unit, PlatformError> SaveStabilizationConfig(const StabilizationConfig& config) override {
     stab_config_ = config;
-    return true;
+    return Unit{};
   }
 
   void SetStabilizationConfig(const StabilizationConfig& config) {
@@ -280,10 +280,10 @@ class FakePlatform : public VehicleControlPlatform {
   // Задачи и синхронизация
   // ─────────────────────────────────────────────────────────────────────────
 
-  bool CreateTask(void (*entry)(void*), void* arg) override {
+  Result<Unit, PlatformError> CreateTask(void (*entry)(void*), void* arg) override {
     (void)entry;
     (void)arg;
-    return true;
+    return Unit{};
   }
 
   void DelayUntilNextTick(uint32_t period_ms) override {

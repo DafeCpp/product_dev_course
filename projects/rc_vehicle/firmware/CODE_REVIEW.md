@@ -11,7 +11,7 @@
 |---|----------|------|--------|
 | 1 | ~~**Переполнение стека в HTTP POST-хэндлерах**~~ — FALSE POSITIVE: `ReadJsonBody()` уже проверяет `total_len >= buf_len` на строке 556 до начала записи | `esp32_common/http_server.cpp` | 556 |
 | 2 | ~~**Race condition: статический буфер WebSocket**~~ — **ИСПРАВЛЕНО**: `static uint8_t buf` заменён на локальный. Также добавлен `NOLINT`-комментарий к `const_cast` в `WebSocketSendTelem` | `esp32_common/websocket_server.cpp` | 32, 123 |
-| 3 | **MockPlatform не совпадает с API** — после перехода на `Result<T>` моки возвращают старые типы (`PlatformError`, `bool`). Тесты не скомпилируются | `tests/mocks/mock_platform.hpp` | 29-32, 59-60, 113, 140-143 |
+| 3 | ~~**MockPlatform не совпадает с API**~~ — **ИСПРАВЛЕНО**: `MOCK_METHOD` и `FakePlatform`-методы обновлены на `Result<Unit, PlatformError>`; `InitPwm/Rc/Imu/Failsafe`, `SaveCalib`, `SaveStabilizationConfig`, `CreateTask` | `tests/mocks/mock_platform.hpp` | 29-32, 59-60, 113, 140-143 |
 
 ---
 
