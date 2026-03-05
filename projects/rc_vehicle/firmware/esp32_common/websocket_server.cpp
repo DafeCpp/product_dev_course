@@ -29,7 +29,9 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     return ESP_OK;
   }
 
-  static uint8_t buf[WS_RX_BUFFER_SIZE];
+  // Локальный буфер: не static, чтобы избежать гонки при нескольких
+  // одновременных WebSocket-соединениях.
+  uint8_t buf[WS_RX_BUFFER_SIZE];
   httpd_ws_frame_t ws_pkt = {};
   ws_pkt.payload = buf;
   ws_pkt.len = 0;
@@ -120,6 +122,8 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   ws_pkt.final = true;
   ws_pkt.fragmented = false;
   ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+  // ESP-IDF API принимает uint8_t*, но при отправке данные не модифицирует.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
   ws_pkt.payload = reinterpret_cast<uint8_t*>(const_cast<char*>(telem_json));
   ws_pkt.len = len;
 

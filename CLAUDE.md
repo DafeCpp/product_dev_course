@@ -175,7 +175,7 @@ make deploy VM_HOST=<ip> REGISTRY_ID=<id>
 
 **TypeScript:** Типы генерируются из OpenAPI-спецификации (`experiment-service/openapi/`). Файл типов не редактировать вручную — используй `make generate-sdk`.
 
-**C++ (firmware):** [Google C++ Style Guide](projects/rc_vehicle/docs/cpp_coding_style.md). Форматирование через `.clang-format`. Стандарт C++23.
+**C++ (firmware):** [Google C++ Style Guide](projects/rc_vehicle/docs/cpp_coding_style.md). Форматирование через `.clang-format`. Стандарт C++26.
 
 ---
 
