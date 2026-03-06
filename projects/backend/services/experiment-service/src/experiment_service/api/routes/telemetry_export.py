@@ -11,6 +11,7 @@ from aiohttp import web
 from backend_common.db.pool import get_pool_service as get_pool
 from experiment_service.api.utils import parse_uuid
 from experiment_service.core.exceptions import NotFoundError
+from experiment_service.middleware.export_rate_limit import ExportRateLimiter
 from experiment_service.services.dependencies import (
     ensure_project_access,
     get_capture_session_service,
@@ -18,10 +19,16 @@ from experiment_service.services.dependencies import (
     require_current_user,
     resolve_project_id,
 )
+from experiment_service.settings import settings
 
 routes = web.RouteTableDef()
 
 STREAM_BATCH_SIZE = 5_000
+
+_export_limiter = ExportRateLimiter(
+    max_requests=settings.export_rate_limit_requests,
+    window_seconds=settings.export_rate_limit_window_seconds,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +291,7 @@ async def export_session_telemetry(request: web.Request):
       - aggregation: 1m (optional; uses continuous aggregate)
     """
     user = await require_current_user(request)
+    _export_limiter.check(user.user_id)
     project_id = resolve_project_id(
         user, request.rel_url.query.get("project_id"),
     )
@@ -368,6 +376,7 @@ async def export_run_telemetry(request: web.Request):
       - aggregation: 1m (optional; uses continuous aggregate)
     """
     user = await require_current_user(request)
+    _export_limiter.check(user.user_id)
     project_id = resolve_project_id(
         user, request.rel_url.query.get("project_id"),
     )

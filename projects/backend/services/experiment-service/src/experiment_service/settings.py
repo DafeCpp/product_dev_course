@@ -34,6 +34,10 @@ class Settings(BaseServiceSettings):
     webhook_dispatch_max_concurrency: int = 10
     webhook_target_max_concurrency: int = 1
 
+    # Telemetry export rate limiting (per user, in-memory fixed window)
+    export_rate_limit_requests: int = 10   # max requests per window
+    export_rate_limit_window_seconds: float = 60.0
+
     # Background worker
     worker_interval_seconds: float = 60.0  # how often the worker loop runs
     idempotency_ttl_hours: int = 48  # delete idempotency keys older than this
