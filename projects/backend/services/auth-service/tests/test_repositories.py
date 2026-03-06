@@ -15,6 +15,22 @@ from auth_service.repositories.users import UserRepository
 
 
 # ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_pool_with_conn():
+    """Create mock pool with proper async context manager for acquire()."""
+    mock_pool = AsyncMock()
+    mock_conn = AsyncMock()
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+    mock_pool.acquire = MagicMock(return_value=mock_cm)
+    return mock_pool, mock_conn
+
+
+# ---------------------------------------------------------------------------
 # BaseRepository Tests
 # ---------------------------------------------------------------------------
 
@@ -28,11 +44,9 @@ class TestBaseRepository:
         assert repo._pool is mock_pool
 
     @pytest.mark.asyncio
-    async def test_fetchrow_returns_row(self):
+    async def test_fetchrow_returns_row(self, mock_pool_with_conn):
         """Test _fetchrow returns a row."""
-        mock_pool = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+        mock_pool, mock_conn = mock_pool_with_conn
         mock_conn.fetchrow = AsyncMock(return_value={"id": 1, "name": "test"})
 
         repo = BaseRepository(mock_pool)
@@ -42,11 +56,9 @@ class TestBaseRepository:
         mock_conn.fetchrow.assert_called_once_with("SELECT * FROM test WHERE id = $1", 1)
 
     @pytest.mark.asyncio
-    async def test_fetchrow_returns_none(self):
+    async def test_fetchrow_returns_none(self, mock_pool_with_conn):
         """Test _fetchrow returns None when no row found."""
-        mock_pool = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+        mock_pool, mock_conn = mock_pool_with_conn
         mock_conn.fetchrow = AsyncMock(return_value=None)
 
         repo = BaseRepository(mock_pool)
@@ -55,11 +67,9 @@ class TestBaseRepository:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_fetch_returns_rows(self):
+    async def test_fetch_returns_rows(self, mock_pool_with_conn):
         """Test _fetch returns list of rows."""
-        mock_pool = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+        mock_pool, mock_conn = mock_pool_with_conn
         mock_conn.fetch = AsyncMock(return_value=[
             {"id": 1, "name": "test1"},
             {"id": 2, "name": "test2"},
@@ -73,11 +83,9 @@ class TestBaseRepository:
         mock_conn.fetch.assert_called_once_with("SELECT * FROM test")
 
     @pytest.mark.asyncio
-    async def test_fetch_returns_empty_list(self):
+    async def test_fetch_returns_empty_list(self, mock_pool_with_conn):
         """Test _fetch returns empty list when no rows found."""
-        mock_pool = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+        mock_pool, mock_conn = mock_pool_with_conn
         mock_conn.fetch = AsyncMock(return_value=[])
 
         repo = BaseRepository(mock_pool)
@@ -86,11 +94,9 @@ class TestBaseRepository:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_execute_returns_result(self):
+    async def test_execute_returns_result(self, mock_pool_with_conn):
         """Test _execute returns result string."""
-        mock_pool = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+        mock_pool, mock_conn = mock_pool_with_conn
         mock_conn.execute = AsyncMock(return_value="DELETE 1")
 
         repo = BaseRepository(mock_pool)
@@ -100,11 +106,9 @@ class TestBaseRepository:
         mock_conn.execute.assert_called_once_with("DELETE FROM test WHERE id = $1", 1)
 
     @pytest.mark.asyncio
-    async def test_fetchrow_with_multiple_params(self):
+    async def test_fetchrow_with_multiple_params(self, mock_pool_with_conn):
         """Test _fetchrow with multiple parameters."""
-        mock_pool = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+        mock_pool, mock_conn = mock_pool_with_conn
         mock_conn.fetchrow = AsyncMock(return_value={"id": 1})
 
         repo = BaseRepository(mock_pool)
@@ -117,11 +121,9 @@ class TestBaseRepository:
         )
 
     @pytest.mark.asyncio
-    async def test_fetch_with_multiple_params(self):
+    async def test_fetch_with_multiple_params(self, mock_pool_with_conn):
         """Test _fetch with multiple parameters."""
-        mock_pool = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+        mock_pool, mock_conn = mock_pool_with_conn
         mock_conn.fetch = AsyncMock(return_value=[{"id": 1}])
 
         repo = BaseRepository(mock_pool)
