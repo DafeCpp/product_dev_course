@@ -588,8 +588,9 @@ class TestStopWebhookDispatcher:
     async def test_cancels_dispatcher_task(self):
         """Test stop_webhook_dispatcher cancels task."""
         app = web.Application()
-        mock_task = AsyncMock()
-        mock_task.cancelled.return_value = True
+        mock_task = MagicMock()
+        mock_task.cancel = MagicMock()
+        mock_task.done = MagicMock(return_value=True)
         app["webhook_dispatcher_task"] = mock_task
 
         await stop_webhook_dispatcher(app)
@@ -600,7 +601,7 @@ class TestStopWebhookDispatcher:
     async def test_closes_client_session(self):
         """Test stop_webhook_dispatcher closes session."""
         app = web.Application()
-        mock_session = MagicMock()
+        mock_session = AsyncMock()
         app["webhook_http_session"] = mock_session
 
         await stop_webhook_dispatcher(app)
@@ -611,7 +612,7 @@ class TestStopWebhookDispatcher:
     async def test_handles_missing_task(self):
         """Test stop_webhook_dispatcher handles missing task."""
         app = web.Application()
-        mock_session = MagicMock()
+        mock_session = AsyncMock()
         app["webhook_http_session"] = mock_session
 
         # Should not raise
@@ -621,34 +622,24 @@ class TestStopWebhookDispatcher:
     async def test_handles_missing_session(self):
         """Test stop_webhook_dispatcher handles missing session."""
         app = web.Application()
-        mock_task = asyncio.create_task(asyncio.sleep(0.1))
+        mock_task = MagicMock()
+        mock_task.cancel = MagicMock()
+        mock_task.done = MagicMock(return_value=True)
         app["webhook_dispatcher_task"] = mock_task
 
-        try:
-            # Should not raise
-            await stop_webhook_dispatcher(app)
-        finally:
-            if not mock_task.done():
-                mock_task.cancel()
-                try:
-                    await mock_task
-                except asyncio.CancelledError:
-                    pass
+        # Should not raise
+        await stop_webhook_dispatcher(app)
 
     @pytest.mark.asyncio
     async def test_handles_cancelled_error(self):
         """Test stop_webhook_dispatcher handles CancelledError."""
         app = web.Application()
-        mock_task = AsyncMock()
-        mock_task.cancelled.return_value = True
-
-        async def raise_cancelled():
-            raise asyncio.CancelledError()
-
-        mock_task.__await__ = raise_cancelled
-
+        mock_task = MagicMock()
+        mock_task.cancel = MagicMock()
+        mock_task.done = MagicMock(return_value=True)
         app["webhook_dispatcher_task"] = mock_task
-        mock_session = MagicMock()
+        
+        mock_session = AsyncMock()
         app["webhook_http_session"] = mock_session
 
         # Should not raise
@@ -669,10 +660,10 @@ class TestWebhookDispatcherLoop:
         response = AsyncMock()
         response.text = AsyncMock(return_value="")
         response.status = 200
-        mock_mock_cm = MagicMock()
+        mock_cm = MagicMock()
         mock_cm.__aenter__ = AsyncMock(return_value=response)
         mock_cm.__aexit__ = AsyncMock(return_value=None)
-        session.post.return_value = mock_cm
+        mock_session.post.return_value = mock_cm
 
         # Mock repository
         mock_delivery = WebhookDelivery(
@@ -696,7 +687,10 @@ class TestWebhookDispatcherLoop:
         with patch("experiment_service.webhooks_dispatcher.get_pool") as mock_get_pool, \
              patch("experiment_service.webhooks_dispatcher.WebhookDeliveryRepository") as MockRepo:
 
-            mock_repo = AsyncMock()
+            mock_pool = MagicMock()
+            mock_get_pool.return_value = mock_pool
+            
+            mock_repo = MagicMock()
             mock_repo.claim_due_pending = AsyncMock(return_value=[mock_delivery])
             mock_repo.mark_attempt = AsyncMock()
             MockRepo.return_value = mock_repo
@@ -727,7 +721,10 @@ class TestWebhookDispatcherLoop:
         with patch("experiment_service.webhooks_dispatcher.get_pool") as mock_get_pool, \
              patch("experiment_service.webhooks_dispatcher.WebhookDeliveryRepository") as MockRepo:
 
-            mock_repo = AsyncMock()
+            mock_pool = MagicMock()
+            mock_get_pool.return_value = mock_pool
+            
+            mock_repo = MagicMock()
             mock_repo.claim_due_pending = AsyncMock(return_value=[])
             MockRepo.return_value = mock_repo
 
@@ -781,7 +778,8 @@ class TestWebhookDispatcherLoop:
         with patch("experiment_service.webhooks_dispatcher.get_pool"), \
              patch("experiment_service.webhooks_dispatcher.WebhookDeliveryRepository") as MockRepo:
 
-            mock_repo = AsyncMock()
+            mock_repo = MagicMock()
+            mock_repo.claim_due_pending = AsyncMock(return_value=[])
             mock_repo.claim_due_pending = AsyncMock(return_value=[mock_delivery])
             mock_repo.mark_attempt = AsyncMock()
             MockRepo.return_value = mock_repo
@@ -839,7 +837,8 @@ class TestWebhookDispatcherLoop:
         with patch("experiment_service.webhooks_dispatcher.get_pool"), \
              patch("experiment_service.webhooks_dispatcher.WebhookDeliveryRepository") as MockRepo:
 
-            mock_repo = AsyncMock()
+            mock_repo = MagicMock()
+            mock_repo.claim_due_pending = AsyncMock(return_value=[])
             mock_repo.claim_due_pending = AsyncMock(return_value=[mock_delivery])
             mock_repo.mark_attempt = AsyncMock()
             MockRepo.return_value = mock_repo
@@ -896,7 +895,8 @@ class TestWebhookDispatcherLoop:
         with patch("experiment_service.webhooks_dispatcher.get_pool"), \
              patch("experiment_service.webhooks_dispatcher.WebhookDeliveryRepository") as MockRepo:
 
-            mock_repo = AsyncMock()
+            mock_repo = MagicMock()
+            mock_repo.claim_due_pending = AsyncMock(return_value=[])
             mock_repo.claim_due_pending = AsyncMock(return_value=[mock_delivery])
             mock_repo.mark_attempt = AsyncMock()
             MockRepo.return_value = mock_repo
