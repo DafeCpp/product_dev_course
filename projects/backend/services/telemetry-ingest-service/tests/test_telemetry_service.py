@@ -266,7 +266,7 @@ class TestTelemetryIngestServiceAuth:
         project_id = uuid4()
         token_hash = b"fake_hash"
 
-        mock_conn.fetchrow = AsyncMock(return_value={"project_id": project_id, "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running"})
+        mock_conn.fetchrow = AsyncMock(return_value={"project_id": project_id, "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running", "payload": {}, "kind": "default"})
 
         result = await service._authenticate_sensor(mock_conn, sensor_id, token_hash)
 
@@ -301,7 +301,7 @@ class TestTelemetryIngestServiceScopeResolution:
         project_id = uuid4()
         run_id = uuid4()
 
-        mock_conn.fetchrow = AsyncMock(return_value={"id": run_id, "status": "running"})
+        mock_conn.fetchrow = AsyncMock(return_value={"id": run_id, "status": "running", "payload": {}, "kind": "default"})
 
         result = await service._ensure_run_scope(mock_conn, project_id, run_id)
 
@@ -357,7 +357,7 @@ class TestTelemetryIngestServiceScopeResolution:
         capture_id = uuid4()
         run_id = uuid4()
 
-        mock_conn.fetchrow = AsyncMock(return_value={"run_id": run_id, "status": "running", "archived": False})
+        mock_conn.fetchrow = AsyncMock(return_value={"run_id": run_id, "status": "running", "archived": False, "payload": {}, "kind": "default"})
 
         result = await service._ensure_capture_scope(mock_conn, project_id, capture_id)
 
@@ -412,7 +412,7 @@ class TestTelemetryIngestServiceScopeResolution:
         project_id = uuid4()
         capture_id = uuid4()
 
-        mock_conn.fetchrow = AsyncMock(return_value={"status": "running"})
+        mock_conn.fetchrow = AsyncMock(return_value={"status": "running", "payload": {}, "kind": "default"})
 
         result = await service._get_capture_status(mock_conn, project_id, capture_id)
 
@@ -440,7 +440,7 @@ class TestTelemetryIngestServiceScopeResolution:
         run_id = uuid4()
         capture_id = uuid4()
 
-        mock_conn.fetchrow = AsyncMock(return_value={"id": capture_id, "status": "running"})
+        mock_conn.fetchrow = AsyncMock(return_value={"id": capture_id, "status": "running", "payload": {}, "kind": "default"})
 
         result = await service._find_active_capture_session(mock_conn, project_id, run_id)
 
@@ -731,10 +731,13 @@ class TestTelemetryIngestServiceIngest:
 
             # Phase 1: auth
             mock_conn.fetchrow = AsyncMock(return_value={
+                "id": uuid4(),
                 "project_id": uuid4(),
                 "run_id": uuid4(),
                 "capture_session_id": uuid4(),
-                "status": "running"
+                "status": "running",
+                "payload": {},
+                "kind": "default"
             })
 
             # Phase 2: insert
@@ -829,7 +832,7 @@ class TestTelemetryIngestServiceIngest:
             mock_pool.acquire.return_value = mock_cm
 
             # Phase 1: auth succeeds
-            mock_conn.fetchrow = AsyncMock(return_value={"project_id": uuid4(), "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running"})
+            mock_conn.fetchrow = AsyncMock(return_value={"id": uuid4(), "project_id": uuid4(), "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running", "payload": {}, "kind": "default"})
 
             # Phase 2: insert fails
             mock_conn.transaction = MagicMock()
@@ -886,7 +889,7 @@ class TestTelemetryIngestServiceIngest:
             mock_pool.acquire.return_value = mock_cm
 
             # Phase 1: auth succeeds
-            mock_conn.fetchrow = AsyncMock(return_value={"project_id": uuid4(), "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running"})
+            mock_conn.fetchrow = AsyncMock(return_value={"id": uuid4(), "project_id": uuid4(), "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running", "payload": {}, "kind": "default"})
 
             # Phase 2: insert fails
             mock_conn.transaction = MagicMock()

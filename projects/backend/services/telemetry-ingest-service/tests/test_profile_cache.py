@@ -589,14 +589,22 @@ class TestProfileCacheIntegration:
 
         mock_conn = AsyncMock()
 
-        # First access - cache miss
+        # Prepare responses for multiple calls
         mock_row1 = {
             "id": uuid4(),
             "kind": "linear",
             "payload": {"a": 1.0, "b": 2.0},
         }
-        mock_conn.fetchrow = AsyncMock(return_value=mock_row1)
+        mock_row2 = {
+            "id": uuid4(),
+            "kind": "polynomial",
+            "payload": {"coefficients": [1.0, 2.0]},
+        }
+        
+        # Use side_effect to return different values on subsequent calls
+        mock_conn.fetchrow = AsyncMock(side_effect=[mock_row1, mock_row2])
 
+        # First access - cache miss
         profile1 = await cache.get_active_profile(mock_conn, sensor_id)
         assert profile1.kind == "linear"
         assert mock_conn.fetchrow.call_count == 1
@@ -611,13 +619,6 @@ class TestProfileCacheIntegration:
         assert sensor_id not in cache._cache
 
         # Third access - cache miss after invalidate
-        mock_row2 = {
-            "id": uuid4(),
-            "kind": "polynomial",
-            "payload": {"coefficients": [1.0, 2.0]},
-        }
-        mock_conn.fetchrow = AsyncMock(return_value=mock_row2)
-
         profile3 = await cache.get_active_profile(mock_conn, sensor_id)
         assert profile3.kind == "polynomial"
         assert mock_conn.fetchrow.call_count == 2
