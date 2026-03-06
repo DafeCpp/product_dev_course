@@ -48,6 +48,11 @@ class Settings(BaseServiceSettings):
     ws_rate_limit_readings_per_window: int = 60_000 # max readings per window
     ws_rate_limit_window_seconds: float = 1.0       # window duration in seconds
 
+    # REST ingest per-sensor rate limiting (fixed window)
+    rest_rate_limit_requests_per_window: int = 60   # max requests per window
+    rest_rate_limit_readings_per_window: int = 60_000 # max readings per window
+    rest_rate_limit_window_seconds: float = 60.0    # window duration in seconds
+
     # Disk spool — write-ahead buffer when DB writes are unavailable
     spool_enabled: bool = True
     spool_dir: str = "/tmp/telemetry-spool"
