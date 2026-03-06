@@ -8,7 +8,6 @@ from aiohttp import web
 
 from backend_common.aiohttp_app import (
     add_cors_to_routes,
-    add_healthcheck,
     add_openapi_spec,
     create_base_app,
 )
@@ -16,6 +15,7 @@ from backend_common.db.migrations import create_migration_runner
 from backend_common.logging_config import configure_logging
 
 from experiment_service.api.router import setup_routes
+from experiment_service.api.routes.health import health_routes
 from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
 from experiment_service.workers import start_background_worker, stop_background_worker
 from experiment_service.otel import setup_otel, shutdown_otel
@@ -45,7 +45,7 @@ apply_migrations_on_startup = create_migration_runner(settings, MIGRATIONS_PATHS
 def create_app() -> web.Application:
     app, cors = create_base_app(settings)
 
-    add_healthcheck(app, settings)
+    app.add_routes(health_routes)
     add_openapi_spec(app, OPENAPI_PATH)
     setup_routes(app)
 
