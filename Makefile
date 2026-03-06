@@ -112,27 +112,29 @@ test-backend: backend-install
 		echo "⚠️  Не найдено ни одного backend сервиса в $(BACKEND_SERVICES_DIR)"; \
 		exit 1; \
 	fi; \
-	echo "🐘 Starting TimescaleDB (postgres) for backend tests..."; \
-	docker-compose up -d postgres >/dev/null 2>&1 || (echo "❌ docker-compose failed to start postgres" && exit 1); \
-	# Wait for readiness (up to ~30s). \
-	for i in $$(seq 1 60); do \
-		docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 && break; \
-		sleep 0.5; \
-	done; \
-	if ! docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then \
-		echo "❌ Postgres is not ready"; \
-		docker-compose logs --tail=80 postgres; \
-		exit 1; \
-	fi; \
 	PG_TEST_DSN="$(TEST_POSTGRESQL_DSN)"; \
 	if [ -z "$$PG_TEST_DSN" ]; then \
+		echo "🐘 Starting TimescaleDB (postgres) for backend tests..."; \
+		docker-compose up -d postgres >/dev/null 2>&1 || { \
+			echo "❌ docker-compose failed to start postgres"; \
+			echo "   If you see 'Permission denied' on the Docker socket, add your user to the docker group:"; \
+			echo "   sudo usermod -aG docker \$$USER && newgrp docker"; \
+			echo "   Or run tests against an existing Postgres: make test-backend TEST_POSTGRESQL_DSN='postgresql://user:pass@host:5432/dbname'"; \
+			exit 1; \
+		}; \
+		for i in $$(seq 1 60); do \
+			docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 && break; \
+			sleep 0.5; \
+		done; \
+		if ! docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then \
+			echo "❌ Postgres is not ready"; \
+			docker-compose logs --tail=80 postgres; \
+			exit 1; \
+		fi; \
 		hostport="$$(docker-compose port postgres 5432 2>/dev/null | tail -n 1 | sed 's/.*://')"; \
 		if [ -z "$$hostport" ]; then hostport=5433; fi; \
-		# Strip quotes if .env uses POSTGRES_USER="..." format. \
 		pg_user="$$(docker-compose exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_USER:-postgres}\"' | sed 's/\"//g')"; \
 		pg_pass="$$(docker-compose exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_PASSWORD:-postgres}\"' | sed 's/\"//g')"; \
-		# If the postgres volume already exists, POSTGRES_PASSWORD env won't update the actual role password. \
-		# Ensure the role password matches what we'll use in the DSN. \
 		docker-compose exec -T postgres psql -U postgres -d postgres -c "ALTER USER \"$${pg_user}\" WITH PASSWORD '$${pg_pass}';" >/dev/null 2>&1 || true; \
 		PG_TEST_DSN="postgresql://$${pg_user}:$${pg_pass}@localhost:$${hostport}/postgres"; \
 	fi; \

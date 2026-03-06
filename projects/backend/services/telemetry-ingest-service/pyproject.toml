@@ -29,7 +29,7 @@ pytest-asyncio = "^0.21.1"
 pytest-aiohttp = "^1.0.5"
 ruff = "^0.5.0"
 mypy = "^1.10.0"
-yandex-taxi-testsuite = {extras = ["postgresql"], version = "^0.3.9"}
+yandex-taxi-testsuite = {extras = ["postgresql-binary"], version = "^0.3.9"}
 openapi-generator-cli = "^7.17.0"
 watchfiles = "^0.21.0"
 

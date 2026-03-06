@@ -51,7 +51,28 @@
       "Bash(cd /home/lostpointer/product_dev_course/projects/backend/services/auth-service && poetry run pytest tests/test_api_auth.py -v 2>&1)",
       "Bash(cd /home/lostpointer/product_dev_course/projects/backend/services/auth-service && poetry run python -c \"from auth_service.services.password import verify_password; print\\(verify_password\\('admin123', '\\\\$2b\\\\$12\\\\$0QfCvOcgNkygw/I79ieV5eOIwAjWXUjdFUr/QvRgDMewN1OfENrmG'\\)\\)\")",
       "Bash(poetry run pytest tests/test_api_auth.py -v 2>&1)",
-      "Bash(git add \\\\\n  projects/backend/services/auth-service/migrations/004_password_reset.sql \\\\\n  projects/backend/services/auth-service/src/auth_service/repositories/password_reset.py \\\\\n  projects/backend/services/auth-service/src/auth_service/api/routes/auth.py \\\\\n  projects/backend/services/auth-service/src/auth_service/domain/dto.py \\\\\n  projects/backend/services/auth-service/src/auth_service/domain/models.py \\\\\n  projects/backend/services/auth-service/src/auth_service/repositories/users.py \\\\\n  projects/backend/services/auth-service/src/auth_service/services/auth.py \\\\\n  projects/backend/services/auth-service/tests/schemas/postgresql/auth_service.sql \\\\\n  projects/backend/services/auth-service/tests/test_api_auth.py)"
+      "Bash(git add \\\\\n  projects/backend/services/auth-service/migrations/004_password_reset.sql \\\\\n  projects/backend/services/auth-service/src/auth_service/repositories/password_reset.py \\\\\n  projects/backend/services/auth-service/src/auth_service/api/routes/auth.py \\\\\n  projects/backend/services/auth-service/src/auth_service/domain/dto.py \\\\\n  projects/backend/services/auth-service/src/auth_service/domain/models.py \\\\\n  projects/backend/services/auth-service/src/auth_service/repositories/users.py \\\\\n  projects/backend/services/auth-service/src/auth_service/services/auth.py \\\\\n  projects/backend/services/auth-service/tests/schemas/postgresql/auth_service.sql \\\\\n  projects/backend/services/auth-service/tests/test_api_auth.py)",
+      "Bash(grep:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm run:*)",
+      "Bash(make test-frontend:*)",
+      "Bash(make test-backend:*)",
+      "Bash(source:*)",
+      "Bash(poetry run:*)",
+      "Bash(~/.local/bin/poetry run:*)",
+      "Bash(pip install:*)",
+      "Bash(find / -path \"*/telemetry-ingest-service/.venv/bin/pytest\")",
+      "Read(//home/**)",
+      "Read(//root/**)",
+      "Read(//tmp/**)",
+      "Bash(docker ps:*)",
+      "Bash(python3:*)",
+      "Bash(poetry:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker-compose run:*)",
+      "Bash(pip3 install:*)",
+      "Bash(TESTSUITE_PGSQL_BINDIR=/usr/bin poetry run:*)"
     ]
   }
 }
