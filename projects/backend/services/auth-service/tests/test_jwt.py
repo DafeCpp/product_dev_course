@@ -101,8 +101,8 @@ class TestCreateAccessToken:
     def test_same_user_gets_different_tokens(self):
         """Test same user gets different tokens (due to time-based exp)."""
         token1 = create_access_token("user-1")
-        # Small delay to ensure different exp
-        time.sleep(0.01)
+        # Delay to ensure different exp
+        time.sleep(1.1)
         token2 = create_access_token("user-1")
 
         # Tokens should be different (different iat/exp)
@@ -399,14 +399,16 @@ class TestGetJtiFromToken:
 
     def test_raises_on_expired_token(self):
         """Test get_jti_from_token raises on expired token."""
-        now = int(time.time())
-
-        with patch("auth_service.services.jwt.time.time", return_value=now - 1000):
+        # Create a token with very short expiration
+        with patch("auth_service.services.jwt.settings.refresh_token_ttl_sec", 1):
             token = create_refresh_token("user-id")
-
-        with patch("auth_service.services.jwt.time.time", return_value=now):
-            with pytest.raises(ValueError, match="Token expired"):
-                get_jti_from_token(token)
+        
+        # Wait for token to expire
+        time.sleep(1.5)
+        
+        # Should raise expired error
+        with pytest.raises(ValueError, match="Token expired"):
+            get_jti_from_token(token)
 
     def test_raises_on_invalid_token(self):
         """Test get_jti_from_token raises on invalid token."""

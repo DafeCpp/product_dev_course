@@ -669,7 +669,7 @@ class TestPasswordOperations:
         }
         reset_repo.get_by_token = AsyncMock(return_value=reset_record)
 
-        with pytest.raises(InvalidCredentialsError, match="Invalid or expired reset token"):
+        with pytest.raises(InvalidCredentialsError, match="Reset token expired"):
             await auth_service_open.confirm_password_reset("expired_token", "newpassword")
 
 
@@ -801,17 +801,31 @@ class TestAdminUserManagement:
                 )
 
     @pytest.mark.asyncio
-    async def test_update_user_last_admin(self, auth_service_open, mock_repos, sample_admin, sample_user):
+    async def test_update_user_last_admin(self, auth_service_open, mock_repos, sample_admin):
         """Test cannot demote last admin."""
         user_repo, *_ = mock_repos
-        user_repo.get_by_id = AsyncMock(side_effect=[sample_admin, sample_user])
+        
+        # Create another admin user that's the last admin
+        last_admin = User(
+            id=uuid4(),
+            username="lastadmin",
+            email="lastadmin@example.com",
+            hashed_password="hashed123",
+            password_change_required=False,
+            is_admin=True,  # This is an admin
+            is_active=True,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        
+        user_repo.get_by_id = AsyncMock(side_effect=[sample_admin, last_admin])
         user_repo.count_admins = AsyncMock(return_value=1)
 
         with patch("auth_service.services.auth.get_user_id_from_token", return_value=str(sample_admin.id)):
             with pytest.raises(ConflictError, match="Cannot remove the last admin"):
                 await auth_service_open.update_user(
                     requester_token="admin_token",
-                    target_user_id=sample_user.id,
+                    target_user_id=last_admin.id,
                     is_active=None,
                     is_admin=False,
                 )
@@ -847,17 +861,31 @@ class TestAdminUserManagement:
                 )
 
     @pytest.mark.asyncio
-    async def test_delete_user_last_admin(self, auth_service_open, mock_repos, sample_admin, sample_user):
+    async def test_delete_user_last_admin(self, auth_service_open, mock_repos, sample_admin):
         """Test cannot delete last admin."""
         user_repo, *_ = mock_repos
-        user_repo.get_by_id = AsyncMock(side_effect=[sample_admin, sample_user])
+        
+        # Create another admin user that's the last admin
+        last_admin = User(
+            id=uuid4(),
+            username="lastadmin",
+            email="lastadmin@example.com",
+            hashed_password="hashed123",
+            password_change_required=False,
+            is_admin=True,  # This is an admin
+            is_active=True,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        
+        user_repo.get_by_id = AsyncMock(side_effect=[sample_admin, last_admin])
         user_repo.count_admins = AsyncMock(return_value=1)
 
         with patch("auth_service.services.auth.get_user_id_from_token", return_value=str(sample_admin.id)):
             with pytest.raises(ConflictError, match="Cannot delete the last admin"):
                 await auth_service_open.delete_user(
                     requester_token="admin_token",
-                    target_user_id=sample_user.id,
+                    target_user_id=last_admin.id,
                 )
 
     @pytest.mark.asyncio
