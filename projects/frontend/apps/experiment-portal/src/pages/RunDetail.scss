@@ -1,5 +1,52 @@
 @import '../styles/colors';
 
+.run-metrics {
+  &__tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid $border-default;
+  }
+
+  &__tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: $text-muted;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: -1px;
+
+    &.active {
+      color: $text-strong;
+      font-weight: 500;
+    }
+
+    &:hover:not(.active) {
+      color: $text-strong;
+    }
+  }
+
+  &__tab-count {
+    font-size: 0.75rem;
+    background: $surface-muted;
+    border-radius: 10px;
+    padding: 0 6px;
+    color: $text-muted;
+  }
+
+  &__summary {
+    margin-top: 8px;
+    font-size: 0.8125rem;
+    color: $text-muted;
+  }
+}
+
 .run-header {
   max-width: 1000px;
 }

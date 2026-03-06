@@ -10,6 +10,7 @@ import type {
   RunCreate,
   RunUpdate,
   RunsListResponse,
+  RunMetricsResponse,
   Sensor,
   SensorCreate,
   SensorUpdate,
@@ -772,6 +773,20 @@ export const projectsApi = {
       data
     )
     return response.data
+  },
+}
+
+// Metrics API
+export const metricsApi = {
+  query: async (
+    runId: string,
+    params?: {
+      name?: string
+      from_step?: number
+      to_step?: number
+    }
+  ): Promise<RunMetricsResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics`, { params })
   },
 }
 

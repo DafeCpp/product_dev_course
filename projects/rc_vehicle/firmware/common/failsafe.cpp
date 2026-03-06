@@ -62,6 +62,9 @@ FailsafeState Failsafe::GetState() const noexcept {
 uint32_t Failsafe::GetTimeSinceLastActive(uint32_t now_ms) const noexcept {
   std::lock_guard<std::mutex> lock(mutex_);
   if (last_active_ms_ == 0) return 0;
+  // Защита от переполнения: если last_active_ms_ > now_ms — таймер
+  // переполнился, считаем что прошло очень много времени (как в Update()).
+  if (last_active_ms_ > now_ms) return UINT32_MAX;
   return now_ms - last_active_ms_;
 }
 

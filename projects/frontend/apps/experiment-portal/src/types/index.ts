@@ -410,6 +410,24 @@ export interface CaptureSessionEventsListResponse {
   page_size: number
 }
 
+/** Типы для метрик */
+
+export interface RunMetricPoint {
+  step: number
+  value: number
+  timestamp: string
+}
+
+export interface RunMetricSeries {
+  name: string
+  points: RunMetricPoint[]
+}
+
+export interface RunMetricsResponse {
+  run_id: string
+  series: RunMetricSeries[]
+}
+
 /** Типы для вебхуков */
 
 export interface WebhookSubscription {

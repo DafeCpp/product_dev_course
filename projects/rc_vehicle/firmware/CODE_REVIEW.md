@@ -31,8 +31,8 @@
 | # | Проблема | Файл |
 |---|----------|------|
 | 8 | ~~**StabilizationManager: race condition на config_**~~ — **ИСПРАВЛЕНО**: добавлен `mutable std::mutex config_mutex_`; `GetConfig()` возвращает по значению; `SetConfig()`/`LoadFromNvs()` блокируют запись, `UpdateWeights()`/`ApplyConfig()` берут локальную копию под локом | `common/stabilization_manager.cpp` |
-| 9 | **Failsafe `GetTimeSinceLastActive()` без проверки переполнения** — в отличие от `Update()`, не обрабатывает wraparound `uint32_t` | `common/failsafe.cpp:62-66` |
-| 10 | **`const_cast` на payload WebSocket** — UB если httpd-слой модифицирует буфер | `esp32_common/websocket_server.cpp:123` |
+| 9 | ~~**Failsafe `GetTimeSinceLastActive()` без проверки переполнения**~~ — **ИСПРАВЛЕНО**: добавлена проверка `last_active_ms_ > now_ms`, при wraparound возвращается `UINT32_MAX` (аналогично `Update()`) | `common/failsafe.cpp:62-66` |
+| 10 | ~~**`const_cast` на payload WebSocket**~~ — FALSE POSITIVE / уже смягчено: единственный caller (`SendTelem`) передаёт мутабельный `char buffer[1024]`, поэтому `const_cast` не UB; ESP-IDF `httpd_ws_send_data` payload не модифицирует; `NOLINTNEXTLINE` + комментарий добавлены в коммите deb82a6 | `esp32_common/websocket_server.cpp:127` |
 | 11 | **NVS CalibBlob без версионирования** — при изменении структуры старые данные прочитаются некорректно | `esp32_common/imu_calibration_nvs.cpp` |
 | 12 | **EKF: произвольный порог `S < 1e-9f`** — TODO_bugfixes.md рекомендует `S < params_.r_gz * 1e-3f` | `common/vehicle_ekf.cpp:102` |
 | 13 | **CMakeLists.txt ссылается на `integration_tests`** — цель не определена, coverage с `ENABLE_COVERAGE=ON` упадёт | `tests/CMakeLists.txt:99-100` |

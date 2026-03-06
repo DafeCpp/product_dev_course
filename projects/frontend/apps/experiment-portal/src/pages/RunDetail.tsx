@@ -17,6 +17,7 @@ import {
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
 import TelemetryExportModal from '../components/TelemetryExportModal'
 import AuditLog from '../components/AuditLog'
+import RunMetrics from '../components/RunMetrics'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
@@ -385,6 +386,14 @@ function RunDetail() {
             </pre>
           </div>
         )}
+      </div>
+
+      {/* Metrics Section */}
+      <div className="metrics-section card">
+        <div className="card-header">
+          <h3>Метрики</h3>
+        </div>
+        <RunMetrics runId={id!} />
       </div>
 
       {/* Telemetry Section */}
