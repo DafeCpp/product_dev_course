@@ -1,6 +1,7 @@
 """Unit tests for telemetry_ingest_service.services.telemetry module."""
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -265,7 +266,7 @@ class TestTelemetryIngestServiceAuth:
         project_id = uuid4()
         token_hash = b"fake_hash"
 
-        mock_conn.fetchrow = AsyncMock(return_value={"project_id": project_id})
+        mock_conn.fetchrow = AsyncMock(return_value={"project_id": project_id, "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running"})
 
         result = await service._authenticate_sensor(mock_conn, sensor_id, token_hash)
 
@@ -714,18 +715,26 @@ class TestTelemetryIngestServiceIngest:
         )
 
         with patch("telemetry_ingest_service.services.telemetry.get_pool") as mock_get_pool:
-            mock_pool = AsyncMock()
+            mock_pool = MagicMock()
             mock_get_pool.return_value = mock_pool
 
             mock_conn = AsyncMock()
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_cm.__aexit__ = AsyncMock(return_value=None)
+            mock_pool.acquire.return_value = mock_cm
 
             # Phase 1: auth
-            mock_conn.fetchrow = AsyncMock(return_value={"project_id": uuid4()})
+            mock_conn.fetchrow = AsyncMock(return_value={
+                "project_id": uuid4(),
+                "run_id": uuid4(),
+                "capture_session_id": uuid4(),
+                "status": "running"
+            })
 
             # Phase 2: insert
             mock_conn.transaction = MagicMock()
-            mock_transaction = AsyncMock()
+            mock_transaction = MagicMock()
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction
@@ -760,11 +769,14 @@ class TestTelemetryIngestServiceIngest:
         )
 
         with patch("telemetry_ingest_service.services.telemetry.get_pool") as mock_get_pool:
-            mock_pool = AsyncMock()
+            mock_pool = MagicMock()
             mock_get_pool.return_value = mock_pool
 
             mock_conn = AsyncMock()
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_cm.__aexit__ = AsyncMock(return_value=None)
+            mock_pool.acquire.return_value = mock_cm
             mock_conn.fetchrow = AsyncMock(return_value=None)  # Sensor not found
 
             with pytest.raises(UnauthorizedError):
@@ -800,18 +812,21 @@ class TestTelemetryIngestServiceIngest:
              patch("telemetry_ingest_service.services.telemetry.write_spool") as mock_write_spool:
 
             mock_settings.spool_enabled = True
-            mock_pool = AsyncMock()
+            mock_pool = MagicMock()
             mock_get_pool.return_value = mock_pool
 
             mock_conn = AsyncMock()
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_cm.__aexit__ = AsyncMock(return_value=None)
+            mock_pool.acquire.return_value = mock_cm
 
             # Phase 1: auth succeeds
-            mock_conn.fetchrow = AsyncMock(return_value={"project_id": uuid4()})
+            mock_conn.fetchrow = AsyncMock(return_value={"project_id": uuid4(), "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running"})
 
             # Phase 2: insert fails
             mock_conn.transaction = MagicMock()
-            mock_transaction = AsyncMock()
+            mock_transaction = MagicMock()
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction
@@ -852,18 +867,21 @@ class TestTelemetryIngestServiceIngest:
              patch("telemetry_ingest_service.services.telemetry.settings") as mock_settings:
 
             mock_settings.spool_enabled = False
-            mock_pool = AsyncMock()
+            mock_pool = MagicMock()
             mock_get_pool.return_value = mock_pool
 
             mock_conn = AsyncMock()
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_cm.__aexit__ = AsyncMock(return_value=None)
+            mock_pool.acquire.return_value = mock_cm
 
             # Phase 1: auth succeeds
-            mock_conn.fetchrow = AsyncMock(return_value={"project_id": uuid4()})
+            mock_conn.fetchrow = AsyncMock(return_value={"project_id": uuid4(), "run_id": uuid4(), "capture_session_id": uuid4(), "status": "running"})
 
             # Phase 2: insert fails
             mock_conn.transaction = MagicMock()
-            mock_transaction = AsyncMock()
+            mock_transaction = MagicMock()
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction

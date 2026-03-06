@@ -1,6 +1,7 @@
 """Unit tests for telemetry_ingest_service.services.profile_cache module."""
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
