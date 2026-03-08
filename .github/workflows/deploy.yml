@@ -300,8 +300,18 @@ jobs:
             # Пуллим новые образы
             docker compose -f docker-compose.prod.yml pull
 
-            # Сбрасываем состояние БД (volumes с данными postgres)
-            docker compose -f docker-compose.prod.yml down -v --remove-orphans || true
+            # Останавливаем контейнеры
+            docker compose -f docker-compose.prod.yml down --remove-orphans || true
+
+            # Сбрасываем схемы БД (DROP SCHEMA public CASCADE + CREATE SCHEMA public)
+            # чтобы миграции применились с нуля без конфликтов чексумм
+            which psql || sudo apt-get install -y --no-install-recommends postgresql-client
+            source .env 2>/dev/null || true
+            for DB_URL in "${AUTH_DATABASE_URL:-}" "${EXPERIMENT_DATABASE_URL:-}"; do
+              if [ -n "$DB_URL" ]; then
+                psql "$DB_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" || true
+              fi
+            done
 
             # Запускаем все сервисы заново
             docker compose -f docker-compose.prod.yml up -d
