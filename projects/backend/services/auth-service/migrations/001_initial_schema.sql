@@ -31,6 +31,18 @@ CREATE TRIGGER users_set_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
 
+-- Создаём пользователя по умолчанию (пароль: admin123)
+-- ВАЖНО: В production обязательно смените пароль при первом входе!
+-- Хеш пароля "admin123" с bcrypt (12 rounds)
+INSERT INTO users (username, email, hashed_password, password_change_required)
+VALUES (
+    'admin',
+    'admin@example.com',
+    '$2b$12$0QfCvOcgNkygw/I79ieV5eOIwAjWXUjdFUr/QvRgDMewN1OfENrmG',  -- admin123
+    true  -- Требуется смена пароля при первом входе
+)
+ON CONFLICT (username) DO NOTHING;
+
 -- Schema migrations tracking
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version text PRIMARY KEY,
