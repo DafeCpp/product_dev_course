@@ -297,11 +297,12 @@ jobs:
             echo "$YC_SA_JSON_KEY" | docker --config "$_DCF" login cr.yandex -u json_key --password-stdin
             export DOCKER_CONFIG="$_DCF"
 
+            # Останавливаем контейнеры и чистим место перед пуллом
+            docker compose -f docker-compose.prod.yml down --remove-orphans || true
+            docker system prune -af --volumes || true
+
             # Пуллим новые образы
             docker compose -f docker-compose.prod.yml pull
-
-            # Останавливаем контейнеры
-            docker compose -f docker-compose.prod.yml down --remove-orphans || true
 
             # Сбрасываем схемы БД (DROP SCHEMA public CASCADE + CREATE SCHEMA public)
             # чтобы миграции применились с нуля без конфликтов чексумм
