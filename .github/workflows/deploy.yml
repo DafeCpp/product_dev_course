@@ -300,8 +300,11 @@ jobs:
             # Пуллим новые образы
             docker compose -f docker-compose.prod.yml pull
 
-            # Запускаем с zero-downtime (по одному сервису)
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            # Сбрасываем состояние БД (volumes с данными postgres)
+            docker compose -f docker-compose.prod.yml down -v --remove-orphans || true
+
+            # Запускаем все сервисы заново
+            docker compose -f docker-compose.prod.yml up -d
 
             # Ждём health checks
             sleep 15

@@ -1,7 +1,7 @@
 -- 001_initial_schema.sql
--- Initial Experiment Service schema (single init; includes TimescaleDB telemetry + later additive migrations).
-
+-- Full Experiment Service schema (merged from 001-003).
 -- pgcrypto и timescaledb создаются при создании БД (Terraform / init script), не миграцией.
+
 BEGIN;
 
 CREATE OR REPLACE FUNCTION set_updated_at()
@@ -18,6 +18,7 @@ CREATE TYPE capture_session_status AS ENUM ('draft', 'running', 'failed', 'succe
 CREATE TYPE sensor_status AS ENUM ('registering', 'active', 'inactive', 'decommissioned');
 CREATE TYPE conversion_profile_status AS ENUM ('draft', 'active', 'scheduled', 'deprecated');
 CREATE TYPE telemetry_conversion_status AS ENUM ('raw_only', 'converted', 'client_provided', 'conversion_failed');
+CREATE TYPE backfill_task_status AS ENUM ('pending', 'running', 'completed', 'failed');
 
 CREATE TABLE experiments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -103,8 +104,6 @@ CREATE TRIGGER sensors_set_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
 
--- Many-to-many relationship between sensors and projects.
--- Sensors keep sensors.project_id as the "primary" project for legacy joins and UX defaults.
 CREATE TABLE sensor_projects (
     sensor_id uuid NOT NULL,
     project_id uuid NOT NULL,
@@ -117,7 +116,7 @@ CREATE TABLE sensor_projects (
 CREATE INDEX sensor_projects_project_idx ON sensor_projects (project_id);
 CREATE INDEX sensor_projects_sensor_idx ON sensor_projects (sensor_id);
 
-COMMENT ON TABLE sensor_projects IS 'Many-to-many relationship between sensors and projects. Each sensor can belong to multiple projects.';
+COMMENT ON TABLE sensor_projects IS 'Many-to-many relationship between sensors and projects.';
 COMMENT ON COLUMN sensors.project_id IS 'Primary project for backward compatibility. All projects are tracked in sensor_projects table.';
 
 CREATE TABLE conversion_profiles (
@@ -239,10 +238,6 @@ CREATE TABLE request_idempotency (
 CREATE INDEX request_idempotency_user_idx ON request_idempotency (user_id, created_at DESC);
 
 CREATE TABLE telemetry_records (
-    -- NOTE: TimescaleDB requires that all UNIQUE indexes include:
-    --  - the time column, and
-    --  - the partitioning column (when using space partitioning).
-    -- We keep an increasing id for debug/cursor tie-breaks; PK includes sensor_id + timestamp.
     id bigserial NOT NULL,
     project_id uuid NOT NULL,
     sensor_id uuid NOT NULL,
@@ -263,8 +258,6 @@ CREATE TABLE telemetry_records (
     FOREIGN KEY (conversion_profile_id) REFERENCES conversion_profiles (id)
 );
 
--- Convert telemetry_records into a hypertable.
--- Chunking/partitioning defaults are a starting point; tune based on real ingestion volume.
 SELECT create_hypertable(
     'telemetry_records',
     'timestamp',
@@ -274,23 +267,17 @@ SELECT create_hypertable(
     if_not_exists => TRUE
 );
 
--- Indexes for the main query patterns.
 CREATE INDEX telemetry_records_project_sensor_ts_id_idx
     ON telemetry_records (project_id, sensor_id, timestamp ASC, id ASC);
-
 CREATE INDEX telemetry_records_sensor_ts_idx
     ON telemetry_records (sensor_id, timestamp DESC, id DESC);
-
 CREATE INDEX telemetry_records_run_ts_idx
     ON telemetry_records (run_id, timestamp DESC, id DESC);
-
 CREATE INDEX telemetry_records_capture_ts_idx
     ON telemetry_records (capture_session_id, timestamp DESC, id DESC);
-
 CREATE INDEX telemetry_records_sensor_signal_ts_idx
     ON telemetry_records (sensor_id, signal, timestamp DESC, id DESC);
 
--- TimescaleDB compression + retention (only in Community/TSL; skipped on Apache 2.0, e.g. Yandex MDB).
 DO $$
 BEGIN
     ALTER TABLE telemetry_records
@@ -303,10 +290,41 @@ BEGIN
     PERFORM add_retention_policy('telemetry_records', INTERVAL '90 days');
 EXCEPTION
     WHEN OTHERS THEN
-        RAISE NOTICE 'TimescaleDB compression/retention skipped (e.g. Apache 2.0 edition): %', SQLERRM;
+        RAISE NOTICE 'TimescaleDB compression/retention skipped: %', SQLERRM;
 END $$;
 
--- Webhooks schema (final, hardened).
+DO $$
+BEGIN
+    CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m
+    WITH (timescaledb.continuous) AS
+    SELECT
+        time_bucket(INTERVAL '1 minute', "timestamp") AS bucket,
+        sensor_id,
+        signal,
+        capture_session_id,
+        count(*)                    AS sample_count,
+        avg(raw_value)              AS avg_raw,
+        min(raw_value)              AS min_raw,
+        max(raw_value)              AS max_raw,
+        avg(physical_value)         AS avg_physical,
+        min(physical_value)         AS min_physical,
+        max(physical_value)         AS max_physical
+    FROM telemetry_records
+    GROUP BY bucket, sensor_id, signal, capture_session_id
+    WITH NO DATA;
+
+    PERFORM add_continuous_aggregate_policy(
+        'telemetry_1m',
+        start_offset    => INTERVAL '7 days',
+        end_offset      => INTERVAL '1 minute',
+        schedule_interval => INTERVAL '1 minute',
+        if_not_exists   => TRUE
+    );
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'TimescaleDB continuous aggregate skipped: %', SQLERRM;
+END $$;
+
 CREATE TABLE webhook_subscriptions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id uuid NOT NULL,
@@ -320,7 +338,6 @@ CREATE TABLE webhook_subscriptions (
 
 CREATE INDEX webhook_subscriptions_project_active_idx
     ON webhook_subscriptions (project_id, is_active);
-
 CREATE INDEX webhook_subscriptions_event_types_gin_idx
     ON webhook_subscriptions USING gin (event_types);
 
@@ -338,7 +355,7 @@ CREATE TABLE webhook_deliveries (
     secret text,
     request_body jsonb NOT NULL DEFAULT '{}'::jsonb,
     dedup_key text UNIQUE,
-    status text NOT NULL DEFAULT 'pending', -- pending|in_progress|succeeded|dead_lettered
+    status text NOT NULL DEFAULT 'pending',
     attempt_count integer NOT NULL DEFAULT 0,
     last_error text,
     locked_at timestamptz,
@@ -350,7 +367,6 @@ CREATE TABLE webhook_deliveries (
 
 CREATE INDEX webhook_deliveries_project_status_idx
     ON webhook_deliveries (project_id, status, created_at DESC);
-
 CREATE INDEX webhook_deliveries_status_next_attempt_idx
     ON webhook_deliveries (status, next_attempt_at, created_at);
 
@@ -359,7 +375,6 @@ CREATE TRIGGER webhook_deliveries_set_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
 
--- Audit log for run actions (status changes, bulk tag updates, etc.)
 CREATE TABLE run_events (
     id bigserial PRIMARY KEY,
     run_id uuid NOT NULL,
@@ -385,11 +400,31 @@ CREATE TABLE run_metrics (
     FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE
 );
 
-CREATE INDEX run_metrics_run_name_step_idx
-    ON run_metrics (run_id, name, step);
+CREATE INDEX run_metrics_run_name_step_idx ON run_metrics (run_id, name, step);
+CREATE INDEX run_metrics_project_name_idx ON run_metrics (project_id, name);
 
-CREATE INDEX run_metrics_project_name_idx
-    ON run_metrics (project_id, name);
+CREATE TABLE conversion_backfill_tasks (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    sensor_id uuid NOT NULL REFERENCES sensors(id) ON DELETE CASCADE,
+    project_id uuid NOT NULL,
+    conversion_profile_id uuid NOT NULL REFERENCES conversion_profiles(id),
+    status backfill_task_status NOT NULL DEFAULT 'pending',
+    total_records int,
+    processed_records int NOT NULL DEFAULT 0,
+    error_message text,
+    created_by uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    started_at timestamptz,
+    completed_at timestamptz,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX backfill_tasks_status_idx ON conversion_backfill_tasks (status);
+CREATE INDEX backfill_tasks_sensor_idx ON conversion_backfill_tasks (sensor_id);
+
+CREATE TRIGGER backfill_tasks_set_updated_at
+    BEFORE UPDATE ON conversion_backfill_tasks
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at();
 
 COMMIT;
-
