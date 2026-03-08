@@ -87,9 +87,16 @@ jobs:
           PG_MAJOR=16
           sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}"
 
+          # Copy TimescaleDB extension files to system PostgreSQL directory
+          # Testsuite uses its own PostgreSQL instance, but needs extension files
+          echo "Copying TimescaleDB extension files..."
+          sudo cp -r /usr/share/timescaledb/* /usr/share/postgresql/16/extension/ 2>/dev/null || true
+          sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so /usr/lib/postgresql/16/lib/ 2>/dev/null || true
+
           # Verify TimescaleDB is installed
           echo "Verifying TimescaleDB installation..."
           ls -la /usr/lib/postgresql/16/lib/timescaledb*.so
+          ls -la /usr/share/postgresql/16/extension/timescaledb*.control 2>/dev/null || echo "Extension control files not found in /usr/share/postgresql/16/extension/"
 
           # Ensure PostgreSQL 16 binaries are in PATH
           echo "Adding PostgreSQL 16 to PATH..."
