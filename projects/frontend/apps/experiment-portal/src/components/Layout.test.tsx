@@ -59,8 +59,13 @@ describe('Layout', () => {
         })
 
         expect(screen.getByText('Test content')).toBeInTheDocument()
-        const experimentsLinks = screen.getAllByRole('link', { name: /эксперименты/i })
-        const navLink = experimentsLinks.find((el) => el.getAttribute('href') === '/experiments')
+        // Ищем ссылку на страницу экспериментов по href (в свернутом меню у ссылок нет текстовых labels)
+        const allLinks = screen.getAllByRole('link')
+        // Навигационная ссылка имеет класс nav__item (в отличие от логотипа)
+        const navLink = allLinks.find((el) => 
+            el.getAttribute('href') === '/experiments' && 
+            el.classList.contains('nav__item')
+        )
         expect(navLink).toBeInTheDocument()
         expect(navLink).toHaveClass('active')
     })
