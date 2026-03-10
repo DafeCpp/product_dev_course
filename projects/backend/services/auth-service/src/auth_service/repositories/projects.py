@@ -122,8 +122,8 @@ class ProjectRepository(BaseRepository):
         description: str | None = None,
     ) -> Project:
         """Update project."""
-        updates = []
-        params = []
+        updates: list[str] = []
+        params: list[str | UUID | None] = []
         param_idx = 1
 
         if name is not None:

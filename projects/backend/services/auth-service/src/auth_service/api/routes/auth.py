@@ -6,6 +6,7 @@ from uuid import UUID
 import structlog
 from aiohttp import web
 
+from auth_service.api.utils import extract_bearer_token
 from auth_service.core.exceptions import AuthError, handle_auth_error
 from backend_common.db.pool import get_pool_service as get_pool
 from auth_service.domain.dto import (
@@ -60,17 +61,9 @@ async def get_auth_service(request: web.Request) -> AuthService:
     )
 
 
-def _extract_bearer_token(request: web.Request) -> str | None:
-    """Extract Bearer token from Authorization header. Returns None if missing."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return None
-    return auth_header[7:].strip() or None
-
-
 async def _get_requester_id(request: web.Request, auth_service: AuthService) -> UUID:
     """Extract and validate requester user ID from Bearer token."""
-    token = _extract_bearer_token(request)
+    token = extract_bearer_token(request)
     if not token:
         from auth_service.core.exceptions import InvalidCredentialsError
         raise InvalidCredentialsError("Unauthorized")
@@ -197,7 +190,7 @@ async def refresh(request: web.Request) -> web.Response:
 
 async def me(request: web.Request) -> web.Response:
     """Get current user information."""
-    token = _extract_bearer_token(request)
+    token = extract_bearer_token(request)
     if not token:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
@@ -234,7 +227,7 @@ async def logout(request: web.Request) -> web.Response:
 
 async def change_password(request: web.Request) -> web.Response:
     """Change user password."""
-    token = _extract_bearer_token(request)
+    token = extract_bearer_token(request)
     if not token:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
