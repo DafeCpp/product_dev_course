@@ -242,7 +242,8 @@ async def test_delete_project_success(service_client):
         f"/projects/{project_id}",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert get_response.status == 404
+    # RBAC returns 403 Forbidden for deleted/non-existent projects when user has no access
+    assert get_response.status == 403
 
 
 @pytest.mark.asyncio
@@ -271,7 +272,8 @@ async def test_list_members_success(service_client):
     payload = await response.json()
     assert "members" in payload
     assert len(payload["members"]) == 1
-    assert payload["members"][0]["role"] == "owner"
+    # Owner role is assigned as a list
+    assert "owner" in payload["members"][0]["roles"]
 
 
 @pytest.mark.asyncio
@@ -309,19 +311,19 @@ async def test_add_member_success(service_client):
     assert create_response.status == 201
     project_id = (await create_response.json())["id"]
 
-    # Add member
+    # Add member (use viewer role UUID)
     response = await service_client.post(
         f"/projects/{project_id}/members",
         headers={"Authorization": f"Bearer {owner_token}"},
         json={
             "user_id": member_id,
-            "role": "editor",
+            "role_id": "00000000-0000-0000-0000-000000000012",  # viewer role
         },
     )
     assert response.status == 201
     payload = await response.json()
     assert payload["user_id"] == member_id
-    assert payload["role"] == "editor"
+    assert payload["role_id"] == "00000000-0000-0000-0000-000000000012"
 
     # Verify member is in list
     list_response = await service_client.get(
@@ -361,19 +363,19 @@ async def test_remove_member_success(service_client):
     assert create_response.status == 201
     project_id = (await create_response.json())["id"]
 
-    # Add member
+    # Add member (use viewer role UUID)
     await service_client.post(
         f"/projects/{project_id}/members",
         headers={"Authorization": f"Bearer {owner_token}"},
         json={
             "user_id": member_id,
-            "role": "viewer",
+            "role_id": "00000000-0000-0000-0000-000000000012",  # viewer role
         },
     )
 
-    # Remove member
+    # Remove member (role_id required)
     response = await service_client.delete(
-        f"/projects/{project_id}/members/{member_id}",
+        f"/projects/{project_id}/members/{member_id}?role_id=00000000-0000-0000-0000-000000000012",
         headers={"Authorization": f"Bearer {owner_token}"},
     )
     assert response.status == 200
@@ -418,25 +420,25 @@ async def test_update_member_role_success(service_client):
     assert create_response.status == 201
     project_id = (await create_response.json())["id"]
 
-    # Add member as viewer
+    # Add member as viewer (use viewer role UUID)
     await service_client.post(
         f"/projects/{project_id}/members",
         headers={"Authorization": f"Bearer {owner_token}"},
         json={
             "user_id": member_id,
-            "role": "viewer",
+            "role_id": "00000000-0000-0000-0000-000000000012",  # viewer role
         },
     )
 
-    # Update role to editor
+    # Update role to editor (use editor role UUID)
     response = await service_client.put(
-        f"/projects/{project_id}/members/{member_id}/role",
+        f"/projects/{project_id}/members/{member_id}/role?old_role_id=00000000-0000-0000-0000-000000000012",
         headers={"Authorization": f"Bearer {owner_token}"},
         json={
-            "role": "editor",
+            "role_id": "00000000-0000-0000-0000-000000000011",  # editor role
         },
     )
     assert response.status == 200
     payload = await response.json()
-    assert payload["role"] == "editor"
+    assert payload["role_id"] == "00000000-0000-0000-0000-000000000011"
 

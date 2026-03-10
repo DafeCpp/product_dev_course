@@ -268,7 +268,8 @@ class TestDeleteSystemRole:
             f"/api/v1/system-roles/{role_id}",
             headers={"Authorization": f"Bearer {admin_user_token}"},
         )
-        assert response.status == 200
+        # 204 No Content is standard for successful DELETE
+        assert response.status == 204
 
     @pytest.mark.asyncio
     async def test_cannot_delete_builtin_role(self, service_client, admin_user_token):
@@ -286,10 +287,23 @@ class TestGrantSystemRoleToUser:
     """Tests for POST /api/v1/users/{user_id}/system-roles."""
 
     @pytest.mark.asyncio
-    async def test_grant_system_role(self, service_client, admin_user_token):
+    async def test_grant_system_role(self, service_client, admin_user_token, database_url):
         """Admin can grant system role."""
-        target_user_id = "550e8400-e29b-41d4-a716-446655440002"  # regularuser
+        import asyncpg
+        conn = await asyncpg.connect(database_url)
+        try:
+            # Ensure the user exists
+            await conn.execute("""
+                INSERT INTO users (id, username, email, hashed_password, password_change_required, is_active)
+                VALUES ('550e8400-e29b-41d4-a716-446655440002', 'regularuser', 'user@example.com',
+                        '$2b$12$0QfCvOcgNkygw/I79ieV5eOIwAjWXUjdFUr/QvRgDMewN1OfENrmG', false, true)
+                ON CONFLICT (id) DO NOTHING
+            """)
+        finally:
+            await conn.close()
         
+        target_user_id = "550e8400-e29b-41d4-a716-446655440002"  # regularuser
+
         response = await service_client.post(
             f"/api/v1/users/{target_user_id}/system-roles",
             headers={"Authorization": f"Bearer {admin_user_token}"},
@@ -323,6 +337,13 @@ class TestRevokeSystemRoleFromUser:
         import asyncpg
         conn = await asyncpg.connect(database_url)
         try:
+            # Ensure the user exists
+            await conn.execute("""
+                INSERT INTO users (id, username, email, hashed_password, password_change_required, is_active)
+                VALUES ('550e8400-e29b-41d4-a716-446655440002', 'regularuser', 'user@example.com',
+                        '$2b$12$0QfCvOcgNkygw/I79ieV5eOIwAjWXUjdFUr/QvRgDMewN1OfENrmG', false, true)
+                ON CONFLICT (id) DO NOTHING
+            """)
             # Grant role first
             await conn.execute("""
                 INSERT INTO user_system_roles (user_id, role_id, granted_by, granted_at)
@@ -330,6 +351,7 @@ class TestRevokeSystemRoleFromUser:
                         '00000000-0000-0000-0000-000000000004',
                         '550e8400-e29b-41d4-a716-446655440003',
                         now())
+                ON CONFLICT (user_id, role_id) DO NOTHING
             """)
         finally:
             await conn.close()

@@ -358,6 +358,14 @@ async def admin_user_token(service_client, database_url):
     import asyncpg
     conn = await asyncpg.connect(str(database_url))
     try:
+        # Ensure superadmin exists first (for granted_by reference)
+        await conn.execute("""
+            INSERT INTO users (id, username, email, hashed_password, password_change_required, is_active)
+            VALUES ('550e8400-e29b-41d4-a716-446655440001', 'superadmin', 'admin@example.com',
+                    '$2b$12$0QfCvOcgNkygw/I79ieV5eOIwAjWXUjdFUr/QvRgDMewN1OfENrmG', false, true)
+            ON CONFLICT (id) DO NOTHING
+        """, timeout=5)
+
         # Create admin user
         await conn.execute("""
             INSERT INTO users (id, username, email, hashed_password, password_change_required, is_active)
