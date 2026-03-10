@@ -16,9 +16,13 @@ from auth_service.domain.dto import (
     ProjectResponse,
     ProjectUpdateRequest,
 )
+from auth_service.repositories.permissions import PermissionRepository
 from auth_service.repositories.projects import ProjectRepository
+from auth_service.repositories.roles import RoleRepository
+from auth_service.repositories.user_roles import UserRoleRepository
 from auth_service.repositories.users import UserRepository
 from auth_service.services.jwt import get_user_id_from_token as jwt_get_user_id
+from auth_service.services.permission import PermissionService
 from auth_service.services.projects import ProjectService
 
 logger = structlog.get_logger(__name__)
@@ -29,7 +33,13 @@ async def get_project_service(request: web.Request) -> ProjectService:
     pool = await get_pool()
     project_repo = ProjectRepository(pool)
     user_repo = UserRepository(pool)
-    return ProjectService(project_repo, user_repo)
+    user_role_repo = UserRoleRepository(pool)
+    perm_svc = PermissionService(
+        PermissionRepository(pool),
+        RoleRepository(pool),
+        user_role_repo,
+    )
+    return ProjectService(project_repo, user_repo, user_role_repo, perm_svc)
 
 
 async def get_user_id_from_token(request: web.Request) -> UUID:
@@ -67,7 +77,7 @@ def _parse_project_id(request: web.Request) -> UUID:
 
 
 async def create_project(request: web.Request) -> web.Response:
-    """Create a new project."""
+    """Create a new project. Requires 'projects.create' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -98,7 +108,7 @@ async def create_project(request: web.Request) -> web.Response:
 
 
 async def get_project(request: web.Request) -> web.Response:
-    """Get project by ID."""
+    """Get project by ID. Requires 'project.members.view' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -154,7 +164,7 @@ async def list_projects(request: web.Request) -> web.Response:
 
 
 async def update_project(request: web.Request) -> web.Response:
-    """Update project."""
+    """Update project. Requires 'project.settings.update' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -195,7 +205,7 @@ async def update_project(request: web.Request) -> web.Response:
 
 
 async def delete_project(request: web.Request) -> web.Response:
-    """Delete project."""
+    """Delete project. Requires 'project.settings.delete' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -222,7 +232,7 @@ async def delete_project(request: web.Request) -> web.Response:
 
 
 async def list_members(request: web.Request) -> web.Response:
-    """List project members."""
+    """List project members. Requires 'project.members.view' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -242,8 +252,8 @@ async def list_members(request: web.Request) -> web.Response:
                     ProjectMemberResponse(
                         project_id=str(m["project_id"]),
                         user_id=str(m["user_id"]),
-                        role=m["role"],
-                        created_at=m["created_at"].isoformat(),
+                        roles=m["roles"],
+                        granted_at=m["granted_at"],
                         username=m.get("username"),
                     ).model_dump()
                     for m in members
@@ -263,7 +273,7 @@ async def list_members(request: web.Request) -> web.Response:
 
 
 async def add_member(request: web.Request) -> web.Response:
-    """Add member to project."""
+    """Add member to project. Requires 'project.members.invite' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -282,19 +292,27 @@ async def add_member(request: web.Request) -> web.Response:
 
     try:
         new_user_id = UUID(req.user_id)
+        role_id = UUID(req.role_id)
     except ValueError:
-        return web.json_response({"error": "Invalid user ID"}, status=400)
+        return web.json_response({"error": "Invalid ID"}, status=400)
 
     try:
         service = await get_project_service(request)
-        member = await service.add_member(project_id, user_id, new_user_id, req.role)
+        assignment = await service.add_member(
+            project_id=project_id,
+            requester_id=user_id,
+            new_user_id=new_user_id,
+            role_id=role_id,
+        )
         return web.json_response(
-            ProjectMemberResponse(
-                project_id=str(member.project_id),
-                user_id=str(member.user_id),
-                role=member.role,
-                created_at=member.created_at.isoformat(),
-            ).model_dump(),
+            {
+                "user_id": str(assignment.user_id),
+                "project_id": str(assignment.project_id),
+                "role_id": str(assignment.role_id),
+                "granted_by": str(assignment.granted_by),
+                "granted_at": assignment.granted_at.isoformat(),
+                "expires_at": assignment.expires_at.isoformat() if assignment.expires_at else None,
+            },
             status=201,
         )
     except NotFoundError as e:
@@ -309,7 +327,7 @@ async def add_member(request: web.Request) -> web.Response:
 
 
 async def remove_member(request: web.Request) -> web.Response:
-    """Remove member from project."""
+    """Remove member from project. Requires 'project.members.remove' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -321,9 +339,24 @@ async def remove_member(request: web.Request) -> web.Response:
     except ValueError:
         return web.json_response({"error": "Invalid ID"}, status=400)
 
+    # Get role_id from query param or body
+    try:
+        data = await request.json() if request.can_read_body else {}
+        role_id_str = data.get("role_id") or request.query.get("role_id")
+        if not role_id_str:
+            return web.json_response({"error": "role_id required"}, status=400)
+        role_id = UUID(role_id_str)
+    except ValueError:
+        return web.json_response({"error": "Invalid role ID"}, status=400)
+
     try:
         service = await get_project_service(request)
-        await service.remove_member(project_id, user_id, member_user_id)
+        await service.remove_member(
+            project_id=project_id,
+            requester_id=user_id,
+            member_user_id=member_user_id,
+            role_id=role_id,
+        )
         return web.json_response({"ok": True}, status=200)
     except NotFoundError as e:
         return web.json_response({"error": str(e)}, status=404)
@@ -337,7 +370,7 @@ async def remove_member(request: web.Request) -> web.Response:
 
 
 async def update_member_role(request: web.Request) -> web.Response:
-    """Update member role."""
+    """Update member role. Requires 'project.members.change_role' permission."""
     try:
         user_id = await get_user_id_from_token(request)
     except AuthError as e:
@@ -356,15 +389,33 @@ async def update_member_role(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
+        new_role_id = UUID(req.role_id)
+        # Get old role_id from query param
+        old_role_id_str = request.query.get("old_role_id")
+        if not old_role_id_str:
+            return web.json_response({"error": "old_role_id query param required"}, status=400)
+        old_role_id = UUID(old_role_id_str)
+    except ValueError:
+        return web.json_response({"error": "Invalid role ID"}, status=400)
+
+    try:
         service = await get_project_service(request)
-        member = await service.update_member_role(project_id, user_id, member_user_id, req.role)
+        assignment = await service.update_member_role(
+            project_id=project_id,
+            requester_id=user_id,
+            member_user_id=member_user_id,
+            old_role_id=old_role_id,
+            new_role_id=new_role_id,
+        )
         return web.json_response(
-            ProjectMemberResponse(
-                project_id=str(member.project_id),
-                user_id=str(member.user_id),
-                role=member.role,
-                created_at=member.created_at.isoformat(),
-            ).model_dump(),
+            {
+                "user_id": str(assignment.user_id),
+                "project_id": str(assignment.project_id),
+                "role_id": str(assignment.role_id),
+                "granted_by": str(assignment.granted_by),
+                "granted_at": assignment.granted_at.isoformat(),
+                "expires_at": assignment.expires_at.isoformat() if assignment.expires_at else None,
+            },
             status=200,
         )
     except NotFoundError as e:
@@ -389,4 +440,3 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_post("/projects/{project_id}/members", add_member)
     app.router.add_delete("/projects/{project_id}/members/{user_id}", remove_member)
     app.router.add_put("/projects/{project_id}/members/{user_id}/role", update_member_role)
-

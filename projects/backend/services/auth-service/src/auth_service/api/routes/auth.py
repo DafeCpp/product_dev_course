@@ -26,9 +26,13 @@ from auth_service.domain.dto import (
 )
 from auth_service.repositories.invites import InviteRepository
 from auth_service.repositories.password_reset import PasswordResetRepository
+from auth_service.repositories.permissions import PermissionRepository
 from auth_service.repositories.revoked_tokens import RevokedTokenRepository
+from auth_service.repositories.roles import RoleRepository
+from auth_service.repositories.user_roles import UserRoleRepository
 from auth_service.repositories.users import UserRepository
 from auth_service.services.auth import AuthService
+from auth_service.services.permission import PermissionService
 from auth_service.settings import settings
 
 logger = structlog.get_logger(__name__)
@@ -41,10 +45,16 @@ async def get_auth_service(request: web.Request) -> AuthService:
     revoked_repo = RevokedTokenRepository(pool)
     reset_repo = PasswordResetRepository(pool)
     invite_repo = InviteRepository(pool)
+    perm_service = PermissionService(
+        PermissionRepository(pool),
+        RoleRepository(pool),
+        UserRoleRepository(pool),
+    )
     return AuthService(
         user_repo,
         revoked_repo,
         reset_repo,
+        perm_service,
         invite_repo=invite_repo,
         registration_mode=settings.registration_mode,
     )
@@ -58,8 +68,18 @@ def _extract_bearer_token(request: web.Request) -> str | None:
     return auth_header[7:].strip() or None
 
 
+async def _get_requester_id(request: web.Request, auth_service: AuthService) -> UUID:
+    """Extract and validate requester user ID from Bearer token."""
+    token = _extract_bearer_token(request)
+    if not token:
+        from auth_service.core.exceptions import InvalidCredentialsError
+        raise InvalidCredentialsError("Unauthorized")
+    user = await auth_service.get_user_by_token(token)
+    return user.id
+
+
 async def bootstrap_admin(request: web.Request) -> web.Response:
-    """Создаёт первого admin-пользователя. Требует ADMIN_BOOTSTRAP_SECRET. Только пока нет ни одного admin."""
+    """Create the first superadmin user. Requires ADMIN_BOOTSTRAP_SECRET."""
     if not settings.admin_bootstrap_secret:
         return web.json_response({"error": "Bootstrap is disabled"}, status=404)
 
@@ -78,9 +98,10 @@ async def bootstrap_admin(request: web.Request) -> web.Response:
             email=req.email,
             password=req.password,
         )
+        user_resp = await auth_service.get_user_response(user)
         return web.json_response(
             {
-                "user": UserResponse.from_user(user).model_dump(),
+                "user": user_resp.model_dump(),
                 "access_token": tokens.access_token,
                 "refresh_token": tokens.refresh_token,
             },
@@ -109,9 +130,10 @@ async def register(request: web.Request) -> web.Response:
             password=req.password,
             invite_token=req.invite_token,
         )
+        user_resp = await auth_service.get_user_response(user)
         return web.json_response(
             {
-                "user": UserResponse.from_user(user).model_dump(),
+                "user": user_resp.model_dump(),
                 "access_token": tokens.access_token,
                 "refresh_token": tokens.refresh_token,
             },
@@ -138,9 +160,10 @@ async def login(request: web.Request) -> web.Response:
             username=req.username,
             password=req.password,
         )
+        user_resp = await auth_service.get_user_response(user)
         return web.json_response(
             {
-                "user": UserResponse.from_user(user).model_dump(),
+                "user": user_resp.model_dump(),
                 "access_token": tokens.access_token,
                 "refresh_token": tokens.refresh_token,
             },
@@ -181,10 +204,8 @@ async def me(request: web.Request) -> web.Response:
     try:
         auth_service = await get_auth_service(request)
         user = await auth_service.get_user_by_token(token)
-        return web.json_response(
-            UserResponse.from_user(user).model_dump(),
-            status=200,
-        )
+        user_resp = await auth_service.get_user_response(user)
+        return web.json_response(user_resp.model_dump(), status=200)
     except AuthError as e:
         return handle_auth_error(request, e)
     except Exception:
@@ -225,18 +246,12 @@ async def change_password(request: web.Request) -> web.Response:
 
     try:
         auth_service = await get_auth_service(request)
-        # Get user from token
         user = await auth_service.get_user_by_token(token)
-        # Change password
         updated_user = await auth_service.change_password(
-            user.id,
-            req.old_password,
-            req.new_password,
+            user.id, req.old_password, req.new_password,
         )
-        return web.json_response(
-            UserResponse.from_user(updated_user).model_dump(),
-            status=200,
-        )
+        user_resp = await auth_service.get_user_response(updated_user)
+        return web.json_response(user_resp.model_dump(), status=200)
     except AuthError as e:
         return handle_auth_error(request, e)
     except Exception:
@@ -287,10 +302,6 @@ async def password_reset_confirm(request: web.Request) -> web.Response:
 
 async def admin_reset_user(request: web.Request) -> web.Response:
     """Admin resets another user's password."""
-    token = _extract_bearer_token(request)
-    if not token:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-
     user_id_str = request.match_info.get("user_id", "")
 
     try:
@@ -300,17 +311,19 @@ async def admin_reset_user(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid request: {e}"}, status=400)
 
     try:
-        from uuid import UUID
-
         target_user_id = UUID(user_id_str)
     except ValueError:
         return web.json_response({"error": "Invalid user_id"}, status=400)
 
     try:
         auth_service = await get_auth_service(request)
-        updated_user, new_password = await auth_service.admin_reset_user(token, target_user_id, req.new_password)
+        requester_id = await _get_requester_id(request, auth_service)
+        updated_user, new_password = await auth_service.admin_reset_user(
+            requester_id, target_user_id, req.new_password,
+        )
+        user_resp = await auth_service.get_user_response(updated_user)
         return web.json_response(
-            {"user": UserResponse.from_user(updated_user).model_dump(), "new_password": new_password},
+            {"user": user_resp.model_dump(), "new_password": new_password},
             status=200,
         )
     except AuthError as e:
@@ -321,11 +334,7 @@ async def admin_reset_user(request: web.Request) -> web.Response:
 
 
 async def create_invite(request: web.Request) -> web.Response:
-    """Create a new invite token (admin only)."""
-    token = _extract_bearer_token(request)
-    if not token:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-
+    """Create a new invite token. Requires 'users.create' permission."""
     try:
         data = await request.json()
         req = InviteCreateRequest(**data)
@@ -334,7 +343,8 @@ async def create_invite(request: web.Request) -> web.Response:
 
     try:
         auth_service = await get_auth_service(request)
-        invite = await auth_service.create_invite(token, req.email_hint, req.expires_in_hours)
+        requester_id = await _get_requester_id(request, auth_service)
+        invite = await auth_service.create_invite(requester_id, req.email_hint, req.expires_in_hours)
         return web.json_response(InviteResponse.from_model(invite).model_dump(mode="json"), status=201)
     except AuthError as e:
         return handle_auth_error(request, e)
@@ -344,17 +354,14 @@ async def create_invite(request: web.Request) -> web.Response:
 
 
 async def list_invites(request: web.Request) -> web.Response:
-    """List all invite tokens (admin only)."""
-    token = _extract_bearer_token(request)
-    if not token:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-
+    """List all invite tokens. Requires 'users.create' permission."""
     active_only_str = request.rel_url.query.get("active_only", "false").lower()
     active_only = active_only_str in ("true", "1", "yes")
 
     try:
         auth_service = await get_auth_service(request)
-        invites = await auth_service.list_invites(token, active_only=active_only)
+        requester_id = await _get_requester_id(request, auth_service)
+        invites = await auth_service.list_invites(requester_id, active_only=active_only)
         return web.json_response(
             [InviteResponse.from_model(inv).model_dump(mode="json") for inv in invites],
             status=200,
@@ -367,11 +374,7 @@ async def list_invites(request: web.Request) -> web.Response:
 
 
 async def revoke_invite(request: web.Request) -> web.Response:
-    """Revoke (delete) an invite token (admin only)."""
-    token = _extract_bearer_token(request)
-    if not token:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-
+    """Revoke (delete) an invite token. Requires 'users.create' permission."""
     token_str = request.match_info.get("token", "")
     try:
         invite_token_uuid = UUID(token_str)
@@ -380,7 +383,8 @@ async def revoke_invite(request: web.Request) -> web.Response:
 
     try:
         auth_service = await get_auth_service(request)
-        await auth_service.revoke_invite(token, invite_token_uuid)
+        requester_id = await _get_requester_id(request, auth_service)
+        await auth_service.revoke_invite(requester_id, invite_token_uuid)
         return web.Response(status=204)
     except AuthError as e:
         return handle_auth_error(request, e)
@@ -390,25 +394,21 @@ async def revoke_invite(request: web.Request) -> web.Response:
 
 
 async def list_users(request: web.Request) -> web.Response:
-    """List all users (admin only)."""
-    token = _extract_bearer_token(request)
-    if not token:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-
+    """List all users. Requires 'users.list' permission."""
     search = request.rel_url.query.get("search") or None
     is_active_str = request.rel_url.query.get("is_active")
 
     try:
         auth_service = await get_auth_service(request)
-        users = await auth_service.list_users(token, search=search)
-        # Фильтр по is_active применяем в Python
+        requester_id = await _get_requester_id(request, auth_service)
+        users = await auth_service.list_users(requester_id, search=search)
         if is_active_str is not None:
             filter_active = is_active_str.lower() in ("true", "1", "yes")
             users = [u for u in users if u.is_active == filter_active]
-        return web.json_response(
-            [UserResponse.from_user(u).model_dump() for u in users],
-            status=200,
-        )
+        results = []
+        for u in users:
+            results.append((await auth_service.get_user_response(u)).model_dump())
+        return web.json_response(results, status=200)
     except AuthError as e:
         return handle_auth_error(request, e)
     except Exception:
@@ -417,11 +417,7 @@ async def list_users(request: web.Request) -> web.Response:
 
 
 async def update_user(request: web.Request) -> web.Response:
-    """Update user flags (admin only)."""
-    token = _extract_bearer_token(request)
-    if not token:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-
+    """Update user flags. Requires 'users.update' permission."""
     user_id_str = request.match_info.get("user_id", "")
     try:
         target_user_id = UUID(user_id_str)
@@ -436,8 +432,10 @@ async def update_user(request: web.Request) -> web.Response:
 
     try:
         auth_service = await get_auth_service(request)
-        user = await auth_service.update_user(token, target_user_id, req.is_active, req.is_admin)
-        return web.json_response(UserResponse.from_user(user).model_dump(), status=200)
+        requester_id = await _get_requester_id(request, auth_service)
+        user = await auth_service.update_user(requester_id, target_user_id, req.is_active)
+        user_resp = await auth_service.get_user_response(user)
+        return web.json_response(user_resp.model_dump(), status=200)
     except AuthError as e:
         return handle_auth_error(request, e)
     except Exception:
@@ -446,11 +444,7 @@ async def update_user(request: web.Request) -> web.Response:
 
 
 async def delete_user(request: web.Request) -> web.Response:
-    """Delete user (admin only)."""
-    token = _extract_bearer_token(request)
-    if not token:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-
+    """Delete user. Requires 'users.delete' permission."""
     user_id_str = request.match_info.get("user_id", "")
     try:
         target_user_id = UUID(user_id_str)
@@ -459,7 +453,8 @@ async def delete_user(request: web.Request) -> web.Response:
 
     try:
         auth_service = await get_auth_service(request)
-        await auth_service.delete_user(token, target_user_id)
+        requester_id = await _get_requester_id(request, auth_service)
+        await auth_service.delete_user(requester_id, target_user_id)
         return web.Response(status=204)
     except AuthError as e:
         return handle_auth_error(request, e)
@@ -486,4 +481,3 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_get("/auth/admin/users", list_users)
     app.router.add_patch("/auth/admin/users/{user_id}", update_user)
     app.router.add_delete("/auth/admin/users/{user_id}", delete_user)
-

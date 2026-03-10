@@ -250,6 +250,27 @@ class ProjectMemberResponse(BaseModel):
     granted_at: str | None = None
 
 
+class ProjectMemberAddRequest(BaseModel):
+    """Request to add a member to a project (grant a role)."""
+
+    user_id: str
+    role_id: str
+    expires_at: str | None = None  # ISO 8601 datetime
+
+
+class ProjectMemberUpdateRequest(BaseModel):
+    """Request to update a member's role."""
+
+    role_id: str
+
+
+class GrantProjectRoleRequest(BaseModel):
+    """Request to grant a project role to a user."""
+
+    role_id: UUID
+    expires_at: datetime | None = None
+
+
 # =============================================================================
 # RBAC v2: Permission DTOs
 # =============================================================================

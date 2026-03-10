@@ -11,7 +11,10 @@ from backend_common.db.migrations import create_migration_runner
 from backend_common.logging_config import configure_logging
 
 from auth_service.api.routes.auth import setup_routes as setup_auth_routes
+from auth_service.api.routes.permissions import setup_routes as setup_permissions_routes
 from auth_service.api.routes.projects import setup_routes as setup_project_routes
+from auth_service.api.routes.project_roles import setup_routes as setup_project_roles_routes
+from auth_service.api.routes.system_roles import setup_routes as setup_system_roles_routes
 from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
 from auth_service.settings import settings
 
@@ -45,6 +48,9 @@ def create_app() -> web.Application:
     add_healthcheck(app, settings)
     setup_auth_routes(app)
     setup_project_routes(app)
+    setup_permissions_routes(app)
+    setup_system_roles_routes(app)
+    setup_project_roles_routes(app)
 
     # Setup database pool and migrations
     app.on_startup.append(init_pool)
