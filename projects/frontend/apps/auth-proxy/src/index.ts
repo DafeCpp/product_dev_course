@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit'
 import httpProxy from '@fastify/http-proxy'
 import { randomUUID } from 'crypto'
 import { PassThrough } from 'stream'
+import Redis from 'ioredis'
 
 type Config = {
     port: number
@@ -23,6 +24,7 @@ type Config = {
     rateLimitWindowMs: number
     rateLimitMax: number
     logLevel: string
+    redisUrl?: string
 }
 
 export function parseConfig(): Config {
@@ -60,6 +62,96 @@ export function parseConfig(): Config {
         rateLimitWindowMs: num(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
         rateLimitMax: num(process.env.RATE_LIMIT_MAX, 60),
         logLevel: process.env.LOG_LEVEL || 'info',
+        redisUrl: process.env.REDIS_URL || undefined,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Permissions cache interface + implementations
+// ---------------------------------------------------------------------------
+
+interface EffectivePermissions {
+    user_id: string
+    is_superadmin: boolean
+    system_permissions: string[]
+    project_permissions: string[]
+}
+
+export interface PermissionsCache {
+    get(key: string): Promise<EffectivePermissions | null>
+    set(key: string, value: EffectivePermissions, ttlSec: number): Promise<void>
+    invalidateUser(userId: string): Promise<void>
+}
+
+class NoopPermissionsCache implements PermissionsCache {
+    get = async (_key: string): Promise<EffectivePermissions | null> => null
+    set = async (_key: string, _value: EffectivePermissions, _ttlSec: number): Promise<void> => {}
+    invalidateUser = async (_userId: string): Promise<void> => {}
+}
+
+export class InMemoryPermissionsCache implements PermissionsCache {
+    private store = new Map<string, { value: EffectivePermissions; expiresAt: number }>()
+
+    async get(key: string): Promise<EffectivePermissions | null> {
+        const entry = this.store.get(key)
+        if (!entry || Date.now() >= entry.expiresAt) return null
+        return entry.value
+    }
+
+    async set(key: string, value: EffectivePermissions, ttlSec: number): Promise<void> {
+        this.store.set(key, { value, expiresAt: Date.now() + ttlSec * 1000 })
+    }
+
+    async invalidateUser(userId: string): Promise<void> {
+        for (const key of [...this.store.keys()]) {
+            if (key.startsWith(`perms:${userId}`) || key === `perms:sys:${userId}`) {
+                this.store.delete(key)
+            }
+        }
+    }
+
+    clear(): void {
+        this.store.clear()
+    }
+}
+
+class RedisPermissionsCache implements PermissionsCache {
+    constructor(private readonly redis: Redis) {}
+
+    async get(key: string): Promise<EffectivePermissions | null> {
+        try {
+            const raw = await this.redis.get(key)
+            if (!raw) return null
+            return JSON.parse(raw) as EffectivePermissions
+        } catch {
+            return null
+        }
+    }
+
+    async set(key: string, value: EffectivePermissions, ttlSec: number): Promise<void> {
+        try {
+            await this.redis.setex(key, ttlSec, JSON.stringify(value))
+        } catch {
+            // ignore — graceful degradation
+        }
+    }
+
+    async invalidateUser(userId: string): Promise<void> {
+        try {
+            const sysKey = `perms:sys:${userId}`
+            const keysToDelete: string[] = [sysKey]
+            const stream = this.redis.scanStream({ match: `perms:${userId}:*`, count: 100 })
+            await new Promise<void>((resolve, reject) => {
+                stream.on('data', (keys: string[]) => keysToDelete.push(...keys))
+                stream.once('end', resolve)
+                stream.once('error', reject)
+            })
+            if (keysToDelete.length > 0) {
+                await this.redis.del(...keysToDelete)
+            }
+        } catch {
+            // ignore
+        }
     }
 }
 
@@ -212,7 +304,7 @@ function _isJwtExpired(token: string, skewSec = 30): boolean {
     return exp <= nowSec + skewSec
 }
 
-export async function buildServer(config: Config) {
+export async function buildServer(config: Config, _cache?: PermissionsCache) {
     const app = fastify({
         logger: {
             level: config.logLevel,
@@ -243,6 +335,43 @@ export async function buildServer(config: Config) {
         },
         trustProxy: true,
     })
+
+    // ---------------------------------------------------------------------------
+    // Permissions cache setup
+    // ---------------------------------------------------------------------------
+    const PERM_TTL_SEC = 30
+
+    let permCache: PermissionsCache
+
+    if (_cache !== undefined) {
+        // DI — used in tests
+        permCache = _cache
+    } else if (config.redisUrl) {
+        const redisClient = new Redis(config.redisUrl, {
+            maxRetriesPerRequest: 1,
+            enableReadyCheck: false,
+            lazyConnect: true,
+        })
+        redisClient.on('error', (err: Error) => {
+            app.log.warn({ err: err.message }, 'Redis connection error — permissions cache disabled')
+        })
+        try {
+            await redisClient.connect()
+            permCache = new RedisPermissionsCache(redisClient)
+            app.addHook('onClose', async () => {
+                await redisClient.quit().catch(() => {})
+            })
+        } catch (err) {
+            app.log.warn({ err: String(err) }, 'Failed to connect to Redis — running without cache')
+            permCache = new NoopPermissionsCache()
+        }
+    } else {
+        permCache = new NoopPermissionsCache()
+    }
+
+    function _permsCacheKey(userId: string, projectId?: string): string {
+        return projectId ? `perms:${userId}:${projectId}` : `perms:sys:${userId}`
+    }
 
     await app.register(cookie)
 
@@ -472,6 +601,19 @@ export async function buildServer(config: Config) {
             reply.header('X-Accel-Buffering', 'no')
             if (!contentType) {
                 reply.header('Content-Type', 'text/event-stream; charset=utf-8')
+            }
+        }
+
+        // Инвалидация кэша прав при 401/403 от downstream (experiment-service)
+        if ((reply.statusCode === 401 || reply.statusCode === 403) && request.url.startsWith('/api/')) {
+            const cookies = parseCookies(request.headers.cookie as string | undefined)
+            const access = cookies[config.accessCookieName]
+            if (access) {
+                const claims = getRbacClaimsFromJwt(access)
+                if (claims?.user_id) {
+                    // fire-and-forget: не блокируем ответ
+                    permCache.invalidateUser(claims.user_id).catch(() => {})
+                }
             }
         }
 
@@ -806,18 +948,16 @@ export async function buildServer(config: Config) {
         }
     }
 
-    interface EffectivePermissions {
-        user_id: string
-        is_superadmin: boolean
-        system_permissions: string[]
-        project_permissions: string[]
-    }
-
     async function getEffectivePermissions(
         userId: string,
         accessToken: string,
         projectId?: string
     ): Promise<EffectivePermissions | null> {
+        const cacheKey = _permsCacheKey(userId, projectId)
+
+        const cached = await permCache.get(cacheKey)
+        if (cached) return cached
+
         try {
             const url = projectId
                 ? `${config.authUrl}/api/v1/users/${userId}/effective-permissions?project_id=${projectId}`
@@ -828,7 +968,10 @@ export async function buildServer(config: Config) {
                 signal: AbortSignal.timeout(3000),
             })
             if (!resp.ok) return null
-            return resp.json() as Promise<EffectivePermissions>
+            const data = (await resp.json()) as EffectivePermissions
+
+            await permCache.set(cacheKey, data, PERM_TTL_SEC)
+            return data
         } catch (error) {
             app.log.error({
                 user_id: userId,

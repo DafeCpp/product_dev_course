@@ -40,6 +40,21 @@ services:
       - experiment-network
     restart: unless-stopped
 
+  # Redis — кэш для прав пользователей (auth-proxy) и брокер телеметрии
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - experiment-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Auth Service - сервис аутентификации
   auth-service:
     build:
@@ -99,6 +114,8 @@ services:
       - "${EXPERIMENT_SERVICE_PORT:-8002}:8002"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - experiment-network
@@ -168,12 +185,15 @@ services:
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-60}
       - LOG_LEVEL=${AUTH_PROXY_LOG_LEVEL:-info}
       - NODE_ENV=production
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "${AUTH_PROXY_PORT:-8080}:8080"
     depends_on:
       experiment-service:
         condition: service_healthy
       auth-service:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - experiment-network
