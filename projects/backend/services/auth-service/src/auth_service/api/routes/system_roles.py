@@ -9,7 +9,6 @@ from aiohttp import web
 from auth_service.core.exceptions import InvalidCredentialsError
 from auth_service.domain.dto import (
     CreateRoleRequest,
-    EffectivePermissionsResponse,
     RoleResponse,
     UpdateRoleRequest,
 )
@@ -66,24 +65,28 @@ async def _get_requester_id(request: web.Request, perm_svc: PermissionService) -
 
 async def list_system_roles(request: web.Request) -> web.Response:
     """List all system roles.
-    
+
     Requires authentication. Returns both built-in and custom system roles.
     """
     try:
+        perm_svc = await _get_permission_service(request)
+        await _get_requester_id(request, perm_svc)  # authentication check only
+
         pool = await get_pool()
         role_repo = RoleRepository(pool)
-        perm_repo = PermissionRepository(pool)
-        
+
         roles = await role_repo.list_system()
-        
+
         # Fetch permissions for each role
         result = []
         for role in roles:
             perms = await role_repo.get_permissions(role.id)
-            role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+            role_resp = RoleResponse.from_model(role, permissions=perms)
             result.append(role_resp.model_dump())
-        
+
         return web.json_response(result)
+    except InvalidCredentialsError as e:
+        return web.json_response({"error": str(e)}, status=401)
     except Exception as e:
         logger.error("Failed to list system roles", exc_info=e)
         return web.json_response({"error": str(e)}, status=500)
@@ -102,7 +105,7 @@ async def get_system_role(request: web.Request) -> web.Response:
             return web.json_response({"error": "Not a system role"}, status=404)
         
         perms = await role_repo.get_permissions(role.id)
-        role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+        role_resp = RoleResponse.from_model(role, permissions=perms)
         return web.json_response(role_resp.model_dump())
     except Exception as e:
         logger.error("Failed to get system role", exc_info=e)
@@ -132,8 +135,8 @@ async def create_system_role(request: web.Request) -> web.Response:
         )
         
         # Fetch permissions for response
-        perms = await perm_svc._role_repo.get_permissions(role.id)
-        role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+        perm_ids = await perm_svc.get_role_permissions(role.id)
+        role_resp = RoleResponse.from_model(role, permissions=perm_ids)
         return web.json_response(role_resp.model_dump(), status=201)
     except InvalidCredentialsError as e:
         return web.json_response({"error": str(e)}, status=401)
@@ -166,8 +169,8 @@ async def update_system_role(request: web.Request) -> web.Response:
         )
         
         # Fetch permissions for response
-        perms = await perm_svc._role_repo.get_permissions(role.id)
-        role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+        perm_ids = await perm_svc.get_role_permissions(role.id)
+        role_resp = RoleResponse.from_model(role, permissions=perm_ids)
         return web.json_response(role_resp.model_dump())
     except InvalidCredentialsError as e:
         return web.json_response({"error": str(e)}, status=401)
@@ -229,6 +232,7 @@ async def grant_system_role_to_user(request: web.Request) -> web.Response:
             grantor_id=requester_id,
             target_user_id=target_user_id,
             role_id=role_id,
+            expires_at=expires_at if expires_at else None,
         )
         
         return web.json_response({
@@ -299,6 +303,8 @@ async def list_user_system_roles(request: web.Request) -> web.Response:
         result = []
         for assignment in assignments:
             role = await role_repo.get_by_id(assignment.role_id)
+            if role is None:
+                continue  # skip orphaned assignments (role was deleted)
             result.append({
                 "role_id": str(role.id),
                 "role_name": role.name,
@@ -306,7 +312,7 @@ async def list_user_system_roles(request: web.Request) -> web.Response:
                 "granted_at": assignment.granted_at.isoformat(),
                 "expires_at": assignment.expires_at.isoformat() if assignment.expires_at else None,
             })
-        
+
         return web.json_response(result)
     except InvalidCredentialsError as e:
         return web.json_response({"error": str(e)}, status=401)

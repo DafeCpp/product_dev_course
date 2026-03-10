@@ -56,16 +56,21 @@ async def _get_requester_id(request: web.Request, perm_svc: PermissionService) -
 
 async def list_permissions(request: web.Request) -> web.Response:
     """List all permissions (catalog).
-    
+
     Requires authentication. Returns the full permissions catalog.
     """
     try:
+        perm_svc = await _get_permission_service(request)
+        await _get_requester_id(request, perm_svc)  # authentication check only
+
         pool = await get_pool()
         perm_repo = PermissionRepository(pool)
         permissions = await perm_repo.list_all()
-        
+
         response = [PermissionResponse.from_model(p).model_dump() for p in permissions]
         return web.json_response(response)
+    except InvalidCredentialsError as e:
+        return web.json_response({"error": str(e)}, status=401)
     except Exception as e:
         logger.error("Failed to list permissions", exc_info=e)
         return web.json_response({"error": str(e)}, status=500)

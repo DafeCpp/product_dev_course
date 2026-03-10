@@ -83,7 +83,7 @@ async def list_project_roles(request: web.Request) -> web.Response:
         result = []
         for role in roles:
             perms = await role_repo.get_permissions(role.id)
-            role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+            role_resp = RoleResponse.from_model(role, permissions=perms)
             result.append(role_resp.model_dump())
         
         return web.json_response(result)
@@ -117,7 +117,7 @@ async def get_project_role(request: web.Request) -> web.Response:
             return web.json_response({"error": "Role not found in this project"}, status=404)
         
         perms = await role_repo.get_permissions(role.id)
-        role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+        role_resp = RoleResponse.from_model(role, permissions=perms)
         return web.json_response(role_resp.model_dump())
     except InvalidCredentialsError as e:
         return web.json_response({"error": str(e)}, status=401)
@@ -151,8 +151,8 @@ async def create_project_role(request: web.Request) -> web.Response:
         )
         
         # Fetch permissions for response
-        perms = await perm_svc._role_repo.get_permissions(role.id)
-        role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+        perm_ids = await perm_svc.get_role_permissions(role.id)
+        role_resp = RoleResponse.from_model(role, permissions=perm_ids)
         return web.json_response(role_resp.model_dump(), status=201)
     except InvalidCredentialsError as e:
         return web.json_response({"error": str(e)}, status=401)
@@ -176,7 +176,12 @@ async def update_project_role(request: web.Request) -> web.Response:
         role_id = UUID(request.match_info["role_id"])
         data = await request.json()
         req = UpdateRoleRequest(**data)
-        
+
+        # Verify role belongs to this project BEFORE making changes
+        existing_role = await perm_svc.get_role_by_id_or_raise(role_id)
+        if existing_role.project_id != project_id:
+            return web.json_response({"error": "Role not found in this project"}, status=404)
+
         role = await perm_svc.update_custom_role(
             updater_id=requester_id,
             role_id=role_id,
@@ -185,13 +190,9 @@ async def update_project_role(request: web.Request) -> web.Response:
             permissions=req.permissions,
         )
         
-        # Verify role belongs to project
-        if role.project_id != project_id:
-            return web.json_response({"error": "Role not found in this project"}, status=404)
-        
         # Fetch permissions for response
-        perms = await perm_svc._role_repo.get_permissions(role.id)
-        role_resp = RoleResponse.from_model(role, permissions=[p.permission_id for p in perms])
+        perm_ids = await perm_svc.get_role_permissions(role.id)
+        role_resp = RoleResponse.from_model(role, permissions=perm_ids)
         return web.json_response(role_resp.model_dump())
     except InvalidCredentialsError as e:
         return web.json_response({"error": str(e)}, status=401)
@@ -214,7 +215,7 @@ async def delete_project_role(request: web.Request) -> web.Response:
         project_id = UUID(request.match_info["project_id"])
         role_id = UUID(request.match_info["role_id"])
         
-        role = await perm_svc._role_repo.get_by_id_or_raise(role_id)
+        role = await perm_svc.get_role_by_id_or_raise(role_id)
         if role.project_id != project_id:
             return web.json_response({"error": "Role not found in this project"}, status=404)
         
@@ -258,6 +259,8 @@ async def list_member_roles(request: web.Request) -> web.Response:
         result = []
         for assignment in assignments:
             role = await role_repo.get_by_id(assignment.role_id)
+            if role is None:
+                continue  # skip orphaned assignments (role was deleted)
             result.append({
                 "role_id": str(role.id),
                 "role_name": role.name,

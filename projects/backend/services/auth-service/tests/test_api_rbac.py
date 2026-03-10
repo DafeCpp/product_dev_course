@@ -439,7 +439,7 @@ class TestRevokeRoleFromMember:
 
     @pytest.mark.asyncio
     async def test_revoke_project_role(
-        self, service_client, superadmin_token, project_data, pgsql
+        self, service_client, superadmin_token, project_data, pgsql, database_url
     ):
         """Project owner can revoke role from member."""
         import asyncpg

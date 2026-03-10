@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from datetime import datetime
+
 from auth_service.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from auth_service.domain.dto import EffectivePermissionsResponse
 from auth_service.domain.models import (
     PROJECT_OWNER_ROLE_ID,
+    SUPERADMIN_ROLE_ID,
     Role,
     ScopeType,
     UserProjectRole,
@@ -106,10 +109,22 @@ class PermissionService:
         """Grant superadmin role during bootstrap (no grantor permission check)."""
         await self._user_role_repo.grant_system_role(user_id, SUPERADMIN_ROLE_ID, user_id)
 
+    async def get_role_permissions(self, role_id: UUID) -> list[str]:
+        """Get permission IDs for a role (for API response building)."""
+        return await self._role_repo.get_permissions(role_id)
+
+    async def get_role_by_id_or_raise(self, role_id: UUID) -> "Role":
+        """Get role by ID or raise NotFoundError."""
+        return await self._role_repo.get_by_id_or_raise(role_id)
+
     # ── System role assignments ────────────────────────────────────────
 
     async def grant_system_role(
-        self, grantor_id: UUID, target_user_id: UUID, role_id: UUID,
+        self,
+        grantor_id: UUID,
+        target_user_id: UUID,
+        role_id: UUID,
+        expires_at: datetime | None = None,
     ) -> UserSystemRole:
         """Grant a system role. Grantor must have 'roles.assign'."""
         await self.ensure_permission(grantor_id, "roles.assign")
@@ -119,7 +134,7 @@ class PermissionService:
             raise ForbiddenError("Cannot assign a project role as a system role")
 
         return await self._user_role_repo.grant_system_role(
-            target_user_id, role_id, grantor_id,
+            target_user_id, role_id, grantor_id, expires_at,
         )
 
     async def revoke_system_role(
