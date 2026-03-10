@@ -308,17 +308,7 @@ async def project_data(service_client, superadmin_token, database_url):
         """, timeout=5)
         project_id = result["id"]
 
-        # Add owner role via trigger (should be automatic, but ensure it exists)
-        await conn.execute("""
-            INSERT INTO user_project_roles (user_id, project_id, role_id, granted_by, granted_at)
-            VALUES ('550e8400-e29b-41d4-a716-446655440001',
-                    '660e8400-e29b-41d4-a716-446655440010',
-                    '00000000-0000-0000-0000-000000000010',
-                    '550e8400-e29b-41d4-a716-446655440001',
-                    now())
-            ON CONFLICT (user_id, project_id, role_id) DO UPDATE SET granted_at = now()
-        """, timeout=5)
-
+        # Owner role is assigned automatically by the assign_project_owner_role trigger
         return str(project_id)
     finally:
         await conn.close()

@@ -47,30 +47,6 @@ async def test_user(database_url):
         await conn.close()
 
 
-@pytest.fixture
-async def grantor_user(database_url):
-    """Create a user who will grant roles (has roles.assign permission via admin role)."""
-    conn = await asyncpg.connect(database_url)
-    try:
-        result = await conn.fetchrow("""
-            INSERT INTO users (username, email, hashed_password, password_change_required, is_active)
-            VALUES ('grantoruser', 'grantor@example.com',
-                    '$2b$12$0QfCvOcgNkygw/I79ieV5eOIwAjWXUjdFUr/QvRgDMewN1OfENrmG',
-                    false, true)
-            RETURNING id
-        """)
-        user_id = result["id"]
-        
-        # Grant admin role (has roles.assign permission)
-        await conn.execute("""
-            INSERT INTO user_system_roles (user_id, role_id, granted_by, granted_at)
-            VALUES ($1, '00000000-0000-0000-0000-000000000002', $1, now())
-        """, user_id)
-        
-        return user_id
-    finally:
-        await conn.close()
-
 
 class TestGetEffectivePermissions:
     """Tests for get_effective_permissions method."""
@@ -250,7 +226,7 @@ class TestCreateCustomRole:
 
     @pytest.mark.asyncio
     async def test_create_custom_system_role_requires_roles_manage(
-        self, permission_service, test_user, pgsql
+        self, permission_service, test_user
     ):
         """Creating custom system role requires roles.manage permission."""
         with pytest.raises(ForbiddenError, match="Missing permission"):
@@ -263,7 +239,7 @@ class TestCreateCustomRole:
 
     @pytest.mark.asyncio
     async def test_create_custom_system_role_success(
-        self, permission_service, test_user, grantor_user, pgsql
+        self, permission_service, test_user, grantor_user
     ):
         """User with roles.manage can create custom system role."""
         role = await permission_service.create_custom_role(
@@ -279,7 +255,7 @@ class TestCreateCustomRole:
 
     @pytest.mark.asyncio
     async def test_create_custom_role_with_invalid_permission(
-        self, permission_service, grantor_user, pgsql
+        self, permission_service, grantor_user
     ):
         """Creating role with invalid permission should fail."""
         with pytest.raises(NotFoundError, match="Unknown permissions"):

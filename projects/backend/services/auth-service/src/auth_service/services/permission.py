@@ -5,6 +5,8 @@ from uuid import UUID
 
 from datetime import datetime
 
+from asyncpg.exceptions import UniqueViolationError
+
 from auth_service.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from auth_service.domain.dto import EffectivePermissionsResponse
 from auth_service.domain.models import (
@@ -231,12 +233,15 @@ class PermissionService:
                 f"Permissions have wrong scope for this role: {', '.join(sorted(wrong_scope))}"
             )
 
-        role = await self._role_repo.create(
-            name, scope_type,
-            project_id=project_id,
-            description=description,
-            created_by=creator_id,
-        )
+        try:
+            role = await self._role_repo.create(
+                name, scope_type,
+                project_id=project_id,
+                description=description,
+                created_by=creator_id,
+            )
+        except UniqueViolationError:
+            raise ConflictError(f"Role with name '{name}' already exists")
         await self._role_repo.set_permissions(role.id, permissions)
         return role
 

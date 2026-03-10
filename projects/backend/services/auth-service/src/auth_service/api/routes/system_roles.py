@@ -6,7 +6,8 @@ from uuid import UUID
 import structlog
 from aiohttp import web
 
-from auth_service.core.exceptions import InvalidCredentialsError
+from auth_service.api.utils import get_requester_id
+from auth_service.core.exceptions import ConflictError, InvalidCredentialsError
 from auth_service.domain.dto import (
     CreateRoleRequest,
     RoleResponse,
@@ -23,40 +24,12 @@ logger = structlog.get_logger(__name__)
 
 
 async def _get_permission_service(request: web.Request) -> PermissionService:
-    """Get permission service from request."""
     pool = await get_pool()
     return PermissionService(
         PermissionRepository(pool),
         RoleRepository(pool),
         UserRoleRepository(pool),
     )
-
-
-def _extract_bearer_token(request: web.Request) -> str | None:
-    """Extract Bearer token from Authorization header."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return None
-    return auth_header[7:].strip() or None
-
-
-async def _get_requester_id(request: web.Request, perm_svc: PermissionService) -> UUID:
-    """Extract and validate requester user ID from Bearer token."""
-    token = _extract_bearer_token(request)
-    if not token:
-        raise InvalidCredentialsError("Unauthorized")
-    
-    from auth_service.services.jwt import get_user_id_from_token
-    user_id = UUID(get_user_id_from_token(token))
-    
-    # Verify user exists and is active
-    from auth_service.repositories.users import UserRepository
-    user_repo = UserRepository(pool=await get_pool())
-    user = await user_repo.get_by_id(user_id)
-    if not user or not user.is_active:
-        raise InvalidCredentialsError("User not found or inactive")
-    
-    return user_id
 
 
 # =============================================================================
@@ -70,7 +43,7 @@ async def list_system_roles(request: web.Request) -> web.Response:
     """
     try:
         perm_svc = await _get_permission_service(request)
-        await _get_requester_id(request, perm_svc)  # authentication check only
+        await get_requester_id(request, perm_svc)  # authentication check only
 
         pool = await get_pool()
         role_repo = RoleRepository(pool)
@@ -121,7 +94,7 @@ async def create_system_role(request: web.Request) -> web.Response:
     """
     try:
         perm_svc = await _get_permission_service(request)
-        requester_id = await _get_requester_id(request, perm_svc)
+        requester_id = await get_requester_id(request, perm_svc)
         
         data = await request.json()
         req = CreateRoleRequest(**data)
@@ -154,7 +127,7 @@ async def update_system_role(request: web.Request) -> web.Response:
     """
     try:
         perm_svc = await _get_permission_service(request)
-        requester_id = await _get_requester_id(request, perm_svc)
+        requester_id = await get_requester_id(request, perm_svc)
         
         role_id = UUID(request.match_info["role_id"])
         data = await request.json()
@@ -188,12 +161,11 @@ async def delete_system_role(request: web.Request) -> web.Response:
     """
     try:
         perm_svc = await _get_permission_service(request)
-        requester_id = await _get_requester_id(request, perm_svc)
+        requester_id = await get_requester_id(request, perm_svc)
         
         role_id = UUID(request.match_info["role_id"])
         await perm_svc.delete_custom_role(requester_id, role_id)
-        
-        return web.json_response({"message": "Role deleted"}, status=200)
+        return web.Response(status=204)
     except InvalidCredentialsError as e:
         return web.json_response({"error": str(e)}, status=401)
     except Exception as e:
@@ -218,7 +190,7 @@ async def grant_system_role_to_user(request: web.Request) -> web.Response:
     """
     try:
         perm_svc = await _get_permission_service(request)
-        requester_id = await _get_requester_id(request, perm_svc)
+        requester_id = await get_requester_id(request, perm_svc)
         
         target_user_id = UUID(request.match_info["user_id"])
         data = await request.json()
@@ -258,7 +230,7 @@ async def revoke_system_role_from_user(request: web.Request) -> web.Response:
     """
     try:
         perm_svc = await _get_permission_service(request)
-        requester_id = await _get_requester_id(request, perm_svc)
+        requester_id = await get_requester_id(request, perm_svc)
         
         target_user_id = UUID(request.match_info["user_id"])
         role_id = UUID(request.match_info["role_id"])
@@ -286,7 +258,7 @@ async def list_user_system_roles(request: web.Request) -> web.Response:
     """List system roles assigned to a user."""
     try:
         perm_svc = await _get_permission_service(request)
-        requester_id = await _get_requester_id(request, perm_svc)
+        requester_id = await get_requester_id(request, perm_svc)
         
         target_user_id = UUID(request.match_info["user_id"])
         

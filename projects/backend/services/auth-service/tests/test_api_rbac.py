@@ -199,7 +199,7 @@ class TestCreateSystemRole:
                 "permissions": ["audit.read"],
             },
         )
-        assert response.status == 400  # or 500 depending on error handling
+        assert response.status == 409  # ConflictError for duplicate role name
 
 
 class TestUpdateSystemRole:
