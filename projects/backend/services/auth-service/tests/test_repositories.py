@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from auth_service.core.exceptions import NotFoundError
-from auth_service.domain.models import Project, ProjectMember, User
+from auth_service.domain.models import Project, User, UserProjectRole
 from auth_service.repositories.base import BaseRepository
 from auth_service.repositories.projects import ProjectRepository
 from auth_service.repositories.users import UserRepository
@@ -899,133 +899,6 @@ class TestProjectRepositoryUpdate:
 
         with pytest.raises(NotFoundError, match="Project"):
             await repo.update(uuid4(), name="New Name")
-
-
-class TestProjectRepositoryMembers:
-    """Tests for ProjectRepository member methods."""
-
-    @pytest.mark.asyncio
-    async def test_is_member_true(self, mock_pool_with_conn):
-        """Test is_member returns True."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.fetchrow = AsyncMock(return_value={"exists": True})
-
-        repo = ProjectRepository(mock_pool)
-        result = await repo.is_member(uuid4(), uuid4())
-
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_is_member_false(self, mock_pool_with_conn):
-        """Test is_member returns False."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.fetchrow = AsyncMock(return_value={"exists": False})
-
-        repo = ProjectRepository(mock_pool)
-        result = await repo.is_member(uuid4(), uuid4())
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_get_member_role_found(self, mock_pool_with_conn):
-        """Test get_member_role returns role."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.fetchrow = AsyncMock(return_value={"role": "editor"})
-
-        repo = ProjectRepository(mock_pool)
-        role = await repo.get_member_role(uuid4(), uuid4())
-
-        assert role == "editor"
-
-    @pytest.mark.asyncio
-    async def test_get_member_role_not_found(self, mock_pool_with_conn):
-        """Test get_member_role returns None."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.fetchrow = AsyncMock(return_value=None)
-
-        repo = ProjectRepository(mock_pool)
-        role = await repo.get_member_role(uuid4(), uuid4())
-
-        assert role is None
-
-    @pytest.mark.asyncio
-    async def test_add_member_success(self, mock_pool_with_conn):
-        """Test add_member returns ProjectMember."""
-        mock_pool, mock_conn = mock_pool_with_conn
-
-        mock_row = {
-            "project_id": uuid4(),
-            "user_id": uuid4(),
-            "role": "editor",
-            "created_at": datetime.now(timezone.utc),
-        }
-        mock_conn.fetchrow = AsyncMock(return_value=mock_row)
-
-        repo = ProjectRepository(mock_pool)
-        member = await repo.add_member(uuid4(), uuid4(), "editor")
-
-        assert isinstance(member, ProjectMember)
-        assert member.role == "editor"
-
-    @pytest.mark.asyncio
-    async def test_add_member_raises_on_failure(self, mock_pool_with_conn):
-        """Test add_member raises on failure."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.fetchrow = AsyncMock(return_value=None)
-
-        repo = ProjectRepository(mock_pool)
-
-        with pytest.raises(RuntimeError, match="Failed to add project member"):
-            await repo.add_member(uuid4(), uuid4(), "editor")
-
-    @pytest.mark.asyncio
-    async def test_remove_member_success(self, mock_pool_with_conn):
-        """Test remove_member succeeds."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.execute = AsyncMock(return_value="DELETE 1")
-
-        repo = ProjectRepository(mock_pool)
-        # Should not raise
-        await repo.remove_member(uuid4(), uuid4())
-
-    @pytest.mark.asyncio
-    async def test_remove_member_not_found(self, mock_pool_with_conn):
-        """Test remove_member raises NotFoundError."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.execute = AsyncMock(return_value="DELETE 0")
-
-        repo = ProjectRepository(mock_pool)
-
-        with pytest.raises(NotFoundError, match="Member"):
-            await repo.remove_member(uuid4(), uuid4())
-
-    @pytest.mark.asyncio
-    async def test_list_members(self, mock_pool_with_conn):
-        """Test list_members returns members with usernames."""
-        mock_pool, mock_conn = mock_pool_with_conn
-        mock_conn.fetch = AsyncMock(return_value=[
-            {
-                "project_id": uuid4(),
-                "user_id": uuid4(),
-                "role": "owner",
-                "created_at": datetime.now(timezone.utc),
-                "username": "owner_user",
-            },
-            {
-                "project_id": uuid4(),
-                "user_id": uuid4(),
-                "role": "editor",
-                "created_at": datetime.now(timezone.utc),
-                "username": "editor_user",
-            },
-        ])
-
-        repo = ProjectRepository(mock_pool)
-        members = await repo.list_members(uuid4())
-
-        assert len(members) == 2
-        assert members[0]["username"] == "owner_user"
-        assert members[1]["role"] == "editor"
 
 
 class TestProjectRepositoryDelete:

@@ -35,6 +35,8 @@ ruff = "^0.5.0"
 mypy = "^1.10.0"
 yandex-taxi-testsuite = {extras = ["postgresql-binary"], version = "^0.3.9"}
 watchfiles = "^0.21.0"
+pytest-cov = "^7.0.0"
+coverage = "^7.13.4"
 
 [tool.ruff]
 line-length = 100
