@@ -76,7 +76,8 @@
       "Bash(git:*)",
       "Bash(gh run:*)",
       "Bash(gh release:*)",
-      "Bash(psql:*)"
+      "Bash(psql:*)",
+      "Bash(wait:*)"
     ]
   }
 }
