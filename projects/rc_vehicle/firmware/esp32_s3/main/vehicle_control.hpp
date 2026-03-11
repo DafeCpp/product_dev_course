@@ -15,8 +15,7 @@
 inline esp_err_t VehicleControlInit(void) {
   static bool platform_set = false;
   if (!platform_set) {
-    auto platform =
-        std::make_unique<rc_vehicle::VehicleControlPlatformEsp32>();
+    auto platform = std::make_unique<rc_vehicle::VehicleControlPlatformEsp32>();
     rc_vehicle::VehicleControlUnified::Instance().SetPlatform(
         std::move(platform));
     platform_set = true;
@@ -48,17 +47,16 @@ inline int VehicleControlGetCalibStage(void) {
 }
 
 inline void VehicleControlSetForwardDirection(float fx, float fy, float fz) {
-  rc_vehicle::VehicleControlUnified::Instance().SetForwardDirection(fx, fy,
-                                                                    fz);
+  rc_vehicle::VehicleControlUnified::Instance().SetForwardDirection(fx, fy, fz);
 }
 
-inline const StabilizationConfig& VehicleControlGetStabilizationConfig(void) {
-  return rc_vehicle::VehicleControlUnified::Instance()
-      .GetStabilizationConfig();
+inline rc_vehicle::StabilizationConfig VehicleControlGetStabilizationConfig(
+    void) {
+  return rc_vehicle::VehicleControlUnified::Instance().GetStabilizationConfig();
 }
 
 inline bool VehicleControlSetStabilizationConfig(
-    const StabilizationConfig& config, bool save_to_nvs = true) {
+    const rc_vehicle::StabilizationConfig& config, bool save_to_nvs = true) {
   return rc_vehicle::VehicleControlUnified::Instance().SetStabilizationConfig(
       config, save_to_nvs);
 }

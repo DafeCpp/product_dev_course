@@ -6,6 +6,7 @@
 #include "calibration_manager.hpp"
 #include "control_components.hpp"
 #include "imu_calibration.hpp"
+#include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
 #include "stabilization_config.hpp"
 #include "stabilization_manager.hpp"
@@ -95,7 +96,7 @@ class VehicleControlUnified {
    * @brief Получить текущую конфигурацию стабилизации
    * @return Конфигурация стабилизации
    */
-  [[nodiscard]] const StabilizationConfig& GetStabilizationConfig() const {
+  [[nodiscard]] StabilizationConfig GetStabilizationConfig() const {
     return stab_mgr_->GetConfig();
   }
 
@@ -206,6 +207,9 @@ class VehicleControlUnified {
   PitchCompensator pitch_ctrl_;
   SlipAngleController slip_ctrl_;
   OversteerGuard oversteer_guard_;
+
+  // Kids Mode процессор (ограничения газа/руля, anti-spin)
+  KidsModeProcessor kids_processor_;
 
   // EKF оценки динамического состояния (vx, vy, r → slip angle)
   VehicleEkf ekf_;

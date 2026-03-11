@@ -119,11 +119,11 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
 
   float yx = zy * fz - zz * fy;  // (0,0,1)×(fx,fy,0) = (-fy, fx, 0)
   float yy = zz * fx - zx * fz;
-  float yz = zx * fy - zy * fx;
+  float yz = zx * fy - zy * fx;  // z-component of Y_veh (0 in flat 2D case)
 
   // R_veh_to_ned: столбцы = оси СК машины в NED (X_veh, Y_veh, Z_veh)
   float r00 = fx, r10 = fy, r20 = 0.f;
-  float r01 = yx, r11 = yy, r21 = 0.f;
+  float r01 = yx, r11 = yy, r21 = yz;
   float r02 = 0.f, r12 = 0.f, r22 = 1.f;
 
   // Матрица → кватернион q_veh_to_ned
