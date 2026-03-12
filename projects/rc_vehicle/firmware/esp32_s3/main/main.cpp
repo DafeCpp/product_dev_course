@@ -6,8 +6,11 @@
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "lwip/inet.h"
+#include "lwip/ip4_addr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "dns_server.hpp"
 #include "http_server.hpp"
 #include "vehicle_control.hpp"
 #include "websocket_server.hpp"
@@ -42,6 +45,18 @@ extern "C" void app_main(void) {
   if (WiFiApInit() != ESP_OK) {
     ESP_LOGE(TAG, "Failed to initialize Wi-Fi AP");
     return;
+  }
+
+  char ap_ip[16] = {};
+  if (WiFiApGetIp(ap_ip, sizeof(ap_ip)) == ESP_OK) {
+    const uint32_t ap_ip_raw = ipaddr_addr(ap_ip);
+    if (ap_ip_raw == IPADDR_NONE) {
+      ESP_LOGW(TAG, "Failed to parse AP IP for DNS server: %s", ap_ip);
+    } else if (DnsServerStart(ap_ip_raw) != ESP_OK) {
+      ESP_LOGW(TAG, "Failed to start DNS server");
+    }
+  } else {
+    ESP_LOGW(TAG, "Failed to get AP IP for DNS server");
   }
 
   // Инициализация HTTP сервера
@@ -93,7 +108,6 @@ extern "C" void app_main(void) {
 
   ESP_LOGI(TAG, "All systems initialized. Ready for connections.");
 
-  char ap_ip[16];
   if (WiFiApGetIp(ap_ip, sizeof(ap_ip)) == ESP_OK) {
     ESP_LOGI(TAG, "----------------------------------------");
     ESP_LOGI(TAG, "  Подключитесь к Wi-Fi и откройте в браузере:");

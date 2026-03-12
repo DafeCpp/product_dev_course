@@ -5,6 +5,7 @@ idf_component_register(
         "ws_command_registry.cpp"
         "ws_command_handlers.cpp"
         "../../esp32_common/wifi_ap.cpp"
+        "../../esp32_common/dns_server.cpp"
         "../../esp32_common/http_server.cpp"
         "../../esp32_common/websocket_server.cpp"
         "../../common/stabilization_config.cpp"

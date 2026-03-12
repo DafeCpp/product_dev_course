@@ -1,6 +1,7 @@
 #include "http_server.hpp"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "cJSON.h"
@@ -692,13 +693,33 @@ static esp_err_t app_js_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
+static esp_err_t redirect_to_root_handler(httpd_req_t* req) {
+  char ap_ip[16] = {};
+  char location[64] = {};
+  if (WiFiApGetIp(ap_ip, sizeof(ap_ip)) == ESP_OK && ap_ip[0] != '\0') {
+    snprintf(location, sizeof(location), "http://%s/", ap_ip);
+  } else {
+    strncpy(location, "http://192.168.4.1/", sizeof(location) - 1);
+    location[sizeof(location) - 1] = '\0';
+  }
+
+  httpd_resp_set_status(req, "302 Found");
+  httpd_resp_set_hdr(req, "Location", location);
+  httpd_resp_set_type(req, "text/plain");
+  httpd_resp_send(req, "Redirecting to captive portal", HTTPD_RESP_USE_STRLEN);
+  return ESP_OK;
+}
+
 esp_err_t HttpServerInit(void) {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = HTTP_SERVER_PORT;
   config.max_uri_handlers = 16;
   config.stack_size = 8192;
-  config.max_open_sockets = 7;
+  config.max_open_sockets = 7;   // LWIP_MAX_SOCKETS лимит (3 занято httpd внутри)
+  config.recv_wait_timeout = 15;  // Секунды — мобильный клиент может отвечать медленнее
+  config.send_wait_timeout = 15;
   config.lru_purge_enable = true;  // Автозакрытие старых соединений при нехватке
+  config.uri_match_fn = httpd_uri_match_wildcard;
 
   ESP_LOGI(TAG, "Starting HTTP server on port %d", config.server_port);
 
@@ -793,6 +814,85 @@ esp_err_t HttpServerInit(void) {
 #endif
     };
     httpd_register_uri_handler(server_handle, &wifi_scan_uri);
+
+    // Captive portal probes (iOS/Android/Windows/macOS).
+    httpd_uri_t captive_android_uri = {
+        .uri = "/generate_204",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_android_uri);
+
+    httpd_uri_t captive_android_alt_uri = {
+        .uri = "/gen_204",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_android_alt_uri);
+
+    httpd_uri_t captive_apple_uri = {
+        .uri = "/hotspot-detect.html",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_apple_uri);
+
+    httpd_uri_t captive_windows_uri = {
+        .uri = "/ncsi.txt",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_windows_uri);
+
+    httpd_uri_t captive_windows_alt_uri = {
+        .uri = "/connecttest.txt",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_windows_alt_uri);
+
+    httpd_uri_t captive_redirect_uri = {
+        .uri = "/redirect",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_redirect_uri);
 
     ESP_LOGI(TAG, "HTTP server started");
     return ESP_OK;
