@@ -19,12 +19,26 @@ void HandleCalibrateImu(cJSON* json, httpd_req_t* req) {
                              ? mode_item->valuestring
                              : "gyro";
   bool is_forward = (strcmp(mode_str, "forward") == 0);
+  bool is_auto_forward = (strcmp(mode_str, "auto_forward") == 0);
   bool full = (strcmp(mode_str, "full") == 0);
 
   cJSON* reply = cJSON_CreateObject();
   if (reply) {
     cJSON_AddStringToObject(reply, "type", "calibrate_imu_ack");
-    if (is_forward) {
+    if (is_auto_forward) {
+      cJSON* thr_item = cJSON_GetObjectItem(json, "throttle");
+      float throttle = (thr_item && cJSON_IsNumber(thr_item))
+                           ? (float)thr_item->valuedouble
+                           : 0.25f;
+      bool ok = VehicleControlStartAutoForwardCalibration(throttle);
+      cJSON_AddStringToObject(reply, "status", ok ? "collecting" : "failed");
+      cJSON_AddNumberToObject(reply, "stage", 2);
+      cJSON_AddBoolToObject(reply, "ok", ok);
+      cJSON_AddBoolToObject(reply, "auto_drive", ok);
+      cJSON_AddNumberToObject(reply, "throttle", throttle);
+      ESP_LOGI(TAG, "calibrate_imu mode=auto_forward throttle=%.2f -> %s",
+               throttle, ok ? "started" : "failed (need stage 1 full)");
+    } else if (is_forward) {
       bool ok = VehicleControlStartForwardCalibration();
       cJSON_AddStringToObject(reply, "status", ok ? "collecting" : "failed");
       cJSON_AddNumberToObject(reply, "stage", 2);

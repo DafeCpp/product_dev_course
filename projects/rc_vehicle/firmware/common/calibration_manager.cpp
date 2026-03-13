@@ -21,6 +21,26 @@ bool CalibrationManager::StartForwardCalibration() {
   return imu_calib_.StartForwardCalibration(2000);
 }
 
+bool CalibrationManager::StartAutoForwardCalibration(float throttle) {
+  if (!imu_calib_.StartForwardCalibration(2000)) {
+    platform_.Log(LogLevel::Warning,
+                  "Auto-forward calib failed to start (need stage 1 full)");
+    return false;
+  }
+  auto_forward_throttle_ =
+      (throttle < 0.1f) ? 0.1f : (throttle > 0.5f ? 0.5f : throttle);
+  auto_forward_active_ = true;
+  platform_.Log(LogLevel::Info, "Auto-forward calibration started");
+  return true;
+}
+
+void CalibrationManager::StopAutoForward() {
+  if (auto_forward_active_) {
+    auto_forward_active_ = false;
+    platform_.Log(LogLevel::Info, "Auto-forward calibration stopped");
+  }
+}
+
 void CalibrationManager::SetForwardDirection(float fx, float fy, float fz) {
   imu_calib_.SetForwardDirection(fx, fy, fz);
   auto result = platform_.SaveCalib(imu_calib_.GetData());
@@ -62,6 +82,11 @@ void CalibrationManager::ProcessCompletion() {
     return;  // Статус не изменился — ничего не делаем
   }
   prev_calib_status_ = status;
+
+  // Авто-движение завершается вместе с калибровкой
+  if (status == CalibStatus::Done || status == CalibStatus::Failed) {
+    StopAutoForward();
+  }
 
   if (status == CalibStatus::Done) {
     auto result = platform_.SaveCalib(imu_calib_.GetData());

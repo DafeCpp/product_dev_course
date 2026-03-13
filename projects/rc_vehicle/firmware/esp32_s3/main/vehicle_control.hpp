@@ -38,6 +38,11 @@ inline bool VehicleControlStartForwardCalibration(void) {
       .StartForwardCalibration();
 }
 
+inline bool VehicleControlStartAutoForwardCalibration(float throttle = 0.25f) {
+  return rc_vehicle::VehicleControlUnified::Instance()
+      .StartAutoForwardCalibration(throttle);
+}
+
 inline const char* VehicleControlGetCalibStatus(void) {
   return rc_vehicle::VehicleControlUnified::Instance().GetCalibStatus();
 }

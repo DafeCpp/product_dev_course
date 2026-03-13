@@ -51,6 +51,31 @@ class CalibrationManager {
   bool StartForwardCalibration();
 
   /**
+   * @brief Запуск этапа 2 с автоматическим движением вперёд.
+   *
+   * Прошивка сама подаёт газ `throttle` при прямых колёсах до завершения
+   * сбора данных. RC-пульт перекрывает авто-движение (безопасность).
+   * При срабатывании failsafe авто-движение прерывается.
+   *
+   * @param throttle Газ вперёд [0.1..0.5], по умолчанию 0.25
+   * @return true при успешном запуске
+   */
+  bool StartAutoForwardCalibration(float throttle = 0.25f);
+
+  /** Прервать авто-движение (вызывается из failsafe). */
+  void StopAutoForward();
+
+  /** true пока идёт авто-движение для калибровки. */
+  [[nodiscard]] bool IsAutoForwardActive() const {
+    return auto_forward_active_;
+  }
+
+  /** Команда газа для авто-движения. */
+  [[nodiscard]] float GetAutoForwardThrottle() const {
+    return auto_forward_throttle_;
+  }
+
+  /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
    * @param fx X компонента вектора
    * @param fy Y компонента вектора
@@ -103,6 +128,10 @@ class CalibrationManager {
 
   // Предыдущий статус калибровки (для логирования только при переходах)
   CalibStatus prev_calib_status_{CalibStatus::Idle};
+
+  // Авто-движение вперёд для Forward-калибровки
+  bool auto_forward_active_{false};
+  float auto_forward_throttle_{0.25f};
 };
 
 }  // namespace rc_vehicle

@@ -94,6 +94,18 @@ void VehicleControlUnified::ControlTaskLoop() {
     SelectControlSource(commanded_throttle, commanded_steering);
 
     // ─────────────────────────────────────────────────────────────────────
+    // Авто-движение для Forward-калибровки направления
+    // RC-пульт имеет приоритет (безопасность): если RC активен, пользователь
+    // управляет машиной вручную, авто-движение не применяется.
+    // ─────────────────────────────────────────────────────────────────────
+
+    const bool rc_active_now = rc_handler_ && rc_handler_->IsActive();
+    if (calib_mgr_->IsAutoForwardActive() && !rc_active_now) {
+      commanded_throttle = calib_mgr_->GetAutoForwardThrottle();
+      commanded_steering = 0.0f;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Kids Mode: применить ограничения газа/руля и anti-spin
     // ─────────────────────────────────────────────────────────────────────
 
@@ -141,6 +153,7 @@ void VehicleControlUnified::ControlTaskLoop() {
       ekf_.Reset();
       stab_mgr_->ResetWeights();       // Сброс весов стабилизации
       telem_mgr_->ResetLastLogTime();  // Сброс таймера лога
+      calib_mgr_->StopAutoForward();   // Прервать авто-движение при failsafe
       platform_->SetPwmNeutral();
     }
 

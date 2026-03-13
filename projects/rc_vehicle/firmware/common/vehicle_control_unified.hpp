@@ -69,6 +69,15 @@ class VehicleControlUnified {
   }
 
   /**
+   * @brief Запуск этапа 2 с автоматическим движением вперёд.
+   * @param throttle Газ вперёд [0.1..0.5], по умолчанию 0.25
+   * @return true при успешном запуске
+   */
+  bool StartAutoForwardCalibration(float throttle = 0.25f) {
+    return calib_mgr_->StartAutoForwardCalibration(throttle);
+  }
+
+  /**
    * @brief Строковый статус калибровки
    * @return "idle", "collecting", "done", "failed"
    */
