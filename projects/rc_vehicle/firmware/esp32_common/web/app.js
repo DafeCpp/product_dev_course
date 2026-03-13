@@ -472,19 +472,37 @@ function applyStabConfig(cfg) {
     updateModeButtons(currentMode);
 
     setChk('stab-enabled', cfg.enabled);
-    set('stab-kp', cfg.pid_kp ?? '');
-    set('stab-ki', cfg.pid_ki ?? '');
-    set('stab-kd', cfg.pid_kd ?? '');
-    set('stab-max-corr', cfg.pid_max_correction ?? '');
-    setChk('adapt-pid-enabled', cfg.adaptive_pid_enabled);
-    set('adapt-speed-ref', cfg.adaptive_speed_ref_ms ?? '');
-    setChk('pitch-comp-enabled', cfg.pitch_comp_enabled);
-    set('pitch-gain', cfg.pitch_comp_gain ?? '');
-    set('pitch-max-corr', cfg.pitch_comp_max_correction ?? '');
-    setChk('oversteer-enabled', cfg.oversteer_warn_enabled);
-    set('ow-slip-thresh', cfg.oversteer_slip_thresh_deg ?? '');
-    set('ow-rate-thresh', cfg.oversteer_rate_thresh_deg_s ?? '');
-    set('ow-throttle-red', cfg.oversteer_throttle_reduction ?? '');
+
+    // Прошивка возвращает вложенный JSON: yaw_rate.pid.kp и т.д.
+    const pid = cfg.yaw_rate?.pid;
+    set('stab-kp', pid?.kp ?? '');
+    set('stab-ki', pid?.ki ?? '');
+    set('stab-kd', pid?.kd ?? '');
+    set('stab-max-corr', pid?.max_correction ?? '');
+    setChk('adapt-pid-enabled', cfg.adaptive?.enabled);
+    set('adapt-speed-ref', cfg.adaptive?.speed_ref_ms ?? '');
+    setChk('pitch-comp-enabled', cfg.pitch_comp?.enabled);
+    set('pitch-gain', cfg.pitch_comp?.gain ?? '');
+    set('pitch-max-corr', cfg.pitch_comp?.max_correction ?? '');
+    setChk('oversteer-enabled', cfg.oversteer?.warn_enabled);
+    set('ow-slip-thresh', cfg.oversteer?.slip_thresh_deg ?? '');
+    set('ow-rate-thresh', cfg.oversteer?.rate_thresh_deg_s ?? '');
+    set('ow-throttle-red', cfg.oversteer?.throttle_reduction ?? '');
+
+    // Детский режим: синхронизировать слайдеры с конфигом прошивки
+    const km = cfg.kids_mode;
+    if (km) {
+        const tPct = Math.round((km.throttle_limit ?? 0.5) * 100);
+        const sPct = Math.round((km.steering_limit ?? 0.7) * 100);
+        kidsThrottleLimit = km.throttle_limit ?? 0.5;
+        kidsSteeringLimit = km.steering_limit ?? 0.7;
+        set('kids-throttle-limit', tPct);
+        set('kids-steering-limit', sPct);
+        const tEl = document.getElementById('kids-throttle-value');
+        const sEl = document.getElementById('kids-steering-value');
+        if (tEl) tEl.textContent = tPct;
+        if (sEl) sEl.textContent = sPct;
+    }
 }
 
 function updateModeButtons(mode) {
@@ -521,10 +539,12 @@ function updateKidsModeUI() {
     const controlPanel = document.getElementById('control-panel');
     const toggleBtn = document.getElementById('btn-kids-toggle');
 
-    if (kidsMode) {
+    // Показываем настройки если включён browser-toggle ИЛИ выбран режим Kids (3)
+    const kidsActive = kidsMode || currentMode === 3;
+    if (kidsActive) {
         if (kidsSettings) kidsSettings.style.display = 'block';
         if (kidsBanner) kidsBanner.style.display = 'block';
-        if (controlPanel && currentMode !== 3) controlPanel.classList.add('kids-active');  // 3 = Kids drive mode
+        if (controlPanel) controlPanel.classList.add('kids-active');
         if (toggleBtn) toggleBtn.textContent = 'Детский режим: ВКЛ';
         if (toggleBtn) toggleBtn.classList.add('btn-kids-active');
     } else {
@@ -550,23 +570,39 @@ function saveStabConfig() {
         return el ? el.checked : false;
     };
 
+    // Прошивка ожидает вложенный JSON — StabilizationConfigFromJson
     const cfg = {
         type: 'set_stab_config',
         mode: currentMode,
         enabled: getChk('stab-enabled'),
-        pid_kp: getF('stab-kp'),
-        pid_ki: getF('stab-ki'),
-        pid_kd: getF('stab-kd'),
-        pid_max_correction: getF('stab-max-corr'),
-        adaptive_pid_enabled: getChk('adapt-pid-enabled'),
-        adaptive_speed_ref_ms: getF('adapt-speed-ref'),
-        pitch_comp_enabled: getChk('pitch-comp-enabled'),
-        pitch_comp_gain: getF('pitch-gain'),
-        pitch_comp_max_correction: getF('pitch-max-corr'),
-        oversteer_warn_enabled: getChk('oversteer-enabled'),
-        oversteer_slip_thresh_deg: getF('ow-slip-thresh'),
-        oversteer_rate_thresh_deg_s: getF('ow-rate-thresh'),
-        oversteer_throttle_reduction: getF('ow-throttle-red'),
+        yaw_rate: {
+            pid: {
+                kp: getF('stab-kp'),
+                ki: getF('stab-ki'),
+                kd: getF('stab-kd'),
+                max_correction: getF('stab-max-corr'),
+            },
+        },
+        adaptive: {
+            enabled: getChk('adapt-pid-enabled'),
+            speed_ref_ms: getF('adapt-speed-ref'),
+        },
+        pitch_comp: {
+            enabled: getChk('pitch-comp-enabled'),
+            gain: getF('pitch-gain'),
+            max_correction: getF('pitch-max-corr'),
+        },
+        oversteer: {
+            warn_enabled: getChk('oversteer-enabled'),
+            slip_thresh_deg: getF('ow-slip-thresh'),
+            rate_thresh_deg_s: getF('ow-rate-thresh'),
+            throttle_reduction: getF('ow-throttle-red'),
+        },
+        kids_mode: {
+            throttle_limit: kidsThrottleLimit,
+            reverse_limit: kidsThrottleLimit,
+            steering_limit: kidsSteeringLimit,
+        },
     };
     wsSend(cfg);
 }

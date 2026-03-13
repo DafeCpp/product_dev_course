@@ -133,6 +133,17 @@ void OversteerGuard::Process(float& throttle, uint32_t dt_ms) noexcept {
   const float slip_rate = (slip - prev_slip_deg_) / dt_sec;
   prev_slip_deg_ = slip;
 
+  // Занос невозможен без значимой угловой скорости рыскания. Yaw rate
+  // измеряется напрямую гироскопом (не интегрируется), поэтому надёжен при
+  // неподвижности. Без этой проверки EKF-дрейф vx/vy при стоянке даёт
+  // ложный slip angle → ложное срабатывание.
+  constexpr float kMinYawRateRad = 0.3f;  // ~17°/с
+  if (std::abs(ekf_->GetYawRate()) < kMinYawRateRad) {
+    oversteer_active_ = false;
+    prev_slip_deg_ = 0.0f;
+    return;
+  }
+
   oversteer_active_ = (std::abs(slip) > cfg_->oversteer.slip_thresh_deg &&
                        std::abs(slip_rate) > cfg_->oversteer.rate_thresh_deg_s);
 

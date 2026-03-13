@@ -78,6 +78,7 @@ add_executable(unit_tests
     unit/test_pid.cpp
     unit/test_vehicle_ekf.cpp
     unit/test_telemetry_log.cpp
+    unit/test_oversteer_guard.cpp
 )
 
 target_link_libraries(unit_tests
