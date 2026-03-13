@@ -341,6 +341,12 @@ PlatformError VehicleControlUnified::Init() {
     platform_->Log(
         LogLevel::Warning,
         "TelemetryLog: failed to allocate (no PSRAM?), log disabled");
+  } else {
+    LogFormat fmt;
+    fmt << "TelemetryLog: allocated "
+        << static_cast<unsigned>(config::TelemetryLogConfig::kCapacityFrames)
+        << " frames";
+    platform_->Log(LogLevel::Info, fmt.str());
   }
 
   // ───────────────────────────────────────────────────────────────────────
