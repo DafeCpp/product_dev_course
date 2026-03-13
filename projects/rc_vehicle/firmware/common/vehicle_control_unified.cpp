@@ -78,6 +78,17 @@ void VehicleControlUnified::ControlTaskLoop() {
       // gz отфильтрован LPF (dps) → рад/с для EKF
       constexpr float kDegToRad = 3.14159265358979f / 180.0f;
       ekf_.UpdateGyroZ(imu_handler_->GetFilteredGyroZ() * kDegToRad);
+
+      // ZUPT: если |a| ≈ 1g и |gyro_z| мал → машина стоит → vx,vy → 0
+      const float accel_mag = std::sqrt(imu_data.ax * imu_data.ax +
+                                        imu_data.ay * imu_data.ay +
+                                        imu_data.az * imu_data.az);
+      constexpr float kZuptAccelThresh = 0.05f;   // |a| - 1g| < 0.05g
+      constexpr float kZuptGyroThresh = 3.0f;     // |gyro_z| < 3 dps
+      if (std::abs(accel_mag - 1.0f) < kZuptAccelThresh &&
+          std::abs(imu_handler_->GetFilteredGyroZ()) < kZuptGyroThresh) {
+        ekf_.UpdateZeroVelocity(0.1f);
+      }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -234,6 +245,9 @@ void VehicleControlUnified::ControlTaskLoop() {
         frame.speed_ms = ekf_.GetSpeedMs();
         frame.throttle = applied_throttle;
         frame.steering = applied_steering;
+        madgwick_.GetEulerDeg(frame.pitch_deg, frame.roll_deg, frame.yaw_deg);
+        frame.yaw_rate_dps = imu_handler_->GetFilteredGyroZ();
+        frame.oversteer_active = oversteer_guard_.IsActive() ? 1.0f : 0.0f;
         telem_mgr_->Push(frame);
         telem_mgr_->SetLastLogTime(now);
       }

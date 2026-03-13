@@ -171,12 +171,23 @@ void HandleGetLogData(cJSON* json, httpd_req_t* req) {
           cJSON* f = cJSON_CreateObject();
           if (f) {
             cJSON_AddNumberToObject(f, "ts_ms", frame.ts_ms);
+            cJSON_AddNumberToObject(f, "ax", frame.ax);
+            cJSON_AddNumberToObject(f, "ay", frame.ay);
+            cJSON_AddNumberToObject(f, "az", frame.az);
+            cJSON_AddNumberToObject(f, "gx", frame.gx);
+            cJSON_AddNumberToObject(f, "gy", frame.gy);
+            cJSON_AddNumberToObject(f, "gz", frame.gz);
             cJSON_AddNumberToObject(f, "vx", frame.vx);
             cJSON_AddNumberToObject(f, "vy", frame.vy);
             cJSON_AddNumberToObject(f, "slip_deg", frame.slip_deg);
             cJSON_AddNumberToObject(f, "speed_ms", frame.speed_ms);
             cJSON_AddNumberToObject(f, "throttle", frame.throttle);
             cJSON_AddNumberToObject(f, "steering", frame.steering);
+            cJSON_AddNumberToObject(f, "pitch_deg", frame.pitch_deg);
+            cJSON_AddNumberToObject(f, "roll_deg", frame.roll_deg);
+            cJSON_AddNumberToObject(f, "yaw_deg", frame.yaw_deg);
+            cJSON_AddNumberToObject(f, "yaw_rate_dps", frame.yaw_rate_dps);
+            cJSON_AddNumberToObject(f, "oversteer_active", frame.oversteer_active);
             cJSON_AddItemToArray(frames_arr, f);
           }
         }

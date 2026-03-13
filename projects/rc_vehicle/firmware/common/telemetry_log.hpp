@@ -7,22 +7,29 @@
 /**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 52 байта (12 × float4 + uint32_t).
+ * Размер: 72 байта (17 × float + uint32_t).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
+ *
+ * Буфер 5000 кадров × 72 байта = 360 КБ.
  */
 struct TelemetryLogFrame {
-  uint32_t ts_ms{0};      // Метка времени [мс]
-  float ax{0}, ay{0}, az{0};  // Ускорение IMU (откалиброванное, в g)
-  float gx{0}, gy{0}, gz{0};  // Угловая скорость IMU (dps)
-  float vx{0}, vy{0};         // EKF: скорость [м/с]
-  float slip_deg{0};           // EKF: угол заноса [градусы]
-  float speed_ms{0};           // EKF: полная скорость |v| [м/с]
-  float throttle{0};           // Команда газа [-1..1]
-  float steering{0};           // Команда руля [-1..1]
-};  // sizeof == 52 bytes (uint32_t + 12 × float)
+  uint32_t ts_ms{0};           // Метка времени [мс]
+  float ax{0}, ay{0}, az{0};   // Ускорение IMU (откалиброванное, в g)
+  float gx{0}, gy{0}, gz{0};   // Угловая скорость IMU (dps)
+  float vx{0}, vy{0};          // EKF: скорость [м/с]
+  float slip_deg{0};            // EKF: угол заноса [градусы]
+  float speed_ms{0};            // EKF: полная скорость |v| [м/с]
+  float throttle{0};            // Команда газа [-1..1]
+  float steering{0};            // Команда руля [-1..1]
+  float pitch_deg{0};           // Madgwick: pitch [градусы]
+  float roll_deg{0};            // Madgwick: roll [градусы]
+  float yaw_deg{0};             // Madgwick: yaw [градусы]
+  float yaw_rate_dps{0};        // Отфильтрованный gyro Z [дпс]
+  float oversteer_active{0};    // OversteerGuard: 1.0 = занос, 0.0 = нет
+};  // sizeof == 72 bytes (uint32_t + 17 × float)
 
 // Compile-time проверка размера структуры
-static_assert(sizeof(TelemetryLogFrame) == 52,
+static_assert(sizeof(TelemetryLogFrame) == 72,
               "TelemetryLogFrame size mismatch");
 
 /**

@@ -685,9 +685,9 @@ function exportLogCsv(frames) {
         alert('Нет данных для скачивания');
         return;
     }
-    const header = 'ts_ms,vx,vy,slip_deg,speed_ms,throttle,steering\n';
+    const header = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active\n';
     const rows = frames.map(f =>
-        `${f.ts_ms},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering}`
+        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active}`
     ).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
