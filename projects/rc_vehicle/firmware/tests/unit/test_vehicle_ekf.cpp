@@ -266,6 +266,30 @@ TEST(VehicleEkfTest, StraightLine_NoSideslip) {
   EXPECT_NEAR(ekf.GetSlipAngleDeg(), 0.0f, 0.2f);
 }
 
+TEST(VehicleEkfTest, NormalTurn_CentripetalAccel_NoFalseSlip) {
+  // Машина едет вперёд (vx=3 m/s) и поворачивает (r=1 рад/с).
+  // Нормальный поворот: центростремительное ускорение ay = r * vx = 3 м/с².
+  // Без заноса: vy должна оставаться около нуля (демпфирование шин).
+  // До исправления (без vy damping): EKF накапливал vy из малых погрешностей
+  // → ложный slip angle при нормальном повороте.
+  VehicleEkf ekf;
+  ekf.SetState(3.0f, 0.0f, 1.0f);
+
+  const float vx = 3.0f;
+  const float r = 1.0f;
+  const float ay_centripetal = r * vx;  // = 3 м/с²
+
+  for (int i = 0; i < 500; ++i) {  // 1 секунда при 500 Hz
+    ekf.Predict(0.0f, ay_centripetal, 0.002f);
+    ekf.UpdateGyroZ(r);
+  }
+
+  // vy должна оставаться близкой к нулю — нет реального заноса
+  EXPECT_NEAR(ekf.GetVy(), 0.0f, 0.5f);
+  // Угол заноса должен быть небольшим (не детектируется как занос)
+  EXPECT_LT(std::abs(ekf.GetSlipAngleDeg()), 10.0f);
+}
+
 TEST(VehicleEkfTest, Speed_IsNonNegative) {
   VehicleEkf ekf;
   ekf.SetState(-3.0f, 2.0f, 0.5f);
@@ -299,6 +323,63 @@ TEST(VehicleEkfTest, HighMeasurementNoise_SlowerConvergence) {
 
   // При низком шуме измерения — ближе к реальному gz
   EXPECT_GT(ekf_low.GetYawRate(), ekf_high.GetYawRate());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Zero Velocity Update (ZUPT)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(VehicleEkfTest, ZUPT_PullsVelocityToZero) {
+  // vx=2, vy=1 → после серии ZUPT → vx≈0, vy≈0
+  VehicleEkf ekf;
+  ekf.SetState(2.0f, 1.0f, 0.5f);
+  for (int i = 0; i < 50; ++i) {
+    ekf.Predict(0.0f, 0.0f, 0.002f);
+    ekf.UpdateZeroVelocity(0.1f);
+  }
+  EXPECT_NEAR(ekf.GetVx(), 0.0f, 0.05f);
+  EXPECT_NEAR(ekf.GetVy(), 0.0f, 0.05f);
+}
+
+TEST(VehicleEkfTest, ZUPT_DoesNotAffectYawRate) {
+  // ZUPT обнуляет vx,vy но yaw rate корректируется только через gyro
+  VehicleEkf ekf;
+  ekf.SetState(0.0f, 0.0f, 2.0f);
+  for (int i = 0; i < 20; ++i) {
+    ekf.Predict(0.0f, 0.0f, 0.002f);
+    ekf.UpdateGyroZ(2.0f);
+    ekf.UpdateZeroVelocity(0.1f);
+  }
+  // yaw rate должен оставаться около 2.0 — ZUPT его не обнуляет
+  EXPECT_NEAR(ekf.GetYawRate(), 2.0f, 0.1f);
+}
+
+TEST(VehicleEkfTest, ZUPT_ReducesVariance) {
+  // После ZUPT дисперсии vx и vy должны уменьшиться
+  VehicleEkf ekf;
+  // Нарастить дисперсию серией предсказаний
+  for (int i = 0; i < 100; ++i) {
+    ekf.Predict(1.0f, 0.5f, 0.002f);
+  }
+  const float pvx_before = ekf.GetVxVariance();
+  const float pvy_before = ekf.GetVyVariance();
+  ekf.UpdateZeroVelocity(0.1f);
+  EXPECT_LT(ekf.GetVxVariance(), pvx_before);
+  EXPECT_LT(ekf.GetVyVariance(), pvy_before);
+}
+
+TEST(VehicleEkfTest, ZUPT_PreventsStationaryDrift) {
+  // Машина стоит (ax=0,ay=0,gz=0), но EKF без ZUPT может дрейфовать.
+  // С ZUPT — vx,vy должны оставаться ≈ 0 даже через 1000 шагов.
+  VehicleEkf ekf;
+  for (int i = 0; i < 1000; ++i) {
+    ekf.Predict(0.0f, 0.0f, 0.002f);
+    ekf.UpdateGyroZ(0.0f);
+    ekf.UpdateZeroVelocity(0.1f);
+  }
+  EXPECT_NEAR(ekf.GetVx(), 0.0f, 0.01f);
+  EXPECT_NEAR(ekf.GetVy(), 0.0f, 0.01f);
+  EXPECT_NEAR(ekf.GetSlipAngleDeg(), 0.0f, 0.1f);
 }
 
 TEST(VehicleEkfTest, SetNoiseParams_AffectsConvergence) {

@@ -55,21 +55,28 @@ void VehicleEkf::Predict(float ax, float ay, float dt) noexcept {
   //   ax_imu = vx_dot - r * vy  →  vx_dot = ax_imu + r * vy
   //   ay_imu = vy_dot + r * vx  →  vy_dot = ay_imu - r * vx
   //   r — random walk (корректируется по gyro_z в шаге обновления)
+  //
+  // Демпфирование vy: моделирует боковую жёсткость шин.
+  // При нормальном повороте ay≈r*vx → vy_dot≈0, демпфирование удерживает vy≈0.
+  // При реальном заносе (ay<r*vx, нет бокового усилия) vy нарастает несмотря
+  // на демпфирование.
+
+  const float vy_damp = 1.0f - params_.vy_decay_hz * dt;
 
   x_[0] = vx + dt * (ax + r * vy);
-  x_[1] = vy + dt * (ay - r * vx);
+  x_[1] = vy * vy_damp + dt * (ay - r * vx);
   x_[2] = r;
 
   // ── Якобиан F = df/dx (вычисляется в точке x до обновления) ──────────
   //
-  // F = [ 1,       dt*r,   dt*vy ]
-  //     [ -dt*r,   1,     -dt*vx ]
-  //     [ 0,       0,      1     ]
+  // F = [ 1,          dt*r,   dt*vy ]
+  //     [ -dt*r,   vy_damp,  -dt*vx ]
+  //     [ 0,          0,      1     ]
 
   float F[9] = {
-      1.0f,    dt * r,  dt * vy,  //
-      -dt * r, 1.0f,   -dt * vx,  //
-      0.0f,    0.0f,    1.0f      //
+      1.0f,    dt * r,  dt * vy,   //
+      -dt * r, vy_damp, -dt * vx,  //
+      0.0f,    0.0f,    1.0f       //
   };
 
   // ── P = F * P * F^T + Q ───────────────────────────────────────────────
@@ -128,6 +135,54 @@ void VehicleEkf::UpdateGyroZ(float gz) noexcept {
     P_[0 + j] -= K0 * p2j;
     P_[3 + j] -= K1 * p2j;
     P_[6 + j] *= (1.0f - K2);
+  }
+
+  SymmetrizeP(P_);
+  ClampP();
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Zero Velocity Update (ZUPT)
+// ═════════════════════════════════════════════════════════════════════════
+
+void VehicleEkf::UpdateZeroVelocity(float r_zupt) noexcept {
+  // Два последовательных скалярных обновления: vx=0, vy=0.
+  // Каждое — стандартный Kalman scalar update с H = единичный вектор.
+
+  // Обновление 1: H = [1, 0, 0], z = 0 → vx → 0
+  const float S_vx = P_[0] + r_zupt;
+  if (S_vx >= 1e-9f) {
+    const float innov_vx = -x_[0];
+    const float K0 = P_[0] / S_vx;
+    const float K1 = P_[3] / S_vx;
+    const float K2 = P_[6] / S_vx;
+    x_[0] += K0 * innov_vx;
+    x_[1] += K1 * innov_vx;
+    x_[2] += K2 * innov_vx;
+    for (int j = 0; j < 3; ++j) {
+      const float p0j = P_[0 + j];
+      P_[0 + j] -= K0 * p0j;
+      P_[3 + j] -= K1 * p0j;
+      P_[6 + j] -= K2 * p0j;
+    }
+  }
+
+  // Обновление 2: H = [0, 1, 0], z = 0 → vy → 0
+  const float S_vy = P_[4] + r_zupt;
+  if (S_vy >= 1e-9f) {
+    const float innov_vy = -x_[1];
+    const float K0 = P_[1] / S_vy;
+    const float K1 = P_[4] / S_vy;
+    const float K2 = P_[7] / S_vy;
+    x_[0] += K0 * innov_vy;
+    x_[1] += K1 * innov_vy;
+    x_[2] += K2 * innov_vy;
+    for (int j = 0; j < 3; ++j) {
+      const float p1j = P_[3 + j];
+      P_[0 + j] -= K0 * p1j;
+      P_[3 + j] -= K1 * p1j;
+      P_[6 + j] -= K2 * p1j;
+    }
   }
 
   SymmetrizeP(P_);
