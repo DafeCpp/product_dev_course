@@ -125,6 +125,19 @@
                 <button id="btn-calib-gyro" class="btn-calib">Гироскоп</button>
                 <button id="btn-calib-full" class="btn-calib">Полная</button>
             </div>
+
+            <p class="calib-hint">После полной калибровки: поставьте машину на прямую, нажмите кнопку — машина проедет вперёд и запомнит направление.</p>
+
+            <div class="control-group">
+                <label for="calib-fwd-throttle">Газ авто-движения (%):</label>
+                <input type="range" id="calib-fwd-throttle" min="10" max="50" step="5" value="25">
+                <span id="calib-fwd-throttle-value">25</span>
+            </div>
+
+            <div class="button-group">
+                <button id="btn-calib-auto-forward" class="btn-calib">Авто-калибровка направления</button>
+                <button id="btn-calib-forward" class="btn-calib">Вперёд (вручную)</button>
+            </div>
         </div>
 
         <div class="control-panel">
@@ -200,6 +213,16 @@
                     <input type="text" id="pitch-gain" size="6">
                     <label for="pitch-max-corr">MaxCorr:</label>
                     <input type="text" id="pitch-max-corr" size="6">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="adaptive-beta-enabled"> Адаптивный Madgwick (защита при движении)
+                </label>
+                <div class="param-row">
+                    <label for="adaptive-accel-thresh">Порог |a| (g):</label>
+                    <input type="text" id="adaptive-accel-thresh" size="6">
                 </div>
             </div>
 

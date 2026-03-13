@@ -20,6 +20,10 @@ const steeringValueEl = document.getElementById('steering-value');
 const btnCenter = document.getElementById('btn-center');
 const btnStop = document.getElementById('btn-stop');
 const telemDataEl = document.getElementById('telem-data');
+const btnCalibAutoForward = document.getElementById('btn-calib-auto-forward');
+const btnCalibForward = document.getElementById('btn-calib-forward');
+const calibFwdThrottleSlider = document.getElementById('calib-fwd-throttle');
+const calibFwdThrottleValueEl = document.getElementById('calib-fwd-throttle-value');
 
 // Wi‑Fi STA UI
 const staStatusEl = document.getElementById('sta-status');
@@ -332,6 +336,8 @@ function updateCalibStatus(status, calib) {
         const collecting = (status === 'collecting');
         if (btnCalibGyro) btnCalibGyro.disabled = collecting;
         if (btnCalibFull) btnCalibFull.disabled = collecting;
+        if (btnCalibForward) btnCalibForward.disabled = collecting;
+        if (btnCalibAutoForward) btnCalibAutoForward.disabled = collecting;
     }
 
     if (calib) {
@@ -481,6 +487,8 @@ function applyStabConfig(cfg) {
     set('stab-max-corr', pid?.max_correction ?? '');
     setChk('adapt-pid-enabled', cfg.adaptive?.enabled);
     set('adapt-speed-ref', cfg.adaptive?.speed_ref_ms ?? '');
+    setChk('adaptive-beta-enabled', cfg.filter?.adaptive_beta_enabled ?? true);
+    set('adaptive-accel-thresh', cfg.filter?.adaptive_accel_threshold_g ?? '');
     setChk('pitch-comp-enabled', cfg.pitch_comp?.enabled);
     set('pitch-gain', cfg.pitch_comp?.gain ?? '');
     set('pitch-max-corr', cfg.pitch_comp?.max_correction ?? '');
@@ -575,6 +583,10 @@ function saveStabConfig() {
         type: 'set_stab_config',
         mode: currentMode,
         enabled: getChk('stab-enabled'),
+        filter: {
+            adaptive_beta_enabled: getChk('adaptive-beta-enabled'),
+            adaptive_accel_threshold_g: getF('adaptive-accel-thresh'),
+        },
         yaw_rate: {
             pid: {
                 kp: getF('stab-kp'),
@@ -713,6 +725,21 @@ if (btnCalibGyro) {
 }
 if (btnCalibFull) {
     btnCalibFull.addEventListener('click', () => sendCalibrate('full'));
+}
+if (btnCalibForward) {
+    btnCalibForward.addEventListener('click', () => sendCalibrate('forward'));
+}
+if (btnCalibAutoForward) {
+    btnCalibAutoForward.addEventListener('click', () => {
+        const pct = calibFwdThrottleSlider ? parseInt(calibFwdThrottleSlider.value) : 25;
+        const throttle = pct / 100;
+        wsSend({ type: 'calibrate_imu', mode: 'auto_forward', throttle });
+    });
+}
+if (calibFwdThrottleSlider) {
+    calibFwdThrottleSlider.addEventListener('input', (e) => {
+        if (calibFwdThrottleValueEl) calibFwdThrottleValueEl.textContent = e.target.value;
+    });
 }
 
 if (staScanList) {
