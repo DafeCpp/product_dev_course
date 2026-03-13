@@ -80,7 +80,9 @@
       "Bash(wait:*)",
       "Bash(npm test:*)",
       "Bash(cp:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(./unit_tests --gtest_filter=\"OversteerGuard*\" 2>&1)",
+      "Bash(./unit_tests 2>&1 | tail -15)"
     ]
   }
 }
