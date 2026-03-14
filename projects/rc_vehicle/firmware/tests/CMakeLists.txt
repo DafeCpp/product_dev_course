@@ -86,6 +86,9 @@ add_executable(unit_tests
     unit/test_yaw_rate_controller.cpp
     unit/test_pitch_compensator.cpp
     unit/test_slip_angle_controller.cpp
+    unit/test_slew_rate.cpp
+    unit/test_control_source.cpp
+    unit/test_telemetry_handler.cpp
 )
 
 target_link_libraries(unit_tests
