@@ -54,8 +54,9 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     mode_transition_weight_ = 0.0f;  // Запустить плавный переход
     {
       LogFormat fmt;
-      fmt << "Mode changed to " << static_cast<unsigned>(validated_config.mode)
-          << ", defaults applied";
+      fmt << "Mode changed: " << DriveModeToString(current_mode) << " -> "
+          << DriveModeToString(validated_config.mode)
+          << ", defaults applied, PID reset";
       platform_.Log(LogLevel::Info, fmt.str());
     }
   }

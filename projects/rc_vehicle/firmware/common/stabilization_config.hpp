@@ -462,4 +462,24 @@ struct StabilizationDefaults {
 };
 }  // namespace config
 
+/**
+ * @brief Преобразовать DriveMode в строку
+ */
+inline const char* DriveModeToString(DriveMode mode) {
+  switch (mode) {
+    case DriveMode::Normal:
+      return "Normal";
+    case DriveMode::Sport:
+      return "Sport";
+    case DriveMode::Drift:
+      return "Drift";
+    case DriveMode::Kids:
+      return "Kids";
+    case DriveMode::DirectLaw:
+      return "DirectLaw";
+    default:
+      return "Unknown";
+  }
+}
+
 }  // namespace rc_vehicle

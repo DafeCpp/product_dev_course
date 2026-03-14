@@ -122,10 +122,11 @@ void HandleSetStabConfig(cJSON* json, httpd_req_t* req) {
   }
 
   ESP_LOGI(TAG,
-           "set_stab_config -> %s "
-           "(enabled=%d beta=%.3f cutoff=%.1f mode=%d kp=%.3f ki=%.3f kd=%.4f)",
-           ok ? "OK" : "FAILED", applied.enabled, applied.filter.madgwick_beta,
-           applied.filter.lpf_cutoff_hz, applied.mode, applied.yaw_rate.pid.kp,
+           "set_stab_config -> %s (mode=%s enabled=%d beta=%.3f cutoff=%.1f "
+           "kp=%.3f ki=%.3f kd=%.4f)",
+           ok ? "OK" : "FAILED", DriveModeToString(applied.mode),
+           applied.enabled, applied.filter.madgwick_beta,
+           applied.filter.lpf_cutoff_hz, applied.yaw_rate.pid.kp,
            applied.yaw_rate.pid.ki, applied.yaw_rate.pid.kd);
 }
 
