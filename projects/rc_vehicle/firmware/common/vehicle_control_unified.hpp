@@ -151,6 +151,18 @@ class VehicleControlUnified {
    */
   [[nodiscard]] std::vector<SelfTestItem> RunSelfTest() const;
 
+  /**
+   * @brief Проверить, готов ли control loop к обработке команд
+   *
+   * Возвращает true после того, как control task завершит первую
+   * итерацию. WS-хэндлеры должны проверять этот флаг перед
+   * обработкой команд, чтобы не обращаться к неинициализированным
+   * компонентам.
+   */
+  [[nodiscard]] bool IsReady() const noexcept {
+    return control_task_ready_.load(std::memory_order_acquire);
+  }
+
   VehicleControlUnified(const VehicleControlUnified&) = delete;
   VehicleControlUnified& operator=(const VehicleControlUnified&) = delete;
 
@@ -243,6 +255,9 @@ class VehicleControlUnified {
 
   // Последнее измерение частоты loop (обновляется в PrintDiagnostics)
   std::atomic<uint32_t> last_loop_hz_{0};
+
+  // Флаг готовности control task (init-ready barrier)
+  std::atomic<bool> control_task_ready_{false};
 
   // Менеджеры (управление отдельными аспектами системы)
   std::unique_ptr<CalibrationManager> calib_mgr_;

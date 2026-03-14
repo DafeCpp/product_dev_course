@@ -85,3 +85,7 @@ inline void VehicleControlClearLog() {
 inline std::vector<rc_vehicle::SelfTestItem> VehicleControlRunSelfTest() {
   return rc_vehicle::VehicleControlUnified::Instance().RunSelfTest();
 }
+
+inline bool VehicleControlIsReady() {
+  return rc_vehicle::VehicleControlUnified::Instance().IsReady();
+}

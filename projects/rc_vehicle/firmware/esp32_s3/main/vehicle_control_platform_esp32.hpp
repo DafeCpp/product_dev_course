@@ -83,6 +83,10 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
                                                        void* arg) override;
   void DelayUntilNextTick(uint32_t period_ms) override;
 
+  // Watchdog
+  void RegisterTaskWdt() override;
+  void FeedTaskWdt() noexcept override;
+
  private:
   QueueHandle_t cmd_queue_{nullptr};
   Failsafe failsafe_;

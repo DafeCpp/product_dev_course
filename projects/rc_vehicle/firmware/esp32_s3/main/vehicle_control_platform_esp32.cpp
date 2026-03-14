@@ -4,6 +4,7 @@
 
 #include "config.hpp"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "failsafe.hpp"
 #include "freertos/FreeRTOS.h"
@@ -273,6 +274,24 @@ void VehicleControlPlatformEsp32::DelayUntilNextTick(uint32_t period_ms) {
   }
   const TickType_t period_ticks = pdMS_TO_TICKS(period_ms);
   vTaskDelayUntil(&last_wake_time_, period_ticks ? period_ticks : 1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Watchdog
+// ─────────────────────────────────────────────────────────────────────────
+
+void VehicleControlPlatformEsp32::RegisterTaskWdt() {
+  esp_err_t err = esp_task_wdt_add(nullptr);  // nullptr = текущая задача
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to register control task in WDT: %s",
+             esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "Control task registered in Task WDT");
+  }
+}
+
+void VehicleControlPlatformEsp32::FeedTaskWdt() noexcept {
+  esp_task_wdt_reset();
 }
 
 }  // namespace rc_vehicle

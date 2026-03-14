@@ -258,6 +258,26 @@ class VehicleControlPlatform {
    * @param period_ms Период в миллисекундах от предыдущего пробуждения
    */
   virtual void DelayUntilNextTick(uint32_t period_ms) = 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Watchdog
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * @brief Зарегистрировать текущую задачу в Task WDT
+   *
+   * Вызывается один раз при старте control loop. После регистрации
+   * задача должна периодически вызывать FeedTaskWdt(), иначе WDT
+   * перезагрузит устройство.
+   */
+  virtual void RegisterTaskWdt() {}
+
+  /**
+   * @brief Сбросить таймер Task WDT (кормить watchdog)
+   *
+   * Вызывается каждую итерацию control loop.
+   */
+  virtual void FeedTaskWdt() noexcept {}
 };
 
 }  // namespace rc_vehicle

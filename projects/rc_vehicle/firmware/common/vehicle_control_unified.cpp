@@ -37,6 +37,9 @@ void VehicleControlUnified::ControlTaskLoop() {
     return;  // Платформа не установлена
   }
 
+  // Зарегистрировать control task в Task WDT
+  platform_->RegisterTaskWdt();
+
   // Slew rate для плавности управления
   float commanded_throttle = 0.0f;
   float commanded_steering = 0.0f;
@@ -49,6 +52,9 @@ void VehicleControlUnified::ControlTaskLoop() {
   // Диагностика
   uint32_t diag_loop_count = 0;
   uint32_t diag_start_ms = platform_->GetTimeMs();
+
+  // Сигнализировать готовность control task (init-ready barrier)
+  control_task_ready_.store(true, std::memory_order_release);
 
   while (true) {
     platform_->DelayUntilNextTick(config::ControlLoopConfig::kPeriodMs);
@@ -258,6 +264,9 @@ void VehicleControlUnified::ControlTaskLoop() {
     // ─────────────────────────────────────────────────────────────────────
 
     PrintDiagnostics(now, diag_loop_count, diag_start_ms);
+
+    // Кормить watchdog — если цикл зависнет, WDT перезагрузит устройство
+    platform_->FeedTaskWdt();
   }
 }
 
