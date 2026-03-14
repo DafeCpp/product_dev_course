@@ -121,28 +121,41 @@ void MadgwickFilter::Update(const ImuData& imu, float dt_sec) {
 void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
                                      const float forward_vec[3], bool valid) {
   use_vehicle_frame_ = false;
-  if (!valid || forward_vec == nullptr) return;
-  (void)gravity_vec;
+  if (!valid || forward_vec == nullptr || gravity_vec == nullptr) return;
 
-  // СК машины в NED: Z_veh = вниз (0,0,1), X_veh = вперёд (проекция forward на
-  // горизонталь), Y_veh = Z × X
-  float zx = 0.f, zy = 0.f, zz = 1.f;
-  float fx = forward_vec[0], fy = forward_vec[1],
-        fz = 0.f;  // проекция на горизонталь (Z=0)
-  float nx2 = fx * fx + fy * fy;
-  if (nx2 < 1e-12f) return;
-  float nx = InvSqrt(nx2);
-  fx *= nx;
-  fy *= nx;
+  // Z_veh (вниз машины) = gravity_vec в СК датчика, нормализованный.
+  // При нормальном монтаже ≈ [0,0,-1], при перевёрнутом ≈ [0,0,+1].
+  float zx = gravity_vec[0], zy = gravity_vec[1], zz = gravity_vec[2];
+  float z2 = zx * zx + zy * zy + zz * zz;
+  if (z2 < 1e-12f) return;
+  float zn = InvSqrt(z2);
+  zx *= zn;
+  zy *= zn;
+  zz *= zn;
 
-  float yx = zy * fz - zz * fy;  // (0,0,1)×(fx,fy,0) = (-fy, fx, 0)
+  // X_veh (вперёд машины) = forward_vec, ортогонализированный к Z_veh.
+  // Проекция: f_orth = forward - (forward · Z_veh) * Z_veh
+  float fx = forward_vec[0], fy = forward_vec[1], fz = forward_vec[2];
+  float dot_fz = fx * zx + fy * zy + fz * zz;
+  fx -= dot_fz * zx;
+  fy -= dot_fz * zy;
+  fz -= dot_fz * zz;
+  float f2 = fx * fx + fy * fy + fz * fz;
+  if (f2 < 1e-12f) return;  // forward ∥ gravity — невозможно построить СК
+  float fn = InvSqrt(f2);
+  fx *= fn;
+  fy *= fn;
+  fz *= fn;
+
+  // Y_veh (вправо) = Z_veh × X_veh
+  float yx = zy * fz - zz * fy;
   float yy = zz * fx - zx * fz;
-  float yz = zx * fy - zy * fx;  // z-component of Y_veh (0 in flat 2D case)
+  float yz = zx * fy - zy * fx;
 
-  // R_veh_to_ned: столбцы = оси СК машины в NED (X_veh, Y_veh, Z_veh)
-  float r00 = fx, r10 = fy, r20 = 0.f;
+  // R_veh_to_ned: столбцы = оси СК машины в СК датчика (X_veh, Y_veh, Z_veh)
+  float r00 = fx, r10 = fy, r20 = fz;
   float r01 = yx, r11 = yy, r21 = yz;
-  float r02 = 0.f, r12 = 0.f, r22 = 1.f;
+  float r02 = zx, r12 = zy, r22 = zz;
 
   // Матрица → кватернион q_veh_to_ned
   float tr = r00 + r11 + r22;

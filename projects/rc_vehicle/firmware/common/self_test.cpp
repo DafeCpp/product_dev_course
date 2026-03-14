@@ -45,13 +45,9 @@ std::vector<SelfTestItem> SelfTest::Run(const SelfTestInput& input) {
     results.emplace_back("accel_1g", ok, buf);
   }
 
-  // 5. Madgwick converged: |pitch| < 5°, roll near 0° or ±180° (upside-down mount)
+  // 5. Madgwick converged: |pitch| < 5°, |roll| < 5°
   {
-    float abs_pitch = std::abs(input.pitch_deg);
-    float abs_roll = std::abs(input.roll_deg);
-    // Allow roll ≈ 0° (normal) or ≈ ±180° (IMU mounted upside-down)
-    float roll_from_level = std::min(abs_roll, std::abs(180.0f - abs_roll));
-    float max_tilt = std::max(abs_pitch, roll_from_level);
+    float max_tilt = std::max(std::abs(input.pitch_deg), std::abs(input.roll_deg));
     std::snprintf(buf, sizeof(buf), "P=%.1f R=%.1f deg", input.pitch_deg,
                   input.roll_deg);
     results.emplace_back("madgwick_level", max_tilt < 5.0f, buf);
