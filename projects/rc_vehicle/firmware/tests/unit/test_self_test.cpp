@@ -92,6 +92,27 @@ TEST(SelfTestTest, MadgwickNotLevel) {
   EXPECT_FALSE(results[4].passed);
 }
 
+TEST(SelfTestTest, MadgwickUpsideDown) {
+  auto in = MakeIdealInput();
+  in.roll_deg = 180.0f;  // IMU mounted upside-down
+  auto results = SelfTest::Run(in);
+  EXPECT_TRUE(results[4].passed) << "roll=180 should pass (upside-down mount)";
+}
+
+TEST(SelfTestTest, MadgwickUpsideDownNeg) {
+  auto in = MakeIdealInput();
+  in.roll_deg = -179.0f;  // near -180°
+  auto results = SelfTest::Run(in);
+  EXPECT_TRUE(results[4].passed) << "roll=-179 should pass (upside-down mount)";
+}
+
+TEST(SelfTestTest, MadgwickTilted45Fails) {
+  auto in = MakeIdealInput();
+  in.roll_deg = 45.0f;  // neither level nor upside-down
+  auto results = SelfTest::Run(in);
+  EXPECT_FALSE(results[4].passed);
+}
+
 TEST(SelfTestTest, EkfDrifting) {
   auto in = MakeIdealInput();
   in.ekf_vx = 0.2f;  // > 0.05 m/s threshold
