@@ -46,13 +46,14 @@ std::vector<SelfTestItem> SelfTest::Run(const SelfTestInput& input) {
     results.emplace_back("accel_1g", ok, buf);
   }
 
-  // 5. Madgwick converged: |pitch| < 10°, |roll| < 10°
-  //    10° accounts for real-world conditions: table tilt, suspension geometry.
+  // 5. Madgwick converged: |pitch| < 5°, |roll| < 5°
+  //    После калибровки (SetVehicleFrame) углы ≈ 0 независимо от монтажа датчика.
+  //    5° допуск на подвеску, неровность стола, шум фильтра.
   {
     float max_tilt = std::max(std::abs(input.pitch_deg), std::abs(input.roll_deg));
     std::snprintf(buf, sizeof(buf), "P=%.1f R=%.1f deg", input.pitch_deg,
                   input.roll_deg);
-    results.emplace_back("madgwick_level", max_tilt < 10.0f, buf);
+    results.emplace_back("madgwick_level", max_tilt < 5.0f, buf);
   }
 
   // 6. EKF at rest (ZUPT): |vx| < 0.05, |vy| < 0.05 m/s

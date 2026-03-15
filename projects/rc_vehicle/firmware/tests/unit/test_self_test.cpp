@@ -87,14 +87,14 @@ TEST(SelfTestTest, AccelWrong) {
 
 TEST(SelfTestTest, MadgwickNotLevel) {
   auto in = MakeIdealInput();
-  in.pitch_deg = 15.0f;  // > 10° threshold
+  in.pitch_deg = 6.0f;  // > 5° threshold
   auto results = SelfTest::Run(in);
   EXPECT_FALSE(results[4].passed);
 }
 
-TEST(SelfTestTest, MadgwickWithinRealWorldTilt) {
+TEST(SelfTestTest, MadgwickWithinTolerance) {
   auto in = MakeIdealInput();
-  in.pitch_deg = -7.5f;  // within 10° (suspension, table tilt)
+  in.pitch_deg = -3.5f;  // within 5° (suspension, noise)
   auto results = SelfTest::Run(in);
   EXPECT_TRUE(results[4].passed);
 }
