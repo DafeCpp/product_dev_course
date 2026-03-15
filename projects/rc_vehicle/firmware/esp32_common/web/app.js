@@ -48,6 +48,7 @@ const btnCalibFull = document.getElementById('btn-calib-full');
 let lastCommandSeq = 0;
 let commandSendInterval = null;
 let lastTelemTime = 0;
+let wsConnectTime = 0;
 const MCU_TIMEOUT_MS = 1500;
 let mcuStatusCheckInterval = null;
 let wifiStatusInterval = null;
@@ -63,6 +64,7 @@ function connectWebSocket() {
             wsStatusEl.className = 'status-value connected';
             clearInterval(wsReconnectInterval);
             lastTelemTime = 0;
+            wsConnectTime = Date.now();
             setMcuStatus('unknown');
             startMcuStatusCheck();
             startCommandSending();
@@ -198,7 +200,8 @@ function setMcuStatus(state) {
 function startMcuStatusCheck() {
     if (mcuStatusCheckInterval) clearInterval(mcuStatusCheckInterval);
     mcuStatusCheckInterval = setInterval(() => {
-        if (lastTelemTime && (Date.now() - lastTelemTime > MCU_TIMEOUT_MS)) {
+        const baseline = lastTelemTime || wsConnectTime;
+        if (Date.now() - baseline > MCU_TIMEOUT_MS) {
             setMcuStatus('disconnected');
         }
     }, 500);
