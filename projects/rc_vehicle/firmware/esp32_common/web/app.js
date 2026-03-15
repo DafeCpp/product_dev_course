@@ -563,9 +563,6 @@ function updateModeButtons(mode) {
 
     // Kids mode settings visibility (independent of drive mode)
     updateKidsModeUI();
-    
-    // Отправить команду на ESP32 для переключения режима
-    wsSend({ type: 'set_stab_config', mode: mode });
 }
 
 function updateKidsModeUI() {
@@ -887,11 +884,11 @@ const kidsSteeringSlider = document.getElementById('kids-steering-limit');
 const kidsThrottleValueEl = document.getElementById('kids-throttle-value');
 const kidsSteeringValueEl = document.getElementById('kids-steering-value');
 
-if (btnModeNormal) btnModeNormal.addEventListener('click', () => { currentMode = 0; updateModeButtons(0); });
-if (btnModeSport) btnModeSport.addEventListener('click', () => { currentMode = 1; updateModeButtons(1); });
-if (btnModeDrift) btnModeDrift.addEventListener('click', () => { currentMode = 2; updateModeButtons(2); });
-if (btnModeKids) btnModeKids.addEventListener('click', () => { currentMode = 3; updateModeButtons(3); });
-if (btnModeDirect) btnModeDirect.addEventListener('click', () => { currentMode = 4; updateModeButtons(4); });
+if (btnModeNormal) btnModeNormal.addEventListener('click', () => { currentMode = 0; updateModeButtons(0); wsSend({ type: 'set_stab_config', mode: 0 }); });
+if (btnModeSport) btnModeSport.addEventListener('click', () => { currentMode = 1; updateModeButtons(1); wsSend({ type: 'set_stab_config', mode: 1 }); });
+if (btnModeDrift) btnModeDrift.addEventListener('click', () => { currentMode = 2; updateModeButtons(2); wsSend({ type: 'set_stab_config', mode: 2 }); });
+if (btnModeKids) btnModeKids.addEventListener('click', () => { currentMode = 3; updateModeButtons(3); wsSend({ type: 'set_stab_config', mode: 3 }); });
+if (btnModeDirect) btnModeDirect.addEventListener('click', () => { currentMode = 4; updateModeButtons(4); wsSend({ type: 'set_stab_config', mode: 4 }); });
 if (btnKidsToggle) btnKidsToggle.addEventListener('click', () => {
     kidsMode = !kidsMode;
     updateKidsModeUI();
