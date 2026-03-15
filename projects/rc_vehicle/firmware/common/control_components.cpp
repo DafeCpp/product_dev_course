@@ -77,13 +77,17 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // LPF инициализирован в конструкторе — горячий путь без проверок
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
-  // Настроить опорную СК фильтра
-  if (calib_.IsValid()) {
+  // Настроить опорную СК фильтра — только при смене состояния калибровки,
+  // чтобы не сбрасывать кватернион Мэджвика каждые 2 мс.
+  const bool calib_valid = calib_.IsValid();
+  if (calib_valid && !veh_frame_set_) {
     const auto& calib_data = calib_.GetData();
     filter_.SetVehicleFrame(calib_data.gravity_vec,
                             calib_data.accel_forward_vec, true);
-  } else {
+    veh_frame_set_ = true;
+  } else if (!calib_valid && veh_frame_set_) {
     filter_.SetVehicleFrame(nullptr, nullptr, false);
+    veh_frame_set_ = false;
   }
 
   // Обновить фильтр Madgwick

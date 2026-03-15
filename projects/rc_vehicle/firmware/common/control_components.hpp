@@ -199,6 +199,7 @@ class ImuHandler : public ControlComponent {
   bool enabled_{false};
   LpfButterworth2 lpf_gyro_z_{};
   float filtered_gz_{0.f};
+  bool veh_frame_set_{false};  ///< Vehicle frame уже передан в фильтр
 };
 
 // ═════════════════════════════════════════════════════════════════════════

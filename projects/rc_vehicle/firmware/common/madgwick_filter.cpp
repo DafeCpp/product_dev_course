@@ -197,10 +197,10 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   use_vehicle_frame_ = true;
 
   // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame Euler = 0.
-  // q_result = q_madgwick * q_sv = identity  ⟹  q_madgwick = conj(q_sv).
-  // Это устраняет проблему конвергенции (особенно седловую точку при
-  // перевёрнутом монтаже) и гарантирует pitch≈0, roll≈0 сразу после калибровки
-  // независимо от ориентации датчика.
+  // Мэджвик использует сопряжённую конвенцию: v_sensor = q* ⊗ v_ref ⊗ q,
+  // т.е. q в стандартной конвенции = sensor→reference.
+  // GetQuaternion: q_result = q_madgwick * q_sv (vehicle→reference в стандартной).
+  // Для identity: q_madgwick * q_sv = I  ⟹  q_madgwick = conj(q_sv).
   q0_ = q_veh_to_ned_0_;
   q1_ = -q_veh_to_ned_1_;
   q2_ = -q_veh_to_ned_2_;
@@ -221,7 +221,10 @@ void MadgwickFilter::GetQuaternion(float& qw, float& qx, float& qy,
     GetQuaternionInNed(qw, qx, qy, qz);
     return;
   }
-  // q_sensor_from_veh = q_sensor_from_ned * q_veh_to_ned
+  // Мэджвик (сопряжённая конвенция): q_madgwick = sensor→reference (стандартная).
+  // q_sv = vehicle→sensor (стандартная).
+  // q_result = q_madgwick * q_sv = vehicle→reference (стандартная конвенция).
+  // Euler ZYX из q_result дают ориентацию машины относительно горизонта.
   QuatMul(q0_, q1_, q2_, q3_, q_veh_to_ned_0_, q_veh_to_ned_1_, q_veh_to_ned_2_,
           q_veh_to_ned_3_, qw, qx, qy, qz);
 }

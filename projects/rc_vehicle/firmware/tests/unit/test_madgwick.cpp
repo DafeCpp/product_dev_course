@@ -927,6 +927,88 @@ TEST(MadgwickTest, UpsideDownMount_DetectsPitch) {
       << "Roll should remain ~0 during pure pitch tilt";
 }
 
+TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
+  // Reproduce the user's real hardware setup:
+  //   gravity_vec = [-0.010, -0.151, -0.988]
+  //   forward_vec = [0.194, 0.978, -0.075]
+  // Verify: (1) pitch≈0 at rest, (2) pitch tracks when nose is lifted ~30°.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float grav[3] = {-0.010f, -0.151f, -0.988f};
+  float fwd[3] = {0.194f, 0.978f, -0.075f};
+  filter.SetVehicleFrame(grav, fwd, true);
+
+  // Phase 1: rest — verify pitch≈0
+  for (int i = 0; i < 500; ++i) {
+    filter.Update(grav[0], grav[1], grav[2], 0.0f, 0.0f, 0.0f, 0.002f);
+  }
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(pitch, 0.0f, 2.0f) << "Pitch should be ~0 at rest";
+  EXPECT_NEAR(roll, 0.0f, 2.0f) << "Roll should be ~0 at rest";
+
+  // Phase 2: compute vehicle frame axes to rotate correctly.
+  // Replicate SetVehicleFrame math to find Y_veh (pitch axis in sensor coords).
+  auto inv_sqrt = [](float x) -> float { return (x > 0.f) ? 1.f / std::sqrt(x) : 0.f; };
+
+  float zx = grav[0], zy = grav[1], zz = grav[2];
+  float zn = inv_sqrt(zx * zx + zy * zy + zz * zz);
+  zx *= zn; zy *= zn; zz *= zn;
+
+  float fx = fwd[0], fy = fwd[1], fz = fwd[2];
+  float dot_fz = fx * zx + fy * zy + fz * zz;
+  fx -= dot_fz * zx; fy -= dot_fz * zy; fz -= dot_fz * zz;
+  float fn = inv_sqrt(fx * fx + fy * fy + fz * fz);
+  fx *= fn; fy *= fn; fz *= fn;
+
+  // Y_veh = Z_veh × X_veh (pitch axis in sensor coords)
+  float yx = zy * fz - zz * fy;
+  float yy = zz * fx - zx * fz;
+  float yz = zx * fy - zy * fx;
+
+  // Phase 3: apply 30° pitch via gyro about Y_veh axis.
+  // Gyro is in sensor frame (gx, gy, gz in dps).
+  // Rotation rate vector = 100 dps * Y_veh_direction.
+  const float rate_dps = 100.0f;
+  const float gyro_gx = rate_dps * yx;
+  const float gyro_gy = rate_dps * yy;
+  const float gyro_gz = rate_dps * yz;
+  const int pitch_samples = 150;  // 100 dps * 0.3s = 30°
+
+  for (int i = 0; i < pitch_samples; ++i) {
+    filter.Update(grav[0], grav[1], grav[2], gyro_gx, gyro_gy, gyro_gz, 0.002f);
+  }
+
+  // Phase 4: compute tilted accel (Rodrigues rotation of gravity_vec about Y_veh).
+  // v' = v*cos(θ) + (k×v)*sin(θ) + k*(k·v)*(1-cos(θ))
+  const float theta = 30.0f * static_cast<float>(M_PI) / 180.0f;
+  const float ct = std::cos(theta), st = std::sin(theta);
+  // k = Y_veh, v = grav (normalized: zx,zy,zz ... no, grav_raw)
+  float vx = grav[0], vy = grav[1], vz = grav[2];
+  // k × v
+  float cx = yy * vz - yz * vy;
+  float cy = yz * vx - yx * vz;
+  float cz = yx * vy - yy * vx;
+  // k · v
+  float kv = yx * vx + yy * vy + yz * vz;
+
+  float tilted_ax = vx * ct + cx * st + yx * kv * (1 - ct);
+  float tilted_ay = vy * ct + cy * st + yy * kv * (1 - ct);
+  float tilted_az = vz * ct + cz * st + yz * kv * (1 - ct);
+
+  // Hold at tilted position for convergence
+  for (int i = 0; i < 2000; ++i) {
+    filter.Update(tilted_ax, tilted_ay, tilted_az, 0.0f, 0.0f, 0.0f, 0.002f);
+  }
+
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(std::abs(pitch), 30.0f, 8.0f)
+      << "Pitch should track ~30° tilt";
+  EXPECT_NEAR(roll, 0.0f, 10.0f)
+      << "Roll should remain ~0 during pure pitch tilt";
+}
+
 TEST(MadgwickTest, SetVehicleFrame_NullGravity) {
   MadgwickFilter filter;
   float forward[3] = {1.0f, 0.0f, 0.0f};
