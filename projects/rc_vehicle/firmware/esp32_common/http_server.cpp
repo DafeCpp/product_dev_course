@@ -717,9 +717,9 @@ esp_err_t HttpServerInit(void) {
   config.stack_size = 8192;
   config.max_open_sockets =
       7;  // LWIP_MAX_SOCKETS лимит (3 занято httpd внутри)
-  config.recv_wait_timeout =
-      15;  // Секунды — мобильный клиент может отвечать медленнее
-  config.send_wait_timeout = 15;
+  config.recv_wait_timeout = 5;   // Секунды — мобильный клиент может быть медленнее
+  config.send_wait_timeout = 2;   // Короткий тайм-аут: зависший send не должен
+                                  // блокировать httpd task и telem_sender_task
   config.lru_purge_enable =
       true;  // Автозакрытие старых соединений при нехватке
   config.uri_match_fn = httpd_uri_match_wildcard;

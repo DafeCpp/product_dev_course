@@ -20,6 +20,16 @@ static QueueHandle_t s_telem_queue = NULL;
 static char s_telem_buf[2][TELEM_BUF_SIZE];
 static uint8_t s_telem_write_idx = 0;
 
+/**
+ * Кешированное количество WS-клиентов.
+ * Обновляется только в telem_sender_task (низкий приоритет, не блокирует
+ * control loop). GetWebSocketClientCount() читает атомарно без мьютексов httpd.
+ */
+static volatile uint8_t s_cached_client_count = 0;
+
+/** Счётчик неудачных отправок для каждого fd — при 3 подряд закрываем. */
+static constexpr int MAX_SEND_FAILURES = 3;
+
 static void telem_sender_task(void* arg) {
   (void)arg;
   for (;;) {
@@ -47,6 +57,12 @@ void WebSocketSetJsonHandler(WebSocketJsonHandler handler) {
 static esp_err_t ws_handler(httpd_req_t* req) {
   if (req->method == HTTP_GET) {
     ESP_LOGI(TAG, "WebSocket connection request");
+    // Обновить кеш при новом подключении
+    int fds[WEBSOCKET_MAX_CLIENTS];
+    size_t cnt = WEBSOCKET_MAX_CLIENTS;
+    if (httpd_get_client_list(ws_server_handle, &cnt, fds) == ESP_OK) {
+      s_cached_client_count = static_cast<uint8_t>(cnt);
+    }
     return ESP_OK;
   }
 
@@ -158,13 +174,17 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
     return ESP_ERR_INVALID_ARG;
   }
 
+  // Получить список клиентов (вызывается из telem_sender_task, не из control
+  // loop). Заодно обновляем кеш для GetWebSocketClientCount().
   int client_fds[WEBSOCKET_MAX_CLIENTS];
   size_t client_count = WEBSOCKET_MAX_CLIENTS;
   if (httpd_get_client_list(ws_server_handle, &client_count, client_fds) !=
           ESP_OK ||
       client_count == 0) {
-    return ESP_OK;  // Нет клиентов, нечего отправлять
+    s_cached_client_count = 0;
+    return ESP_OK;
   }
+  s_cached_client_count = static_cast<uint8_t>(client_count);
 
   size_t len = strlen(telem_json);
   httpd_ws_frame_t ws_pkt = {};
@@ -176,6 +196,9 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   ws_pkt.payload = reinterpret_cast<uint8_t*>(const_cast<char*>(telem_json));
   ws_pkt.len = len;
 
+  // Счётчик последовательных ошибок по fd (static: живёт между вызовами)
+  static int fail_count[WEBSOCKET_MAX_CLIENTS] = {};
+
   for (size_t i = 0; i < client_count; i++) {
     int fd = client_fds[i];
     if (httpd_ws_get_fd_info(ws_server_handle, fd) !=
@@ -183,21 +206,22 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
       continue;
     }
     if (httpd_ws_send_data(ws_server_handle, fd, &ws_pkt) != ESP_OK) {
-      ESP_LOGW(TAG, "Failed to send telem to fd %d", fd);
+      fail_count[i]++;
+      if (fail_count[i] >= MAX_SEND_FAILURES) {
+        ESP_LOGW(TAG, "Closing stale WS client fd %d after %d failures", fd,
+                 fail_count[i]);
+        httpd_sess_trigger_close(ws_server_handle, fd);
+        fail_count[i] = 0;
+      }
+    } else {
+      fail_count[i] = 0;
     }
   }
   return ESP_OK;
 }
 
 uint8_t WebSocketGetClientCount(void) {
-  if (ws_server_handle == NULL) {
-    return 0;
-  }
-  int client_fds[WEBSOCKET_MAX_CLIENTS];
-  size_t client_count = WEBSOCKET_MAX_CLIENTS;
-  if (httpd_get_client_list(ws_server_handle, &client_count, client_fds) !=
-      ESP_OK) {
-    return 0;
-  }
-  return (uint8_t)client_count;
+  // Возвращаем кешированное значение — никаких мьютексов httpd, безопасно
+  // вызывать из control loop на Core 1 без риска блокировки.
+  return s_cached_client_count;
 }
