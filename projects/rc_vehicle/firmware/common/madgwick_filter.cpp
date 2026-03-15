@@ -123,8 +123,9 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   use_vehicle_frame_ = false;
   if (!valid || forward_vec == nullptr || gravity_vec == nullptr) return;
 
-  // Z_veh (вниз машины) = gravity_vec в СК датчика, нормализованный.
-  // При нормальном монтаже ≈ [0,0,-1], при перевёрнутом ≈ [0,0,+1].
+  // Z_veh = gravity_vec в СК датчика (показание акселерометра в покое),
+  // нормализованный. Направлен ВВЕРХ (реакция опоры, противоположно g).
+  // При нормальном монтаже ≈ [0,0,+1], при перевёрнутом ≈ [0,0,-1].
   float zx = gravity_vec[0], zy = gravity_vec[1], zz = gravity_vec[2];
   float z2 = zx * zx + zy * zy + zz * zz;
   if (z2 < 1e-12f) return;
@@ -194,6 +195,16 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   q_veh_to_ned_2_ *= qn;
   q_veh_to_ned_3_ *= qn;
   use_vehicle_frame_ = true;
+
+  // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame Euler = 0.
+  // q_result = q_madgwick * q_sv = identity  ⟹  q_madgwick = conj(q_sv).
+  // Это устраняет проблему конвергенции (особенно седловую точку при
+  // перевёрнутом монтаже) и гарантирует pitch≈0, roll≈0 сразу после калибровки
+  // независимо от ориентации датчика.
+  q0_ = q_veh_to_ned_0_;
+  q1_ = -q_veh_to_ned_1_;
+  q2_ = -q_veh_to_ned_2_;
+  q3_ = -q_veh_to_ned_3_;
 }
 
 void MadgwickFilter::GetQuaternionInNed(float& qw, float& qx, float& qy,
