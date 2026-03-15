@@ -5,6 +5,7 @@
 
 #include "calibration_manager.hpp"
 #include "control_components.hpp"
+#include "drive_mode_registry.hpp"
 #include "imu_calibration.hpp"
 #include "self_test.hpp"
 #include "kids_mode_processor.hpp"
@@ -104,18 +105,26 @@ class VehicleControlUnified {
 
   /**
    * @brief Включить/выключить детский режим
-   * @param active true — включить, false — выключить
+   *
+   * Обновляет StabilizationConfig.mode, что изменяет routing в control loop
+   * через ModeTraits. Если IMU не инициализирован (stab_mgr_ == nullptr),
+   * вызов игнорируется.
+   *
+   * @param active true — включить (DriveMode::Kids), false — Normal
    */
   void SetKidsModeActive(bool active) {
-    kids_processor_.SetMode(active ? DriveMode::Kids : DriveMode::Normal);
+    if (!stab_mgr_) return;
+    auto cfg = stab_mgr_->GetConfig();
+    cfg.mode = active ? DriveMode::Kids : DriveMode::Normal;
+    stab_mgr_->SetConfig(cfg);
   }
 
   /**
    * @brief Проверить, активен ли детский режим
-   * @return true если детский режим активен
+   * @return true если текущий режим == DriveMode::Kids
    */
   [[nodiscard]] bool IsKidsModeActive() const {
-    return kids_processor_.IsActive();
+    return stab_mgr_ && stab_mgr_->GetConfig().mode == DriveMode::Kids;
   }
 
   /**

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "drive_mode_registry.hpp"
+
 namespace rc_vehicle {
 
 // ============================================================================
@@ -200,114 +202,7 @@ void StabilizationConfig::Reset() noexcept {
 }
 
 void StabilizationConfig::ApplyModeDefaults() noexcept {
-  switch (mode) {
-    case DriveMode::Sport:  // быстрый отклик, лёгкий slip assist
-      yaw_rate.pid.kp = 0.20f;
-      yaw_rate.pid.ki = 0.01f;
-      yaw_rate.pid.kd = 0.010f;
-      yaw_rate.pid.max_integral = 1.0f;
-      yaw_rate.pid.max_correction = 0.40f;
-      yaw_rate.steer_to_yaw_rate_dps = 120.0f;
-
-      pitch_comp.gain = 0.02f;
-      pitch_comp.max_correction = 0.30f;
-
-      slip_angle.target_deg = 5.0f;
-      slip_angle.pid.kp = 0.003f;
-      slip_angle.pid.ki = 0.0f;
-      slip_angle.pid.kd = 0.001f;
-      slip_angle.pid.max_integral = 5.0f;
-      slip_angle.pid.max_correction = 0.15f;
-      break;
-
-    case DriveMode::Drift:  // мягкая коррекция yaw, slip angle PID включён
-      yaw_rate.pid.kp = 0.05f;
-      yaw_rate.pid.ki = 0.00f;
-      yaw_rate.pid.kd = 0.002f;
-      yaw_rate.pid.max_integral = 0.3f;
-      yaw_rate.pid.max_correction = 0.20f;
-      yaw_rate.steer_to_yaw_rate_dps = 60.0f;
-
-      pitch_comp.gain = 0.005f;
-      pitch_comp.max_correction = 0.15f;
-
-      slip_angle.target_deg = 15.0f;
-      slip_angle.pid.kp = 0.008f;
-      slip_angle.pid.ki = 0.0f;
-      slip_angle.pid.kd = 0.002f;
-      slip_angle.pid.max_integral = 5.0f;
-      slip_angle.pid.max_correction = 0.25f;
-      break;
-
-    case DriveMode::Kids:  // усиленная стабилизация, помощь в управлении
-      // Yaw rate: увеличенный kp для лучшего контроля
-      yaw_rate.pid.kp = 0.15f;
-      yaw_rate.pid.ki = 0.005f;
-      yaw_rate.pid.kd = 0.008f;
-      yaw_rate.pid.max_integral = 0.8f;
-      yaw_rate.pid.max_correction = 0.35f;
-      yaw_rate.steer_to_yaw_rate_dps = 75.0f;
-
-      // Pitch compensation: включена для помощи на склонах
-      pitch_comp.enabled = true;
-      pitch_comp.gain = 0.015f;
-      pitch_comp.max_correction = 0.30f;
-
-      // Slip angle: выключен (не нужен в Kids Mode)
-      slip_angle.target_deg = 0.0f;
-      slip_angle.pid.kp = 0.0f;
-      slip_angle.pid.ki = 0.0f;
-      slip_angle.pid.kd = 0.0f;
-      slip_angle.pid.max_integral = 5.0f;
-      slip_angle.pid.max_correction = 0.0f;
-
-      // Oversteer guard: агрессивное снижение газа
-      oversteer.warn_enabled = true;
-      oversteer.slip_thresh_deg = kids_mode.anti_spin_threshold_deg;
-      oversteer.rate_thresh_deg_s = 30.0f;
-      oversteer.throttle_reduction = kids_mode.anti_spin_reduction;
-
-      // Adaptive PID: включён для лучшего контроля на разных скоростях
-      adaptive.enabled = true;
-      adaptive.speed_ref_ms = 1.0f;
-      adaptive.scale_min = 0.6f;
-      adaptive.scale_max = 1.5f;
-      break;
-
-    case DriveMode::DirectLaw:  // прямое управление: стабилизация не используется
-      enabled = false;
-      yaw_rate.pid.kp = 0.0f;
-      yaw_rate.pid.ki = 0.0f;
-      yaw_rate.pid.kd = 0.0f;
-      yaw_rate.pid.max_correction = 0.0f;
-      pitch_comp.enabled = false;
-      pitch_comp.gain = 0.0f;
-      slip_angle.target_deg = 0.0f;
-      slip_angle.pid.kp = 0.0f;
-      slip_angle.pid.ki = 0.0f;
-      slip_angle.pid.kd = 0.0f;
-      slip_angle.pid.max_correction = 0.0f;
-      break;
-
-    default:  // Normal: базовые параметры, slip PID выключен
-      yaw_rate.pid.kp = 0.10f;
-      yaw_rate.pid.ki = 0.00f;
-      yaw_rate.pid.kd = 0.005f;
-      yaw_rate.pid.max_integral = 0.5f;
-      yaw_rate.pid.max_correction = 0.30f;
-      yaw_rate.steer_to_yaw_rate_dps = 90.0f;
-
-      pitch_comp.gain = 0.01f;
-      pitch_comp.max_correction = 0.25f;
-
-      slip_angle.target_deg = 0.0f;
-      slip_angle.pid.kp = 0.0f;
-      slip_angle.pid.ki = 0.0f;
-      slip_angle.pid.kd = 0.0f;
-      slip_angle.pid.max_integral = 5.0f;
-      slip_angle.pid.max_correction = 0.0f;
-      break;
-  }
+  DriveModeRegistry::Get(mode).ApplyDefaults(*this);
 }
 
 void StabilizationConfig::Clamp() noexcept {

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <mutex>
 
+#include "drive_mode_registry.hpp"
 #include "esp_log.h"
 #include "log_format.hpp"
 #include "slew_rate.hpp"
@@ -67,8 +68,9 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     mode_transition_weight_ = 0.0f;  // Запустить плавный переход
     {
       LogFormat fmt;
-      fmt << "Mode changed: " << DriveModeToString(current_mode) << " -> "
-          << DriveModeToString(validated_config.mode)
+      fmt << "Mode changed: "
+          << DriveModeRegistry::Get(current_mode).GetName() << " -> "
+          << DriveModeRegistry::Get(validated_config.mode).GetName()
           << ", defaults applied, PID reset";
       platform_.Log(LogLevel::Info, fmt.str());
     }

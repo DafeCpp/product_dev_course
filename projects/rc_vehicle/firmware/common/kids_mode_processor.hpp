@@ -12,8 +12,10 @@ namespace rc_vehicle {
  * Применяет ограничения газа, руля и slew rate,
  * а также усиленную защиту от заноса (anti-spin).
  *
- * Работает в control loop после SelectControlSource,
- * применяя лимиты к командам от любого источника (RC или Wi-Fi).
+ * Активность определяется через cfg_->mode == DriveMode::Kids —
+ * отдельного трекинга current_mode_ нет. Control loop вызывает
+ * Process() только когда ModeTraits.apply_input_limits == true,
+ * но внутренняя проверка IsActive() остаётся как safety guard.
  */
 class KidsModeProcessor {
  public:
@@ -21,7 +23,7 @@ class KidsModeProcessor {
 
   /**
    * @brief Инициализация процессора
-   * @param cfg Конфигурация стабилизации (содержит kids_mode)
+   * @param cfg Конфигурация стабилизации (содержит kids_mode и mode)
    * @param ekf EKF для получения угла заноса (anti-spin)
    * @param imu IMU handler (может быть nullptr если IMU не включён)
    */
@@ -38,16 +40,10 @@ class KidsModeProcessor {
 
   /**
    * @brief Проверить, активен ли Kids Mode
-   * @return true если текущий режим == DriveMode::Kids
+   * @return true если cfg_.mode == DriveMode::Kids
    */
-  [[nodiscard]] bool IsActive() const noexcept;
-
-  /**
-   * @brief Установить режим вождения
-   * @param mode Режим вождения
-   */
-  void SetMode(DriveMode mode) noexcept {
-    current_mode_ = mode;
+  [[nodiscard]] bool IsActive() const noexcept {
+    return cfg_ && cfg_->mode == DriveMode::Kids;
   }
 
   /**
@@ -71,7 +67,6 @@ class KidsModeProcessor {
   float smoothed_throttle_{0.0f};
   float smoothed_steering_{0.0f};
   bool anti_spin_active_{false};
-  DriveMode current_mode_{DriveMode::Normal};
 };
 
 }  // namespace rc_vehicle

@@ -48,22 +48,16 @@ class SlipAngleControllerTest : public ::testing::Test {
 // Tests
 // ══════════════════════════════════════════════════════════════════════════════
 
-TEST_F(SlipAngleControllerTest, NoEffect_InNormalMode) {
+TEST_F(SlipAngleControllerTest, WorksRegardlessOfMode_ModeFilteringIsDoneByTraits) {
+  // After Strategy refactoring, mode filtering is done by ModeTraits in
+  // control loop, not inside the controller. Controller is mode-agnostic.
   cfg_.mode = DriveMode::Normal;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
   ekf_.SetState(2.0f, 0.5f, 0.5f);
   float throttle = 0.5f;
   ctrl_.Process(throttle, 1.0f, 1.0f, 2);
-  EXPECT_FLOAT_EQ(throttle, 0.5f) << "Slip PID inactive in Normal mode";
-}
-
-TEST_F(SlipAngleControllerTest, NoEffect_InSportMode) {
-  cfg_.mode = DriveMode::Sport;
-  ctrl_.Init(cfg_, ekf_, &imu_handler_);
-  ekf_.SetState(2.0f, 0.5f, 0.5f);
-  float throttle = 0.5f;
-  ctrl_.Process(throttle, 1.0f, 1.0f, 2);
-  EXPECT_FLOAT_EQ(throttle, 0.5f) << "Slip PID inactive in Sport mode";
+  EXPECT_NE(throttle, 0.5f)
+      << "Controller processes regardless of mode; filtering is in control loop";
 }
 
 TEST_F(SlipAngleControllerTest, ActiveInDriftMode) {

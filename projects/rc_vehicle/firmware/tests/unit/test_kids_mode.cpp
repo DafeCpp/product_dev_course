@@ -355,3 +355,38 @@ TEST(StabilizationConfigTest, IsValidAcceptsKidsMode) {
   cfg.mode = DriveMode::Kids;
   EXPECT_TRUE(cfg.IsValid());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KidsModeProcessor::IsActive читает cfg_->mode напрямую — нет current_mode_
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(KidsModeProcessorInitTest, IsActive_TrueWhenCfgModeIsKids) {
+  StabilizationConfig cfg;
+  cfg.mode = DriveMode::Kids;
+  VehicleEkf ekf;
+  KidsModeProcessor proc;
+  proc.Init(cfg, ekf, nullptr);
+  EXPECT_TRUE(proc.IsActive());
+}
+
+TEST(KidsModeProcessorInitTest, IsActive_FalseWhenCfgModeIsNormal) {
+  StabilizationConfig cfg;
+  cfg.mode = DriveMode::Normal;
+  VehicleEkf ekf;
+  KidsModeProcessor proc;
+  proc.Init(cfg, ekf, nullptr);
+  EXPECT_FALSE(proc.IsActive());
+}
+
+TEST(KidsModeProcessorInitTest, IsActive_UpdatesLiveWhenCfgModeChanges) {
+  // cfg — живая ссылка: смена mode снаружи отражается в IsActive() немедленно
+  StabilizationConfig cfg;
+  cfg.mode = DriveMode::Normal;
+  VehicleEkf ekf;
+  KidsModeProcessor proc;
+  proc.Init(cfg, ekf, nullptr);
+  EXPECT_FALSE(proc.IsActive());
+
+  cfg.mode = DriveMode::Kids;
+  EXPECT_TRUE(proc.IsActive());
+}

@@ -119,12 +119,15 @@ TEST_F(YawRateControllerTest, NoEffect_WhenModeWeightZero) {
   EXPECT_NEAR(steering, 0.5f, 0.01f);
 }
 
-TEST_F(YawRateControllerTest, NoEffect_InDriftMode) {
+TEST_F(YawRateControllerTest, WorksRegardlessOfMode_ModeFilteringIsDoneByTraits) {
+  // After Strategy refactoring, mode filtering is done by ModeTraits in
+  // control loop, not inside the controller. Controller is mode-agnostic.
   cfg_.mode = DriveMode::Drift;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
   float steering = 0.5f;
   ctrl_.Process(steering, 1.0f, 1.0f, 2);
-  EXPECT_FLOAT_EQ(steering, 0.5f) << "Yaw PID disabled in Drift mode";
+  EXPECT_NE(steering, 0.5f)
+      << "Controller processes regardless of mode; filtering is in control loop";
 }
 
 TEST_F(YawRateControllerTest, NoEffect_WhenImuDisabled) {

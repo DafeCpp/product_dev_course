@@ -50,6 +50,8 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/stabilization_pipeline.cpp
     ${COMMON_DIR}/kids_mode_processor.cpp
     ${COMMON_DIR}/self_test.cpp
+    ${COMMON_DIR}/drive_modes.cpp
+    ${COMMON_DIR}/drive_mode_registry.cpp
 )
 
 # Include directories
@@ -89,6 +91,7 @@ add_executable(unit_tests
     unit/test_slew_rate.cpp
     unit/test_control_source.cpp
     unit/test_telemetry_handler.cpp
+    unit/test_drive_modes.cpp
 )
 
 target_link_libraries(unit_tests

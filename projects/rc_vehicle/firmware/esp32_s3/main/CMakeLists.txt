@@ -10,6 +10,8 @@ idf_component_register(
         "../../esp32_common/websocket_server.cpp"
         "../../common/stabilization_config.cpp"
         "../../common/stabilization_pipeline.cpp"
+        "../../common/drive_modes.cpp"
+        "../../common/drive_mode_registry.cpp"
         "../../common/kids_mode_processor.cpp"
         "../../common/vehicle_control_unified.cpp"
         "../../common/self_test.cpp"

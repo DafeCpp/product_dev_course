@@ -5,6 +5,7 @@
 #include <iomanip>
 
 #include "config.hpp"
+#include "drive_mode_registry.hpp"
 #include "log_format.hpp"
 #include "rc_vehicle_common.hpp"
 #include "slew_rate.hpp"
@@ -123,32 +124,43 @@ void VehicleControlUnified::ControlTaskLoop() {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Kids Mode: применить ограничения газа/руля и anti-spin
-    // ─────────────────────────────────────────────────────────────────────
-
-    kids_processor_.Process(commanded_throttle, commanded_steering, dt_ms);
-
-    // ─────────────────────────────────────────────────────────────────────
     // Плавное нарастание/спад веса стабилизации и переход между режимами
     // ─────────────────────────────────────────────────────────────────────
 
     stab_mgr_->UpdateWeights(dt_ms);
 
     const DriveMode drive_mode = stab_mgr_ ? stab_mgr_->GetConfig().mode : DriveMode::Normal;
+    const auto& strategy = DriveModeRegistry::Get(drive_mode);
+    const auto traits = strategy.GetTraits();
 
     // ─────────────────────────────────────────────────────────────────────
-    // Стабилизационный pipeline (стратегии, Phase 1 refactoring)
+    // Kids Mode: применить ограничения газа/руля и anti-spin
+    // (активируется через traits.apply_input_limits)
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (traits.apply_input_limits) {
+      kids_processor_.Process(commanded_throttle, commanded_steering, dt_ms);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Стабилизационный pipeline (управляется ModeTraits)
     // ─────────────────────────────────────────────────────────────────────
 
     const float stab_weight = stab_mgr_->GetStabilizationWeight();
     const float mode_weight = stab_mgr_->GetModeTransitionWeight();
 
-    if (drive_mode != DriveMode::DirectLaw) {
+    if (traits.yaw_rate_active)
       yaw_ctrl_.Process(commanded_steering, stab_weight, mode_weight, dt_ms);
+
+    if (traits.pitch_comp_active)
       pitch_ctrl_.Process(commanded_throttle, stab_weight);
+
+    if (traits.slip_angle_active)
       slip_ctrl_.Process(commanded_throttle, stab_weight, mode_weight, dt_ms);
-      oversteer_guard_.Process(commanded_throttle, dt_ms);
-    }
+
+    if (traits.oversteer_guard_active)
+      oversteer_guard_.Process(commanded_throttle, dt_ms,
+                               traits.oversteer_reduces_throttle);
 
     // ─────────────────────────────────────────────────────────────────────
     // Failsafe
@@ -178,14 +190,13 @@ void VehicleControlUnified::ControlTaskLoop() {
     // Обновление PWM с slew rate
     // ─────────────────────────────────────────────────────────────────────
 
-    // Direct Law: команды идут напрямую в PWM, без slew rate
-    if (drive_mode == DriveMode::DirectLaw) {
+    if (traits.use_slew_rate) {
+      UpdatePwmWithSlewRate(now, commanded_throttle, commanded_steering,
+                            applied_throttle, applied_steering, last_pwm_update);
+    } else {
       applied_throttle = commanded_throttle;
       applied_steering = commanded_steering;
       platform_->SetPwm(applied_throttle, applied_steering);
-    } else {
-      UpdatePwmWithSlewRate(now, commanded_throttle, commanded_steering,
-                            applied_throttle, applied_steering, last_pwm_update);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -199,8 +210,8 @@ void VehicleControlUnified::ControlTaskLoop() {
       snap.throttle = applied_throttle;
       snap.steering = applied_steering;
 
-      // Kids Mode status
-      snap.kids_mode_active = kids_processor_.IsActive();
+      // Kids Mode status (routing определяется drive_mode/traits)
+      snap.kids_mode_active = (drive_mode == DriveMode::Kids);
       snap.kids_anti_spin_active = kids_processor_.IsAntiSpinActive();
       snap.kids_throttle_limit =
           stab_mgr_->GetConfig().kids_mode.throttle_limit;
