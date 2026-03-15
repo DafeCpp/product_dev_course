@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
+#include <vector>
 
 #include "madgwick_filter.hpp"
 #include "mpu6050_spi.hpp"
@@ -830,18 +832,41 @@ TEST(MadgwickTest, AdaptiveBetaQuaternionStaysNormalized) {
 // Upside-Down IMU Mount Tests (gravity_vec support)
 // ═══════════════════════════════════════════════════════════════════════════
 
+TEST(MadgwickTest, SetVehicleFrame_InitializesQuaternion) {
+  // SetVehicleFrame should initialize q_madgwick = conj(q_sv) so that
+  // vehicle-frame Euler angles are immediately ~0 WITHOUT any Update calls.
+  // This works for ANY mounting angle.
+  for (auto& grav : std::vector<std::array<float, 3>>{
+           {0.f, 0.f, 1.f},    // upside-down mount
+           {0.f, 0.f, -1.f},   // normal mount (z down)
+           {0.f, 1.f, 0.f},    // 90° tilt (y up)
+           {0.707f, 0.f, 0.707f}  // 45° tilt
+       }) {
+    MadgwickFilter filter;
+    float forward[3] = {1.0f, 0.0f, 0.0f};
+    filter.SetVehicleFrame(grav.data(), forward, true);
+
+    float pitch, roll, yaw;
+    filter.GetEulerDeg(pitch, roll, yaw);
+
+    EXPECT_NEAR(pitch, 0.0f, 0.1f)
+        << "Pitch should be ~0 immediately after SetVehicleFrame, gravity=["
+        << grav[0] << "," << grav[1] << "," << grav[2] << "]";
+    EXPECT_NEAR(roll, 0.0f, 0.1f)
+        << "Roll should be ~0 immediately after SetVehicleFrame, gravity=["
+        << grav[0] << "," << grav[1] << "," << grav[2] << "]";
+  }
+}
+
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
-  // IMU mounted upside-down: accelerometer reads az ≈ +1g (gravity in +Z sensor)
-  // gravity_vec from calibration = [0, 0, +1]
-  // After SetVehicleFrame, Madgwick should report roll ≈ 0 (not 180°)
+  // After SetVehicleFrame init + convergence, roll stays ~0
   MadgwickFilter filter;
   filter.SetBeta(0.5f);
 
-  float gravity[3] = {0.0f, 0.0f, 1.0f};   // upside-down: g points in +Z
+  float gravity[3] = {0.0f, 0.0f, 1.0f};
   float forward[3] = {1.0f, 0.0f, 0.0f};
   filter.SetVehicleFrame(gravity, forward, true);
 
-  // Feed data as upside-down IMU sees: az = +1g
   for (int i = 0; i < 300; ++i) {
     filter.Update(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.002f);
   }
@@ -849,44 +874,34 @@ TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
   float pitch, roll, yaw;
   filter.GetEulerDeg(pitch, roll, yaw);
 
-  EXPECT_NEAR(pitch, 0.0f, 5.0f)
-      << "Pitch should be ~0 with upside-down mount after calibration";
-  EXPECT_NEAR(roll, 0.0f, 5.0f)
-      << "Roll should be ~0 with upside-down mount after calibration";
+  EXPECT_NEAR(pitch, 0.0f, 2.0f);
+  EXPECT_NEAR(roll, 0.0f, 2.0f);
 }
 
 TEST(MadgwickTest, NormalMount_RollNearZero) {
-  // Normal mount: az ≈ -1g (gravity in -Z sensor), gravity_vec = [0, 0, -1]
-  // Identity quaternion with az=-1g is a Madgwick saddle point.
-  // A small ay perturbation breaks symmetry; high beta + many iterations converge.
-  // On real hardware, sensor noise naturally breaks the saddle point.
+  // Normal mount: az = -1g. Previously a saddle point — now solved by
+  // SetVehicleFrame initializing q_madgwick = conj(q_sv).
+  // No perturbation or high beta needed.
   MadgwickFilter filter;
-  filter.SetBeta(2.0f);  // aggressive beta for fast convergence in test
+  filter.SetBeta(0.1f);
 
   float gravity[3] = {0.0f, 0.0f, -1.0f};
   float forward[3] = {1.0f, 0.0f, 0.0f};
   filter.SetVehicleFrame(gravity, forward, true);
 
-  // Phase 1: perturbation to escape saddle
-  for (int i = 0; i < 200; ++i) {
-    filter.Update(0.0f, 0.05f, -1.0f, 0.0f, 0.0f, 0.0f, 0.002f);
-  }
-  // Phase 2: converge to true orientation (roll=180° internally)
-  for (int i = 0; i < 5000; ++i) {
+  for (int i = 0; i < 300; ++i) {
     filter.Update(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.002f);
   }
 
   float pitch, roll, yaw;
   filter.GetEulerDeg(pitch, roll, yaw);
 
-  EXPECT_NEAR(pitch, 0.0f, 5.0f);
-  EXPECT_NEAR(roll, 0.0f, 5.0f);
+  EXPECT_NEAR(pitch, 0.0f, 2.0f);
+  EXPECT_NEAR(roll, 0.0f, 2.0f);
 }
 
 TEST(MadgwickTest, UpsideDownMount_DetectsPitch) {
   // Upside-down mount, tilted forward ~30° pitch
-  // gravity_vec = [0, 0, +1] (calibrated flat)
-  // Now tilt: accelerometer sees rotated gravity
   MadgwickFilter filter;
   filter.SetBeta(0.5f);
 
@@ -895,12 +910,11 @@ TEST(MadgwickTest, UpsideDownMount_DetectsPitch) {
   filter.SetVehicleFrame(gravity, forward, true);
 
   // 30° pitch: ax = sin(30°)*1g = 0.5, az = cos(30°)*1g = 0.866
-  // (upside-down, so g is in +Z direction when flat)
   float pitch_rad = 30.0f * M_PI / 180.0f;
   float ax = std::sin(pitch_rad);
   float az = std::cos(pitch_rad);
 
-  for (int i = 0; i < 300; ++i) {
+  for (int i = 0; i < 500; ++i) {
     filter.Update(ax, 0.0f, az, 0.0f, 0.0f, 0.0f, 0.002f);
   }
 
