@@ -20,6 +20,8 @@ const steeringValueEl = document.getElementById('steering-value');
 const btnCenter = document.getElementById('btn-center');
 const btnStop = document.getElementById('btn-stop');
 const telemDataEl = document.getElementById('telem-data');
+const telemCounterEl = document.getElementById('telem-counter');
+let telemRxCount = 0;
 const btnCalibAutoForward = document.getElementById('btn-calib-auto-forward');
 const btnCalibForward = document.getElementById('btn-calib-forward');
 const calibFwdThrottleSlider = document.getElementById('calib-fwd-throttle');
@@ -117,7 +119,10 @@ function connectWebSocket() {
                     console.log('Kids Mode:', kidsMode ? 'ВКЛ' : 'ВЫКЛ');
                 }
             } catch (e) {
-                console.error('Failed to parse message:', e);
+                console.error('Failed to parse message:', e, event.data?.slice(0, 200));
+                if (telemDataEl) {
+                    telemDataEl.innerHTML = `<p style="color:red">JS error: ${e.message}</p>`;
+                }
             }
         };
 
@@ -383,6 +388,8 @@ function sendCalibrate(mode) {
 // Обновление телеметрии (статус Pico/STM: по mcu_pong_ok с ESP32 или по факту прихода телеметрии)
 function updateTelem(data) {
     lastTelemTime = Date.now();
+    telemRxCount++;
+    if (telemCounterEl) telemCounterEl.textContent = `(rx: ${telemRxCount})`;
     if (data.mcu_pong_ok !== undefined) {
         setMcuStatus(data.mcu_pong_ok ? 'connected' : 'disconnected');
     } else {
