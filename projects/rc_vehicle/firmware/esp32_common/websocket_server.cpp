@@ -6,9 +6,30 @@
 #include "config.hpp"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 static const char* TAG = "websocket";
 static httpd_handle_t ws_server_handle = NULL;
+
+/** Размер одного буфера телеметрии (JSON). */
+static constexpr size_t TELEM_BUF_SIZE = 1024;
+/** Очередь длины 1: индекс буфера (0 или 1), готового к отправке. */
+static QueueHandle_t s_telem_queue = NULL;
+static char s_telem_buf[2][TELEM_BUF_SIZE];
+static uint8_t s_telem_write_idx = 0;
+
+static void telem_sender_task(void* arg) {
+  (void)arg;
+  for (;;) {
+    uint8_t idx;
+    if (xQueueReceive(s_telem_queue, &idx, portMAX_DELAY) != pdTRUE) {
+      continue;
+    }
+    WebSocketSendTelem(s_telem_buf[idx]);
+  }
+}
 static WebSocketCommandHandler s_cmd_handler = nullptr;
 static WebSocketJsonHandler s_json_handler = nullptr;
 
@@ -95,6 +116,19 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
   }
 
   ws_server_handle = server;
+
+  if (s_telem_queue == NULL) {
+    s_telem_queue = xQueueCreate(1, sizeof(uint8_t));
+    if (s_telem_queue != NULL) {
+      const UBaseType_t prio = 5;
+      if (xTaskCreate(telem_sender_task, "ws_telem", 3072, NULL, prio, NULL) !=
+          pdPASS) {
+        vQueueDelete(s_telem_queue);
+        s_telem_queue = NULL;
+      }
+    }
+  }
+
   esp_err_t ret = httpd_register_uri_handler(ws_server_handle, &ws_uri);
   if (ret == ESP_OK) {
     ESP_LOGI(TAG, "WebSocket URI /ws registered");
@@ -102,6 +136,21 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
     ESP_LOGE(TAG, "Failed to register WebSocket URI: %s", esp_err_to_name(ret));
   }
   return ret;
+}
+
+void WebSocketEnqueueTelem(const char* telem_json) {
+  if (telem_json == NULL || s_telem_queue == NULL) {
+    return;
+  }
+  size_t len = strlen(telem_json);
+  if (len >= TELEM_BUF_SIZE) {
+    len = TELEM_BUF_SIZE - 1;
+  }
+  memcpy(s_telem_buf[s_telem_write_idx], telem_json, len);
+  s_telem_buf[s_telem_write_idx][len] = '\0';
+  const uint8_t idx = s_telem_write_idx;
+  s_telem_write_idx = 1 - s_telem_write_idx;
+  xQueueOverwrite(s_telem_queue, &idx);
 }
 
 esp_err_t WebSocketSendTelem(const char* telem_json) {
