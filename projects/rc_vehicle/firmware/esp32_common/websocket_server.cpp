@@ -14,7 +14,7 @@ static const char* TAG = "websocket";
 static httpd_handle_t ws_server_handle = NULL;
 
 /** Размер одного буфера телеметрии (JSON). */
-static constexpr size_t TELEM_BUF_SIZE = 1024;
+static constexpr size_t TELEM_BUF_SIZE = 2048;
 /** Очередь длины 1: индекс буфера (0 или 1), готового к отправке. */
 static QueueHandle_t s_telem_queue = NULL;
 static char s_telem_buf[2][TELEM_BUF_SIZE];
@@ -172,6 +172,7 @@ void WebSocketEnqueueTelem(const char* telem_json) {
   }
   size_t len = strlen(telem_json);
   if (len >= TELEM_BUF_SIZE) {
+    ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes", len, TELEM_BUF_SIZE);
     len = TELEM_BUF_SIZE - 1;
   }
   memcpy(s_telem_buf[s_telem_write_idx], telem_json, len);
