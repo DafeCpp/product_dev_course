@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Учебная платформа (2 семестра, МФТИ) + рабочий Experiment Tracking Platform (аналог MLflow).
+Учебная платформа (2 семестра, МФТИ) + рабочий Experiment Tracking Platform для физических экспериментов на стендах, аэродинамических трубах и сбора/анализа телеметрии.
 Помимо бэкенда, есть прошивка для RC-машинки на ESP32-S3.
 
 ---

@@ -519,12 +519,12 @@ DevOps получает: scripts.*, configs.*, audit.read
 Не получает: users.*, roles.*
 ```
 
-### Сценарий 2: Owner проекта создаёт роль "ML Engineer"
+### Сценарий 2: Owner проекта создаёт роль "Test Engineer"
 
 ```
 POST /api/v1/projects/{pid}/roles
 {
-  "name": "ml_engineer",
+  "name": "test_engineer",
   "permissions": [
     "experiments.view", "experiments.create", "experiments.update",
     "runs.create", "runs.update",
@@ -533,7 +533,7 @@ POST /api/v1/projects/{pid}/roles
 }
 
 POST /api/v1/projects/{pid}/members/{uid}/roles
-{ "role_id": "<ml_engineer-role-uuid>" }
+{ "role_id": "<test_engineer-role-uuid>" }
 ```
 
 ### Сценарий 3: Временный доступ аудитора
@@ -599,7 +599,7 @@ GET /api/v1/audit-log?action=experiment.delete&from=2026-03-01&scope_type=projec
 
 ## 14. Открытые вопросы
 
-1. **Множественные роли в проекте.** Может ли пользователь иметь несколько проектных ролей одновременно (editor + кастомная "ml_engineer")? Предложение: да, effective permissions = union. Это проще и гибче.
+1. **Множественные роли в проекте.** Может ли пользователь иметь несколько проектных ролей одновременно (editor + кастомная "test_engineer")? Предложение: да, effective permissions = union. Это проще и гибче.
 
 2. **Wildcard permissions.** Нужен ли `experiments.*` как shorthand? Предложение: нет, только явные permissions — проще аудировать и понимать.
 
