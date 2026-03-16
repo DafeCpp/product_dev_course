@@ -253,12 +253,12 @@ void VehicleControlUnified::ControlTaskLoop() {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Запись в кольцевой буфер телеметрии (Phase 4.3) — 20 Hz
+    // Запись в кольцевой буфер телеметрии (Phase 4.3) — 100 Hz
     // ─────────────────────────────────────────────────────────────────────
 
     if (imu_handler_ && imu_handler_->IsEnabled()) {
       const uint32_t last_log = telem_mgr_->GetLastLogTime();
-      if (now - last_log >= config::TelemetryConfig::kSendIntervalMs) {
+      if (now - last_log >= config::TelemetryLogConfig::kLogIntervalMs) {
         TelemetryLogFrame frame;
         frame.ts_ms = now;
         const auto& d = imu_handler_->GetData();
@@ -366,7 +366,7 @@ PlatformError VehicleControlUnified::Init() {
 
   // ───────────────────────────────────────────────────────────────────────
   // Инициализация кольцевого буфера телеметрии (Phase 4.3)
-  // 90000 кадров × 72 байта ≈ 6.3 МБ → выделяется из PSRAM
+  // 18000 кадров × 72 байта ≈ 1.3 МБ → выделяется из PSRAM
   // ───────────────────────────────────────────────────────────────────────
 
   if (!telem_mgr_->Init(config::TelemetryLogConfig::kCapacityFrames)) {

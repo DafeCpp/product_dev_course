@@ -56,7 +56,8 @@ struct TelemetryConfig {
  * @brief Конфигурация кольцевого буфера телеметрии
  */
 struct TelemetryLogConfig {
-  static constexpr size_t kCapacityFrames = 90000;  ///< Ёмкость буфера (кадров) — 3 мин при 500 Hz, ~6.3 МБ PSRAM
+  static constexpr uint32_t kLogIntervalMs = 10;    ///< Интервал записи в лог (100 Hz)
+  static constexpr size_t kCapacityFrames = 18000;  ///< Ёмкость буфера (кадров) — 3 мин при 100 Hz, ~1.3 МБ PSRAM
   static constexpr size_t kMaxExportFrames =
       200;  ///< Макс. кадров для экспорта
 };
