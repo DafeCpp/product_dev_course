@@ -68,6 +68,13 @@ TEST_F(OversteerGuardTest, NoTrigger_WhenYawRateBelowThreshold) {
       << "Занос не должен срабатывать при yaw_rate < 0.3 рад/с";
 }
 
+TEST_F(OversteerGuardTest, NoTrigger_WhenSpeedBelowThreshold) {
+  // EKF speed < 0.5 m/s → slip angle ненадёжен (шум vx/vy)
+  // vx=0.3, vy=0.3 → speed≈0.42, slip=45°, yaw_rate=1.0 рад/с
+  EXPECT_FALSE(RunWithEkfState(0.3f, 0.3f, 1.0f))
+      << "Занос не должен срабатывать при speed < 0.5 м/с";
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Тест: при реальном занос (высокий yaw rate + большой slip) срабатывает
 // ══════════════════════════════════════════════════════════════════════════════

@@ -341,6 +341,18 @@ struct KidsModeConfig {
   /** Снижение газа при anti-spin [0..1] */
   float anti_spin_reduction{0.7f};
 
+  /** Включить ограничение по ускорению (IMU) */
+  bool accel_limit_enabled{true};
+
+  /** Порог ускорения [g], выше которого throttle снижается [0.05..0.5] */
+  float accel_threshold_g{0.15f};
+
+  /** Пропорциональный коэффициент: excess_g * gain → reduction [0.5..10.0] */
+  float accel_limit_gain{3.0f};
+
+  /** Максимальное снижение throttle от accel limiter [0..1] */
+  float accel_max_reduction{0.5f};
+
   /**
    * @brief Проверить валидность конфигурации Kids Mode
    */
@@ -352,7 +364,10 @@ struct KidsModeConfig {
            slew_steering >= 0.2f && slew_steering <= 3.0f &&
            anti_spin_threshold_deg >= 5.0f &&
            anti_spin_threshold_deg <= 45.0f && anti_spin_reduction >= 0.0f &&
-           anti_spin_reduction <= 1.0f;
+           anti_spin_reduction <= 1.0f &&
+           accel_threshold_g >= 0.05f && accel_threshold_g <= 0.5f &&
+           accel_limit_gain >= 0.5f && accel_limit_gain <= 10.0f &&
+           accel_max_reduction >= 0.0f && accel_max_reduction <= 1.0f;
   }
 
   /**

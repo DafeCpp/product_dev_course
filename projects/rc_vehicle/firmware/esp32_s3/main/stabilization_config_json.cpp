@@ -111,6 +111,14 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
                             cfg.kids_mode.anti_spin_threshold_deg);
     cJSON_AddNumberToObject(kids_mode, "anti_spin_reduction",
                             cfg.kids_mode.anti_spin_reduction);
+    cJSON_AddBoolToObject(kids_mode, "accel_limit_enabled",
+                          cfg.kids_mode.accel_limit_enabled);
+    cJSON_AddNumberToObject(kids_mode, "accel_threshold_g",
+                            cfg.kids_mode.accel_threshold_g);
+    cJSON_AddNumberToObject(kids_mode, "accel_limit_gain",
+                            cfg.kids_mode.accel_limit_gain);
+    cJSON_AddNumberToObject(kids_mode, "accel_max_reduction",
+                            cfg.kids_mode.accel_max_reduction);
   }
 
   return obj;
@@ -223,5 +231,11 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
               cfg.kids_mode.anti_spin_threshold_deg);
     get_float(kids_mode, "anti_spin_reduction",
               cfg.kids_mode.anti_spin_reduction);
+    get_bool(kids_mode, "accel_limit_enabled",
+             cfg.kids_mode.accel_limit_enabled);
+    get_float(kids_mode, "accel_threshold_g", cfg.kids_mode.accel_threshold_g);
+    get_float(kids_mode, "accel_limit_gain", cfg.kids_mode.accel_limit_gain);
+    get_float(kids_mode, "accel_max_reduction",
+              cfg.kids_mode.accel_max_reduction);
   }
 }

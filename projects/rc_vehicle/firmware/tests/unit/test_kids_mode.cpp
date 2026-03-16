@@ -42,6 +42,14 @@ TEST(KidsModeConfigTest, AntiSpinEnabledByDefault) {
   EXPECT_TRUE(cfg.anti_spin_enabled);
 }
 
+TEST(KidsModeConfigTest, AccelLimitEnabledByDefault) {
+  KidsModeConfig cfg;
+  EXPECT_TRUE(cfg.accel_limit_enabled);
+  EXPECT_FLOAT_EQ(cfg.accel_threshold_g, 0.15f);
+  EXPECT_FLOAT_EQ(cfg.accel_limit_gain, 3.0f);
+  EXPECT_FLOAT_EQ(cfg.accel_max_reduction, 0.5f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // KidsModeConfig::IsValid() Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -138,6 +146,10 @@ TEST(KidsModeConfigTest, ApplyPresetToddlerSetsCorrectValues) {
   EXPECT_FLOAT_EQ(cfg.slew_steering, 0.3f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_threshold_deg, 5.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_reduction, 0.8f);
+  EXPECT_TRUE(cfg.accel_limit_enabled);
+  EXPECT_FLOAT_EQ(cfg.accel_threshold_g, 0.10f);
+  EXPECT_FLOAT_EQ(cfg.accel_limit_gain, 5.0f);
+  EXPECT_FLOAT_EQ(cfg.accel_max_reduction, 0.7f);
 }
 
 TEST(KidsModeConfigTest, ApplyPresetChildSetsCorrectValues) {
@@ -151,6 +163,10 @@ TEST(KidsModeConfigTest, ApplyPresetChildSetsCorrectValues) {
   EXPECT_FLOAT_EQ(cfg.slew_steering, 0.5f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_threshold_deg, 10.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_reduction, 0.7f);
+  EXPECT_TRUE(cfg.accel_limit_enabled);
+  EXPECT_FLOAT_EQ(cfg.accel_threshold_g, 0.15f);
+  EXPECT_FLOAT_EQ(cfg.accel_limit_gain, 3.0f);
+  EXPECT_FLOAT_EQ(cfg.accel_max_reduction, 0.5f);
 }
 
 TEST(KidsModeConfigTest, ApplyPresetPreteenSetsCorrectValues) {
@@ -164,6 +180,10 @@ TEST(KidsModeConfigTest, ApplyPresetPreteenSetsCorrectValues) {
   EXPECT_FLOAT_EQ(cfg.slew_steering, 0.7f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_threshold_deg, 15.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_reduction, 0.5f);
+  EXPECT_TRUE(cfg.accel_limit_enabled);
+  EXPECT_FLOAT_EQ(cfg.accel_threshold_g, 0.20f);
+  EXPECT_FLOAT_EQ(cfg.accel_limit_gain, 2.0f);
+  EXPECT_FLOAT_EQ(cfg.accel_max_reduction, 0.3f);
 }
 
 TEST(KidsModeConfigTest, ApplyPresetCustomDoesNotChangeValues) {
@@ -276,6 +296,121 @@ TEST_F(KidsModeProcessorTest, ZeroSteeringRemainsZero) {
   processor_.Process(throttle, steering, 10);
 
   EXPECT_FLOAT_EQ(steering, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Accel Limit Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST_F(KidsModeProcessorTest, AccelLimitReducesThrottleAboveThreshold) {
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.15f;
+  cfg_.kids_mode.accel_limit_gain = 3.0f;
+  cfg_.kids_mode.accel_max_reduction = 0.5f;
+  processor_.Init(cfg_, ekf_, nullptr);
+
+  float throttle = 0.3f;
+  float steering = 0.0f;
+
+  // forward_accel = 0.25g → excess = 0.10 → reduction = 0.30
+  // throttle *= (1 - 0.30) = 0.3 * 0.7 = 0.21
+  processor_.Process(throttle, steering, 10, 0.25f);
+
+  EXPECT_LT(throttle, 0.3f);
+  EXPECT_TRUE(processor_.IsAccelLimitActive());
+}
+
+TEST_F(KidsModeProcessorTest, AccelLimitNoEffectBelowThreshold) {
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.15f;
+  cfg_.kids_mode.slew_throttle = 100.0f;  // effectively disabled
+  processor_.Init(cfg_, ekf_, nullptr);
+
+  float throttle = 0.3f;
+  float steering = 0.0f;
+
+  processor_.Process(throttle, steering, 10, 0.10f);
+
+  EXPECT_NEAR(throttle, 0.3f, 0.01f);
+  EXPECT_FALSE(processor_.IsAccelLimitActive());
+}
+
+TEST_F(KidsModeProcessorTest, AccelLimitNoEffectForReverseThrottle) {
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.15f;
+  cfg_.kids_mode.slew_throttle = 100.0f;
+  processor_.Init(cfg_, ekf_, nullptr);
+
+  float throttle = -0.2f;
+  float steering = 0.0f;
+
+  processor_.Process(throttle, steering, 10, 0.30f);
+
+  EXPECT_GE(throttle, -0.2f);
+  EXPECT_FALSE(processor_.IsAccelLimitActive());
+}
+
+TEST_F(KidsModeProcessorTest, AccelLimitNoEffectWhenDisabled) {
+  cfg_.kids_mode.accel_limit_enabled = false;
+  cfg_.kids_mode.slew_throttle = 100.0f;
+  processor_.Init(cfg_, ekf_, nullptr);
+
+  float throttle = 0.3f;
+  float steering = 0.0f;
+
+  processor_.Process(throttle, steering, 10, 0.30f);
+
+  EXPECT_NEAR(throttle, 0.3f, 0.01f);
+  EXPECT_FALSE(processor_.IsAccelLimitActive());
+}
+
+TEST_F(KidsModeProcessorTest, AccelLimitCapsAtMaxReduction) {
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.10f;
+  cfg_.kids_mode.accel_limit_gain = 10.0f;
+  cfg_.kids_mode.accel_max_reduction = 0.5f;
+  cfg_.kids_mode.slew_throttle = 100.0f;
+  processor_.Init(cfg_, ekf_, nullptr);
+
+  float throttle = 0.3f;
+  float steering = 0.0f;
+
+  // forward_accel = 0.50g → excess = 0.40 → gain*excess = 4.0 → capped at 0.5
+  processor_.Process(throttle, steering, 10, 0.50f);
+
+  // throttle *= (1 - 0.5) = 0.3 * 0.5 = 0.15
+  EXPECT_NEAR(throttle, 0.15f, 0.01f);
+  EXPECT_TRUE(processor_.IsAccelLimitActive());
+}
+
+TEST_F(KidsModeProcessorTest, AccelLimitDefaultForwardAccelIsZero) {
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.15f;
+  cfg_.kids_mode.slew_throttle = 100.0f;
+  processor_.Init(cfg_, ekf_, nullptr);
+
+  float throttle = 0.3f;
+  float steering = 0.0f;
+
+  // No forward_accel argument → default 0.0f → no reduction
+  processor_.Process(throttle, steering, 10);
+
+  EXPECT_NEAR(throttle, 0.3f, 0.01f);
+  EXPECT_FALSE(processor_.IsAccelLimitActive());
+}
+
+TEST_F(KidsModeProcessorTest, ResetClearsAccelLimitState) {
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.15f;
+  processor_.Init(cfg_, ekf_, nullptr);
+
+  float throttle = 0.3f;
+  float steering = 0.0f;
+  processor_.Process(throttle, steering, 10, 0.30f);
+  EXPECT_TRUE(processor_.IsAccelLimitActive());
+
+  processor_.Reset();
+  EXPECT_FALSE(processor_.IsAccelLimitActive());
 }
 
 TEST_F(KidsModeProcessorTest, ResetClearsAntiSpinState) {

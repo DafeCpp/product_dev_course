@@ -92,6 +92,9 @@ void KidsModeConfig::Clamp() noexcept {
   slew_steering = std::clamp(slew_steering, 0.2f, 3.0f);
   anti_spin_threshold_deg = std::clamp(anti_spin_threshold_deg, 5.0f, 45.0f);
   anti_spin_reduction = std::clamp(anti_spin_reduction, 0.0f, 1.0f);
+  accel_threshold_g = std::clamp(accel_threshold_g, 0.05f, 0.5f);
+  accel_limit_gain = std::clamp(accel_limit_gain, 0.5f, 10.0f);
+  accel_max_reduction = std::clamp(accel_max_reduction, 0.0f, 1.0f);
 }
 
 void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
@@ -104,6 +107,10 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       slew_steering = 0.3f;
       anti_spin_threshold_deg = 5.0f;
       anti_spin_reduction = 0.8f;
+      accel_limit_enabled = true;
+      accel_threshold_g = 0.10f;
+      accel_limit_gain = 5.0f;
+      accel_max_reduction = 0.7f;
       break;
 
     case KidsPreset::Child:
@@ -114,6 +121,10 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       slew_steering = 0.5f;
       anti_spin_threshold_deg = 10.0f;
       anti_spin_reduction = 0.7f;
+      accel_limit_enabled = true;
+      accel_threshold_g = 0.15f;
+      accel_limit_gain = 3.0f;
+      accel_max_reduction = 0.5f;
       break;
 
     case KidsPreset::Preteen:
@@ -124,6 +135,10 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       slew_steering = 0.7f;
       anti_spin_threshold_deg = 15.0f;
       anti_spin_reduction = 0.5f;
+      accel_limit_enabled = true;
+      accel_threshold_g = 0.20f;
+      accel_limit_gain = 2.0f;
+      accel_max_reduction = 0.3f;
       break;
 
     default:

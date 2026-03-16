@@ -142,7 +142,11 @@ void OversteerGuard::Process(float& throttle, uint32_t dt_ms,
   // неподвижности. Без этой проверки EKF-дрейф vx/vy при стоянке даёт
   // ложный slip angle → ложное срабатывание.
   constexpr float kMinYawRateRad = 0.3f;  // ~17°/с
-  if (std::abs(ekf_->GetYawRate()) < kMinYawRateRad) {
+  // На малых скоростях EKF slip angle ненадёжен: vx/vy зашумлены,
+  // atan2(vy,vx) скачет. Без энкодеров speed < 0.5 м/с — зона шума.
+  constexpr float kMinSpeedMs = 0.5f;
+  if (std::abs(ekf_->GetYawRate()) < kMinYawRateRad ||
+      ekf_->GetSpeedMs() < kMinSpeedMs) {
     oversteer_active_ = false;
     prev_slip_deg_ = 0.0f;
     return;

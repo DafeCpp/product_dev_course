@@ -35,8 +35,10 @@ class KidsModeProcessor {
    * @param throttle Команда газа [in/out]
    * @param steering Команда руля [in/out]
    * @param dt_ms Шаг времени в миллисекундах
+   * @param forward_accel Продольное ускорение IMU [g] для accel limiter
    */
-  void Process(float& throttle, float& steering, uint32_t dt_ms) noexcept;
+  void Process(float& throttle, float& steering, uint32_t dt_ms,
+               float forward_accel = 0.0f) noexcept;
 
   /**
    * @brief Проверить, активен ли Kids Mode
@@ -55,6 +57,14 @@ class KidsModeProcessor {
   }
 
   /**
+   * @brief Проверить, сработало ли ограничение по ускорению
+   * @return true если accel limiter снижает throttle
+   */
+  [[nodiscard]] bool IsAccelLimitActive() const noexcept {
+    return accel_limit_active_;
+  }
+
+  /**
    * @brief Сбросить состояние процессора
    */
   void Reset() noexcept;
@@ -67,6 +77,7 @@ class KidsModeProcessor {
   float smoothed_throttle_{0.0f};
   float smoothed_steering_{0.0f};
   bool anti_spin_active_{false};
+  bool accel_limit_active_{false};
 };
 
 }  // namespace rc_vehicle

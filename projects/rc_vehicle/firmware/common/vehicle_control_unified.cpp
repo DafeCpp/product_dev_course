@@ -151,7 +151,13 @@ void VehicleControlUnified::ControlTaskLoop() {
     // ─────────────────────────────────────────────────────────────────────
 
     if (traits.apply_input_limits) {
-      kids_processor_.Process(commanded_throttle, commanded_steering, dt_ms);
+      float kids_fwd_accel = 0.0f;
+      if (imu_handler_ && imu_handler_->IsEnabled()) {
+        kids_fwd_accel =
+            imu_calib_.GetForwardAccel(imu_handler_->GetData());
+      }
+      kids_processor_.Process(commanded_throttle, commanded_steering, dt_ms,
+                              kids_fwd_accel);
     }
 
     // ─────────────────────────────────────────────────────────────────────

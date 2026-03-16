@@ -16,7 +16,8 @@ void KidsModeProcessor::Init(const StabilizationConfig& cfg,
 }
 
 void KidsModeProcessor::Process(float& throttle, float& steering,
-                                uint32_t dt_ms) noexcept {
+                                uint32_t dt_ms,
+                                float forward_accel) noexcept {
   if (!cfg_ || !IsActive()) {
     return;  // Kids Mode не активен
   }
@@ -66,12 +67,28 @@ void KidsModeProcessor::Process(float& throttle, float& steering,
       throttle *= (1.0f - km.anti_spin_reduction);
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 4. Ограничение по ускорению (IMU, не дрейфует)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  accel_limit_active_ = false;
+
+  if (km.accel_limit_enabled && throttle > 0.0f &&
+      forward_accel > km.accel_threshold_g) {
+    accel_limit_active_ = true;
+    const float excess = forward_accel - km.accel_threshold_g;
+    const float reduction =
+        std::min(excess * km.accel_limit_gain, km.accel_max_reduction);
+    throttle *= (1.0f - reduction);
+  }
 }
 
 void KidsModeProcessor::Reset() noexcept {
   smoothed_throttle_ = 0.0f;
   smoothed_steering_ = 0.0f;
   anti_spin_active_ = false;
+  accel_limit_active_ = false;
 }
 
 }  // namespace rc_vehicle
