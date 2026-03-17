@@ -4,7 +4,6 @@ Maps mutating HTTP routes to audit actions and sends them to auth-service.
 """
 from __future__ import annotations
 
-from typing import Awaitable, Callable
 from uuid import UUID
 
 import structlog
@@ -68,8 +67,8 @@ def _extract_client_ip(request: web.Request) -> str | None:
 @web.middleware
 async def audit_middleware(
     request: web.Request,
-    handler: web.RequestHandler,  # type: ignore[type-arg]
-) -> web.StreamResponse:
+    handler: Handler,
+) -> StreamResponse:
     response = await handler(request)
 
     # Only audit successful mutating requests
