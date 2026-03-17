@@ -6,6 +6,8 @@ AUTH_DB_USER=${AUTH_DB_USER:-auth_user}
 AUTH_DB_PASSWORD=${AUTH_DB_PASSWORD:-auth_password}
 EXPERIMENT_DB_USER=${EXPERIMENT_DB_USER:-experiment_user}
 EXPERIMENT_DB_PASSWORD=${EXPERIMENT_DB_PASSWORD:-experiment_password}
+SCRIPT_DB_USER=${SCRIPT_DB_USER:-script_user}
+SCRIPT_DB_PASSWORD=${SCRIPT_DB_PASSWORD:-script_password}
 
 echo "Creating databases and users..."
 
@@ -72,6 +74,35 @@ psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "experiment_db" <<-
     GRANT ALL ON SCHEMA public TO $EXPERIMENT_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $EXPERIMENT_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $EXPERIMENT_DB_USER;
+EOSQL
+
+# Create script_db and script_user
+echo "Creating database: script_db"
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "CREATE DATABASE script_db;" 2>&1 | grep -v "already exists" || true
+
+echo "Creating user: $SCRIPT_DB_USER"
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    DO \$\$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_user WHERE usename = '$SCRIPT_DB_USER') THEN
+            CREATE USER $SCRIPT_DB_USER WITH PASSWORD '$SCRIPT_DB_PASSWORD';
+        ELSE
+            ALTER USER $SCRIPT_DB_USER WITH PASSWORD '$SCRIPT_DB_PASSWORD';
+        END IF;
+    END
+    \$\$;
+EOSQL
+
+echo "Granting privileges on script_db to $SCRIPT_DB_USER"
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    GRANT ALL PRIVILEGES ON DATABASE script_db TO $SCRIPT_DB_USER;
+EOSQL
+
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "script_db" <<-EOSQL
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    GRANT ALL ON SCHEMA public TO $SCRIPT_DB_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $SCRIPT_DB_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $SCRIPT_DB_USER;
 EOSQL
 
 echo "✅ Multiple databases and users initialized"

@@ -25,6 +25,8 @@ services:
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_password}
       EXPERIMENT_DB_USER: ${EXPERIMENT_DB_USER:-experiment_user}
       EXPERIMENT_DB_PASSWORD: ${EXPERIMENT_DB_PASSWORD:-experiment_password}
+      SCRIPT_DB_USER: ${SCRIPT_DB_USER:-script_user}
+      SCRIPT_DB_PASSWORD: ${SCRIPT_DB_PASSWORD:-script_password}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
@@ -76,6 +78,7 @@ services:
       - REFRESH_TOKEN_TTL_SEC=${REFRESH_TTL_SEC:-1209600}
       - BCRYPT_ROUNDS=${BCRYPT_ROUNDS:-12}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      - ADMIN_BOOTSTRAP_SECRET=${ADMIN_BOOTSTRAP_SECRET:-dev-bootstrap-secret}
     ports:
       - "${AUTH_SERVICE_PORT:-8001}:8001"
     depends_on:
@@ -158,6 +161,38 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # Script Service - управление и выполнение скриптов
+  script-service:
+    build:
+      context: ./projects/backend
+      dockerfile: services/script-service/Dockerfile
+    container_name: script-service
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${SCRIPT_DATABASE_URL:-postgresql://script_user:script_password@postgres:5432/script_db}
+      - ENV=${SCRIPT_SERVICE_ENV:-development}
+      - HOST=${SCRIPT_SERVICE_HOST:-0.0.0.0}
+      - PORT=${SCRIPT_SERVICE_PORT:-8004}
+      - DB_POOL_SIZE=${SCRIPT_SERVICE_DB_POOL_SIZE:-10}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+    command: ["python", "-m", "script_service.main"]
+    ports:
+      - "${SCRIPT_SERVICE_PORT:-8004}:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8004/health').read()\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Auth Proxy - BFF для фронтенда
   auth-proxy:
