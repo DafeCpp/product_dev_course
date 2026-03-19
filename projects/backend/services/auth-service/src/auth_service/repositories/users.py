@@ -1,10 +1,20 @@
 """User repository."""
 from __future__ import annotations
 
+from typing import TypedDict
 from uuid import UUID
 
 from auth_service.domain.models import User
 from auth_service.repositories.base import BaseRepository
+
+
+class UserSearchRow(TypedDict):
+    """Row shape returned by search_by_username."""
+
+    id: str
+    username: str
+    email: str
+    is_active: bool
 
 _SELECT_COLS = "id, username, email, hashed_password, password_change_required, is_active, created_at, updated_at"
 
@@ -116,3 +126,32 @@ class UserRepository(BaseRepository):
         query = "DELETE FROM users WHERE id = $1"
         result = await self._execute(query, user_id)
         return result == "DELETE 1"
+
+    async def search_by_username(
+        self,
+        query: str,
+        limit: int = 10,
+        exclude_project_id: UUID | None = None,
+    ) -> list[UserSearchRow]:
+        """Search active users by username prefix, optionally excluding project members."""
+        sql = """
+            SELECT id, username, email, is_active
+            FROM users
+            WHERE username ILIKE $1 || '%'
+              AND is_active = true
+              AND ($2::uuid IS NULL OR id NOT IN (
+                  SELECT user_id FROM project_members WHERE project_id = $2
+              ))
+            ORDER BY username
+            LIMIT $3
+        """
+        rows = await self._fetch(sql, query, exclude_project_id, limit)
+        return [
+            UserSearchRow(
+                id=str(row["id"]),
+                username=str(row["username"]),
+                email=str(row["email"]),
+                is_active=bool(row["is_active"]),
+            )
+            for row in rows
+        ]

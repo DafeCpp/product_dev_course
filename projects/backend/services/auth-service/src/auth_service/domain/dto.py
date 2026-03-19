@@ -92,6 +92,7 @@ class AuthTokensResponse(BaseModel):
 
     access_token: str
     refresh_token: str
+    password_change_required: bool = False
 
 
 class UserResponse(BaseModel):
@@ -414,3 +415,16 @@ class AuditLogQuery(BaseModel):
     offset: int = Field(default=0, ge=0)
 
     model_config = {"populate_by_name": True}
+
+
+# =============================================================================
+# User search DTOs
+# =============================================================================
+
+class UserSearchResult(BaseModel):
+    """Single user entry returned by the search endpoint."""
+
+    id: str
+    username: str
+    email: str
+    is_active: bool
