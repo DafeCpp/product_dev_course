@@ -40,6 +40,10 @@ paths:
     $ref: ./paths/runs.yaml#/captureSessionDelete
   /api/v1/runs/{run_id}/metrics:
     $ref: ./paths/runs.yaml#/metrics
+  /api/v1/runs/{run_id}/metrics/summary:
+    $ref: ./paths/runs.yaml#/metricsSummary
+  /api/v1/runs/{run_id}/metrics/aggregations:
+    $ref: ./paths/runs.yaml#/metricsAggregations
   /api/v1/runs/{run_id}/artifacts:
     $ref: ./paths/runs.yaml#/artifacts
   /api/v1/runs/{run_id}/artifacts/{artifact_id}/approve:
@@ -103,6 +107,14 @@ components:
       $ref: ./components/schemas.yaml#/MetricIngestRequest
     MetricQueryResponse:
       $ref: ./components/schemas.yaml#/MetricQueryResponse
+    MetricSummaryResponse:
+      $ref: ./components/schemas.yaml#/MetricSummaryResponse
+    MetricSummaryItem:
+      $ref: ./components/schemas.yaml#/MetricSummaryItem
+    MetricAggregationsResponse:
+      $ref: ./components/schemas.yaml#/MetricAggregationsResponse
+    MetricBucket:
+      $ref: ./components/schemas.yaml#/MetricBucket
     Artifact:
       $ref: ./components/schemas.yaml#/Artifact
     ArtifactCreate:

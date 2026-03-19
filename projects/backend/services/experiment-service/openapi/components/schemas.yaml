@@ -363,6 +363,76 @@ MetricQueryResponse:
                 timestamp:
                   type: string
                   format: date-time
+    total:
+      type: integer
+    limit:
+      type: integer
+    offset:
+      type: integer
+MetricSummaryResponse:
+  type: object
+  properties:
+    run_id:
+      type: string
+      format: uuid
+    metrics:
+      type: array
+      items:
+        $ref: '#/MetricSummaryItem'
+MetricSummaryItem:
+  type: object
+  properties:
+    name:
+      type: string
+    last_step:
+      type: integer
+    last_value:
+      type: number
+    last_timestamp:
+      type: string
+      format: date-time
+    total_steps:
+      type: integer
+    min_value:
+      type: number
+    max_value:
+      type: number
+    avg_value:
+      type: number
+MetricAggregationsResponse:
+  type: object
+  properties:
+    run_id:
+      type: string
+      format: uuid
+    bucket_size:
+      type: integer
+    series:
+      type: array
+      items:
+        type: object
+        properties:
+          name:
+            type: string
+          buckets:
+            type: array
+            items:
+              $ref: '#/MetricBucket'
+MetricBucket:
+  type: object
+  properties:
+    step_from:
+      type: integer
+    step_to:
+      type: integer
+    min:
+      type: number
+    avg:
+      type: number
+    max:
+      type: number
+    count:
+      type: integer
 Artifact:
   type: object
   properties:

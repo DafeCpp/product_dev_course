@@ -1,12 +1,12 @@
 """Run metrics repository."""
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from typing import Any, Iterable
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
-from experiment_service.domain.dto import RunMetricIngestDTO, RunMetricPointDTO
+from experiment_service.domain.dto import RunMetricIngestDTO
 from experiment_service.domain.models import RunMetric
 from experiment_service.repositories.base import BaseRepository
 
@@ -43,6 +43,7 @@ class RunMetricsRepository(BaseRepository):
                 timestamp
             )
             VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT DO NOTHING
         """
         async with self._pool.acquire() as conn:
             await conn.executemany(query, values)
@@ -53,15 +54,23 @@ class RunMetricsRepository(BaseRepository):
         run_id: UUID,
         *,
         name: str | None = None,
+        names: list[str] | None = None,
         from_step: int | None = None,
         to_step: int | None = None,
+        order: str = "asc",
+        limit: int = 1000,
+        offset: int = 0,
     ) -> list[RunMetric]:
         conditions = ["project_id = $1", "run_id = $2"]
-        params: list = [project_id, run_id]
+        params: list[Any] = [project_id, run_id]
         idx = 3
-        if name:
-            conditions.append(f"name = ${idx}")
-            params.append(name)
+
+        if name is not None and names is None:
+            names = [name]
+
+        if names:
+            conditions.append(f"name = ANY(${idx})")
+            params.append(names)
             idx += 1
         if from_step is not None:
             conditions.append(f"step >= ${idx}")
@@ -71,13 +80,155 @@ class RunMetricsRepository(BaseRepository):
             conditions.append(f"step <= ${idx}")
             params.append(to_step)
             idx += 1
+
+        order_dir = "DESC" if order.lower() == "desc" else "ASC"
         where_clause = " AND ".join(conditions)
         query = f"""
-            SELECT *
+            SELECT id, project_id, run_id, name, step, value, timestamp, created_at
             FROM run_metrics
             WHERE {where_clause}
-            ORDER BY name, step
+            ORDER BY name, step {order_dir}
+            LIMIT ${idx} OFFSET ${idx + 1}
         """
+        params.extend([limit, offset])
         rows: Iterable[Record] = await self._fetch(query, *params)
         return [self._to_model(row) for row in rows]
 
+    async def count_series(
+        self,
+        project_id: UUID,
+        run_id: UUID,
+        *,
+        name: str | None = None,
+        names: list[str] | None = None,
+        from_step: int | None = None,
+        to_step: int | None = None,
+    ) -> int:
+        conditions = ["project_id = $1", "run_id = $2"]
+        params: list[Any] = [project_id, run_id]
+        idx = 3
+
+        if name is not None and names is None:
+            names = [name]
+
+        if names:
+            conditions.append(f"name = ANY(${idx})")
+            params.append(names)
+            idx += 1
+        if from_step is not None:
+            conditions.append(f"step >= ${idx}")
+            params.append(from_step)
+            idx += 1
+        if to_step is not None:
+            conditions.append(f"step <= ${idx}")
+            params.append(to_step)
+            idx += 1
+
+        where_clause = " AND ".join(conditions)
+        query = f"SELECT count(*)::bigint FROM run_metrics WHERE {where_clause}"
+        row = await self._fetchrow(query, *params)
+        return int(row[0]) if row is not None else 0
+
+    async def fetch_summary_aggregates(
+        self,
+        project_id: UUID,
+        run_id: UUID,
+        *,
+        names: list[str] | None = None,
+    ) -> list[Record]:
+        conditions = ["project_id = $1", "run_id = $2"]
+        params: list[Any] = [project_id, run_id]
+        idx = 3
+
+        if names:
+            conditions.append(f"name = ANY(${idx})")
+            params.append(names)
+            idx += 1
+
+        where_clause = " AND ".join(conditions)
+        query = f"""
+            SELECT
+                name,
+                count(*)::bigint AS total_steps,
+                min(value)       AS min_value,
+                max(value)       AS max_value,
+                avg(value)       AS avg_value
+            FROM run_metrics
+            WHERE {where_clause}
+            GROUP BY name
+            ORDER BY name
+        """
+        rows: list[Record] = list(await self._fetch(query, *params))
+        return rows
+
+    async def fetch_last_per_metric(
+        self,
+        project_id: UUID,
+        run_id: UUID,
+        *,
+        names: list[str] | None = None,
+    ) -> list[Record]:
+        conditions = ["project_id = $1", "run_id = $2"]
+        params: list[Any] = [project_id, run_id]
+        idx = 3
+
+        if names:
+            conditions.append(f"name = ANY(${idx})")
+            params.append(names)
+            idx += 1
+
+        where_clause = " AND ".join(conditions)
+        query = f"""
+            SELECT DISTINCT ON (name)
+                name,
+                step        AS last_step,
+                value       AS last_value,
+                timestamp   AS last_timestamp
+            FROM run_metrics
+            WHERE {where_clause}
+            ORDER BY name, step DESC
+        """
+        rows: list[Record] = list(await self._fetch(query, *params))
+        return rows
+
+    async def fetch_aggregations(
+        self,
+        project_id: UUID,
+        run_id: UUID,
+        *,
+        names: list[str],
+        from_step: int | None = None,
+        to_step: int | None = None,
+        bucket_size: int,
+    ) -> list[Record]:
+        conditions = ["project_id = $1", "run_id = $2", "name = ANY($3)"]
+        params: list[Any] = [project_id, run_id, names, bucket_size]
+        idx = 5
+
+        if from_step is not None:
+            conditions.append(f"step >= ${idx}")
+            params.append(from_step)
+            idx += 1
+        if to_step is not None:
+            conditions.append(f"step <= ${idx}")
+            params.append(to_step)
+            idx += 1
+
+        where_clause = " AND ".join(conditions)
+        # $4 is bucket_size used in SELECT expressions
+        query = f"""
+            SELECT
+                name,
+                (step / $4) * $4          AS step_from,
+                (step / $4) * $4 + $4 - 1 AS step_to,
+                min(value)                 AS min_val,
+                avg(value)                 AS avg_val,
+                max(value)                 AS max_val,
+                count(*)::bigint           AS cnt
+            FROM run_metrics
+            WHERE {where_clause}
+            GROUP BY name, (step / $4)
+            ORDER BY name, step_from
+        """
+        rows: list[Record] = list(await self._fetch(query, *params))
+        return rows
