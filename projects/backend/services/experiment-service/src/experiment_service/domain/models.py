@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from experiment_service.domain.enums import (
     CaptureSessionStatus,
+    ConnectionStatus,
     ConversionProfileStatus,
     ExperimentStatus,
     RunStatus,
@@ -79,6 +80,7 @@ class Sensor(BaseModel):
     last_heartbeat: datetime | None = None
     active_profile_id: UUID | None = None
     calibration_notes: str | None = None
+    connection_status: ConnectionStatus = ConnectionStatus.OFFLINE
     created_at: datetime
     updated_at: datetime
 

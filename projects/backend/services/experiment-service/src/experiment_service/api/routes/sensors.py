@@ -278,6 +278,44 @@ async def remove_sensor_project(request: web.Request):
     return web.Response(status=204)
 
 
+@routes.get("/api/v1/sensors/status-summary")
+async def get_sensor_status_summary(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
+    service = await get_sensor_service(request)
+    summary = await service.get_status_summary(project_id)
+    return web.json_response(summary)
+
+
+@routes.get("/api/v1/sensors/{sensor_id}/heartbeat-history")
+async def get_sensor_heartbeat_history(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
+    sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
+    minutes_raw = request.rel_url.query.get("minutes", "60")
+    try:
+        minutes = int(minutes_raw)
+        if minutes < 1 or minutes > 1440:
+            raise ValueError("out of range")
+    except ValueError:
+        raise web.HTTPBadRequest(text="minutes must be an integer between 1 and 1440")
+    service = await get_sensor_service(request)
+    try:
+        await service.get_sensor(project_id, sensor_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    timestamps = await service.get_heartbeat_history(sensor_id, minutes)
+    return web.json_response(
+        {
+            "sensor_id": str(sensor_id),
+            "timestamps": [ts.isoformat() for ts in timestamps],
+            "count": len(timestamps),
+        }
+    )
+
+
 @routes.get("/api/v1/sensors/{sensor_id}/projects")
 async def get_sensor_projects(request: web.Request):
     """Get all projects associated with a sensor."""

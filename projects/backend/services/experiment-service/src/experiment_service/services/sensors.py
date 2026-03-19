@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import datetime
-from typing import List, Tuple
+from typing import List
 from uuid import UUID
 
 from experiment_service.domain.dto import (
@@ -169,6 +169,16 @@ class SensorService:
     ) -> None:
         """Remove a sensor from a project."""
         await self._sensor_repository.remove_sensor_project(sensor_id, project_id)
+
+    async def get_status_summary(self, project_id: UUID) -> dict[str, int]:
+        """Return counts of online/delayed/offline/total sensors for a project."""
+        return await self._sensor_repository.get_status_summary(project_id)
+
+    async def get_heartbeat_history(
+        self, sensor_id: UUID, minutes: int
+    ) -> list[datetime]:
+        """Return per-minute bucketed timestamps for the given sensor."""
+        return await self._sensor_repository.get_heartbeat_history(sensor_id, minutes)
 
 
 class ConversionProfileService:

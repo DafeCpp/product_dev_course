@@ -50,8 +50,14 @@ paths:
     $ref: ./paths/runs.yaml#/artifactApprove
   /api/v1/sensors:
     $ref: ./paths/sensors.yaml#/collection
+  /api/v1/sensors/status-summary:
+    $ref: ./paths/sensors.yaml#/statusSummary
+  /api/v1/sensors/{sensor_id}:
+    $ref: ./paths/sensors.yaml#/item
   /api/v1/sensors/{sensor_id}/rotate-token:
     $ref: ./paths/sensors.yaml#/rotateToken
+  /api/v1/sensors/{sensor_id}/heartbeat-history:
+    $ref: ./paths/sensors.yaml#/heartbeatHistory
   /api/v1/sensors/{sensor_id}/conversion-profiles:
     $ref: ./paths/sensors.yaml#/conversionProfiles
   /api/v1/sensors/{sensor_id}/conversion-profiles/{profile_id}/publish:
