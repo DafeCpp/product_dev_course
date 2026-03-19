@@ -28,7 +28,7 @@
    - покрытие 100% экспериментов командой — ✅ (все эксперименты привязаны к проектам с RBAC)
    - TTM сравнения < 10 сек — ❌ (Comparison Service не реализован)
    - время регистрации нового запуска < 3 сек — ✅
-   - MTTR < 15 мин — ⚠️ (OpenTelemetry + Grafana/Loki для диагностики, но SLO/SLI мониторинг не настроен)
+   - MTTR < 15 мин — ⚠️ (OpenTelemetry + Grafana/Loki для диагностики, Prometheus метрики на всех сервисах; SLO/SLI мониторинг не настроен)
 
 ## 3. Пользовательские роли и сценарии
 - **Оператор экспериментов (инженер-испытатель):** ✅ логинится, управляет экспериментами и запусками, просматривает телеметрию.
@@ -37,7 +37,7 @@
 
 ### 3.1 Базовый сценарий работы
 1. ✅ Все датчики непрерывно отправляют телеметрию в публичную ingest-ручку (`POST /api/v1/telemetry`).
-2. ⚠️ Пользователь авторизуется и видит список датчиков с фильтрацией; дашборд онлайн-статусов (heartbeat sparklines) — ❌.
+2. ✅ Пользователь авторизуется и видит список датчиков с фильтрацией; дашборд онлайн-статусов реализован (`/sensor-monitor` — connection_status online/delayed/offline, status-summary, heartbeat-history).
 3. ✅ Пользователь может добавить новый датчик (имя, тип, токен, единица измерения); тестовая отправка через sensor-simulator.
 4. ✅ Пользователь открывает/создаёт эксперимент, добавляет запуск.
 5. ✅ Запуск переводится в `running`; пользователь наблюдает live-графики (SSE, мульти-панельный TelemetryViewer с Plotly, raw/physical).
@@ -62,7 +62,7 @@
 - ✅ OpenTelemetry трассировка
 
 ### Вне scope / не реализовано
-- ❌ Metrics Service (отдельный — метрики `run_metrics` есть в схеме, но без API/UI)
+- ✅ Metrics Service API (POST/GET /runs/{id}/metrics, summary, step-bucketed aggregations; frontend: RunMetrics panel с Plotly, summary cards)
 - ❌ Artifact Service (таблица `artifacts` есть, но нет S3/pre-signed URL/UI)
 - ❌ Comparison Service
 - ❌ API Gateway (роль выполняет Auth Proxy)
@@ -83,7 +83,7 @@
 | Frontend (Experiment Portal) | React SPA: проекты, эксперименты, запуски, датчики, телеметрия (live + history), webhooks, аудит | Работает поверх Auth Proxy | ✅ |
 | Sensor Simulator | React SPA для генерации тестовой телеметрии (waveforms, сценарии burst/dropout/late) | localStorage | ✅ |
 | Logging Stack (Loki + Alloy + Grafana) | Сбор и визуализация логов со всех сервисов | Loki | ✅ |
-| Metrics Service | Прием батчей метрик, хранение серий, агрегации | — | ❌ |
+| Metrics Service | Прием батчей метрик, хранение серий, агрегации | PostgreSQL (`experiment_db`) | ✅ |
 | Artifact Service | Загрузка артефактов, версионирование | — | ❌ |
 | Comparison Service | Построение сравнений запусков | — | ❌ |
 | API Gateway | Агрегация ответов, внешний API | — | ❌ (Auth Proxy выполняет роль BFF) |
@@ -92,13 +92,13 @@
 
 ### 6.1 Управление аутентификацией и проектами
 - ✅ Регистрация пользователя (открытая, без инвайт-кода).
-- ❌ Восстановление пароля.
+- ⚠️ Восстановление пароля (self-service reset-токен реализован, принудительная смена пароля работает — pcr claim в JWT + middleware + frontend redirect; SMTP-интеграция — ❌).
 - ✅ Создание проектов, добавление участников с ролями `owner`, `editor`, `viewer`.
 - ✅ **Многоуровневый доступ к проектам:** при `GET /projects` пользователь получает все проекты, где он участник через `project_members`.
-- ❌ Поиск и фильтрация проектов через UI (есть список, но без поиска/фильтра).
-- ❌ **Управление командой проекта с suggest:** при добавлении участника в проект через UI реализован **suggest** (подсказки при вводе) с отображением **ников пользователей** (username), а не UUID. API endpoint для поиска пользователей: `GET /api/v1/users/search?q=<query>`.
+- ✅ Поиск и фильтрация проектов: `GET /projects?search=&role=&limit=&offset=` с пагинацией; frontend — поиск по названию и фильтр по роли.
+- ✅ **Управление командой проекта с suggest:** при добавлении участника в проект через UI реализован **suggest** (подсказки при вводе) с отображением **ников пользователей** (username), а не UUID. API endpoint для поиска пользователей: `GET /api/v1/users/search?q=<query>`.
 - ✅ JWT авторизация (access + refresh токены, PyJWT, bcrypt).
-- ❌ Ротация refresh токенов с черным списком при отзыве (logout — stub).
+- ✅ Ротация refresh токенов: таблица `refresh_token_families`, reuse detection (отзыв всей цепочки при повторном использовании), cleanup worker.
 - ✅ Auth Proxy (BFF) на **Fastify** (TypeScript): `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`; прокси `/api/*`, `/projects/*`, `/api/v1/telemetry/*`; access/refresh в HttpOnly Secure SameSite=Lax куках.
 - ✅ CSRF: double-submit cookie (`csrf_token`) + проверка `Origin/Referer` + `X-CSRF-Token`.
 - ✅ CORS: whitelist фронтовых origin, `credentials: true`.
@@ -121,8 +121,8 @@
 ### 6.2 Датчики и телеметрия
 - ✅ Регистрация датчика: имя, тип, единица измерения, проект, секретный токен.
 - ⚠️ API ingest `/api/v1/telemetry` — POST (REST, батчи); SSE стриминг (`GET /api/v1/telemetry/stream`). **WebSocket — ❌.**
-- ❌ SLA ingest API (rate limit на уровне токена, 429, журнал датчика).
-- ⚠️ Мониторинг состояния: `last_heartbeat` хранится; автоматический расчёт `online`/`delayed`/`offline` — ❌.
+- ⚠️ SLA ingest API: per-sensor REST rate limiter реализован (requests + readings per window, 429 с Retry-After); журнал ошибок датчика — ❌.
+- ✅ Мониторинг состояния: `connection_status` вычисляется (online/delayed/offline), `status-summary`, `heartbeat-history`; frontend дашборд `/sensor-monitor`.
 - ✅ Веб-интерфейс: список датчиков, создание, фильтрация по проекту/типу.
 - ✅ Sensor Simulator (React SPA) для тестовой отправки с различными сценариями (burst, dropout, sine, late data).
 - ❌ Журнал ошибок приёма на уровне датчика.
@@ -144,9 +144,9 @@
 - ✅ Экспорт экспериментов и запусков в CSV/JSON.
 
 ### 6.4 Метрики
-- ⚠️ Таблица `run_metrics` существует в схеме (run_id, name, step, value, timestamp).
-- ❌ Endpoint `POST /runs/{id}/metrics` — не реализован.
-- ❌ Агрегации min/avg/max по шагам — не реализованы.
+- ✅ Таблица `run_metrics` существует в схеме (run_id, name, step, value, timestamp).
+- ✅ Endpoint `POST /runs/{id}/metrics` — реализован (батчевая запись метрик).
+- ✅ `GET /runs/{id}/metrics` — получение метрик с фильтрацией; summary; step-bucketed aggregations (min/avg/max).
 - ✅ Live-канал (SSE) ретранслирует последние точки телеметрии.
 - ✅ При активном отсчёте сохраняются все значения датчиков с отметками времени.
 - ✅ Для каждого значения доступны `raw_value` и `physical_value`.
@@ -163,7 +163,7 @@
 
 ### 6.7 API Gateway
 - ❌ Отдельный API Gateway не реализован; Auth Proxy (Fastify) выполняет роль BFF/прокси.
-- ⚠️ Rate limiting реализован в Auth Proxy, но не per-token, а per-session/IP.
+- ⚠️ Rate limiting реализован в Auth Proxy (per-session/IP) и в telemetry-ingest-service (per-sensor REST rate limiter); per-token granularity — частично.
 
 ### 6.8 Frontend
 - ✅ Страницы: список проектов, список экспериментов, карточка эксперимента, детали запуска, список датчиков, создание датчика, телеметрия, webhooks.
@@ -171,7 +171,7 @@
 - ✅ Панель управления запуском: кнопки «Старт отсчёта» / «Стоп отсчёта».
 - ✅ Переключатель capture session для выбранного запуска (history mode).
 - ✅ Формы добавления датчика, эксперимента и запуска с валидацией.
-- ❌ Монитор датчиков (online/offline, heartbeat sparklines) — не реализован.
+- ✅ Монитор датчиков: страница `/sensor-monitor` с StatusIndicator (online/delayed/offline), SensorStatusSummaryBar, heartbeat sparklines, автообновление.
 - ❌ Экран сравнения запусков.
 
 ### 6.9 UX Live-монитора
@@ -197,7 +197,7 @@
 - ✅ Секреты датчиков: токен показывается один раз при создании; ротация через `POST /sensors/{id}/rotate-token`.
 - ❌ MFA для ротации токенов.
 - ✅ Аудит-лог: операции с capture sessions и запусками (user_id, роль, payload).
-- ❌ Хранение аудита минимум 1 год (без настроенного retention).
+- ⚠️ Хранение аудита: retention policy `AUDIT_RETENTION_DAYS=365` настроен, background cleanup worker работает в обоих сервисах, индексы добавлены.
 - ⚠️ TLS: делегировано на уровень деплоя (не настроен в Docker Compose).
 - ❌ AES-256 для токенов/профилей в БД; KMS.
 - ✅ Маскирование секретов в UI (DebugErrorToast, httpDebug.ts).
@@ -230,7 +230,7 @@
 ## 8. Данные и модели
 - ✅ **Experiment:** id, project_id, name, description, tags[], owner_id, created_at, updated_at, status, experiment_type, metadata (JSONB).
 - ✅ **Run:** id, experiment_id, project_id, params(JSONB), git_sha, env, tags[], status, started_at, finished_at, duration_seconds, notes, metadata.
-- ⚠️ **RunMetric:** run_id, name, step, value, timestamp — таблица есть, API нет.
+- ✅ **RunMetric:** run_id, name, step, value, timestamp — таблица и API реализованы (POST/GET /runs/{id}/metrics, summary, aggregations).
 - ⚠️ **Artifact:** id, run_id, type, uri, checksum, size, metadata, approved_by — таблица есть, API нет.
 - ❌ **Comparison:** не реализовано.
 - ✅ **Sensor:** id, project_id, name, type, input_unit, display_unit, token_hash, token_preview, status, last_heartbeat, active_profile_id.
@@ -248,11 +248,11 @@
 - ⚠️ **Надёжность:** целевой аптайм 99.5% — не SLA; бэкапы БД — не настроены (ответственность деплоя).
 - ⚠️ **Масштабируемость:** сервисы stateless (могут горизонтально масштабироваться); шардирование — не реализовано.
 - ⚠️ **Безопасность:** TLS на уровне деплоя; CSRF + SameSite cookies; маскирование секретов; шифрование at rest — ❌.
-- ✅ **Соответствие:** аудит-лог для run/capture session действий; retention — не настроен.
+- ✅ **Соответствие:** аудит-лог для run/capture session действий; retention policy `AUDIT_RETENTION_DAYS=365` настроен с background cleanup.
 - ⚠️ **Поток датчиков:** 200 одновременных датчиков, 5k точек/сек — не нагрузочно-тестировалось; TimescaleDB + batch insert + SSE poll.
 
 ## 10. Наблюдаемость и поддержка
-- ❌ Метрики Prometheus (RPS, latency, error rate, queue lag).
+- ✅ Метрики Prometheus: `GET /metrics` на всех 3 сервисах (auth, experiment, telemetry-ingest); HTTP метрики (RPS, latency, error rate) + бизнес-метрики.
 - ✅ OpenTelemetry трассировка для experiment-service (TracerProvider + OTLP HTTP exporter + auto-instrumentation).
 - ✅ Структурированное логирование (structlog, JSON) → Alloy → Loki → Grafana.
 - ✅ Дашборд логов в Grafana (`infrastructure/logging/grafana/dashboards/logs-overview.json`).
@@ -270,7 +270,7 @@
 | **MVP (спринты 1–3)** | Auth, Telemetry Ingest (REST + SSE), список датчиков, CRUD экспериментов/запусков, старт/стоп отсчёта, Docker Compose | ✅ |
 | **Beta (спринты 4–6)** | SSE стриминг (live + history), мульти-панельные графики, webhooks, аудит, расширенные фильтры, экспорт, backfill, RBAC, TimescaleDB | ✅ |
 | **GA (спринты 7–8)** | Наблюдаемость (OpenTelemetry + Loki/Grafana), документация | ⚠️ (трассировка и логи — ✅; SLO/SLI, алёрты, CLI, вебхуки CI/CD — ❌) |
-| **Не реализовано** | Metrics Service (отдельный), Artifact Service (S3), Comparison Service, API Gateway, WebSocket, Kafka, мобильное приложение, chaos-тесты, нагрузочное тестирование | ❌ |
+| **Не реализовано** | Artifact Service (S3), Comparison Service, API Gateway, WebSocket, Kafka, мобильное приложение, chaos-тесты, нагрузочное тестирование | ❌ |
 
 ## 13. Критерии приёмки
 
