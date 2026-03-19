@@ -167,14 +167,14 @@ async def login(request: web.Request) -> web.Response:
             user_agent=extract_user_agent(request),
         )
         user_resp = await auth_service.get_user_response(user)
-        return web.json_response(
-            {
-                "user": user_resp.model_dump(),
-                "access_token": tokens.access_token,
-                "refresh_token": tokens.refresh_token,
-            },
-            status=200,
-        )
+        body: dict = {
+            "user": user_resp.model_dump(),
+            "access_token": tokens.access_token,
+            "refresh_token": tokens.refresh_token,
+        }
+        if tokens.password_change_required:
+            body["password_change_required"] = True
+        return web.json_response(body, status=200)
     except AuthError as e:
         return handle_auth_error(request, e)
     except Exception:
@@ -257,13 +257,20 @@ async def change_password(request: web.Request) -> web.Response:
     try:
         auth_service = await get_auth_service(request)
         user = await auth_service.get_user_by_token(token)
-        updated_user = await auth_service.change_password(
+        updated_user, new_tokens = await auth_service.change_password(
             user.id, req.old_password, req.new_password,
             ip_address=extract_client_ip(request),
             user_agent=extract_user_agent(request),
         )
         user_resp = await auth_service.get_user_response(updated_user)
-        return web.json_response(user_resp.model_dump(), status=200)
+        return web.json_response(
+            {
+                **user_resp.model_dump(),
+                "access_token": new_tokens.access_token,
+                "refresh_token": new_tokens.refresh_token,
+            },
+            status=200,
+        )
     except AuthError as e:
         return handle_auth_error(request, e)
     except Exception:

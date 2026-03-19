@@ -698,6 +698,12 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         setCsrfCookie(reply, config)
 
         const { access_token, refresh_token, ...rest } = data
+        // Forward password_change_required so the frontend can redirect to the
+        // change-password page. Strip it from the object if it is falsy to
+        // keep the response body lean.
+        if (!rest.password_change_required) {
+            delete rest.password_change_required
+        }
         return rest
     })
 

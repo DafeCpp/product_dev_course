@@ -217,7 +217,10 @@ class AuthService:
         if not user.is_active:
             raise ForbiddenError("Account is deactivated")
 
-        tokens = await self._create_tokens(str(user.id))
+        tokens = await self._create_tokens(
+            str(user.id),
+            password_change_required=user.password_change_required,
+        )
         await self._audit(
             user.id, AuditAction.LOGIN,
             ip_address=ip_address, user_agent=user_agent,
@@ -231,8 +234,12 @@ class AuthService:
         new_password: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> User:
-        """Change user password."""
+    ) -> tuple[User, AuthTokensResponse]:
+        """Change user password.
+
+        Returns the updated user and fresh tokens without the ``pcr`` claim so
+        the caller is not locked out immediately after changing the password.
+        """
         user = await self._user_repo.get_by_id(user_id)
         if not user:
             raise UserNotFoundError()
@@ -252,7 +259,9 @@ class AuthService:
             target_type="user", target_id=str(user_id),
             ip_address=ip_address, user_agent=user_agent,
         )
-        return updated
+        # Issue fresh tokens without pcr so the client is not blocked
+        tokens = await self._create_tokens(str(user_id), password_change_required=False)
+        return updated, tokens
 
     async def logout(
         self,
@@ -484,6 +493,7 @@ class AuthService:
         self,
         user_id: str,
         family_id: UUID | None = None,
+        password_change_required: bool = False,
     ) -> AuthTokensResponse:
         """Create access and refresh tokens with RBAC v2 claims.
 
@@ -492,6 +502,8 @@ class AuthService:
             family_id: Existing family to continue (refresh rotation).
                 When ``None`` and ``_family_repo`` is configured, a new family
                 is created so the issued refresh token can be tracked.
+            password_change_required: When True the ``pcr: true`` claim is
+                embedded in the access token.
         """
         uid = UUID(user_id)
         is_sa = await self._perm_svc.is_superadmin(uid)
@@ -509,6 +521,12 @@ class AuthService:
         fid_str: str | None = str(family_id) if family_id is not None else None
 
         return AuthTokensResponse(
-            access_token=create_access_token(user_id, is_superadmin=is_sa, system_permissions=system_perms),
+            access_token=create_access_token(
+                user_id,
+                is_superadmin=is_sa,
+                system_permissions=system_perms,
+                password_change_required=password_change_required,
+            ),
             refresh_token=create_refresh_token(user_id, family_id=fid_str),
+            password_change_required=password_change_required,
         )
