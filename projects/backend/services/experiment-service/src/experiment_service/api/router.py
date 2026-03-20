@@ -11,6 +11,7 @@ from experiment_service.api.routes import (
     conversion_profiles,
     experiments,
     export,
+    full_export,
     metrics,
     runs,
     sensors,
@@ -19,6 +20,7 @@ from experiment_service.api.routes import (
 )
 
 ROUTE_MODULES = [
+    full_export,
     export,
     telemetry_export,
     experiments,

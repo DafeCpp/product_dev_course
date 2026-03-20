@@ -244,6 +244,31 @@ archive:
     responses:
       200:
         description: Archived
+export:
+  get:
+    tags:
+    - experiments
+    summary: Export full experiment as ZIP
+    operationId: exportExperimentZip
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: format
+      in: query
+      schema:
+        type: string
+        enum: [zip]
+        default: zip
+    responses:
+      200:
+        description: ZIP archive containing experiment data
+        content:
+          application/zip:
+            schema:
+              type: string
+              format: binary
+      404:
+        description: Experiment not found
 runs:
   get:
     tags:

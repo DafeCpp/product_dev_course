@@ -28,6 +28,8 @@ paths:
     $ref: ./paths/experiments.yaml#/archive
   /api/v1/experiments/{experiment_id}/compare:
     $ref: ./paths/experiments.yaml#/compare
+  /api/v1/experiments/{experiment_id}/export:
+    $ref: ./paths/experiments.yaml#/export
   /api/v1/experiments/{experiment_id}/runs:
     $ref: ./paths/experiments.yaml#/runs
   /api/v1/runs/{run_id}:
