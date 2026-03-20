@@ -86,6 +86,7 @@ export interface User {
   email: string
   is_active: boolean
   is_admin?: boolean
+  system_roles?: string[]
   password_change_required?: boolean
   created_at: string
 }
@@ -95,7 +96,8 @@ export interface AdminUser {
   username: string
   email: string
   is_active: boolean
-  is_admin: boolean
+  is_admin?: boolean
+  system_roles?: string[]
   password_change_required: boolean
   created_at: string
 }
@@ -121,6 +123,7 @@ export interface RegisterRequest {
   username: string
   email: string
   password: string
+  invite_token?: string
 }
 
 export interface AuthResponse {
@@ -373,6 +376,7 @@ export interface ProjectUpdate {
 
 export interface ProjectsListResponse {
   projects: Project[]
+  total?: number
 }
 
 export interface ProjectMember {

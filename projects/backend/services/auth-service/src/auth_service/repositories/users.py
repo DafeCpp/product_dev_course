@@ -140,7 +140,7 @@ class UserRepository(BaseRepository):
             WHERE username ILIKE $1 || '%'
               AND is_active = true
               AND ($2::uuid IS NULL OR id NOT IN (
-                  SELECT user_id FROM project_members WHERE project_id = $2
+                  SELECT user_id FROM user_project_roles WHERE project_id = $2
               ))
             ORDER BY username
             LIMIT $3

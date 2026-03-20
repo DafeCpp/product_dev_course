@@ -1226,6 +1226,31 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         },
     })
 
+    // Users API proxy — forward /api/v1/users/* to Auth Service (must be before generic /api proxy)
+    await app.register(httpProxy, {
+        prefix: '/api/v1/users',
+        upstream: config.authUrl,
+        rewritePrefix: '/api/v1/users',
+        http2: false,
+        replyOptions: {
+            rewriteRequestHeaders: (req, headers) => {
+                const cookies = parseCookies(req.headers.cookie as string | undefined)
+                const access = cookies[config.accessCookieName]
+                const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+                const newHeaders: Record<string, string> = {}
+                for (const [key, value] of Object.entries(headers)) {
+                    if (typeof value === 'string') newHeaders[key] = value
+                    else if (Array.isArray(value) && value.length > 0) newHeaders[key] = String(value[0])
+                }
+                newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+                if (access) newHeaders['authorization'] = `Bearer ${access}`
+                return newHeaders
+            },
+        },
+    })
+
     // Experiment service proxy (+future gateway), with WS/SSE
     await app.register(httpProxy, {
         prefix: '/api',

@@ -158,9 +158,10 @@ function Layout({ children }: LayoutProps) {
     },
   })
 
+  const isAdmin = user?.is_admin || user?.system_roles?.some((r) => r === 'superadmin' || r === 'admin')
   const availableNavItems = useMemo(
-    () => navItems.filter((item) => !item.adminOnly || user?.is_admin),
-    [user?.is_admin]
+    () => navItems.filter((item) => !item.adminOnly || isAdmin),
+    [isAdmin]
   )
 
   const currentPage =
@@ -332,7 +333,7 @@ function Layout({ children }: LayoutProps) {
               <div className="header-chip">
                 <span className="header-chip__label">Workspace</span>
                 <span className="header-chip__value">
-                  {user?.is_admin ? 'Admin access' : 'Member access'}
+                  {isAdmin ? 'Admin access' : 'Member access'}
                 </span>
               </div>
 

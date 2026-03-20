@@ -104,6 +104,7 @@ class UserResponse(BaseModel):
     password_change_required: bool = False
     is_active: bool = True
     system_roles: list[str] = Field(default_factory=list)
+    created_at: str = ""
 
     @classmethod
     def from_user(cls, user: "User", system_roles: list[str] | None = None) -> "UserResponse":
@@ -115,6 +116,7 @@ class UserResponse(BaseModel):
             password_change_required=user.password_change_required,
             is_active=user.is_active,
             system_roles=system_roles or [],
+            created_at=user.created_at.isoformat(),
         )
 
 

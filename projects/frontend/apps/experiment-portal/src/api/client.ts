@@ -741,7 +741,11 @@ export const usersApi = {
     q: string
     exclude_project_id?: string
   }): Promise<{ users: Array<{ id: string; username: string; email: string }> }> => {
-    return await apiGet('/api/v1/users/search', { params })
+    const data = await apiGet<Array<{ id: string; username: string; email: string }>>(
+      '/api/v1/users/search',
+      { params },
+    )
+    return { users: Array.isArray(data) ? data : [] }
   },
 }
 
@@ -753,8 +757,8 @@ export const projectsApi = {
     limit?: number
     offset?: number
   }): Promise<ProjectsListResponse> => {
-    const response = await apiClient.get<ProjectsListResponse>('/projects', { params })
-    return response.data
+    const response = await apiClient.get<{ items: Project[]; total: number }>('/projects', { params })
+    return { projects: response.data.items ?? [], total: response.data.total }
   },
 
   get: async (id: string): Promise<Project> => {

@@ -115,6 +115,14 @@ function AdminUsers() {
         })
     }
 
+    function handleCopyInviteLink(token: string) {
+        const link = `${window.location.origin}/register?token=${token}`
+        navigator.clipboard.writeText(link).then(() => {
+            setCopiedToken(`link:${token}`)
+            setTimeout(() => setCopiedToken(null), 2000)
+        })
+    }
+
     const users: AdminUser[] = usersQuery.data ?? []
     const invites: AdminInviteToken[] = invitesQuery.data ?? []
 
@@ -207,9 +215,13 @@ function AdminUsers() {
                                                 </span>
                                             </td>
                                             <td>
-                                                <span className={`badge ${u.is_admin ? 'badge-admin' : 'badge-user'}`}>
-                                                    {u.is_admin ? 'admin' : 'user'}
-                                                </span>
+                                                {(u.system_roles ?? []).length > 0 ? (
+                                                    (u.system_roles ?? []).map((r) => (
+                                                        <span key={r} className="badge badge-admin">{r}</span>
+                                                    ))
+                                                ) : (
+                                                    <span className="badge badge-user">user</span>
+                                                )}
                                             </td>
                                             <td className="date-cell">
                                                 {format(new Date(u.created_at), 'dd.MM.yyyy HH:mm')}
@@ -398,6 +410,13 @@ function AdminUsers() {
                                                     onClick={() => handleCopyToken(inv.token)}
                                                 >
                                                     {copiedToken === inv.token ? '✓' : '⎘'}
+                                                </button>
+                                                <button
+                                                    className="btn btn-ghost btn-xs"
+                                                    title="Скопировать ссылку для регистрации"
+                                                    onClick={() => handleCopyInviteLink(inv.token)}
+                                                >
+                                                    {copiedToken === `link:${inv.token}` ? '✓' : '🔗'}
                                                 </button>
                                             </td>
                                             <td>{inv.email_hint ?? '—'}</td>
