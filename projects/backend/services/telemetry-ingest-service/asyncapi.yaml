@@ -1,0 +1,388 @@
+asyncapi: 3.0.0
+
+info:
+  title: Telemetry Ingest Service - Async API
+  version: 1.0.0
+  description: |
+    Asynchronous channels of the Telemetry Ingest Service.
+
+    **SSE** -- server-sent events for real-time telemetry streaming to UI/consumers.
+    **WebSocket** -- high-frequency sensor telemetry ingest (device -> server).
+  contact:
+    name: Experiment Tracking Platform Team
+  license:
+    name: MIT
+
+servers:
+  development:
+    host: localhost:8003
+    protocol: http
+    description: Local development server (Docker Compose)
+  production:
+    host: '{host}:8003'
+    protocol: https
+    description: Production deployment
+    variables:
+      host:
+        description: Production hostname
+
+# ---------------------------------------------------------------------------
+# Channels
+# ---------------------------------------------------------------------------
+channels:
+  telemetrySSE:
+    address: /api/v1/telemetry/stream
+    title: Telemetry SSE Stream
+    description: |
+      Server-Sent Events endpoint that streams telemetry records for a single
+      sensor in real time.  The server polls the database and pushes new records
+      as `event: telemetry` SSE frames.  Periodic `: heartbeat` comments keep
+      the connection alive.
+
+      **Authentication:** Bearer token (JWT user token or sensor token) via
+      `Authorization` header, `X-Access-Token` / `X-Sensor-Token` header, or
+      `access_token` / `token` query parameter.
+
+      **Query parameters:**
+      | Param | Required | Description |
+      |---|---|---|
+      | `sensor_id` | yes | UUID of the sensor to stream |
+      | `since_ts` | no | ISO-8601 cursor timestamp (default: epoch) |
+      | `since_id` | no | Tie-break cursor for identical timestamps (default: 0) |
+      | `max_events` | no | Stop after N events (useful for tests) |
+      | `idle_timeout_seconds` | no | Close after N seconds without new data (default: 30) |
+    servers:
+      - $ref: '#/servers/development'
+      - $ref: '#/servers/production'
+    messages:
+      telemetryEvent:
+        $ref: '#/components/messages/TelemetrySSEEvent'
+      heartbeat:
+        $ref: '#/components/messages/SSEHeartbeat'
+      error:
+        $ref: '#/components/messages/SSEError'
+    bindings:
+      http:
+        method: GET
+
+  telemetryWS:
+    address: /api/v1/telemetry/ws
+    title: WebSocket Telemetry Ingest
+    description: |
+      WebSocket endpoint for high-frequency sensor telemetry ingest.
+
+      The sensor authenticates **once** at connection time via sensor token.
+      Subsequent messages carry readings without re-authentication.
+
+      **Connection query parameters:**
+      | Param | Required | Description |
+      |---|---|---|
+      | `sensor_id` | yes | UUID of the sensor |
+      | `token` / `access_token` | no | Sensor token (alternative to `Authorization` header) |
+
+      **Protocol:** JSON text frames only. Binary frames are rejected.
+
+      **Rate limits (per sensor, fixed window):**
+      - Max 600 messages / 1 s window
+      - Max 60 000 readings / 1 s window
+      - Max message size: 1 MB
+    servers:
+      - $ref: '#/servers/development'
+      - $ref: '#/servers/production'
+    messages:
+      ingestMessage:
+        $ref: '#/components/messages/WsIngestMessage'
+      ackMessage:
+        $ref: '#/components/messages/WsAckMessage'
+      errorMessage:
+        $ref: '#/components/messages/WsErrorMessage'
+    bindings:
+      ws:
+        query:
+          type: object
+          required:
+            - sensor_id
+          properties:
+            sensor_id:
+              type: string
+              format: uuid
+              description: UUID of the sensor
+            token:
+              type: string
+              description: Sensor token (if Authorization header is unavailable)
+            access_token:
+              type: string
+              description: Alias for token
+
+# ---------------------------------------------------------------------------
+# Operations
+# ---------------------------------------------------------------------------
+operations:
+  streamTelemetry:
+    action: send
+    channel:
+      $ref: '#/channels/telemetrySSE'
+    summary: Stream telemetry records via SSE
+    description: |
+      Server pushes `event: telemetry` SSE frames containing JSON-serialized
+      telemetry records.  Heartbeat comments (`: heartbeat`) are sent every
+      10 seconds to keep the connection alive.  On error, an `event: error`
+      frame is sent and the stream closes.
+    messages:
+      - $ref: '#/channels/telemetrySSE/messages/telemetryEvent'
+      - $ref: '#/channels/telemetrySSE/messages/heartbeat'
+      - $ref: '#/channels/telemetrySSE/messages/error'
+
+  ingestTelemetryViaWS:
+    action: receive
+    channel:
+      $ref: '#/channels/telemetryWS'
+    summary: Receive telemetry readings from sensor via WebSocket
+    description: |
+      Client (sensor device) sends JSON text frames with batches of readings.
+      Server responds with an acknowledgement or error for each message.
+    messages:
+      - $ref: '#/channels/telemetryWS/messages/ingestMessage'
+
+  ackTelemetryViaWS:
+    action: send
+    channel:
+      $ref: '#/channels/telemetryWS'
+    summary: Send acknowledgements/errors back to sensor via WebSocket
+    description: |
+      After processing each ingest message, the server sends back an ack
+      (`status: accepted`) or an error (`status: error`).  Fatal errors
+      (bad credentials) cause the WebSocket to close with an appropriate code.
+    messages:
+      - $ref: '#/channels/telemetryWS/messages/ackMessage'
+      - $ref: '#/channels/telemetryWS/messages/errorMessage'
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+  messages:
+    # --- SSE messages ---
+    TelemetrySSEEvent:
+      name: telemetry
+      title: Telemetry Record
+      summary: A single telemetry reading pushed via SSE
+      description: |
+        SSE frame format:
+        ```
+        event: telemetry
+        data: {"id":1,"project_id":"...","sensor_id":"...","timestamp":"...","raw_value":1.0,...}
+        ```
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryRecord'
+
+    SSEHeartbeat:
+      name: heartbeat
+      title: SSE Heartbeat
+      summary: Keep-alive comment sent every ~10 seconds
+      description: |
+        SSE comment (not a named event):
+        ```
+        : heartbeat
+        ```
+        Clients should treat this as a no-op keep-alive signal.
+
+    SSEError:
+      name: error
+      title: SSE Error
+      summary: Error event that terminates the stream
+      description: |
+        SSE frame format:
+        ```
+        event: error
+        data: <error message string>
+        ```
+      contentType: text/plain
+      payload:
+        type: string
+        description: Human-readable error message
+
+    # --- WebSocket messages ---
+    WsIngestMessage:
+      name: ingest
+      title: WebSocket Ingest Message
+      summary: Batch of telemetry readings from a sensor
+      description: |
+        JSON text frame sent by the sensor. `sensor_id` is NOT included --
+        it is fixed at connection time via the query parameter.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WsIngestPayload'
+
+    WsAckMessage:
+      name: ack
+      title: WebSocket Acknowledgement
+      summary: Server acknowledgement of successfully ingested readings
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WsAckPayload'
+
+    WsErrorMessage:
+      name: error
+      title: WebSocket Error
+      summary: Server error response for a single message
+      description: |
+        Sent for recoverable errors (invalid JSON, validation, scope mismatch).
+        Fatal errors (unauthorized) additionally close the WebSocket with
+        code 1008 (Policy Violation).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WsErrorPayload'
+
+  # --- Schemas ---
+  schemas:
+    TelemetryRecord:
+      type: object
+      description: Serialized telemetry record as pushed via SSE
+      required:
+        - id
+        - timestamp
+        - raw_value
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Auto-increment record ID (used as cursor tie-breaker)
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        sensor_id:
+          type: string
+          format: uuid
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO-8601/RFC-3339 timestamp with trailing Z
+        raw_value:
+          type: number
+          format: double
+        physical_value:
+          type: number
+          format: double
+          nullable: true
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+        capture_session_id:
+          type: string
+          format: uuid
+          nullable: true
+        meta:
+          type: object
+          additionalProperties: true
+          description: Arbitrary metadata (JSON object)
+
+    WsIngestPayload:
+      type: object
+      description: Client-to-server telemetry ingest message (WebSocket text frame)
+      required:
+        - readings
+      properties:
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional run context
+        capture_session_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional capture session context
+        meta:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: Batch-level metadata merged into each reading (reading wins on key conflicts)
+        readings:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          description: Array of telemetry readings (1..10000)
+          items:
+            $ref: '#/components/schemas/TelemetryReading'
+        seq:
+          type: integer
+          nullable: true
+          description: Optional sequence number echoed back in the ack for client-side correlation
+
+    TelemetryReading:
+      type: object
+      description: A single telemetry reading within a batch
+      required:
+        - timestamp
+        - raw_value
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO-8601/RFC-3339 timestamp
+        raw_value:
+          type: number
+          format: double
+        physical_value:
+          type: number
+          format: double
+          nullable: true
+        meta:
+          type: object
+          additionalProperties: true
+          default: {}
+
+    WsAckPayload:
+      type: object
+      description: Server acknowledgement after successful ingest
+      required:
+        - status
+        - accepted
+      properties:
+        status:
+          type: string
+          enum:
+            - accepted
+        accepted:
+          type: integer
+          description: Number of readings accepted
+        seq:
+          type: integer
+          nullable: true
+          description: Echoed sequence number from the client message (present only if client sent seq)
+
+    WsErrorPayload:
+      type: object
+      description: Server error response
+      required:
+        - status
+        - code
+        - message
+      properties:
+        status:
+          type: string
+          enum:
+            - error
+        code:
+          type: string
+          enum:
+            - invalid_json
+            - validation_error
+            - rate_limited
+            - unauthorized
+            - bad_request
+            - internal_error
+            - unsupported
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable error details
+        retry_after:
+          type: number
+          nullable: true
+          description: Seconds to wait before retrying (present only for rate_limited)
