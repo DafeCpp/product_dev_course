@@ -4,8 +4,25 @@
 
 // ── WebSocket ──
 let ws = null;
-let wsReconnectInterval = null;
+let wsReconnectTimer = null;
 const WS_URL = `ws://${window.location.hostname}/ws`;
+
+// ── Wake Lock (предотвращает засыпание экрана) ──
+let wakeLock = null;
+
+async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (e) {
+        // Браузер отклонил (например, low battery) — не критично
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
 
 function wsSend(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -79,19 +96,33 @@ document.querySelectorAll('.panel-header').forEach(hdr => {
 // WebSocket connection
 // ═══════════════════════════════════════════════════════════════════
 
+function scheduleReconnect(delayMs) {
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = setTimeout(connectWebSocket, delayMs);
+}
+
 function connectWebSocket() {
+    // Очистить pending таймер
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+
+    // Закрыть zombie-соединение
+    if (ws) {
+        try { ws.onclose = null; ws.onerror = null; ws.close(); } catch (_) {}
+        ws = null;
+    }
+
     try {
         ws = new WebSocket(WS_URL);
 
         ws.onopen = () => {
             wsStatusEl.textContent = 'WS';
             wsStatusEl.className = 'badge badge-on';
-            clearInterval(wsReconnectInterval);
             lastTelemTime = 0;
             wsConnectTime = Date.now();
             setMcuStatus('unknown');
             startMcuStatusCheck();
             startCommandSending();
+            requestWakeLock();
         };
 
         ws.onmessage = (event) => {
@@ -148,15 +179,17 @@ function connectWebSocket() {
         ws.onerror = (error) => console.error('WS error:', error);
 
         ws.onclose = () => {
+            ws = null;
             wsStatusEl.textContent = 'WS';
             wsStatusEl.className = 'badge badge-off';
             stopCommandSending();
             stopMcuStatusCheck();
             setMcuStatus('unknown');
-            wsReconnectInterval = setInterval(connectWebSocket, 2000);
+            scheduleReconnect(2000);
         };
     } catch (e) {
         console.error('WS connect failed:', e);
+        scheduleReconnect(2000);
     }
 }
 
@@ -799,8 +832,20 @@ window.addEventListener('load', () => {
     wifiStatusInterval = setInterval(fetchWifiStatus, 1000);
 });
 
+// Пробуждение экрана: немедленно переподключить WebSocket
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Страница снова видна (телефон проснулся / вкладка активна)
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            connectWebSocket();
+        }
+        requestWakeLock();  // Wake Lock сбрасывается при засыпании — запросить снова
+    }
+});
+
 window.addEventListener('beforeunload', () => {
     stopCommandSending();
+    releaseWakeLock();
     if (wifiStatusInterval) { clearInterval(wifiStatusInterval); wifiStatusInterval = null; }
     if (ws) ws.close();
 });
