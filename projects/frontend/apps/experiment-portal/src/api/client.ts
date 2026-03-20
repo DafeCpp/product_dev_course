@@ -48,6 +48,10 @@ import type {
   ConversionProfilesListResponse,
   BackfillTask,
   BackfillTasksListResponse,
+  ComparisonResponse,
+  Artifact,
+  ArtifactsListResponse,
+  CreateArtifactRequest,
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
@@ -912,6 +916,38 @@ export const webhooksApi = {
 
   retryDelivery: async (deliveryId: string): Promise<void> => {
     await apiPost(`/api/v1/webhooks/deliveries/${deliveryId}:retry`)
+  },
+}
+
+// Comparison API
+export const comparisonApi = {
+  compare: async (
+    experimentId: string,
+    body: { run_ids: string[]; metric_names: string[] }
+  ): Promise<ComparisonResponse> => {
+    return await apiPost(`/api/v1/experiments/${experimentId}/compare`, body)
+  },
+}
+
+// Artifacts API
+export const artifactsApi = {
+  list: async (
+    runId: string,
+    params?: { type?: string; limit?: number; offset?: number }
+  ): Promise<ArtifactsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/artifacts`, { params })
+  },
+
+  create: async (runId: string, data: CreateArtifactRequest): Promise<Artifact> => {
+    return await apiPost(`/api/v1/runs/${runId}/artifacts`, data)
+  },
+
+  delete: async (artifactId: string): Promise<void> => {
+    await apiDelete(`/api/v1/artifacts/${artifactId}`)
+  },
+
+  approve: async (artifactId: string): Promise<Artifact> => {
+    return await apiPost(`/api/v1/artifacts/${artifactId}/approve`, {})
   },
 }
 

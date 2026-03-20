@@ -14,6 +14,7 @@ import TelemetryViewer from './pages/TelemetryViewer'
 import Webhooks from './pages/Webhooks'
 import AdminUsers from './pages/AdminUsers'
 import SensorMonitor from './pages/SensorMonitor'
+import ComparisonPage from './pages/ComparisonPage'
 import './App.scss'
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
                 <Route path="/projects" element={<ProjectsList />} />
                 <Route path="/experiments" element={<ExperimentsList />} />
                 <Route path="/experiments/:id" element={<ExperimentDetail />} />
+                <Route path="/experiments/:experimentId/compare" element={<ComparisonPage />} />
                 <Route path="/runs/:id" element={<RunDetail />} />
                 <Route path="/sensors" element={<SensorsList />} />
                 <Route path="/sensors/new" element={<CreateSensor />} />

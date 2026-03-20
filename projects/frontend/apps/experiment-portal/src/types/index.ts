@@ -490,6 +490,69 @@ export interface MetricAggregationsResponse {
   items: MetricBucket[]
 }
 
+/** Типы для сравнения runs */
+
+export interface ComparisonMetricSummary {
+  last: number | null
+  min: number | null
+  max: number | null
+  count: number
+}
+
+export interface ComparisonMetricPoint {
+  step: number
+  value: number
+}
+
+export interface ComparisonMetricData {
+  summary: ComparisonMetricSummary
+  series: ComparisonMetricPoint[]
+}
+
+export interface ComparisonRunEntry {
+  run_id: string
+  run_name: string
+  status: string
+  metrics: Record<string, ComparisonMetricData>
+}
+
+export interface ComparisonResponse {
+  runs: ComparisonRunEntry[]
+  metric_names: string[]
+}
+
+/** Типы для артефактов */
+
+export type ArtifactType = 'model' | 'dataset' | 'plot' | 'log' | 'config' | 'other'
+
+export interface Artifact {
+  id: string
+  run_id: string
+  type: ArtifactType | string
+  uri: string
+  checksum?: string | null
+  size_bytes?: number | null
+  metadata: Record<string, any>
+  approved_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ArtifactsListResponse {
+  artifacts: Artifact[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface CreateArtifactRequest {
+  type: ArtifactType | string
+  uri: string
+  checksum?: string
+  size_bytes?: number
+  metadata?: Record<string, any>
+}
+
 /** Типы для вебхуков */
 
 export interface WebhookSubscription {
