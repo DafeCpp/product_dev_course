@@ -746,12 +746,12 @@ class TestTelemetryIngestServiceIngest:
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction
-            mock_conn.executemany = AsyncMock()
-            mock_conn.execute = AsyncMock()
+            # execute is called once per INSERT row then once for heartbeat UPDATE
+            mock_conn.execute = AsyncMock(side_effect=["INSERT 0 1", "UPDATE 1"])
 
             result = await service.ingest(payload, token=token)
 
-            assert result == 1  # Number of readings
+            assert result == 1  # Number of readings actually inserted
 
     @pytest.mark.asyncio
     async def test_ingest_unauthorized_sensor(self):
@@ -840,7 +840,7 @@ class TestTelemetryIngestServiceIngest:
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction
-            mock_conn.executemany = AsyncMock(side_effect=asyncpg.PostgresError("DB error"))
+            mock_conn.execute = AsyncMock(side_effect=asyncpg.PostgresError("DB error"))
 
             result = await service.ingest(payload, token=token)
 
@@ -897,7 +897,7 @@ class TestTelemetryIngestServiceIngest:
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction
-            mock_conn.executemany = AsyncMock(side_effect=asyncpg.PostgresError("DB error"))
+            mock_conn.execute = AsyncMock(side_effect=asyncpg.PostgresError("DB error"))
 
             with pytest.raises(asyncpg.PostgresError):
                 await service.ingest(payload, token=token)
@@ -933,13 +933,13 @@ class TestTelemetryIngestServiceFlushSpool:
             last_reading_ts=datetime.now(timezone.utc).isoformat(),
         )
 
-        mock_conn.executemany = AsyncMock()
-        mock_conn.execute = AsyncMock()
+        # execute is called once per INSERT row + once for heartbeat UPDATE
+        mock_conn.execute = AsyncMock(side_effect=["INSERT 0 1", "UPDATE 1"])
 
         await service._flush_spool_record(mock_conn, record)
 
-        mock_conn.executemany.assert_called_once()
-        mock_conn.execute.assert_called_once()
+        # 2 execute calls: 1 INSERT + 1 heartbeat UPDATE
+        assert mock_conn.execute.call_count == 2
 
 
 class TestTelemetryIngestServiceHeartbeat:

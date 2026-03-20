@@ -474,4 +474,10 @@ CREATE TRIGGER backfill_tasks_set_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
 
+-- Migration: 003_telemetry_dedup_index.sql
+-- Unique index for burst-ingest deduplication.
+-- Includes both partitioning columns (sensor_id + timestamp) as required by TimescaleDB.
+CREATE UNIQUE INDEX IF NOT EXISTS telemetry_records_dedup_idx
+    ON telemetry_records (sensor_id, timestamp, signal);
+
 COMMIT;

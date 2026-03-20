@@ -55,6 +55,7 @@ _INSERT_QUERY = """
         conversion_profile_id
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+    ON CONFLICT (sensor_id, timestamp, signal) DO NOTHING
 """
 
 
@@ -205,7 +206,7 @@ class TelemetryIngestService:
         try:
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    await self._do_insert(conn, items)
+                    inserted = await self._do_insert(conn, items)
                     await self._update_sensor_heartbeat_ts(conn, payload.sensor_id, last_ts)
         except asyncpg.PostgresError as exc:
             if settings.spool_enabled:
@@ -224,14 +225,18 @@ class TelemetryIngestService:
                 return len(payload.readings)
             raise
 
-        return len(payload.readings)
+        return inserted
 
-    async def _flush_spool_record(self, conn, record: SpoolRecord) -> None:
-        """Replay one spooled batch.  Must be called within an open transaction."""
+    async def _flush_spool_record(self, conn, record: SpoolRecord) -> int:
+        """Replay one spooled batch.  Must be called within an open transaction.
+
+        Returns the number of rows actually inserted (duplicates silently skipped).
+        """
         items = items_from_dicts(record.items)
-        await self._do_insert(conn, items)
+        inserted = await self._do_insert(conn, items)
         last_ts = datetime.fromisoformat(record.last_reading_ts)
         await self._update_sensor_heartbeat_ts(conn, record.sensor_id, last_ts)
+        return inserted
 
     # ------------------------------------------------------------------
     # Auth / scope resolution (read-only DB queries)
@@ -453,8 +458,25 @@ class TelemetryIngestService:
         assert last_ts is not None  # payload has min_length=1 constraint
         return items, last_ts
 
-    async def _do_insert(self, conn, items: list[tuple]) -> None:
-        await conn.executemany(_INSERT_QUERY, items)
+    async def _do_insert(self, conn, items: list[tuple]) -> int:
+        """Execute bulk INSERT with ON CONFLICT DO NOTHING.
+
+        Returns the number of rows actually inserted (duplicates are skipped).
+        asyncpg.executemany does not expose per-statement status tags, so we
+        use ``execute`` in a loop and parse the ``INSERT 0 N`` status tag to
+        accumulate the real insert count.
+        """
+        inserted = 0
+        for row in items:
+            status: str = await conn.execute(_INSERT_QUERY, *row)
+            # status has the form "INSERT 0 N" where N is 0 or 1
+            try:
+                inserted += int(status.split()[-1])
+            except (IndexError, ValueError):
+                # Defensive fallback — should not happen with a well-formed
+                # INSERT statement, but we prefer not to crash ingest.
+                inserted += 1
+        return inserted
 
     async def _update_sensor_heartbeat_ts(
         self, conn, sensor_id: UUID, last_ts: datetime

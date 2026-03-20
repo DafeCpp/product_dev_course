@@ -131,6 +131,11 @@ SELECT create_hypertable(
 CREATE INDEX IF NOT EXISTS telemetry_records_project_sensor_ts_id_idx
     ON telemetry_records (project_id, sensor_id, timestamp ASC, id ASC);
 
+-- Dedup index: silently discard duplicate (sensor_id, timestamp, signal) tuples.
+-- TimescaleDB requires both partitioning columns (sensor_id + timestamp) in unique indexes.
+CREATE UNIQUE INDEX IF NOT EXISTS telemetry_records_dedup_idx
+    ON telemetry_records (sensor_id, timestamp, signal);
+
 -- Continuous aggregate for 1-minute downsampling.
 -- NOTE: timescaledb.continuous aggregates require enterprise license.
 -- For OSS compatibility, we create a regular materialized view without continuous refresh.
