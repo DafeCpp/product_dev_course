@@ -177,4 +177,5 @@ def test_worker_instance_has_correct_tasks():
     assert "webhook_purge_succeeded" in task_names
     assert "conversion_backfill" in task_names
     assert "audit_log_cleanup" in task_names
-    assert len(task_names) == 7
+    assert "activate_scheduled_profiles" in task_names
+    assert len(task_names) == 8

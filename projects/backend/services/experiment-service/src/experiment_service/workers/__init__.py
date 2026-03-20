@@ -11,6 +11,7 @@ from __future__ import annotations
 from backend_common.worker import BackgroundWorker, WorkerTask
 
 from experiment_service.settings import settings
+from experiment_service.workers.activate_scheduled_profiles import activate_scheduled_profiles
 from experiment_service.workers.audit_log_cleanup import audit_log_cleanup
 from experiment_service.workers.conversion_backfill import conversion_backfill
 from experiment_service.workers.idempotency_cleanup import idempotency_cleanup
@@ -29,6 +30,7 @@ worker = BackgroundWorker(
         WorkerTask(name="webhook_purge_succeeded", fn=webhook_purge_succeeded),
         WorkerTask(name="conversion_backfill", fn=conversion_backfill),
         WorkerTask(name="audit_log_cleanup", fn=audit_log_cleanup),
+        WorkerTask(name="activate_scheduled_profiles", fn=activate_scheduled_profiles),
     ],
 )
 
