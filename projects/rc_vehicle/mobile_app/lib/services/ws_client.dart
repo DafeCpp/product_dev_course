@@ -19,6 +19,7 @@ class WsClient {
   double _throttle = 0;
   double _steering = 0;
   bool _disposed = false;
+  bool _connected = false;
   int _reconnectAttempts = 0;
   static const int _maxReconnectAttempts = 10;
 
@@ -29,7 +30,7 @@ class WsClient {
     this.onMessage,
   });
 
-  bool get isConnected => _channel != null;
+  bool get isConnected => _connected;
   String get ip => _ip;
 
   Future<bool> connect(String ip) async {
@@ -62,6 +63,7 @@ class WsClient {
     );
 
     _reconnectAttempts = 0;
+    _connected = true;
     onConnected?.call();
     return true;
   }
@@ -117,6 +119,7 @@ class WsClient {
     _channel = null;
     _throttle = 0;
     _steering = 0;
+    _connected = false;
     onDisconnected?.call();
     _scheduleReconnect();
   }
@@ -154,6 +157,7 @@ class WsClient {
     _channel = null;
     _throttle = 0;
     _steering = 0;
+    _connected = false;
     if (permanent) {
       _ip = '';
     }

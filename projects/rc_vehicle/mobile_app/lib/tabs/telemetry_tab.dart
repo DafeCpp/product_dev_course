@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart' show Share, XFile;
 import '../models/telemetry_frame.dart';
 import '../providers/connection_provider.dart';
+import '../screens/settings_screen.dart';
 import '../services/csv_writer.dart';
 import '../services/udp_receiver.dart';
 import '../widgets/telemetry_chart.dart';
@@ -85,11 +86,11 @@ class _TelemetryTabState extends ConsumerState<TelemetryTab>
 
   void _startStream() {
     if (_streaming) return;
+    _streaming = true;
 
-    const port = 5555;
+    final port = ref.read(appSettingsProvider).udpPort;
     _udp.start(port).then((_) {
       _udpSub = _udp.stream.listen(_onFrame);
-      _streaming = true;
 
       // Tell ESP32 to start UDP stream via WebSocket.
       ref.read(connectionProvider.notifier).sendCommand({

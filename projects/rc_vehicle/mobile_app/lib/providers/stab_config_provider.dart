@@ -36,8 +36,7 @@ class StabConfigNotifier extends StateNotifier<StabConfig?> {
 
   void setMode(DriveMode mode) {
     final c = state ?? StabConfig();
-    c.mode = mode;
-    apply(c);
+    apply(c.copyWith(mode: mode));
   }
 
   void setKidsPreset(int presetId) {

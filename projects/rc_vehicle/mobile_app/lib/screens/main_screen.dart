@@ -23,7 +23,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     ref.watch(connectionProvider);
 
     ref.listen(connectionProvider, (prev, next) {
-      if (!next.isConnected && prev?.isConnected == true) {
+      if (!next.isConnected && prev?.isConnected == true && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const ConnectionScreen()),
           (_) => false,

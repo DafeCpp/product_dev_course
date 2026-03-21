@@ -235,6 +235,31 @@ class _InfoChip extends StatelessWidget {
   }
 }
 
+class _EStopButton extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return TextButton(
+      onPressed: () {
+        // Zero drive input immediately.
+        ref.read(driveInputProvider.notifier).reset();
+        ref.read(connectionProvider.notifier).setDriveInput(0, 0);
+        // Send explicit emergency stop command.
+        ref.read(connectionProvider.notifier).sendCommand({
+          'type': 'cmd',
+          'throttle': 0.0,
+          'steering': 0.0,
+        });
+      },
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.red,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: Size.zero,
+      ),
+      child: const Text('STOP', style: TextStyle(fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
 class _BottomBar extends StatelessWidget {
   final bool connected;
 
@@ -249,17 +274,7 @@ class _BottomBar extends StatelessWidget {
       child: Row(
         children: [
           // E-Stop button.
-          TextButton(
-            onPressed: () {
-              // TODO: send emergency stop
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-            ),
-            child: const Text('STOP', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
+          _EStopButton(),
           const Spacer(),
           // Back button to exit drive mode.
           TextButton(

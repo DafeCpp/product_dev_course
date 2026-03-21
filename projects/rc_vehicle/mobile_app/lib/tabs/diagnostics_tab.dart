@@ -24,6 +24,7 @@ class _DiagnosticsTabState extends ConsumerState<DiagnosticsTab> {
   bool _wifiLoading = false;
 
   StreamSubscription? _msgSub;
+  RestClient? _restClient;
 
   @override
   void initState() {
@@ -56,7 +57,10 @@ class _DiagnosticsTabState extends ConsumerState<DiagnosticsTab> {
 
   RestClient get _rest {
     final ip = ref.read(connectionProvider).ipAddress;
-    return RestClient(ip);
+    if (_restClient == null || _restClient!.baseUrl != 'http://$ip') {
+      _restClient = RestClient(ip);
+    }
+    return _restClient!;
   }
 
   Future<void> _loadWifiStatus() async {

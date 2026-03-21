@@ -156,8 +156,9 @@ class _KidsModeSection extends ConsumerWidget {
               max: 1.0,
               format: (v) => '${(v * 100).round()}%',
               onChanged: (v) {
-                km.throttleLimit = v;
-                ref.read(stabConfigProvider.notifier).apply(config);
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(kidsMode: km.copyWith(throttleLimit: v)),
+                );
               },
             ),
             _SliderRow(
@@ -167,8 +168,9 @@ class _KidsModeSection extends ConsumerWidget {
               max: 1.0,
               format: (v) => '${(v * 100).round()}%',
               onChanged: (v) {
-                km.steeringLimit = v;
-                ref.read(stabConfigProvider.notifier).apply(config);
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(kidsMode: km.copyWith(steeringLimit: v)),
+                );
               },
             ),
             _SliderRow(
@@ -178,16 +180,18 @@ class _KidsModeSection extends ConsumerWidget {
               max: 1.0,
               format: (v) => '${(v * 100).round()}%',
               onChanged: (v) {
-                km.reverseLimit = v;
-                ref.read(stabConfigProvider.notifier).apply(config);
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(kidsMode: km.copyWith(reverseLimit: v)),
+                );
               },
             ),
             SwitchListTile(
               title: const Text('Anti-spin protection'),
               value: km.antiSpinEnabled,
               onChanged: (v) {
-                km.antiSpinEnabled = v;
-                ref.read(stabConfigProvider.notifier).apply(config);
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(kidsMode: km.copyWith(antiSpinEnabled: v)),
+                );
               },
               contentPadding: EdgeInsets.zero,
               dense: true,
@@ -243,8 +247,9 @@ class _TrimSection extends ConsumerWidget {
               max: 0.2,
               format: (v) => v.toStringAsFixed(2),
               onChanged: (v) {
-                config.steeringTrim = v;
-                ref.read(stabConfigProvider.notifier).apply(config);
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(steeringTrim: v),
+                );
               },
             ),
             _SliderRow(
@@ -254,8 +259,9 @@ class _TrimSection extends ConsumerWidget {
               max: 0.2,
               format: (v) => v.toStringAsFixed(2),
               onChanged: (v) {
-                config.throttleTrim = v;
-                ref.read(stabConfigProvider.notifier).apply(config);
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(throttleTrim: v),
+                );
               },
             ),
           ],
@@ -277,6 +283,20 @@ class _PidSection extends ConsumerStatefulWidget {
 
 class _PidSectionState extends ConsumerState<_PidSection> {
   bool _expanded = false;
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _applyDebounced(StabConfig config) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 200), () {
+      ref.read(stabConfigProvider.notifier).apply(config);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -310,8 +330,9 @@ class _PidSectionState extends ConsumerState<_PidSection> {
                     max: 1.0,
                     format: (v) => v.toStringAsFixed(3),
                     onChanged: (v) {
-                      pid.kp = v;
-                      ref.read(stabConfigProvider.notifier).apply(config);
+                      _applyDebounced(
+                        config.copyWith(yawRatePid: pid.copyWith(kp: v)),
+                      );
                     },
                   ),
                   _SliderRow(
@@ -321,8 +342,9 @@ class _PidSectionState extends ConsumerState<_PidSection> {
                     max: 0.5,
                     format: (v) => v.toStringAsFixed(3),
                     onChanged: (v) {
-                      pid.ki = v;
-                      ref.read(stabConfigProvider.notifier).apply(config);
+                      _applyDebounced(
+                        config.copyWith(yawRatePid: pid.copyWith(ki: v)),
+                      );
                     },
                   ),
                   _SliderRow(
@@ -332,8 +354,9 @@ class _PidSectionState extends ConsumerState<_PidSection> {
                     max: 0.1,
                     format: (v) => v.toStringAsFixed(4),
                     onChanged: (v) {
-                      pid.kd = v;
-                      ref.read(stabConfigProvider.notifier).apply(config);
+                      _applyDebounced(
+                        config.copyWith(yawRatePid: pid.copyWith(kd: v)),
+                      );
                     },
                   ),
                   const Divider(),
@@ -341,8 +364,9 @@ class _PidSectionState extends ConsumerState<_PidSection> {
                     title: const Text('Adaptive PID'),
                     value: config.adaptiveEnabled,
                     onChanged: (v) {
-                      config.adaptiveEnabled = v;
-                      ref.read(stabConfigProvider.notifier).apply(config);
+                      ref.read(stabConfigProvider.notifier).apply(
+                        config.copyWith(adaptiveEnabled: v),
+                      );
                     },
                     contentPadding: EdgeInsets.zero,
                     dense: true,
@@ -351,8 +375,9 @@ class _PidSectionState extends ConsumerState<_PidSection> {
                     title: const Text('Pitch compensation'),
                     value: config.pitchCompEnabled,
                     onChanged: (v) {
-                      config.pitchCompEnabled = v;
-                      ref.read(stabConfigProvider.notifier).apply(config);
+                      ref.read(stabConfigProvider.notifier).apply(
+                        config.copyWith(pitchCompEnabled: v),
+                      );
                     },
                     contentPadding: EdgeInsets.zero,
                     dense: true,
@@ -361,8 +386,9 @@ class _PidSectionState extends ConsumerState<_PidSection> {
                     title: const Text('Oversteer protection'),
                     value: config.oversteerWarnEnabled,
                     onChanged: (v) {
-                      config.oversteerWarnEnabled = v;
-                      ref.read(stabConfigProvider.notifier).apply(config);
+                      ref.read(stabConfigProvider.notifier).apply(
+                        config.copyWith(oversteerWarnEnabled: v),
+                      );
                     },
                     contentPadding: EdgeInsets.zero,
                     dense: true,

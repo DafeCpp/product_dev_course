@@ -91,7 +91,11 @@ class UdpReceiver {
 
   Future<void> stop() async {
     _commandPort?.send('stop');
-    _isolate?.kill(priority: Isolate.immediate);
+    // Give isolate time to close socket gracefully before killing.
+    if (_isolate != null) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      _isolate?.kill(priority: Isolate.immediate);
+    }
     _isolate = null;
     _receivePort?.close();
     _receivePort = null;

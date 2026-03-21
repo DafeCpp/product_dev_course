@@ -18,15 +18,31 @@ enum DriveMode {
 }
 
 class PidConfig {
-  double kp, ki, kd, maxIntegral, maxCorrection;
+  final double kp, ki, kd, maxIntegral, maxCorrection;
 
-  PidConfig({
+  const PidConfig({
     this.kp = 0.1,
     this.ki = 0.0,
     this.kd = 0.005,
     this.maxIntegral = 0.5,
     this.maxCorrection = 0.3,
   });
+
+  PidConfig copyWith({
+    double? kp,
+    double? ki,
+    double? kd,
+    double? maxIntegral,
+    double? maxCorrection,
+  }) {
+    return PidConfig(
+      kp: kp ?? this.kp,
+      ki: ki ?? this.ki,
+      kd: kd ?? this.kd,
+      maxIntegral: maxIntegral ?? this.maxIntegral,
+      maxCorrection: maxCorrection ?? this.maxCorrection,
+    );
+  }
 
   factory PidConfig.fromJson(Map<String, dynamic> j) => PidConfig(
         kp: (j['kp'] as num?)?.toDouble() ?? 0.1,
@@ -46,17 +62,17 @@ class PidConfig {
 }
 
 class KidsModeConfig {
-  double throttleLimit,
+  final double throttleLimit,
       reverseLimit,
       steeringLimit,
       slewThrottle,
       slewSteering;
-  bool antiSpinEnabled;
-  double antiSpinThresholdDeg, antiSpinReduction;
-  bool accelLimitEnabled;
-  double accelThresholdG, accelLimitGain, accelMaxReduction;
+  final bool antiSpinEnabled;
+  final double antiSpinThresholdDeg, antiSpinReduction;
+  final bool accelLimitEnabled;
+  final double accelThresholdG, accelLimitGain, accelMaxReduction;
 
-  KidsModeConfig({
+  const KidsModeConfig({
     this.throttleLimit = 0.3,
     this.reverseLimit = 0.2,
     this.steeringLimit = 0.7,
@@ -70,6 +86,36 @@ class KidsModeConfig {
     this.accelLimitGain = 3.0,
     this.accelMaxReduction = 0.5,
   });
+
+  KidsModeConfig copyWith({
+    double? throttleLimit,
+    double? reverseLimit,
+    double? steeringLimit,
+    double? slewThrottle,
+    double? slewSteering,
+    bool? antiSpinEnabled,
+    double? antiSpinThresholdDeg,
+    double? antiSpinReduction,
+    bool? accelLimitEnabled,
+    double? accelThresholdG,
+    double? accelLimitGain,
+    double? accelMaxReduction,
+  }) {
+    return KidsModeConfig(
+      throttleLimit: throttleLimit ?? this.throttleLimit,
+      reverseLimit: reverseLimit ?? this.reverseLimit,
+      steeringLimit: steeringLimit ?? this.steeringLimit,
+      slewThrottle: slewThrottle ?? this.slewThrottle,
+      slewSteering: slewSteering ?? this.slewSteering,
+      antiSpinEnabled: antiSpinEnabled ?? this.antiSpinEnabled,
+      antiSpinThresholdDeg: antiSpinThresholdDeg ?? this.antiSpinThresholdDeg,
+      antiSpinReduction: antiSpinReduction ?? this.antiSpinReduction,
+      accelLimitEnabled: accelLimitEnabled ?? this.accelLimitEnabled,
+      accelThresholdG: accelThresholdG ?? this.accelThresholdG,
+      accelLimitGain: accelLimitGain ?? this.accelLimitGain,
+      accelMaxReduction: accelMaxReduction ?? this.accelMaxReduction,
+    );
+  }
 
   factory KidsModeConfig.fromJson(Map<String, dynamic> j) => KidsModeConfig(
         throttleLimit: (j['throttle_limit'] as num?)?.toDouble() ?? 0.3,
@@ -107,41 +153,41 @@ class KidsModeConfig {
 }
 
 class StabConfig {
-  bool enabled;
-  DriveMode mode;
-  int fadeMs;
+  final bool enabled;
+  final DriveMode mode;
+  final int fadeMs;
 
   // Yaw rate PID
-  PidConfig yawRatePid;
-  double steerToYawRateDps;
+  final PidConfig yawRatePid;
+  final double steerToYawRateDps;
 
   // Slip angle PID
-  PidConfig slipAnglePid;
-  double slipTargetDeg;
+  final PidConfig slipAnglePid;
+  final double slipTargetDeg;
 
   // Adaptive
-  bool adaptiveEnabled;
-  double adaptiveSpeedRefMs, adaptiveScaleMin, adaptiveScaleMax;
+  final bool adaptiveEnabled;
+  final double adaptiveSpeedRefMs, adaptiveScaleMin, adaptiveScaleMax;
 
   // Oversteer
-  bool oversteerWarnEnabled;
-  double oversteerSlipThreshDeg,
+  final bool oversteerWarnEnabled;
+  final double oversteerSlipThreshDeg,
       oversteerRateThreshDegS,
       oversteerThrottleReduction;
 
   // Pitch compensation
-  bool pitchCompEnabled;
-  double pitchCompGain, pitchCompMaxCorrection;
+  final bool pitchCompEnabled;
+  final double pitchCompGain, pitchCompMaxCorrection;
 
   // Kids mode
-  KidsModeConfig kidsMode;
+  final KidsModeConfig kidsMode;
 
   // Trim
-  double steeringTrim, throttleTrim;
+  final double steeringTrim, throttleTrim;
 
   // Filter
-  double madgwickBeta, lpfCutoffHz;
-  bool adaptiveBetaEnabled;
+  final double madgwickBeta, lpfCutoffHz;
+  final bool adaptiveBetaEnabled;
 
   StabConfig({
     this.enabled = false,
@@ -168,9 +214,67 @@ class StabConfig {
     this.madgwickBeta = 0.1,
     this.lpfCutoffHz = 30.0,
     this.adaptiveBetaEnabled = true,
-  })  : yawRatePid = yawRatePid ?? PidConfig(),
-        slipAnglePid = slipAnglePid ?? PidConfig(),
-        kidsMode = kidsMode ?? KidsModeConfig();
+  })  : yawRatePid = yawRatePid ?? const PidConfig(),
+        slipAnglePid = slipAnglePid ?? const PidConfig(),
+        kidsMode = kidsMode ?? const KidsModeConfig();
+
+  StabConfig copyWith({
+    bool? enabled,
+    DriveMode? mode,
+    int? fadeMs,
+    PidConfig? yawRatePid,
+    double? steerToYawRateDps,
+    PidConfig? slipAnglePid,
+    double? slipTargetDeg,
+    bool? adaptiveEnabled,
+    double? adaptiveSpeedRefMs,
+    double? adaptiveScaleMin,
+    double? adaptiveScaleMax,
+    bool? oversteerWarnEnabled,
+    double? oversteerSlipThreshDeg,
+    double? oversteerRateThreshDegS,
+    double? oversteerThrottleReduction,
+    bool? pitchCompEnabled,
+    double? pitchCompGain,
+    double? pitchCompMaxCorrection,
+    KidsModeConfig? kidsMode,
+    double? steeringTrim,
+    double? throttleTrim,
+    double? madgwickBeta,
+    double? lpfCutoffHz,
+    bool? adaptiveBetaEnabled,
+  }) {
+    return StabConfig(
+      enabled: enabled ?? this.enabled,
+      mode: mode ?? this.mode,
+      fadeMs: fadeMs ?? this.fadeMs,
+      yawRatePid: yawRatePid ?? this.yawRatePid,
+      steerToYawRateDps: steerToYawRateDps ?? this.steerToYawRateDps,
+      slipAnglePid: slipAnglePid ?? this.slipAnglePid,
+      slipTargetDeg: slipTargetDeg ?? this.slipTargetDeg,
+      adaptiveEnabled: adaptiveEnabled ?? this.adaptiveEnabled,
+      adaptiveSpeedRefMs: adaptiveSpeedRefMs ?? this.adaptiveSpeedRefMs,
+      adaptiveScaleMin: adaptiveScaleMin ?? this.adaptiveScaleMin,
+      adaptiveScaleMax: adaptiveScaleMax ?? this.adaptiveScaleMax,
+      oversteerWarnEnabled: oversteerWarnEnabled ?? this.oversteerWarnEnabled,
+      oversteerSlipThreshDeg:
+          oversteerSlipThreshDeg ?? this.oversteerSlipThreshDeg,
+      oversteerRateThreshDegS:
+          oversteerRateThreshDegS ?? this.oversteerRateThreshDegS,
+      oversteerThrottleReduction:
+          oversteerThrottleReduction ?? this.oversteerThrottleReduction,
+      pitchCompEnabled: pitchCompEnabled ?? this.pitchCompEnabled,
+      pitchCompGain: pitchCompGain ?? this.pitchCompGain,
+      pitchCompMaxCorrection:
+          pitchCompMaxCorrection ?? this.pitchCompMaxCorrection,
+      kidsMode: kidsMode ?? this.kidsMode,
+      steeringTrim: steeringTrim ?? this.steeringTrim,
+      throttleTrim: throttleTrim ?? this.throttleTrim,
+      madgwickBeta: madgwickBeta ?? this.madgwickBeta,
+      lpfCutoffHz: lpfCutoffHz ?? this.lpfCutoffHz,
+      adaptiveBetaEnabled: adaptiveBetaEnabled ?? this.adaptiveBetaEnabled,
+    );
+  }
 
   factory StabConfig.fromJson(Map<String, dynamic> j) {
     final yr = j['yaw_rate'] as Map<String, dynamic>? ?? {};

@@ -6,6 +6,8 @@ class RestClient {
 
   RestClient(String ip) : _baseUrl = 'http://$ip';
 
+  String get baseUrl => _baseUrl;
+
   Future<Map<String, dynamic>> getWifiStatus() async {
     return _get('/api/wifi/status');
   }
