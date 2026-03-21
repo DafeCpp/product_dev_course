@@ -676,6 +676,7 @@ static esp_err_t wifi_scan_handler(httpd_req_t* req) {
 
 static esp_err_t root_get_handler(httpd_req_t* req) {
   httpd_resp_set_type(req, "text/html");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_send(req, reinterpret_cast<const char*>(INDEX_HTML),
                   INDEX_HTML_LEN);
   return ESP_OK;
@@ -683,12 +684,14 @@ static esp_err_t root_get_handler(httpd_req_t* req) {
 
 static esp_err_t style_css_handler(httpd_req_t* req) {
   httpd_resp_set_type(req, "text/css");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_send(req, reinterpret_cast<const char*>(STYLE_CSS), STYLE_CSS_LEN);
   return ESP_OK;
 }
 
 static esp_err_t app_js_handler(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/javascript");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_send(req, reinterpret_cast<const char*>(APP_JS), APP_JS_LEN);
   return ESP_OK;
 }
