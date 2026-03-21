@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Sequence, cast
 from uuid import UUID
 
-import asyncpg
+from asyncpg.exceptions import PostgresError  # type: ignore[import-untyped]
 
 from backend_common.conversion import apply_conversion
 from backend_common.db.pool import get_pool_service as get_pool
@@ -119,7 +119,7 @@ class TelemetryIngestService:
 
     Phase 2 (write):
         Execute the bulk INSERT + sensor heartbeat UPDATE inside a single
-        transaction.  If this phase raises ``asyncpg.PostgresError`` and
+        transaction.  If this phase raises ``PostgresError`` and
         ``settings.spool_enabled`` is True, the pre-computed rows are
         serialised to a spool file on disk for later replay by the flush
         worker.  The caller receives an optimistic 202 response.
@@ -208,7 +208,7 @@ class TelemetryIngestService:
                 async with conn.transaction():
                     inserted = await self._do_insert(conn, items)
                     await self._update_sensor_heartbeat_ts(conn, payload.sensor_id, last_ts)
-        except asyncpg.PostgresError as exc:
+        except PostgresError as exc:
             if settings.spool_enabled:
                 logger.warning(
                     "ingest_write_failed_spooling",

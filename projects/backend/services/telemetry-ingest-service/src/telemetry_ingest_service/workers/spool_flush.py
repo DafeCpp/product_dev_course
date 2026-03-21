@@ -4,7 +4,7 @@ The worker runs as a long-lived asyncio task.  On each tick it:
 1. Lists all spool files in chronological order (oldest first).
 2. Tries to replay each file via ``TelemetryIngestService._flush_spool_record``.
 3. Deletes successfully replayed files.
-4. Stops the current cycle on the first ``asyncpg.PostgresError`` — if the DB
+4. Stops the current cycle on the first ``PostgresError`` — if the DB
    is still unavailable there is no point trying the remaining files.
 
 Corrupted spool files (JSON parse error, unexpected schema) are renamed to
@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import asyncpg
+from asyncpg.exceptions import PostgresError  # type: ignore[import-untyped]
 import structlog
 
 from backend_common.db.pool import get_pool_service as get_pool
@@ -49,7 +49,7 @@ async def _flush_one(path: Path) -> bool:
         delete_spool(path)
         logger.info("spool_flushed", path=str(path), items=len(record.items))
         return True
-    except asyncpg.PostgresError as exc:
+    except PostgresError as exc:
         logger.warning("spool_flush_db_unavailable", error=str(exc))
         return False
 

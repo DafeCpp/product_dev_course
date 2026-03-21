@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from asyncpg.exceptions import PostgresError
 
 from telemetry_ingest_service.core.exceptions import (
     NotFoundError,
@@ -813,8 +814,6 @@ class TestTelemetryIngestServiceIngest:
             ],
         )
 
-        import asyncpg
-
         with patch("telemetry_ingest_service.services.telemetry.get_pool") as mock_get_pool, \
              patch("telemetry_ingest_service.services.telemetry.settings") as mock_settings, \
              patch("telemetry_ingest_service.services.telemetry.write_spool") as mock_write_spool:
@@ -840,7 +839,7 @@ class TestTelemetryIngestServiceIngest:
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction
-            mock_conn.execute = AsyncMock(side_effect=asyncpg.PostgresError("DB error"))
+            mock_conn.execute = AsyncMock(side_effect=PostgresError("DB error"))
 
             result = await service.ingest(payload, token=token)
 
@@ -871,8 +870,6 @@ class TestTelemetryIngestServiceIngest:
             ],
         )
 
-        import asyncpg
-
         with patch("telemetry_ingest_service.services.telemetry.get_pool") as mock_get_pool, \
              patch("telemetry_ingest_service.services.telemetry.settings") as mock_settings:
 
@@ -897,9 +894,9 @@ class TestTelemetryIngestServiceIngest:
             mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
             mock_transaction.__aexit__ = AsyncMock(return_value=None)
             mock_conn.transaction.return_value = mock_transaction
-            mock_conn.execute = AsyncMock(side_effect=asyncpg.PostgresError("DB error"))
+            mock_conn.execute = AsyncMock(side_effect=PostgresError("DB error"))
 
-            with pytest.raises(asyncpg.PostgresError):
+            with pytest.raises(PostgresError):
                 await service.ingest(payload, token=token)
 
 
