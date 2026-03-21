@@ -256,6 +256,9 @@ struct TelemetrySnapshot {
   // Actuators (applied, после стабилизации/trim/slew rate)
   float throttle{0.0f};
   float steering{0.0f};
+
+  // Uptime (ms since boot, for reboot diagnostics)
+  uint32_t uptime_ms{0};
 };
 
 // ═════════════════════════════════════════════════════════════════════════

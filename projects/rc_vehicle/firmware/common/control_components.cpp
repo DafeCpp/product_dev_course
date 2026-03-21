@@ -142,6 +142,7 @@ std::string TelemetryHandler::BuildTelemJson(
   cJSON_AddStringToObject(root, "type", "telem");
   // Для совместимости: "mcu_pong_ok" = "контроллер жив"
   cJSON_AddBoolToObject(root, "mcu_pong_ok", true);
+  cJSON_AddNumberToObject(root, "uptime_ms", snap.uptime_ms);
 
   // Link status
   cJSON* link = cJSON_AddObjectToObject(root, "link");

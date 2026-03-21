@@ -232,6 +232,7 @@ void VehicleControlUnified::ControlTaskLoop() {
 
     if (telem_handler_) {
       TelemetrySnapshot snap;
+      snap.uptime_ms = now;
       snap.rc_ok = rc_handler_ && rc_handler_->IsActive();
       snap.wifi_ok = wifi_handler_ && wifi_handler_->IsActive();
       snap.throttle = applied_throttle;

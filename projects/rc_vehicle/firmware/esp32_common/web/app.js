@@ -42,6 +42,7 @@ const btnCenter        = $('btn-center');
 const btnStop          = $('btn-stop');
 const telemDataEl      = $('telem-data');
 const telemCounterEl   = $('telem-counter');
+const uptimeBadgeEl    = $('uptime-badge');
 const calibStatusEl    = $('calib-status');
 const calibValidEl     = $('calib-valid');
 const calibBiasEl      = $('calib-bias');
@@ -391,6 +392,18 @@ function updateTelem(data) {
     lastTelemTime = Date.now();
     telemRxCount++;
     if (telemCounterEl) telemCounterEl.textContent = `rx: ${telemRxCount}`;
+    // Uptime display (reboot diagnostics)
+    if (data.uptime_ms !== undefined && uptimeBadgeEl) {
+        const totalSec = Math.floor(data.uptime_ms / 1000);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        const pad = (n) => String(n).padStart(2, '0');
+        uptimeBadgeEl.textContent = h > 0
+            ? `⏱ ${h}:${pad(m)}:${pad(s)}`
+            : `⏱ ${pad(m)}:${pad(s)}`;
+    }
+
     if (data.mcu_pong_ok !== undefined) {
         setMcuStatus(data.mcu_pong_ok ? 'connected' : 'disconnected');
     } else {
