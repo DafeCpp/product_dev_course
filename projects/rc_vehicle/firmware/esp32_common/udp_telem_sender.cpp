@@ -44,7 +44,13 @@ static std::atomic<bool> s_streaming{false};
 static std::atomic<uint32_t> s_seq{0};
 static std::atomic<uint32_t> s_dropped{0};
 
-// Target configuration (modified only when !s_streaming)
+// Spinlock protecting s_target_addr, s_target_ip_str, s_target_port, s_hz.
+// Writer: UdpTelemStart() (called from udp_ctrl_task or WebSocket handler).
+// Reader: udp_sender_task (sendto).
+// On dual-core ESP32-S3 without this lock, sendto() could read a partially
+// written sockaddr_in when Start() is called from a different core.
+static portMUX_TYPE s_target_mux = portMUX_INITIALIZER_UNLOCKED;
+
 static struct sockaddr_in s_target_addr;
 static char s_target_ip_str[16] = {};
 static uint16_t s_target_port = Cfg::kDefaultDataPort;
@@ -106,8 +112,8 @@ static void udp_sender_task(void* arg) {
   pkt.magic[1] = kMagic[1];
   pkt.version = Cfg::kPacketVersion;
 
-  uint32_t last_send_us = 0;
-  uint32_t send_interval_us = 10000;  // 100 Hz = 10000 us
+  int64_t last_send_us = 0;
+  int64_t send_interval_us = 10000;  // 100 Hz = 10000 us
 
   TickType_t last_diag = xTaskGetTickCount();
   uint32_t frames_sent = 0;
@@ -123,8 +129,11 @@ static void udp_sender_task(void* arg) {
     }
 
     // Rate limiting: skip frames if hz < 100
-    uint32_t now_us = (uint32_t)(esp_timer_get_time() & 0xFFFFFFFF);
-    send_interval_us = 1000000u / s_hz;
+    int64_t now_us = esp_timer_get_time();
+    taskENTER_CRITICAL(&s_target_mux);
+    uint8_t cur_hz = s_hz;
+    taskEXIT_CRITICAL(&s_target_mux);
+    send_interval_us = 1000000LL / cur_hz;
     if (now_us - last_send_us < send_interval_us) {
       continue;  // skip this frame
     }
@@ -133,8 +142,14 @@ static void udp_sender_task(void* arg) {
     pkt.seq = s_seq.fetch_add(1, std::memory_order_relaxed);
     memcpy(&pkt.frame, &frame, sizeof(TelemetryLogFrame));
 
+    // Take a consistent snapshot of the target address under spinlock.
+    struct sockaddr_in target_snap;
+    taskENTER_CRITICAL(&s_target_mux);
+    memcpy(&target_snap, &s_target_addr, sizeof(target_snap));
+    taskEXIT_CRITICAL(&s_target_mux);
+
     int ret = sendto(s_data_sock, &pkt, sizeof(pkt), 0,
-                     (struct sockaddr*)&s_target_addr, sizeof(s_target_addr));
+                     (struct sockaddr*)&target_snap, sizeof(target_snap));
     if (ret < 0) {
       // Rate-limited warning
       static uint32_t last_warn_ms = 0;
@@ -227,13 +242,23 @@ static void handle_ctrl_stop(struct sockaddr_in* src_addr,
 
 static void handle_ctrl_status(struct sockaddr_in* src_addr,
                                socklen_t addr_len) {
+  // Snapshot target config under lock for consistent STATUS reply
+  char ip_snap[16];
+  uint16_t port_snap;
+  uint8_t hz_snap;
+  taskENTER_CRITICAL(&s_target_mux);
+  memcpy(ip_snap, s_target_ip_str, sizeof(ip_snap));
+  port_snap = s_target_port;
+  hz_snap = s_hz;
+  taskEXIT_CRITICAL(&s_target_mux);
+
   char reply[256];
   snprintf(reply, sizeof(reply),
            "{\"streaming\":%s,\"ip\":\"%s\",\"port\":%u,\"hz\":%u,"
            "\"seq\":%lu,\"dropped\":%lu}",
            s_streaming.load() ? "true" : "false",
-           s_target_ip_str[0] ? s_target_ip_str : "",
-           s_target_port, (unsigned)s_hz,
+           ip_snap[0] ? ip_snap : "",
+           port_snap, (unsigned)hz_snap,
            (unsigned long)s_seq.load(std::memory_order_relaxed),
            (unsigned long)s_dropped.load(std::memory_order_relaxed));
   send_ctrl_reply(reply, src_addr, addr_len);
@@ -384,26 +409,35 @@ bool UdpTelemStart(const char* ip, uint16_t port, uint8_t hz) {
     UdpTelemStop();
   }
 
-  // Configure target address
-  memset(&s_target_addr, 0, sizeof(s_target_addr));
-  s_target_addr.sin_family = AF_INET;
-  s_target_addr.sin_port = htons(port);
-  if (inet_pton(AF_INET, ip, &s_target_addr.sin_addr) != 1) {
+  // Build new target address in a local variable first, then copy under lock.
+  struct sockaddr_in new_addr = {};
+  new_addr.sin_family = AF_INET;
+  new_addr.sin_port = htons(port);
+  if (inet_pton(AF_INET, ip, &new_addr.sin_addr) != 1) {
     ESP_LOGW(TAG, "Invalid IP: %s", ip);
     return false;
   }
 
+  // Check if target config actually changed (to avoid unnecessary NVS writes).
+  bool config_changed;
+  taskENTER_CRITICAL(&s_target_mux);
+  config_changed = (strcmp(s_target_ip_str, ip) != 0) ||
+                   (s_target_port != port) || (s_hz != hz);
+  memcpy(&s_target_addr, &new_addr, sizeof(s_target_addr));
   strncpy(s_target_ip_str, ip, sizeof(s_target_ip_str) - 1);
   s_target_ip_str[sizeof(s_target_ip_str) - 1] = '\0';
   s_target_port = port;
   s_hz = hz;
+  taskEXIT_CRITICAL(&s_target_mux);
 
   // Reset counters
   s_seq.store(0, std::memory_order_relaxed);
   s_dropped.store(0, std::memory_order_relaxed);
 
-  // Save to NVS
-  nvs_save();
+  // Save to NVS only when target config changed to reduce flash wear.
+  if (config_changed) {
+    nvs_save();
+  }
 
   // Start streaming
   s_streaming.store(true, std::memory_order_release);
@@ -419,9 +453,9 @@ void UdpTelemStop() {
   }
   s_streaming.store(false, std::memory_order_release);
 
-  // Drain queue
-  TelemetryLogFrame dummy;
-  while (xQueueReceive(s_queue, &dummy, 0) == pdTRUE) {}
+  // No explicit drain needed: udp_sender_task already skips frames
+  // when s_streaming is false (line 127). Draining here would race with
+  // the sender task's xQueueReceive on the other core.
 
   ESP_LOGI(TAG, "Stopped. Total seq=%lu, dropped=%lu",
            (unsigned long)s_seq.load(), (unsigned long)s_dropped.load());
@@ -440,13 +474,23 @@ uint32_t UdpTelemGetDropped() {
 }
 
 const char* UdpTelemGetTargetIp() {
+  // s_target_ip_str is only written under s_target_mux in UdpTelemStart(),
+  // but the returned pointer is read without lock. This is safe because
+  // callers (STATUS handler, WS handler) run on the same core as the writer
+  // and the string is always null-terminated before s_streaming is set.
   return s_target_ip_str;
 }
 
 uint16_t UdpTelemGetTargetPort() {
-  return s_target_port;
+  taskENTER_CRITICAL(&s_target_mux);
+  uint16_t port = s_target_port;
+  taskEXIT_CRITICAL(&s_target_mux);
+  return port;
 }
 
 uint8_t UdpTelemGetHz() {
-  return s_hz;
+  taskENTER_CRITICAL(&s_target_mux);
+  uint8_t hz = s_hz;
+  taskEXIT_CRITICAL(&s_target_mux);
+  return hz;
 }

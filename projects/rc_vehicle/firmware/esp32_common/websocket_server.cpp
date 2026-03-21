@@ -1,5 +1,6 @@
 #include "websocket_server.hpp"
 
+#include <atomic>
 #include <string.h>
 
 #include "cJSON.h"
@@ -18,14 +19,17 @@ static constexpr size_t TELEM_BUF_SIZE = 2048;
 /** Очередь длины 1: индекс буфера (0 или 1), готового к отправке. */
 static QueueHandle_t s_telem_queue = NULL;
 static char s_telem_buf[2][TELEM_BUF_SIZE];
-static uint8_t s_telem_write_idx = 0;
+// Index of the buffer that the *next* WebSocketEnqueueTelem() call will write
+// into. Atomic to ensure the store to the buffer is visible to
+// telem_sender_task on the other core before the index swap.
+static std::atomic<uint8_t> s_telem_write_idx{0};
 
 /**
  * Кешированное количество WS-клиентов.
  * Обновляется только в telem_sender_task (низкий приоритет, не блокирует
  * control loop). GetWebSocketClientCount() читает атомарно без мьютексов httpd.
  */
-static volatile uint8_t s_cached_client_count = 0;
+static std::atomic<uint8_t> s_cached_client_count{0};
 
 /** Счётчик неудачных отправок для каждого fd — при 3 подряд закрываем. */
 static constexpr int MAX_SEND_FAILURES = 3;
@@ -46,7 +50,8 @@ static void telem_sender_task(void* arg) {
     TickType_t now = xTaskGetTickCount();
     if ((now - last_diag) >= pdMS_TO_TICKS(10000)) {
       ESP_LOGI(TAG, "telem_sender: %lu frames sent in 10s, clients=%u",
-               (unsigned long)frames_sent, (unsigned)s_cached_client_count);
+               (unsigned long)frames_sent,
+               (unsigned)s_cached_client_count.load(std::memory_order_relaxed));
       frames_sent = 0;
       last_diag = now;
     }
@@ -73,7 +78,7 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     int fds[WEBSOCKET_MAX_CLIENTS];
     size_t cnt = WEBSOCKET_MAX_CLIENTS;
     if (httpd_get_client_list(ws_server_handle, &cnt, fds) == ESP_OK) {
-      s_cached_client_count = static_cast<uint8_t>(cnt);
+      s_cached_client_count.store(static_cast<uint8_t>(cnt), std::memory_order_relaxed);
     }
     return ESP_OK;
   }
@@ -175,10 +180,13 @@ void WebSocketEnqueueTelem(const char* telem_json) {
     ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes", len, TELEM_BUF_SIZE);
     len = TELEM_BUF_SIZE - 1;
   }
-  memcpy(s_telem_buf[s_telem_write_idx], telem_json, len);
-  s_telem_buf[s_telem_write_idx][len] = '\0';
-  const uint8_t idx = s_telem_write_idx;
-  s_telem_write_idx = 1 - s_telem_write_idx;
+  // Read current write index (relaxed — only this task writes it).
+  const uint8_t idx = s_telem_write_idx.load(std::memory_order_relaxed);
+  memcpy(s_telem_buf[idx], telem_json, len);
+  s_telem_buf[idx][len] = '\0';
+  // Swap write index with release: guarantees the memcpy above is visible to
+  // telem_sender_task (on potentially different core) before it reads the buffer.
+  s_telem_write_idx.store(1 - idx, std::memory_order_release);
   xQueueOverwrite(s_telem_queue, &idx);
 }
 
@@ -196,14 +204,14 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   if (list_err != ESP_OK) {
     ESP_LOGW(TAG, "httpd_get_client_list failed: %s",
              esp_err_to_name(list_err));
-    s_cached_client_count = 0;
+    s_cached_client_count.store(0, std::memory_order_relaxed);
     return ESP_OK;
   }
   if (client_count == 0) {
-    s_cached_client_count = 0;
+    s_cached_client_count.store(0, std::memory_order_relaxed);
     return ESP_OK;
   }
-  s_cached_client_count = static_cast<uint8_t>(client_count);
+  s_cached_client_count.store(static_cast<uint8_t>(client_count), std::memory_order_relaxed);
 
   size_t len = strlen(telem_json);
   httpd_ws_frame_t ws_pkt = {};
@@ -218,8 +226,17 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   // Счётчик последовательных ошибок: ключ — fd (не позиция в списке).
   // Позиция fd в массиве client_fds меняется между вызовами, поэтому
   // индексирование по i было бы некорректным.
+  // Sentinel -1 means "empty slot". Using 0 would be incorrect because
+  // fd 0 (stdin) is a valid file descriptor that httpd could reuse.
   static int s_fd_fail_count[WEBSOCKET_MAX_CLIENTS] = {};
   static int s_fd_keys[WEBSOCKET_MAX_CLIENTS] = {};
+  static bool s_fd_keys_initialized = false;
+  if (!s_fd_keys_initialized) {
+    for (int s = 0; s < WEBSOCKET_MAX_CLIENTS; s++) {
+      s_fd_keys[s] = -1;
+    }
+    s_fd_keys_initialized = true;
+  }
 
   for (size_t i = 0; i < client_count; i++) {
     int fd = client_fds[i];
@@ -240,7 +257,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
     if (slot == -1) {
       // Новый fd — занять свободный слот
       for (int s = 0; s < WEBSOCKET_MAX_CLIENTS; s++) {
-        if (s_fd_keys[s] == 0) {
+        if (s_fd_keys[s] == -1) {
           s_fd_keys[s] = fd;
           s_fd_fail_count[s] = 0;
           slot = s;
@@ -260,7 +277,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
         ESP_LOGW(TAG, "Closing stale WS client fd %d after %d failures", fd,
                  s_fd_fail_count[slot]);
         httpd_sess_trigger_close(ws_server_handle, fd);
-        s_fd_keys[slot] = 0;
+        s_fd_keys[slot] = -1;
         s_fd_fail_count[slot] = 0;
       }
     } else {
@@ -270,7 +287,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
 
   // Очистить слоты для fd, которых больше нет в списке клиентов
   for (int s = 0; s < WEBSOCKET_MAX_CLIENTS; s++) {
-    if (s_fd_keys[s] == 0) continue;
+    if (s_fd_keys[s] == -1) continue;
     bool found = false;
     for (size_t i = 0; i < client_count; i++) {
       if (client_fds[i] == s_fd_keys[s]) {
@@ -280,7 +297,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
     }
     if (!found) {
       ESP_LOGD(TAG, "fd %d left, clearing fail slot", s_fd_keys[s]);
-      s_fd_keys[s] = 0;
+      s_fd_keys[s] = -1;
       s_fd_fail_count[s] = 0;
     }
   }
@@ -291,5 +308,5 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
 uint8_t WebSocketGetClientCount(void) {
   // Возвращаем кешированное значение — никаких мьютексов httpd, безопасно
   // вызывать из control loop на Core 1 без риска блокировки.
-  return s_cached_client_count;
+  return s_cached_client_count.load(std::memory_order_relaxed);
 }
