@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/connection_provider.dart';
 import '../tabs/drive_tab.dart';
+import '../tabs/setup_tab.dart';
+import '../tabs/diagnostics_tab.dart';
 import 'connection_screen.dart';
+import 'settings_screen.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
@@ -19,8 +22,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     ref.watch(connectionProvider);
 
     ref.listen(connectionProvider, (prev, next) {
-      if (!next.isConnected &&
-          prev?.isConnected == true) {
+      if (!next.isConnected && prev?.isConnected == true) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const ConnectionScreen()),
           (_) => false,
@@ -29,17 +31,32 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     });
 
     return Scaffold(
+      appBar: _tabIndex == 0
+          ? null
+          : AppBar(
+              title: Text(_tabTitle()),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SettingsScreen(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
       body: IndexedStack(
         index: _tabIndex,
         children: const [
           DriveTab(),
           _PlaceholderTab(title: 'Telemetry'),
-          _PlaceholderTab(title: 'Setup'),
-          _PlaceholderTab(title: 'Diagnostics'),
+          SetupTab(),
+          DiagnosticsTab(),
         ],
       ),
       bottomNavigationBar: _tabIndex == 0
-          ? null // Hide tab bar in DriveTab (fullscreen)
+          ? null
           : NavigationBar(
               selectedIndex: _tabIndex,
               onDestinationSelected: (i) => setState(() => _tabIndex = i),
@@ -63,6 +80,19 @@ class _MainScreenState extends ConsumerState<MainScreen> {
               ],
             ),
     );
+  }
+
+  String _tabTitle() {
+    switch (_tabIndex) {
+      case 1:
+        return 'Telemetry';
+      case 2:
+        return 'Setup';
+      case 3:
+        return 'Diagnostics';
+      default:
+        return '';
+    }
   }
 }
 
