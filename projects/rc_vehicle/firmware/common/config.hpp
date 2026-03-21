@@ -57,7 +57,7 @@ struct TelemetryConfig {
  */
 struct TelemetryLogConfig {
   static constexpr uint32_t kLogIntervalMs = 10;    ///< Интервал записи в лог (100 Hz)
-  static constexpr size_t kCapacityFrames = 18000;  ///< Ёмкость буфера (кадров) — 3 мин при 100 Hz, ~1.3 МБ PSRAM
+  static constexpr size_t kCapacityFrames = 60000;  ///< Ёмкость буфера (кадров) — 10 мин при 100 Hz, ~4.1 МБ PSRAM
   static constexpr size_t kMaxExportFrames =
       200;  ///< Макс. кадров для экспорта
 };
