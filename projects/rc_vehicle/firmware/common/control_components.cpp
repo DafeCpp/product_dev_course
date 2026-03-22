@@ -39,8 +39,8 @@ void WifiCommandHandler::Update(uint32_t now_ms,
     last_command_ = cmd;
     last_cmd_ms_ = now_ms;
   }
-  // Активность проверяется через IsActive() - команда актуальна в пределах
-  // timeout
+  // Кэшируем active-состояние: стабильно в пределах одной итерации control loop
+  active_ = last_cmd_ms_ != 0 && (now_ms - last_cmd_ms_) < timeout_ms_;
 }
 
 // ═════════════════════════════════════════════════════════════════════════

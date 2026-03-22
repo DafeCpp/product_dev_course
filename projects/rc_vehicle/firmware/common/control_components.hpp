@@ -102,23 +102,21 @@ class WifiCommandHandler : public ControlComponent {
    * @brief Проверить, активны ли Wi-Fi команды
    * @return true, если команда получена недавно (в пределах timeout)
    */
-  [[nodiscard]] bool IsActive() const noexcept {
-    return last_cmd_ms_ != 0 &&
-           (platform_.GetTimeMs() - last_cmd_ms_) < timeout_ms_;
-  }
+  [[nodiscard]] bool IsActive() const noexcept { return active_; }
 
   /**
    * @brief Получить последнюю команду
    * @return Команда управления, если Wi-Fi активен
    */
   [[nodiscard]] std::optional<RcCommand> GetCommand() const {
-    return IsActive() ? last_command_ : std::nullopt;
+    return active_ ? last_command_ : std::nullopt;
   }
 
  private:
   VehicleControlPlatform& platform_;
   uint32_t timeout_ms_;
   uint32_t last_cmd_ms_{0};
+  bool active_{false};
   std::optional<RcCommand> last_command_;
 };
 
