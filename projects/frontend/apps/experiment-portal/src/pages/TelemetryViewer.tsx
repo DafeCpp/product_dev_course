@@ -6,6 +6,8 @@ import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, t
 import { EmptyState, Error as ErrorComponent, FloatingActionButton, Loading, MaterialSelect } from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
 import TelemetryExportModal from '../components/TelemetryExportModal'
+import CaptureSessionTimeline from '../components/CaptureSessionTimeline'
+import LiveSensorPanel from '../components/LiveSensorPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
 import { notifyError, notifySuccess } from '../utils/notify'
@@ -76,6 +78,7 @@ function TelemetryViewer() {
     const [historySessionFilter, setHistorySessionFilter] = useState('')
     const [historySensorFilter, setHistorySensorFilter] = useState('')
     const [showExportModal, setShowExportModal] = useState(false)
+    const [historyTimeRange, setHistoryTimeRange] = useState<[string, string] | null>(null)
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -755,6 +758,28 @@ function TelemetryViewer() {
         return () => observer.disconnect()
     }, [])
 
+    // Track Plotly zoom/pan to sync CaptureSessionTimeline
+    useEffect(() => {
+        const element = historyPlotRef.current
+        if (!element) return
+        const handler = (eventData: any) => {
+            const xRange = eventData?.['xaxis.range']
+            const x0 = eventData?.['xaxis.range[0]']
+            const x1 = eventData?.['xaxis.range[1]']
+            if (xRange && xRange.length === 2) {
+                setHistoryTimeRange([String(xRange[0]), String(xRange[1])])
+            } else if (x0 && x1) {
+                setHistoryTimeRange([String(x0), String(x1)])
+            } else if (eventData?.['xaxis.autorange']) {
+                setHistoryTimeRange(null)
+            }
+        }
+        ;(element as any).on?.('plotly_relayout', handler)
+        return () => {
+            ;(element as any).removeAllListeners?.('plotly_relayout')
+        }
+    }, [historyHasData])
+
     useEffect(() => {
         return () => {
             const element = historyPlotRef.current
@@ -1231,6 +1256,7 @@ function TelemetryViewer() {
                         </section>
 
                         {isLiveMode ? (
+                            <div className="telemetry-view__live-layout">
                             <section className="telemetry-view__live-stage card detail-card">
                                 <div className="detail-section-header">
                                     <div className="detail-section-header__copy">
@@ -1242,6 +1268,16 @@ function TelemetryViewer() {
                                         </p>
                                     </div>
                                 </div>
+
+                                {captureSessions.length > 0 && (
+                                    <CaptureSessionTimeline
+                                        sessions={captureSessions}
+                                        onSessionClick={(sessionId) => {
+                                            setHistoryCaptureSessionId(sessionId)
+                                            setViewMode('history')
+                                        }}
+                                    />
+                                )}
 
                                 {panelIds.length === 0 ? (
                                     <EmptyState message="Добавьте панель, чтобы начать просмотр графиков." />
@@ -1317,6 +1353,11 @@ function TelemetryViewer() {
                                     </div>
                                 )}
                             </section>
+
+                            {projectId && sensors.length > 0 && (
+                                <LiveSensorPanel sensors={sensors} projectId={projectId} />
+                            )}
+                            </div>
                         ) : (
                             <section className="telemetry-view__history card detail-card">
                                 <div className="detail-section-header">
@@ -1530,6 +1571,16 @@ function TelemetryViewer() {
                                                 historyOrder === 'desc' ? 'последние' : 'первые'
                                             } ${historyDisplayMaxPoints})`}
                                     </div>
+                                )}
+
+                                {captureSessions.length > 0 && (
+                                    <CaptureSessionTimeline
+                                        sessions={captureSessions}
+                                        timeRange={historyTimeRange}
+                                        onSessionClick={(sessionId) => {
+                                            setHistoryCaptureSessionId(sessionId)
+                                        }}
+                                    />
                                 )}
 
                                 <div className="telemetry-view__history-chart">
