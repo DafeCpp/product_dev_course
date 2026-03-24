@@ -24,6 +24,9 @@ void NormalModeStrategy::ApplyDefaults(
   cfg.slip_angle.pid.kd = 0.0f;
   cfg.slip_angle.pid.max_integral = 5.0f;
   cfg.slip_angle.pid.max_correction = 0.0f;
+
+  cfg.slew_throttle = 0.5f;
+  cfg.slew_steering = 3.0f;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -48,6 +51,9 @@ void SportModeStrategy::ApplyDefaults(
   cfg.slip_angle.pid.kd = 0.001f;
   cfg.slip_angle.pid.max_integral = 5.0f;
   cfg.slip_angle.pid.max_correction = 0.15f;
+
+  cfg.slew_throttle = 1.0f;
+  cfg.slew_steering = 5.0f;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -72,6 +78,9 @@ void DriftModeStrategy::ApplyDefaults(
   cfg.slip_angle.pid.kd = 0.002f;
   cfg.slip_angle.pid.max_integral = 5.0f;
   cfg.slip_angle.pid.max_correction = 0.25f;
+
+  cfg.slew_throttle = 0.8f;
+  cfg.slew_steering = 4.0f;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -107,6 +116,9 @@ void KidsModeStrategy::ApplyDefaults(
   cfg.adaptive.speed_ref_ms = 1.0f;
   cfg.adaptive.scale_min = 0.6f;
   cfg.adaptive.scale_max = 1.5f;
+
+  cfg.slew_throttle = 0.3f;
+  cfg.slew_steering = 1.5f;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

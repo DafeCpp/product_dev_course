@@ -155,6 +155,8 @@ bool StabilizationConfig::IsValid() const noexcept {
          yaw_rate.IsValid() && slip_angle.IsValid() && adaptive.IsValid() &&
          oversteer.IsValid() && pitch_comp.IsValid() && kids_mode.IsValid() &&
          static_cast<uint8_t>(mode) <= 4 &&
+         slew_throttle >= 0.1f && slew_throttle <= 10.0f &&
+         slew_steering >= 0.5f && slew_steering <= 10.0f &&
          steering_trim >= -0.1f && steering_trim <= 0.1f &&
          throttle_trim >= -0.1f && throttle_trim <= 0.1f;
 }
@@ -214,6 +216,10 @@ void StabilizationConfig::Reset() noexcept {
   kids_mode.anti_spin_threshold_deg = 10.0f;
   kids_mode.anti_spin_reduction = 0.7f;
 
+  // Slew rate defaults
+  slew_throttle = 0.5f;
+  slew_steering = 3.0f;
+
   // Trim defaults
   steering_trim = 0.0f;
   throttle_trim = 0.0f;
@@ -237,6 +243,8 @@ void StabilizationConfig::Clamp() noexcept {
   oversteer.Clamp();
   pitch_comp.Clamp();
   kids_mode.Clamp();
+  slew_throttle = std::clamp(slew_throttle, 0.1f, 10.0f);
+  slew_steering = std::clamp(slew_steering, 0.5f, 10.0f);
   steering_trim = std::clamp(steering_trim, -0.1f, 0.1f);
   throttle_trim = std::clamp(throttle_trim, -0.1f, 0.1f);
 }

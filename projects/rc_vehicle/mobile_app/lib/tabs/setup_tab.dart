@@ -61,6 +61,8 @@ class _SetupTabState extends ConsumerState<SetupTab> {
         const SizedBox(height: 16),
         _TrimSection(config: config),
         const SizedBox(height: 16),
+        _SlewRateSection(config: config),
+        const SizedBox(height: 16),
         _PidSection(config: config),
         const SizedBox(height: 16),
         _CalibrationSection(calibStatus: _calibStatus),
@@ -261,6 +263,58 @@ class _TrimSection extends ConsumerWidget {
               onChanged: (v) {
                 ref.read(stabConfigProvider.notifier).apply(
                   config.copyWith(throttleTrim: v),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Slew Rate (Response) ---
+
+class _SlewRateSection extends ConsumerWidget {
+  final StabConfig config;
+  const _SlewRateSection({required this.config});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Response', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Control how fast steering and throttle react',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            _SliderRow(
+              label: 'Steering speed',
+              value: config.slewSteering,
+              min: 0.5,
+              max: 10.0,
+              format: (v) => v.toStringAsFixed(1),
+              onChanged: (v) {
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(slewSteering: v),
+                );
+              },
+            ),
+            _SliderRow(
+              label: 'Throttle speed',
+              value: config.slewThrottle,
+              min: 0.1,
+              max: 10.0,
+              format: (v) => v.toStringAsFixed(1),
+              onChanged: (v) {
+                ref.read(stabConfigProvider.notifier).apply(
+                  config.copyWith(slewThrottle: v),
                 );
               },
             ),

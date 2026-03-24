@@ -121,6 +121,10 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
                             cfg.kids_mode.accel_max_reduction);
   }
 
+  // Slew rate
+  cJSON_AddNumberToObject(obj, "slew_throttle", cfg.slew_throttle);
+  cJSON_AddNumberToObject(obj, "slew_steering", cfg.slew_steering);
+
   // Trim
   cJSON_AddNumberToObject(obj, "steering_trim", cfg.steering_trim);
   cJSON_AddNumberToObject(obj, "throttle_trim", cfg.throttle_trim);
@@ -242,6 +246,10 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_float(kids_mode, "accel_max_reduction",
               cfg.kids_mode.accel_max_reduction);
   }
+
+  // Slew rate
+  get_float(json, "slew_throttle", cfg.slew_throttle);
+  get_float(json, "slew_steering", cfg.slew_steering);
 
   // Trim
   get_float(json, "steering_trim", cfg.steering_trim);

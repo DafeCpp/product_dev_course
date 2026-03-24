@@ -182,6 +182,9 @@ class StabConfig {
   // Kids mode
   final KidsModeConfig kidsMode;
 
+  // Slew rate
+  final double slewThrottle, slewSteering;
+
   // Trim
   final double steeringTrim, throttleTrim;
 
@@ -209,6 +212,8 @@ class StabConfig {
     this.pitchCompGain = 0.01,
     this.pitchCompMaxCorrection = 0.25,
     KidsModeConfig? kidsMode,
+    this.slewThrottle = 0.5,
+    this.slewSteering = 3.0,
     this.steeringTrim = 0.0,
     this.throttleTrim = 0.0,
     this.madgwickBeta = 0.1,
@@ -238,6 +243,8 @@ class StabConfig {
     double? pitchCompGain,
     double? pitchCompMaxCorrection,
     KidsModeConfig? kidsMode,
+    double? slewThrottle,
+    double? slewSteering,
     double? steeringTrim,
     double? throttleTrim,
     double? madgwickBeta,
@@ -268,6 +275,8 @@ class StabConfig {
       pitchCompMaxCorrection:
           pitchCompMaxCorrection ?? this.pitchCompMaxCorrection,
       kidsMode: kidsMode ?? this.kidsMode,
+      slewThrottle: slewThrottle ?? this.slewThrottle,
+      slewSteering: slewSteering ?? this.slewSteering,
       steeringTrim: steeringTrim ?? this.steeringTrim,
       throttleTrim: throttleTrim ?? this.throttleTrim,
       madgwickBeta: madgwickBeta ?? this.madgwickBeta,
@@ -312,6 +321,8 @@ class StabConfig {
       pitchCompMaxCorrection:
           (pc['max_correction'] as num?)?.toDouble() ?? 0.25,
       kidsMode: KidsModeConfig.fromJson(km),
+      slewThrottle: (j['slew_throttle'] as num?)?.toDouble() ?? 0.5,
+      slewSteering: (j['slew_steering'] as num?)?.toDouble() ?? 3.0,
       steeringTrim: (j['steering_trim'] as num?)?.toDouble() ?? 0.0,
       throttleTrim: (j['throttle_trim'] as num?)?.toDouble() ?? 0.0,
       madgwickBeta: (fi['madgwick_beta'] as num?)?.toDouble() ?? 0.1,
@@ -351,6 +362,8 @@ class StabConfig {
           'max_correction': pitchCompMaxCorrection,
         },
         'kids_mode': kidsMode.toJson(),
+        'slew_throttle': slewThrottle,
+        'slew_steering': slewSteering,
         'steering_trim': steeringTrim,
         'throttle_trim': throttleTrim,
         'filter': {

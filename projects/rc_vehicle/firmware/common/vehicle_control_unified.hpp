@@ -218,7 +218,8 @@ class VehicleControlUnified {
    * @param commanded_steering Выходной параметр: руль
    * @return true если есть активный источник управления
    */
-  bool SelectControlSource(float& commanded_throttle,
+  bool SelectControlSource(const SensorSnapshot& sensors,
+                           float& commanded_throttle,
                            float& commanded_steering);
 
   /**
@@ -235,7 +236,9 @@ class VehicleControlUnified {
                              float& applied_steering,
                              uint32_t& last_pwm_update,
                              float throttle_trim = 0.0f,
-                             float steering_trim = 0.0f);
+                             float steering_trim = 0.0f,
+                             float slew_throttle_per_sec = 0.5f,
+                             float slew_steering_per_sec = 3.0f);
 
   /**
    * @brief Вывод диагностической информации

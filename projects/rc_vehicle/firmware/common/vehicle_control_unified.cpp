@@ -77,27 +77,47 @@ void VehicleControlUnified::ControlTaskLoop() {
     if (imu_handler_) imu_handler_->Update(now, dt_ms);
 
     // ─────────────────────────────────────────────────────────────────────
+    // Sensor snapshot — атомарный снимок состояния датчиков.
+    // Собирается один раз и используется во всех этапах итерации.
+    // ─────────────────────────────────────────────────────────────────────
+
+    SensorSnapshot sensors;
+    sensors.rc_active = rc_handler_ && rc_handler_->IsActive();
+    if (sensors.rc_active) {
+      sensors.rc_cmd = rc_handler_->GetCommand();
+    }
+    sensors.wifi_active = wifi_handler_ && wifi_handler_->IsActive();
+    if (sensors.wifi_active) {
+      sensors.wifi_cmd = wifi_handler_->GetCommand();
+    }
+    sensors.imu_enabled = imu_handler_ && imu_handler_->IsEnabled();
+    if (sensors.imu_enabled) {
+      sensors.imu_data = imu_handler_->GetData();
+      sensors.filtered_gz = imu_handler_->GetFilteredGyroZ();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // EKF: оценка динамического состояния (vx, vy, r → slip angle)
     // ─────────────────────────────────────────────────────────────────────
 
-    if (imu_handler_ && imu_handler_->IsEnabled() && dt_ms > 0) {
+    if (sensors.imu_enabled && dt_ms > 0) {
       const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
-      const auto& imu_data = imu_handler_->GetData();
       // ax, ay в IMU после калибровки в g → конвертируем в м/с²
       constexpr float kG = 9.80665f;
-      ekf_.Predict(imu_data.ax * kG, imu_data.ay * kG, dt_sec);
+      ekf_.Predict(sensors.imu_data.ax * kG, sensors.imu_data.ay * kG, dt_sec);
       // gz отфильтрован LPF (dps) → рад/с для EKF
       constexpr float kDegToRad = 3.14159265358979f / 180.0f;
-      ekf_.UpdateGyroZ(imu_handler_->GetFilteredGyroZ() * kDegToRad);
+      ekf_.UpdateGyroZ(sensors.filtered_gz * kDegToRad);
 
       // ZUPT: если |a| ≈ 1g и |gyro_z| мал → машина стоит → vx,vy → 0
-      const float accel_mag = std::sqrt(imu_data.ax * imu_data.ax +
-                                        imu_data.ay * imu_data.ay +
-                                        imu_data.az * imu_data.az);
+      const float accel_mag = std::sqrt(
+          sensors.imu_data.ax * sensors.imu_data.ax +
+          sensors.imu_data.ay * sensors.imu_data.ay +
+          sensors.imu_data.az * sensors.imu_data.az);
       constexpr float kZuptAccelThresh = 0.05f;   // |a| - 1g| < 0.05g
       constexpr float kZuptGyroThresh = 3.0f;     // |gyro_z| < 3 dps
       if (std::abs(accel_mag - 1.0f) < kZuptAccelThresh &&
-          std::abs(imu_handler_->GetFilteredGyroZ()) < kZuptGyroThresh) {
+          std::abs(sensors.filtered_gz) < kZuptGyroThresh) {
         ekf_.UpdateZeroVelocity(0.1f);
       }
     }
@@ -113,7 +133,7 @@ void VehicleControlUnified::ControlTaskLoop() {
     // Выбор источника управления (RC приоритетнее Wi-Fi)
     // ─────────────────────────────────────────────────────────────────────
 
-    SelectControlSource(commanded_throttle, commanded_steering);
+    SelectControlSource(sensors, commanded_throttle, commanded_steering);
 
     // ─────────────────────────────────────────────────────────────────────
     // Авто-движение для Forward-калибровки направления
@@ -121,18 +141,18 @@ void VehicleControlUnified::ControlTaskLoop() {
     // управляет машиной вручную, авто-движение не применяется.
     // ─────────────────────────────────────────────────────────────────────
 
-    const bool rc_active_now = rc_handler_ && rc_handler_->IsActive();
-    if (calib_mgr_->IsAutoForwardActive() && !rc_active_now) {
+    if (calib_mgr_->IsAutoForwardActive() && !sensors.rc_active) {
       const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
       float fwd_accel = 0.0f;
       float accel_mag = 1.0f;
       float gyro_z = 0.0f;
-      if (imu_handler_ && imu_handler_->IsEnabled()) {
-        const auto& imu = imu_handler_->GetData();
-        fwd_accel = imu_calib_.GetForwardAccel(imu);
-        accel_mag = std::sqrt(imu.ax * imu.ax + imu.ay * imu.ay +
-                              imu.az * imu.az);
-        gyro_z = imu_handler_->GetFilteredGyroZ();
+      if (sensors.imu_enabled) {
+        fwd_accel = imu_calib_.GetForwardAccel(sensors.imu_data);
+        accel_mag = std::sqrt(
+            sensors.imu_data.ax * sensors.imu_data.ax +
+            sensors.imu_data.ay * sensors.imu_data.ay +
+            sensors.imu_data.az * sensors.imu_data.az);
+        gyro_z = sensors.filtered_gz;
       }
       commanded_throttle = calib_mgr_->UpdateAutoForward(
           fwd_accel, accel_mag, gyro_z, dt_sec);
@@ -140,12 +160,20 @@ void VehicleControlUnified::ControlTaskLoop() {
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Снимок конфигурации стабилизации (atomic snapshot — один вызов
+    // GetConfig() за итерацию вместо нескольких)
+    // ─────────────────────────────────────────────────────────────────────
+
+    const auto stab_cfg = stab_mgr_ ? stab_mgr_->GetConfig()
+                                     : StabilizationConfig{};
+
+    // ─────────────────────────────────────────────────────────────────────
     // Плавное нарастание/спад веса стабилизации и переход между режимами
     // ─────────────────────────────────────────────────────────────────────
 
     stab_mgr_->UpdateWeights(dt_ms);
 
-    const DriveMode drive_mode = stab_mgr_ ? stab_mgr_->GetConfig().mode : DriveMode::Normal;
+    const DriveMode drive_mode = stab_cfg.mode;
     const auto& strategy = DriveModeRegistry::Get(drive_mode);
     const auto traits = strategy.GetTraits();
 
@@ -156,9 +184,8 @@ void VehicleControlUnified::ControlTaskLoop() {
 
     if (traits.apply_input_limits) {
       float kids_fwd_accel = 0.0f;
-      if (imu_handler_ && imu_handler_->IsEnabled()) {
-        kids_fwd_accel =
-            imu_calib_.GetForwardAccel(imu_handler_->GetData());
+      if (sensors.imu_enabled) {
+        kids_fwd_accel = imu_calib_.GetForwardAccel(sensors.imu_data);
       }
       kids_processor_.Process(commanded_throttle, commanded_steering, dt_ms,
                               kids_fwd_accel);
@@ -188,10 +215,7 @@ void VehicleControlUnified::ControlTaskLoop() {
     // Failsafe
     // ─────────────────────────────────────────────────────────────────────
 
-    bool rc_active = rc_handler_ && rc_handler_->IsActive();
-    bool wifi_active = wifi_handler_ && wifi_handler_->IsActive();
-
-    if (platform_->FailsafeUpdate(rc_active, wifi_active)) {
+    if (platform_->FailsafeUpdate(sensors.rc_active, sensors.wifi_active)) {
       // Failsafe активен: нейтраль
       commanded_throttle = 0.0f;
       commanded_steering = 0.0f;
@@ -213,13 +237,14 @@ void VehicleControlUnified::ControlTaskLoop() {
     // ─────────────────────────────────────────────────────────────────────
 
     // Применить trim (компенсация механического смещения нейтрали)
-    const float steer_trim = stab_mgr_ ? stab_mgr_->GetConfig().steering_trim : 0.0f;
-    const float thr_trim = stab_mgr_ ? stab_mgr_->GetConfig().throttle_trim : 0.0f;
+    const float steer_trim = stab_cfg.steering_trim;
+    const float thr_trim = stab_cfg.throttle_trim;
 
     if (traits.use_slew_rate) {
       UpdatePwmWithSlewRate(now, commanded_throttle, commanded_steering,
                             applied_throttle, applied_steering, last_pwm_update,
-                            thr_trim, steer_trim);
+                            thr_trim, steer_trim,
+                            stab_cfg.slew_throttle, stab_cfg.slew_steering);
     } else {
       applied_throttle = commanded_throttle + thr_trim;
       applied_steering = commanded_steering + steer_trim;
@@ -233,31 +258,27 @@ void VehicleControlUnified::ControlTaskLoop() {
     if (telem_handler_) {
       TelemetrySnapshot snap;
       snap.uptime_ms = now;
-      snap.rc_ok = rc_handler_ && rc_handler_->IsActive();
-      snap.wifi_ok = wifi_handler_ && wifi_handler_->IsActive();
+      snap.rc_ok = sensors.rc_active;
+      snap.wifi_ok = sensors.wifi_active;
       snap.throttle = applied_throttle;
       snap.steering = applied_steering;
 
       // Raw RC input (до стабилизации)
-      if (rc_handler_ && rc_handler_->IsActive()) {
-        auto rc_cmd = rc_handler_->GetCommand();
-        if (rc_cmd) {
-          snap.rc_throttle = rc_cmd->throttle;
-          snap.rc_steering = rc_cmd->steering;
-        }
+      if (sensors.rc_active && sensors.rc_cmd) {
+        snap.rc_throttle = sensors.rc_cmd->throttle;
+        snap.rc_steering = sensors.rc_cmd->steering;
       }
 
       // Kids Mode status (routing определяется drive_mode/traits)
       snap.kids_mode_active = (drive_mode == DriveMode::Kids);
       snap.kids_anti_spin_active = kids_processor_.IsAntiSpinActive();
-      snap.kids_throttle_limit =
-          stab_mgr_->GetConfig().kids_mode.throttle_limit;
+      snap.kids_throttle_limit = stab_cfg.kids_mode.throttle_limit;
 
-      if (imu_handler_ && imu_handler_->IsEnabled()) {
+      if (sensors.imu_enabled) {
         snap.imu_enabled = true;
-        snap.imu_data = imu_handler_->GetData();
-        snap.filtered_gz = imu_handler_->GetFilteredGyroZ();
-        snap.forward_accel = imu_calib_.GetForwardAccel(snap.imu_data);
+        snap.imu_data = sensors.imu_data;
+        snap.filtered_gz = sensors.filtered_gz;
+        snap.forward_accel = imu_calib_.GetForwardAccel(sensors.imu_data);
         madgwick_.GetEulerDeg(snap.pitch_deg, snap.roll_deg, snap.yaw_deg);
         snap.calib_status = imu_calib_.GetStatus();
         snap.calib_stage = imu_calib_.GetCalibStage();
@@ -274,25 +295,24 @@ void VehicleControlUnified::ControlTaskLoop() {
         snap.oversteer_available = true;
         snap.oversteer_active = oversteer_guard_.IsActive();
       }
-      telem_handler_->Update(now, snap);
+      telem_handler_->SendTelemetry(now, snap);
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // Запись в кольцевой буфер телеметрии (Phase 4.3) — 100 Hz
     // ─────────────────────────────────────────────────────────────────────
 
-    if (imu_handler_ && imu_handler_->IsEnabled()) {
+    if (sensors.imu_enabled) {
       const uint32_t last_log = telem_mgr_->GetLastLogTime();
       if (now - last_log >= config::TelemetryLogConfig::kLogIntervalMs) {
         TelemetryLogFrame frame;
         frame.ts_ms = now;
-        const auto& d = imu_handler_->GetData();
-        frame.ax = d.ax;
-        frame.ay = d.ay;
-        frame.az = d.az;
-        frame.gx = d.gx;
-        frame.gy = d.gy;
-        frame.gz = d.gz;
+        frame.ax = sensors.imu_data.ax;
+        frame.ay = sensors.imu_data.ay;
+        frame.az = sensors.imu_data.az;
+        frame.gx = sensors.imu_data.gx;
+        frame.gy = sensors.imu_data.gy;
+        frame.gz = sensors.imu_data.gz;
         frame.vx = ekf_.GetVx();
         frame.vy = ekf_.GetVy();
         frame.slip_deg = ekf_.GetSlipAngleDeg();
@@ -300,14 +320,11 @@ void VehicleControlUnified::ControlTaskLoop() {
         frame.throttle = applied_throttle;
         frame.steering = applied_steering;
         madgwick_.GetEulerDeg(frame.pitch_deg, frame.roll_deg, frame.yaw_deg);
-        frame.yaw_rate_dps = imu_handler_->GetFilteredGyroZ();
+        frame.yaw_rate_dps = sensors.filtered_gz;
         frame.oversteer_active = oversteer_guard_.IsActive() ? 1.0f : 0.0f;
-        if (rc_handler_ && rc_handler_->IsActive()) {
-          auto rc_cmd = rc_handler_->GetCommand();
-          if (rc_cmd) {
-            frame.rc_throttle = rc_cmd->throttle;
-            frame.rc_steering = rc_cmd->steering;
-          }
+        if (sensors.rc_active && sensors.rc_cmd) {
+          frame.rc_throttle = sensors.rc_cmd->throttle;
+          frame.rc_steering = sensors.rc_cmd->steering;
         }
         telem_mgr_->Push(frame);
         telem_mgr_->SetLastLogTime(now);
@@ -487,25 +504,19 @@ bool VehicleControlUnified::InitializeComponents() {
   return true;
 }
 
-bool VehicleControlUnified::SelectControlSource(float& commanded_throttle,
-                                                float& commanded_steering) {
-  bool rc_active = rc_handler_ && rc_handler_->IsActive();
-  bool wifi_active = wifi_handler_ && wifi_handler_->IsActive();
+bool VehicleControlUnified::SelectControlSource(
+    const SensorSnapshot& sensors, float& commanded_throttle,
+    float& commanded_steering) {
+  if (sensors.rc_active && sensors.rc_cmd) {
+    commanded_throttle = sensors.rc_cmd->throttle;
+    commanded_steering = sensors.rc_cmd->steering;
+    return true;
+  }
 
-  if (rc_active) {
-    auto cmd = rc_handler_->GetCommand();
-    if (cmd) {
-      commanded_throttle = cmd->throttle;
-      commanded_steering = cmd->steering;
-      return true;
-    }
-  } else if (wifi_active) {
-    auto cmd = wifi_handler_->GetCommand();
-    if (cmd) {
-      commanded_throttle = cmd->throttle;
-      commanded_steering = cmd->steering;
-      return true;
-    }
+  if (sensors.wifi_active && sensors.wifi_cmd) {
+    commanded_throttle = sensors.wifi_cmd->throttle;
+    commanded_steering = sensors.wifi_cmd->steering;
+    return true;
   }
 
   return false;
@@ -518,17 +529,19 @@ void VehicleControlUnified::UpdatePwmWithSlewRate(uint32_t now_ms,
                                                   float& applied_steering,
                                                   uint32_t& last_pwm_update,
                                                   float throttle_trim,
-                                                  float steering_trim) {
+                                                  float steering_trim,
+                                                  float slew_throttle_per_sec,
+                                                  float slew_steering_per_sec) {
   if (now_ms - last_pwm_update >= config::PwmConfig::kUpdateIntervalMs) {
     const uint32_t pwm_dt_ms = now_ms - last_pwm_update;
     last_pwm_update = now_ms;
 
     applied_throttle =
         ApplySlewRate(commanded_throttle, applied_throttle,
-                      config::SlewRateConfig::kThrottleMaxPerSec, pwm_dt_ms);
+                      slew_throttle_per_sec, pwm_dt_ms);
     applied_steering =
         ApplySlewRate(commanded_steering, applied_steering,
-                      config::SlewRateConfig::kSteeringMaxPerSec, pwm_dt_ms);
+                      slew_steering_per_sec, pwm_dt_ms);
 
     platform_->SetPwm(applied_throttle + throttle_trim,
                       applied_steering + steering_trim);
