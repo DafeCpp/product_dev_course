@@ -6,9 +6,8 @@ from uuid import UUID
 
 from aiohttp import web
 
-from auth_service.api.utils import extract_client_ip, extract_user_agent
+from auth_service.api.utils import extract_client_ip, extract_user_agent, get_requester_id
 from auth_service.core.exceptions import AuthError, ForbiddenError, NotFoundError, handle_auth_error
-from backend_common.db.pool import get_pool_service as get_pool
 from auth_service.domain.dto import (
     ProjectCreateRequest,
     ProjectListResponse,
@@ -18,59 +17,9 @@ from auth_service.domain.dto import (
     ProjectResponse,
     ProjectUpdateRequest,
 )
-from auth_service.repositories.audit import AuditRepository
-from auth_service.repositories.permissions import PermissionRepository
-from auth_service.repositories.projects import ProjectRepository
-from auth_service.repositories.roles import RoleRepository
-from auth_service.repositories.user_roles import UserRoleRepository
-from auth_service.repositories.users import UserRepository
-from auth_service.services.jwt import get_user_id_from_token as jwt_get_user_id
-from auth_service.services.permission import PermissionService
-from auth_service.services.projects import ProjectService
+from auth_service.services.dependencies import get_permission_service, get_project_service
 
 logger = structlog.get_logger(__name__)
-
-
-async def get_project_service(request: web.Request) -> ProjectService:
-    """Get project service from request."""
-    pool = await get_pool()
-    project_repo = ProjectRepository(pool)
-    user_repo = UserRepository(pool)
-    user_role_repo = UserRoleRepository(pool)
-    audit_repo = AuditRepository(pool)
-    perm_svc = PermissionService(
-        PermissionRepository(pool),
-        RoleRepository(pool),
-        user_role_repo,
-        audit_repo=audit_repo,
-    )
-    return ProjectService(project_repo, user_repo, user_role_repo, perm_svc, audit_repo=audit_repo)
-
-
-async def get_user_id_from_token(request: web.Request) -> UUID:
-    """Extract user ID from JWT token."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        from auth_service.core.exceptions import InvalidCredentialsError
-        raise InvalidCredentialsError("Unauthorized")
-
-    token = auth_header[7:].strip()
-    if not token:
-        from auth_service.core.exceptions import InvalidCredentialsError
-        raise InvalidCredentialsError("Unauthorized")
-
-    pool = await get_pool()
-    user_repo = UserRepository(pool)
-    try:
-        user_id_str = jwt_get_user_id(token)
-    except ValueError as e:
-        from auth_service.core.exceptions import InvalidCredentialsError
-        raise InvalidCredentialsError(str(e)) from e
-    user = await user_repo.get_by_id(UUID(user_id_str))
-    if not user:
-        from auth_service.core.exceptions import UserNotFoundError
-        raise UserNotFoundError()
-    return user.id
 
 
 def _parse_project_id(request: web.Request) -> UUID:
@@ -84,7 +33,8 @@ def _parse_project_id(request: web.Request) -> UUID:
 async def create_project(request: web.Request) -> web.Response:
     """Create a new project. Requires 'projects.create' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -117,7 +67,8 @@ async def create_project(request: web.Request) -> web.Response:
 async def get_project(request: web.Request) -> web.Response:
     """Get project by ID. Requires 'project.members.view' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -154,7 +105,8 @@ async def list_projects(request: web.Request) -> web.Response:
       offset  — page offset, default 0
     """
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -189,7 +141,8 @@ async def list_projects(request: web.Request) -> web.Response:
 async def update_project(request: web.Request) -> web.Response:
     """Update project. Requires 'project.settings.update' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -230,7 +183,8 @@ async def update_project(request: web.Request) -> web.Response:
 async def delete_project(request: web.Request) -> web.Response:
     """Delete project. Requires 'project.settings.delete' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -261,7 +215,8 @@ async def delete_project(request: web.Request) -> web.Response:
 async def list_members(request: web.Request) -> web.Response:
     """List project members. Requires 'project.members.view' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -302,7 +257,8 @@ async def list_members(request: web.Request) -> web.Response:
 async def add_member(request: web.Request) -> web.Response:
     """Add member to project. Requires 'project.members.invite' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -358,7 +314,8 @@ async def add_member(request: web.Request) -> web.Response:
 async def remove_member(request: web.Request) -> web.Response:
     """Remove member from project. Requires 'project.members.remove' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 
@@ -403,7 +360,8 @@ async def remove_member(request: web.Request) -> web.Response:
 async def update_member_role(request: web.Request) -> web.Response:
     """Update member role. Requires 'project.members.change_role' permission."""
     try:
-        user_id = await get_user_id_from_token(request)
+        perm_svc = await get_permission_service(request)
+        user_id = await get_requester_id(request, perm_svc)
     except AuthError as e:
         return handle_auth_error(request, e)
 

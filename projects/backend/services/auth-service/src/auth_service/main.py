@@ -8,6 +8,7 @@ from aiohttp import web
 
 from backend_common.aiohttp_app import add_cors_to_routes, add_healthcheck, create_base_app
 from backend_common.metrics import metrics_handler, metrics_middleware
+from backend_common.middleware.error_handler import error_handling_middleware
 from backend_common.db.migrations import create_migration_runner
 from backend_common.logging_config import configure_logging
 
@@ -48,6 +49,7 @@ apply_migrations_on_startup = create_migration_runner(
 def create_app() -> web.Application:
     """Create aiohttp application."""
     app, cors = create_base_app(settings)
+    app.middlewares.append(error_handling_middleware)
     app.middlewares.append(metrics_middleware("auth-service"))
     app.middlewares.append(password_change_required_middleware)
 

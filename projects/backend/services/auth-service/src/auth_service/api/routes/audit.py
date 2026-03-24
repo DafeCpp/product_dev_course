@@ -11,22 +11,10 @@ from auth_service.api.utils import get_requester_id
 from auth_service.core.exceptions import ForbiddenError, InvalidCredentialsError
 from auth_service.domain.dto import AuditLogEntry
 from auth_service.repositories.audit import AuditRepository
-from auth_service.repositories.permissions import PermissionRepository
-from auth_service.repositories.roles import RoleRepository
-from auth_service.repositories.user_roles import UserRoleRepository
-from auth_service.services.permission import PermissionService
+from auth_service.services.dependencies import get_permission_service
 from backend_common.db.pool import get_pool_service as get_pool
 
 logger = structlog.get_logger(__name__)
-
-
-async def _get_permission_service(request: web.Request) -> PermissionService:
-    pool = await get_pool()
-    return PermissionService(
-        PermissionRepository(pool),
-        RoleRepository(pool),
-        UserRoleRepository(pool),
-    )
 
 
 def _parse_optional_uuid(value: str | None) -> UUID | None:
@@ -65,7 +53,7 @@ async def list_audit_log(request: web.Request) -> web.Response:
         offset (int, default 0)
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         await perm_svc.ensure_permission(requester_id, "audit.read")
 

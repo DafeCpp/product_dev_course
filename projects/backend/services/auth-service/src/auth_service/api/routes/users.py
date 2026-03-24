@@ -8,37 +8,15 @@ from aiohttp import web
 
 from auth_service.core.exceptions import AuthError, handle_auth_error
 from auth_service.domain.dto import UserSearchResult
-from auth_service.repositories.users import UserRepository, UserSearchRow
-from auth_service.services.jwt import get_user_id_from_token as jwt_get_user_id
+from auth_service.repositories.users import UserRepository
+from auth_service.api.utils import get_requester_id
+from auth_service.services.dependencies import get_permission_service
 from backend_common.db.pool import get_pool_service as get_pool
 
 logger = structlog.get_logger(__name__)
 
 _MAX_LIMIT = 10
 _MIN_QUERY_LENGTH = 2
-
-
-async def _require_auth(request: web.Request) -> None:
-    """Validate Bearer token; raise AuthError on failure."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        from auth_service.core.exceptions import InvalidCredentialsError
-        raise InvalidCredentialsError("Unauthorized")
-    token = auth_header[7:].strip()
-    if not token:
-        from auth_service.core.exceptions import InvalidCredentialsError
-        raise InvalidCredentialsError("Unauthorized")
-    pool = await get_pool()
-    user_repo = UserRepository(pool)
-    try:
-        user_id_str = jwt_get_user_id(token)
-    except ValueError as exc:
-        from auth_service.core.exceptions import InvalidCredentialsError
-        raise InvalidCredentialsError(str(exc)) from exc
-    user = await user_repo.get_by_id(UUID(user_id_str))
-    if not user or not user.is_active:
-        from auth_service.core.exceptions import UserNotFoundError
-        raise UserNotFoundError()
 
 
 async def search_users(request: web.Request) -> web.Response:
@@ -49,7 +27,8 @@ async def search_users(request: web.Request) -> web.Response:
     Requires: valid Bearer JWT token.
     """
     try:
-        await _require_auth(request)
+        perm_svc = await get_permission_service(request)
+        await get_requester_id(request, perm_svc)
     except AuthError as exc:
         return handle_auth_error(request, exc)
 

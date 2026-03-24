@@ -7,31 +7,19 @@ import structlog
 from aiohttp import web
 
 from auth_service.api.utils import get_requester_id
-from auth_service.core.exceptions import ConflictError, InvalidCredentialsError
+from auth_service.core.exceptions import InvalidCredentialsError
 from auth_service.domain.dto import (
     CreateRoleRequest,
     RoleResponse,
     UpdateRoleRequest,
 )
 from auth_service.domain.models import ScopeType
-from auth_service.repositories.audit import AuditRepository
-from auth_service.repositories.permissions import PermissionRepository
 from auth_service.repositories.roles import RoleRepository
 from auth_service.repositories.user_roles import UserRoleRepository
-from auth_service.services.permission import PermissionService
+from auth_service.services.dependencies import get_permission_service
 from backend_common.db.pool import get_pool_service as get_pool
 
 logger = structlog.get_logger(__name__)
-
-
-async def _get_permission_service(request: web.Request) -> PermissionService:
-    pool = await get_pool()
-    return PermissionService(
-        PermissionRepository(pool),
-        RoleRepository(pool),
-        UserRoleRepository(pool),
-        audit_repo=AuditRepository(pool),
-    )
 
 
 # =============================================================================
@@ -44,7 +32,7 @@ async def list_system_roles(request: web.Request) -> web.Response:
     Requires authentication. Returns both built-in and custom system roles.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         await get_requester_id(request, perm_svc)  # authentication check only
 
         pool = await get_pool()
@@ -95,7 +83,7 @@ async def create_system_role(request: web.Request) -> web.Response:
     Requires 'roles.manage' permission.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         data = await request.json()
@@ -128,7 +116,7 @@ async def update_system_role(request: web.Request) -> web.Response:
     Requires 'roles.manage' permission. Cannot update built-in roles.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         role_id = UUID(request.match_info["role_id"])
@@ -162,7 +150,7 @@ async def delete_system_role(request: web.Request) -> web.Response:
     Requires 'roles.manage' permission. Cannot delete built-in roles.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         role_id = UUID(request.match_info["role_id"])
@@ -191,7 +179,7 @@ async def grant_system_role_to_user(request: web.Request) -> web.Response:
         expires_at (datetime, optional): Expiration time
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         target_user_id = UUID(request.match_info["user_id"])
@@ -199,7 +187,7 @@ async def grant_system_role_to_user(request: web.Request) -> web.Response:
         role_id = UUID(data["role_id"])
         expires_at = data.get("expires_at")
         if expires_at:
-            from datetime import datetime, timezone
+            from datetime import datetime
             expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
         
         role_assignment = await perm_svc.grant_system_role(
@@ -231,7 +219,7 @@ async def revoke_system_role_from_user(request: web.Request) -> web.Response:
     Requires 'roles.assign' permission. Protects the last superadmin.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         target_user_id = UUID(request.match_info["user_id"])
@@ -259,7 +247,7 @@ async def revoke_system_role_from_user(request: web.Request) -> web.Response:
 async def list_user_system_roles(request: web.Request) -> web.Response:
     """List system roles assigned to a user."""
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         target_user_id = UUID(request.match_info["user_id"])

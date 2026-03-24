@@ -10,21 +10,10 @@ from auth_service.api.utils import get_requester_id
 from auth_service.core.exceptions import InvalidCredentialsError
 from auth_service.domain.dto import PermissionResponse
 from auth_service.repositories.permissions import PermissionRepository
-from auth_service.repositories.roles import RoleRepository
-from auth_service.repositories.user_roles import UserRoleRepository
-from auth_service.services.permission import PermissionService
+from auth_service.services.dependencies import get_permission_service
 from backend_common.db.pool import get_pool_service as get_pool
 
 logger = structlog.get_logger(__name__)
-
-
-async def _get_permission_service(request: web.Request) -> PermissionService:
-    pool = await get_pool()
-    return PermissionService(
-        PermissionRepository(pool),
-        RoleRepository(pool),
-        UserRoleRepository(pool),
-    )
 
 
 async def list_permissions(request: web.Request) -> web.Response:
@@ -33,7 +22,7 @@ async def list_permissions(request: web.Request) -> web.Response:
     Requires authentication. Returns the full permissions catalog.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         await get_requester_id(request, perm_svc)  # authentication check only
 
         pool = await get_pool()
@@ -59,7 +48,7 @@ async def get_effective_permissions(request: web.Request) -> web.Response:
         project_id (optional): Filter to project-specific permissions
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         # Get target user ID from path

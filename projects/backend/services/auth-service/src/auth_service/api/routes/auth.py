@@ -8,11 +8,9 @@ from aiohttp import web
 
 from auth_service.api.utils import extract_bearer_token, extract_client_ip, extract_user_agent
 from auth_service.core.exceptions import AuthError, handle_auth_error
-from backend_common.db.pool import get_pool_service as get_pool
 from auth_service.domain.dto import (
     AdminUserResetRequest,
     AdminUserUpdateRequest,
-    AuthTokensResponse,
     BootstrapAdminRequest,
     InviteCreateRequest,
     InviteResponse,
@@ -23,49 +21,12 @@ from auth_service.domain.dto import (
     TokenRefreshRequest,
     UserLoginRequest,
     UserRegisterRequest,
-    UserResponse,
 )
-from auth_service.repositories.audit import AuditRepository
-from auth_service.repositories.invites import InviteRepository
-from auth_service.repositories.password_reset import PasswordResetRepository
-from auth_service.repositories.permissions import PermissionRepository
-from auth_service.repositories.revoked_tokens import RevokedTokenRepository
-from auth_service.repositories.roles import RoleRepository
-from auth_service.repositories.token_families import TokenFamilyRepository
-from auth_service.repositories.user_roles import UserRoleRepository
-from auth_service.repositories.users import UserRepository
 from auth_service.services.auth import AuthService
-from auth_service.services.permission import PermissionService
+from auth_service.services.dependencies import get_auth_service
 from auth_service.settings import settings
 
 logger = structlog.get_logger(__name__)
-
-
-async def get_auth_service(request: web.Request) -> AuthService:
-    """Get auth service from request."""
-    pool = await get_pool()
-    user_repo = UserRepository(pool)
-    revoked_repo = RevokedTokenRepository(pool)
-    reset_repo = PasswordResetRepository(pool)
-    invite_repo = InviteRepository(pool)
-    audit_repo = AuditRepository(pool)
-    perm_service = PermissionService(
-        PermissionRepository(pool),
-        RoleRepository(pool),
-        UserRoleRepository(pool),
-        audit_repo=audit_repo,
-    )
-    family_repo = TokenFamilyRepository(pool)
-    return AuthService(
-        user_repo,
-        revoked_repo,
-        reset_repo,
-        perm_service,
-        invite_repo=invite_repo,
-        registration_mode=settings.registration_mode,
-        audit_repo=audit_repo,
-        family_repo=family_repo,
-    )
 
 
 async def _get_requester_id(request: web.Request, auth_service: AuthService) -> UUID:

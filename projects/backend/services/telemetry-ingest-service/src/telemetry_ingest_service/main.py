@@ -13,6 +13,7 @@ from backend_common.aiohttp_app import (
     create_base_app,
 )
 from backend_common.metrics import metrics_handler, metrics_middleware
+from backend_common.middleware.error_handler import error_handling_middleware
 from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
 from backend_common.logging_config import configure_logging
 
@@ -50,6 +51,7 @@ async def _stop_spool_worker(app: web.Application) -> None:
 
 def create_app() -> web.Application:
     app, cors = create_base_app(settings)
+    app.middlewares.append(error_handling_middleware)
     app.middlewares.append(metrics_middleware("telemetry-ingest-service"))
 
     app.add_routes(health_routes)

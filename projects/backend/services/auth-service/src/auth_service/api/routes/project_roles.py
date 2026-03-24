@@ -7,27 +7,15 @@ import structlog
 from aiohttp import web
 
 from auth_service.api.utils import get_requester_id
-from auth_service.core.exceptions import ConflictError, InvalidCredentialsError
+from auth_service.core.exceptions import InvalidCredentialsError
 from auth_service.domain.dto import CreateRoleRequest, RoleResponse, UpdateRoleRequest
 from auth_service.domain.models import ScopeType
-from auth_service.repositories.audit import AuditRepository
-from auth_service.repositories.permissions import PermissionRepository
 from auth_service.repositories.roles import RoleRepository
 from auth_service.repositories.user_roles import UserRoleRepository
-from auth_service.services.permission import PermissionService
+from auth_service.services.dependencies import get_permission_service
 from backend_common.db.pool import get_pool_service as get_pool
 
 logger = structlog.get_logger(__name__)
-
-
-async def _get_permission_service(request: web.Request) -> PermissionService:
-    pool = await get_pool()
-    return PermissionService(
-        PermissionRepository(pool),
-        RoleRepository(pool),
-        UserRoleRepository(pool),
-        audit_repo=AuditRepository(pool),
-    )
 
 
 # =============================================================================
@@ -41,7 +29,7 @@ async def list_project_roles(request: web.Request) -> web.Response:
     Returns both built-in and custom project roles.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
@@ -74,7 +62,7 @@ async def list_project_roles(request: web.Request) -> web.Response:
 async def get_project_role(request: web.Request) -> web.Response:
     """Get a specific project role by ID."""
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
@@ -109,7 +97,7 @@ async def create_project_role(request: web.Request) -> web.Response:
     Requires 'project.roles.manage' permission in the project.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
@@ -144,7 +132,7 @@ async def update_project_role(request: web.Request) -> web.Response:
     Requires 'project.roles.manage' permission. Cannot update built-in roles.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
@@ -184,7 +172,7 @@ async def delete_project_role(request: web.Request) -> web.Response:
     Requires 'project.roles.manage' permission. Cannot delete built-in roles.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
@@ -215,7 +203,7 @@ async def list_member_roles(request: web.Request) -> web.Response:
     Requires 'project.members.view' permission.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
@@ -263,7 +251,7 @@ async def grant_role_to_member(request: web.Request) -> web.Response:
         expires_at (datetime, optional): Expiration time
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
@@ -273,7 +261,7 @@ async def grant_role_to_member(request: web.Request) -> web.Response:
         role_id = UUID(data["role_id"])
         expires_at = data.get("expires_at")
         if expires_at:
-            from datetime import datetime, timezone
+            from datetime import datetime
             expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
         
         role_assignment = await perm_svc.grant_project_role(
@@ -306,7 +294,7 @@ async def revoke_role_from_member(request: web.Request) -> web.Response:
     Requires 'project.members.change_role' permission. Protects the last owner.
     """
     try:
-        perm_svc = await _get_permission_service(request)
+        perm_svc = await get_permission_service(request)
         requester_id = await get_requester_id(request, perm_svc)
         
         project_id = UUID(request.match_info["project_id"])
