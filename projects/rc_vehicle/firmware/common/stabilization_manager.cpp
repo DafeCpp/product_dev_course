@@ -81,9 +81,10 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
   madgwick_.SetAdaptiveBeta(validated_config.filter.adaptive_beta_enabled,
                             validated_config.filter.adaptive_accel_threshold_g);
 
-  // Применить к LPF (если IMU включен)
+  // Применить к LPF и Madgwick enable (если IMU включен)
   if (imu_handler_) {
     imu_handler_->SetLpfCutoff(validated_config.filter.lpf_cutoff_hz);
+    imu_handler_->SetMadgwickEnabled(validated_config.filter.madgwick_enabled);
   }
 
   // Обновить коэффициенты ПИД yaw rate и slip angle
@@ -149,9 +150,10 @@ void StabilizationManager::ApplyConfig() {
   madgwick_.SetAdaptiveBeta(cfg.filter.adaptive_beta_enabled,
                             cfg.filter.adaptive_accel_threshold_g);
 
-  // Применить к LPF (если IMU включен)
+  // Применить к LPF и Madgwick enable (если IMU включен)
   if (imu_handler_) {
     imu_handler_->SetLpfCutoff(cfg.filter.lpf_cutoff_hz);
+    imu_handler_->SetMadgwickEnabled(cfg.filter.madgwick_enabled);
   }
 }
 

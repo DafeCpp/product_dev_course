@@ -190,6 +190,7 @@ class StabConfig {
 
   // Filter
   final double madgwickBeta, lpfCutoffHz;
+  final bool madgwickEnabled, ekfEnabled;
   final bool adaptiveBetaEnabled;
 
   StabConfig({
@@ -218,6 +219,8 @@ class StabConfig {
     this.throttleTrim = 0.0,
     this.madgwickBeta = 0.1,
     this.lpfCutoffHz = 30.0,
+    this.madgwickEnabled = true,
+    this.ekfEnabled = true,
     this.adaptiveBetaEnabled = true,
   })  : yawRatePid = yawRatePid ?? const PidConfig(),
         slipAnglePid = slipAnglePid ?? const PidConfig(),
@@ -249,6 +252,8 @@ class StabConfig {
     double? throttleTrim,
     double? madgwickBeta,
     double? lpfCutoffHz,
+    bool? madgwickEnabled,
+    bool? ekfEnabled,
     bool? adaptiveBetaEnabled,
   }) {
     return StabConfig(
@@ -281,6 +286,8 @@ class StabConfig {
       throttleTrim: throttleTrim ?? this.throttleTrim,
       madgwickBeta: madgwickBeta ?? this.madgwickBeta,
       lpfCutoffHz: lpfCutoffHz ?? this.lpfCutoffHz,
+      madgwickEnabled: madgwickEnabled ?? this.madgwickEnabled,
+      ekfEnabled: ekfEnabled ?? this.ekfEnabled,
       adaptiveBetaEnabled: adaptiveBetaEnabled ?? this.adaptiveBetaEnabled,
     );
   }
@@ -327,6 +334,8 @@ class StabConfig {
       throttleTrim: (j['throttle_trim'] as num?)?.toDouble() ?? 0.0,
       madgwickBeta: (fi['madgwick_beta'] as num?)?.toDouble() ?? 0.1,
       lpfCutoffHz: (fi['lpf_cutoff_hz'] as num?)?.toDouble() ?? 30.0,
+      madgwickEnabled: fi['madgwick_enabled'] as bool? ?? true,
+      ekfEnabled: fi['ekf_enabled'] as bool? ?? true,
       adaptiveBetaEnabled: fi['adaptive_beta_enabled'] as bool? ?? true,
     );
   }
@@ -369,6 +378,8 @@ class StabConfig {
         'filter': {
           'madgwick_beta': madgwickBeta,
           'lpf_cutoff_hz': lpfCutoffHz,
+          'madgwick_enabled': madgwickEnabled,
+          'ekf_enabled': ekfEnabled,
           'adaptive_beta_enabled': adaptiveBetaEnabled,
         },
       };

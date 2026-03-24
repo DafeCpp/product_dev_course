@@ -414,6 +414,35 @@ class _PidSectionState extends ConsumerState<_PidSection> {
                     },
                   ),
                   const Divider(),
+                  Text(
+                    'Filters',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  SwitchListTile(
+                    title: const Text('Madgwick AHRS'),
+                    subtitle: const Text('Orientation (pitch/roll/yaw)'),
+                    value: config.madgwickEnabled,
+                    onChanged: (v) {
+                      ref.read(stabConfigProvider.notifier).apply(
+                        config.copyWith(madgwickEnabled: v),
+                      );
+                    },
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  SwitchListTile(
+                    title: const Text('EKF'),
+                    subtitle: const Text('Speed, slip angle estimation'),
+                    value: config.ekfEnabled,
+                    onChanged: (v) {
+                      ref.read(stabConfigProvider.notifier).apply(
+                        config.copyWith(ekfEnabled: v),
+                      );
+                    },
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  const Divider(),
                   SwitchListTile(
                     title: const Text('Adaptive PID'),
                     value: config.adaptiveEnabled,
