@@ -403,6 +403,39 @@
             </div>
         </section>
 
+        <!-- Графики -->
+        <section class="panel" id="panel-charts">
+            <button class="panel-header" aria-expanded="false">
+                <span class="panel-icon">&#9654;</span>
+                <span>Графики</span>
+            </button>
+            <div class="panel-body" hidden>
+                <div class="btn-row" style="margin-top:0; margin-bottom:12px">
+                    <button id="btn-charts-pause" class="btn btn-outline btn-sm">Пауза</button>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-legend" id="legend-accel"></div>
+                    <canvas id="chart-accel"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-legend" id="legend-gyro"></div>
+                    <canvas id="chart-gyro"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-legend" id="legend-ekf"></div>
+                    <canvas id="chart-ekf"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-legend" id="legend-ctrl"></div>
+                    <canvas id="chart-ctrl"></canvas>
+                </div>
+            </div>
+        </section>
+
         <!-- Телеметрия (всегда открыта) -->
         <section class="panel panel-telem open" id="panel-telem">
             <button class="panel-header" aria-expanded="true">

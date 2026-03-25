@@ -401,6 +401,279 @@ function sendCalibrate(mode) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Live charts
+// ═══════════════════════════════════════════════════════════════════
+
+const CHART_WINDOW = 200; // rolling buffer size (~10s at 20Hz)
+
+// ChartBuffer: ring buffer for N traces
+function ChartBuffer(traceCount) {
+    this.size = CHART_WINDOW;
+    this.len = 0;
+    this.head = 0;
+    this.data = [];
+    for (let i = 0; i < traceCount; i++) {
+        this.data.push(new Float32Array(CHART_WINDOW));
+    }
+}
+ChartBuffer.prototype.push = function(values) {
+    for (let i = 0; i < this.data.length; i++) {
+        this.data[i][this.head] = values[i] !== undefined ? values[i] : 0;
+    }
+    this.head = (this.head + 1) % this.size;
+    if (this.len < this.size) this.len++;
+};
+ChartBuffer.prototype.getTrace = function(traceIdx) {
+    const arr = this.data[traceIdx];
+    const out = new Float32Array(this.len);
+    const start = this.len < this.size ? 0 : this.head;
+    for (let i = 0; i < this.len; i++) {
+        out[i] = arr[(start + i) % this.size];
+    }
+    return out;
+};
+
+// Chart definitions
+const chartDefs = {
+    accel: {
+        canvasId: 'chart-accel',
+        legendId: 'legend-accel',
+        title: 'Акселерометр',
+        traces: [
+            { label: 'ax', color: '#5b8af5' },
+            { label: 'ay', color: '#34c759' },
+            { label: 'az', color: '#ff9f0a' },
+        ],
+        buf: new ChartBuffer(3),
+        lastVals: [0, 0, 0],
+    },
+    gyro: {
+        canvasId: 'chart-gyro',
+        legendId: 'legend-gyro',
+        title: 'Гироскоп Z',
+        traces: [
+            { label: 'gz', color: '#ff453a' },
+        ],
+        buf: new ChartBuffer(1),
+        lastVals: [0],
+    },
+    ekf: {
+        canvasId: 'chart-ekf',
+        legendId: 'legend-ekf',
+        title: 'EKF: Скорость',
+        traces: [
+            { label: 'speed_ms', color: '#5b8af5' },
+            { label: 'slip_deg', color: '#ff9f0a' },
+        ],
+        buf: new ChartBuffer(2),
+        lastVals: [0, 0],
+    },
+    ctrl: {
+        canvasId: 'chart-ctrl',
+        legendId: 'legend-ctrl',
+        title: 'Управление',
+        traces: [
+            { label: 'cmd.thr', color: '#5b8af5' },
+            { label: 'cmd.str', color: '#34c759' },
+            { label: 'act.thr', color: '#ff453a' },
+            { label: 'act.str', color: '#ff9f0a' },
+        ],
+        buf: new ChartBuffer(4),
+        lastVals: [0, 0, 0, 0],
+    },
+};
+
+let chartsPaused = false;
+let chartsRafId = null;
+
+function pushChartData(data) {
+    if (chartsPaused) return;
+    if (data.imu) {
+        const d = chartDefs.accel;
+        d.lastVals = [data.imu.ax || 0, data.imu.ay || 0, data.imu.az || 0];
+        d.buf.push(d.lastVals);
+        const dg = chartDefs.gyro;
+        dg.lastVals = [data.imu.gz || 0];
+        dg.buf.push(dg.lastVals);
+    }
+    if (data.ekf) {
+        const d = chartDefs.ekf;
+        d.lastVals = [data.ekf.speed_ms || 0, data.ekf.slip_deg || 0];
+        d.buf.push(d.lastVals);
+    }
+    if (data.cmd || data.act) {
+        const d = chartDefs.ctrl;
+        d.lastVals = [
+            (data.cmd && data.cmd.throttle) || 0,
+            (data.cmd && data.cmd.steering) || 0,
+            (data.act && data.act.throttle) || 0,
+            (data.act && data.act.steering) || 0,
+        ];
+        d.buf.push(d.lastVals);
+    }
+}
+
+function drawChart(canvas, buf, traces, lastVals) {
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth;
+    const cssH = canvas.clientHeight;
+    if (cssW === 0 || cssH === 0) return;
+
+    // Resize canvas backing store if needed
+    const needW = Math.round(cssW * dpr);
+    const needH = Math.round(cssH * dpr);
+    if (canvas.width !== needW || canvas.height !== needH) {
+        canvas.width = needW;
+        canvas.height = needH;
+    }
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+
+    const W = cssW;
+    const H = cssH;
+    const PAD_LEFT = 36;
+    const PAD_RIGHT = 4;
+    const PAD_TOP = 4;
+    const PAD_BOTTOM = 4;
+    const plotW = W - PAD_LEFT - PAD_RIGHT;
+    const plotH = H - PAD_TOP - PAD_BOTTOM;
+
+    const nPoints = buf.len;
+    if (nPoints < 2) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        return;
+    }
+
+    // Compute global min/max across all traces
+    let gmin = Infinity, gmax = -Infinity;
+    for (let t = 0; t < traces.length; t++) {
+        const arr = buf.getTrace(t);
+        for (let i = 0; i < arr.length; i++) {
+            if (arr[i] < gmin) gmin = arr[i];
+            if (arr[i] > gmax) gmax = arr[i];
+        }
+    }
+    if (gmin === gmax) { gmin -= 1; gmax += 1; }
+    const pad = (gmax - gmin) * 0.1;
+    gmin -= pad; gmax += pad;
+
+    // Grid
+    const gridColor = 'rgba(45,50,60,0.8)';
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 0.5;
+    const gridLines = 4;
+    for (let g = 0; g <= gridLines; g++) {
+        const y = PAD_TOP + (g / gridLines) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(PAD_LEFT, y);
+        ctx.lineTo(PAD_LEFT + plotW, y);
+        ctx.stroke();
+    }
+
+    // Y axis labels
+    ctx.fillStyle = 'rgba(139,143,154,0.9)';
+    ctx.font = `${Math.round(9 * dpr) / dpr}px -apple-system, system-ui, sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    const fmtY = (v) => {
+        const a = Math.abs(v);
+        if (a >= 100) return v.toFixed(0);
+        if (a >= 10) return v.toFixed(1);
+        return v.toFixed(2);
+    };
+    ctx.fillText(fmtY(gmax), PAD_LEFT - 2, PAD_TOP);
+    ctx.fillText(fmtY(gmin), PAD_LEFT - 2, PAD_TOP + plotH);
+
+    // Clip to plot area
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PAD_LEFT, PAD_TOP, plotW, plotH);
+    ctx.clip();
+
+    // Draw traces
+    ctx.lineWidth = 1.5;
+    ctx.imageSmoothingEnabled = true;
+    const range = gmax - gmin;
+
+    for (let t = 0; t < traces.length; t++) {
+        const arr = buf.getTrace(t);
+        ctx.strokeStyle = traces[t].color;
+        ctx.beginPath();
+        for (let i = 0; i < arr.length; i++) {
+            const x = PAD_LEFT + (i / (CHART_WINDOW - 1)) * plotW;
+            const y = PAD_TOP + plotH - ((arr[i] - gmin) / range) * plotH;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    ctx.restore();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function updateChartLegend(def) {
+    const el = document.getElementById(def.legendId);
+    if (!el) return;
+    if (el.children.length === 0) {
+        // Build legend items once
+        for (let i = 0; i < def.traces.length; i++) {
+            const item = document.createElement('span');
+            item.className = 'chart-legend-item';
+            item.innerHTML =
+                `<span class="legend-swatch" style="background:${def.traces[i].color}"></span>` +
+                `<span class="legend-name">${def.traces[i].label}</span>` +
+                `\u00a0<span class="legend-val" id="lv-${def.canvasId}-${i}">—</span>`;
+            el.appendChild(item);
+        }
+    }
+    for (let i = 0; i < def.traces.length; i++) {
+        const valEl = document.getElementById(`lv-${def.canvasId}-${i}`);
+        if (valEl) {
+            const v = def.lastVals[i];
+            const a = Math.abs(v);
+            valEl.textContent = a >= 100 ? v.toFixed(1) : a >= 10 ? v.toFixed(2) : v.toFixed(3);
+        }
+    }
+}
+
+function chartsRafLoop() {
+    const panel = $('panel-charts');
+    if (panel && panel.classList.contains('open')) {
+        for (const key in chartDefs) {
+            const def = chartDefs[key];
+            const canvas = $(def.canvasId);
+            if (canvas) drawChart(canvas, def.buf, def.traces, def.lastVals);
+            updateChartLegend(def);
+        }
+    }
+    chartsRafId = requestAnimationFrame(chartsRafLoop);
+}
+
+// Init pause button and RAF loop after DOM ready
+(function initCharts() {
+    const btnPause = $('btn-charts-pause');
+    if (btnPause) {
+        btnPause.addEventListener('click', () => {
+            chartsPaused = !chartsPaused;
+            btnPause.textContent = chartsPaused ? 'Продолжение' : 'Пауза';
+            btnPause.classList.toggle('btn-accent', chartsPaused);
+            btnPause.classList.toggle('btn-outline', !chartsPaused);
+        });
+    }
+
+    // Set canvas CSS class for sizing
+    for (const key in chartDefs) {
+        const canvas = $(chartDefs[key].canvasId);
+        if (canvas) canvas.className = 'chart-canvas';
+    }
+
+    chartsRafLoop();
+})();
+
+// ═══════════════════════════════════════════════════════════════════
 // Telemetry display
 // ═══════════════════════════════════════════════════════════════════
 
@@ -408,6 +681,7 @@ function updateTelem(data) {
     lastTelemTime = Date.now();
     telemRxCount++;
     if (telemCounterEl) telemCounterEl.textContent = `rx: ${telemRxCount}`;
+    pushChartData(data);
     // Uptime display (reboot diagnostics)
     if (data.uptime_ms !== undefined && uptimeBadgeEl) {
         const totalSec = Math.floor(data.uptime_ms / 1000);
