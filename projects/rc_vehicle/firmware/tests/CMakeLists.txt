@@ -105,6 +105,7 @@ add_executable(unit_tests
     unit/test_steering_trim_calibration.cpp
     unit/test_test_runner.cpp
     unit/test_com_offset_calibration.cpp
+    unit/test_com_offset_correction.cpp
     integration/test_control_loop.cpp
 )
 

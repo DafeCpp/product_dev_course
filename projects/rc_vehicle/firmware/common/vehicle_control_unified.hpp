@@ -374,6 +374,9 @@ class VehicleControlUnified : public IVehicleControl {
   bool imu_enabled_{false};
   bool inited_{false};
 
+  // Предыдущее значение gz (рад/с) для вычисления углового ускорения α
+  float prev_gz_rad_s_{0.0f};
+
   // Последнее измерение частоты loop (обновляется в PrintDiagnostics)
   std::atomic<uint32_t> last_loop_hz_{0};
 

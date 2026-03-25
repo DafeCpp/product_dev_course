@@ -92,6 +92,19 @@ void VehicleControlUnified::ControlTaskLoop() {
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Коррекция акселерометра за смещение IMU от центра масс
+    // ─────────────────────────────────────────────────────────────────────
+
+    if (sensors.imu_enabled && dt_ms > 0) {
+      constexpr float kDeg2Rad = 3.14159265358979f / 180.0f;
+      const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
+      const float gz_rad = sensors.filtered_gz * kDeg2Rad;
+      const float alpha_rad = (gz_rad - prev_gz_rad_s_) / dt_sec;
+      imu_calib_.CorrectForComOffset(sensors.imu_data, gz_rad, alpha_rad);
+      prev_gz_rad_s_ = gz_rad;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // EKF: оценка динамического состояния (vx, vy, r → slip angle)
     // ─────────────────────────────────────────────────────────────────────
 
