@@ -123,7 +123,7 @@ TEST_F(ControlLoopTest, WifiCommand_ProducesPwmOutput) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, RcOverridesWifi) {
-  auto platform = std::make_unique<SimPlatform>(50);
+  auto platform = std::make_unique<SimPlatform>(100);
   platform_ = platform.get();
 
   ImuData imu{};
@@ -136,6 +136,7 @@ TEST_F(ControlLoopTest, RcOverridesWifi) {
   (void)vc_.Init();
 
   // RC throttle 0.8 >> Wi-Fi throttle 0.1 → output should trend toward 0.8
+  // (slew rate needs enough iterations to ramp up)
   EXPECT_GT(platform_->GetLastThrottle(), 0.05f);
 }
 
@@ -176,8 +177,14 @@ TEST_F(ControlLoopTest, NoImu_LoopStillRuns) {
 TEST_F(ControlLoopTest, ConfigPersistence_RoundTrip) {
   RunLoop(5);
 
+  // First switch mode (ApplyModeDefaults applies Sport defaults)
   auto cfg = vc_.GetStabilizationConfig();
   cfg.mode = DriveMode::Sport;
+  EXPECT_TRUE(vc_.SetStabilizationConfig(cfg, false));
+
+  // Now modify PID within the same mode — no defaults override
+  cfg = vc_.GetStabilizationConfig();
+  EXPECT_EQ(cfg.mode, DriveMode::Sport);
   cfg.yaw_rate.pid.kp = 1.23f;
   EXPECT_TRUE(vc_.SetStabilizationConfig(cfg, true));
 
@@ -225,4 +232,84 @@ TEST_F(ControlLoopTest, ClearLog_EmptiesBuffer) {
   vc_.ClearLog();
   vc_.GetLogInfo(count, cap);
   EXPECT_EQ(count, 0u);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TestRunner (Task 6): взаимное исключение, старт/стоп
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(ControlLoopTest, TestRunner_StartStop) {
+  RunLoop(5);
+
+  TestParams params;
+  params.type = TestType::Straight;
+  params.target_accel_g = 0.1f;
+  params.duration_sec = 3.0f;
+  EXPECT_TRUE(vc_.StartTest(params));
+  EXPECT_TRUE(vc_.IsTestActive());
+
+  vc_.StopTest();
+  EXPECT_FALSE(vc_.IsTestActive());
+}
+
+TEST_F(ControlLoopTest, TestRunner_MutualExclusion_WithTrimCalib) {
+  RunLoop(5);
+
+  // Start trim calibration first
+  EXPECT_TRUE(vc_.StartSteeringTrimCalibration(0.1f));
+  EXPECT_TRUE(vc_.IsSteeringTrimCalibActive());
+
+  // TestRunner should be rejected while trim calib is active
+  TestParams params;
+  params.type = TestType::Straight;
+  params.target_accel_g = 0.1f;
+  params.duration_sec = 3.0f;
+  EXPECT_FALSE(vc_.StartTest(params));
+
+  vc_.StopSteeringTrimCalibration();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CoM Offset Calibration (Task 2): старт/стоп, взаимное исключение
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(ControlLoopTest, ComOffsetCalib_StartStop) {
+  RunLoop(5);
+
+  EXPECT_TRUE(vc_.StartComOffsetCalibration(0.1f, 0.5f, 5.0f));
+  EXPECT_TRUE(vc_.IsComOffsetCalibActive());
+
+  vc_.StopComOffsetCalibration();
+  EXPECT_FALSE(vc_.IsComOffsetCalibActive());
+}
+
+TEST_F(ControlLoopTest, ComOffsetCalib_MutualExclusion_WithTestRunner) {
+  RunLoop(5);
+
+  // Start test first
+  TestParams params;
+  params.type = TestType::Circle;
+  params.target_accel_g = 0.1f;
+  params.duration_sec = 3.0f;
+  params.steering = 0.5f;
+  EXPECT_TRUE(vc_.StartTest(params));
+
+  // CoM calib should be rejected
+  EXPECT_FALSE(vc_.StartComOffsetCalibration(0.1f, 0.5f, 5.0f));
+
+  vc_.StopTest();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Steering Trim Calibration: старт/стоп через интерфейс
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(ControlLoopTest, SteeringTrimCalib_StartStop) {
+  RunLoop(5);
+
+  EXPECT_TRUE(vc_.StartSteeringTrimCalibration(0.1f));
+  EXPECT_TRUE(vc_.IsSteeringTrimCalibActive());
+
+  vc_.StopSteeringTrimCalibration();
+  EXPECT_FALSE(vc_.IsSteeringTrimCalibActive());
 }

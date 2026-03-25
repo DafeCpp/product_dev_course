@@ -45,7 +45,10 @@ class SteeringTrimCalibration {
   void Stop();
 
   /** true пока идёт авто-движение для калибровки trim. */
-  [[nodiscard]] bool IsActive() const { return phase_ != Phase::Idle; }
+  [[nodiscard]] bool IsActive() const {
+    return phase_ != Phase::Idle && phase_ != Phase::Done &&
+           phase_ != Phase::Failed;
+  }
 
   /** true когда калибровка завершена (Done или Failed). */
   [[nodiscard]] bool IsFinished() const {
