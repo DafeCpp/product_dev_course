@@ -38,6 +38,7 @@ const adminUser = {
     email: 'admin@example.com',
     is_active: true,
     is_admin: true,
+    system_roles: ['admin'],
     password_change_required: false,
     created_at: '2024-01-15T10:00:00Z',
 }
