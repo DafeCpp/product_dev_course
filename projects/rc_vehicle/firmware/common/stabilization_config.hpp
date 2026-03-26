@@ -24,6 +24,16 @@ enum class DriveMode : uint8_t {
 };
 
 /**
+ * @brief Режим торможения при отпускании газа
+ * Coast — накат: мотор отключается, машина катится по инерции
+ * Brake — торможение: деселерация ускоряется через асимметричный slew rate
+ */
+enum class BrakingMode : uint8_t {
+  Coast = 0,
+  Brake = 1,
+};
+
+/**
  * @brief Возрастные пресеты для Kids Mode
  */
 enum class KidsPreset : uint8_t {
@@ -478,6 +488,20 @@ struct StabilizationConfig {
 
   /** Трим газа [-0.1..0.1] — смещение нейтрали */
   float throttle_trim{0.0f};
+
+  /**
+   * Режим торможения при отпускании газа.
+   * Coast (0) — накат (текущее поведение, симметричный slew rate).
+   * Brake (1) — активное торможение: деселерация быстрее разгона.
+   */
+  BrakingMode braking_mode{BrakingMode::Coast};
+
+  /**
+   * Множитель ускорения деселерации в режиме Brake [1..10].
+   * Эффективный slew rate при торможении = slew_throttle * brake_slew_multiplier.
+   * Диапазон: 1.0–10.0, по умолчанию 4.0.
+   */
+  float brake_slew_multiplier{4.0f};
 
   /** Версия структуры для NVS-миграции */
   uint8_t version{3};

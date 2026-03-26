@@ -1,5 +1,6 @@
 #include "stabilization_config_json.hpp"
 
+using rc_vehicle::BrakingMode;
 using rc_vehicle::DriveMode;
 using rc_vehicle::KidsPreset;
 using rc_vehicle::StabilizationConfig;
@@ -134,6 +135,12 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
   cJSON_AddNumberToObject(obj, "slew_throttle", cfg.slew_throttle);
   cJSON_AddNumberToObject(obj, "slew_steering", cfg.slew_steering);
 
+  // Braking
+  cJSON_AddNumberToObject(obj, "braking_mode",
+                          static_cast<uint8_t>(cfg.braking_mode));
+  cJSON_AddNumberToObject(obj, "brake_slew_multiplier",
+                          cfg.brake_slew_multiplier);
+
   // Trim
   cJSON_AddNumberToObject(obj, "steering_trim", cfg.steering_trim);
   cJSON_AddNumberToObject(obj, "throttle_trim", cfg.throttle_trim);
@@ -265,6 +272,14 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
   // Slew rate
   get_float(json, "slew_throttle", cfg.slew_throttle);
   get_float(json, "slew_steering", cfg.slew_steering);
+
+  // Braking
+  {
+    cJSON* item = cJSON_GetObjectItem(json, "braking_mode");
+    if (item && cJSON_IsNumber(item))
+      cfg.braking_mode = static_cast<BrakingMode>(item->valueint);
+  }
+  get_float(json, "brake_slew_multiplier", cfg.brake_slew_multiplier);
 
   // Trim
   get_float(json, "steering_trim", cfg.steering_trim);

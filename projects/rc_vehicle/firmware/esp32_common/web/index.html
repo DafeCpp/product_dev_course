@@ -165,6 +165,20 @@
                 </fieldset>
 
                 <fieldset class="param-set">
+                    <legend>Торможение</legend>
+                    <div class="field-row">
+                        <span style="font-size:0.85em;margin-right:8px">Режим:</span>
+                        <label class="chk" style="margin-right:12px"><input type="radio" name="braking-mode" id="braking-coast" value="0" checked> Накат</label>
+                        <label class="chk"><input type="radio" name="braking-mode" id="braking-brake" value="1"> Торможение</label>
+                    </div>
+                    <div class="mini-slider-row" id="brake-multiplier-row" style="display:none">
+                        <label for="brake-slew-mult">Интенсивность</label>
+                        <input type="range" id="brake-slew-mult" min="1" max="10" step="0.5" value="4">
+                        <span id="brake-slew-mult-value" class="mini-val">4.0×</span>
+                    </div>
+                </fieldset>
+
+                <fieldset class="param-set">
                     <legend>Trim (нейтраль)</legend>
                     <div class="trim-row">
                         <label>Руль</label>

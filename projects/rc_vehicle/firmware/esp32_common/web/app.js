@@ -805,6 +805,21 @@ function applyStabConfig(cfg) {
         if (stEl) stEl.textContent = st.toFixed(1);
     }
 
+    // Braking
+    {
+        const bm = cfg.braking_mode ?? 0;
+        const mult = cfg.brake_slew_multiplier ?? 4.0;
+        const coastEl = $('braking-coast');
+        const brakeEl = $('braking-brake');
+        if (coastEl) coastEl.checked = (bm === 0);
+        if (brakeEl) brakeEl.checked = (bm === 1);
+        set('brake-slew-mult', mult);
+        const multEl = $('brake-slew-mult-value');
+        if (multEl) multEl.textContent = parseFloat(mult).toFixed(1) + '×';
+        const rowEl = $('brake-multiplier-row');
+        if (rowEl) rowEl.style.display = (bm === 1) ? 'flex' : 'none';
+    }
+
     // Trim
     setTrimValue('steering-trim', cfg.steering_trim ?? 0);
     setTrimValue('throttle-trim', cfg.throttle_trim ?? 0);
@@ -909,6 +924,8 @@ function saveStabConfig() {
         },
         slew_steering: getF('slew-steering'),
         slew_throttle: getF('slew-throttle'),
+        braking_mode: $('braking-brake')?.checked ? 1 : 0,
+        brake_slew_multiplier: getF('brake-slew-mult'),
         steering_trim: getF('steering-trim'),
         throttle_trim: getF('throttle-trim'),
     });
@@ -1396,6 +1413,20 @@ if (slewThrottleSliderEl) slewThrottleSliderEl.addEventListener('input', (e) => 
     const v = parseFloat(e.target.value);
     const el = $('slew-throttle-value');
     if (el) el.textContent = v.toFixed(1);
+});
+
+// Braking controls
+document.querySelectorAll('input[name="braking-mode"]').forEach(el => {
+    el.addEventListener('change', () => {
+        const rowEl = $('brake-multiplier-row');
+        if (rowEl) rowEl.style.display = $('braking-brake')?.checked ? 'flex' : 'none';
+    });
+});
+const brakeSlewSliderEl = $('brake-slew-mult');
+if (brakeSlewSliderEl) brakeSlewSliderEl.addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    const el = $('brake-slew-mult-value');
+    if (el) el.textContent = v.toFixed(1) + '×';
 });
 
 // Log buttons

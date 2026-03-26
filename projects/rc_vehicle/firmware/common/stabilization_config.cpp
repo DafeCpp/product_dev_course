@@ -169,7 +169,9 @@ bool StabilizationConfig::IsValid() const noexcept {
          slew_throttle >= 0.1f && slew_throttle <= 10.0f &&
          slew_steering >= 0.5f && slew_steering <= 10.0f &&
          steering_trim >= -0.1f && steering_trim <= 0.1f &&
-         throttle_trim >= -0.1f && throttle_trim <= 0.1f;
+         throttle_trim >= -0.1f && throttle_trim <= 0.1f &&
+         static_cast<uint8_t>(braking_mode) <= 1 &&
+         brake_slew_multiplier >= 1.0f && brake_slew_multiplier <= 10.0f;
 }
 
 void StabilizationConfig::Reset() noexcept {
@@ -233,6 +235,10 @@ void StabilizationConfig::Reset() noexcept {
   slew_throttle = 0.5f;
   slew_steering = 3.0f;
 
+  // Braking defaults
+  braking_mode = BrakingMode::Coast;
+  brake_slew_multiplier = 4.0f;
+
   // Trim defaults
   steering_trim = 0.0f;
   throttle_trim = 0.0f;
@@ -260,6 +266,8 @@ void StabilizationConfig::Clamp() noexcept {
   slew_steering = std::clamp(slew_steering, 0.5f, 10.0f);
   steering_trim = std::clamp(steering_trim, -0.1f, 0.1f);
   throttle_trim = std::clamp(throttle_trim, -0.1f, 0.1f);
+  if (static_cast<uint8_t>(braking_mode) > 1) braking_mode = BrakingMode::Coast;
+  brake_slew_multiplier = std::clamp(brake_slew_multiplier, 1.0f, 10.0f);
 }
 
 }  // namespace rc_vehicle

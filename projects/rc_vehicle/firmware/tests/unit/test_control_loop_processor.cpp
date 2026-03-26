@@ -8,6 +8,7 @@
 
 using namespace rc_vehicle;
 using namespace rc_vehicle::testing;
+using rc_vehicle::BrakingMode;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Fixture
@@ -191,6 +192,49 @@ TEST_F(ProcessorTest, SlewRate_EventuallyReachesTarget) {
   // 2 секунды = 1000 шагов → успеет дойти при 0.5/с slew
   RunSteps(1000);
   EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 0.01f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BrakingMode
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Включить BrakingMode::Brake в Normal mode (slew_throttle=0.5, mult=4 → 2/s) */
+// Note: helper defined as free function to avoid name clash with member
+static void SetBrakeMode(StabilizationManager& stab_mgr, float multiplier = 4.0f) {
+  auto cfg = stab_mgr.GetConfig();
+  cfg.braking_mode = BrakingMode::Brake;
+  cfg.brake_slew_multiplier = multiplier;
+  stab_mgr.SetConfig(cfg);
+}
+
+TEST_F(ProcessorTest, BrakeMode_DeceleratesFasterThanCoast) {
+  // Разгоняемся до ~0.5, затем посылаем commanded=0 (wifi остаётся активным).
+  // В Brake mode decel slew = 0.5 * 4 = 2.0/s → за 250ms достигает 0.
+
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  RunSteps(1000);  // 2 сек → дошли до 0.5
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 0.02f);
+
+  SetBrakeMode(*stab_mgr_);
+  // Посылаем commanded=0 (не ClearWifiCommand — failsafe не срабатывает)
+  platform_.SetWifiCommand({0.0f, 0.0f});
+
+  // 2.0/s decel → 0.5 / 2.0 = 0.25s = 125 steps по 2ms
+  RunSteps(130);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.0f, 0.05f);
+}
+
+TEST_F(ProcessorTest, CoastMode_DeceleratesSlowly) {
+  // Coast mode (default): разгон, потом commanded=0 — decel slew=0.5/s
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  RunSteps(1000);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 0.02f);
+
+  platform_.SetWifiCommand({0.0f, 0.0f});
+
+  // 0.5/s → за 250ms (125 шагов) изменится не более 0.125 → applied ≥ 0.35
+  RunSteps(125);
+  EXPECT_GT(platform_.GetLastThrottle(), 0.2f);  // всё ещё далеко от нуля
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

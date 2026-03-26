@@ -17,7 +17,8 @@ static const char* NVS_KEY = "config";
 // v3: добавлены slew_throttle, slew_steering в StabilizationConfig
 // v4: добавлены FilterConfig::madgwick_enabled, ekf_enabled
 // v5: добавлены KidsModeConfig::speed_limit_enabled, max_speed_ms, speed_limit_gain
-static constexpr uint8_t kCurrentStabConfigVersion = 5;
+// v6: добавлены StabilizationConfig::braking_mode, brake_slew_multiplier
+static constexpr uint8_t kCurrentStabConfigVersion = 6;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
 struct StabConfigBlob {
