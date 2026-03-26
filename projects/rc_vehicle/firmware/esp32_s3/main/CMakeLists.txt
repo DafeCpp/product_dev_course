@@ -5,20 +5,28 @@ idf_component_register(
         "ws_command_registry.cpp"
         "ws_command_handlers.cpp"
         "../../esp32_common/wifi_ap.cpp"
+        "../../esp32_common/dns_server.cpp"
         "../../esp32_common/http_server.cpp"
         "../../esp32_common/websocket_server.cpp"
         "../../common/stabilization_config.cpp"
         "../../common/stabilization_pipeline.cpp"
+        "../../common/drive_modes.cpp"
+        "../../common/drive_mode_registry.cpp"
+        "../../common/kids_mode_processor.cpp"
         "../../common/vehicle_control_unified.cpp"
+        "../../common/self_test.cpp"
         "../../common/calibration_manager.cpp"
         "../../common/stabilization_manager.cpp"
         "../../common/telemetry_manager.cpp"
+        "../../common/telemetry_log.cpp"
+        "../../common/vehicle_ekf.cpp"
         "vehicle_control_platform_esp32.cpp"
         "pwm_control.cpp"
         "rc_input.cpp"
         "spi_esp32.cpp"
         "imu.cpp"
         "../../common/mpu6050_spi.cpp"
+        "../../common/lsm6ds3_spi.cpp"
         "../../common/failsafe.cpp"
         "../../common/control_components.cpp"
         "../../common/pid_controller.cpp"
@@ -27,6 +35,7 @@ idf_component_register(
         "../../common/lpf_butterworth.cpp"
         "../../esp32_common/imu_calibration_nvs.cpp"
         "../../esp32_common/stabilization_config_nvs.cpp"
+        "../../esp32_common/udp_telem_sender.cpp"
     INCLUDE_DIRS
         "."
         "../../common"
@@ -39,6 +48,7 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_ledc
         esp_driver_spi
+        lwip
         freertos
         cjson
         esp_timer

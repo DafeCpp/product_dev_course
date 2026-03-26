@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 
+#include "config.hpp"
 #include "imu_calibration.hpp"
 #include "lpf_butterworth.hpp"
 #include "madgwick_filter.hpp"
@@ -101,23 +102,21 @@ class WifiCommandHandler : public ControlComponent {
    * @brief Проверить, активны ли Wi-Fi команды
    * @return true, если команда получена недавно (в пределах timeout)
    */
-  [[nodiscard]] bool IsActive() const noexcept {
-    return last_cmd_ms_ != 0 &&
-           (platform_.GetTimeMs() - last_cmd_ms_) < timeout_ms_;
-  }
+  [[nodiscard]] bool IsActive() const noexcept { return active_; }
 
   /**
    * @brief Получить последнюю команду
    * @return Команда управления, если Wi-Fi активен
    */
   [[nodiscard]] std::optional<RcCommand> GetCommand() const {
-    return IsActive() ? last_command_ : std::nullopt;
+    return active_ ? last_command_ : std::nullopt;
   }
 
  private:
   VehicleControlPlatform& platform_;
   uint32_t timeout_ms_;
   uint32_t last_cmd_ms_{0};
+  bool active_{false};
   std::optional<RcCommand> last_command_;
 };
 
@@ -148,7 +147,10 @@ class ImuHandler : public ControlComponent {
       : platform_(platform),
         calib_(calib),
         filter_(filter),
-        read_interval_ms_(read_interval_ms) {}
+        read_interval_ms_(read_interval_ms) {
+    const float fs_hz = 1000.f / static_cast<float>(read_interval_ms_);
+    lpf_gyro_z_.SetParams(config::LpfConfig::kDefaultCutoffHz, fs_hz);
+  }
 
   void Update(uint32_t now_ms, uint32_t dt_ms) override;
 
@@ -184,16 +186,51 @@ class ImuHandler : public ControlComponent {
    */
   void SetEnabled(bool enabled) noexcept { enabled_ = enabled; }
 
+  /**
+   * @brief Включить/выключить обновление фильтра Madgwick
+   * @param enabled false — IMU читается и LPF работает, но Madgwick не обновляется
+   */
+  void SetMadgwickEnabled(bool enabled) noexcept { madgwick_enabled_ = enabled; }
+
  private:
   VehicleControlPlatform& platform_;
   ImuCalibration& calib_;
   MadgwickFilter& filter_;
   uint32_t read_interval_ms_;
   uint32_t last_read_ms_{0};
+  bool first_read_{true};
   ImuData data_{};
   bool enabled_{false};
+  bool madgwick_enabled_{true};
   LpfButterworth2 lpf_gyro_z_{};
   float filtered_gz_{0.f};
+  bool veh_frame_set_{false};  ///< Vehicle frame уже передан в фильтр
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// SensorSnapshot — атомарный снимок состояния датчиков
+// ═════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Атомарный снимок состояния всех датчиков за одну итерацию control loop
+ *
+ * Собирается один раз после Update() всех компонентов и используется
+ * во всех последующих этапах итерации. Предотвращает многократные вызовы
+ * IsActive()/GetData()/GetFilteredGyroZ() и гарантирует согласованность данных.
+ */
+struct SensorSnapshot {
+  // RC input
+  bool rc_active{false};
+  std::optional<RcCommand> rc_cmd;
+
+  // Wi-Fi
+  bool wifi_active{false};
+  std::optional<RcCommand> wifi_cmd;
+
+  // IMU
+  bool imu_enabled{false};
+  ImuData imu_data{};
+  float filtered_gz{0.0f};
 };
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -203,7 +240,7 @@ class ImuHandler : public ControlComponent {
 /**
  * @brief Снимок данных для телеметрии
  *
- * Заполняется в ControlTaskLoop() и передаётся в TelemetryHandler::Update(),
+ * Заполняется в ControlTaskLoop() и передаётся в TelemetryHandler::SendTelemetry(),
  * устраняя прямые зависимости от отдельных компонентов.
  */
 struct TelemetrySnapshot {
@@ -238,9 +275,30 @@ struct TelemetrySnapshot {
   bool oversteer_available{false};
   bool oversteer_active{false};
 
-  // Actuators
+  // Kids Mode
+  bool kids_mode_active{false};
+  bool kids_anti_spin_active{false};
+  float kids_throttle_limit{0.0f};
+
+  // RC input (сырые значения с пульта, до стабилизации)
+  float rc_throttle{0.0f};
+  float rc_steering{0.0f};
+
+  // Actuators (applied, после стабилизации/trim/slew rate)
   float throttle{0.0f};
   float steering{0.0f};
+
+  // Commanded (до trim/slew rate, после стабилизации)
+  float cmd_throttle{0.0f};
+  float cmd_steering{0.0f};
+
+  // EKF covariance (для оценки качества фильтра)
+  float ekf_vx_var{0.0f};
+  float ekf_vy_var{0.0f};
+  float ekf_r_var{0.0f};
+
+  // Uptime (ms since boot, for reboot diagnostics)
+  uint32_t uptime_ms{0};
 };
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -252,8 +310,11 @@ struct TelemetrySnapshot {
  *
  * Получает снимок данных (TelemetrySnapshot) и отправляет телеметрию
  * по WebSocket с заданной частотой.
+ *
+ * Не наследует ControlComponent — использует собственный интерфейс
+ * SendTelemetry() вместо Update(now, dt).
  */
-class TelemetryHandler : public ControlComponent {
+class TelemetryHandler {
  public:
   /**
    * @brief Конструктор
@@ -265,15 +326,12 @@ class TelemetryHandler : public ControlComponent {
                    uint32_t send_interval_ms = 50)
       : platform_(platform), send_interval_ms_(send_interval_ms) {}
 
-  // Удовлетворяет интерфейсу ControlComponent; использовать перегрузку со snapshot.
-  void Update(uint32_t /*now_ms*/, uint32_t /*dt_ms*/) override {}
-
   /**
    * @brief Отправить телеметрию с переданным снимком данных
    * @param now_ms Текущее время в миллисекундах
    * @param snap Снимок данных телеметрии
    */
-  void Update(uint32_t now_ms, const TelemetrySnapshot& snap);
+  void SendTelemetry(uint32_t now_ms, const TelemetrySnapshot& snap);
 
  private:
   VehicleControlPlatform& platform_;

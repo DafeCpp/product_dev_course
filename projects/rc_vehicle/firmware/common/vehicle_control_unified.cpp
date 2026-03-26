@@ -1,23 +1,14 @@
 #include "vehicle_control_unified.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
-
 #include "config.hpp"
+#include "control_loop_processor.hpp"
 #include "rc_vehicle_common.hpp"
-#include "slew_rate.hpp"
 
 namespace rc_vehicle {
 
 // ═════════════════════════════════════════════════════════════════════════
 // VehicleControlUnified Implementation
 // ═════════════════════════════════════════════════════════════════════════
-
-VehicleControlUnified& VehicleControlUnified::Instance() {
-  static VehicleControlUnified s_instance;
-  return s_instance;
-}
 
 void VehicleControlUnified::SetPlatform(
     std::unique_ptr<VehicleControlPlatform> platform) {
@@ -32,413 +23,74 @@ void VehicleControlUnified::ControlTaskEntry(void* arg) {
 }
 
 void VehicleControlUnified::ControlTaskLoop() {
-  if (!platform_) {
-    return;  // Платформа не установлена
-  }
+  if (!platform_) return;
+  platform_->RegisterTaskWdt();
 
-  // Slew rate для плавности управления
-  float commanded_throttle = 0.0f;
-  float commanded_steering = 0.0f;
-  float applied_throttle = 0.0f;
-  float applied_steering = 0.0f;
+  const ControlLoopContext ctx{
+      *platform_,       imu_calib_,        madgwick_,    ekf_,
+      yaw_ctrl_,        pitch_ctrl_,        slip_ctrl_,   oversteer_guard_,
+      kids_processor_,  auto_drive_,
+      calib_mgr_.get(), stab_mgr_.get(),    telem_mgr_.get(),
+      rc_handler_.get(), wifi_handler_.get(), imu_handler_.get(),
+      telem_handler_.get(), last_loop_hz_};
 
-  uint32_t last_pwm_update = platform_->GetTimeMs();
-  uint32_t last_loop = platform_->GetTimeMs();
+  const uint32_t start = platform_->GetTimeMs();
+  ControlLoopProcessor processor(ctx, start);
 
-  // Диагностика
-  uint32_t diag_loop_count = 0;
-  uint32_t diag_start_ms = platform_->GetTimeMs();
+  control_task_ready_.store(true, std::memory_order_release);
 
+  uint32_t last_loop = start;
   while (true) {
     platform_->DelayUntilNextTick(config::ControlLoopConfig::kPeriodMs);
     const uint32_t now = platform_->GetTimeMs();
-    const uint32_t dt_ms = now - last_loop;
+    processor.Step(now, now - last_loop);
     last_loop = now;
-    ++diag_loop_count;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Обновление всех компонентов
-    // ─────────────────────────────────────────────────────────────────────
-
-    if (rc_handler_) rc_handler_->Update(now, dt_ms);
-    if (wifi_handler_) wifi_handler_->Update(now, dt_ms);
-    if (imu_handler_) imu_handler_->Update(now, dt_ms);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // EKF: оценка динамического состояния (vx, vy, r → slip angle)
-    // ─────────────────────────────────────────────────────────────────────
-
-    if (imu_handler_ && imu_handler_->IsEnabled() && dt_ms > 0) {
-      const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
-      const auto& imu_data = imu_handler_->GetData();
-      // ax, ay в IMU после калибровки в g → конвертируем в м/с²
-      constexpr float kG = 9.80665f;
-      ekf_.Predict(imu_data.ax * kG, imu_data.ay * kG, dt_sec);
-      // gz отфильтрован LPF (dps) → рад/с для EKF
-      constexpr float kDegToRad = 3.14159265358979f / 180.0f;
-      ekf_.UpdateGyroZ(imu_handler_->GetFilteredGyroZ() * kDegToRad);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Обработка запроса калибровки
-    // ─────────────────────────────────────────────────────────────────────
-
-    calib_mgr_->ProcessRequest(now);
-    calib_mgr_->ProcessCompletion();
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Выбор источника управления (RC приоритетнее Wi-Fi)
-    // ─────────────────────────────────────────────────────────────────────
-
-    SelectControlSource(commanded_throttle, commanded_steering);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Плавное нарастание/спад веса стабилизации и переход между режимами
-    // ─────────────────────────────────────────────────────────────────────
-
-    stab_mgr_->UpdateWeights(dt_ms);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Стабилизационный pipeline (стратегии, Phase 1 refactoring)
-    // ─────────────────────────────────────────────────────────────────────
-
-    const float stab_weight = stab_mgr_->GetStabilizationWeight();
-    const float mode_weight = stab_mgr_->GetModeTransitionWeight();
-
-    yaw_ctrl_.Process(commanded_steering, stab_weight, mode_weight, dt_ms);
-    pitch_ctrl_.Process(commanded_throttle, stab_weight);
-    slip_ctrl_.Process(commanded_throttle, stab_weight, mode_weight, dt_ms);
-    oversteer_guard_.Process(commanded_throttle, dt_ms);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Failsafe
-    // ─────────────────────────────────────────────────────────────────────
-
-    bool rc_active = rc_handler_ && rc_handler_->IsActive();
-    bool wifi_active = wifi_handler_ && wifi_handler_->IsActive();
-
-    if (platform_->FailsafeUpdate(rc_active, wifi_active)) {
-      // Failsafe активен: нейтраль
-      commanded_throttle = 0.0f;
-      commanded_steering = 0.0f;
-      applied_throttle = 0.0f;
-      applied_steering = 0.0f;
-      yaw_ctrl_.Reset();
-      slip_ctrl_.Reset();
-      oversteer_guard_.Reset();
-      ekf_.Reset();
-      stab_mgr_->ResetWeights();       // Сброс весов стабилизации
-      telem_mgr_->ResetLastLogTime();  // Сброс таймера лога
-      platform_->SetPwmNeutral();
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Обновление PWM с slew rate
-    // ─────────────────────────────────────────────────────────────────────
-
-    UpdatePwmWithSlewRate(now, commanded_throttle, commanded_steering,
-                          applied_throttle, applied_steering, last_pwm_update);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Телеметрия
-    // ─────────────────────────────────────────────────────────────────────
-
-    if (telem_handler_) {
-      TelemetrySnapshot snap;
-      snap.rc_ok = rc_handler_ && rc_handler_->IsActive();
-      snap.wifi_ok = wifi_handler_ && wifi_handler_->IsActive();
-      snap.throttle = applied_throttle;
-      snap.steering = applied_steering;
-      if (imu_handler_ && imu_handler_->IsEnabled()) {
-        snap.imu_enabled = true;
-        snap.imu_data = imu_handler_->GetData();
-        snap.filtered_gz = imu_handler_->GetFilteredGyroZ();
-        snap.forward_accel = imu_calib_.GetForwardAccel(snap.imu_data);
-        madgwick_.GetEulerDeg(snap.pitch_deg, snap.roll_deg, snap.yaw_deg);
-        snap.calib_status = imu_calib_.GetStatus();
-        snap.calib_stage = imu_calib_.GetCalibStage();
-        snap.calib_valid = imu_calib_.IsValid();
-        if (snap.calib_valid) {
-          snap.calib_data = imu_calib_.GetData();
-        }
-        snap.ekf_available = true;
-        snap.ekf_vx = ekf_.GetVx();
-        snap.ekf_vy = ekf_.GetVy();
-        snap.ekf_yaw_rate = ekf_.GetYawRate();
-        snap.ekf_slip_deg = ekf_.GetSlipAngleDeg();
-        snap.ekf_speed_ms = ekf_.GetSpeedMs();
-        snap.oversteer_available = true;
-        snap.oversteer_active = oversteer_guard_.IsActive();
-      }
-      telem_handler_->Update(now, snap);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Запись в кольцевой буфер телеметрии (Phase 4.3) — 20 Hz
-    // ─────────────────────────────────────────────────────────────────────
-
-    if (imu_handler_ && imu_handler_->IsEnabled()) {
-      const uint32_t last_log = telem_mgr_->GetLastLogTime();
-      if (now - last_log >= config::TelemetryConfig::kSendIntervalMs) {
-        TelemetryLogFrame frame;
-        frame.ts_ms = now;
-        const auto& d = imu_handler_->GetData();
-        frame.ax = d.ax;
-        frame.ay = d.ay;
-        frame.az = d.az;
-        frame.gx = d.gx;
-        frame.gy = d.gy;
-        frame.gz = d.gz;
-        frame.vx = ekf_.GetVx();
-        frame.vy = ekf_.GetVy();
-        frame.slip_deg = ekf_.GetSlipAngleDeg();
-        frame.speed_ms = ekf_.GetSpeedMs();
-        frame.throttle = applied_throttle;
-        frame.steering = applied_steering;
-        telem_mgr_->Push(frame);
-        telem_mgr_->SetLastLogTime(now);
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Диагностика
-    // ─────────────────────────────────────────────────────────────────────
-
-    PrintDiagnostics(now, diag_loop_count, diag_start_ms);
+    platform_->FeedTaskWdt();
   }
 }
 
-PlatformError VehicleControlUnified::Init() {
-  if (inited_) {
-    return PlatformError::Ok;
-  }
-
-  if (!platform_) {
-    return PlatformError::TaskCreateFailed;  // Платформа не установлена
-  }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // Инициализация платформы
-  // ───────────────────────────────────────────────────────────────────────
-
-  auto pwm_result = platform_->InitPwm();
-  if (IsError(pwm_result)) {
-    platform_->Log(LogLevel::Error, "Failed to initialize PWM");
-    return GetError(pwm_result);
-  }
-
-  auto failsafe_result = platform_->InitFailsafe();
-  if (IsError(failsafe_result)) {
-    platform_->Log(LogLevel::Error, "Failed to initialize failsafe");
-    return GetError(failsafe_result);
-  }
-
-  // RC input (опционально)
-  auto rc_result = platform_->InitRc();
-  if (IsOk(rc_result)) {
-    rc_enabled_ = true;
-  } else {
-    rc_enabled_ = false;
-    platform_->Log(LogLevel::Warning,
-                   "RC input init failed — continuing without RC-in");
-  }
-
-  // IMU (опционально)
-  auto imu_result = platform_->InitImu();
-  if (IsOk(imu_result)) {
-    imu_enabled_ = true;
-
-    // Создание менеджеров (должно быть до загрузки конфигурации)
-    calib_mgr_.reset(new CalibrationManager(*platform_, imu_calib_, madgwick_));
-    stab_mgr_.reset(new StabilizationManager(*platform_, madgwick_, yaw_ctrl_,
-                                             slip_ctrl_, nullptr));
-    telem_mgr_.reset(new TelemetryManager());
-
-    // Загрузка калибровки из NVS
-    calib_mgr_->LoadFromNvs();
-
-    // Загрузка конфигурации стабилизации из NVS
-    stab_mgr_->LoadFromNvs();
-
-    // Применить конфигурацию к фильтрам
-    stab_mgr_->ApplyConfig();
-
-    // Автокалибровка при старте
-    calib_mgr_->StartAutoCalibration();
-  } else {
-    imu_enabled_ = false;
-    const int who = platform_->GetImuLastWhoAmI();
-    platform_->Log(LogLevel::Warning,
-                   "IMU init failed — continuing without IMU");
-    if (who >= 0) {
-      char buf[64];
-      snprintf(buf, sizeof(buf), "IMU WHO_AM_I = 0x%02X",
-               static_cast<unsigned>(who));
-      platform_->Log(LogLevel::Debug, buf);
-    }
-  }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // Инициализация кольцевого буфера телеметрии (Phase 4.3)
-  // 5000 кадров × ~60 байт ≈ 293 КБ → выделяется из PSRAM
-  // ───────────────────────────────────────────────────────────────────────
-
-  if (!telem_mgr_->Init(config::TelemetryLogConfig::kCapacityFrames)) {
-    platform_->Log(
-        LogLevel::Warning,
-        "TelemetryLog: failed to allocate (no PSRAM?), log disabled");
-  }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // Создание компонентов control loop
-  // ───────────────────────────────────────────────────────────────────────
-
-  if (!InitializeComponents()) {
-    return PlatformError::TaskCreateFailed;
-  }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // Запуск control loop
-  // ───────────────────────────────────────────────────────────────────────
-
-  auto task_result = platform_->CreateTask(ControlTaskEntry, this);
-  if (IsError(task_result)) {
-    platform_->Log(LogLevel::Error, "Failed to create vehicle control task");
-    return GetError(task_result);
-  }
-
-  inited_ = true;
-  platform_->Log(LogLevel::Info,
-                 "Vehicle control started (unified architecture)");
-  return PlatformError::Ok;
+bool VehicleControlUnified::StartComOffsetCalibration(
+    float target_accel_g, float steering_magnitude,
+    float cruise_duration_sec) {
+  if (!stab_mgr_ || !imu_enabled_) return false;
+  const auto& calib_data = imu_calib_.GetData();
+  return auto_drive_.StartComCalib(target_accel_g, steering_magnitude,
+                                   cruise_duration_sec,
+                                   calib_data.gravity_vec);
 }
 
-bool VehicleControlUnified::InitializeComponents() {
-  if (rc_enabled_) {
-    rc_handler_.reset(
-        new RcInputHandler(*platform_, config::RcInputConfig::kPollIntervalMs));
-  }
+bool VehicleControlUnified::StartTest(const TestParams& params) {
+  if (!stab_mgr_ || !imu_enabled_) return false;
+  return auto_drive_.StartTest(params);
+}
 
-  wifi_handler_.reset(new WifiCommandHandler(
-      *platform_, config::WifiConfig::kCommandTimeoutMs));
+bool VehicleControlUnified::StartSpeedCalibration(float target_throttle,
+                                                   float cruise_duration_sec) {
+  if (!imu_enabled_) return false;
+  return auto_drive_.StartSpeedCalib(target_throttle, cruise_duration_sec);
+}
 
-  if (imu_enabled_) {
-    imu_handler_.reset(new ImuHandler(*platform_, imu_calib_, madgwick_,
-                                      config::ImuConfig::kReadIntervalMs));
-    imu_handler_->SetEnabled(true);
-    // Применить LPF cutoff из конфигурации
-    imu_handler_->SetLpfCutoff(stab_mgr_->GetConfig().filter.lpf_cutoff_hz);
-    // Обновить указатель на imu_handler в stab_mgr
-    stab_mgr_.reset(new StabilizationManager(*platform_, madgwick_, yaw_ctrl_,
-                                             slip_ctrl_, imu_handler_.get()));
-    stab_mgr_->LoadFromNvs();
-    stab_mgr_->ApplyConfig();
-  }
-
-  // Создаём пустые handlers если они не были созданы (для телеметрии)
-  if (!rc_handler_) {
-    rc_handler_.reset(new RcInputHandler(*platform_, 0));
-  }
-  if (!imu_handler_) {
-    imu_handler_.reset(new ImuHandler(*platform_, imu_calib_, madgwick_, 0));
-  }
-
-  // Инициализация стратегий стабилизации
+bool VehicleControlUnified::StartSteeringTrimCalibration(
+    float target_accel_g) {
+  if (!stab_mgr_ || !imu_enabled_) return false;
   const auto& cfg = stab_mgr_->GetConfig();
-  yaw_ctrl_.Init(cfg, ekf_, imu_handler_.get());
-  pitch_ctrl_.Init(cfg, madgwick_, imu_handler_.get());
-  slip_ctrl_.Init(cfg, ekf_, imu_handler_.get());
-  oversteer_guard_.Init(cfg, ekf_, imu_handler_.get());
-
-  // Телеметрия
-  telem_handler_.reset(new TelemetryHandler(
-      *platform_, config::TelemetryConfig::kSendIntervalMs));
-
-  return true;
-}
-
-bool VehicleControlUnified::SelectControlSource(float& commanded_throttle,
-                                                float& commanded_steering) {
-  bool rc_active = rc_handler_ && rc_handler_->IsActive();
-  bool wifi_active = wifi_handler_ && wifi_handler_->IsActive();
-
-  if (rc_active) {
-    auto cmd = rc_handler_->GetCommand();
-    if (cmd) {
-      commanded_throttle = cmd->throttle;
-      commanded_steering = cmd->steering;
-      return true;
-    }
-  } else if (wifi_active) {
-    auto cmd = wifi_handler_->GetCommand();
-    if (cmd) {
-      commanded_throttle = cmd->throttle;
-      commanded_steering = cmd->steering;
-      return true;
-    }
-  }
-
-  return false;
-}
-
-void VehicleControlUnified::UpdatePwmWithSlewRate(uint32_t now_ms,
-                                                  float commanded_throttle,
-                                                  float commanded_steering,
-                                                  float& applied_throttle,
-                                                  float& applied_steering,
-                                                  uint32_t& last_pwm_update) {
-  if (now_ms - last_pwm_update >= config::PwmConfig::kUpdateIntervalMs) {
-    const uint32_t pwm_dt_ms = now_ms - last_pwm_update;
-    last_pwm_update = now_ms;
-
-    applied_throttle =
-        ApplySlewRate(commanded_throttle, applied_throttle,
-                      config::SlewRateConfig::kThrottleMaxPerSec, pwm_dt_ms);
-    applied_steering =
-        ApplySlewRate(commanded_steering, applied_steering,
-                      config::SlewRateConfig::kSteeringMaxPerSec, pwm_dt_ms);
-
-    platform_->SetPwm(applied_throttle, applied_steering);
-  }
-}
-
-void VehicleControlUnified::PrintDiagnostics(uint32_t now_ms,
-                                             uint32_t& diag_loop_count,
-                                             uint32_t& diag_start_ms) {
-  const uint32_t elapsed = now_ms - diag_start_ms;
-  if (elapsed >= config::DiagnosticsConfig::kIntervalMs) {
-    const uint32_t loop_hz =
-        (elapsed > 0) ? (diag_loop_count * 1000u / elapsed) : 0u;
-
-    const auto& cfg = stab_mgr_->GetConfig();
-    const float stab_weight = stab_mgr_->GetStabilizationWeight();
-
-    char buf[80];
-    snprintf(buf, sizeof(buf), "DIAG: loop=%u Hz  stab=%s (w=%.2f)",
-             static_cast<unsigned>(loop_hz), cfg.enabled ? "ON" : "OFF",
-             stab_weight);
-    platform_->Log(LogLevel::Info, buf);
-
-    if (imu_handler_ && imu_handler_->IsEnabled()) {
-      float pitch_deg = 0.f, roll_deg = 0.f, yaw_deg = 0.f;
-      madgwick_.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
-      snprintf(buf, sizeof(buf), "IMU: P=%.1f R=%.1f Y=%.1f deg  gz=%.1f dps",
-               pitch_deg, roll_deg, yaw_deg, imu_handler_->GetFilteredGyroZ());
-      platform_->Log(LogLevel::Info, buf);
-      snprintf(buf, sizeof(buf), "EKF: vx=%.2f vy=%.2f m/s  slip=%.1f deg",
-               ekf_.GetVx(), ekf_.GetVy(), ekf_.GetSlipAngleDeg());
-      platform_->Log(LogLevel::Info, buf);
-    }
-
-    diag_loop_count = 0;
-    diag_start_ms = now_ms;
-  }
+  return auto_drive_.StartTrimCalib(target_accel_g, cfg.steering_trim,
+                                    cfg.yaw_rate.steer_to_yaw_rate_dps);
 }
 
 void VehicleControlUnified::OnWifiCommand(float throttle, float steering) {
   if (platform_) {
     platform_->SendWifiCommand(throttle, steering);
   }
+}
+
+std::vector<SelfTestItem> VehicleControlUnified::RunSelfTest() const {
+  const SelfTestContext ctx{last_loop_hz_,   imu_handler_.get(),
+                            madgwick_,       ekf_,
+                            rc_handler_.get(), wifi_handler_.get(),
+                            imu_calib_,      telem_mgr_.get(),
+                            platform_ != nullptr, inited_};
+  return SelfTest::Run(BuildSelfTestInput(ctx));
 }
 
 }  // namespace rc_vehicle

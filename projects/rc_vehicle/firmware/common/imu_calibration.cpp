@@ -174,6 +174,22 @@ void ImuCalibration::Apply(ImuData& data) const {
   data.az -= data_.accel_bias[2];
 }
 
+void ImuCalibration::CorrectForComOffset(ImuData& data, float omega_rad_s,
+                                         float alpha_rad_s2) const {
+  const float rx = data_.com_offset[0];
+  const float ry = data_.com_offset[1];
+
+  // Skip if offset is negligible
+  if (rx == 0.0f && ry == 0.0f) return;
+
+  constexpr float kG = 9.80665f;
+  const float omega_sq = omega_rad_s * omega_rad_s;
+
+  // Centripetal + tangential correction (convert m/s² to g)
+  data.ax += (omega_sq * rx + alpha_rad_s2 * ry) / kG;
+  data.ay += (omega_sq * ry - alpha_rad_s2 * rx) / kG;
+}
+
 float ImuCalibration::GetForwardAccel(const ImuData& data) const {
   return data.ax * data_.accel_forward_vec[0] +
          data.ay * data_.accel_forward_vec[1] +

@@ -290,6 +290,23 @@ class RunRepository(BaseRepository):
                 raise NotFoundError("One or more runs not found")
             return [self._to_model(record) for record in records]
 
+    async def fetch_runs_brief(
+        self,
+        project_id: UUID,
+        experiment_id: UUID,
+        run_ids: list[UUID],
+    ) -> list[dict[str, Any]]:
+        """Return id, name, status for a batch of run_ids in one query."""
+        query = """
+            SELECT id, name, status, experiment_id
+            FROM runs
+            WHERE project_id = $1
+              AND experiment_id = $2
+              AND id = ANY($3)
+        """
+        records = await self._fetch(query, project_id, experiment_id, run_ids)
+        return [dict(r) for r in records]
+
     async def bulk_update_tags(
         self,
         project_id: UUID,

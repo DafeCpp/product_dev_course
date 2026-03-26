@@ -3,9 +3,14 @@
 #include <atomic>
 #include <memory>
 
+#include "auto_drive_coordinator.hpp"
 #include "calibration_manager.hpp"
 #include "control_components.hpp"
+#include "drive_mode_registry.hpp"
+#include "i_vehicle_control.hpp"
 #include "imu_calibration.hpp"
+#include "self_test.hpp"
+#include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
 #include "stabilization_config.hpp"
 #include "stabilization_manager.hpp"
@@ -29,10 +34,10 @@ namespace rc_vehicle {
  * @note Эта версия заменяет старую common/vehicle_control.hpp и
  *       esp32_s3/main/vehicle_control.hpp, объединяя их функциональность.
  */
-class VehicleControlUnified {
+class VehicleControlUnified : public IVehicleControl {
  public:
-  /** Единственный экземпляр */
-  static VehicleControlUnified& Instance();
+  VehicleControlUnified() = default;
+  ~VehicleControlUnified() override = default;
 
   /**
    * @brief Установить платформу (должно быть вызвано до Init)
@@ -51,27 +56,36 @@ class VehicleControlUnified {
    * @param throttle Газ [-1..1]
    * @param steering Руль [-1..1]
    */
-  void OnWifiCommand(float throttle, float steering);
+  void OnWifiCommand(float throttle, float steering) override;
 
   /**
    * @brief Запуск калибровки IMU, этап 1
    * @param full true — полная (gyro+accel+g), false — только гироскоп
    */
-  void StartCalibration(bool full) { calib_mgr_->StartCalibration(full); }
+  void StartCalibration(bool full) override { calib_mgr_->StartCalibration(full); }
 
   /**
    * @brief Запуск этапа 2 калибровки (движение вперёд/назад)
    * @return true при успешном запуске
    */
-  bool StartForwardCalibration() {
+  bool StartForwardCalibration() override {
     return calib_mgr_->StartForwardCalibration();
+  }
+
+  /**
+   * @brief Запуск этапа 2 с автоматическим движением вперёд.
+   * @param target_accel_g Целевое ускорение в g [0.02..0.3], по умолчанию 0.1
+   * @return true при успешном запуске
+   */
+  bool StartAutoForwardCalibration(float target_accel_g = 0.1f) override {
+    return calib_mgr_->StartAutoForwardCalibration(target_accel_g);
   }
 
   /**
    * @brief Строковый статус калибровки
    * @return "idle", "collecting", "done", "failed"
    */
-  [[nodiscard]] const char* GetCalibStatus() const {
+  [[nodiscard]] const char* GetCalibStatus() const override {
     return calib_mgr_->GetStatus();
   }
 
@@ -79,7 +93,7 @@ class VehicleControlUnified {
    * @brief Текущий этап калибровки
    * @return 0, 1 (стояние), 2 (вперёд/назад)
    */
-  [[nodiscard]] int GetCalibStage() const { return calib_mgr_->GetStage(); }
+  [[nodiscard]] int GetCalibStage() const override { return calib_mgr_->GetStage(); }
 
   /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
@@ -87,15 +101,127 @@ class VehicleControlUnified {
    * @param fy Y компонента вектора
    * @param fz Z компонента вектора
    */
-  void SetForwardDirection(float fx, float fy, float fz) {
+  void SetForwardDirection(float fx, float fy, float fz) override {
     calib_mgr_->SetForwardDirection(fx, fy, fz);
+  }
+
+  /**
+   * @brief Запуск автокалибровки steering trim
+   * @param target_accel_g Целевое ускорение при разгоне [0.02..0.3 g]
+   * @return true при успешном запуске
+   */
+  bool StartSteeringTrimCalibration(float target_accel_g = 0.1f) override;
+
+  /** Прервать калибровку trim руля. */
+  void StopSteeringTrimCalibration() override { auto_drive_.StopTrimCalib(); }
+
+  /** true пока идёт калибровка trim. */
+  [[nodiscard]] bool IsSteeringTrimCalibActive() const override {
+    return auto_drive_.IsTrimCalibActive();
+  }
+
+  /** Результат калибровки trim (валиден после завершения). */
+  [[nodiscard]] SteeringTrimCalibration::Result
+  GetSteeringTrimCalibResult() const override {
+    return auto_drive_.GetTrimCalibResult();
+  }
+
+  /**
+   * @brief Запустить круговую калибровку IMU→CoM
+   * @param target_accel_g Целевое ускорение при разгоне
+   * @param steering_magnitude Абсолютное значение руля
+   * @param cruise_duration_sec Длительность круизной фазы
+   * @return true при успешном запуске
+   */
+  bool StartComOffsetCalibration(float target_accel_g = 0.1f,
+                                 float steering_magnitude = 0.5f,
+                                 float cruise_duration_sec = 5.0f) override;
+
+  /** Прервать калибровку CoM offset. */
+  void StopComOffsetCalibration() override { auto_drive_.StopComCalib(); }
+
+  /** true пока идёт калибровка CoM offset. */
+  [[nodiscard]] bool IsComOffsetCalibActive() const override {
+    return auto_drive_.IsComCalibActive();
+  }
+
+  /** Результат калибровки CoM offset. */
+  [[nodiscard]] ComOffsetCalibration::Result
+  GetComOffsetCalibResult() const override {
+    return auto_drive_.GetComCalibResult();
+  }
+
+  /**
+   * @brief Запустить автоматический тестовый манёвр
+   * @param params Параметры теста
+   * @return true при успешном запуске
+   */
+  bool StartTest(const TestParams& params) override;
+
+  /** Прервать тестовый манёвр. */
+  void StopTest() override { auto_drive_.StopTest(); }
+
+  /** true пока тест активен. */
+  [[nodiscard]] bool IsTestActive() const override {
+    return auto_drive_.IsTestActive();
+  }
+
+  /** Статус текущего теста. */
+  [[nodiscard]] TestRunner::Status GetTestStatus() const override {
+    return auto_drive_.GetTestStatus();
+  }
+
+  /**
+   * @brief Запустить калибровку скорости (throttle → speed gain)
+   * @param target_throttle Целевой газ в фазе крейсера
+   * @param cruise_duration_sec Длительность крейсерской фазы
+   * @return true при успешном запуске
+   */
+  bool StartSpeedCalibration(float target_throttle = 0.3f,
+                              float cruise_duration_sec = 3.0f) override;
+
+  /** Прервать калибровку скорости. */
+  void StopSpeedCalibration() override { auto_drive_.StopSpeedCalib(); }
+
+  /** true пока идёт калибровка скорости. */
+  [[nodiscard]] bool IsSpeedCalibActive() const override {
+    return auto_drive_.IsSpeedCalibActive();
+  }
+
+  /** Результат калибровки скорости. */
+  [[nodiscard]] SpeedCalibration::Result GetSpeedCalibResult() const override {
+    return auto_drive_.GetSpeedCalibResult();
+  }
+
+  /**
+   * @brief Включить/выключить детский режим
+   *
+   * Обновляет StabilizationConfig.mode, что изменяет routing в control loop
+   * через ModeTraits. Если IMU не инициализирован (stab_mgr_ == nullptr),
+   * вызов игнорируется.
+   *
+   * @param active true — включить (DriveMode::Kids), false — Normal
+   */
+  void SetKidsModeActive(bool active) override {
+    if (!stab_mgr_) return;
+    auto cfg = stab_mgr_->GetConfig();
+    cfg.mode = active ? DriveMode::Kids : DriveMode::Normal;
+    stab_mgr_->SetConfig(cfg);
+  }
+
+  /**
+   * @brief Проверить, активен ли детский режим
+   * @return true если текущий режим == DriveMode::Kids
+   */
+  [[nodiscard]] bool IsKidsModeActive() const override {
+    return stab_mgr_ && stab_mgr_->GetConfig().mode == DriveMode::Kids;
   }
 
   /**
    * @brief Получить текущую конфигурацию стабилизации
    * @return Конфигурация стабилизации
    */
-  [[nodiscard]] const StabilizationConfig& GetStabilizationConfig() const {
+  [[nodiscard]] StabilizationConfig GetStabilizationConfig() const override {
     return stab_mgr_->GetConfig();
   }
 
@@ -106,7 +232,7 @@ class VehicleControlUnified {
    * @return true при успехе
    */
   bool SetStabilizationConfig(const StabilizationConfig& config,
-                              bool save_to_nvs = true) {
+                              bool save_to_nvs = true) override {
     return stab_mgr_->SetConfig(config, save_to_nvs);
   }
 
@@ -115,7 +241,7 @@ class VehicleControlUnified {
    * @param count_out Текущее количество кадров
    * @param cap_out   Ёмкость буфера
    */
-  void GetLogInfo(size_t& count_out, size_t& cap_out) const {
+  void GetLogInfo(size_t& count_out, size_t& cap_out) const override {
     telem_mgr_->GetLogInfo(count_out, cap_out);
   }
 
@@ -125,21 +251,37 @@ class VehicleControlUnified {
    * @param out Выходной кадр
    * @return true если idx < Count()
    */
-  bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const {
+  bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const override {
     return telem_mgr_->GetLogFrame(idx, out);
   }
 
   /**
    * @brief Очистить буфер телеметрии
    */
-  void ClearLog() { telem_mgr_->Clear(); }
+  void ClearLog() override { telem_mgr_->Clear(); }
+
+  /**
+   * @brief Запустить self-test (проверка подсистем)
+   * @return Вектор результатов проверок
+   */
+  [[nodiscard]] std::vector<SelfTestItem> RunSelfTest() const override;
+
+  /**
+   * @brief Проверить, готов ли control loop к обработке команд
+   *
+   * Возвращает true после того, как control task завершит первую
+   * итерацию. WS-хэндлеры должны проверять этот флаг перед
+   * обработкой команд, чтобы не обращаться к неинициализированным
+   * компонентам.
+   */
+  [[nodiscard]] bool IsReady() const noexcept override {
+    return control_task_ready_.load(std::memory_order_acquire);
+  }
 
   VehicleControlUnified(const VehicleControlUnified&) = delete;
   VehicleControlUnified& operator=(const VehicleControlUnified&) = delete;
 
  private:
-  VehicleControlUnified() = default;
-  ~VehicleControlUnified() = default;
 
   /**
    * @brief Точка входа для control loop задачи
@@ -152,43 +294,16 @@ class VehicleControlUnified {
    */
   void ControlTaskLoop();
 
-  /**
-   * @brief Инициализация компонентов control loop
-   * @return true при успехе
-   */
+  /** Инициализация IMU подсистемы (менеджеры, NVS, авто-калибровка). */
+  void InitImuSubsystem();
+
+  /** Инициализация кольцевого буфера телеметрии. */
+  void InitTelemetryLog();
+
+  /** Создание компонентов control loop. */
   bool InitializeComponents();
 
-  /**
-   * @brief Выбор источника управления (RC приоритетнее Wi-Fi)
-   * @param commanded_throttle Выходной параметр: газ
-   * @param commanded_steering Выходной параметр: руль
-   * @return true если есть активный источник управления
-   */
-  bool SelectControlSource(float& commanded_throttle,
-                           float& commanded_steering);
 
-  /**
-   * @brief Обновление PWM с slew rate
-   * @param now_ms Текущее время
-   * @param commanded_throttle Целевой газ
-   * @param commanded_steering Целевой руль
-   * @param applied_throttle Текущий применённый газ (in/out)
-   * @param applied_steering Текущий применённый руль (in/out)
-   * @param last_pwm_update Время последнего обновления PWM (in/out)
-   */
-  void UpdatePwmWithSlewRate(uint32_t now_ms, float commanded_throttle,
-                             float commanded_steering, float& applied_throttle,
-                             float& applied_steering,
-                             uint32_t& last_pwm_update);
-
-  /**
-   * @brief Вывод диагностической информации
-   * @param now_ms Текущее время
-   * @param diag_loop_count Счётчик итераций (in/out)
-   * @param diag_start_ms Время начала диагностики (in/out)
-   */
-  void PrintDiagnostics(uint32_t now_ms, uint32_t& diag_loop_count,
-                        uint32_t& diag_start_ms);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Члены класса
@@ -207,8 +322,14 @@ class VehicleControlUnified {
   SlipAngleController slip_ctrl_;
   OversteerGuard oversteer_guard_;
 
+  // Kids Mode процессор (ограничения газа/руля, anti-spin)
+  KidsModeProcessor kids_processor_;
+
   // EKF оценки динамического состояния (vx, vy, r → slip angle)
   VehicleEkf ekf_;
+
+  // Координатор авто-процедур (trim calib, CoM calib, test runner)
+  AutoDriveCoordinator auto_drive_;
 
   // Control components
   std::unique_ptr<RcInputHandler> rc_handler_;
@@ -220,6 +341,12 @@ class VehicleControlUnified {
   bool rc_enabled_{false};
   bool imu_enabled_{false};
   bool inited_{false};
+
+  // Последнее измерение частоты loop (обновляется в PrintDiagnostics)
+  std::atomic<uint32_t> last_loop_hz_{0};
+
+  // Флаг готовности control task (init-ready barrier)
+  std::atomic<bool> control_task_ready_{false};
 
   // Менеджеры (управление отдельными аспектами системы)
   std::unique_ptr<CalibrationManager> calib_mgr_;

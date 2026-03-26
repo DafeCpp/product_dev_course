@@ -5,7 +5,7 @@
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kSqrt2 = 1.41421356237309504880f;  // 1/sqrt(2) for Butterworth
+constexpr float kSqrt2 = 1.41421356237309504880f;  // sqrt(2) — Q для максимально плоского АЧХ Баттерворта 2-го порядка
 
 }  // namespace
 

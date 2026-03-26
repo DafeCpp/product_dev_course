@@ -56,7 +56,8 @@ struct TelemetryConfig {
  * @brief Конфигурация кольцевого буфера телеметрии
  */
 struct TelemetryLogConfig {
-  static constexpr size_t kCapacityFrames = 5000;  ///< Ёмкость буфера (кадров)
+  static constexpr uint32_t kLogIntervalMs = 10;    ///< Интервал записи в лог (100 Hz)
+  static constexpr size_t kCapacityFrames = 60000;  ///< Ёмкость буфера (кадров) — 10 мин при 100 Hz, ~4.1 МБ PSRAM
   static constexpr size_t kMaxExportFrames =
       200;  ///< Макс. кадров для экспорта
 };
@@ -112,6 +113,22 @@ struct PwmConfig {
       20;  ///< Интервал обновления PWM (50 Hz)
   static constexpr uint32_t kFrequencyHz =
       50;  ///< Частота PWM (стандарт для RC servo)
+};
+
+/**
+ * @brief Конфигурация UDP-стриминга телеметрии
+ */
+struct UdpTelemConfig {
+  static constexpr uint16_t kControlPort = 5556;      ///< Порт приёма команд START/STOP/STATUS
+  static constexpr uint16_t kDefaultDataPort = 5555;   ///< Порт отправки телеметрии (по умолчанию)
+  static constexpr size_t kQueueDepth = 64;            ///< Глубина FreeRTOS очереди кадров
+  static constexpr size_t kSenderTaskStack = 4096;     ///< Стек задачи отправки
+  static constexpr uint8_t kSenderTaskPriority = 3;    ///< Приоритет задачи отправки
+  static constexpr uint8_t kControlTaskPriority = 2;   ///< Приоритет задачи приёма команд
+  static constexpr size_t kControlTaskStack = 4096;    ///< Стек задачи приёма команд
+  static constexpr uint8_t kDefaultHz = 100;           ///< Частота отправки по умолчанию
+  static constexpr size_t kMaxCommandLen = 64;         ///< Макс. длина UDP-команды
+  static constexpr uint8_t kPacketVersion = 1;         ///< Версия протокола пакета
 };
 
 }  // namespace rc_vehicle::config

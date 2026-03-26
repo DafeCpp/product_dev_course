@@ -229,6 +229,7 @@ CREATE TABLE capture_session_events (
 );
 
 CREATE INDEX capture_session_events_session_idx ON capture_session_events (capture_session_id, created_at DESC);
+CREATE INDEX idx_capture_session_events_created_at ON capture_session_events (created_at);
 
 CREATE TABLE artifacts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -319,16 +320,18 @@ CREATE INDEX telemetry_records_capture_ts_idx
 CREATE INDEX telemetry_records_sensor_signal_ts_idx
     ON telemetry_records (sensor_id, signal, timestamp DESC, id DESC);
 
--- TimescaleDB compression + retention policies for raw points.
-ALTER TABLE telemetry_records
-    SET (
-        timescaledb.compress,
-        timescaledb.compress_segmentby = 'sensor_id, signal',
-        timescaledb.compress_orderby = 'timestamp DESC'
-    );
+-- TimescaleDB compression settings for raw points.
+-- NOTE: Compression features require enterprise license in newer TimescaleDB versions.
+-- We skip compression for OSS compatibility.
+-- ALTER TABLE telemetry_records
+--     SET (
+--         timescaledb.compress,
+--         timescaledb.compress_segmentby = 'sensor_id, signal',
+--         timescaledb.compress_orderby = 'timestamp DESC'
+--     );
 
-SELECT add_compression_policy('telemetry_records', INTERVAL '7 days');
-SELECT add_retention_policy('telemetry_records', INTERVAL '90 days');
+-- Skip compression policy in OSS version (requires enterprise license)
+-- SELECT add_compression_policy('telemetry_records', INTERVAL '7 days');
 
 -- Webhooks schema (final, hardened).
 CREATE TABLE webhook_subscriptions (
@@ -396,6 +399,7 @@ CREATE TABLE run_events (
 );
 
 CREATE INDEX run_events_run_idx ON run_events (run_id, created_at DESC);
+CREATE INDEX idx_run_events_created_at ON run_events (created_at);
 
 CREATE TABLE run_metrics (
     id bigserial PRIMARY KEY,
@@ -416,8 +420,9 @@ CREATE INDEX run_metrics_project_name_idx
     ON run_metrics (project_id, name);
 
 -- Migration: 002_continuous_aggregates.sql
-CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m
-WITH (timescaledb.continuous) AS
+-- NOTE: timescaledb.continuous aggregates require enterprise license.
+-- For OSS compatibility, we create a regular materialized view without continuous refresh.
+CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m AS
 SELECT
     time_bucket(INTERVAL '1 minute', "timestamp") AS bucket,
     sensor_id,
@@ -431,16 +436,16 @@ SELECT
     min(physical_value)         AS min_physical,
     max(physical_value)         AS max_physical
 FROM telemetry_records
-GROUP BY bucket, sensor_id, signal, capture_session_id
-WITH NO DATA;
+GROUP BY bucket, sensor_id, signal, capture_session_id;
 
-SELECT add_continuous_aggregate_policy(
-    'telemetry_1m',
-    start_offset    => INTERVAL '7 days',
-    end_offset      => INTERVAL '1 minute',
-    schedule_interval => INTERVAL '1 minute',
-    if_not_exists   => TRUE
-);
+-- Skip continuous aggregate policy in OSS version (requires enterprise license)
+-- SELECT add_continuous_aggregate_policy(
+--     'telemetry_1m',
+--     start_offset    => INTERVAL '7 days',
+--     end_offset      => INTERVAL '1 minute',
+--     schedule_interval => INTERVAL '1 minute',
+--     if_not_exists   => TRUE
+-- );
 
 -- Migration: 003_conversion_backfill.sql
 CREATE TYPE backfill_task_status AS ENUM ('pending', 'running', 'completed', 'failed');
@@ -468,5 +473,11 @@ CREATE TRIGGER backfill_tasks_set_updated_at
     BEFORE UPDATE ON conversion_backfill_tasks
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
+
+-- Migration: 003_telemetry_dedup_index.sql
+-- Unique index for burst-ingest deduplication.
+-- Includes both partitioning columns (sensor_id + timestamp) as required by TimescaleDB.
+CREATE UNIQUE INDEX IF NOT EXISTS telemetry_records_dedup_idx
+    ON telemetry_records (sensor_id, timestamp, signal);
 
 COMMIT;

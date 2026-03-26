@@ -31,7 +31,15 @@ void WebSocketSetJsonHandler(WebSocketJsonHandler handler);
 esp_err_t WebSocketRegisterUri(httpd_handle_t server);
 
 /**
+ * Поставить телеметрию в очередь на отправку (не блокирует вызывающий поток).
+ * Реальная отправка выполняется в отдельной задаче, чтобы цикл управления
+ * не блокировался на TCP/WebSocket при отключении клиента.
+ */
+void WebSocketEnqueueTelem(const char* telem_json);
+
+/**
  * Отправить телеметрию всем подключенным WebSocket-клиентам.
+ * Вызывается из задачи ws_telem; не вызывать из vehicle_ctrl.
  * @param telem_json JSON строка с телеметрией
  * @return ESP_OK при успехе
  */

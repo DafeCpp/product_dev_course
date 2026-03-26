@@ -4,6 +4,7 @@
 
 #include "config.hpp"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "failsafe.hpp"
 #include "freertos/FreeRTOS.h"
@@ -142,6 +143,17 @@ Result<Unit, PlatformError> VehicleControlPlatformEsp32::SaveCalib(
              : Err<Unit, PlatformError>(PlatformError::CalibSaveFailed);
 }
 
+Result<Unit, PlatformError> VehicleControlPlatformEsp32::SaveComOffset(
+    const float offset[2]) {
+  return (imu_nvs::SaveComOffset(offset) == ESP_OK)
+             ? Ok<Unit, PlatformError>(Unit{})
+             : Err<Unit, PlatformError>(PlatformError::CalibSaveFailed);
+}
+
+bool VehicleControlPlatformEsp32::LoadComOffset(float offset[2]) {
+  return imu_nvs::LoadComOffset(offset) == ESP_OK;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Stabilization Config
 // ─────────────────────────────────────────────────────────────────────────
@@ -215,12 +227,16 @@ unsigned VehicleControlPlatformEsp32::GetWebSocketClientCount() const noexcept {
 }
 
 void VehicleControlPlatformEsp32::SendTelem(std::string_view json) {
-  // WebSocketSendTelem ожидает null-terminated строку
-  char buffer[1024];
+  // Не блокировать цикл управления на TCP: ставим в очередь, отправляет ws_telem
+  char buffer[2048];
+  if (json.size() >= sizeof(buffer)) {
+    ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes — увеличьте буфер",
+             json.size(), sizeof(buffer) - 1);
+  }
   size_t len = std::min(json.size(), sizeof(buffer) - 1);
   std::memcpy(buffer, json.data(), len);
   buffer[len] = '\0';
-  WebSocketSendTelem(buffer);
+  WebSocketEnqueueTelem(buffer);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -269,6 +285,24 @@ void VehicleControlPlatformEsp32::DelayUntilNextTick(uint32_t period_ms) {
   }
   const TickType_t period_ticks = pdMS_TO_TICKS(period_ms);
   vTaskDelayUntil(&last_wake_time_, period_ticks ? period_ticks : 1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Watchdog
+// ─────────────────────────────────────────────────────────────────────────
+
+void VehicleControlPlatformEsp32::RegisterTaskWdt() {
+  esp_err_t err = esp_task_wdt_add(nullptr);  // nullptr = текущая задача
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to register control task in WDT: %s",
+             esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "Control task registered in Task WDT");
+  }
+}
+
+void VehicleControlPlatformEsp32::FeedTaskWdt() noexcept {
+  esp_task_wdt_reset();
 }
 
 }  // namespace rc_vehicle

@@ -7,7 +7,7 @@ namespace rc_vehicle {
 namespace {
 constexpr float kPi = 3.14159265358979f;
 constexpr float kRadToDeg = 180.0f / kPi;
-constexpr float kMinSpeedThreshold = 0.05f;  // м/с: ниже этого atan2 нестабилен
+constexpr float kMinSpeedThreshold = 0.3f;  // м/с: ниже этого EKF без датчиков колёс ненадёжен
 }  // namespace
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -55,21 +55,28 @@ void VehicleEkf::Predict(float ax, float ay, float dt) noexcept {
   //   ax_imu = vx_dot - r * vy  →  vx_dot = ax_imu + r * vy
   //   ay_imu = vy_dot + r * vx  →  vy_dot = ay_imu - r * vx
   //   r — random walk (корректируется по gyro_z в шаге обновления)
+  //
+  // Демпфирование vy: моделирует боковую жёсткость шин.
+  // При нормальном повороте ay≈r*vx → vy_dot≈0, демпфирование удерживает vy≈0.
+  // При реальном заносе (ay<r*vx, нет бокового усилия) vy нарастает несмотря
+  // на демпфирование.
+
+  const float vy_damp = 1.0f - params_.vy_decay_hz * dt;
 
   x_[0] = vx + dt * (ax + r * vy);
-  x_[1] = vy + dt * (ay - r * vx);
+  x_[1] = vy * vy_damp + dt * (ay - r * vx);
   x_[2] = r;
 
   // ── Якобиан F = df/dx (вычисляется в точке x до обновления) ──────────
   //
-  // F = [ 1,       dt*r,   dt*vy ]
-  //     [ -dt*r,   1,     -dt*vx ]
-  //     [ 0,       0,      1     ]
+  // F = [ 1,          dt*r,   dt*vy ]
+  //     [ -dt*r,   vy_damp,  -dt*vx ]
+  //     [ 0,          0,      1     ]
 
   float F[9] = {
-      1.0f,    dt * r,  dt * vy,  //
-      -dt * r, 1.0f,   -dt * vx,  //
-      0.0f,    0.0f,    1.0f      //
+      1.0f,    dt * r,  dt * vy,   //
+      -dt * r, vy_damp, -dt * vx,  //
+      0.0f,    0.0f,    1.0f       //
   };
 
   // ── P = F * P * F^T + Q ───────────────────────────────────────────────
@@ -97,10 +104,13 @@ void VehicleEkf::UpdateGyroZ(float gz) noexcept {
   // Инновация: y = gz - r
   const float innov = gz - x_[2];
 
-  // S = H * P * H^T + R = P[2][2] + R_gz
+  // S = H * P * H^T + R = P[2][2] + R_gz.
+  // ClampP() гарантирует P[2][2] >= kPDiagMin = 1e-6f, r_gz >= 0 →
+  // S >= kPDiagMin > 0 всегда. Порог по kPDiagMin защищает только от
+  // r_gz < 0 (ошибка конфигурации), штатный 1e-9f никогда не срабатывал.
   const float S = P_[8] + params_.r_gz;
-  if (S < 1e-9f) {
-    return;  // Защита от деления на ноль
+  if (S < kPDiagMin) {
+    return;
   }
 
   // K = P * H^T / S = P-столбец 2, делённый на S
@@ -135,11 +145,63 @@ void VehicleEkf::UpdateGyroZ(float gz) noexcept {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+// Zero Velocity Update (ZUPT)
+// ═════════════════════════════════════════════════════════════════════════
+
+void VehicleEkf::ScalarZeroUpdate(int col, float r) noexcept {
+  // Скалярное Kalman-обновление: z = 0, H = e_col^T.
+  //
+  // Joseph form P_new[i][j] = P[i][j] − K[i]·Pcol[j] − K[j]·Pcol[i] + K[i]·K[j]·S
+  // получена аналитически для H = e_col^T, где K[i] = P[i][col] / S.
+  // Обходим верхний треугольник и зеркалируем — снапшот только столбца Pcol.
+
+  const float S = P_[col * 3 + col] + r;
+  if (S < kPDiagMin) return;
+
+  // Снапшот столбца col (P симметрична, поэтому P[i][col] = P[col][i])
+  const float Pcol[3] = {P_[col], P_[3 + col], P_[6 + col]};
+  const float K[3] = {Pcol[0] / S, Pcol[1] / S, Pcol[2] / S};
+
+  // Состояние: x += K * (-x[col])
+  const float innov = -x_[col];
+  x_[0] += K[0] * innov;
+  x_[1] += K[1] * innov;
+  x_[2] += K[2] * innov;
+
+  // P: обходим верхний треугольник, зеркалируем нижний
+  for (int i = 0; i < 3; ++i) {
+    for (int j = i; j < 3; ++j) {
+      const float val =
+          P_[i * 3 + j] - K[i] * Pcol[j] - K[j] * Pcol[i] + K[i] * K[j] * S;
+      P_[i * 3 + j] = val;
+      P_[j * 3 + i] = val;
+    }
+  }
+}
+
+void VehicleEkf::UpdateZeroVelocity(float r_zupt) noexcept {
+  // Два последовательных скалярных обновления Kalman с нулевым измерением.
+  // Joseph form гарантирует сохранение положительной полуопределённости P
+  // при частых вызовах (в отличие от упрощённой P_new = (I−KH)·P).
+  ScalarZeroUpdate(0, r_zupt);  // H = [1,0,0], z = 0 → vx → 0
+  ScalarZeroUpdate(1, r_zupt);  // H = [0,1,0], z = 0 → vy → 0
+  ClampP();
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 // Угол заноса
 // ═════════════════════════════════════════════════════════════════════════
 
 float VehicleEkf::GetSlipAngleRad() const noexcept {
   if (GetSpeedMs() < kMinSpeedThreshold) {
+    return 0.0f;
+  }
+  // При сильном отрицательном vx (< -kMinSpeedThreshold) EKF без датчиков
+  // колёс не может надёжно оценить угол заноса: вектор скорости инвертирован,
+  // что даёт atan2 ≈ 120–180°. При vx ∈ (-kMinSpeedThreshold, 0] значение
+  // может быть артефактом float-точности, но atan2 всё ещё даёт корректный
+  // угол (±90° при vx≈0, vy≠0), поэтому guard только для явного заднего хода.
+  if (x_[0] < -kMinSpeedThreshold) {
     return 0.0f;
   }
   return std::atan2(x_[1], x_[0]);
@@ -199,6 +261,28 @@ void VehicleEkf::SymmetrizeP(float P[9]) noexcept {
       P[i * 3 + j] = avg;
       P[j * 3 + i] = avg;
     }
+  }
+}
+
+void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g,
+                               float gz_dps, float dt_sec) noexcept {
+  constexpr float kG = 9.80665f;
+  constexpr float kDegToRad = kPi / 180.0f;
+
+  // Predict: ax,ay в g → м/с²
+  Predict(ax_g * kG, ay_g * kG, dt_sec);
+
+  // Update: gz в °/с → рад/с
+  UpdateGyroZ(gz_dps * kDegToRad);
+
+  // ZUPT: если |a| ≈ 1g и |gyro_z| мал → машина стоит
+  const float accel_mag =
+      std::sqrt(ax_g * ax_g + ay_g * ay_g + az_g * az_g);
+  constexpr float kZuptAccelThresh = 0.05f;  // ||a| - 1g| < 0.05g
+  constexpr float kZuptGyroThresh = 3.0f;    // |gyro_z| < 3 dps
+  if (std::abs(accel_mag - 1.0f) < kZuptAccelThresh &&
+      std::abs(gz_dps) < kZuptGyroThresh) {
+    UpdateZeroVelocity(0.1f);
   }
 }
 

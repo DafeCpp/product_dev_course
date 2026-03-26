@@ -11,12 +11,17 @@ import type {
   RunUpdate,
   RunsListResponse,
   RunMetricsResponse,
+  RunMetricsListResponse,
+  MetricSummaryResponse,
+  MetricAggregationsResponse,
   Sensor,
   SensorCreate,
   SensorUpdate,
   SensorsListResponse,
   SensorRegisterResponse,
   SensorTokenResponse,
+  StatusSummary,
+  HeartbeatHistory,
   CaptureSession,
   CaptureSessionCreate,
   CaptureSessionsListResponse,
@@ -43,6 +48,10 @@ import type {
   ConversionProfilesListResponse,
   BackfillTask,
   BackfillTasksListResponse,
+  ComparisonResponse,
+  Artifact,
+  ArtifactsListResponse,
+  CreateArtifactRequest,
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
@@ -355,6 +364,14 @@ export const sensorsApi = {
 
   rotateToken: async (id: string, params?: { project_id?: string }): Promise<SensorTokenResponse> => {
     return await apiPost(`/api/v1/sensors/${id}/rotate-token`, {}, { params })
+  },
+
+  getStatusSummary: async (projectId: string): Promise<StatusSummary> => {
+    return await apiGet('/api/v1/sensors/status-summary', { params: { project_id: projectId } })
+  },
+
+  getHeartbeatHistory: async (sensorId: string, minutes: number = 60): Promise<HeartbeatHistory> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/heartbeat-history`, { params: { minutes } })
   },
 
   // Multiple projects management
@@ -718,11 +735,30 @@ export const telemetryApi = {
   },
 }
 
+// Users API
+export const usersApi = {
+  search: async (params: {
+    q: string
+    exclude_project_id?: string
+  }): Promise<{ users: Array<{ id: string; username: string; email: string }> }> => {
+    const data = await apiGet<Array<{ id: string; username: string; email: string }>>(
+      '/api/v1/users/search',
+      { params },
+    )
+    return { users: Array.isArray(data) ? data : [] }
+  },
+}
+
 // Projects API
 export const projectsApi = {
-  list: async (): Promise<ProjectsListResponse> => {
-    const response = await apiClient.get<ProjectsListResponse>('/projects')
-    return response.data
+  list: async (params?: {
+    search?: string
+    role?: string
+    limit?: number
+    offset?: number
+  }): Promise<ProjectsListResponse> => {
+    const response = await apiClient.get<{ items: Project[]; total: number }>('/projects', { params })
+    return { projects: response.data.items ?? [], total: response.data.total }
   },
 
   get: async (id: string): Promise<Project> => {
@@ -778,6 +814,7 @@ export const projectsApi = {
 
 // Metrics API
 export const metricsApi = {
+  /** Legacy: returns series grouped by name. Kept for backward compat. */
   query: async (
     runId: string,
     params?: {
@@ -787,6 +824,52 @@ export const metricsApi = {
     }
   ): Promise<RunMetricsResponse> => {
     return await apiGet(`/api/v1/runs/${runId}/metrics`, { params })
+  },
+
+  /** Batch insert metrics for a run. */
+  record: async (
+    runId: string,
+    metrics: Array<{ name: string; step: number; value: number }>
+  ): Promise<{ accepted: number }> => {
+    return await apiPost(`/api/v1/runs/${runId}/metrics`, { metrics })
+  },
+
+  /** List raw metric points with optional filtering. */
+  list: async (
+    runId: string,
+    params?: {
+      names?: string
+      from_step?: number
+      to_step?: number
+      order?: string
+      limit?: number
+      offset?: number
+    }
+  ): Promise<RunMetricsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics`, { params })
+  },
+
+  /** Summary per metric name: last value, min, avg, max. */
+  summary: async (
+    runId: string,
+    names?: string
+  ): Promise<MetricSummaryResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics/summary`, {
+      params: names ? { names } : undefined,
+    })
+  },
+
+  /** Step-bucketed aggregations. Use for large datasets (>10K steps). */
+  aggregations: async (
+    runId: string,
+    params: {
+      names: string
+      from_step?: number
+      to_step?: number
+      bucket_size?: number
+    }
+  ): Promise<MetricAggregationsResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics/aggregations`, { params })
   },
 }
 
@@ -837,6 +920,38 @@ export const webhooksApi = {
 
   retryDelivery: async (deliveryId: string): Promise<void> => {
     await apiPost(`/api/v1/webhooks/deliveries/${deliveryId}:retry`)
+  },
+}
+
+// Comparison API
+export const comparisonApi = {
+  compare: async (
+    experimentId: string,
+    body: { run_ids: string[]; metric_names: string[] }
+  ): Promise<ComparisonResponse> => {
+    return await apiPost(`/api/v1/experiments/${experimentId}/compare`, body)
+  },
+}
+
+// Artifacts API
+export const artifactsApi = {
+  list: async (
+    runId: string,
+    params?: { type?: string; limit?: number; offset?: number }
+  ): Promise<ArtifactsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/artifacts`, { params })
+  },
+
+  create: async (runId: string, data: CreateArtifactRequest): Promise<Artifact> => {
+    return await apiPost(`/api/v1/runs/${runId}/artifacts`, data)
+  },
+
+  delete: async (artifactId: string): Promise<void> => {
+    await apiDelete(`/api/v1/artifacts/${artifactId}`)
+  },
+
+  approve: async (artifactId: string): Promise<Artifact> => {
+    return await apiPost(`/api/v1/artifacts/${artifactId}/approve`, {})
   },
 }
 

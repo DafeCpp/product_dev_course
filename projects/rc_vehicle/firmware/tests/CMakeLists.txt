@@ -48,6 +48,24 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/telemetry_log.cpp
     ${COMMON_DIR}/stabilization_config.cpp
     ${COMMON_DIR}/stabilization_pipeline.cpp
+    ${COMMON_DIR}/kids_mode_processor.cpp
+    ${COMMON_DIR}/self_test.cpp
+    ${COMMON_DIR}/drive_modes.cpp
+    ${COMMON_DIR}/drive_mode_registry.cpp
+    ${COMMON_DIR}/calibration_manager.cpp
+    ${COMMON_DIR}/stabilization_manager.cpp
+    ${COMMON_DIR}/telemetry_manager.cpp
+    ${COMMON_DIR}/vehicle_control_unified.cpp
+    ${COMMON_DIR}/vehicle_control_unified_init.cpp
+    ${COMMON_DIR}/steering_trim_calibration.cpp
+    ${COMMON_DIR}/test_runner.cpp
+    ${COMMON_DIR}/com_offset_calibration.cpp
+    ${COMMON_DIR}/speed_calibration.cpp
+    ${COMMON_DIR}/auto_drive_coordinator.cpp
+    ${COMMON_DIR}/telemetry_builder.cpp
+    ${COMMON_DIR}/diagnostics_reporter.cpp
+    ${COMMON_DIR}/control_loop_helpers.cpp
+    ${COMMON_DIR}/control_loop_processor.cpp
 )
 
 # Include directories
@@ -78,6 +96,27 @@ add_executable(unit_tests
     unit/test_pid.cpp
     unit/test_vehicle_ekf.cpp
     unit/test_telemetry_log.cpp
+    unit/test_oversteer_guard.cpp
+    unit/test_kids_mode.cpp
+    unit/test_self_test.cpp
+    unit/test_yaw_rate_controller.cpp
+    unit/test_pitch_compensator.cpp
+    unit/test_slip_angle_controller.cpp
+    unit/test_slew_rate.cpp
+    unit/test_control_source.cpp
+    unit/test_telemetry_handler.cpp
+    unit/test_drive_modes.cpp
+    unit/test_telemetry_manager.cpp
+    unit/test_calibration_manager.cpp
+    unit/test_stabilization_manager.cpp
+    unit/test_steering_trim_calibration.cpp
+    unit/test_test_runner.cpp
+    unit/test_com_offset_calibration.cpp
+    unit/test_speed_calibration.cpp
+    unit/test_com_offset_correction.cpp
+    unit/test_control_loop_helpers.cpp
+    unit/test_control_loop_processor.cpp
+    integration/test_control_loop.cpp
 )
 
 target_link_libraries(unit_tests

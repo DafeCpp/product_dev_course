@@ -31,13 +31,14 @@ struct __attribute__((packed)) CalibBlob {
 
 static constexpr size_t kBlobSize = sizeof(CalibBlob);
 
-esp_err_t imu_nvs::Save(const ImuCalibData& data) {
+esp_err_t imu_nvs::Save(const rc_vehicle::ImuCalibData& data) {
   CalibBlob blob{};
   blob.flags = data.valid ? 0x01 : 0x00;
   blob.version = kCurrentCalibVersion;
   std::memcpy(blob.gyro_bias, data.gyro_bias, sizeof(blob.gyro_bias));
   std::memcpy(blob.accel_bias, data.accel_bias, sizeof(blob.accel_bias));
-  std::memcpy(blob.accel_forward_vec, data.accel_forward_vec, sizeof(blob.accel_forward_vec));
+  std::memcpy(blob.accel_forward_vec, data.accel_forward_vec,
+              sizeof(blob.accel_forward_vec));
   std::memcpy(blob.gravity_vec, data.gravity_vec, sizeof(blob.gravity_vec));
 
   nvs_handle_t h;
@@ -52,18 +53,21 @@ esp_err_t imu_nvs::Save(const ImuCalibData& data) {
   nvs_close(h);
 
   if (err == ESP_OK) {
-    ESP_LOGI(TAG, "Saved calib: gyro=[%.3f, %.3f, %.3f] accel=[%.4f, %.4f, %.4f] forward_vec=[%.3f, %.3f, %.3f] gravity_vec=[%.3f, %.3f, %.3f]",
+    ESP_LOGI(TAG,
+             "Saved calib: gyro=[%.3f, %.3f, %.3f] accel=[%.4f, %.4f, %.4f] "
+             "forward_vec=[%.3f, %.3f, %.3f] gravity_vec=[%.3f, %.3f, %.3f]",
              data.gyro_bias[0], data.gyro_bias[1], data.gyro_bias[2],
              data.accel_bias[0], data.accel_bias[1], data.accel_bias[2],
-             data.accel_forward_vec[0], data.accel_forward_vec[1], data.accel_forward_vec[2],
-             data.gravity_vec[0], data.gravity_vec[1], data.gravity_vec[2]);
+             data.accel_forward_vec[0], data.accel_forward_vec[1],
+             data.accel_forward_vec[2], data.gravity_vec[0],
+             data.gravity_vec[1], data.gravity_vec[2]);
   } else {
     ESP_LOGE(TAG, "nvs_set_blob/commit failed: %s", esp_err_to_name(err));
   }
   return err;
 }
 
-esp_err_t imu_nvs::Load(ImuCalibData& data) {
+esp_err_t imu_nvs::Load(rc_vehicle::ImuCalibData& data) {
   nvs_handle_t h;
   esp_err_t err = nvs_open(kNvsNamespace, NVS_READONLY, &h);
   if (err != ESP_OK) {
@@ -90,28 +94,85 @@ esp_err_t imu_nvs::Load(ImuCalibData& data) {
 
   for (int i = 0; i < 3; ++i) {
     if (!std::isfinite(blob.gyro_bias[i]) ||
-        std::fabs(blob.gyro_bias[i]) > ImuCalibration::kMaxGyroBias) {
-      ESP_LOGW(TAG, "Invalid gyro_bias[%d]=%.3f — discarding", i, blob.gyro_bias[i]);
+        std::fabs(blob.gyro_bias[i]) >
+            rc_vehicle::ImuCalibration::kMaxGyroBias) {
+      ESP_LOGW(TAG, "Invalid gyro_bias[%d]=%.3f — discarding", i,
+               blob.gyro_bias[i]);
       return ESP_ERR_INVALID_STATE;
     }
     if (!std::isfinite(blob.accel_bias[i]) ||
-        std::fabs(blob.accel_bias[i]) > ImuCalibration::kMaxAccelBias) {
-      ESP_LOGW(TAG, "Invalid accel_bias[%d]=%.4f — discarding", i, blob.accel_bias[i]);
+        std::fabs(blob.accel_bias[i]) >
+            rc_vehicle::ImuCalibration::kMaxAccelBias) {
+      ESP_LOGW(TAG, "Invalid accel_bias[%d]=%.4f — discarding", i,
+               blob.accel_bias[i]);
       return ESP_ERR_INVALID_STATE;
     }
   }
 
   std::memcpy(data.gyro_bias, blob.gyro_bias, sizeof(data.gyro_bias));
   std::memcpy(data.accel_bias, blob.accel_bias, sizeof(data.accel_bias));
-  std::memcpy(data.accel_forward_vec, blob.accel_forward_vec, sizeof(data.accel_forward_vec));
+  std::memcpy(data.accel_forward_vec, blob.accel_forward_vec,
+              sizeof(data.accel_forward_vec));
   std::memcpy(data.gravity_vec, blob.gravity_vec, sizeof(data.gravity_vec));
   data.valid = (blob.flags & 0x01) != 0;
 
-  ESP_LOGI(TAG, "Loaded calib: gyro=[%.3f, %.3f, %.3f] accel=[%.4f, %.4f, %.4f] forward_vec=[%.3f, %.3f, %.3f] gravity_vec=[%.3f, %.3f, %.3f] valid=%d",
-           data.gyro_bias[0], data.gyro_bias[1], data.gyro_bias[2],
-           data.accel_bias[0], data.accel_bias[1], data.accel_bias[2],
-           data.accel_forward_vec[0], data.accel_forward_vec[1], data.accel_forward_vec[2],
-           data.gravity_vec[0], data.gravity_vec[1], data.gravity_vec[2], data.valid);
+  ESP_LOGI(
+      TAG,
+      "Loaded calib: gyro=[%.3f, %.3f, %.3f] accel=[%.4f, %.4f, %.4f] "
+      "forward_vec=[%.3f, %.3f, %.3f] gravity_vec=[%.3f, %.3f, %.3f] valid=%d",
+      data.gyro_bias[0], data.gyro_bias[1], data.gyro_bias[2],
+      data.accel_bias[0], data.accel_bias[1], data.accel_bias[2],
+      data.accel_forward_vec[0], data.accel_forward_vec[1],
+      data.accel_forward_vec[2], data.gravity_vec[0], data.gravity_vec[1],
+      data.gravity_vec[2], data.valid);
+  return ESP_OK;
+}
+
+static constexpr const char* kNvsComOffKey = "com_off";
+
+esp_err_t imu_nvs::SaveComOffset(const float offset[2]) {
+  nvs_handle_t h;
+  esp_err_t err = nvs_open(kNvsNamespace, NVS_READWRITE, &h);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "nvs_open failed for com_offset: %s", esp_err_to_name(err));
+    return err;
+  }
+
+  err = nvs_set_blob(h, kNvsComOffKey, offset, sizeof(float) * 2);
+  if (err == ESP_OK) err = nvs_commit(h);
+  nvs_close(h);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "Saved com_offset: rx=%.4f ry=%.4f m", offset[0], offset[1]);
+  } else {
+    ESP_LOGE(TAG, "nvs com_offset save failed: %s", esp_err_to_name(err));
+  }
+  return err;
+}
+
+esp_err_t imu_nvs::LoadComOffset(float offset[2]) {
+  nvs_handle_t h;
+  esp_err_t err = nvs_open(kNvsNamespace, NVS_READONLY, &h);
+  if (err != ESP_OK) return ESP_ERR_NOT_FOUND;
+
+  size_t len = sizeof(float) * 2;
+  err = nvs_get_blob(h, kNvsComOffKey, offset, &len);
+  nvs_close(h);
+
+  if (err != ESP_OK || len != sizeof(float) * 2) {
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  if (!std::isfinite(offset[0]) || !std::isfinite(offset[1]) ||
+      std::fabs(offset[0]) > 1.0f || std::fabs(offset[1]) > 1.0f) {
+    ESP_LOGW(TAG, "Invalid com_offset: rx=%.4f ry=%.4f — discarding",
+             offset[0], offset[1]);
+    offset[0] = 0.f;
+    offset[1] = 0.f;
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  ESP_LOGI(TAG, "Loaded com_offset: rx=%.4f ry=%.4f m", offset[0], offset[1]);
   return ESP_OK;
 }
 

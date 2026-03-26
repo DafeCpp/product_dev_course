@@ -46,9 +46,27 @@ class MadgwickFilter : public IOrientationFilter {
   void SetBeta(float beta) { beta_ = beta; }
   float GetBeta() const { return beta_; }
 
+  /**
+   * Адаптивный beta: при линейном ускорении отключает коррекцию по
+   * акселерометру (beta → 0), предотвращая ошибки ориентации при разгоне,
+   * торможении и поворотах. Срабатывает, когда |a| - 1g| > threshold.
+   * @param enabled       Включить адаптивный режим
+   * @param threshold_g   Порог отклонения от 1g [g], по умолчанию 0.2
+   */
+  void SetAdaptiveBeta(bool enabled, float threshold_g = 0.2f) {
+    adaptive_enabled_ = enabled;
+    adaptive_threshold_g_ = threshold_g;
+  }
+  bool GetAdaptiveBetaEnabled() const { return adaptive_enabled_; }
+  float GetAdaptiveThresholdG() const { return adaptive_threshold_g_; }
+
  private:
   float q0_{1.f}, q1_{0.f}, q2_{0.f}, q3_{0.f};
   float beta_{0.1f};
+
+  // Адаптивный beta: отключение коррекции при линейном ускорении
+  bool adaptive_enabled_{false};
+  float adaptive_threshold_g_{0.2f};
 
   // Опорная СК машины: q_veh_to_ned (поворот из СК машины в NED), только если
   // use_vehicle_frame_

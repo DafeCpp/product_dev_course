@@ -5,84 +5,45 @@
 
 namespace rc_vehicle {
 
+class IVehicleControl;
+
 /**
  * @brief WebSocket command handlers
  *
- * These functions handle specific WebSocket JSON commands.
- * Each handler is responsible for:
- * 1. Parsing command-specific parameters from JSON
- * 2. Executing the command logic
- * 3. Sending a JSON response back to the client
+ * All handlers receive an IVehicleControl& via dependency injection
+ * instead of accessing the global singleton directly.
  */
 
-/**
- * @brief Handle IMU calibration command
- *
- * Supports three modes:
- * - "gyro": Calibrate gyroscope only
- * - "full": Full calibration (stage 1: stationary)
- * - "forward": Forward calibration (stage 2: moving forward)
- *
- * Request: {"type":"calibrate_imu","mode":"gyro"|"full"|"forward"}
- * Response:
- * {"type":"calibrate_imu_ack","status":"collecting"|"failed","stage":1|2,"ok":true|false}
- */
-void HandleCalibrateImu(cJSON* json, httpd_req_t* req);
-
-/**
- * @brief Get calibration status
- *
- * Request: {"type":"get_calib_status"}
- * Response: {"type":"calib_status","status":"...","stage":1|2}
- */
-void HandleGetCalibStatus(cJSON* json, httpd_req_t* req);
-
-/**
- * @brief Set forward direction vector
- *
- * Request: {"type":"set_forward_direction","vec":[fx,fy,fz]}
- * Response: {"type":"set_forward_direction_ack","ok":true}
- */
-void HandleSetForwardDirection(cJSON* json, httpd_req_t* req);
-
-/**
- * @brief Get stabilization configuration
- *
- * Request: {"type":"get_stab_config"}
- * Response: {"type":"stab_config",...config fields...}
- */
-void HandleGetStabConfig(cJSON* json, httpd_req_t* req);
-
-/**
- * @brief Set stabilization configuration
- *
- * Request: {"type":"set_stab_config",...config fields...}
- * Response: {"type":"set_stab_config_ack","ok":true,...applied config...}
- */
-void HandleSetStabConfig(cJSON* json, httpd_req_t* req);
-
-/**
- * @brief Get telemetry log information
- *
- * Request: {"type":"get_log_info"}
- * Response: {"type":"log_info","count":N,"capacity":M}
- */
-void HandleGetLogInfo(cJSON* json, httpd_req_t* req);
-
-/**
- * @brief Get telemetry log data
- *
- * Request: {"type":"get_log_data","offset":N,"count":M}
- * Response: {"type":"log_data","frames":[...]}
- */
-void HandleGetLogData(cJSON* json, httpd_req_t* req);
-
-/**
- * @brief Clear telemetry log
- *
- * Request: {"type":"clear_log"}
- * Response: {"type":"clear_log_ack","ok":true}
- */
-void HandleClearLog(cJSON* json, httpd_req_t* req);
+void HandleCalibrateImu(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetCalibStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleSetForwardDirection(IVehicleControl& vc, cJSON* json,
+                               httpd_req_t* req);
+void HandleGetStabConfig(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleSetStabConfig(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetLogInfo(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetLogData(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleClearLog(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleSetKidsPreset(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetKidsPresets(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleToggleKidsMode(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleCalibrateSteeringTrim(IVehicleControl& vc, cJSON* json,
+                                 httpd_req_t* req);
+void HandleGetSteeringTrimStatus(IVehicleControl& vc, cJSON* json,
+                                 httpd_req_t* req);
+void HandleCalibrateComOffset(IVehicleControl& vc, cJSON* json,
+                              httpd_req_t* req);
+void HandleGetComOffsetStatus(IVehicleControl& vc, cJSON* json,
+                              httpd_req_t* req);
+void HandleStartTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleStopTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetTestStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleStartSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleStopSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetSpeedCalibStatus(IVehicleControl& vc, cJSON* json,
+                                httpd_req_t* req);
+void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleUdpStreamStart(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleUdpStreamStop(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleUdpStreamStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 
 }  // namespace rc_vehicle

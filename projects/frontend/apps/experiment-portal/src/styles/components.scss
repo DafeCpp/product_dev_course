@@ -1,76 +1,77 @@
 @import './colors';
 
+// ── Badges ──
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   border: 1px solid transparent;
-  background-color: rgba(98, 91, 113, 0.12);
+  background-color: var(--surface-variant);
   color: var(--text-secondary);
 }
 
 .badge::before {
   content: '';
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
-  opacity: 0.68;
 }
 
 .badge-primary {
-  background-color: rgba(103, 80, 164, 0.12);
+  background-color: rgba(79, 70, 229, 0.08);
   color: var(--primary);
-  border-color: rgba(103, 80, 164, 0.14);
+  border-color: rgba(79, 70, 229, 0.12);
 }
 
 .badge-success {
-  background-color: rgba(56, 106, 32, 0.12);
+  background-color: rgba(22, 163, 74, 0.08);
   color: var(--success);
-  border-color: rgba(56, 106, 32, 0.16);
+  border-color: rgba(22, 163, 74, 0.12);
 }
 
 .badge-warning {
-  background-color: rgba(124, 78, 0, 0.12);
-  color: $text-warning;
-  border-color: rgba(124, 78, 0, 0.16);
+  background-color: rgba(217, 119, 6, 0.08);
+  color: var(--warning);
+  border-color: rgba(217, 119, 6, 0.12);
 }
 
 .badge-danger {
-  background-color: rgba(179, 38, 30, 0.12);
+  background-color: rgba(220, 38, 38, 0.08);
   color: var(--error);
-  border-color: rgba(179, 38, 30, 0.16);
+  border-color: rgba(220, 38, 38, 0.12);
 }
 
 .badge-info {
-  background-color: rgba(0, 99, 155, 0.12);
+  background-color: rgba(2, 132, 199, 0.08);
   color: var(--info);
-  border-color: rgba(0, 99, 155, 0.16);
+  border-color: rgba(2, 132, 199, 0.12);
 }
 
 .badge-secondary {
-  background-color: rgba(98, 91, 113, 0.12);
+  background-color: var(--surface-variant);
   color: var(--text-secondary);
-  border-color: rgba(98, 91, 113, 0.12);
+  border-color: var(--outline);
 }
 
 .btn-sm {
-  min-height: 38px;
-  padding: 0 14px;
+  min-height: 34px;
+  padding: 0 12px;
   font-size: 0.8125rem;
 }
 
 .text-muted {
   color: var(--text-secondary);
-  font-size: 0.9375rem;
+  font-size: 0.9rem;
 }
 
+// ── Section headers ──
 .section-header {
   display: flex;
   justify-content: space-between;
@@ -82,18 +83,19 @@
 .section-header h3 {
   margin: 0;
   color: var(--text);
-  font-family: var(--font-display);
-  font-size: clamp(1.1rem, 1.6vw, 1.35rem);
-  letter-spacing: -0.03em;
+  font-size: clamp(1.05rem, 1.5vw, 1.25rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
+// ── Info rows ──
 .info-row {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(98, 91, 113, 0.14);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--outline);
 }
 
 .info-row:last-child {
@@ -103,10 +105,10 @@
 .info-row strong {
   color: var(--text-secondary);
   font-weight: 600;
-  min-width: 160px;
+  min-width: 140px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
 }
 
 .info-row span {
@@ -115,7 +117,7 @@
 }
 
 .mono {
-  font-family: 'IBM Plex Mono', 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.82rem;
 }
 

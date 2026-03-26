@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { projectsApi } from '../api/client'
@@ -7,6 +7,13 @@ import { Loading, Error, EmptyState, FloatingActionButton } from '../components/
 import ProjectModal from '../components/ProjectModal'
 import ProjectMembersModal from '../components/ProjectMembersModal'
 import './ProjectsList.scss'
+
+const ROLE_OPTIONS = [
+  { value: '', label: 'Все роли' },
+  { value: 'owner', label: 'Owner' },
+  { value: 'editor', label: 'Editor' },
+  { value: 'viewer', label: 'Viewer' },
+]
 
 function ProjectsList() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -17,9 +24,31 @@ function ProjectsList() {
     projectId?: string
   }>({ isOpen: false, mode: 'create' })
 
+  const [searchInput, setSearchInput] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(searchInput)
+    }, 300)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [searchInput])
+
+  const queryParams = {
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(roleFilter ? { role: roleFilter } : {}),
+    limit: 20,
+    offset: 0,
+  }
+
   const { data, isLoading, error, isError } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => projectsApi.list(),
+    queryKey: ['projects', queryParams],
+    queryFn: () => projectsApi.list(queryParams),
     retry: 1,
     refetchOnWindowFocus: false,
     staleTime: 0,
@@ -56,6 +85,28 @@ function ProjectsList() {
 
   return (
     <div className="projects-list">
+      <div className="projects-filters" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Поиск проектов..."
+          style={{ flex: '1 1 200px', minWidth: 160 }}
+          aria-label="Поиск проектов"
+        />
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          aria-label="Фильтр по роли"
+        >
+          {ROLE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {isLoading && <Loading message="Загрузка проектов..." />}
       {isError && error && (
         <Error message={error instanceof Error ? error.message : 'Ошибка загрузки проектов'} />

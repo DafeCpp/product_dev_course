@@ -244,16 +244,15 @@ TEST(FailsafeTest, ZeroTimeout) {
 
 TEST(FailsafeTest, TimeWrapAround) {
   Failsafe fs(100);
-  uint32_t time = UINT32_MAX - 50;  // Near wrap-around
+  // Активный сигнал за 50 мс до переполнения uint32
+  (void)fs.Update(UINT32_MAX - 50, true, false);
 
-  // Active control
-  (void)fs.Update(time, true, false);
-
-  // Wrap around
-  time = 60;  // Wrapped around, total elapsed ~110ms
-  (void)fs.Update(time, false, false);
-  // Note: This test may fail if failsafe doesn't handle wrap-around correctly
-  // The implementation should use proper time difference calculation
+  // После wraparound прошло ~110 мс (50 + 60) без сигнала — failsafe должен
+  // активироваться: это проверяет, что реализация использует (uint32_t)(b-a),
+  // а не знаковую разность
+  const auto state = fs.Update(60, false, false);
+  EXPECT_EQ(state, FailsafeState::Active)
+      << "Failsafe должен активироваться при wraparound uint32 таймера";
 }
 
 TEST(FailsafeTest, RapidUpdates) {

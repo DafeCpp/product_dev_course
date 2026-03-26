@@ -143,6 +143,21 @@ class VehicleControlPlatform {
   [[nodiscard]] virtual Result<Unit, PlatformError> SaveCalib(
       const ImuCalibData& data) = 0;
 
+  /**
+   * @brief Сохранить смещение IMU→CoM в энергонезависимую память
+   * @param offset Массив [rx, ry] в метрах
+   * @return Result with Unit on success or PlatformError on failure
+   */
+  [[nodiscard]] virtual Result<Unit, PlatformError> SaveComOffset(
+      const float offset[2]) = 0;
+
+  /**
+   * @brief Загрузить смещение IMU→CoM из энергонезависимой памяти
+   * @param offset Массив [rx, ry] для записи
+   * @return true если данные найдены и валидны
+   */
+  [[nodiscard]] virtual bool LoadComOffset(float offset[2]) = 0;
+
   // ─────────────────────────────────────────────────────────────────────────
   // Stabilization Config
   // ─────────────────────────────────────────────────────────────────────────
@@ -258,6 +273,26 @@ class VehicleControlPlatform {
    * @param period_ms Период в миллисекундах от предыдущего пробуждения
    */
   virtual void DelayUntilNextTick(uint32_t period_ms) = 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Watchdog
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * @brief Зарегистрировать текущую задачу в Task WDT
+   *
+   * Вызывается один раз при старте control loop. После регистрации
+   * задача должна периодически вызывать FeedTaskWdt(), иначе WDT
+   * перезагрузит устройство.
+   */
+  virtual void RegisterTaskWdt() {}
+
+  /**
+   * @brief Сбросить таймер Task WDT (кормить watchdog)
+   *
+   * Вызывается каждую итерацию control loop.
+   */
+  virtual void FeedTaskWdt() noexcept {}
 };
 
 }  // namespace rc_vehicle

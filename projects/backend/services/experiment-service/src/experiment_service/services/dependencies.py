@@ -20,6 +20,7 @@ from experiment_service.repositories import (
     SensorRepository,
     TelemetryRepository,
 )
+from experiment_service.repositories.artifacts import ArtifactRepository
 from experiment_service.repositories.backfill_tasks import BackfillTaskRepository
 from experiment_service.repositories.webhooks import WebhookDeliveryRepository, WebhookSubscriptionRepository
 from experiment_service.repositories.idempotency import IdempotencyRepository
@@ -35,11 +36,9 @@ from experiment_service.services import (
     TelemetryService,
     WebhookService,
 )
+from experiment_service.services.artifacts import ArtifactService
 from experiment_service.services.backfill import BackfillService
-from experiment_service.services.idempotency import (
-    IDEMPOTENCY_HEADER,
-    IdempotencyService,
-)
+from experiment_service.services.idempotency import IdempotencyService
 
 TService = TypeVar("TService")
 
@@ -55,21 +54,32 @@ _PROFILE_SERVICE_KEY = "conversion_profile_service"
 _TELEMETRY_SERVICE_KEY = "telemetry_service"
 _METRICS_SERVICE_KEY = "metrics_service"
 _BACKFILL_SERVICE_KEY = "backfill_service"
+_ARTIFACT_SERVICE_KEY = "artifact_service"
 
 USER_ID_HEADER = "X-User-Id"
 PROJECT_ID_HEADER = "X-Project-Id"
-PROJECT_ROLE_HEADER = "X-Project-Role"
+IS_SUPERADMIN_HEADER = "X-User-Is-Superadmin"
+SYSTEM_PERMISSIONS_HEADER = "X-User-System-Permissions"
+PROJECT_PERMISSIONS_HEADER = "X-User-Permissions"
 
 
 @dataclass
 class UserContext:
     user_id: UUID
-    project_roles: dict[UUID, str]
+    is_superadmin: bool
+    system_permissions: frozenset[str]
+    project_permissions: frozenset[str]
     active_project_id: UUID | None
 
 
+def _parse_permissions(header_value: str | None) -> frozenset[str]:
+    if not header_value:
+        return frozenset()
+    return frozenset(p.strip() for p in header_value.split(",") if p.strip())
+
+
 async def require_current_user(request: web.Request) -> UserContext:
-    """Temporary auth hook: relies on debug headers provided by API gateway/tests."""
+    """Auth hook: reads RBAC v2 headers provided by auth-proxy."""
     user_header = request.headers.get(USER_ID_HEADER)
     if user_header is None:
         raise web.HTTPUnauthorized(
@@ -80,7 +90,6 @@ async def require_current_user(request: web.Request) -> UserContext:
     except ValueError as exc:
         raise web.HTTPBadRequest(text=f"Invalid {USER_ID_HEADER}") from exc
 
-    # project_id опционален - если не передан, будет использован из query/body или вернется ошибка
     project_header = request.headers.get(PROJECT_ID_HEADER)
     project_id: UUID | None = None
     if project_header:
@@ -89,32 +98,49 @@ async def require_current_user(request: web.Request) -> UserContext:
         except ValueError as exc:
             raise web.HTTPBadRequest(text=f"Invalid {PROJECT_ID_HEADER}") from exc
 
-    # Получаем роль из заголовка, если она установлена
-    # Если заголовок не установлен, role будет None, и мы не добавим проект в project_roles
-    # Это позволяет experiment-service проверить доступ через ensure_project_access
-    role = request.headers.get(PROJECT_ROLE_HEADER)
+    is_superadmin_raw = request.headers.get(IS_SUPERADMIN_HEADER, "false")
+    is_superadmin = is_superadmin_raw.strip().lower() == "true"
 
-    # Если project_id передан, используем его как active_project_id
-    # Если не передан, active_project_id будет None (будет установлен позже через resolve_project_id)
-    # Добавляем проект в project_roles только если роль была установлена
+    system_permissions = _parse_permissions(request.headers.get(SYSTEM_PERMISSIONS_HEADER))
+    project_permissions = _parse_permissions(request.headers.get(PROJECT_PERMISSIONS_HEADER))
+
     return UserContext(
         user_id=user_id,
-        project_roles={project_id: role} if (project_id and role) else {},
-        active_project_id=project_id,  # Может быть None
+        is_superadmin=is_superadmin,
+        system_permissions=system_permissions,
+        project_permissions=project_permissions,
+        active_project_id=project_id,
     )
 
 
-def ensure_project_access(
-    user: UserContext,
-    project_id: UUID,
-    *,
-    require_role: tuple[str, ...] | None = None,
-) -> None:
-    role = user.project_roles.get(project_id)
-    if role is None:
-        raise web.HTTPForbidden(reason="User does not belong to project")
-    if require_role and role not in require_role:
-        raise web.HTTPForbidden(reason="Insufficient project role")
+def ensure_permission(user: UserContext, permission: str) -> None:
+    """Raises HTTPForbidden if user lacks the given permission."""
+    if user.is_superadmin:
+        return
+    if permission in user.project_permissions:
+        return
+    if permission in user.system_permissions:
+        return
+    raise web.HTTPForbidden(reason=f"Missing permission: {permission}")
+
+
+def infer_project_role(user: UserContext) -> str:
+    """Infer project role name from permissions for audit (owner/editor/viewer)."""
+    if user.is_superadmin:
+        return "owner"
+    perms = user.project_permissions | user.system_permissions
+    if "project.roles.manage" in perms:
+        return "owner"
+    if "runs.create" in perms or "experiments.create" in perms:
+        return "editor"
+    return "viewer"
+
+
+def ensure_project_context(user: UserContext) -> UUID:
+    """Returns active_project_id or raises HTTPBadRequest."""
+    if user.active_project_id is None:
+        raise web.HTTPBadRequest(reason="X-Project-Id header required")
+    return user.active_project_id
 
 
 def resolve_project_id(
@@ -123,20 +149,33 @@ def resolve_project_id(
     *,
     require_role: tuple[str, ...] | None = None,
 ) -> UUID:
+    """Resolve project_id from string or active_project_id. require_role is ignored (deprecated)."""
     if project_id_str is None:
-        # Если project_id не передан, используем active_project_id из заголовков
         if user.active_project_id is None:
             raise web.HTTPBadRequest(
                 text="project_id is required. Provide it in query parameter, request body, or X-Project-Id header"
             )
-        ensure_project_access(user, user.active_project_id, require_role=require_role)
         return user.active_project_id
     try:
-        project_id = UUID(project_id_str)
+        return UUID(project_id_str)
     except ValueError as exc:
         raise web.HTTPBadRequest(text="Invalid project_id") from exc
-    ensure_project_access(user, project_id, require_role=require_role)
-    return project_id
+
+
+def ensure_project_access(
+    user: UserContext,
+    project_id: UUID,
+    *,
+    require_role: tuple[str, ...] | None = None,
+) -> None:
+    """Deprecated: kept for compatibility. Use ensure_permission() instead."""
+    # In the new RBAC model project access is validated via project_permissions.
+    # If user has any project permissions or is superadmin, they have basic access.
+    if user.is_superadmin:
+        return
+    if user.project_permissions or user.system_permissions:
+        return
+    raise web.HTTPForbidden(reason="User does not belong to project")
 
 
 async def _get_or_create_service(
@@ -261,6 +300,16 @@ async def get_metrics_service(request: web.Request) -> MetricsService:
         return MetricsService(run_repo, metrics_repo)
 
     return await _get_or_create_service(request, _METRICS_SERVICE_KEY, builder)
+
+
+async def get_artifact_service(request: web.Request) -> ArtifactService:
+    async def builder(_: web.Request) -> ArtifactService:
+        pool = await get_pool()
+        artifact_repo = ArtifactRepository(pool)
+        run_repo = RunRepository(pool)
+        return ArtifactService(artifact_repo, run_repo)
+
+    return await _get_or_create_service(request, _ARTIFACT_SERVICE_KEY, builder)
 
 
 async def get_backfill_service(request: web.Request) -> BackfillService:

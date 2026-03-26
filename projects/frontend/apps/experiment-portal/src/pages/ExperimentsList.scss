@@ -1,7 +1,7 @@
 .experiments-list {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .experiments-filter-actions {
@@ -13,21 +13,39 @@
 .experiments-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
+  gap: 16px;
 }
 
 .experiment-card {
   display: flex;
   flex-direction: column;
-  min-height: 300px;
-  gap: 16px;
+  min-height: 280px;
+  gap: 14px;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+}
+
+.experiment-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary);
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
 .experiment-card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-2px);
   box-shadow: var(--elevation-2);
-  border-color: rgba(15, 118, 110, 0.18);
+  border-color: rgba(79, 70, 229, 0.15);
+}
+
+.experiment-card:hover::after {
+  opacity: 1;
 }
 
 .experiment-card__topline {
@@ -38,17 +56,16 @@
 }
 
 .experiment-card__title {
-  font-family: var(--font-display);
-  font-size: clamp(1.55rem, 2.3vw, 2rem);
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
 .experiment-description {
   color: var(--text-secondary);
-  line-height: 1.65;
-  font-size: 0.97rem;
+  line-height: 1.6;
+  font-size: 0.9rem;
 }
 
 .experiment-card__footer {
@@ -57,34 +74,39 @@
   justify-content: space-between;
   gap: 16px;
   margin-top: auto;
-  padding-top: 16px;
-  border-top: 1px solid rgba(91, 105, 118, 0.14);
+  padding-top: 14px;
+  border-top: 1px solid var(--outline);
 }
 
 .experiment-card__meta {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .experiment-card__meta span {
   color: var(--text-secondary);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .experiment-card__meta strong {
   color: var(--text);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .experiment-card__cta {
   color: var(--primary);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  transition: color 0.15s ease;
+}
+
+.experiment-card:hover .experiment-card__cta {
+  color: var(--primary-hover);
 }
 
 @media (max-width: 720px) {

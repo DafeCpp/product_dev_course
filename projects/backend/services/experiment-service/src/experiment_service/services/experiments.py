@@ -15,6 +15,7 @@ from experiment_service.domain.models import Experiment
 from experiment_service.repositories.experiments import ExperimentRepository
 from experiment_service.repositories.runs import RunRepository
 from experiment_service.services.state_machine import validate_experiment_transition
+from experiment_service.prometheus_metrics import EXPERIMENTS_CREATED
 
 
 class ExperimentService:
@@ -31,7 +32,9 @@ class ExperimentService:
     async def create_experiment(self, data: ExperimentCreateDTO) -> Experiment:
         if data.status != ExperimentStatus.DRAFT:
             validate_experiment_transition(ExperimentStatus.DRAFT, data.status)
-        return await self._repository.create(data)
+        experiment = await self._repository.create(data)
+        EXPERIMENTS_CREATED.inc()
+        return experiment
 
     async def get_experiment(self, project_id: UUID, experiment_id: UUID) -> Experiment:
         return await self._repository.get(project_id, experiment_id)

@@ -40,6 +40,9 @@ class Settings(BaseServiceSettings):
     # Если не задан — endpoint POST /auth/admin/bootstrap отключён (404).
     admin_bootstrap_secret: str | None = Field(default=None)
 
+    audit_retention_days: int = 365  # delete audit_log entries older than this
+    worker_interval_seconds: float = 60.0  # how often the background worker runs
+
     @model_validator(mode="after")
     def _warn_insecure_jwt_secret(self) -> "Settings":
         """Emit a loud warning when the JWT secret is a known insecure default."""

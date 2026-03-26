@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 from experiment_service.api.utils import paginated_response, pagination_params, parse_uuid, read_json
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_webhook_service,
     require_current_user,
     resolve_project_id,
@@ -26,7 +26,7 @@ class WebhookCreateDTO(BaseModel):
 async def list_webhooks(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     service = await get_webhook_service(request)
     limit, offset = pagination_params(request)
     items, total = await service.list_subscriptions(project_id, limit=limit, offset=offset)
@@ -43,9 +43,8 @@ async def list_webhooks(request: web.Request):
 @routes.post("/api/v1/webhooks")
 async def create_webhook(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.create")
     body = await read_json(request)
     try:
         dto = WebhookCreateDTO.model_validate(body)
@@ -71,9 +70,8 @@ async def create_webhook(request: web.Request):
 @routes.delete("/api/v1/webhooks/{webhook_id}")
 async def delete_webhook(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.delete")
     webhook_id = parse_uuid(request.match_info["webhook_id"], "webhook_id")
     service = await get_webhook_service(request)
     try:
@@ -87,7 +85,7 @@ async def delete_webhook(request: web.Request):
 async def list_webhook_deliveries(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     status = request.rel_url.query.get("status")
     limit, offset = pagination_params(request)
     service = await get_webhook_service(request)
@@ -105,9 +103,8 @@ async def list_webhook_deliveries(request: web.Request):
 @routes.post("/api/v1/webhooks/deliveries/{delivery_id}:retry")
 async def retry_webhook_delivery(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.update")
     delivery_id = parse_uuid(request.match_info["delivery_id"], "delivery_id")
     service = await get_webhook_service(request)
     try:

@@ -25,6 +25,7 @@ pyjwt = "^2.8.0"
 bcrypt = "^4.1.2"
 email-validator = "^2.1.0"
 backend-common = { path = "../../common", develop = true }
+prometheus-client = "^0.24.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
@@ -35,6 +36,8 @@ ruff = "^0.5.0"
 mypy = "^1.10.0"
 yandex-taxi-testsuite = {extras = ["postgresql-binary"], version = "^0.3.9"}
 watchfiles = "^0.21.0"
+pytest-cov = "^7.0.0"
+coverage = "^7.13.4"
 
 [tool.ruff]
 line-length = 100
@@ -42,7 +45,6 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-p testsuite.pytest_plugin"
 testpaths = ["tests"]
 pythonpath = ["src"]
 filterwarnings = [

@@ -1,0 +1,72 @@
+.status-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+}
+
+.status-summary-bar__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.status-summary-bar__chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill, 9999px);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.status-chip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-chip--online {
+  background: rgba(22, 163, 74, 0.1);
+  color: #15803d;
+}
+
+.status-chip--online .status-chip__dot {
+  background: #16a34a;
+}
+
+.status-chip--delayed {
+  background: rgba(217, 119, 6, 0.1);
+  color: #b45309;
+}
+
+.status-chip--delayed .status-chip__dot {
+  background: #d97706;
+}
+
+.status-chip--offline {
+  background: rgba(107, 114, 128, 0.1);
+  color: #4b5563;
+}
+
+.status-chip--offline .status-chip__dot {
+  background: #6b7280;
+}
+
+.status-chip--total {
+  background: rgba(91, 105, 118, 0.08);
+  color: var(--text-secondary);
+}

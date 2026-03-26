@@ -23,10 +23,12 @@ python-dotenv = "^1.0.1"
 orjson = "^3.10.3"
 structlog = "^24.2.0"
 backend-common = { path = "../../common", develop = true }
+aio-pika = ">=9.4.0"
 opentelemetry-api = "^1.39.1"
 opentelemetry-sdk = "^1.39.1"
 opentelemetry-exporter-otlp-proto-http = "^1.39.1"
 opentelemetry-instrumentation-aiohttp-server = "^0.60b1"
+prometheus-client = "^0.24.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
@@ -62,6 +64,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 mypy_path = "../../common/types"
+disable_error_code = ["arg-type"]
 
 [[tool.mypy.overrides]]
 module = "aiohttp_cors.*"

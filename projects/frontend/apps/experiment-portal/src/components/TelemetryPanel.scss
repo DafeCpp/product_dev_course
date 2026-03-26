@@ -209,18 +209,24 @@
 .telemetry-panel__mode,
 .telemetry-panel__checkbox {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   align-items: center;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
+  line-height: 1.2;
 }
 
 .telemetry-panel__mode label,
 .telemetry-panel__checkbox {
-  padding: 6px 10px;
+  display: inline-flex;
+  padding: 4px 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(16, 34, 58, 0.08);
+  align-items: center;
+  justify-content: center;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .modal-content.telemetry-panel__settings-modal {
@@ -271,9 +277,19 @@
   font-size: 0.86rem;
 }
 
-.telemetry-panel__checkbox input,
-.telemetry-panel__mode input {
+.telemetry-panel__settings .form-group .telemetry-panel__checkbox input[type='checkbox'],
+.telemetry-panel__settings .form-group .telemetry-panel__mode input[type='radio'] {
   accent-color: var(--primary);
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  margin: 0;
+  flex: 0 0 14px;
 }
 
 @media (max-width: 1100px) {

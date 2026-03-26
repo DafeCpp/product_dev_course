@@ -19,6 +19,11 @@ from telemetry_ingest_service.core.exceptions import (
 )
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO, WsIngestMessageDTO
 from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
+from telemetry_ingest_service.prometheus_metrics import (
+    INGEST_RATE_LIMITED,
+    TELEMETRY_READINGS_INGESTED,
+    WS_CONNECTIONS_ACTIVE,
+)
 from telemetry_ingest_service.services.telemetry import TelemetryIngestService, hash_sensor_token
 from telemetry_ingest_service.settings import settings
 
@@ -112,6 +117,7 @@ async def ws_ingest(request: web.Request) -> web.WebSocketResponse:
     service = TelemetryIngestService()
     log = logger.bind(sensor_id=str(sensor_id))
 
+    WS_CONNECTIONS_ACTIVE.inc()
     try:
         async for msg in ws:
             if msg.type == aiohttp.WSMsgType.TEXT:
@@ -129,6 +135,8 @@ async def ws_ingest(request: web.Request) -> web.WebSocketResponse:
                 code=aiohttp.WSCloseCode.INTERNAL_ERROR,
                 message=b"Internal server error",
             )
+    finally:
+        WS_CONNECTIONS_ACTIVE.dec()
 
     return ws
 
@@ -159,6 +167,7 @@ async def _handle_message(
     # --- rate limiting (per sensor, fixed window) ---
     limit_hit = _ws_limiter.check(sensor_id, len(ws_msg.readings))
     if limit_hit is not None:
+        INGEST_RATE_LIMITED.labels(transport="ws").inc()
         await ws.send_json({
             "status": "error",
             "code": "rate_limited",
@@ -193,6 +202,7 @@ async def _handle_message(
         await ws.send_json({"status": "error", "code": "internal_error", "message": "Internal error"})
         return
 
+    TELEMETRY_READINGS_INGESTED.labels(transport="ws").inc(accepted)
     ack: dict = {"status": "accepted", "accepted": accepted}
     if ws_msg.seq is not None:
         ack["seq"] = ws_msg.seq

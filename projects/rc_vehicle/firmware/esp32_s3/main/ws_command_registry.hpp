@@ -9,13 +9,18 @@
 
 namespace rc_vehicle {
 
+// Forward declaration — handlers receive a reference to the control interface
+class IVehicleControl;
+
 /**
  * @brief Handler function type for WebSocket JSON commands
  *
+ * @param vc Reference to the vehicle control interface (DI)
  * @param json The parsed JSON object containing the command
  * @param req The HTTP request handle for sending responses
  */
-using WsJsonHandler = std::function<void(cJSON* json, httpd_req_t* req)>;
+using WsJsonHandler =
+    std::function<void(IVehicleControl& vc, cJSON* json, httpd_req_t* req)>;
 
 /**
  * @brief Registry for WebSocket JSON command handlers
@@ -56,12 +61,14 @@ class WsCommandRegistry {
   /**
    * @brief Handle a command by dispatching to the registered handler
    *
+   * @param vc Vehicle control interface (injected into handler)
    * @param type Command type string
    * @param json Parsed JSON object
    * @param req HTTP request handle
    * @return true if handler was found and executed, false otherwise
    */
-  bool Handle(const char* type, cJSON* json, httpd_req_t* req);
+  bool Handle(IVehicleControl& vc, const char* type, cJSON* json,
+              httpd_req_t* req);
 
   /**
    * @brief Check if a handler is registered for a command type

@@ -7,9 +7,11 @@ from experiment_service.api.routes import (
     artifacts,
     backfill,
     capture_sessions,
+    comparison,
     conversion_profiles,
     experiments,
     export,
+    full_export,
     metrics,
     runs,
     sensors,
@@ -18,6 +20,7 @@ from experiment_service.api.routes import (
 )
 
 ROUTE_MODULES = [
+    full_export,
     export,
     telemetry_export,
     experiments,
@@ -25,6 +28,7 @@ ROUTE_MODULES = [
     capture_sessions,
     webhooks,
     metrics,
+    comparison,
     sensors,
     conversion_profiles,
     backfill,

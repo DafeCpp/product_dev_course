@@ -38,12 +38,17 @@ class Settings(BaseServiceSettings):
     export_rate_limit_requests: int = 10   # max requests per window
     export_rate_limit_window_seconds: float = 60.0
 
+    # Sensor connection status thresholds
+    sensor_online_threshold_seconds: int = 30
+    sensor_delayed_threshold_seconds: int = 300
+
     # Background worker
     worker_interval_seconds: float = 60.0  # how often the worker loop runs
     idempotency_ttl_hours: int = 48  # delete idempotency keys older than this
     stale_session_max_hours: int = 24  # auto-fail running sessions older than this
     webhook_stuck_minutes: int = 10  # reclaim in_progress deliveries older than this
     webhook_succeeded_retention_days: int = 30  # purge succeeded deliveries older than this
+    audit_retention_days: int = 365  # delete run_events/capture_session_events older than this
 
 
 @lru_cache

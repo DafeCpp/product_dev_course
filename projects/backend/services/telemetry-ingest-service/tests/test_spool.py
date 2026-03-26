@@ -6,7 +6,7 @@ Unit tests (no DB):
   - spool_max_files limit
 
 Integration tests (with DB):
-  - ingest falls back to spool when _do_insert raises asyncpg.PostgresError
+  - ingest falls back to spool when _do_insert raises PostgresError
   - flush worker (_flush_spool_record) replays spooled data into the DB
 """
 from __future__ import annotations
@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 import asyncpg
 import pytest
+from asyncpg.exceptions import PostgresError
 
 from telemetry_ingest_service.services.spool import (
     SpoolRecord,
@@ -174,7 +175,7 @@ def test_delete_spool_is_idempotent(tmp_path, monkeypatch):
 
 
 async def test_ingest_spools_on_db_write_failure(service_client, pgsql, tmp_path, monkeypatch):
-    """When _do_insert raises asyncpg.PostgresError, the batch is spooled and
+    """When _do_insert raises PostgresError, the batch is spooled and
     the endpoint returns 202 (optimistic success)."""
     monkeypatch.setattr(settings, "spool_dir", str(tmp_path))
     monkeypatch.setattr(settings, "spool_enabled", True)
@@ -197,7 +198,7 @@ async def test_ingest_spools_on_db_write_failure(service_client, pgsql, tmp_path
 
     # Make the INSERT step fail.
     async def _failing_do_insert(self, conn, items):
-        raise asyncpg.PostgresError("simulated write failure")
+        raise PostgresError("simulated write failure")
 
     monkeypatch.setattr(TelemetryIngestService, "_do_insert", _failing_do_insert)
 
@@ -317,7 +318,7 @@ async def test_ingest_spool_disabled_raises_on_write_failure(
     )
 
     async def _failing_do_insert(self, conn, items):
-        raise asyncpg.PostgresError("simulated write failure")
+        raise PostgresError("simulated write failure")
 
     monkeypatch.setattr(TelemetryIngestService, "_do_insert", _failing_do_insert)
 

@@ -13,7 +13,7 @@ from experiment_service.api.utils import parse_uuid
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.middleware.export_rate_limit import ExportRateLimiter
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_capture_session_service,
     get_run_service,
     require_current_user,
@@ -295,7 +295,7 @@ async def export_session_telemetry(request: web.Request):
     project_id = resolve_project_id(
         user, request.rel_url.query.get("project_id"),
     )
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
 
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     session_id = parse_uuid(request.match_info["session_id"], "session_id")
@@ -380,7 +380,7 @@ async def export_run_telemetry(request: web.Request):
     project_id = resolve_project_id(
         user, request.rel_url.query.get("project_id"),
     )
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
 
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     run_service = await get_run_service(request)

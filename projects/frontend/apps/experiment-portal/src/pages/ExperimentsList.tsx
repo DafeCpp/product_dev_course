@@ -172,7 +172,7 @@ function ExperimentsList() {
                 }}
                 disabled={isBusy}
               >
-                {projectsData?.projects.map((project) => (
+                {projectsData?.projects?.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
                   </option>

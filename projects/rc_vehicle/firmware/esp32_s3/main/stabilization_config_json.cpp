@@ -1,6 +1,8 @@
 #include "stabilization_config_json.hpp"
 
+using rc_vehicle::BrakingMode;
 using rc_vehicle::DriveMode;
+using rc_vehicle::KidsPreset;
 using rc_vehicle::StabilizationConfig;
 
 cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
@@ -19,6 +21,13 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
     cJSON_AddNumberToObject(filter, "lpf_cutoff_hz", cfg.filter.lpf_cutoff_hz);
     cJSON_AddNumberToObject(filter, "imu_sample_rate_hz",
                             cfg.filter.imu_sample_rate_hz);
+    cJSON_AddBoolToObject(filter, "madgwick_enabled",
+                          cfg.filter.madgwick_enabled);
+    cJSON_AddBoolToObject(filter, "ekf_enabled", cfg.filter.ekf_enabled);
+    cJSON_AddBoolToObject(filter, "adaptive_beta_enabled",
+                          cfg.filter.adaptive_beta_enabled);
+    cJSON_AddNumberToObject(filter, "adaptive_accel_threshold_g",
+                            cfg.filter.adaptive_accel_threshold_g);
   }
 
   // Yaw rate config
@@ -87,6 +96,55 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
                             cfg.pitch_comp.max_correction);
   }
 
+  // Kids mode config
+  cJSON* kids_mode = cJSON_AddObjectToObject(obj, "kids_mode");
+  if (kids_mode) {
+    cJSON_AddNumberToObject(kids_mode, "throttle_limit",
+                            cfg.kids_mode.throttle_limit);
+    cJSON_AddNumberToObject(kids_mode, "reverse_limit",
+                            cfg.kids_mode.reverse_limit);
+    cJSON_AddNumberToObject(kids_mode, "steering_limit",
+                            cfg.kids_mode.steering_limit);
+    cJSON_AddNumberToObject(kids_mode, "slew_throttle",
+                            cfg.kids_mode.slew_throttle);
+    cJSON_AddNumberToObject(kids_mode, "slew_steering",
+                            cfg.kids_mode.slew_steering);
+    cJSON_AddBoolToObject(kids_mode, "anti_spin_enabled",
+                          cfg.kids_mode.anti_spin_enabled);
+    cJSON_AddNumberToObject(kids_mode, "anti_spin_threshold_deg",
+                            cfg.kids_mode.anti_spin_threshold_deg);
+    cJSON_AddNumberToObject(kids_mode, "anti_spin_reduction",
+                            cfg.kids_mode.anti_spin_reduction);
+    cJSON_AddBoolToObject(kids_mode, "accel_limit_enabled",
+                          cfg.kids_mode.accel_limit_enabled);
+    cJSON_AddNumberToObject(kids_mode, "accel_threshold_g",
+                            cfg.kids_mode.accel_threshold_g);
+    cJSON_AddNumberToObject(kids_mode, "accel_limit_gain",
+                            cfg.kids_mode.accel_limit_gain);
+    cJSON_AddNumberToObject(kids_mode, "accel_max_reduction",
+                            cfg.kids_mode.accel_max_reduction);
+    cJSON_AddBoolToObject(kids_mode, "speed_limit_enabled",
+                          cfg.kids_mode.speed_limit_enabled);
+    cJSON_AddNumberToObject(kids_mode, "max_speed_ms",
+                            cfg.kids_mode.max_speed_ms);
+    cJSON_AddNumberToObject(kids_mode, "speed_limit_gain",
+                            cfg.kids_mode.speed_limit_gain);
+  }
+
+  // Slew rate
+  cJSON_AddNumberToObject(obj, "slew_throttle", cfg.slew_throttle);
+  cJSON_AddNumberToObject(obj, "slew_steering", cfg.slew_steering);
+
+  // Braking
+  cJSON_AddNumberToObject(obj, "braking_mode",
+                          static_cast<uint8_t>(cfg.braking_mode));
+  cJSON_AddNumberToObject(obj, "brake_slew_multiplier",
+                          cfg.brake_slew_multiplier);
+
+  // Trim
+  cJSON_AddNumberToObject(obj, "steering_trim", cfg.steering_trim);
+  cJSON_AddNumberToObject(obj, "throttle_trim", cfg.throttle_trim);
+
   return obj;
 }
 
@@ -123,6 +181,11 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_float(filter, "madgwick_beta", cfg.filter.madgwick_beta);
     get_float(filter, "lpf_cutoff_hz", cfg.filter.lpf_cutoff_hz);
     get_float(filter, "imu_sample_rate_hz", cfg.filter.imu_sample_rate_hz);
+    get_bool(filter, "madgwick_enabled", cfg.filter.madgwick_enabled);
+    get_bool(filter, "ekf_enabled", cfg.filter.ekf_enabled);
+    get_bool(filter, "adaptive_beta_enabled", cfg.filter.adaptive_beta_enabled);
+    get_float(filter, "adaptive_accel_threshold_g",
+              cfg.filter.adaptive_accel_threshold_g);
   }
 
   // Yaw rate config
@@ -180,4 +243,45 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_float(pitch_comp, "gain", cfg.pitch_comp.gain);
     get_float(pitch_comp, "max_correction", cfg.pitch_comp.max_correction);
   }
+
+  // Kids mode config
+  cJSON* kids_mode = cJSON_GetObjectItem(json, "kids_mode");
+  if (kids_mode) {
+    get_float(kids_mode, "throttle_limit", cfg.kids_mode.throttle_limit);
+    get_float(kids_mode, "reverse_limit", cfg.kids_mode.reverse_limit);
+    get_float(kids_mode, "steering_limit", cfg.kids_mode.steering_limit);
+    get_float(kids_mode, "slew_throttle", cfg.kids_mode.slew_throttle);
+    get_float(kids_mode, "slew_steering", cfg.kids_mode.slew_steering);
+    get_bool(kids_mode, "anti_spin_enabled", cfg.kids_mode.anti_spin_enabled);
+    get_float(kids_mode, "anti_spin_threshold_deg",
+              cfg.kids_mode.anti_spin_threshold_deg);
+    get_float(kids_mode, "anti_spin_reduction",
+              cfg.kids_mode.anti_spin_reduction);
+    get_bool(kids_mode, "accel_limit_enabled",
+             cfg.kids_mode.accel_limit_enabled);
+    get_float(kids_mode, "accel_threshold_g", cfg.kids_mode.accel_threshold_g);
+    get_float(kids_mode, "accel_limit_gain", cfg.kids_mode.accel_limit_gain);
+    get_float(kids_mode, "accel_max_reduction",
+              cfg.kids_mode.accel_max_reduction);
+    get_bool(kids_mode, "speed_limit_enabled",
+             cfg.kids_mode.speed_limit_enabled);
+    get_float(kids_mode, "max_speed_ms", cfg.kids_mode.max_speed_ms);
+    get_float(kids_mode, "speed_limit_gain", cfg.kids_mode.speed_limit_gain);
+  }
+
+  // Slew rate
+  get_float(json, "slew_throttle", cfg.slew_throttle);
+  get_float(json, "slew_steering", cfg.slew_steering);
+
+  // Braking
+  {
+    cJSON* item = cJSON_GetObjectItem(json, "braking_mode");
+    if (item && cJSON_IsNumber(item))
+      cfg.braking_mode = static_cast<BrakingMode>(item->valueint);
+  }
+  get_float(json, "brake_slew_multiplier", cfg.brake_slew_multiplier);
+
+  // Trim
+  get_float(json, "steering_trim", cfg.steering_trim);
+  get_float(json, "throttle_trim", cfg.throttle_trim);
 }

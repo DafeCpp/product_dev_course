@@ -82,21 +82,41 @@ jobs:
             gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg >/dev/null
 
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-16
+          sudo apt-get install -y --no-install-recommends postgresql-16 postgresql-contrib-16
 
           PG_MAJOR=16
           sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}"
 
-          # Copy TimescaleDB extension files to system PostgreSQL directory
-          # Testsuite uses its own PostgreSQL instance, but needs extension files
+          # Copy TimescaleDB extension files to testsuite's PostgreSQL directory
+          # testsuite uses its own PostgreSQL, so we need to find where it is
+          echo "Finding testsuite PostgreSQL installation..."
+          
+          # Install poetry dependencies first to get testsuite
+          cd ${{ github.workspace }}/projects/backend/services/experiment-service
+          poetry install --no-interaction --no-root 2>/dev/null || true
+          
+          # Find testsuite's PostgreSQL bin directory
+          TS_PG_BIN=$(poetry run python -c "from testsuite.databases.pgsql import config; print(config.PG_BIN_DIR)" 2>/dev/null || echo "")
+          echo "Testsuite PG_BIN_DIR: $TS_PG_BIN"
+          
+          # Copy TimescaleDB files to both system and potential testsuite locations
           echo "Copying TimescaleDB extension files..."
           sudo cp -r /usr/share/timescaledb/* /usr/share/postgresql/16/extension/ 2>/dev/null || true
           sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so /usr/lib/postgresql/16/lib/ 2>/dev/null || true
+          
+          # Also copy to common testsuite locations if they exist
+          for ts_dir in /usr/share/postgresql /usr/lib/postgresql; do
+            if [ -d "$ts_dir" ]; then
+              echo "Copying to $ts_dir..."
+              sudo cp -r /usr/share/timescaledb/* $ts_dir/*/extension/ 2>/dev/null || true
+              sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so $ts_dir/*/lib/ 2>/dev/null || true
+            fi
+          done
 
           # Verify TimescaleDB is installed
           echo "Verifying TimescaleDB installation..."
-          ls -la /usr/lib/postgresql/16/lib/timescaledb*.so
-          ls -la /usr/share/postgresql/16/extension/timescaledb*.control 2>/dev/null || echo "Extension control files not found in /usr/share/postgresql/16/extension/"
+          ls -la /usr/lib/postgresql/16/lib/timescaledb*.so || true
+          ls -la /usr/share/postgresql/16/extension/timescaledb*.control || true
 
           # Ensure PostgreSQL 16 binaries are in PATH
           echo "Adding PostgreSQL 16 to PATH..."
@@ -106,6 +126,11 @@ jobs:
           echo "Verifying pg_config..."
           which pg_config || true
           pg_config --version || true
+          
+          # Set environment variables for testsuite
+          echo "PG_BIN=/usr/lib/postgresql/16/bin" >> $GITHUB_ENV
+          echo "PG_SHARE=/usr/share/postgresql/16" >> $GITHUB_ENV
+          echo "PG_LIB=/usr/lib/postgresql/16/lib" >> $GITHUB_ENV
 
       - name: Install Poetry
         uses: snok/install-poetry@v1

@@ -161,5 +161,15 @@ export const authApi = {
     adminRevokeInvite: async (token: string): Promise<void> => {
         await authClient.delete(`/auth/admin/invites/${token}`)
     },
+
+    /**
+     * Смена пароля пользователя
+     */
+    changePassword: async (data: {
+        old_password: string
+        new_password: string
+    }): Promise<void> => {
+        await authClient.post('/auth/change-password', data)
+    },
 }
 

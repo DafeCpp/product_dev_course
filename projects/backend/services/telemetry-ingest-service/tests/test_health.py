@@ -37,12 +37,12 @@ async def test_health_includes_uptime(service_client):
 
 async def test_health_returns_503_when_db_unavailable(service_client, monkeypatch):
     """When the DB pool raises, /health returns 503 with status=degraded."""
-    from backend_common.db import pool as pool_module
+    import telemetry_ingest_service.api.routes.health as health_module
 
     async def _bad_pool():
         raise RuntimeError("simulated DB failure")
 
-    monkeypatch.setattr(pool_module, "get_pool_service", _bad_pool)
+    monkeypatch.setattr(health_module, "get_pool", _bad_pool)
 
     resp = await service_client.get("/health")
     assert resp.status == 503

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { RegisterRequest } from '../types'
@@ -9,9 +9,13 @@ import './Register.scss'
 
 function Register() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get('token') ?? undefined
+  const emailHint = searchParams.get('email_hint') ?? ''
+
   const [formData, setFormData] = useState<RegisterRequest & { confirmPassword: string }>({
     username: '',
-    email: '',
+    email: emailHint,
     password: '',
     confirmPassword: '',
   })
@@ -100,6 +104,7 @@ function Register() {
       username,
       email,
       password: formData.password,
+      ...(inviteToken ? { invite_token: inviteToken } : {}),
     })
   }
 
@@ -138,6 +143,16 @@ function Register() {
               Создайте учетную запись для доступа к проектам, экспериментам и данным.
             </p>
           </div>
+
+          {inviteToken && (
+            <div className="invite-banner">
+              <span className="invite-banner__icon">✉</span>
+              <span>
+                Регистрация по приглашению
+                {emailHint && <strong> для {emailHint}</strong>}
+              </span>
+            </div>
+          )}
 
           {IS_TEST && error && <div className="error-message">{error}</div>}
 

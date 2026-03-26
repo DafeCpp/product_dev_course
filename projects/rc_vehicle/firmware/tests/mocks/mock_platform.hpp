@@ -58,6 +58,8 @@ class MockPlatform : public VehicleControlPlatform {
 
   MOCK_METHOD(std::optional<ImuCalibData>, LoadCalib, (), (override));
   MOCK_METHOD((Result<Unit, PlatformError>), SaveCalib, (const ImuCalibData& data), (override));
+  MOCK_METHOD((Result<Unit, PlatformError>), SaveComOffset, (const float offset[2]), (override));
+  MOCK_METHOD(bool, LoadComOffset, (float offset[2]), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
   // Stabilization Config
@@ -182,8 +184,23 @@ class FakePlatform : public VehicleControlPlatform {
     calib_data_ = data;
     return Unit{};
   }
+  Result<Unit, PlatformError> SaveComOffset(const float offset[2]) override {
+    com_offset_[0] = offset[0];
+    com_offset_[1] = offset[1];
+    return Unit{};
+  }
+  bool LoadComOffset(float offset[2]) override {
+    offset[0] = com_offset_[0];
+    offset[1] = com_offset_[1];
+    return com_offset_set_;
+  }
 
   void SetCalibData(const ImuCalibData& data) { calib_data_ = data; }
+  void SetComOffset(float rx, float ry) {
+    com_offset_[0] = rx;
+    com_offset_[1] = ry;
+    com_offset_set_ = true;
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Stabilization Config
@@ -297,6 +314,8 @@ class FakePlatform : public VehicleControlPlatform {
   // IMU
   std::optional<ImuData> imu_data_;
   std::optional<ImuCalibData> calib_data_;
+  float com_offset_[2]{0.f, 0.f};
+  bool com_offset_set_{false};
 
   // Stabilization
   std::optional<StabilizationConfig> stab_config_;

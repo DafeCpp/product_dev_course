@@ -1,6 +1,7 @@
 #include "stabilization_pipeline.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 
 namespace rc_vehicle {
@@ -11,6 +12,7 @@ namespace rc_vehicle {
 
 void YawRateController::Init(const StabilizationConfig& cfg,
                              const VehicleEkf& ekf, const ImuHandler* imu) {
+  assert(imu != nullptr && "YawRateController::Init() requires non-null imu");
   cfg_ = &cfg;
   ekf_ = &ekf;
   imu_ = imu;
@@ -20,7 +22,6 @@ void YawRateController::Init(const StabilizationConfig& cfg,
 void YawRateController::Process(float& steering, float stab_w, float mode_w,
                                 uint32_t dt_ms) noexcept {
   if (!cfg_ || !ekf_ || !imu_) return;
-  if (cfg_->mode == DriveMode::Drift) return;  // Yaw PID отключён в Drift mode
   if (stab_w <= 0.0f) return;
   if (!imu_->IsEnabled()) return;
   if (dt_ms == 0) return;
@@ -55,6 +56,7 @@ void YawRateController::SetGains(const StabilizationConfig& cfg) noexcept {
 void PitchCompensator::Init(const StabilizationConfig& cfg,
                             const MadgwickFilter& madgwick,
                             const ImuHandler* imu) {
+  assert(imu != nullptr && "PitchCompensator::Init() requires non-null imu");
   cfg_ = &cfg;
   madgwick_ = &madgwick;
   imu_ = imu;
@@ -83,6 +85,7 @@ void PitchCompensator::Process(float& throttle, float stab_w) noexcept {
 
 void SlipAngleController::Init(const StabilizationConfig& cfg,
                                const VehicleEkf& ekf, const ImuHandler* imu) {
+  assert(imu != nullptr && "SlipAngleController::Init() requires non-null imu");
   cfg_ = &cfg;
   ekf_ = &ekf;
   imu_ = imu;
@@ -92,7 +95,6 @@ void SlipAngleController::Init(const StabilizationConfig& cfg,
 void SlipAngleController::Process(float& throttle, float stab_w, float mode_w,
                                   uint32_t dt_ms) noexcept {
   if (!cfg_ || !ekf_ || !imu_) return;
-  if (cfg_->mode != DriveMode::Drift) return;  // Только в Drift mode
   if (stab_w <= 0.0f) return;
   if (!imu_->IsEnabled()) return;
   if (dt_ms == 0) return;
@@ -117,12 +119,14 @@ void SlipAngleController::SetGains(const StabilizationConfig& cfg) noexcept {
 
 void OversteerGuard::Init(const StabilizationConfig& cfg, const VehicleEkf& ekf,
                           const ImuHandler* imu) {
+  assert(imu != nullptr && "OversteerGuard::Init() requires non-null imu");
   cfg_ = &cfg;
   ekf_ = &ekf;
   imu_ = imu;
 }
 
-void OversteerGuard::Process(float& throttle, uint32_t dt_ms) noexcept {
+void OversteerGuard::Process(float& throttle, uint32_t dt_ms,
+                             bool reduce_throttle) noexcept {
   if (!cfg_ || !ekf_ || !imu_) return;
   if (!cfg_->oversteer.warn_enabled) return;
   if (!imu_->IsEnabled()) return;
@@ -133,11 +137,26 @@ void OversteerGuard::Process(float& throttle, uint32_t dt_ms) noexcept {
   const float slip_rate = (slip - prev_slip_deg_) / dt_sec;
   prev_slip_deg_ = slip;
 
+  // Занос невозможен без значимой угловой скорости рыскания. Yaw rate
+  // измеряется напрямую гироскопом (не интегрируется), поэтому надёжен при
+  // неподвижности. Без этой проверки EKF-дрейф vx/vy при стоянке даёт
+  // ложный slip angle → ложное срабатывание.
+  constexpr float kMinYawRateRad = 0.3f;  // ~17°/с
+  // На малых скоростях EKF slip angle ненадёжен: vx/vy зашумлены,
+  // atan2(vy,vx) скачет. Без энкодеров speed < 0.5 м/с — зона шума.
+  constexpr float kMinSpeedMs = 0.5f;
+  if (std::abs(ekf_->GetYawRate()) < kMinYawRateRad ||
+      ekf_->GetSpeedMs() < kMinSpeedMs) {
+    oversteer_active_ = false;
+    prev_slip_deg_ = 0.0f;
+    return;
+  }
+
   oversteer_active_ = (std::abs(slip) > cfg_->oversteer.slip_thresh_deg &&
                        std::abs(slip_rate) > cfg_->oversteer.rate_thresh_deg_s);
 
   if (oversteer_active_ && cfg_->oversteer.throttle_reduction > 0.0f &&
-      cfg_->mode != DriveMode::Drift) {
+      reduce_throttle) {
     throttle *= (1.0f - cfg_->oversteer.throttle_reduction);
   }
 }

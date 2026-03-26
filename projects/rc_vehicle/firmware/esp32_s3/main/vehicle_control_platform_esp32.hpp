@@ -53,6 +53,11 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   [[nodiscard]] Result<Unit, PlatformError> SaveCalib(
       const ImuCalibData& data) override;
 
+  // CoM offset
+  [[nodiscard]] Result<Unit, PlatformError> SaveComOffset(
+      const float offset[2]) override;
+  [[nodiscard]] bool LoadComOffset(float offset[2]) override;
+
   // Stabilization Config
   [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig()
       override;
@@ -82,6 +87,10 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   [[nodiscard]] Result<Unit, PlatformError> CreateTask(void (*entry)(void*),
                                                        void* arg) override;
   void DelayUntilNextTick(uint32_t period_ms) override;
+
+  // Watchdog
+  void RegisterTaskWdt() override;
+  void FeedTaskWdt() noexcept override;
 
  private:
   QueueHandle_t cmd_queue_{nullptr};

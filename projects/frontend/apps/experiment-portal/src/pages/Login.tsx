@@ -18,10 +18,14 @@ function Login() {
 
   const loginMutation = useMutation({
     mutationFn: (credentials: LoginRequest) => authApi.login(credentials),
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
       notifySuccess('Вход выполнен')
-      navigate('/experiments')
+      if (data?.user?.password_change_required) {
+        navigate('/change-password', { replace: true })
+      } else {
+        navigate('/experiments')
+      }
     },
     onError: (err: any) => {
       const msg =

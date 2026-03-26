@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "esp_log.h"
+#include "i_vehicle_control.hpp"
 
 static const char* TAG = "ws_cmd_registry";
 
@@ -19,17 +20,32 @@ void WsCommandRegistry::Register(const std::string& type,
   }
 }
 
-bool WsCommandRegistry::Handle(const char* type, cJSON* json,
-                               httpd_req_t* req) {
+bool WsCommandRegistry::Handle(IVehicleControl& vc, const char* type,
+                               cJSON* json, httpd_req_t* req) {
   if (!type) {
     ESP_LOGW(TAG, "Handle called with null type");
     return false;
   }
 
+  // Init-ready barrier: отклонить команды до готовности control task
+  if (!vc.IsReady()) {
+    ESP_LOGW(TAG, "Command '%s' rejected: control task not ready", type);
+    cJSON* reply = cJSON_CreateObject();
+    if (reply) {
+      cJSON_AddStringToObject(reply, "type", "error");
+      cJSON_AddStringToObject(reply, "error", "not_ready");
+      cJSON_AddStringToObject(reply, "message",
+                              "Control task is still initializing");
+      WsSendJsonReply(req, reply);
+      cJSON_Delete(reply);
+    }
+    return true;  // Команда обработана (отклонена)
+  }
+
   auto it = handlers_.find(type);
   if (it != handlers_.end()) {
     ESP_LOGD(TAG, "Handling command: %s", type);
-    it->second(json, req);
+    it->second(vc, json, req);
     return true;
   }
 

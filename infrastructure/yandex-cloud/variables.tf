@@ -4,6 +4,13 @@
 
 # --- Yandex Cloud credentials ---
 
+variable "yc_token" {
+  description = "Yandex Cloud OAuth token"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "cloud_id" {
   description = "Yandex Cloud ID"
   type        = string

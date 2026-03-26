@@ -9,11 +9,39 @@ static constexpr uint32_t kStabilizationConfigMagic = 0x53544232;
 
 /**
  * @brief Режим стабилизации
- * 0 = Normal  — базовый контроль рыскания
- * 1 = Sport   — агрессивные параметры, высокая отзывчивость
- * 2 = Drift   — мягкий контроль, управление заносом
+ * 0 = Normal    — базовый контроль рыскания
+ * 1 = Sport     — агрессивные параметры, высокая отзывчивость
+ * 2 = Drift     — мягкий контроль, управление заносом
+ * 3 = Kids      — детский режим с ограничениями скорости и усиленной помощью
+ * 4 = DirectLaw — прямое управление без стабилизации и ограничения скорости изменения
  */
-enum class DriveMode : uint8_t { Normal = 0, Sport = 1, Drift = 2 };
+enum class DriveMode : uint8_t {
+  Normal = 0,
+  Sport = 1,
+  Drift = 2,
+  Kids = 3,
+  DirectLaw = 4
+};
+
+/**
+ * @brief Режим торможения при отпускании газа
+ * Coast — накат: мотор отключается, машина катится по инерции
+ * Brake — торможение: деселерация ускоряется через асимметричный slew rate
+ */
+enum class BrakingMode : uint8_t {
+  Coast = 0,
+  Brake = 1,
+};
+
+/**
+ * @brief Возрастные пресеты для Kids Mode
+ */
+enum class KidsPreset : uint8_t {
+  Custom = 0,   // Пользовательские настройки
+  Toddler = 1,  // 3-5 лет: очень медленно, максимальная помощь
+  Child = 2,    // 6-9 лет: умеренно, хорошая помощь
+  Preteen = 3   // 10-12 лет: быстрее, базовая помощь
+};
 
 /**
  * @brief Конфигурация ПИД-регулятора
@@ -45,7 +73,7 @@ struct PidConfig {
    */
   [[nodiscard]] bool IsValid() const noexcept {
     return kp >= 0.0f && ki >= 0.0f && kd >= 0.0f && max_integral >= 0.0f &&
-           max_correction > 0.0f;
+           max_correction >= 0.0f;
   }
 
   /**
@@ -83,12 +111,44 @@ struct FilterConfig {
   float imu_sample_rate_hz{500.0f};
 
   /**
+   * Включён ли Madgwick AHRS фильтр.
+   * При выключении: pitch/roll/yaw = 0, pitch compensation не работает.
+   * По умолчанию включён.
+   */
+  bool madgwick_enabled{true};
+
+  /**
+   * Включён ли EKF (Extended Kalman Filter) для оценки скорости и slip angle.
+   * При выключении: vx/vy/speed/slip = 0, adaptive PID и slip angle PID
+   * не получают данных, oversteer guard не срабатывает по slip.
+   * По умолчанию включён.
+   */
+  bool ekf_enabled{true};
+
+  /**
+   * Адаптивный beta: отключить коррекцию акселерометра при линейном ускорении.
+   * При включении: если |a| - 1g| > adaptive_accel_threshold_g, beta=0.
+   * Предотвращает ошибки ориентации при разгоне/торможении/поворотах.
+   * По умолчанию включено.
+   */
+  bool adaptive_beta_enabled{true};
+
+  /**
+   * Порог линейного ускорения для адаптивного beta [g].
+   * При |a| - 1g| > threshold коррекция акселерометра отключается.
+   * Диапазон: 0.05–0.5 g, по умолчанию 0.2 g.
+   */
+  float adaptive_accel_threshold_g{0.2f};
+
+  /**
    * @brief Проверить валидность конфигурации фильтров
    */
   [[nodiscard]] bool IsValid() const noexcept {
     return madgwick_beta > 0.0f && madgwick_beta <= 1.0f &&
            lpf_cutoff_hz >= 5.0f && lpf_cutoff_hz <= 100.0f &&
-           imu_sample_rate_hz > 0.0f;
+           imu_sample_rate_hz > 0.0f &&
+           adaptive_accel_threshold_g >= 0.05f &&
+           adaptive_accel_threshold_g <= 0.5f;
   }
 
   /**
@@ -279,6 +339,86 @@ struct PitchCompensationConfig {
 };
 
 /**
+ * @brief Конфигурация детского режима (Kids Mode)
+ */
+struct KidsModeConfig {
+  /** Максимальный газ вперёд [0.1..1.0] */
+  float throttle_limit{0.3f};
+
+  /** Максимальный задний ход [0.1..1.0] */
+  float reverse_limit{0.2f};
+
+  /** Максимальный угол поворота [0.3..1.0] */
+  float steering_limit{0.7f};
+
+  /** Скорость изменения газа [/сек] */
+  float slew_throttle{0.3f};
+
+  /** Скорость изменения руля [/сек] */
+  float slew_steering{0.5f};
+
+  /** Включить защиту от заноса */
+  bool anti_spin_enabled{true};
+
+  /** Порог угла заноса для anti-spin [градусы] */
+  float anti_spin_threshold_deg{10.0f};
+
+  /** Снижение газа при anti-spin [0..1] */
+  float anti_spin_reduction{0.7f};
+
+  /** Включить ограничение по ускорению (IMU) */
+  bool accel_limit_enabled{true};
+
+  /** Порог ускорения [g], выше которого throttle снижается [0.05..0.5] */
+  float accel_threshold_g{0.15f};
+
+  /** Пропорциональный коэффициент: excess_g * gain → reduction [0.5..10.0] */
+  float accel_limit_gain{3.0f};
+
+  /** Максимальное снижение throttle от accel limiter [0..1] */
+  float accel_max_reduction{0.5f};
+
+  /** Включить ограничение по скорости (EKF) */
+  bool speed_limit_enabled{false};
+
+  /** Максимальная скорость [м/с]; при превышении throttle снижается [0.3..5.0] */
+  float max_speed_ms{1.5f};
+
+  /** P-коэффициент регулятора скорости: excess_ms * gain → снижение [0.5..10.0] */
+  float speed_limit_gain{5.0f};
+
+  /**
+   * @brief Проверить валидность конфигурации Kids Mode
+   */
+  [[nodiscard]] bool IsValid() const noexcept {
+    return throttle_limit >= 0.1f && throttle_limit <= 1.0f &&
+           reverse_limit >= 0.1f && reverse_limit <= 1.0f &&
+           steering_limit >= 0.3f && steering_limit <= 1.0f &&
+           slew_throttle >= 0.1f && slew_throttle <= 2.0f &&
+           slew_steering >= 0.2f && slew_steering <= 3.0f &&
+           anti_spin_threshold_deg >= 5.0f &&
+           anti_spin_threshold_deg <= 45.0f && anti_spin_reduction >= 0.0f &&
+           anti_spin_reduction <= 1.0f &&
+           accel_threshold_g >= 0.05f && accel_threshold_g <= 0.5f &&
+           accel_limit_gain >= 0.5f && accel_limit_gain <= 10.0f &&
+           accel_max_reduction >= 0.0f && accel_max_reduction <= 1.0f &&
+           max_speed_ms >= 0.3f && max_speed_ms <= 5.0f &&
+           speed_limit_gain >= 0.5f && speed_limit_gain <= 10.0f;
+  }
+
+  /**
+   * @brief Применить ограничения к параметрам
+   */
+  void Clamp() noexcept;
+
+  /**
+   * @brief Применить возрастной пресет
+   * @param preset Пресет для применения
+   */
+  void ApplyPreset(KidsPreset preset) noexcept;
+};
+
+/**
  * @brief Конфигурация системы стабилизации
  *
  * Улучшенная структура с группировкой связанных параметров в подструктуры.
@@ -324,8 +464,47 @@ struct StabilizationConfig {
   /** Конфигурация pitch compensation */
   PitchCompensationConfig pitch_comp;
 
+  /** Конфигурация детского режима */
+  KidsModeConfig kids_mode;
+
+  /**
+   * Скорость изменения газа (slew rate) [единиц/сек].
+   * Ограничивает максимальную скорость изменения throttle PWM.
+   * Меньше → плавнее, больше → отзывчивее.
+   * Диапазон: 0.1–10.0, по умолчанию 0.5.
+   */
+  float slew_throttle{0.5f};
+
+  /**
+   * Скорость изменения руля (slew rate) [единиц/сек].
+   * Ограничивает максимальную скорость изменения steering PWM.
+   * Меньше → плавнее, больше → отзывчивее.
+   * Диапазон: 0.5–10.0, по умолчанию 3.0.
+   */
+  float slew_steering{3.0f};
+
+  /** Трим руля [-0.1..0.1] — смещение нейтрали (компенсация механического сдвига) */
+  float steering_trim{0.0f};
+
+  /** Трим газа [-0.1..0.1] — смещение нейтрали */
+  float throttle_trim{0.0f};
+
+  /**
+   * Режим торможения при отпускании газа.
+   * Coast (0) — накат (текущее поведение, симметричный slew rate).
+   * Brake (1) — активное торможение: деселерация быстрее разгона.
+   */
+  BrakingMode braking_mode{BrakingMode::Coast};
+
+  /**
+   * Множитель ускорения деселерации в режиме Brake [1..10].
+   * Эффективный slew rate при торможении = slew_throttle * brake_slew_multiplier.
+   * Диапазон: 1.0–10.0, по умолчанию 4.0.
+   */
+  float brake_slew_multiplier{4.0f};
+
   /** Версия структуры для NVS-миграции */
-  uint8_t version{2};
+  uint8_t version{3};
 
   /** Валидность конфигурации (magic number для проверки NVS) */
   uint32_t magic{kStabilizationConfigMagic};
@@ -369,5 +548,25 @@ struct StabilizationDefaults {
   static constexpr DriveMode kMode = DriveMode::Normal;
 };
 }  // namespace config
+
+/**
+ * @brief Преобразовать DriveMode в строку
+ */
+inline const char* DriveModeToString(DriveMode mode) {
+  switch (mode) {
+    case DriveMode::Normal:
+      return "Normal";
+    case DriveMode::Sport:
+      return "Sport";
+    case DriveMode::Drift:
+      return "Drift";
+    case DriveMode::Kids:
+      return "Kids";
+    case DriveMode::DirectLaw:
+      return "DirectLaw";
+    default:
+      return "Unknown";
+  }
+}
 
 }  // namespace rc_vehicle

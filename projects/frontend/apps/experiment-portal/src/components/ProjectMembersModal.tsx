@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi } from '../api/client'
+import Autocomplete from '@mui/material/Autocomplete'
+import TextField from '@mui/material/TextField'
+import CircularProgress from '@mui/material/CircularProgress'
+import { projectsApi, usersApi } from '../api/client'
 import { authApi } from '../api/auth'
-import type { ProjectMemberAdd, ProjectMemberUpdate } from '../types'
+import type { ProjectMemberAdd, ProjectMemberUpdate, UserSearchResult } from '../types'
 import Modal from './Modal'
 import { Loading, Error, MaterialSelect } from './common'
 import { IS_TEST } from '../utils/env'
@@ -20,9 +23,40 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
     const queryClient = useQueryClient()
     const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [isOwner, setIsOwner] = useState(false)
-    const [newMemberUserId, setNewMemberUserId] = useState('')
+    const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
+    const [userSearchInput, setUserSearchInput] = useState('')
     const [newMemberRole, setNewMemberRole] = useState<'owner' | 'editor' | 'viewer'>('viewer')
     const [error, setError] = useState<string | null>(null)
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [debouncedQuery, setDebouncedQuery] = useState('')
+
+    // Debounce user search input 300ms, min 2 chars
+    useEffect(() => {
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        if (userSearchInput.length >= 2) {
+            debounceRef.current = setTimeout(() => {
+                setDebouncedQuery(userSearchInput)
+            }, 300)
+        } else {
+            setDebouncedQuery('')
+        }
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current)
+        }
+    }, [userSearchInput])
+
+    // Search users
+    const {
+        data: usersSearchData,
+        isFetching: isSearchingUsers,
+    } = useQuery({
+        queryKey: ['users', 'search', debouncedQuery, projectId],
+        queryFn: () => usersApi.search({ q: debouncedQuery, exclude_project_id: projectId }),
+        enabled: debouncedQuery.length >= 2,
+        staleTime: 30_000,
+    })
+
+    const userOptions: UserSearchResult[] = usersSearchData?.users ?? []
 
     // Получаем текущего пользователя
     const { data: currentUser } = useQuery({
@@ -47,11 +81,9 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
     useEffect(() => {
         if (currentUser) {
             setCurrentUserId(currentUser.id)
-            // Проверяем, является ли пользователь владельцем проекта
             const isProjectOwner = currentUser.id === projectOwnerId
             setIsOwner(isProjectOwner)
 
-            // Если не owner, проверяем роль в списке участников
             if (!isProjectOwner && membersData?.members) {
                 const member = membersData.members.find((m) => m.user_id === currentUser.id)
                 if (member?.role === 'owner') {
@@ -66,7 +98,9 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         mutationFn: (data: ProjectMemberAdd) => projectsApi.addMember(projectId, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
-            setNewMemberUserId('')
+            setSelectedUser(null)
+            setUserSearchInput('')
+            setDebouncedQuery('')
             setNewMemberRole('viewer')
             setError(null)
             notifySuccess('Участник добавлен')
@@ -114,15 +148,15 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         e.preventDefault()
         setError(null)
 
-        if (!newMemberUserId.trim()) {
-            const msg = 'Введите ID пользователя'
+        if (!selectedUser) {
+            const msg = 'Выберите пользователя из списка'
             setError(msg)
             notifyError(msg)
             return
         }
 
         addMemberMutation.mutate({
-            user_id: newMemberUserId.trim(),
+            user_id: selectedUser.id,
             role: newMemberRole,
         })
     }
@@ -143,7 +177,9 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
 
     const handleClose = () => {
         if (!addMemberMutation.isPending && !removeMemberMutation.isPending && !updateRoleMutation.isPending) {
-            setNewMemberUserId('')
+            setSelectedUser(null)
+            setUserSearchInput('')
+            setDebouncedQuery('')
             setNewMemberRole('viewer')
             setError(null)
             onClose()
@@ -278,16 +314,54 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
                                 <form onSubmit={handleAddMember}>
                                     <div className="form-group">
                                         <label htmlFor="new_member_user_id">
-                                            ID пользователя <span className="required">*</span>
+                                            Пользователь <span className="required">*</span>
                                         </label>
-                                        <input
+                                        <Autocomplete<UserSearchResult>
                                             id="new_member_user_id"
-                                            type="text"
-                                            value={newMemberUserId}
-                                            onChange={(e) => setNewMemberUserId(e.target.value)}
-                                            placeholder="Введите UUID пользователя"
-                                            required
+                                            options={userOptions}
+                                            value={selectedUser}
+                                            inputValue={userSearchInput}
+                                            onInputChange={(_event, value) => {
+                                                setUserSearchInput(value)
+                                                if (!value) setSelectedUser(null)
+                                            }}
+                                            onChange={(_event, value) => setSelectedUser(value)}
+                                            getOptionLabel={(option) => option.username}
+                                            isOptionEqualToValue={(option, value) => option.id === value.id}
+                                            renderOption={(props, option) => (
+                                                <li {...props} key={option.id}>
+                                                    <span style={{ fontWeight: 500 }}>{option.username}</span>
+                                                    <span style={{ marginLeft: 8, color: '#888', fontSize: '0.85em' }}>
+                                                        {option.email}
+                                                    </span>
+                                                </li>
+                                            )}
+                                            loading={isSearchingUsers}
+                                            noOptionsText={
+                                                debouncedQuery.length < 2
+                                                    ? 'Введите минимум 2 символа'
+                                                    : 'Пользователи не найдены'
+                                            }
                                             disabled={isPending}
+                                            renderInput={(params) => (
+                                                <TextField
+                                                    {...params}
+                                                    placeholder="Поиск по имени или email"
+                                                    size="small"
+                                                    InputProps={{
+                                                        ...params.InputProps,
+                                                        endAdornment: (
+                                                            <>
+                                                                {isSearchingUsers ? (
+                                                                    <CircularProgress color="inherit" size={16} />
+                                                                ) : null}
+                                                                {params.InputProps.endAdornment}
+                                                            </>
+                                                        ),
+                                                    }}
+                                                />
+                                            )}
+                                            filterOptions={(x) => x}
                                         />
                                     </div>
 
@@ -310,7 +384,7 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
                                     <button
                                         type="submit"
                                         className="btn btn-primary"
-                                        disabled={isPending || !newMemberUserId.trim()}
+                                        disabled={isPending || !selectedUser}
                                     >
                                         {addMemberMutation.isPending ? 'Добавление...' : 'Добавить участника'}
                                     </button>
@@ -336,4 +410,3 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
 }
 
 export default ProjectMembersModal
-

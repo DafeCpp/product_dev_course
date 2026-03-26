@@ -1,6 +1,8 @@
 # Firmware Bug Fixes — Remaining
 
-Сделано: #1 (TelemetryLog race condition), #2 (EKF P matrix clamp).
+Сделано: #1 (TelemetryLog race condition), #2 (EKF P matrix clamp), #3 (Failsafe mutex),
+#4 (slip angle guard), #5 (dt_ms wraparound), #6 (NVS Clamp + versioning),
+#7 (LPF boundary check), #8 (RxBuffer assert), #9 (Init nullptr asserts), #10 (EKF threshold).
 
 ---
 

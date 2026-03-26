@@ -42,6 +42,13 @@ const navItems: NavItem[] = [
     shortLabel: 'SN',
   },
   {
+    to: '/sensor-monitor',
+    label: 'Монитор датчиков',
+    description: 'Статус подключения и история heartbeat',
+    eyebrow: 'Sensor Monitor',
+    shortLabel: 'SM',
+  },
+  {
     to: '/telemetry',
     label: 'Телеметрия',
     description: 'Потоки сигналов и живая диагностика',
@@ -89,6 +96,12 @@ const pageMeta = [
     title: 'Датчики',
     description: 'Держите под контролем флот устройств, состояние каналов и токены доступа.',
     eyebrow: 'Sensor Fleet',
+  },
+  {
+    match: (pathname: string) => pathname.startsWith('/sensor-monitor'),
+    title: 'Монитор датчиков',
+    description: 'Оперативный контроль статуса подключения и истории heartbeat по флоту.',
+    eyebrow: 'Sensor Monitor',
   },
   {
     match: (pathname: string) => pathname.startsWith('/telemetry'),
@@ -145,9 +158,10 @@ function Layout({ children }: LayoutProps) {
     },
   })
 
+  const isAdmin = user?.is_admin || user?.system_roles?.some((r) => r === 'superadmin' || r === 'admin')
   const availableNavItems = useMemo(
-    () => navItems.filter((item) => !item.adminOnly || user?.is_admin),
-    [user?.is_admin]
+    () => navItems.filter((item) => !item.adminOnly || isAdmin),
+    [isAdmin]
   )
 
   const currentPage =
@@ -319,7 +333,7 @@ function Layout({ children }: LayoutProps) {
               <div className="header-chip">
                 <span className="header-chip__label">Workspace</span>
                 <span className="header-chip__value">
-                  {user?.is_admin ? 'Admin access' : 'Member access'}
+                  {isAdmin ? 'Admin access' : 'Member access'}
                 </span>
               </div>
 

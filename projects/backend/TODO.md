@@ -12,15 +12,10 @@
 - Отдельным миграционным job'ом
 
 **Задачи:**
-- [ ] Удалить функцию `apply_migrations_on_startup` из `auth-service/src/auth_service/main.py`
-- [ ] Удалить функцию `apply_migrations_on_startup` из `experiment-service/src/experiment_service/main.py`
-- [ ] Удалить вызов `app.on_startup.append(apply_migrations_on_startup)` из обоих сервисов
-- [ ] Настроить применение миграций через отдельный init container или миграционный job
-- [ ] Обновить docker-compose.yml для применения миграций отдельным шагом
+- [x] Удалить функцию `apply_migrations_on_startup` из `auth-service/src/auth_service/main.py`
+- [x] Удалить функцию `apply_migrations_on_startup` из `experiment-service/src/experiment_service/main.py`
+- [x] Удалить вызов `app.on_startup.append(apply_migrations_on_startup)` из обоих сервисов
+- [x] Настроить применение миграций через отдельный init container (`auth-migrate`, `experiment-migrate`)
+- [x] Обновить docker-compose.yml — добавлены сервисы `auth-migrate` и `experiment-migrate`
 - [ ] Обновить документацию по развертыванию
-
-**Текущее состояние:**
-- `auth-service/src/auth_service/main.py` - применяет миграции на строках 44-161, регистрируется на строке 193
-- `experiment-service/src/experiment_service/main.py` - применяет миграции на строках 47-163, регистрируется на строке 191
-- Оба сервиса имеют скрипты миграций в `bin/migrate.py`, которые можно использовать отдельно
 

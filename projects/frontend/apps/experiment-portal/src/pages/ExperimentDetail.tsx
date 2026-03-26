@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
@@ -188,9 +188,18 @@ function ExperimentDetail() {
             <h3 className="detail-card__title">Запуски эксперимента</h3>
             <p>Управляйте серией запусков, экспортируйте данные и быстро проваливайтесь в детали.</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowCreateRunModal(true)}>
-            Новый запуск
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Link
+              to={`/experiments/${id}/compare`}
+              className="btn btn-secondary"
+              style={{ textDecoration: 'none' }}
+            >
+              Compare Runs
+            </Link>
+            <button className="btn btn-primary" onClick={() => setShowCreateRunModal(true)}>
+              Новый запуск
+            </button>
+          </div>
         </div>
         <RunsList experimentId={id!} />
       </section>

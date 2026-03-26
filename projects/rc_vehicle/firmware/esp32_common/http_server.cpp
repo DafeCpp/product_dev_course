@@ -1,5 +1,6 @@
 #include "http_server.hpp"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -7,6 +8,8 @@
 #include "config.hpp"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "telemetry_log.hpp"
+#include "vehicle_control.hpp"
 #include "wifi_ap.hpp"
 
 static const char* TAG = "http_server";
@@ -675,6 +678,7 @@ static esp_err_t wifi_scan_handler(httpd_req_t* req) {
 
 static esp_err_t root_get_handler(httpd_req_t* req) {
   httpd_resp_set_type(req, "text/html");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_send(req, reinterpret_cast<const char*>(INDEX_HTML),
                   INDEX_HTML_LEN);
   return ESP_OK;
@@ -682,13 +686,88 @@ static esp_err_t root_get_handler(httpd_req_t* req) {
 
 static esp_err_t style_css_handler(httpd_req_t* req) {
   httpd_resp_set_type(req, "text/css");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_send(req, reinterpret_cast<const char*>(STYLE_CSS), STYLE_CSS_LEN);
   return ESP_OK;
 }
 
 static esp_err_t app_js_handler(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/javascript");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_send(req, reinterpret_cast<const char*>(APP_JS), APP_JS_LEN);
+  return ESP_OK;
+}
+
+static esp_err_t redirect_to_root_handler(httpd_req_t* req) {
+  char ap_ip[16] = {};
+  char location[64] = {};
+  if (WiFiApGetIp(ap_ip, sizeof(ap_ip)) == ESP_OK && ap_ip[0] != '\0') {
+    snprintf(location, sizeof(location), "http://%s/", ap_ip);
+  } else {
+    strncpy(location, "http://192.168.4.1/", sizeof(location) - 1);
+    location[sizeof(location) - 1] = '\0';
+  }
+
+  httpd_resp_set_status(req, "302 Found");
+  httpd_resp_set_hdr(req, "Location", location);
+  httpd_resp_set_type(req, "text/plain");
+  httpd_resp_send(req, "Redirecting to captive portal", HTTPD_RESP_USE_STRLEN);
+  return ESP_OK;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Binary telemetry log download: GET /api/log.bin
+// Protocol:
+//   [4 bytes] uint32_t frame_count  (little-endian)
+//   [4 bytes] uint32_t frame_size   (sizeof(TelemetryLogFrame))
+//   [frame_count × frame_size bytes] raw TelemetryLogFrame data
+// ─────────────────────────────────────────────────────────────────────────────
+
+static esp_err_t log_bin_handler(httpd_req_t* req) {
+  size_t count = 0;
+  size_t cap = 0;
+  VehicleControlGetLogInfo(&count, &cap);
+
+  httpd_resp_set_type(req, "application/octet-stream");
+  httpd_resp_set_hdr(req, "Content-Disposition",
+                     "attachment; filename=\"telemetry_log.bin\"");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+
+  // Header: frame_count + frame_size
+  const uint32_t header[2] = {
+      static_cast<uint32_t>(count),
+      static_cast<uint32_t>(sizeof(TelemetryLogFrame)),
+  };
+  esp_err_t err =
+      httpd_resp_send_chunk(req, reinterpret_cast<const char*>(header),
+                            sizeof(header));
+  if (err != ESP_OK) return err;
+
+  // Send frames in chunks to avoid large stack allocation
+  constexpr size_t kBatchSize = 32;
+  TelemetryLogFrame batch[kBatchSize];
+
+  for (size_t sent = 0; sent < count;) {
+    size_t n = std::min(kBatchSize, count - sent);
+    size_t filled = 0;
+    for (size_t i = 0; i < n; ++i) {
+      if (VehicleControlGetLogFrame(sent + i, &batch[filled])) {
+        ++filled;
+      }
+    }
+    if (filled > 0) {
+      err = httpd_resp_send_chunk(
+          req, reinterpret_cast<const char*>(batch),
+          filled * sizeof(TelemetryLogFrame));
+      if (err != ESP_OK) return err;
+    }
+    sent += n;
+  }
+
+  // End chunked response
+  httpd_resp_send_chunk(req, nullptr, 0);
+  ESP_LOGI(TAG, "Binary log download: %zu frames, %zu bytes", count,
+           count * sizeof(TelemetryLogFrame) + sizeof(header));
   return ESP_OK;
 }
 
@@ -697,8 +776,14 @@ esp_err_t HttpServerInit(void) {
   config.server_port = HTTP_SERVER_PORT;
   config.max_uri_handlers = 16;
   config.stack_size = 8192;
-  config.max_open_sockets = 7;
-  config.lru_purge_enable = true;  // Автозакрытие старых соединений при нехватке
+  config.max_open_sockets =
+      7;  // LWIP_MAX_SOCKETS лимит (3 занято httpd внутри)
+  config.recv_wait_timeout = 5;   // Секунды — мобильный клиент может быть медленнее
+  config.send_wait_timeout = 2;   // Короткий тайм-аут: зависший send не должен
+                                  // блокировать httpd task и telem_sender_task
+  config.lru_purge_enable =
+      true;  // Автозакрытие старых соединений при нехватке
+  config.uri_match_fn = httpd_uri_match_wildcard;
 
   ESP_LOGI(TAG, "Starting HTTP server on port %d", config.server_port);
 
@@ -793,6 +878,98 @@ esp_err_t HttpServerInit(void) {
 #endif
     };
     httpd_register_uri_handler(server_handle, &wifi_scan_uri);
+
+    httpd_uri_t log_bin_uri = {
+        .uri = "/api/log.bin",
+        .method = HTTP_GET,
+        .handler = log_bin_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &log_bin_uri);
+
+    // Captive portal probes (iOS/Android/Windows/macOS).
+    httpd_uri_t captive_android_uri = {
+        .uri = "/generate_204",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_android_uri);
+
+    httpd_uri_t captive_android_alt_uri = {
+        .uri = "/gen_204",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_android_alt_uri);
+
+    httpd_uri_t captive_apple_uri = {
+        .uri = "/hotspot-detect.html",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_apple_uri);
+
+    httpd_uri_t captive_windows_uri = {
+        .uri = "/ncsi.txt",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_windows_uri);
+
+    httpd_uri_t captive_windows_alt_uri = {
+        .uri = "/connecttest.txt",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_windows_alt_uri);
+
+    httpd_uri_t captive_redirect_uri = {
+        .uri = "/redirect",
+        .method = HTTP_GET,
+        .handler = redirect_to_root_handler,
+        .user_ctx = NULL,
+#if CONFIG_HTTPD_WS_SUPPORT
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = NULL,
+#endif
+    };
+    httpd_register_uri_handler(server_handle, &captive_redirect_uri);
 
     ESP_LOGI(TAG, "HTTP server started");
     return ESP_OK;

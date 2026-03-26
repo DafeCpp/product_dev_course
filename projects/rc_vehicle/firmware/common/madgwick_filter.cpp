@@ -1,5 +1,6 @@
 #include "madgwick_filter.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -41,6 +42,18 @@ void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
   float ax_n = ax, ay_n = ay, az_n = az;
   const float norm2 = ax * ax + ay * ay + az * az;
   if (norm2 > 1e-12f) {
+    // Адаптивный beta: при линейном ускорении |a| отклоняется от 1g.
+    // Акселерометр перестаёт быть надёжным ориентиром гравитации → отключаем
+    // коррекцию (beta=0), чтобы не вносить ошибку в ориентацию при разгоне,
+    // торможении и поворотах.
+    float effective_beta = beta_;
+    if (adaptive_enabled_) {
+      const float accel_mag = std::sqrt(norm2);
+      if (std::fabs(accel_mag - 1.0f) > adaptive_threshold_g_) {
+        effective_beta = 0.0f;
+      }
+    }
+
     const float recipNorm = InvSqrt(norm2);
     ax_n *= recipNorm;
     ay_n *= recipNorm;
@@ -61,16 +74,21 @@ void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
                _4q2 + _8q2 * q1q1 + _8q2 * q2q2 + _4q2 * az_n;
     float s3 = 4.f * q1q1 * q3_ - _2q1 * ax_n + 4.f * q2q2 * q3_ - _2q2 * ay_n;
 
-    const float sNorm = InvSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3);
-    s0 *= sNorm;
-    s1 *= sNorm;
-    s2 *= sNorm;
-    s3 *= sNorm;
+    const float sSqNorm = s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3;
+    // Пропускаем коррекцию если градиент вырожден (кватернион точно выровнен с g)
+    // или subnormal float — умножение на InvSqrt(~0) даст NaN/Inf в кватернионе
+    if (sSqNorm >= 1e-20f) {
+      const float sNorm = InvSqrt(sSqNorm);
+      s0 *= sNorm;
+      s1 *= sNorm;
+      s2 *= sNorm;
+      s3 *= sNorm;
 
-    qDot1 -= beta_ * s0;
-    qDot2 -= beta_ * s1;
-    qDot3 -= beta_ * s2;
-    qDot4 -= beta_ * s3;
+      qDot1 -= effective_beta * s0;
+      qDot2 -= effective_beta * s1;
+      qDot3 -= effective_beta * s2;
+      qDot4 -= effective_beta * s3;
+    }
   }
 
   // Интегрирование
@@ -103,28 +121,42 @@ void MadgwickFilter::Update(const ImuData& imu, float dt_sec) {
 void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
                                      const float forward_vec[3], bool valid) {
   use_vehicle_frame_ = false;
-  if (!valid || forward_vec == nullptr) return;
-  (void)gravity_vec;
+  if (!valid || forward_vec == nullptr || gravity_vec == nullptr) return;
 
-  // СК машины в NED: Z_veh = вниз (0,0,1), X_veh = вперёд (проекция forward на
-  // горизонталь), Y_veh = Z × X
-  float zx = 0.f, zy = 0.f, zz = 1.f;
-  float fx = forward_vec[0], fy = forward_vec[1],
-        fz = 0.f;  // проекция на горизонталь (Z=0)
-  float nx2 = fx * fx + fy * fy;
-  if (nx2 < 1e-12f) return;
-  float nx = InvSqrt(nx2);
-  fx *= nx;
-  fy *= nx;
+  // Z_veh = gravity_vec в СК датчика (показание акселерометра в покое),
+  // нормализованный. Направлен ВВЕРХ (реакция опоры, противоположно g).
+  // При нормальном монтаже ≈ [0,0,+1], при перевёрнутом ≈ [0,0,-1].
+  float zx = gravity_vec[0], zy = gravity_vec[1], zz = gravity_vec[2];
+  float z2 = zx * zx + zy * zy + zz * zz;
+  if (z2 < 1e-12f) return;
+  float zn = InvSqrt(z2);
+  zx *= zn;
+  zy *= zn;
+  zz *= zn;
 
-  float yx = zy * fz - zz * fy;  // (0,0,1)×(fx,fy,0) = (-fy, fx, 0)
+  // X_veh (вперёд машины) = forward_vec, ортогонализированный к Z_veh.
+  // Проекция: f_orth = forward - (forward · Z_veh) * Z_veh
+  float fx = forward_vec[0], fy = forward_vec[1], fz = forward_vec[2];
+  float dot_fz = fx * zx + fy * zy + fz * zz;
+  fx -= dot_fz * zx;
+  fy -= dot_fz * zy;
+  fz -= dot_fz * zz;
+  float f2 = fx * fx + fy * fy + fz * fz;
+  if (f2 < 1e-12f) return;  // forward ∥ gravity — невозможно построить СК
+  float fn = InvSqrt(f2);
+  fx *= fn;
+  fy *= fn;
+  fz *= fn;
+
+  // Y_veh (вправо) = Z_veh × X_veh
+  float yx = zy * fz - zz * fy;
   float yy = zz * fx - zx * fz;
   float yz = zx * fy - zy * fx;
 
-  // R_veh_to_ned: столбцы = оси СК машины в NED (X_veh, Y_veh, Z_veh)
-  float r00 = fx, r10 = fy, r20 = 0.f;
-  float r01 = yx, r11 = yy, r21 = 0.f;
-  float r02 = 0.f, r12 = 0.f, r22 = 1.f;
+  // R_veh_to_ned: столбцы = оси СК машины в СК датчика (X_veh, Y_veh, Z_veh)
+  float r00 = fx, r10 = fy, r20 = fz;
+  float r01 = yx, r11 = yy, r21 = yz;
+  float r02 = zx, r12 = zy, r22 = zz;
 
   // Матрица → кватернион q_veh_to_ned
   float tr = r00 + r11 + r22;
@@ -163,6 +195,16 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   q_veh_to_ned_2_ *= qn;
   q_veh_to_ned_3_ *= qn;
   use_vehicle_frame_ = true;
+
+  // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame Euler = 0.
+  // Мэджвик использует сопряжённую конвенцию: v_sensor = q* ⊗ v_ref ⊗ q,
+  // т.е. q в стандартной конвенции = sensor→reference.
+  // GetQuaternion: q_result = q_madgwick * q_sv (vehicle→reference в стандартной).
+  // Для identity: q_madgwick * q_sv = I  ⟹  q_madgwick = conj(q_sv).
+  q0_ = q_veh_to_ned_0_;
+  q1_ = -q_veh_to_ned_1_;
+  q2_ = -q_veh_to_ned_2_;
+  q3_ = -q_veh_to_ned_3_;
 }
 
 void MadgwickFilter::GetQuaternionInNed(float& qw, float& qx, float& qy,
@@ -179,7 +221,10 @@ void MadgwickFilter::GetQuaternion(float& qw, float& qx, float& qy,
     GetQuaternionInNed(qw, qx, qy, qz);
     return;
   }
-  // q_sensor_from_veh = q_sensor_from_ned * q_veh_to_ned
+  // Мэджвик (сопряжённая конвенция): q_madgwick = sensor→reference (стандартная).
+  // q_sv = vehicle→sensor (стандартная).
+  // q_result = q_madgwick * q_sv = vehicle→reference (стандартная конвенция).
+  // Euler ZYX из q_result дают ориентацию машины относительно горизонта.
   QuatMul(q0_, q1_, q2_, q3_, q_veh_to_ned_0_, q_veh_to_ned_1_, q_veh_to_ned_2_,
           q_veh_to_ned_3_, qw, qx, qy, qz);
 }
@@ -199,7 +244,7 @@ void MadgwickFilter::GetEulerRad(float& pitch_rad, float& roll_rad,
   GetQuaternion(qw, qx, qy, qz);
   roll_rad =
       std::atan2(2.f * (qw * qx + qy * qz), 1.f - 2.f * (qx * qx + qy * qy));
-  pitch_rad = std::asin(2.f * (qw * qy - qz * qx));
+  pitch_rad = std::asin(std::clamp(2.f * (qw * qy - qz * qx), -1.f, 1.f));
   yaw_rad =
       std::atan2(2.f * (qw * qz + qx * qy), 1.f - 2.f * (qy * qy + qz * qz));
 }

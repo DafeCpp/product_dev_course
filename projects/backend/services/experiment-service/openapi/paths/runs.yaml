@@ -164,6 +164,71 @@ metrics:
             schema:
               $ref: ../components/schemas.yaml#/MetricQueryResponse
 
+metricsSummary:
+  get:
+    tags: [metrics]
+    summary: Get metrics summary (last value, min/avg/max per metric)
+    operationId: getMetricsSummary
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: names
+        in: query
+        schema:
+          type: string
+        description: Comma-separated metric names
+    responses:
+      200:
+        description: Summary
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/MetricSummaryResponse
+      404:
+        description: Run not found
+
+metricsAggregations:
+  get:
+    tags: [metrics]
+    summary: Get step-bucketed aggregations for selected metrics
+    operationId: getMetricsAggregations
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: names
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Comma-separated metric names
+      - name: from_step
+        in: query
+        schema:
+          type: integer
+      - name: to_step
+        in: query
+        schema:
+          type: integer
+      - name: bucket_size
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+      - name: agg
+        in: query
+        schema:
+          type: string
+          default: min,avg,max
+    responses:
+      200:
+        description: Aggregated metrics
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/MetricAggregationsResponse
+      404:
+        description: Run not found
+
 artifacts:
   post:
     tags: [artifacts]

@@ -3,13 +3,21 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 if TYPE_CHECKING:
-    from auth_service.domain.models import InviteToken, Project, ProjectMember, User
+    from auth_service.domain.models import (
+        AuditEntry,
+        InviteToken,
+        Permission,
+        Project,
+        Role,
+        User,
+        UserProjectRole,
+    )
 
 # Minimum password complexity: at least one uppercase, one lowercase, one digit.
 _PASSWORD_COMPLEXITY_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$")
@@ -27,6 +35,10 @@ def _check_password_complexity(value: str) -> str:
         )
     return value
 
+
+# =============================================================================
+# Auth DTOs
+# =============================================================================
 
 class BootstrapAdminRequest(BaseModel):
     """Bootstrap first admin user request."""
@@ -80,28 +92,31 @@ class AuthTokensResponse(BaseModel):
 
     access_token: str
     refresh_token: str
+    password_change_required: bool = False
 
 
 class UserResponse(BaseModel):
-    """User response."""
+    """User response (без is_admin — заменён системными ролями)."""
 
     id: str
     username: str
     email: str
     password_change_required: bool = False
-    is_admin: bool = False
     is_active: bool = True
+    system_roles: list[str] = Field(default_factory=list)
+    created_at: str = ""
 
     @classmethod
-    def from_user(cls, user: "User") -> "UserResponse":
+    def from_user(cls, user: "User", system_roles: list[str] | None = None) -> "UserResponse":
         """Create UserResponse from a User domain model."""
         return cls(
             id=str(user.id),
             username=user.username,
             email=user.email,
             password_change_required=user.password_change_required,
-            is_admin=user.is_admin,
             is_active=user.is_active,
+            system_roles=system_roles or [],
+            created_at=user.created_at.isoformat(),
         )
 
 
@@ -130,10 +145,9 @@ class AdminUserResetRequest(BaseModel):
 
 
 class AdminUserUpdateRequest(BaseModel):
-    """Admin update of user fields (is_active, is_admin)."""
+    """Admin update of user fields."""
 
     is_active: bool | None = None
-    is_admin: bool | None = None
 
 
 class PasswordChangeRequest(BaseModel):
@@ -148,7 +162,9 @@ class PasswordChangeRequest(BaseModel):
         return _check_password_complexity(value)
 
 
+# =============================================================================
 # Invite DTOs
+# =============================================================================
 
 class InviteCreateRequest(BaseModel):
     """Invite creation request."""
@@ -186,7 +202,10 @@ class InviteResponse(BaseModel):
         )
 
 
+# =============================================================================
 # Project DTOs
+# =============================================================================
+
 class ProjectCreateRequest(BaseModel):
     """Project creation request."""
 
@@ -224,25 +243,235 @@ class ProjectResponse(BaseModel):
         )
 
 
-class ProjectMemberAddRequest(BaseModel):
-    """Add member to project request."""
+class ProjectListResponse(BaseModel):
+    """Paginated project list response."""
 
-    user_id: str
-    role: str = Field(..., pattern="^(owner|editor|viewer)$")
-
-
-class ProjectMemberUpdateRequest(BaseModel):
-    """Update project member role request."""
-
-    role: str = Field(..., pattern="^(owner|editor|viewer)$")
+    items: list[ProjectResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class ProjectMemberResponse(BaseModel):
-    """Project member response."""
+    """Project member response (через user_project_roles)."""
 
     project_id: str
     user_id: str
-    role: str
-    created_at: str
-    username: str | None = None  # Optional, populated when joining with users table
+    roles: list[str]
+    username: str | None = None
+    granted_at: str | None = None
 
+
+# Fixed UUIDs for built-in project roles (match 001_initial_schema.sql seed)
+PROJECT_ROLE_NAME_TO_ID: dict[str, str] = {
+    "owner":  "00000000-0000-0000-0000-000000000010",
+    "editor": "00000000-0000-0000-0000-000000000011",
+    "viewer": "00000000-0000-0000-0000-000000000012",
+}
+
+
+class ProjectMemberAddRequest(BaseModel):
+    """Request to add a member to a project (grant a role).
+
+    Accepts either ``role_id`` (UUID) or ``role`` (name: owner/editor/viewer).
+    """
+
+    user_id: str
+    role_id: str | None = None
+    role: str | None = None
+    expires_at: str | None = None  # ISO 8601 datetime
+
+    def resolved_role_id(self) -> str:
+        if self.role_id:
+            return self.role_id
+        if self.role:
+            rid = PROJECT_ROLE_NAME_TO_ID.get(self.role.lower())
+            if not rid:
+                raise ValueError(f"Unknown role name: {self.role!r}. Use one of: {list(PROJECT_ROLE_NAME_TO_ID)}")
+            return rid
+        raise ValueError("Either role_id or role must be provided")
+
+
+class ProjectMemberUpdateRequest(BaseModel):
+    """Request to update a member's role.
+
+    Accepts either ``role_id`` (UUID) or ``role`` (name: owner/editor/viewer).
+    """
+
+    role_id: str | None = None
+    role: str | None = None
+
+    def resolved_role_id(self) -> str:
+        if self.role_id:
+            return self.role_id
+        if self.role:
+            rid = PROJECT_ROLE_NAME_TO_ID.get(self.role.lower())
+            if not rid:
+                raise ValueError(f"Unknown role name: {self.role!r}. Use one of: {list(PROJECT_ROLE_NAME_TO_ID)}")
+            return rid
+        raise ValueError("Either role_id or role must be provided")
+
+
+class GrantProjectRoleRequest(BaseModel):
+    """Request to grant a project role to a user."""
+
+    role_id: UUID
+    expires_at: datetime | None = None
+
+
+# =============================================================================
+# RBAC v2: Permission DTOs
+# =============================================================================
+
+class PermissionResponse(BaseModel):
+    """Single permission from the catalog."""
+
+    id: str
+    scope_type: str
+    category: str
+    description: str | None = None
+
+    @classmethod
+    def from_model(cls, perm: "Permission") -> "PermissionResponse":
+        return cls(
+            id=perm.id,
+            scope_type=perm.scope_type.value,
+            category=perm.category,
+            description=perm.description,
+        )
+
+
+class EffectivePermissionsResponse(BaseModel):
+    """Effective permissions for a user in a given scope."""
+
+    user_id: str
+    is_superadmin: bool = False
+    system_permissions: list[str] = Field(default_factory=list)
+    project_permissions: list[str] = Field(default_factory=list)
+
+
+# =============================================================================
+# RBAC v2: Role DTOs
+# =============================================================================
+
+class CreateRoleRequest(BaseModel):
+    """Create a custom role."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    permissions: list[str] = Field(..., min_length=1)
+
+
+class UpdateRoleRequest(BaseModel):
+    """Update a custom role."""
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    permissions: list[str] | None = None
+
+
+class RoleResponse(BaseModel):
+    """Role response."""
+
+    id: str
+    name: str
+    scope_type: str
+    project_id: str | None = None
+    is_builtin: bool = False
+    description: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_model(cls, role: "Role", permissions: list[str] | None = None) -> "RoleResponse":
+        return cls(
+            id=str(role.id),
+            name=role.name,
+            scope_type=role.scope_type.value,
+            project_id=str(role.project_id) if role.project_id else None,
+            is_builtin=role.is_builtin,
+            description=role.description,
+            permissions=permissions or [],
+            created_at=role.created_at.isoformat(),
+            updated_at=role.updated_at.isoformat(),
+        )
+
+
+class GrantRoleRequest(BaseModel):
+    """Assign a role to a user."""
+
+    role_id: UUID
+    expires_at: datetime | None = None
+
+
+class RevokeRoleRequest(BaseModel):
+    """Revoke a role from a user (used for DELETE body if needed)."""
+
+    role_id: UUID
+
+
+# =============================================================================
+# Audit DTOs
+# =============================================================================
+
+class AuditLogEntry(BaseModel):
+    """Single audit log entry response."""
+
+    id: str
+    timestamp: str
+    actor_id: str
+    action: str
+    scope_type: str
+    scope_id: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    ip_address: str | None = None
+    user_agent: str | None = None
+
+    @classmethod
+    def from_model(cls, entry: "AuditEntry") -> "AuditLogEntry":
+        return cls(
+            id=str(entry.id),
+            timestamp=entry.timestamp.isoformat(),
+            actor_id=str(entry.actor_id),
+            action=entry.action,
+            scope_type=entry.scope_type,
+            scope_id=str(entry.scope_id) if entry.scope_id else None,
+            target_type=entry.target_type,
+            target_id=entry.target_id,
+            details=entry.details,
+            ip_address=entry.ip_address,
+            user_agent=entry.user_agent,
+        )
+
+
+class AuditLogQuery(BaseModel):
+    """Query parameters for audit log search."""
+
+    actor_id: UUID | None = None
+    action: str | None = None
+    scope_type: str | None = None
+    scope_id: UUID | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    from_date: datetime | None = Field(None, alias="from")
+    to_date: datetime | None = Field(None, alias="to")
+    limit: int = Field(default=50, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
+
+    model_config = {"populate_by_name": True}
+
+
+# =============================================================================
+# User search DTOs
+# =============================================================================
+
+class UserSearchResult(BaseModel):
+    """Single user entry returned by the search endpoint."""
+
+    id: str
+    username: str
+    email: str
+    is_active: bool

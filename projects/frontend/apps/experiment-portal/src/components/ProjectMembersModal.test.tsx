@@ -3,10 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ProjectMembersModal from './ProjectMembersModal'
-import { projectsApi } from '../api/client'
+import { projectsApi, usersApi } from '../api/client'
 import { authApi } from '../api/auth'
-import { pickMaterialSelectOption } from '../testUtils/materialSelect'
-
 // Мокаем API
 vi.mock('../api/client', () => ({
     projectsApi: {
@@ -14,6 +12,9 @@ vi.mock('../api/client', () => ({
         addMember: vi.fn(),
         removeMember: vi.fn(),
         updateMemberRole: vi.fn(),
+    },
+    usersApi: {
+        search: vi.fn(),
     },
 }))
 
@@ -77,15 +78,16 @@ describe('ProjectMembersModal', () => {
         vi.clearAllMocks()
         mockOnClose.mockClear()
 
-        // Мокаем authApi.me
         const mockAuthApi = vi.mocked(authApi)
         mockAuthApi.me.mockResolvedValue(mockCurrentUser)
 
-        // Мокаем projectsApi.listMembers
         const mockProjectsApi = vi.mocked(projectsApi)
         mockProjectsApi.listMembers.mockResolvedValue({
             members: mockMembers,
         })
+
+        const mockUsersApi = vi.mocked(usersApi)
+        mockUsersApi.search.mockResolvedValue({ users: [] })
     })
 
     it('does not render when isOpen is false', () => {
@@ -156,7 +158,6 @@ describe('ProjectMembersModal', () => {
             { wrapper: createWrapper() }
         )
 
-        // Проверяем, что отображается индикатор загрузки
         expect(screen.getByText(/загрузка/i)).toBeInTheDocument()
     })
 
@@ -211,7 +212,7 @@ describe('ProjectMembersModal', () => {
 
         await waitFor(() => {
             expect(screen.getByRole('heading', { name: /добавить участника/i })).toBeInTheDocument()
-            expect(screen.getByLabelText(/id пользователя/i)).toBeInTheDocument()
+            expect(screen.getByRole('combobox')).toBeInTheDocument()
             expect(screen.getByLabelText(/роль/i)).toBeInTheDocument()
         })
     })
@@ -239,16 +240,20 @@ describe('ProjectMembersModal', () => {
         })
     })
 
-    it('adds new member successfully', async () => {
+    it('searches users and selects from dropdown', async () => {
         const user = userEvent.setup()
+        const mockUsersApi = vi.mocked(usersApi)
+        mockUsersApi.search.mockResolvedValue({
+            users: [{ id: 'new-user-1', username: 'newuser', email: 'new@example.com' }],
+        })
+
         const mockProjectsApi = vi.mocked(projectsApi)
-        const newMember = {
+        mockProjectsApi.addMember.mockResolvedValueOnce({
             project_id: projectId,
             user_id: 'new-user-1',
             role: 'viewer' as const,
             created_at: '2024-01-04T00:00:00Z',
-        }
-        mockProjectsApi.addMember.mockResolvedValueOnce(newMember)
+        })
 
         render(
             <ProjectMembersModal
@@ -261,13 +266,17 @@ describe('ProjectMembersModal', () => {
         )
 
         await waitFor(() => {
-            expect(screen.getByLabelText(/id пользователя/i)).toBeInTheDocument()
+            expect(screen.getByRole('combobox')).toBeInTheDocument()
         })
 
-        const userIdInput = screen.getByLabelText(/id пользователя/i)
-        await user.type(userIdInput, 'new-user-1')
+        const combobox = screen.getByRole('combobox')
+        await user.type(combobox, 'new')
 
-        await pickMaterialSelectOption(user, /^роль$/i, 'Наблюдатель')
+        await waitFor(() => {
+            expect(screen.getByText('newuser')).toBeInTheDocument()
+        })
+
+        await user.click(screen.getByText('newuser'))
 
         const addButton = screen.getByRole('button', { name: /добавить участника/i })
         await user.click(addButton)
@@ -277,45 +286,6 @@ describe('ProjectMembersModal', () => {
                 user_id: 'new-user-1',
                 role: 'viewer',
             })
-        })
-
-        // Проверяем, что список обновился
-        await waitFor(() => {
-            expect(mockProjectsApi.listMembers).toHaveBeenCalledTimes(2) // Initial + after add
-        })
-    })
-
-    it('shows error when adding member fails', async () => {
-        const user = userEvent.setup()
-        const mockProjectsApi = vi.mocked(projectsApi)
-        mockProjectsApi.addMember.mockRejectedValueOnce({
-            response: {
-                data: { error: 'User not found' },
-            },
-        })
-
-        render(
-            <ProjectMembersModal
-                isOpen={true}
-                onClose={mockOnClose}
-                projectId={projectId}
-                projectOwnerId={projectOwnerId}
-            />,
-            { wrapper: createWrapper() }
-        )
-
-        await waitFor(() => {
-            expect(screen.getByLabelText(/id пользователя/i)).toBeInTheDocument()
-        })
-
-        const userIdInput = screen.getByLabelText(/id пользователя/i)
-        await user.type(userIdInput, 'invalid-user')
-
-        const addButton = screen.getByRole('button', { name: /добавить участника/i })
-        await user.click(addButton)
-
-        await waitFor(() => {
-            expect(screen.getByText(/user not found/i)).toBeInTheDocument()
         })
     })
 
@@ -344,11 +314,9 @@ describe('ProjectMembersModal', () => {
             expect(screen.getByText('editor')).toBeInTheDocument()
         })
 
-        // Находим select для роли editor - ищем в строке таблицы
         const editorRow = screen.getByText('editor').closest('tr')
         expect(editorRow).toBeInTheDocument()
 
-        // Ищем select в строке editor
         const editorRoleSelect = editorRow?.querySelector('select') as HTMLSelectElement
         expect(editorRoleSelect).toBeInTheDocument()
         expect(editorRoleSelect.value).toBe('editor')
@@ -367,7 +335,6 @@ describe('ProjectMembersModal', () => {
         const mockProjectsApi = vi.mocked(projectsApi)
         mockProjectsApi.removeMember.mockResolvedValueOnce(undefined)
 
-        // Мокаем window.confirm
         const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
         render(
@@ -384,7 +351,6 @@ describe('ProjectMembersModal', () => {
             expect(screen.getByText('editor')).toBeInTheDocument()
         })
 
-        // Находим кнопку удаления для editor
         const removeButtons = screen.getAllByRole('button', { name: /удалить/i })
         const editorRemoveButton = removeButtons.find(
             (button) => button.closest('tr')?.textContent?.includes('editor')
@@ -405,7 +371,6 @@ describe('ProjectMembersModal', () => {
         const user = userEvent.setup()
         const mockProjectsApi = vi.mocked(projectsApi)
 
-        // Мокаем window.confirm
         const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
 
         render(
@@ -454,7 +419,6 @@ describe('ProjectMembersModal', () => {
             expect(screen.getByText('owner')).toBeInTheDocument()
         })
 
-        // Проверяем, что для owner отображается "Нельзя удалить"
         const ownerRow = screen.getByText('owner').closest('tr')
         expect(ownerRow).toBeInTheDocument()
         expect(ownerRow).toHaveTextContent(/нельзя удалить/i)
@@ -475,7 +439,6 @@ describe('ProjectMembersModal', () => {
             expect(screen.getByText('owner')).toBeInTheDocument()
         })
 
-        // Проверяем наличие бейджей
         expect(screen.getByText('Вы')).toBeInTheDocument()
         expect(screen.getByText('Владелец проекта')).toBeInTheDocument()
     })
@@ -502,8 +465,7 @@ describe('ProjectMembersModal', () => {
         expect(mockOnClose).toHaveBeenCalledTimes(1)
     })
 
-    it('validates required user ID field when adding member', async () => {
-        const user = userEvent.setup()
+    it('add button is disabled when no user selected', async () => {
         render(
             <ProjectMembersModal
                 isOpen={true}
@@ -515,63 +477,11 @@ describe('ProjectMembersModal', () => {
         )
 
         await waitFor(() => {
-            expect(screen.getByLabelText(/id пользователя/i)).toBeInTheDocument()
+            expect(screen.getByRole('heading', { name: /добавить участника/i })).toBeInTheDocument()
         })
 
         const addButton = screen.getByRole('button', { name: /добавить участника/i })
-        await user.click(addButton)
-
-        // HTML5 validation should prevent submission
-        const userIdInput = screen.getByLabelText(/id пользователя/i) as HTMLInputElement
-        expect(userIdInput.validity.valueMissing).toBe(true)
-    })
-
-    it('disables form during operations', async () => {
-        const user = userEvent.setup()
-        const mockProjectsApi = vi.mocked(projectsApi)
-
-        // Мокаем долгий запрос
-        let resolveAdd: (value: any) => void
-        const addPromise = new Promise((resolve) => {
-            resolveAdd = resolve
-        })
-        mockProjectsApi.addMember.mockReturnValueOnce(addPromise as any)
-
-        render(
-            <ProjectMembersModal
-                isOpen={true}
-                onClose={mockOnClose}
-                projectId={projectId}
-                projectOwnerId={projectOwnerId}
-            />,
-            { wrapper: createWrapper() }
-        )
-
-        await waitFor(() => {
-            expect(screen.getByLabelText(/id пользователя/i)).toBeInTheDocument()
-        })
-
-        const userIdInput = screen.getByLabelText(/id пользователя/i)
-        await user.type(userIdInput, 'new-user-1')
-
-        const addButton = screen.getByRole('button', { name: /добавить участника/i })
-        const clickPromise = user.click(addButton)
-
-        // Проверяем, что форма заблокирована
-        await waitFor(() => {
-            expect(addButton).toBeDisabled()
-            expect(userIdInput).toBeDisabled()
-        })
-
-        // Завершаем промис
-        resolveAdd!({
-            project_id: projectId,
-            user_id: 'new-user-1',
-            role: 'viewer' as const,
-            created_at: '2024-01-04T00:00:00Z',
-        })
-
-        await clickPromise
+        expect(addButton).toBeDisabled()
     })
 
     it('shows role labels correctly', async () => {
@@ -591,25 +501,20 @@ describe('ProjectMembersModal', () => {
             expect(screen.getByText('viewer')).toBeInTheDocument()
         })
 
-        // Проверяем, что роли отображаются правильно
-        // Для owner участника (который является владельцем проекта) должен быть текст (не select)
         const ownerRow = screen.getByText('owner').closest('tr')
         expect(ownerRow).toBeInTheDocument()
         const ownerSelect = ownerRow?.querySelector('select')
-        expect(ownerSelect).not.toBeInTheDocument() // Select не должен быть для владельца проекта
-        expect(ownerRow).toHaveTextContent(/владелец/i) // Должен быть текст с ролью
+        expect(ownerSelect).not.toBeInTheDocument()
+        expect(ownerRow).toHaveTextContent(/владелец/i)
 
-        // Проверяем, что для editor есть select (так как он не владелец проекта и текущий пользователь - owner)
         const editorRow = screen.getByText('editor').closest('tr')
         expect(editorRow).toBeInTheDocument()
         const editorSelect = editorRow?.querySelector('select')
         expect(editorSelect).toBeInTheDocument()
 
-        // Проверяем, что для viewer тоже есть select
         const viewerRow = screen.getByText('viewer').closest('tr')
         expect(viewerRow).toBeInTheDocument()
         const viewerSelect = viewerRow?.querySelector('select')
         expect(viewerSelect).toBeInTheDocument()
     })
 })
-

@@ -4,6 +4,9 @@
 #include <cstdio>
 #include <mutex>
 
+#include "drive_mode_registry.hpp"
+#include "esp_log.h"
+#include "log_format.hpp"
 #include "slew_rate.hpp"
 
 namespace rc_vehicle {
@@ -32,6 +35,18 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
 
   if (!validated_config.IsValid()) {
     platform_.Log(LogLevel::Error, "Invalid stabilization config");
+    // Detailed validation logging
+    ESP_LOGE("stab_mgr", "magic=0x%08X (expected 0x%08X)", validated_config.magic, 0x53544232);
+    ESP_LOGE("stab_mgr", "filter.valid=%d yaw.valid=%d slip.valid=%d", 
+             validated_config.filter.IsValid(), 
+             validated_config.yaw_rate.IsValid(),
+             validated_config.slip_angle.IsValid());
+    ESP_LOGE("stab_mgr", "yaw.kp=%.3f ki=%.3f kd=%.4f max_corr=%.3f max_int=%.3f",
+             validated_config.yaw_rate.pid.kp,
+             validated_config.yaw_rate.pid.ki,
+             validated_config.yaw_rate.pid.kd,
+             validated_config.yaw_rate.pid.max_correction,
+             validated_config.yaw_rate.pid.max_integral);
     return false;
   }
 
@@ -51,18 +66,25 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     yaw_ctrl_.Reset();
     slip_ctrl_.Reset();
     mode_transition_weight_ = 0.0f;  // Запустить плавный переход
-    char buf[48];
-    snprintf(buf, sizeof(buf), "Mode changed to %u, defaults applied",
-             static_cast<unsigned>(validated_config.mode));
-    platform_.Log(LogLevel::Info, buf);
+    {
+      LogFormat fmt;
+      fmt << "Mode changed: "
+          << DriveModeRegistry::Get(current_mode).GetName() << " -> "
+          << DriveModeRegistry::Get(validated_config.mode).GetName()
+          << ", defaults applied, PID reset";
+      platform_.Log(LogLevel::Info, fmt.str());
+    }
   }
 
   // Применить к фильтрам
   madgwick_.SetBeta(validated_config.filter.madgwick_beta);
+  madgwick_.SetAdaptiveBeta(validated_config.filter.adaptive_beta_enabled,
+                            validated_config.filter.adaptive_accel_threshold_g);
 
-  // Применить к LPF (если IMU включен)
+  // Применить к LPF и Madgwick enable (если IMU включен)
   if (imu_handler_) {
     imu_handler_->SetLpfCutoff(validated_config.filter.lpf_cutoff_hz);
+    imu_handler_->SetMadgwickEnabled(validated_config.filter.madgwick_enabled);
   }
 
   // Обновить коэффициенты ПИД yaw rate и slip angle
@@ -125,10 +147,13 @@ void StabilizationManager::ApplyConfig() {
 
   // Применить конфигурацию к фильтрам
   madgwick_.SetBeta(cfg.filter.madgwick_beta);
+  madgwick_.SetAdaptiveBeta(cfg.filter.adaptive_beta_enabled,
+                            cfg.filter.adaptive_accel_threshold_g);
 
-  // Применить к LPF (если IMU включен)
+  // Применить к LPF и Madgwick enable (если IMU включен)
   if (imu_handler_) {
     imu_handler_->SetLpfCutoff(cfg.filter.lpf_cutoff_hz);
+    imu_handler_->SetMadgwickEnabled(cfg.filter.madgwick_enabled);
   }
 }
 

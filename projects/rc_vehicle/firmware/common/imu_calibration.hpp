@@ -15,6 +15,9 @@ struct ImuCalibData {
   /** Единичный вектор «вперёд» в СК датчика (этап 2: движение вперёд/назад).
    * Продольное ускорение = dot(accel, vec). */
   float accel_forward_vec[3]{1.f, 0.f, 0.f};
+  /** Смещение IMU от центра масс [м]: (rx, ry) в СК датчика.
+   * Определяется круговой калибровкой (CW+CCW). */
+  float com_offset[2]{0.f, 0.f};
   bool valid{false};
 };
 
@@ -86,6 +89,23 @@ class ImuCalibration {
 
   /** Загрузить калибровочные данные (из NVS или внешнего источника). */
   void SetData(const ImuCalibData& data);
+
+  /**
+   * Коррекция акселерометра за смещение IMU от центра масс.
+   *
+   * Вычитает центростремительную и тангенциальную составляющие,
+   * вызванные offset (rx, ry) между IMU и CoM.
+   *
+   * Формулы (в g):
+   *   ax_corrected = ax + (ω²·rx + α·ry) / g
+   *   ay_corrected = ay + (ω²·ry − α·rx) / g
+   *
+   * @param data  Откалиброванные IMU-данные (после Apply). Модифицируется in-place.
+   * @param omega_rad_s  Угловая скорость рыскания [рад/с]
+   * @param alpha_rad_s2 Угловое ускорение рыскания [рад/с²]
+   */
+  void CorrectForComOffset(ImuData& data, float omega_rad_s,
+                           float alpha_rad_s2) const;
 
   /** Калибровка валидна и можно применять Apply(). */
   bool IsValid() const { return data_.valid; }

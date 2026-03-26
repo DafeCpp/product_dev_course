@@ -19,6 +19,9 @@
     "e2e": "start-server-and-test \"vite --host 0.0.0.0 --port 3005 --strictPort\" http://localhost:3005 \"cypress run\""
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.9",
     "@tanstack/react-query": "^5.90.12",
     "axios": "^1.13.5",
     "date-fns": "^4.1.0",

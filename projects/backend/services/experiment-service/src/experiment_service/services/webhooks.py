@@ -12,6 +12,7 @@ from experiment_service.repositories.webhooks import (
     WebhookDeliveryRepository,
     WebhookSubscriptionRepository,
 )
+from experiment_service.prometheus_metrics import WEBHOOK_DELIVERIES
 
 
 class WebhookService:
@@ -98,6 +99,7 @@ class WebhookService:
                 request_body=body,
                 dedup_key=dedup_key,
             )
+            WEBHOOK_DELIVERIES.labels(event_type=event_type).inc()
             deliveries.append(delivery)
         return deliveries
 

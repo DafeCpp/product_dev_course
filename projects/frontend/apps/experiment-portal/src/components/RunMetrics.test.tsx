@@ -7,7 +7,9 @@ import { metricsApi } from '../api/client'
 
 vi.mock('../api/client', () => ({
   metricsApi: {
-    query: vi.fn(),
+    summary: vi.fn(),
+    list: vi.fn(),
+    aggregations: vi.fn(),
   },
 }))
 
@@ -30,30 +32,29 @@ function createWrapper() {
 
 const RUN_ID = 'run-abc'
 
-const mockSeries = [
-  {
-    name: 'loss',
-    points: [
-      { step: 1, value: 0.9, timestamp: '2024-01-01T00:00:01Z' },
-      { step: 2, value: 0.7, timestamp: '2024-01-01T00:00:02Z' },
-      { step: 3, value: 0.5, timestamp: '2024-01-01T00:00:03Z' },
-    ],
-  },
-  {
-    name: 'accuracy',
-    points: [
-      { step: 1, value: 0.6, timestamp: '2024-01-01T00:00:01Z' },
-      { step: 2, value: 0.8, timestamp: '2024-01-01T00:00:02Z' },
-    ],
-  },
-]
+const mockSummary = {
+  items: [
+    { name: 'loss', last_step: 3, last_value: 0.5, count: 3, min: 0.5, avg: 0.7, max: 0.9 },
+    { name: 'accuracy', last_step: 2, last_value: 0.8, count: 2, min: 0.6, avg: 0.7, max: 0.8 },
+  ],
+}
+
+const mockList = {
+  items: [
+    { name: 'loss', step: 1, value: 0.9, timestamp: '2024-01-01T00:00:01Z' },
+    { name: 'loss', step: 2, value: 0.7, timestamp: '2024-01-01T00:00:02Z' },
+    { name: 'loss', step: 3, value: 0.5, timestamp: '2024-01-01T00:00:03Z' },
+    { name: 'accuracy', step: 1, value: 0.6, timestamp: '2024-01-01T00:00:01Z' },
+    { name: 'accuracy', step: 2, value: 0.8, timestamp: '2024-01-01T00:00:02Z' },
+  ],
+  total: 5,
+}
 
 describe('RunMetrics', () => {
   beforeEach(() => {
-    vi.mocked(metricsApi.query).mockResolvedValue({
-      run_id: RUN_ID,
-      series: mockSeries,
-    })
+    vi.mocked(metricsApi.summary).mockResolvedValue(mockSummary)
+    vi.mocked(metricsApi.list).mockResolvedValue(mockList)
+    vi.mocked(metricsApi.aggregations).mockResolvedValue({ items: [] })
   })
 
   it('shows loading state initially', () => {
@@ -61,58 +62,76 @@ describe('RunMetrics', () => {
     expect(screen.getByText(/загрузка метрик/i)).toBeInTheDocument()
   })
 
-  it('renders metric tabs when data loads', async () => {
+  it('renders summary cards for each metric', async () => {
     render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: /loss/i })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /accuracy/i })).toBeInTheDocument()
+      expect(screen.getByText('loss')).toBeInTheDocument()
+      expect(screen.getByText('accuracy')).toBeInTheDocument()
     })
   })
 
-  it('shows point count and last value summary', async () => {
+  it('shows last value in summary card', async () => {
     render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
     await waitFor(() => {
-      // loss tab is selected by default: 3 points, last step=3 value=0.5
-      expect(screen.getByText(/3 точек/)).toBeInTheDocument()
-      expect(screen.getByText('0.5')).toBeInTheDocument()
-      // "3" appears multiple times (tab count + step) — just check summary text
-      expect(screen.getByText(/на шаге/)).toBeInTheDocument()
+      // loss last_value = 0.5 (may appear multiple times: card value + min stat)
+      expect(screen.getAllByText('0.5000').length).toBeGreaterThan(0)
+      // accuracy last_value = 0.8
+      expect(screen.getAllByText('0.8000').length).toBeGreaterThan(0)
     })
   })
 
-  it('switches to another metric tab', async () => {
-    render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
-    await waitFor(() => screen.getByRole('tab', { name: /accuracy/i }))
-
-    await userEvent.click(screen.getByRole('tab', { name: /accuracy/i }))
-
-    expect(screen.getByText(/2 точек/)).toBeInTheDocument()
-    expect(screen.getByText('0.8')).toBeInTheDocument()
-  })
-
-  it('shows empty state when no series returned', async () => {
-    vi.mocked(metricsApi.query).mockResolvedValue({ run_id: RUN_ID, series: [] })
+  it('shows min/avg/max stats in summary card', async () => {
     render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
     await waitFor(() => {
-      expect(screen.getByText(/метрики не записаны/i)).toBeInTheDocument()
+      // loss stats
+      expect(screen.getAllByText('0.5000').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('0.9000').length).toBeGreaterThan(0)
+    })
+  })
+
+  it('cards are toggleable — clicking deselects metric', async () => {
+    render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
+    await waitFor(() => screen.getByText('loss'))
+
+    const lossCard = screen.getByText('loss').closest('button')!
+    expect(lossCard).toHaveAttribute('aria-pressed', 'true')
+
+    await userEvent.click(lossCard)
+    expect(lossCard).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('shows empty state when no metrics returned', async () => {
+    vi.mocked(metricsApi.summary).mockResolvedValue({ items: [] })
+    render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
+    await waitFor(() => {
+      expect(screen.getByText(/нет записанных метрик/i)).toBeInTheDocument()
     })
   })
 
   it('shows error state on fetch failure', async () => {
-    vi.mocked(metricsApi.query).mockRejectedValue(new Error('Network error'))
+    vi.mocked(metricsApi.summary).mockRejectedValue(new Error('Network error'))
     render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
     await waitFor(() => {
       expect(screen.getByText(/не удалось загрузить метрики/i)).toBeInTheDocument()
     })
   })
 
-  it('does not show tabs when only one series', async () => {
-    vi.mocked(metricsApi.query).mockResolvedValue({
-      run_id: RUN_ID,
-      series: [mockSeries[0]],
-    })
+  it('re-selects all metrics automatically when set becomes empty', async () => {
+    // The component auto-selects all when selectedNames.size === 0,
+    // so deselecting all cards triggers re-selection instead of showing empty state.
     render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
-    await waitFor(() => screen.getByText(/3 точек/))
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    await waitFor(() => screen.getByText('loss'))
+
+    const lossCard = screen.getByText('loss').closest('button')!
+    const accuracyCard = screen.getByText('accuracy').closest('button')!
+
+    // Deselect loss — accuracy stays, lossCard deselected
+    await userEvent.click(lossCard)
+    await waitFor(() => expect(lossCard).toHaveAttribute('aria-pressed', 'false'))
+    expect(accuracyCard).toHaveAttribute('aria-pressed', 'true')
+
+    // Re-select loss — now both selected again
+    await userEvent.click(lossCard)
+    await waitFor(() => expect(lossCard).toHaveAttribute('aria-pressed', 'true'))
   })
 })

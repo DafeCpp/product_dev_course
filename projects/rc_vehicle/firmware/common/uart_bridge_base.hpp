@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <optional>
@@ -72,6 +73,7 @@ class RxBuffer {
    * @param n Количество записанных байт
    */
   void Advance(size_t n) noexcept {
+    assert(pos_ + n <= CAPACITY && "RxBuffer::Advance() overflow");
     pos_ += n;
     if (pos_ > CAPACITY) pos_ = CAPACITY;
   }

@@ -168,7 +168,7 @@ async def test_webhook_purge_succeeded_returns_summary(mock_pool_purge):
 # ---------------------------------------------------------------------------
 
 def test_worker_instance_has_correct_tasks():
-    """The module-level worker should have all 6 tasks registered."""
+    """The module-level worker should have all 7 tasks registered."""
     task_names = [t.name for t in worker.tasks]
     assert "idempotency_cleanup" in task_names
     assert "stale_session_cleanup" in task_names
@@ -176,4 +176,6 @@ def test_worker_instance_has_correct_tasks():
     assert "webhook_reclaim_stuck" in task_names
     assert "webhook_purge_succeeded" in task_names
     assert "conversion_backfill" in task_names
-    assert len(task_names) == 6
+    assert "audit_log_cleanup" in task_names
+    assert "activate_scheduled_profiles" in task_names
+    assert len(task_names) == 8

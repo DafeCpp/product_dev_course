@@ -190,10 +190,13 @@ class OversteerGuard {
 
   /**
    * @brief Один шаг oversteer detection.
-   * @param throttle  Команда газа [in/out], может быть снижена при oversteer
-   * @param dt_ms     Шаг времени в миллисекундах
+   * @param throttle         Команда газа [in/out], может быть снижена при
+   *                         oversteer
+   * @param dt_ms            Шаг времени в миллисекундах
+   * @param reduce_throttle  Разрешено ли снижение газа (определяется ModeTraits)
    */
-  void Process(float& throttle, uint32_t dt_ms) noexcept;
+  void Process(float& throttle, uint32_t dt_ms,
+               bool reduce_throttle = true) noexcept;
 
   /** @brief Сбросить состояние (вызывается при failsafe). */
   void Reset() noexcept;

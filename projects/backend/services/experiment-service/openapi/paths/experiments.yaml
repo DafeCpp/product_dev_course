@@ -159,6 +159,80 @@ search:
               $ref: ../components/schemas.yaml#/ExperimentListResponse
       400:
         description: Bad request (missing query parameter)
+compare:
+  get:
+    tags:
+    - metrics
+    - experiments
+    summary: Compare metrics across runs (GET)
+    operationId: compareRunMetricsGet
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: run_ids
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Comma-separated run UUIDs (2-10)
+    - name: names
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Comma-separated metric names (1-20)
+    - name: from_step
+      in: query
+      schema:
+        type: integer
+    - name: to_step
+      in: query
+      schema:
+        type: integer
+    - name: max_points
+      in: query
+      schema:
+        type: integer
+        minimum: 100
+        maximum: 2000
+        default: 500
+    responses:
+      200:
+        description: Comparison data
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ComparisonResponse
+      400:
+        description: Validation error (too many runs, missing params)
+      404:
+        description: Experiment or runs not found
+  post:
+    tags:
+    - metrics
+    - experiments
+    summary: Compare metrics across runs (POST)
+    operationId: compareRunMetrics
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ComparisonRequest
+    responses:
+      200:
+        description: Comparison data
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ComparisonResponse
+      400:
+        description: Validation error
+      404:
+        description: Experiment or runs not found
 archive:
   post:
     tags:
@@ -170,6 +244,31 @@ archive:
     responses:
       200:
         description: Archived
+export:
+  get:
+    tags:
+    - experiments
+    summary: Export full experiment as ZIP
+    operationId: exportExperimentZip
+    parameters:
+    - $ref: ../components/parameters.yaml#/ExperimentId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: format
+      in: query
+      schema:
+        type: string
+        enum: [zip]
+        default: zip
+    responses:
+      200:
+        description: ZIP archive containing experiment data
+        content:
+          application/zip:
+            schema:
+              type: string
+              format: binary
+      404:
+        description: Experiment not found
 runs:
   get:
     tags:

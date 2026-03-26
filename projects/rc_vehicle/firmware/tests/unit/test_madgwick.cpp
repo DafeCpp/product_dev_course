@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
+#include <vector>
 
 #include "madgwick_filter.hpp"
 #include "mpu6050_spi.hpp"
@@ -705,6 +707,331 @@ TEST(MadgwickTest, VeryHighBeta) {
 
   EXPECT_TRUE(IsQuaternionNormalized(qw, qx, qy, qz))
       << "Filter should remain stable with very high beta";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Adaptive Beta Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(MadgwickTest, AdaptiveBetaDefaultOff) {
+  MadgwickFilter filter;
+  EXPECT_FALSE(filter.GetAdaptiveBetaEnabled())
+      << "Adaptive beta should be disabled by default";
+}
+
+TEST(MadgwickTest, AdaptiveBetaGetSet) {
+  MadgwickFilter filter;
+  filter.SetAdaptiveBeta(true, 0.3f);
+  EXPECT_TRUE(filter.GetAdaptiveBetaEnabled());
+  EXPECT_FLOAT_EQ(filter.GetAdaptiveThresholdG(), 0.3f);
+
+  filter.SetAdaptiveBeta(false);
+  EXPECT_FALSE(filter.GetAdaptiveBetaEnabled());
+}
+
+TEST(MadgwickTest, AdaptiveBetaNoSuppressAtRest) {
+  // При покое |a| ≈ 1g: коррекция акселерометра НЕ подавляется.
+  // Ожидаем, что filter с adaptive converges так же быстро, как без него.
+  MadgwickFilter filter_normal, filter_adaptive;
+  filter_normal.SetBeta(0.5f);
+  filter_adaptive.SetBeta(0.5f);
+  filter_adaptive.SetAdaptiveBeta(true, 0.2f);
+
+  // Машина на месте, отклонена на 45° вокруг X (roll)
+  for (int i = 0; i < 200; ++i) {
+    filter_normal.Update(0.0f, 0.707f, 0.707f, 0.0f, 0.0f, 0.0f, 0.01f);
+    filter_adaptive.Update(0.0f, 0.707f, 0.707f, 0.0f, 0.0f, 0.0f, 0.01f);
+  }
+
+  float p1, r1, y1, p2, r2, y2;
+  filter_normal.GetEulerRad(p1, r1, y1);
+  filter_adaptive.GetEulerRad(p2, r2, y2);
+
+  // Оба должны сойтись к ~45°, разница незначительная
+  EXPECT_NEAR(r1, r2, 0.01f)
+      << "Adaptive beta at rest should converge same as normal";
+  EXPECT_NEAR(std::fabs(r1), M_PI / 4.0f, 0.1f)
+      << "Both filters should detect 45 degree tilt";
+}
+
+TEST(MadgwickTest, AdaptiveBetaSuppressesDuringLinearAccel) {
+  // При сильном линейном ускорении |a| >> 1g: коррекция подавляется.
+  // Имитируем боковое ускорение при крутом повороте (≈1.5g поперёк).
+  // |a| = sqrt(1.5² + 1.0²) ≈ 1.80, deviation=0.80 > threshold=0.2 → сработает.
+  MadgwickFilter filter_normal, filter_adaptive;
+  filter_normal.SetBeta(0.5f);
+  filter_adaptive.SetBeta(0.5f);
+  filter_adaptive.SetAdaptiveBeta(true, 0.2f);
+
+  for (int i = 0; i < 100; ++i) {
+    // ay=1.5g (боковое), az=1.0g (гравитация), нет вращения
+    filter_normal.Update(0.0f, 1.5f, 1.0f, 0.0f, 0.0f, 0.0f, 0.01f);
+    filter_adaptive.Update(0.0f, 1.5f, 1.0f, 0.0f, 0.0f, 0.0f, 0.01f);
+  }
+
+  float p1, r1, y1, p2, r2, y2;
+  filter_normal.GetEulerDeg(p1, r1, y1);
+  filter_adaptive.GetEulerDeg(p2, r2, y2);
+
+  // filter_normal тянется к ложному крену (ay >> gravity → воспринимает как
+  // наклон). filter_adaptive игнорирует этот шум → меньше крен.
+  float roll_diff = std::fabs(r1 - r2);
+  EXPECT_GT(roll_diff, 1.0f)
+      << "Adaptive beta should significantly reduce roll error during "
+         "lateral acceleration (diff="
+      << roll_diff << " deg)";
+}
+
+TEST(MadgwickTest, AdaptiveBetaThresholdEffect) {
+  // Маленький threshold → подавляет при небольшом ускорении
+  // Большой threshold → не подавляет при том же ускорении
+  MadgwickFilter filter_tight, filter_loose;
+  filter_tight.SetBeta(0.5f);
+  filter_tight.SetAdaptiveBeta(true, 0.05f);  // очень чувствительный
+  filter_loose.SetBeta(0.5f);
+  filter_loose.SetAdaptiveBeta(true, 0.5f);  // менее чувствительный
+
+  // Небольшое линейное ускорение: |a| ≈ 1.1g, deviation=0.1
+  // tight: 0.1 > 0.05 → подавляет
+  // loose: 0.1 < 0.5  → не подавляет
+  for (int i = 0; i < 100; ++i) {
+    filter_tight.Update(0.0f, 0.35f, 1.0f, 0.0f, 0.0f, 0.0f, 0.01f);
+    filter_loose.Update(0.0f, 0.35f, 1.0f, 0.0f, 0.0f, 0.0f, 0.01f);
+  }
+
+  float p1, r1, y1, p2, r2, y2;
+  filter_tight.GetEulerRad(p1, r1, y1);
+  filter_loose.GetEulerRad(p2, r2, y2);
+
+  // loose должен сильнее отклониться в сторону ложного крена (следит за accel)
+  // tight держится на месте (гироскоп без вращения → минимальный крен)
+  EXPECT_GT(std::fabs(r2), std::fabs(r1))
+      << "Loose threshold should allow more roll correction than tight "
+         "threshold";
+}
+
+TEST(MadgwickTest, AdaptiveBetaQuaternionStaysNormalized) {
+  MadgwickFilter filter;
+  filter.SetBeta(0.3f);
+  filter.SetAdaptiveBeta(true, 0.15f);
+
+  // Чередуем покой и резкие ускорения
+  for (int i = 0; i < 200; ++i) {
+    float ax = (i % 10 < 5) ? 0.0f : 0.8f;  // каждые 5 шагов — "разгон"
+    filter.Update(ax, 0.0f, 1.0f, 10.0f, 5.0f, 3.0f, 0.01f);
+  }
+
+  float qw, qx, qy, qz;
+  filter.GetQuaternion(qw, qx, qy, qz);
+  float norm = std::sqrt(qw * qw + qx * qx + qy * qy + qz * qz);
+  EXPECT_NEAR(norm, 1.0f, 1e-5f)
+      << "Quaternion should stay normalized with adaptive beta";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Upside-Down IMU Mount Tests (gravity_vec support)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(MadgwickTest, SetVehicleFrame_InitializesQuaternion) {
+  // SetVehicleFrame should initialize q_madgwick = conj(q_sv) so that
+  // vehicle-frame Euler angles are immediately ~0 WITHOUT any Update calls.
+  // This works for ANY mounting angle.
+  for (auto& grav : std::vector<std::array<float, 3>>{
+           {0.f, 0.f, 1.f},    // upside-down mount
+           {0.f, 0.f, -1.f},   // normal mount (z down)
+           {0.f, 1.f, 0.f},    // 90° tilt (y up)
+           {0.707f, 0.f, 0.707f}  // 45° tilt
+       }) {
+    MadgwickFilter filter;
+    float forward[3] = {1.0f, 0.0f, 0.0f};
+    filter.SetVehicleFrame(grav.data(), forward, true);
+
+    float pitch, roll, yaw;
+    filter.GetEulerDeg(pitch, roll, yaw);
+
+    EXPECT_NEAR(pitch, 0.0f, 0.1f)
+        << "Pitch should be ~0 immediately after SetVehicleFrame, gravity=["
+        << grav[0] << "," << grav[1] << "," << grav[2] << "]";
+    EXPECT_NEAR(roll, 0.0f, 0.1f)
+        << "Roll should be ~0 immediately after SetVehicleFrame, gravity=["
+        << grav[0] << "," << grav[1] << "," << grav[2] << "]";
+  }
+}
+
+TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
+  // After SetVehicleFrame init + convergence, roll stays ~0
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float gravity[3] = {0.0f, 0.0f, 1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  for (int i = 0; i < 300; ++i) {
+    filter.Update(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+
+  EXPECT_NEAR(pitch, 0.0f, 2.0f);
+  EXPECT_NEAR(roll, 0.0f, 2.0f);
+}
+
+TEST(MadgwickTest, NormalMount_RollNearZero) {
+  // Normal mount: az = -1g. Previously a saddle point — now solved by
+  // SetVehicleFrame initializing q_madgwick = conj(q_sv).
+  // No perturbation or high beta needed.
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  for (int i = 0; i < 300; ++i) {
+    filter.Update(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+
+  EXPECT_NEAR(pitch, 0.0f, 2.0f);
+  EXPECT_NEAR(roll, 0.0f, 2.0f);
+}
+
+TEST(MadgwickTest, UpsideDownMount_DetectsPitch) {
+  // Upside-down mount, tilted forward ~30° pitch
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float gravity[3] = {0.0f, 0.0f, 1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // 30° pitch: ax = sin(30°)*1g = 0.5, az = cos(30°)*1g = 0.866
+  float pitch_rad = 30.0f * M_PI / 180.0f;
+  float ax = std::sin(pitch_rad);
+  float az = std::cos(pitch_rad);
+
+  for (int i = 0; i < 500; ++i) {
+    filter.Update(ax, 0.0f, az, 0.0f, 0.0f, 0.0f, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+
+  EXPECT_NEAR(std::abs(pitch), 30.0f, 5.0f)
+      << "Should detect ~30° pitch with upside-down mount";
+  EXPECT_NEAR(roll, 0.0f, 5.0f)
+      << "Roll should remain ~0 during pure pitch tilt";
+}
+
+TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
+  // Reproduce the user's real hardware setup:
+  //   gravity_vec = [-0.010, -0.151, -0.988]
+  //   forward_vec = [0.194, 0.978, -0.075]
+  // Verify: (1) pitch≈0 at rest, (2) pitch tracks when nose is lifted ~30°.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float grav[3] = {-0.010f, -0.151f, -0.988f};
+  float fwd[3] = {0.194f, 0.978f, -0.075f};
+  filter.SetVehicleFrame(grav, fwd, true);
+
+  // Phase 1: rest — verify pitch≈0
+  for (int i = 0; i < 500; ++i) {
+    filter.Update(grav[0], grav[1], grav[2], 0.0f, 0.0f, 0.0f, 0.002f);
+  }
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(pitch, 0.0f, 2.0f) << "Pitch should be ~0 at rest";
+  EXPECT_NEAR(roll, 0.0f, 2.0f) << "Roll should be ~0 at rest";
+
+  // Phase 2: compute vehicle frame axes to rotate correctly.
+  // Replicate SetVehicleFrame math to find Y_veh (pitch axis in sensor coords).
+  auto inv_sqrt = [](float x) -> float { return (x > 0.f) ? 1.f / std::sqrt(x) : 0.f; };
+
+  float zx = grav[0], zy = grav[1], zz = grav[2];
+  float zn = inv_sqrt(zx * zx + zy * zy + zz * zz);
+  zx *= zn; zy *= zn; zz *= zn;
+
+  float fx = fwd[0], fy = fwd[1], fz = fwd[2];
+  float dot_fz = fx * zx + fy * zy + fz * zz;
+  fx -= dot_fz * zx; fy -= dot_fz * zy; fz -= dot_fz * zz;
+  float fn = inv_sqrt(fx * fx + fy * fy + fz * fz);
+  fx *= fn; fy *= fn; fz *= fn;
+
+  // Y_veh = Z_veh × X_veh (pitch axis in sensor coords)
+  float yx = zy * fz - zz * fy;
+  float yy = zz * fx - zx * fz;
+  float yz = zx * fy - zy * fx;
+
+  // Phase 3: apply 30° pitch via gyro about Y_veh axis.
+  // Gyro is in sensor frame (gx, gy, gz in dps).
+  // Rotation rate vector = 100 dps * Y_veh_direction.
+  const float rate_dps = 100.0f;
+  const float gyro_gx = rate_dps * yx;
+  const float gyro_gy = rate_dps * yy;
+  const float gyro_gz = rate_dps * yz;
+  const int pitch_samples = 150;  // 100 dps * 0.3s = 30°
+
+  for (int i = 0; i < pitch_samples; ++i) {
+    filter.Update(grav[0], grav[1], grav[2], gyro_gx, gyro_gy, gyro_gz, 0.002f);
+  }
+
+  // Phase 4: compute tilted accel (Rodrigues rotation of gravity_vec about Y_veh).
+  // v' = v*cos(θ) + (k×v)*sin(θ) + k*(k·v)*(1-cos(θ))
+  const float theta = 30.0f * static_cast<float>(M_PI) / 180.0f;
+  const float ct = std::cos(theta), st = std::sin(theta);
+  // k = Y_veh, v = grav (normalized: zx,zy,zz ... no, grav_raw)
+  float vx = grav[0], vy = grav[1], vz = grav[2];
+  // k × v
+  float cx = yy * vz - yz * vy;
+  float cy = yz * vx - yx * vz;
+  float cz = yx * vy - yy * vx;
+  // k · v
+  float kv = yx * vx + yy * vy + yz * vz;
+
+  float tilted_ax = vx * ct + cx * st + yx * kv * (1 - ct);
+  float tilted_ay = vy * ct + cy * st + yy * kv * (1 - ct);
+  float tilted_az = vz * ct + cz * st + yz * kv * (1 - ct);
+
+  // Hold at tilted position for convergence
+  for (int i = 0; i < 2000; ++i) {
+    filter.Update(tilted_ax, tilted_ay, tilted_az, 0.0f, 0.0f, 0.0f, 0.002f);
+  }
+
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(std::abs(pitch), 30.0f, 8.0f)
+      << "Pitch should track ~30° tilt";
+  EXPECT_NEAR(roll, 0.0f, 10.0f)
+      << "Roll should remain ~0 during pure pitch tilt";
+}
+
+TEST(MadgwickTest, SetVehicleFrame_NullGravity) {
+  MadgwickFilter filter;
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+
+  // Null gravity should be handled gracefully (no crash, no vehicle frame)
+  filter.SetVehicleFrame(nullptr, forward, true);
+
+  float qw, qx, qy, qz;
+  filter.GetQuaternion(qw, qx, qy, qz);
+  EXPECT_FLOAT_EQ(qw, 1.0f);  // identity — vehicle frame not set
+}
+
+TEST(MadgwickTest, SetVehicleFrame_ForwardParallelToGravity) {
+  MadgwickFilter filter;
+  float gravity[3] = {0.0f, 0.0f, 1.0f};
+  float forward[3] = {0.0f, 0.0f, 1.0f};  // parallel to gravity
+
+  // Projection of forward onto plane ⊥ gravity = 0 → should not set frame
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float qw, qx, qy, qz;
+  filter.GetQuaternion(qw, qx, qy, qz);
+  EXPECT_FLOAT_EQ(qw, 1.0f);  // identity — cannot build frame
 }
 
 TEST(MadgwickTest, NegativeBeta) {

@@ -39,8 +39,8 @@ void WifiCommandHandler::Update(uint32_t now_ms,
     last_command_ = cmd;
     last_cmd_ms_ = now_ms;
   }
-  // Активность проверяется через IsActive() - команда актуальна в пределах
-  // timeout
+  // Кэшируем active-состояние: стабильно в пределах одной итерации control loop
+  active_ = last_cmd_ms_ != 0 && (now_ms - last_cmd_ms_) < timeout_ms_;
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -71,31 +71,41 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Подача семпла в калибровку (если идёт сбор)
   calib_.FeedSample(data_);
 
+  // Сохранить сырые данные акселерометра ДО коррекции bias.
+  // Madgwick-фильтр должен видеть истинное направление гравитации в СК датчика,
+  // совпадающее с gravity_vec из калибровки. Accel bias включает компоненты
+  // наклона (ax,ay mean), из-за чего bias-corrected данные = [0,0,±1]
+  // не соответствуют реальному gravity_vec при наклонном монтаже.
+  const float raw_ax = data_.ax, raw_ay = data_.ay, raw_az = data_.az;
+
   // Применить компенсацию bias (если калибровка валидна)
   calib_.Apply(data_);
 
-  // LPF Butterworth 2-го порядка для gyro Z (подготовка к yaw rate PID)
-  // Инициализация с дефолтными параметрами, если ещё не настроен
-  if (!lpf_gyro_z_.IsConfigured()) {
-    const float fs_hz = 1000.f / static_cast<float>(read_interval_ms_);
-    lpf_gyro_z_.SetParams(config::LpfConfig::kDefaultCutoffHz, fs_hz);
-  }
+  // LPF инициализирован в конструкторе — горячий путь без проверок
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
-  // Настроить опорную СК фильтра
-  if (calib_.IsValid()) {
+  // Настроить опорную СК фильтра — только при смене состояния калибровки,
+  // чтобы не сбрасывать кватернион Мэджвика каждые 2 мс.
+  const bool calib_valid = calib_.IsValid();
+  if (calib_valid && !veh_frame_set_) {
     const auto& calib_data = calib_.GetData();
     filter_.SetVehicleFrame(calib_data.gravity_vec,
                             calib_data.accel_forward_vec, true);
-  } else {
+    veh_frame_set_ = true;
+  } else if (!calib_valid && veh_frame_set_) {
     filter_.SetVehicleFrame(nullptr, nullptr, false);
+    veh_frame_set_ = false;
   }
 
-  // Обновить фильтр Madgwick
-  const float dt_sec = (prev_read_ms == 0)
+  // Обновить фильтр Madgwick: сырой акселерометр + калиброванный гироскоп.
+  // Gyro bias уже вычтен в Apply(), но accel нужен сырой (см. выше).
+  const float dt_sec = first_read_
                            ? (read_interval_ms_ / 1000.0f)
-                           : ((now_ms - prev_read_ms) / 1000.0f);
-  filter_.Update(data_, dt_sec);
+                           : (static_cast<float>(now_ms - prev_read_ms) / 1000.0f);
+  first_read_ = false;
+  if (madgwick_enabled_) {
+    filter_.Update(raw_ax, raw_ay, raw_az, data_.gx, data_.gy, data_.gz, dt_sec);
+  }
 }
 
 void ImuHandler::SetLpfCutoff(float cutoff_hz) {
@@ -112,7 +122,8 @@ void ImuHandler::SetLpfCutoff(float cutoff_hz) {
 // TelemetryHandler
 // ═════════════════════════════════════════════════════════════════════════
 
-void TelemetryHandler::Update(uint32_t now_ms, const TelemetrySnapshot& snap) {
+void TelemetryHandler::SendTelemetry(uint32_t now_ms,
+                                     const TelemetrySnapshot& snap) {
   if (now_ms - last_send_ms_ < send_interval_ms_) {
     return;
   }
@@ -134,6 +145,7 @@ std::string TelemetryHandler::BuildTelemJson(
   cJSON_AddStringToObject(root, "type", "telem");
   // Для совместимости: "mcu_pong_ok" = "контроллер жив"
   cJSON_AddBoolToObject(root, "mcu_pong_ok", true);
+  cJSON_AddNumberToObject(root, "uptime_ms", snap.uptime_ms);
 
   // Link status
   cJSON* link = cJSON_AddObjectToObject(root, "link");
@@ -225,6 +237,9 @@ std::string TelemetryHandler::BuildTelemJson(
         cJSON_AddNumberToObject(ekf, "yaw_rate", snap.ekf_yaw_rate);
         cJSON_AddNumberToObject(ekf, "slip_deg", snap.ekf_slip_deg);
         cJSON_AddNumberToObject(ekf, "speed_ms", snap.ekf_speed_ms);
+        cJSON_AddNumberToObject(ekf, "vx_var", snap.ekf_vx_var);
+        cJSON_AddNumberToObject(ekf, "vy_var", snap.ekf_vy_var);
+        cJSON_AddNumberToObject(ekf, "r_var", snap.ekf_r_var);
       }
     }
 
@@ -237,7 +252,34 @@ std::string TelemetryHandler::BuildTelemJson(
     }
   }
 
-  // Actuators
+  // Kids Mode status
+  if (snap.kids_mode_active) {
+    cJSON* kids = cJSON_AddObjectToObject(root, "kids_mode");
+    if (kids) {
+      cJSON_AddBoolToObject(kids, "active", true);
+      cJSON_AddBoolToObject(kids, "anti_spin_active",
+                            snap.kids_anti_spin_active);
+      cJSON_AddNumberToObject(kids, "throttle_limit", snap.kids_throttle_limit);
+    }
+  }
+
+  // RC input (сырые значения с пульта)
+  if (snap.rc_ok) {
+    cJSON* rc = cJSON_AddObjectToObject(root, "rc");
+    if (rc) {
+      cJSON_AddNumberToObject(rc, "throttle", snap.rc_throttle);
+      cJSON_AddNumberToObject(rc, "steering", snap.rc_steering);
+    }
+  }
+
+  // Commanded (до trim/slew)
+  cJSON* cmd = cJSON_AddObjectToObject(root, "cmd");
+  if (cmd) {
+    cJSON_AddNumberToObject(cmd, "throttle", snap.cmd_throttle);
+    cJSON_AddNumberToObject(cmd, "steering", snap.cmd_steering);
+  }
+
+  // Actuators (после trim/slew)
   cJSON* act = cJSON_AddObjectToObject(root, "act");
   if (act) {
     cJSON_AddNumberToObject(act, "throttle", snap.throttle);

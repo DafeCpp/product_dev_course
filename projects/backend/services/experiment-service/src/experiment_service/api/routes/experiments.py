@@ -24,7 +24,7 @@ from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateD
 from experiment_service.domain.enums import ExperimentStatus
 from experiment_service.domain.models import Experiment
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_idempotency_service,
     get_experiment_service,
     require_current_user,
@@ -50,11 +50,10 @@ async def list_experiments(request: web.Request):
 
     # project_id опционален - если не передан, используем active_project_id из заголовков
     project_id_query = request.rel_url.query.get("project_id")
+    ensure_permission(user, "experiments.view")
     if project_id_query:
         project_id = resolve_project_id(user, project_id_query)
     elif user.active_project_id:
-        # Используем active_project_id из заголовков, если project_id не передан в query
-        ensure_project_access(user, user.active_project_id)
         project_id = user.active_project_id
     else:
         # Если project_id не передан и нет active_project_id, возвращаем ошибку
@@ -91,6 +90,7 @@ async def list_experiments(request: web.Request):
 @routes.get("/api/v1/experiments/search")
 async def search_experiments(request: web.Request):
     user = await require_current_user(request)
+    ensure_permission(user, "experiments.view")
     service = await get_experiment_service(request)
     limit, offset = pagination_params(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
@@ -116,9 +116,8 @@ async def create_experiment(request: web.Request):
     service = await get_experiment_service(request)
     idempotency_service = await get_idempotency_service(request)
     body = await read_json(request)
-    project_id = resolve_project_id(
-        user, body.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, body.get("project_id"))
+    ensure_permission(user, "experiments.create")
     body["project_id"] = project_id
     body["owner_id"] = user.user_id
     idempotency_key = request.headers.get(IDEMPOTENCY_HEADER)
@@ -159,6 +158,7 @@ async def create_experiment(request: web.Request):
 @routes.get("/api/v1/experiments/{experiment_id}")
 async def get_experiment(request: web.Request):
     user = await require_current_user(request)
+    ensure_permission(user, "experiments.view")
     service = await get_experiment_service(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
@@ -166,7 +166,6 @@ async def get_experiment(request: web.Request):
         experiment = await service.get_experiment(project_id, experiment_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
-    ensure_project_access(user, experiment.project_id)
     return web.json_response(_experiment_response(experiment))
 
 
@@ -174,9 +173,8 @@ async def get_experiment(request: web.Request):
 async def update_experiment(request: web.Request):
     user = await require_current_user(request)
     service = await get_experiment_service(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.update")
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     body = await read_json(request)
     try:
@@ -196,9 +194,8 @@ async def update_experiment(request: web.Request):
 async def archive_experiment(request: web.Request):
     user = await require_current_user(request)
     service = await get_experiment_service(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.archive")
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     dto = ExperimentUpdateDTO(
         status=ExperimentStatus.ARCHIVED,
@@ -215,9 +212,8 @@ async def archive_experiment(request: web.Request):
 async def delete_experiment(request: web.Request):
     user = await require_current_user(request)
     service = await get_experiment_service(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.delete")
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     try:
         await service.delete_experiment(project_id, experiment_id)

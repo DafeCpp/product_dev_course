@@ -22,6 +22,7 @@ python-dotenv = "^1.0.1"
 orjson = "^3.10.3"
 structlog = "^24.2.0"
 backend-common = { path = "../../common", develop = true }
+prometheus-client = "^0.24.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"

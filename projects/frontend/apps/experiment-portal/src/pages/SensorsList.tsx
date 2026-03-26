@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import type { Sensor } from '../types'
 import {
   StatusBadge,
+  ConnectionStatusIndicator,
   Loading,
   Error,
   EmptyState,
@@ -16,6 +17,7 @@ import {
   sensorStatusMap,
 } from '../components/common'
 import SensorDetailModal from '../components/SensorDetailModal'
+import SensorStatusSummaryBar from '../components/SensorStatusSummaryBar'
 import { setActiveProjectId } from '../utils/activeProject'
 import './SensorsList.scss'
 
@@ -42,6 +44,13 @@ function SensorsList() {
         page_size: pageSize,
       }),
     enabled: true,
+  })
+
+  const { data: statusSummary } = useQuery({
+    queryKey: ['sensors', 'status-summary', projectId],
+    queryFn: () => sensorsApi.getStatusSummary(projectId),
+    enabled: !!projectId,
+    refetchInterval: 30_000,
   })
 
   const formatLastHeartbeat = (heartbeat?: string | null) => {
@@ -82,6 +91,8 @@ function SensorsList() {
 
       {!isBusy && !error && (projectId || (projectsData?.projects?.length ?? 0) > 0) && (
         <>
+          {statusSummary && <SensorStatusSummaryBar summary={statusSummary} />}
+
           <div className="filters card filter-panel">
             <div className="filter-panel__header">
               <div>
@@ -149,7 +160,15 @@ function SensorsList() {
                   >
                     <div className="sensor-card__topline">
                       <span className="meta-chip">{sensor.type}</span>
-                      <StatusBadge status={sensor.status} statusMap={sensorStatusMap} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {sensor.connection_status && (
+                          <ConnectionStatusIndicator
+                            status={sensor.connection_status}
+                            showLabel
+                          />
+                        )}
+                        <StatusBadge status={sensor.status} statusMap={sensorStatusMap} />
+                      </div>
                     </div>
 
                     <h3 className="sensor-card__title">{sensor.name}</h3>

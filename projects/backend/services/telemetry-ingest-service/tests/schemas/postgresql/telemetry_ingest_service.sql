@@ -131,9 +131,15 @@ SELECT create_hypertable(
 CREATE INDEX IF NOT EXISTS telemetry_records_project_sensor_ts_id_idx
     ON telemetry_records (project_id, sensor_id, timestamp ASC, id ASC);
 
+-- Dedup index: silently discard duplicate (sensor_id, timestamp, signal) tuples.
+-- TimescaleDB requires both partitioning columns (sensor_id + timestamp) in unique indexes.
+CREATE UNIQUE INDEX IF NOT EXISTS telemetry_records_dedup_idx
+    ON telemetry_records (sensor_id, timestamp, signal);
+
 -- Continuous aggregate for 1-minute downsampling.
-CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m
-WITH (timescaledb.continuous) AS
+-- NOTE: timescaledb.continuous aggregates require enterprise license.
+-- For OSS compatibility, we create a regular materialized view without continuous refresh.
+CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m AS
 SELECT
     time_bucket(INTERVAL '1 minute', "timestamp") AS bucket,
     sensor_id,
@@ -147,16 +153,16 @@ SELECT
     min(physical_value)         AS min_physical,
     max(physical_value)         AS max_physical
 FROM telemetry_records
-GROUP BY bucket, sensor_id, signal, capture_session_id
-WITH NO DATA;
+GROUP BY bucket, sensor_id, signal, capture_session_id;
 
-SELECT add_continuous_aggregate_policy(
-    'telemetry_1m',
-    start_offset    => INTERVAL '7 days',
-    end_offset      => INTERVAL '1 minute',
-    schedule_interval => INTERVAL '1 minute',
-    if_not_exists   => TRUE
-);
+-- Skip continuous aggregate policy in OSS version (requires enterprise license)
+-- SELECT add_continuous_aggregate_policy(
+--     'telemetry_1m',
+--     start_offset    => INTERVAL '7 days',
+--     end_offset      => INTERVAL '1 minute',
+--     schedule_interval => INTERVAL '1 minute',
+--     if_not_exists   => TRUE
+-- );
 
 COMMIT;
 

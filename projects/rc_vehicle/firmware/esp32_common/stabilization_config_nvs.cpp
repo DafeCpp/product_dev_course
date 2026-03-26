@@ -13,10 +13,15 @@ static const char* NVS_NAMESPACE = "stab_cfg";
 static const char* NVS_KEY = "config";
 
 /** Текущая версия формата. Увеличивать при изменении StabilizationConfig. */
-static constexpr uint8_t kCurrentStabConfigVersion = 1;
+// v2: добавлены FilterConfig::adaptive_beta_enabled, adaptive_accel_threshold_g
+// v3: добавлены slew_throttle, slew_steering в StabilizationConfig
+// v4: добавлены FilterConfig::madgwick_enabled, ekf_enabled
+// v5: добавлены KidsModeConfig::speed_limit_enabled, max_speed_ms, speed_limit_gain
+// v6: добавлены StabilizationConfig::braking_mode, brake_slew_multiplier
+static constexpr uint8_t kCurrentStabConfigVersion = 6;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
-struct __attribute__((packed)) StabConfigBlob {
+struct StabConfigBlob {
   uint8_t version;
   uint8_t reserved[3];
   StabilizationConfig config;
@@ -59,8 +64,8 @@ esp_err_t Load(StabilizationConfig& config) {
     ESP_LOGI(TAG,
              "Loaded stabilization config: enabled=%d beta=%.3f "
              "lpf_cutoff=%.1f Hz mode=%d",
-             config.enabled, config.madgwick_beta, config.lpf_cutoff_hz,
-             static_cast<int>(config.mode));
+             config.enabled, config.filter.madgwick_beta,
+             config.filter.lpf_cutoff_hz, static_cast<int>(config.mode));
     return ESP_OK;
   } else if (err != ESP_ERR_NVS_NOT_FOUND) {
     ESP_LOGW(TAG, "Failed to read config from NVS: %s", esp_err_to_name(err));
@@ -93,8 +98,8 @@ esp_err_t Save(const StabilizationConfig& config) {
       ESP_LOGI(TAG,
                "Saved stabilization config: enabled=%d beta=%.3f "
                "lpf_cutoff=%.1f Hz mode=%d",
-               config.enabled, config.madgwick_beta, config.lpf_cutoff_hz,
-               static_cast<int>(config.mode));
+               config.enabled, config.filter.madgwick_beta,
+               config.filter.lpf_cutoff_hz, static_cast<int>(config.mode));
     } else {
       ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(err));
     }
