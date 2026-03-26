@@ -56,6 +56,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/stabilization_manager.cpp
     ${COMMON_DIR}/telemetry_manager.cpp
     ${COMMON_DIR}/vehicle_control_unified.cpp
+    ${COMMON_DIR}/vehicle_control_unified_init.cpp
     ${COMMON_DIR}/steering_trim_calibration.cpp
     ${COMMON_DIR}/test_runner.cpp
     ${COMMON_DIR}/com_offset_calibration.cpp

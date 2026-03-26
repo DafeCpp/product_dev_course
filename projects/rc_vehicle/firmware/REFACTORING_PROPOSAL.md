@@ -1,7 +1,7 @@
 # Firmware Refactoring — Status
 
 560 тестов (544 unit + 16 integration), 0 глобальных классов, `main.cpp` 139 строк.
-`VehicleControlUnified.cpp` — 265 строк (цель <200).
+`VehicleControlUnified.cpp` — **89 строк** ✅ (цель <200 достигнута).
 
 ---
 
@@ -17,7 +17,8 @@
 | VehicleEkf::UpdateFromImu | Predict + GyroZ + ZUPT за один вызов |
 | ControlLoopHelpers | `BuildSensorSnapshot`, `CorrectImuForComOffset`, `BuildAutoDriveInput`, `SelectControlSource`, `UpdatePwmWithSlewRate`, `HandleAutoDriveCompletion`, `BuildSelfTestInput` → free functions |
 | InitImuSubsystem / InitTelemetryLog | Блоки инициализации извлечены из `Init()` |
-| ControlLoopProcessor | Тело `ControlTaskLoop` (~220 строк) → отдельный класс с методами Step/UpdateComponents/UpdateSensorsAndEkf/UpdateAutoDrive/UpdateStabilization/HandleFailsafe/UpdatePwm/UpdateTelemetry |
+| ControlLoopProcessor | Тело `ControlTaskLoop` (~220 строк) → отдельный класс; `ControlTaskLoop` стал 22 строки |
+| vehicle_control_unified_init.cpp | `Init`, `InitImuSubsystem`, `InitTelemetryLog`, `InitializeComponents` → отдельный файл; VCU main .cpp = 89 строк |
 | CoM Offset Calibration | Круговая калибровка CW+CCW с вычислением смещения IMU |
 | CoM Accel Correction | Коррекция акселерометра: центростремительная + тангенциальная |
 | TestRunner | Фреймворк авто-тестов (Straight/Circle) |
@@ -27,15 +28,17 @@
 
 ---
 
-## Текущий долг: VCU — 473 строк → цель <200
+## Итог рефакторинга VCU
 
-| Блок в `.cpp` | Строк |
-|---------------|-------|
-| `ControlTaskLoop()` | 22 (теперь только while + watchdog) |
-| `InitializeComponents()` | ~43 |
-| `InitImuSubsystem()` | ~38 |
-| `Init()` | ~38 |
-| Делегаторы (Start*, RunSelfTest, OnWifi) | ~30 |
+| Файл | Строк |
+|------|-------|
+| `vehicle_control_unified.cpp` | **89** (оркестрация: loop + делегаторы) |
+| `vehicle_control_unified_init.cpp` | 142 (инициализация) |
+| `vehicle_control_unified.hpp` | 334 |
+| `control_loop_processor.cpp` | 176 |
+| `control_loop_processor.hpp` | 97 |
+| `control_loop_helpers.hpp/cpp` | ~180 |
+| Было: `vehicle_control_unified.cpp` | 868 |
 
 ---
 
