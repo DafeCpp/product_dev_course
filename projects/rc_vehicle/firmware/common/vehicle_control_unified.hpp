@@ -172,6 +172,28 @@ class VehicleControlUnified : public IVehicleControl {
   }
 
   /**
+   * @brief Запустить калибровку скорости (throttle → speed gain)
+   * @param target_throttle Целевой газ в фазе крейсера
+   * @param cruise_duration_sec Длительность крейсерской фазы
+   * @return true при успешном запуске
+   */
+  bool StartSpeedCalibration(float target_throttle = 0.3f,
+                              float cruise_duration_sec = 3.0f) override;
+
+  /** Прервать калибровку скорости. */
+  void StopSpeedCalibration() override { auto_drive_.StopSpeedCalib(); }
+
+  /** true пока идёт калибровка скорости. */
+  [[nodiscard]] bool IsSpeedCalibActive() const override {
+    return auto_drive_.IsSpeedCalibActive();
+  }
+
+  /** Результат калибровки скорости. */
+  [[nodiscard]] SpeedCalibration::Result GetSpeedCalibResult() const override {
+    return auto_drive_.GetSpeedCalibResult();
+  }
+
+  /**
    * @brief Включить/выключить детский режим
    *
    * Обновляет StabilizationConfig.mode, что изменяет routing в control loop

@@ -29,6 +29,14 @@ void HandleAutoDriveCompletion(const AutoDriveOutput& ad_out,
       platform.Log(LogLevel::Warning, "CoM offset calibration failed");
     }
   }
+
+  if (ad_out.speed_cal_completed) {
+    if (ad_out.speed_cal_result.valid) {
+      platform.Log(LogLevel::Info, "Speed calibration done");
+    } else {
+      platform.Log(LogLevel::Warning, "Speed calibration failed");
+    }
+  }
 }
 
 SelfTestInput BuildSelfTestInput(const SelfTestContext& ctx) {

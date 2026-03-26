@@ -37,6 +37,10 @@ void HandleGetComOffsetStatus(IVehicleControl& vc, cJSON* json,
 void HandleStartTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleStopTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleGetTestStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleStartSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleStopSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetSpeedCalibStatus(IVehicleControl& vc, cJSON* json,
+                                httpd_req_t* req);
 void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleUdpStreamStart(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleUdpStreamStop(IVehicleControl& vc, cJSON* json, httpd_req_t* req);

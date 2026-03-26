@@ -62,8 +62,11 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
 }
 
 void ControlLoopProcessor::UpdateAutoDrive(uint32_t dt_ms) {
-  auto ad_out = ctx_.auto_drive.Update(
-      BuildAutoDriveInput(sensors_, ctx_.imu_calib, dt_ms));
+  auto ad_input = BuildAutoDriveInput(sensors_, ctx_.imu_calib, dt_ms);
+  if (sensors_.imu_enabled) {
+    ad_input.speed_ms = ctx_.ekf.GetSpeedMs();
+  }
+  auto ad_out = ctx_.auto_drive.Update(ad_input);
   if (ad_out.active) {
     commanded_throttle_ = ad_out.throttle;
     commanded_steering_ = ad_out.steering;

@@ -593,6 +593,80 @@ void HandleGetTestStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   }
 }
 
+void HandleStartSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
+  cJSON* thr_item = cJSON_GetObjectItem(json, "throttle");
+  cJSON* dur_item = cJSON_GetObjectItem(json, "duration");
+  float throttle = 0.3f;
+  float duration = 3.0f;
+  if (thr_item && cJSON_IsNumber(thr_item))
+    throttle = (float)thr_item->valuedouble;
+  if (dur_item && cJSON_IsNumber(dur_item))
+    duration = (float)dur_item->valuedouble;
+
+  bool ok = vc.StartSpeedCalibration(throttle, duration);
+
+  cJSON* reply = cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "start_speed_calib_ack");
+    cJSON_AddBoolToObject(reply, "ok", ok);
+    cJSON_AddStringToObject(reply, "status", ok ? "started" : "failed");
+    if (!ok) {
+      cJSON_AddStringToObject(
+          reply, "error",
+          "IMU not ready, another procedure active, or already running");
+    }
+    cJSON_AddNumberToObject(reply, "throttle", throttle);
+    cJSON_AddNumberToObject(reply, "duration", duration);
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+
+  ESP_LOGI(TAG, "start_speed_calib throttle=%.2f dur=%.1fs -> %s", throttle,
+           duration, ok ? "started" : "failed");
+}
+
+void HandleStopSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
+  (void)json;
+  vc.StopSpeedCalibration();
+
+  cJSON* reply = cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "stop_speed_calib_ack");
+    cJSON_AddBoolToObject(reply, "ok", true);
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+
+  ESP_LOGI(TAG, "stop_speed_calib");
+}
+
+void HandleGetSpeedCalibStatus(IVehicleControl& vc, cJSON* json,
+                                httpd_req_t* req) {
+  (void)json;
+
+  bool active = vc.IsSpeedCalibActive();
+  auto result = vc.GetSpeedCalibResult();
+
+  cJSON* reply = cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "speed_calib_status");
+    cJSON_AddBoolToObject(reply, "active", active);
+
+    cJSON* res = cJSON_CreateObject();
+    if (res) {
+      cJSON_AddBoolToObject(res, "valid", result.valid);
+      cJSON_AddNumberToObject(res, "target_throttle", result.target_throttle);
+      cJSON_AddNumberToObject(res, "mean_speed_ms", result.mean_speed_ms);
+      cJSON_AddNumberToObject(res, "speed_gain", result.speed_gain);
+      cJSON_AddNumberToObject(res, "samples", result.samples);
+      cJSON_AddItemToObject(reply, "result", res);
+    }
+
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+}
+
 void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   (void)json;
 

@@ -9,6 +9,7 @@ bool AutoDriveCoordinator::IsAnyActive() const {
   if (trim_calib_.IsActive()) return true;
   if (com_calib_.IsActive()) return true;
   if (test_runner_.IsActive()) return true;
+  if (speed_calib_.IsActive()) return true;
   return false;
 }
 
@@ -57,6 +58,18 @@ AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
     return out;
   }
 
+  // Speed calibration
+  if (speed_calib_.IsActive() && !input.rc_active) {
+    out.active = true;
+    speed_calib_.Update(input.speed_ms, input.accel_mag, input.dt_sec,
+                        out.throttle, out.steering);
+    if (speed_calib_.IsFinished()) {
+      out.speed_cal_completed = true;
+      out.speed_cal_result = speed_calib_.GetResult();
+    }
+    return out;
+  }
+
   return out;
 }
 
@@ -81,11 +94,18 @@ bool AutoDriveCoordinator::StartTest(const TestParams& params) {
   return test_runner_.Start(params);
 }
 
+bool AutoDriveCoordinator::StartSpeedCalib(float target_throttle,
+                                            float cruise_duration_sec) {
+  if (IsAnyActive()) return false;
+  return speed_calib_.Start(target_throttle, cruise_duration_sec);
+}
+
 void AutoDriveCoordinator::StopAll() {
   if (calib_mgr_) calib_mgr_->StopAutoForward();
   trim_calib_.Stop();
   com_calib_.Stop();
   test_runner_.Stop();
+  speed_calib_.Stop();
 }
 
 }  // namespace rc_vehicle

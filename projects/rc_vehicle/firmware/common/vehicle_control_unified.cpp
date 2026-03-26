@@ -64,6 +64,12 @@ bool VehicleControlUnified::StartTest(const TestParams& params) {
   return auto_drive_.StartTest(params);
 }
 
+bool VehicleControlUnified::StartSpeedCalibration(float target_throttle,
+                                                   float cruise_duration_sec) {
+  if (!imu_enabled_) return false;
+  return auto_drive_.StartSpeedCalib(target_throttle, cruise_duration_sec);
+}
+
 bool VehicleControlUnified::StartSteeringTrimCalibration(
     float target_accel_g) {
   if (!stab_mgr_ || !imu_enabled_) return false;

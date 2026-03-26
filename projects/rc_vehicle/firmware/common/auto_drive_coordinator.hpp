@@ -1,6 +1,7 @@
 #pragma once
 
 #include "com_offset_calibration.hpp"
+#include "speed_calibration.hpp"
 #include "steering_trim_calibration.hpp"
 #include "test_runner.hpp"
 
@@ -16,6 +17,7 @@ struct AutoDriveInput {
   float cal_ax{0.0f};
   float cal_ay{0.0f};
   float dt_sec{0.0f};
+  float speed_ms{0.0f};  ///< EKF speed [m/s] (0 если IMU недоступен)
   bool rc_active{false};
   bool imu_enabled{false};
 };
@@ -32,6 +34,9 @@ struct AutoDriveOutput {
 
   bool com_completed{false};
   ComOffsetCalibration::Result com_result{};
+
+  bool speed_cal_completed{false};
+  SpeedCalibration::Result speed_cal_result{};
 };
 
 /**
@@ -84,6 +89,17 @@ class AutoDriveCoordinator {
     return test_runner_.GetTestMarker();
   }
 
+  // ── Speed Calibration ────────────────────────────────────────────────
+  bool StartSpeedCalib(float target_throttle = 0.3f,
+                       float cruise_duration_sec = 3.0f);
+  void StopSpeedCalib() { speed_calib_.Stop(); }
+  [[nodiscard]] bool IsSpeedCalibActive() const {
+    return speed_calib_.IsActive();
+  }
+  [[nodiscard]] SpeedCalibration::Result GetSpeedCalibResult() const {
+    return speed_calib_.GetResult();
+  }
+
   /** Остановить все процедуры (вызывается из failsafe). */
   void StopAll();
 
@@ -92,6 +108,7 @@ class AutoDriveCoordinator {
   SteeringTrimCalibration trim_calib_;
   ComOffsetCalibration com_calib_;
   TestRunner test_runner_;
+  SpeedCalibration speed_calib_;
 };
 
 }  // namespace rc_vehicle

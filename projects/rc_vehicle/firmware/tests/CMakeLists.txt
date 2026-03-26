@@ -60,6 +60,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/steering_trim_calibration.cpp
     ${COMMON_DIR}/test_runner.cpp
     ${COMMON_DIR}/com_offset_calibration.cpp
+    ${COMMON_DIR}/speed_calibration.cpp
     ${COMMON_DIR}/auto_drive_coordinator.cpp
     ${COMMON_DIR}/telemetry_builder.cpp
     ${COMMON_DIR}/diagnostics_reporter.cpp
@@ -111,6 +112,7 @@ add_executable(unit_tests
     unit/test_steering_trim_calibration.cpp
     unit/test_test_runner.cpp
     unit/test_com_offset_calibration.cpp
+    unit/test_speed_calibration.cpp
     unit/test_com_offset_correction.cpp
     unit/test_control_loop_helpers.cpp
     unit/test_control_loop_processor.cpp

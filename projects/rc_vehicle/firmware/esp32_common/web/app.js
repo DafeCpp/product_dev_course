@@ -184,6 +184,13 @@ function connectWebSocket() {
                 } else if (data.type === 'toggle_kids_mode_ack') {
                     kidsMode = data.active;
                     updateKidsModeUI();
+                } else if (data.type === 'start_speed_calib_ack') {
+                    updateSpeedCalibStatus(data);
+                } else if (data.type === 'speed_calib_status') {
+                    updateSpeedCalibStatus(data);
+                } else if (data.type === 'stop_speed_calib_ack') {
+                    if (speedCalibStatusEl) speedCalibStatusEl.textContent = 'Остановлено';
+                    if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 }
             } catch (e) {
                 console.error('Parse error:', e, event.data?.slice(0, 200));
@@ -1297,6 +1304,65 @@ if (btnTestStart) btnTestStart.addEventListener('click', () => {
 
 if (btnTestStop) btnTestStop.addEventListener('click', () => {
     wsSend({ type: 'stop_test' });
+});
+
+// ── Speed Calibration ──
+const btnSpeedCalibStart  = $('btn-speed-calib-start');
+const btnSpeedCalibStop   = $('btn-speed-calib-stop');
+const speedCalibStatusEl  = $('speed-calib-status');
+const speedCalibThrSlider = $('speed-calib-thr');
+const speedCalibThrVal    = $('speed-calib-thr-value');
+const speedCalibDurSlider = $('speed-calib-dur');
+const speedCalibDurVal    = $('speed-calib-dur-value');
+const speedCalibBadge     = $('speed-calib-badge');
+
+function updateSpeedCalibStatus(data) {
+    if (!speedCalibStatusEl) return;
+    speedCalibStatusEl.style.display = 'block';
+    if (data.status === 'started' || data.active) {
+        speedCalibStatusEl.textContent = 'Калибровка скорости идёт...';
+        if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = true;
+        if (speedCalibBadge) { speedCalibBadge.textContent = 'RUN'; speedCalibBadge.className = 'badge badge-warn'; }
+        if (data.active) setTimeout(() => wsSend({ type: 'get_speed_calib_status' }), 1000);
+    } else if (data.result && data.result.valid) {
+        const r = data.result;
+        speedCalibStatusEl.textContent =
+            `Gain: ${r.speed_gain.toFixed(3)} m/s/thr | ` +
+            `скорость: ${r.mean_speed_ms.toFixed(2)} m/s @ газ ${r.target_throttle.toFixed(2)} | ` +
+            `${r.samples} сэмплов`;
+        if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
+        if (speedCalibBadge) { speedCalibBadge.textContent = 'DONE'; speedCalibBadge.className = 'badge badge-on'; }
+    } else if (data.result && !data.result.valid) {
+        speedCalibStatusEl.textContent = `Калибровка не удалась (${data.result.samples} сэмплов)`;
+        if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
+        if (speedCalibBadge) { speedCalibBadge.textContent = 'FAIL'; speedCalibBadge.className = 'badge badge-off'; }
+    } else if (data.ok === false) {
+        speedCalibStatusEl.textContent = data.error || 'Ошибка запуска';
+        if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
+        if (speedCalibBadge) { speedCalibBadge.textContent = 'ERR'; speedCalibBadge.className = 'badge badge-off'; }
+    }
+}
+
+if (speedCalibThrSlider) speedCalibThrSlider.addEventListener('input', (e) => {
+    if (speedCalibThrVal) speedCalibThrVal.textContent = parseFloat(e.target.value).toFixed(2);
+});
+if (speedCalibDurSlider) speedCalibDurSlider.addEventListener('input', (e) => {
+    if (speedCalibDurVal) speedCalibDurVal.textContent = parseFloat(e.target.value).toFixed(1);
+});
+
+if (btnSpeedCalibStart) btnSpeedCalibStart.addEventListener('click', () => {
+    const throttle = speedCalibThrSlider ? parseFloat(speedCalibThrSlider.value) : 0.3;
+    const duration = speedCalibDurSlider ? parseFloat(speedCalibDurSlider.value) : 3.0;
+    wsSend({ type: 'start_speed_calib', throttle, duration });
+    if (speedCalibStatusEl) { speedCalibStatusEl.style.display = 'block'; speedCalibStatusEl.textContent = 'Запуск...'; }
+    setTimeout(() => wsSend({ type: 'get_speed_calib_status' }), 2000);
+});
+
+if (btnSpeedCalibStop) btnSpeedCalibStop.addEventListener('click', () => {
+    wsSend({ type: 'stop_speed_calib' });
+    if (speedCalibStatusEl) { speedCalibStatusEl.textContent = 'Остановлено'; }
+    if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
+    if (speedCalibBadge) { speedCalibBadge.textContent = 'STOP'; speedCalibBadge.className = 'badge badge-off'; }
 });
 
 // Wi-Fi scan list

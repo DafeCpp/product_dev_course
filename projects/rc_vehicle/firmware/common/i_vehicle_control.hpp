@@ -3,10 +3,11 @@
 #include <cstddef>
 #include <vector>
 
+#include "com_offset_calibration.hpp"
 #include "self_test.hpp"
+#include "speed_calibration.hpp"
 #include "stabilization_config.hpp"
 #include "steering_trim_calibration.hpp"
-#include "com_offset_calibration.hpp"
 #include "telemetry_log.hpp"
 #include "test_runner.hpp"
 
@@ -63,6 +64,14 @@ class IVehicleControl {
   virtual void StopTest() = 0;
   [[nodiscard]] virtual bool IsTestActive() const = 0;
   [[nodiscard]] virtual TestRunner::Status GetTestStatus() const = 0;
+
+  // Калибровка скорости (throttle → speed gain)
+  virtual bool StartSpeedCalibration(float target_throttle = 0.3f,
+                                     float cruise_duration_sec = 3.0f) = 0;
+  virtual void StopSpeedCalibration() = 0;
+  [[nodiscard]] virtual bool IsSpeedCalibActive() const = 0;
+  [[nodiscard]] virtual SpeedCalibration::Result
+  GetSpeedCalibResult() const = 0;
 
   // Телеметрия лог
   virtual void GetLogInfo(size_t& count_out, size_t& cap_out) const = 0;

@@ -112,6 +112,12 @@ extern "C" void app_main(void) {
   g_command_registry.Register("start_test", rc_vehicle::HandleStartTest);
   g_command_registry.Register("stop_test", rc_vehicle::HandleStopTest);
   g_command_registry.Register("get_test_status", rc_vehicle::HandleGetTestStatus);
+  g_command_registry.Register("start_speed_calib",
+                              rc_vehicle::HandleStartSpeedCalib);
+  g_command_registry.Register("stop_speed_calib",
+                              rc_vehicle::HandleStopSpeedCalib);
+  g_command_registry.Register("get_speed_calib_status",
+                              rc_vehicle::HandleGetSpeedCalibStatus);
   g_command_registry.Register("run_self_test", rc_vehicle::HandleRunSelfTest);
   g_command_registry.Register("udp_stream_start",
                               rc_vehicle::HandleUdpStreamStart);
