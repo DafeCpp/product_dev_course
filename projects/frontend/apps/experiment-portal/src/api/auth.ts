@@ -14,7 +14,7 @@ import { getCsrfToken } from '../utils/csrf'
 import { maybeEmitHttpErrorToastFromAxiosError } from '../utils/httpDebug'
 
 // Auth Proxy работает на другом порту
-const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL || 'http://localhost:8080'
+const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
 
 const authClient = axios.create({
     baseURL: AUTH_PROXY_URL,

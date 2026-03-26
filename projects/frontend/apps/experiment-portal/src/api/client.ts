@@ -65,7 +65,7 @@ import {
 } from '../utils/httpDebug'
 
 // API работает через Auth Proxy, который автоматически добавляет токен из куки
-const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL || 'http://localhost:8080'
+const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
 
 const apiClient = axios.create({
   baseURL: AUTH_PROXY_URL,
