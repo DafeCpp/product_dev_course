@@ -82,6 +82,9 @@ void TestRunner::Update(float current_accel_g, float accel_magnitude,
       float error = params_.target_accel_g - current_accel_g;
       throttle = accel_pid_.Step(error, dt_sec);
       throttle = std::clamp(throttle, 0.0f, 0.5f);
+      if (throttle > 0.0f && throttle < kMinEffectiveThrottle) {
+        throttle = kMinEffectiveThrottle;
+      }
       steering = 0.0f;
 
       if (phase_elapsed_sec_ >= kAccelDurationSec) {

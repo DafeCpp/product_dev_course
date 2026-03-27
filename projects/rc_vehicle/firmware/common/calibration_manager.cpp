@@ -68,6 +68,9 @@ float CalibrationManager::UpdateAutoForward(float current_accel_g,
       float error = target_accel_g_ - current_accel_g;
       float throttle = accel_pid_.Step(error, dt_sec);
       throttle = std::clamp(throttle, 0.0f, 0.5f);
+      if (throttle > 0.0f && throttle < kMinEffectiveThrottle) {
+        throttle = kMinEffectiveThrottle;
+      }
 
       if (phase_elapsed_sec_ >= kAccelDurationSec) {
         // Переход в круиз: фиксируем текущий throttle

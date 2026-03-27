@@ -33,6 +33,9 @@ void SpeedCalibration::Update(float speed_ms, float accel_mag, float dt_sec,
       // Линейный рост throttle 0 → target_throttle за kAccelSec
       const float ramp = std::min(phase_elapsed_sec_ / kAccelSec, 1.0f);
       throttle = ramp * target_throttle_;
+      if (throttle > 0.0f && throttle < kMinEffectiveThrottle) {
+        throttle = kMinEffectiveThrottle;
+      }
       if (phase_elapsed_sec_ >= kAccelSec) {
         cruise_throttle_ = target_throttle_;
         phase_elapsed_sec_ = 0.0f;

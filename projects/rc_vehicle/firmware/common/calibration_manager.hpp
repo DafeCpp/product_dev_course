@@ -153,6 +153,8 @@ class CalibrationManager {
 
   static constexpr float kAccelDurationSec = 1.5f;
   static constexpr float kCruiseDurationSec = 1.0f;
+  // Минимальный рабочий газ для преодоления мёртвой зоны ESC.
+  static constexpr float kMinEffectiveThrottle = 0.15f;
   static constexpr float kBrakeTimeoutSec = 3.0f;
   // ZUPT-пороги для детекции остановки
   static constexpr float kStopAccelThresh = 0.05f;  // |a| - 1g| < 0.05g

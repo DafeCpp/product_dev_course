@@ -132,6 +132,9 @@ class TestRunner {
   // Длительности фиксированных фаз
   static constexpr float kAccelDurationSec = 1.5f;
   static constexpr float kBrakeTimeoutSec = 3.0f;
+  // Минимальный рабочий газ для преодоления мёртвой зоны ESC.
+  // Если PID выдаёт ненулевой, но слишком малый сигнал — поднимаем до порога.
+  static constexpr float kMinEffectiveThrottle = 0.15f;
   // Step: стабилизация перед поворотом
   static constexpr float kStepSettleSec = 1.0f;
 
