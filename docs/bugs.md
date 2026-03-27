@@ -255,7 +255,7 @@ if (S < 1e-9f) return;  // порог выбран без обоснования
 
 ### BUG-RC-012 — Машина не двигается при малых значениях throttle в тестовых режимах
 **Приоритет:** MEDIUM
-**Статус:** [ ] Открыт
+**Статус:** [x] Исправлен
 **Файл:** `projects/rc_vehicle/firmware/common/calibration_manager.cpp`, `projects/rc_vehicle/firmware/common/test_runner.cpp`, `projects/rc_vehicle/firmware/common/speed_calibration.cpp`
 
 В автоматических тестовых режимах (авто-калибровка, тестовые прогоны) машина стоит на месте при малых значениях throttle.
