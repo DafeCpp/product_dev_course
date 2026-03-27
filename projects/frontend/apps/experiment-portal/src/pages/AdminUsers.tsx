@@ -108,19 +108,49 @@ function AdminUsers() {
         },
     })
 
-    function handleCopyToken(token: string) {
-        navigator.clipboard.writeText(token).then(() => {
-            setCopiedToken(token)
-            setTimeout(() => setCopiedToken(null), 2000)
-        })
+    async function copyText(text: string): Promise<boolean> {
+        if (navigator.clipboard) {
+            try {
+                await navigator.clipboard.writeText(text)
+                return true
+            } catch {
+                // fallback below
+            }
+        }
+        try {
+            const ta = document.createElement('textarea')
+            ta.value = text
+            ta.style.position = 'fixed'
+            ta.style.left = '-9999px'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            return true
+        } catch {
+            return false
+        }
     }
 
-    function handleCopyInviteLink(token: string) {
+    async function handleCopyToken(token: string) {
+        const ok = await copyText(token)
+        if (ok) {
+            setCopiedToken(token)
+            setTimeout(() => setCopiedToken(null), 2000)
+        } else {
+            notifyError('Не удалось скопировать токен')
+        }
+    }
+
+    async function handleCopyInviteLink(token: string) {
         const link = `${window.location.origin}/register?token=${token}`
-        navigator.clipboard.writeText(link).then(() => {
+        const ok = await copyText(link)
+        if (ok) {
             setCopiedToken(`link:${token}`)
             setTimeout(() => setCopiedToken(null), 2000)
-        })
+        } else {
+            notifyError('Не удалось скопировать ссылку')
+        }
     }
 
     const users: AdminUser[] = usersQuery.data ?? []
@@ -266,8 +296,10 @@ function AdminUsers() {
                                                         className="reset-password-result"
                                                         title="Нажмите чтобы скопировать"
                                                         onClick={() => {
-                                                            navigator.clipboard.writeText(resetResult.password)
-                                                            notifySuccess('Пароль скопирован')
+                                                            void copyText(resetResult.password).then((ok) => {
+                                                                if (ok) notifySuccess('Пароль скопирован')
+                                                                else notifyError('Не удалось скопировать пароль')
+                                                            })
                                                         }}
                                                     >
                                                         🔑 {resetResult.password}

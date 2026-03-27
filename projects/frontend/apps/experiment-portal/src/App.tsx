@@ -9,6 +9,7 @@ import ExperimentDetail from './pages/ExperimentDetail'
 import RunDetail from './pages/RunDetail'
 import SensorsList from './pages/SensorsList'
 import CreateSensor from './pages/CreateSensor'
+import SensorDetail from './pages/SensorDetail'
 import ProjectsList from './pages/ProjectsList'
 import TelemetryViewer from './pages/TelemetryViewer'
 import Webhooks from './pages/Webhooks'
@@ -44,6 +45,7 @@ function App() {
                 <Route path="/runs/:id" element={<RunDetail />} />
                 <Route path="/sensors" element={<SensorsList />} />
                 <Route path="/sensors/new" element={<CreateSensor />} />
+                <Route path="/sensors/:id" element={<SensorDetail />} />
                 <Route path="/sensor-monitor" element={<SensorMonitor />} />
                 <Route path="/telemetry" element={<TelemetryViewer />} />
                 <Route path="/webhooks" element={<Webhooks />} />
