@@ -549,7 +549,8 @@ export const telemetryApi = {
   ): Promise<{ response: Response; debug: { url: string; headers: Record<string, string>; method: string } }> => {
     // Stream is user-authenticated via auth-proxy session cookies.
     // Do NOT attach sensor token here (UI doesn't ask for it anymore).
-    const url = new URL(`${AUTH_PROXY_URL}/api/v1/telemetry/stream`)
+    const streamBase = AUTH_PROXY_URL || window.location.origin
+    const url = new URL(`${streamBase}/api/v1/telemetry/stream`)
     url.searchParams.set('sensor_id', params.sensor_id)
     const activeProjectId = getActiveProjectId()
     if (activeProjectId) {

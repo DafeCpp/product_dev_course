@@ -268,12 +268,35 @@ function SensorDetail() {
                             <button
                                 type="button"
                                 className="btn btn-secondary btn-sm"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(newToken)
-                                    notifySuccessSticky(
-                                        'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
-                                        'Токен скопирован'
-                                    )
+                                onClick={async () => {
+                                    let copied = false
+                                    if (navigator.clipboard) {
+                                        try {
+                                            await navigator.clipboard.writeText(newToken)
+                                            copied = true
+                                        } catch { /* fallback below */ }
+                                    }
+                                    if (!copied) {
+                                        try {
+                                            const ta = document.createElement('textarea')
+                                            ta.value = newToken
+                                            ta.style.position = 'fixed'
+                                            ta.style.left = '-9999px'
+                                            document.body.appendChild(ta)
+                                            ta.select()
+                                            document.execCommand('copy')
+                                            document.body.removeChild(ta)
+                                            copied = true
+                                        } catch { /* ignore */ }
+                                    }
+                                    if (copied) {
+                                        notifySuccessSticky(
+                                            'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
+                                            'Токен скопирован'
+                                        )
+                                    } else {
+                                        notifyError('Не удалось скопировать токен — скопируйте вручную')
+                                    }
                                 }}
                             >
                                 Копировать

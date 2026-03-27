@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { sensorsApi, projectsApi } from '../api/client'
 import { format } from 'date-fns'
@@ -24,6 +25,7 @@ interface SensorDetailModalProps {
 }
 
 function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps) {
+    const navigate = useNavigate()
     const queryClient = useQueryClient()
     const [showToken, setShowToken] = useState(false)
     const [newToken, setNewToken] = useState<string | null>(null)
@@ -195,6 +197,16 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
                                 </button>
                                 <button
                                     className="btn btn-secondary btn-sm"
+                                    onClick={() => {
+                                        onClose()
+                                        navigate(`/sensors/${sensorId}`)
+                                    }}
+                                    disabled={isPending}
+                                >
+                                    Профили и настройки →
+                                </button>
+                                <button
+                                    className="btn btn-secondary btn-sm"
                                     onClick={() => rotateTokenMutation.mutate()}
                                     disabled={isPending}
                                 >
@@ -223,12 +235,35 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
                                         <button
                                             type="button"
                                             className="btn btn-secondary btn-sm"
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(newToken)
-                                                notifySuccessSticky(
-                                                    'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
-                                                    'Токен скопирован'
-                                                )
+                                            onClick={async () => {
+                                                let copied = false
+                                                if (navigator.clipboard) {
+                                                    try {
+                                                        await navigator.clipboard.writeText(newToken)
+                                                        copied = true
+                                                    } catch { /* fallback below */ }
+                                                }
+                                                if (!copied) {
+                                                    try {
+                                                        const ta = document.createElement('textarea')
+                                                        ta.value = newToken
+                                                        ta.style.position = 'fixed'
+                                                        ta.style.left = '-9999px'
+                                                        document.body.appendChild(ta)
+                                                        ta.select()
+                                                        document.execCommand('copy')
+                                                        document.body.removeChild(ta)
+                                                        copied = true
+                                                    } catch { /* ignore */ }
+                                                }
+                                                if (copied) {
+                                                    notifySuccessSticky(
+                                                        'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
+                                                        'Токен скопирован'
+                                                    )
+                                                } else {
+                                                    notifyError('Не удалось скопировать токен — скопируйте вручную')
+                                                }
                                             }}
                                         >
                                             Копировать

@@ -11,6 +11,11 @@
 #   docker compose -f docker-compose.prod.yml up -d
 
 version: "3.9"
+# Явно фиксируем имя проекта, чтобы com.docker.compose.project совпадал
+# с фильтром в infrastructure/logging/alloy.river.
+# Без этого имя берётся из директории (/opt/experiment-tracking → "experiment-tracking"),
+# и Alloy не находит ни одного контейнера → Loki пустой → в Grafana нет лейблов.
+name: product_dev_course
 
 services:
   auth-service:
