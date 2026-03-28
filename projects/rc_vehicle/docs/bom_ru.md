@@ -1,4 +1,4 @@
-# BOM (что купить) под STM32 + ESP32 + IMU + 2 источника управления
+# BOM (что купить) под ESP32-S3 + IMU + 2 источника управления
 
 Оценку стоимости по веткам A/B и с/без RC‑пульта см. в `docs/budget_ru.md`.
 Сокращения и термины (ESC/BEC/PWM/IMU и т.п.): см. `docs/glossary_ru.md`.
@@ -6,7 +6,7 @@
 ## Зафиксированная база (шасси)
 
 - **Himoto SCT‑16 4WD RTR 1:16 2.4G (HI4192|RED)** — [карточка на Яндекс Маркете](https://market.yandex.ru/card/radioupravlyayemyy-short-kors-trak-himoto-sct-16-4wd-rtr-masshtab-116-24g---hi4192red/4399880474?do-waremd5=9jRAzA7SdRMQfoiYw52cAw&cpc=d2PGwzy0QTs0eLnRlKp0k5YCu2JHodVzFJDvJtshUWzSyDz3E9FKzWqRWc9gIULXX9EJ9Ku-0mvQsCTCCBzwqE-a6FjyS4PfsjEQ8zw1WU-FqmGO5HghkO4aplP4qdbhCmxXetVCLQqycN6o03nHXP_tLSTfOP2glbQ73t_oCvPUAJbjP6PtzyvAx9EZdLsM_MZD6JCx9hF2cmhA0Yc88aMXOZ_Ei1IVvZjbvcsvgHDewTubfOP7WxmSPsCnzZvbiXsTE30oPZ2PX6ct5WAkjK3DLf9791pMdJqhKAAkwv7LcDElOfELc6S0wxkUen63wrtSxWiKAo38hVIlcprRM84HQu9ao5TKsC9LjxYBM0hP5J5NaEfI0IHukClWKjyg9bwUETyJZKEokhHrUvGdfPVfDCgSMMCBr0cFhxl4T4GRgdt4k6KP_xjqOGhNoV-7&ogV=-9)
-- Целевой путь проекта: **ветка A** (оставляем штатные ESC/серво, STM32 выдаёт PWM), но держим **ветку B** как plan‑B на случай "toy‑grade" платы без стандартных входов.
+- Целевой путь проекта: **ветка A** (оставляем штатные ESC/серво, ESP32‑S3 выдаёт PWM), но держим **ветку B** как plan‑B на случай "toy‑grade" платы без стандартных входов.
 
 ---
 
@@ -14,26 +14,69 @@
 
 ### Контроллеры
 
-- ✅ **Raspberry Pi Pico Black Board (RP2040, 16MB, Type‑C)** — real‑time контроллер для PWM/RC‑in
-  - [Яндекс Маркет](https://market.yandex.ru/card/modul-raspberry-pi-pico-black-board-rp2040-16mb-type-c/101977621941?do-waremd5=KXwAQBbWM23jC4k_WKwjUA&cpc=fna-Qu50e8muv38IWVhR0Fo5mO7RNPEOWKGz8s95Wzfz40a9nHQSFdqr1s54gSQa6MwJLwCtjJo-VCHlQ9uJhycguuE69orAarhEQ6jz2mhvUvGpojtg0C3V4pXowZB5IpUIeJEMbD61BMk_raVdXJb60fcMV3LrrEFIAL20HpHB-AA-5gbvuHxxInPCWGmCP9wcKQZTF3TGMT-fpJZ3FHpScIqRTb0F2L6TggJQA8Q6qwdxS_cVmDXBSIgqh8gQfHoU9ERHLW8fRUrN6ToMsiOGmKb7o-eq2eHpVOXYJ7qGUXwAVhBgLirLmqgsPbpwLaEeu7dw0HV7P_OL-jhLDp4ceboivm-SNoreHEyOtngeqILf-wuSBoNehqzGHth8cYoU4c8bZyKrOeapApXyGSp3_YdXSHPJ&ogV=-10)
-  - Назначение: генерация PWM для ESC/серво, чтение RC‑сигналов, сбор данных IMU, общение с ESP32 по UART
-
-- ✅ **ESP32‑S3 Zero mini** — Wi‑Fi контроллер для веб‑пульта
+- ✅ **ESP32‑S3 Zero mini** — основной контроллер для Wi‑Fi + PWM + IMU
   - [Яндекс Маркет](https://market.yandex.ru/card/maketnaya-plata-esp32-s3-zero-mini-dlya-proyekta-iot-24-ggts-wi-fi-bluetooth/103634232370?do-waremd5=vxTuEkoNEHaFL1-hMP5q0g&cpc=xbcl0T7dlyqTqEliUKBiBdmRk_doM6XyJ9SidkVp1WBkX0UVoVdYBrcMq-2HEb-Z8XD3BJ7LjDVpO6cpmovsBUbMEI_VFnzT-AA_dh9NWtgqpPYUkx2cxxxuD7R8ikKGj4Q_y301LwjY8ECR51JmrqPAOgiR_LXw-4Oyf1F6uqmqXJCxJGH1AUypO9-UQ9eigt8b4ED4jl8oRLNzqKXVqxL95ZEfu3iDvRDaO2T8iT02Aj0Wc7xIn3I5AbrOhWuRAUI1gpyUFLbbgbl6W9_PikeIGCByR75F&ogV=-10)
-  - Назначение: Wi‑Fi AP, веб‑интерфейс, WebSocket для управления, UART мост к RP2040
-  - Примечание: выведены 5V / GND / 3V3 и TX/RX для связи с RP2040
+  - Назначение: Wi‑Fi AP, веб‑интерфейс, WebSocket для управления, генерация PWM для ESC/серво, чтение RC‑сигналов, сбор данных IMU
+  - Примечание: выведены 5V / GND / 3V3 и TX/RX для связи с периферией
+
+- ✅ **Raspberry Pi Pico Black Board (RP2040, 16MB, Type‑C)** — резервный контроллер
+  - [Яндекс Маркет](https://market.yandex.ru/card/modul-raspberry-pi-pico-black-board-rp2040-16mb-type-c/101977621941?do-waremd5=KXwAQBbWM23jC4k_WKwjUA&cpc=fna-Qu50e8muv38IWVhR0Fo5mO7RNPEOWKGz8s95Wzfz40a9nHQSFdqr1s54gSQa6MwJLwCtjJo-VCHlQ9uJhycguuE69orAarhEQ6jz2mhvUvGpojtg0C3V4pXowZB5IpUIeJEMbD61BMk_raVdXJb60fcMV3LrrEFIAL20HpHB-AA-5gbvuHxxInPCWGmCP9wcKQZTF3TGMT-fpJZ3FHpScIqRTb0F2L6TggJQA8Q6qwdxS_cVmDXBSIgqh8gQfHoU9ERHLW8fRUrN6ToMsiOGmKb7o-eq2eHpVOXYJ7qGUXwAVhBgLirLmqgsPbpwLaEeu7dw0HV7P_OL-jhLDp4ceboivm-SNoreHEyOtngeqILf-wuSBoNehqzGHth8cYoU4c8bZyKrOeapApXyGSp3_YdXSHPJ&ogV=-10)
+  - Назначение: резервный контроллер на случай если ESP32‑S3 не справится с задачей или для будущих расширений
 
 ### Датчики
 
-- ✅ **MPU‑6500** (акселерометр + гироскоп, 3.3–5V, MEMS)
+- ✅ **MPU‑6500** (акселерометр + гироскоп, 3.3–5V, MEMS) — **В НАЛИЧИИ**
   - [Яндекс Маркет](https://market.yandex.ru/card/akselerometr--giroskop-mpu-6500-33-5v-sistema-mems/102580846385?do-waremd5=1NSDIxJDDq-0kaVwcJ4q5w&cpc=A6Rjy4HSFMTjzz7n7VPtT6P-NE87DKv0ymmrYmCFu5EJ7gN2P_06BC5NAida8vdPcrdT0hHDkTjf1FbJLI10xzuw_Y8aaFZoASXUhKDaNfpR3OB0VuBJRpCLMISQ4iPvc5Vc4E7Vp12xluX5d5GMhabQPY6qyS6ZsSEw634fBBS27FPsl235IfOs5C9rTiD3MBFrCI5fD3Dg-IZZmjZybqsqTdR5SIYEWr9k3bddRD900U88BfYuHHi1HH-prtBAOYqkgqnlJU2_b06UFi3PrVlI8obE9Ku8&ogV=-10)
-  - Назначение: измерение ускорений и угловых скоростей для телеметрии
+  - Назначение: измерение ускорений и угловых скоростей для телеметрии (базовый вариант до прихода новых датчиков)
+
+- ✅ **LSM3DS3** (6‑DOF: акселерометр + гироскоп) — **В ПУТИ (ожидается 12-15 апреля)**
+  - Назначение: основной IMU (замена MPU‑6500), измерение ускорений и угловых скоростей
+  - Характеристики:
+    - Акселерометр: ±2/±4/±8/±16g, низкий шум
+    - Гироскоп: ±250/±500/±1000/±2000 dps
+    - Частота обновления: до 1.6 кГц (акселерометр), до 1 кГц (гироскоп)
+    - Встроенный температурный датчик
+  - Интерфейс: I2C или SPI (3.3V логика)
+  - Напряжение: 1.71–3.6V (требуется 3.3V питание)
+  - 🔍 Поиск: [LSM3DS модуль](https://market.yandex.ru/search?text=lsm3ds%20модуль)
+  - Примечание: 6-DOF IMU без магнитометра — для компенсации дрейфа yaw потребуется отдельный магнитометр (MMC5983MA) или использование ICM‑20948
+
+- ✅ **ICM‑20948** (9‑DOF: акселерометр + гироскоп + магнитометр) — **В ПУТИ (ожидается 29 апреля - 2 мая)**
+  - Назначение: полная замена связки MPU‑6500/MMC5983 или LSM3DS3/MMC5983MA (единый чип для ориентации и heading)
+  - Характеристики:
+    - Акселерометр: ±2/±4/±8/±16g, низкий шум
+    - Гироскоп: ±250/±500/±1000/±2000 dps, низкий дрейф
+    - Магнитометр: 3-осевой, ±4900 µT
+    - Частота обновления: до 1.1 кГц (акселерометр/гироскоп), 100 Гц (магнитометр)
+  - Интерфейс: I2C (адрес 0x68/0x69) или SPI (3.3V логика)
+  - Напряжение: 1.71–3.45V (требуется 3.3V питание)
+  - 🔍 Поиск: [ICM-20948 модуль](https://market.yandex.ru/search?text=icm-20948%20модуль)
+  - 🔍 Альтернатива: [ICM-20948 купить](https://www.digikey.com/en/products/detail/tdk-invensense/ICM-20948/7618694) (DigiKey, Mouser)
+  - Примечание: размещать как можно дальше от мотора/ESC для минимизации магнитных помех
+
+- ✅ **MMC5983MA** (магнитометр, 3-осевой, I2C/SPI) — **В ПУТИ (ожидается 8 апреля)**
+  - Назначение: компенсация дрейфа yaw, получение абсолютного heading (курс относительно магнитного севера)
+  - Характеристики: разрешение до 0.1 мГн, частота обновления до 1000 Гц, низкое энергопотребление
+  - Интерфейс: I2C (адрес 0x30) или SPI (3.3V логика)
+  - 🔍 Поиск: [MMC5983MA модуль](https://market.yandex.ru/search?text=mmc5983ma%20модуль)
+  - 🔍 Альтернатива: [MMC5983MA купить](https://www.digikey.com/en/products/detail/memsic-inc/MMC5983MA/9881671) (DigiKey, Mouser)
+  - Примечание: размещать как можно дальше от мотора/ESC для минимизации магнитных помех
+
+- ✅ **MPU‑9250** (9‑DOF: акселерометр + гироскоп + магнитометр) — **В ПУТИ (ожидается 22-25 апреля)**
+  - Назначение: альтернативный 9-DOF IMU для тестирования и сравнения
+  - Характеристики:
+    - Акселерометр: ±2/±4/±8/±16g
+    - Гироскоп: ±250/±500/±1000/±2000 dps
+    - Магнитометр: 3-осевой, AK8963
+  - Интерфейс: I2C или SPI (3.3V логика)
+  - 🔍 Поиск: [MPU-9250 модуль](https://market.yandex.ru/search?text=mpu-9250%20модуль)
+  - Примечание: устаревшая модель, заменена на ICM-20948, но всё ещё широко доступна и дешевле
 
 ### Питание
 
 - ✅ **BEC ReadyToSky 2–6S, 5V/12V, 3A (переключаемый)**
   - [Яндекс Маркет](https://market.yandex.ru/card/bec-readytosky-2-6s-5v-i-12v-3a-pereklyuchayemyy-aiii-e-038/103564674296?do-waremd5=-uOt7eNlVIwYfqRLfrdeAQ&cpc=KL4AfZnl5XrB9mZXLprEXZFNgJvQa9dL6w5N6rJzzKVYwwfDmEKVSwzbSTU9CE8mnLwcIr5LNETqdMMlYa3tTVj5lRBx764Zsy3BZj2QYBMf4Dep_pkUPQLpdNj5gR_q-lr9LYpMEZMp-1_qa-hM59pmjG0nUqZMqAAvb3B3eTUeviBUkXDY6O0qV6BPjhwGWEW-yjWu-0FBB2VFvFzad7_5pbNClQ9YfzXJA5AY4xxEjAZIDUgb1yEoerMku3Z6Ighc79j6y95zUun3zvIKIvzVUWV6GWuZVnnHSkeqnoKOM55LUfTqewZi7iNkAYMz8AtYUOtuyDIR2HoY5ENgmE9kozp8BsCWdZgozJN3jpQLKTWYRS2I85pZ-SKg-HuE8j1tKFb_L8Ox3XqAfZifWFmAicQgE-msb6btiFc7YcjQEL11zCIfmA%2C%2C&ogV=-10)
-  - Назначение: питание ESP32 + RP2040 + серво от батареи 2S
+  - Назначение: питание ESP32‑S3 + серво от батареи 2S
   - ⚠️ Важно: выставлять режим **5V** (12V не нужен)
 
 ---
@@ -69,12 +112,12 @@
 
 ### Согласование уровней (если нужно)
 
-- ❌ **Делители напряжения** для входов RP2040 (если RC‑приёмник выдаёт 5V сигналы):
+- ❌ **Делители напряжения** для входов ESP32‑S3 (если RC‑приёмник выдаёт 5V сигналы):
   - Вариант 1: **2 резистора на каждый канал** (например, 10kΩ + 10kΩ для деления пополам)
     - 🔍 Поиск: [резисторы набор 10 ком](https://market.yandex.ru/search?text=резисторы+набор+10+ком)
   - Вариант 2: **4‑канальный level‑shifter** (универсальнее, но больше деталей)
     - 🔍 Поиск: [level shifter 4 канала 3.3в 5в](https://market.yandex.ru/search?text=level+shifter+4+канала+3.3в+5в)
-  - Примечание: RP2040 работает на 3.3V логике, а многие RC‑приёмники выдают 5V PWM
+  - Примечание: ESP32‑S3 работает на 3.3V логике, а многие RC‑приёмники выдают 5V PWM
 
 - ❌ **Подтягивающие резисторы для I2C** (4.7kΩ, 2 шт.) — **ПРОВЕРИТЬ НЕОБХОДИМОСТЬ**:
   - Для линий SDA и SCL шины I2C (подключение к MPU-6050/MPU-9250)
@@ -116,7 +159,7 @@
 
 ### О ветках A и B
 
-**Ветка A** (текущий план): остаётся штатный ESC и серва, RP2040 выдаёт на них PWM.
+**Ветка A** (текущий план): остаётся штатный ESC и серва, ESP32‑S3 выдаёт на них PWM.
 
 - Требование: штатный ESC/серво должны принимать **обычный PWM**, как от RC‑приёмника
 - Практический критерий: у приёмника/платы есть **стандартные 3‑pin разъёмы** (`CH1/CH2` или `STR/THR`)
@@ -224,7 +267,7 @@
 
 - **Mini560 Pro 5–32V → 3.3V** (до 5A) — [Яндекс Маркет](https://market.yandex.ru/card/ponizhayushchiy-dc-dc-preobrazovatel-mini560-pro-iz-5-32v-v-33v-5a/103022207609?do-waremd5=Y9qDtNmxAfLHJ0cy-D2PcA&ogV=-9)
   - Нужен только если выяснится, что "5V шумные/проседают" или плата ESP32 требует только 3.3V
-  - Рекомендация: сначала использовать 3.3V с регуляторов на RP2040/ESP32 платах
+  - Рекомендация: сначала использовать 3.3V с регулятора на плате ESP32‑S3
 
 ### Управление с RC‑пульта (опционально)
 
@@ -254,10 +297,14 @@
 
 ## 🎯 ЧЕКЛИСТ ДЛЯ СБОРКИ MVP (ветка A)
 
-- [x] RP2040 (Raspberry Pi Pico Black Board)
-- [x] ESP32‑S3 Zero mini
+- [x] ESP32‑S3 Zero mini (основной контроллер)
 - [x] MPU‑6500
 - [x] BEC ReadyToSky 2–6S 5V/12V 3A
+- [x] RP2040 (Raspberry Pi Pico Black Board) — резервный
+- [x] **LSM3DS3** (6‑DOF IMU — в пути, ожидается 12-15 апреля)
+- [x] **ICM‑20948** (9‑DOF IMU — в пути, ожидается 29 апреля - 2 мая)
+- [x] **MMC5983MA** (магнитометр — в пути, ожидается 8 апреля)
+- [x] **MPU‑9250** (9‑DOF IMU — в пути, ожидается 22-25 апреля)
 - [ ] Конденсаторы 470–1000µF + 0.1µF
 - [ ] Делители напряжения (если RC‑приёмник 5V)
 - [ ] Подтягивающие резисторы 4.7kΩ для I2C (2 шт., **проверить необходимость** — большинство модулей уже имеют их)
