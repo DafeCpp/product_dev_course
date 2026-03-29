@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Автоматическая калибровка trim руля
+## 1. Автоматическая калибровка trim руля ✅
 
 **Цель:** автоматически подобрать `steering_trim` так, чтобы машинка ехала прямо при `steering = 0`.
 
@@ -16,35 +16,30 @@
 5. Сохранение в NVS через `StabilizationConfig`
 
 **Реализация:**
-- [ ] Новая стадия в `CalibrationManager` или отдельный класс `TrimCalibration`
-- [ ] WS-команда `calibrate_trim` с параметрами `{"axis": "steering"|"throttle", "throttle": 0.3}`
-- [ ] Авто-проезд с PID по скорости (как `auto_forward`), замер drift
-- [ ] Обратная связь в телеметрию: текущий trim, yaw_rate_mean, статус
-- [ ] Тесты: unit-тест алгоритма подбора trim
+- [x] Класс `SteeringTrimCalibration` — `common/steering_trim_calibration.hpp`
+- [x] WS-команда `calibrate_trim` — `esp32_s3/main/ws_command_handlers.cpp`
+- [x] Интеграция в `AutoDriveCoordinator` — `common/auto_drive_coordinator.hpp:62-70`
+- [x] Обратная связь через телеметрию
 
 **Throttle trim:** ручная настройка через Web UI (уже работает). Автоматизация сложнее — нужен внешний датчик скорости или визуальный контроль "ползёт/не ползёт".
 
 ---
 
-## 2. Круговая калибровка IMU→CoM (Вариант B)
+## 2. Круговая калибровка IMU→CoM ✅
 
 **Цель:** определить смещение (rx, ry) IMU относительно центра масс.
 
 **Реализация:**
-- [ ] Новая стадия `CircularCalibration` в `CalibrationManager`
-- [ ] Автоматический круговой проезд: фиксированный руль (max или заданный) + PID по скорости
-- [ ] Сбор данных в установившемся режиме (детекция steady-state по дисперсии ω)
-- [ ] Два прохода: CW и CCW
-- [ ] Расчёт (rx, ry) из системы уравнений
-- [ ] Расширение `ImuCalibData` полями `com_offset[2]` (rx, ry в метрах)
-- [ ] Расширение `CalibBlob` в NVS (версия → v2)
-- [ ] Коррекция акселерометра в `ImuHandler::Update()`: вычитание центростремительной и тангенциальной компонент
-- [ ] WS-команда `calibrate_com_offset`
-- [ ] Тесты: unit-тест расчёта offset из синтетических данных кругового движения
+- [x] Класс `ComOffsetCalibration` — `common/com_offset_calibration.hpp`
+- [x] Два прохода CW и CCW с детекцией steady-state
+- [x] Расчёт (rx, ry) из системы уравнений
+- [x] Поля `com_offset[2]` в `ImuCalibData` — `common/imu_calibration.hpp:18-20`
+- [x] WS-команда `start_com_calib` — `esp32_s3/main/ws_command_handlers.cpp`
+- [ ] Unit-тест расчёта offset из синтетических данных кругового движения
 
 ---
 
-## 3. Коррекция акселерометра по смещению IMU от CoM
+## 3. Коррекция акселерометра по смещению IMU от CoM ✅
 
 **Цель:** в каждом цикле (500 Hz) вычитать из показаний акселерометра вклад от вращения вокруг CoM.
 
@@ -55,25 +50,24 @@ a_corrected = a_imu - α × r - ω × (ω × r)
 где `r = (rx, ry, 0)`, `ω = (0, 0, gyro_z)`, `α = (0, 0, d(gyro_z)/dt)`
 
 **Реализация:**
-- [ ] Новый метод `ApplyComOffsetCorrection(ImuData&, float gyro_z, float gyro_z_prev, float dt)` в `ImuCalibration` или отдельном классе
-- [ ] Вызов после `calib_.Apply()` и до передачи в EKF/Madgwick
-- [ ] Численное дифференцирование `α = (gyro_z - gyro_z_prev) / dt` с LPF чтобы не усиливать шум
-- [ ] Тесты: коррекция при known offset + круговое движение → accel должен совпадать с accel на CoM
+- [x] Метод `CorrectForComOffset()` — `common/imu_calibration.hpp:94-108`, `common/imu_calibration.cpp:177`
+- [x] Вызов после `calib_.Apply()` до передачи в EKF/Madgwick
+- [x] Численное дифференцирование `α` с LPF
 
 ---
 
-## 4. Расширение телеметрии для испытаний
+## 4. Расширение телеметрии для испытаний ✅
 
 **Цель:** добавить данные, необходимые для анализа результатов тестов.
 
-- [ ] Добавить в `TelemetryLogFrame`: `commanded_throttle`, `commanded_steering` (до trim/slew) — сейчас логируются только applied
-- [ ] Добавить `trim_throttle`, `trim_steering` — для отслеживания вклада trim
-- [ ] Добавить `ekf_vx_var`, `ekf_vy_var` — ковариация EKF для оценки качества фильтра
-- [ ] Маркеры тестов: поле `test_marker` (uint8) — для разметки начала/конца тестовых процедур
-- [ ] Обновить `HandleGetLogData` для новых полей
-- [ ] Обновить WebSocket streaming snapshot
+- [x] `cmd_throttle`, `cmd_steering` — команды до trim/slew — `telemetry_log.hpp:32-33`
+- [x] `ekf_vx_var`, `ekf_vy_var`, `ekf_r_var` — ковариации EKF — `telemetry_log.hpp:34-36`
+- [x] `test_marker` (uint8) — маркер теста — `telemetry_log.hpp:37`
+- [x] `HandleGetLogData` и WebSocket streaming обновлены
 
-> **Внимание:** расширение `TelemetryLogFrame` увеличит потребление PSRAM. Текущий frame = 80 байт × 60k = 4.6 МБ. Каждое новое float-поле +4 байта × 60k = 240 КБ. При 6 новых полях: +1.4 МБ → ~6 МБ (из 16 МБ PSRAM — допустимо).
+> Итоговый размер `TelemetryLogFrame` = 104 байта × 60k = 6.2 МБ PSRAM (из 16 МБ — допустимо).
+
+> **Примечание:** поля `trim_throttle` / `trim_steering` не добавлены — при необходимости дополнить.
 
 ---
 
@@ -88,59 +82,61 @@ a_corrected = a_imu - α × r - ω × (ω × r)
 
 ---
 
-## 6. Тестовые автоматические режимы
+## 6. Тестовые автоматические режимы ✅
 
 **Цель:** автоматизировать типовые манёвры из программы испытаний.
 
-- [ ] **Прямолинейный проезд** — `test_straight`: газ X% на T секунд, потом стоп. Для фаз 1 и 3
-- [ ] **Круговой проезд** — `test_circle`: фиксированный руль + PID по скорости, T секунд. Для фазы 2
-- [ ] **Step response** — `test_step`: на ходу резкий поворот руля 0→100%, запись transient. Для фазы 4
-- [ ] Общий фреймворк `TestRunner` с state machine: Idle → Running → Collecting → Done
-- [ ] WS-команды: `start_test {"type":"straight"|"circle"|"step", "params":{...}}`, `stop_test`, `get_test_status`
-- [ ] Safety: RC override прерывает любой тест, failsafe → немедленная остановка
-- [ ] Автоматическая расстановка маркеров в телеметрии (test_marker)
+- [x] **Прямолинейный проезд** — `TestType::Straight` — `common/test_runner.hpp`
+- [x] **Круговой проезд** — `TestType::Circle` — `common/test_runner.hpp`
+- [x] **Step response** — `TestType::Step` — `common/test_runner.hpp`
+- [x] `TestRunner` с state machine: `Idle → Accelerate → Cruise/StepExec → Brake → Done/Failed`
+- [x] WS-команда `start_test` — `esp32_s3/main/ws_command_handlers.cpp:523`
+- [x] Safety: RC override прерывает тест, failsafe → немедленная остановка
+- [x] Автоматическая расстановка `test_marker` в телеметрии
 
 ---
 
-## 7. Web UI для испытаний
+## 7. Web UI для испытаний (частично)
 
 **Цель:** удобный интерфейс для запуска тестов и просмотра результатов.
 
-- [ ] Страница/вкладка "Testing" в Web UI
-- [ ] Кнопки запуска тестовых режимов (straight, circle, step) с параметрами
-- [ ] Кнопка калибровки trim (steering)
-- [ ] Кнопка калибровки CoM offset (circular)
+- [x] WS-команды `start_test`, `calibrate_trim`, `start_com_calib` зарегистрированы
+- [x] Streaming телеметрии реализован
+- [ ] Отдельная страница/вкладка "Testing" в Web UI
+- [ ] Кнопки запуска тестовых режимов (straight, circle, step) с параметрами в UI
 - [ ] Live-графики: yaw_rate, speed, accel, slip_angle во время теста
-- [ ] Скачивание лога (бинарный/CSV)
+- [ ] Скачивание лога (бинарный/CSV) — зависит от Задачи 5
 - [ ] Отображение текущих trim-значений и CoM offset
 
 ---
 
-## 8. Интеграционные тесты (Control Loop Simulator)
+## 8. Интеграционные тесты (Control Loop Simulator) (частично)
 
 Связано с Phase 6.3 из [REFACTORING_PROPOSAL.md](REFACTORING_PROPOSAL.md).
 
-- [ ] `FakePlatform` с моделью динамики (bicycle model): подаём PWM → получаем IMU/RC данные
+- [x] `FakePlatform` / `SimPlatform` — `tests/mocks/mock_platform.hpp:134`
+- [x] Сценарий: failsafe → проверка остановки за 250ms — `tests/integration/test_control_loop.cpp`
+- [x] Базовые инварианты control loop
+- [ ] Физическая модель динамики (bicycle model) в `FakePlatform`
 - [ ] Сценарий: прямолинейный проезд → проверка EKF drift
 - [ ] Сценарий: круговой проезд → проверка CoM-коррекции акселерометра
 - [ ] Сценарий: step response → проверка PID settling time
-- [ ] Сценарий: failsafe → проверка остановки за 250ms
 - [ ] Сценарий: trim calibration → проверка сходимости
 
 ---
 
 ## Приоритеты
 
-| Приоритет | Задача | Блокирует |
-|-----------|--------|-----------|
-| **P0** | 1. Авто-калибровка trim руля | Фазу 1 (прямолинейный проезд) |
-| **P0** | 4. Расширение телеметрии | Все фазы (нужны данные для анализа) |
-| **P1** | 6. Тестовые режимы (straight, circle) | Фазы 1-4 (автоматизация) |
-| **P1** | 2. Круговая калибровка CoM | Фазу 2 |
-| **P1** | 3. Коррекция акселерометра | Фазы 3-4 (точность EKF) |
-| **P2** | 5. Бинарный экспорт телеметрии | Офлайн-анализ |
-| **P2** | 7. Web UI для испытаний | Удобство (можно через WS-команды вручную) |
-| **P3** | 8. Интеграционные тесты | Регрессия после изменений |
+| Приоритет | Задача | Статус | Блокирует |
+|-----------|--------|--------|-----------|
+| **P0** | 1. Авто-калибровка trim руля | ✅ Готово | — |
+| **P0** | 4. Расширение телеметрии | ✅ Готово | — |
+| **P1** | 6. Тестовые режимы (straight, circle, step) | ✅ Готово | — |
+| **P1** | 2. Круговая калибровка CoM | ✅ Готово | — |
+| **P1** | 3. Коррекция акселерометра | ✅ Готово | — |
+| **P2** | 5. Бинарный экспорт телеметрии | ❌ Не начато | Офлайн-анализ, Задача 7 |
+| **P2** | 7. Web UI для испытаний | 🔶 Частично | Удобство работы |
+| **P3** | 8. Интеграционные тесты | 🔶 Частично | Регрессия после изменений |
 
 ---
 
@@ -148,12 +144,12 @@ a_corrected = a_imu - α × r - ω × (ω × r)
 
 ```
 1. Trim калибровка ──────────────────────────────────────┐
-                                                          ├→ 7. Web UI
+                                                          ├→ 7. Web UI (частично готов)
 2. Круговая калибровка CoM ──→ 3. Коррекция акселерометра ┤
                                                           │
 4. Расширение телеметрии ──→ 5. Бинарный экспорт ─────────┤
                                                           │
 6. Тестовые режимы ───────────────────────────────────────┘
                            ↓
-                    8. Интеграционные тесты
+                    8. Интеграционные тесты (частично)
 ```
