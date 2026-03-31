@@ -91,7 +91,19 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  animation: lsp-pulse 2s ease-in-out infinite;
+}
+
+.lsp__dot--online {
+  animation: lsp-pulse 1s ease-in-out infinite;
+}
+
+.lsp__dot--delayed {
+  animation: lsp-pulse 3s ease-in-out infinite;
+}
+
+.lsp__dot--offline {
+  animation: none;
+  opacity: 0.4;
 }
 
 @keyframes lsp-pulse {
@@ -122,7 +134,9 @@
 }
 
 .lsp__card-mid {
-  height: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .lsp__sparkline {
@@ -134,18 +148,84 @@
 .lsp__sparkline--empty {
   background: $overlay-ink-02;
   border-radius: 4px;
+  height: 20px;
 }
+
+// Value sparkline
+
+.lsp__value-sparkline-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lsp__value-sparkline {
+  flex: 1;
+  height: 16px;
+  min-width: 0;
+}
+
+.lsp__value-sparkline-last {
+  font-size: 0.75rem;
+  color: $text-hint;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lsp__value-sparkline-range {
+  font-size: 0.6rem;
+  color: $text-dim;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+// Bottom row
 
 .lsp__card-bot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
+}
+
+.lsp__last-value {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: $text;
+  white-space: nowrap;
+  margin-right: auto;
 }
 
 .lsp__heartbeat {
   font-size: 0.65rem;
   color: $text-hint;
+}
+
+// Latency badge
+
+.lsp__latency {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lsp__latency--green {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.lsp__latency--amber {
+  background: rgba(217, 119, 6, 0.12);
+  color: #d97706;
+}
+
+.lsp__latency--gray {
+  background: $overlay-ink-08;
+  color: #6b7280;
 }
 
 .lsp__status {
