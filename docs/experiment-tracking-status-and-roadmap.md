@@ -413,8 +413,11 @@
   - `backend_common/script_runner/runner.py` — `ScriptRunner` объединяет Consumer + Executor как embeddable компонент для любого сервиса.
   - Experiment Service интегрирует `ScriptRunner` с graceful failure при недоступности RabbitMQ.
   - Тесты: `backend_common/tests/test_script_executor.py`, `test_script_runner.py`.
+- **✅ RBAC v2 + интеграция (актуализировано 2026-03-30):** полная реализация — новая схема БД (`permissions`, `roles`, `role_permissions`, `user_system_roles`, `user_project_roles`), `PermissionService`, JWT с `sa`/`sys` claims, API endpoints (`/permissions`, `/system-roles`, `/projects/{pid}/roles`), auth-proxy с заголовками `X-User-Permissions`/`X-User-System-Permissions`/`X-User-Is-Superadmin`, Redis-кэш effective-permissions, `ensure_permission` в experiment-service. Подробности — `docs/tasks-rbac-scripts.md`.
+- **✅ Script Service API (актуализировано 2026-03-30):** сервис `projects/backend/services/script-service/` реализован — CRUD скриптов, Execution API, RabbitMQ dispatcher, тесты. **⚠️ Отсутствует:** `git_client.py` — git-интеграция для валидации/загрузки скриптов из репозитория.
 - **❌ Не реализовано / в backlog** (подробности — в секции «Нереализованные задачи» ниже):
-  - Enforcement бизнес-политик доступа
+  - Frontend RBAC: `usePermissions`, `PermissionGate`, страницы «Аудит» и «Скрипты» (фаза 6 в `docs/tasks-rbac-scripts.md`)
+  - `git_client.py` для script_runner (script-service + backend_common)
   - SLO/SLI мониторинг
   - Chaos-тесты
   - ~~Metrics Service (run_metrics API)~~ ✅ Реализовано (POST/GET /runs/{id}/metrics, summary, step-bucketed aggregations)
@@ -488,8 +491,9 @@
 
 ### Backlog
 
-- **API эндпоинты Script Service:** CRUD для скриптов, запуск/отмена выполнения, просмотр истории.
-- **Frontend:** UI управления скриптами, редактор кода, просмотр результатов выполнения.
+- ~~**API эндпоинты Script Service**~~ ✅ Реализовано: CRUD скриптов, Execution API, RabbitMQ dispatcher, тесты.
+- **git_client.py:** ❌ клонирование/fetch/checkout репозитория, валидация `git_ref`, защита от path traversal — отсутствует в `backend_common/script_runner/` и `script-service/`.
+- **Frontend:** ❌ UI управления скриптами, страница «Скрипты» (`/admin/scripts`), просмотр результатов выполнения.
 - **Sandbox для JavaScript:** изолированный runtime (Node.js child process или QuickJS).
 - **Ресурсные лимиты:** CPU, memory, disk quota на выполнение.
 - **Версионирование скриптов:** история изменений.

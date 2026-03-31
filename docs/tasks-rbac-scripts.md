@@ -423,50 +423,52 @@
 
 ## Сводка
 
-| # | Задача | Оценка | Зависит от |
-|---|--------|--------|------------|
-| **Фаза 1** | **RBAC v2 в auth-service** | | |
-| 1.1 | Новая схема БД | ~4ч | — |
-| 1.2 | Domain models и DTO | ~3ч | 1.1 |
-| 1.3 | Repositories (permissions, roles, user_roles) | ~5ч | 1.2 |
-| 1.4 | PermissionService + AuthService рефакторинг | ~6ч | 1.3 |
-| 1.5 | ProjectService рефакторинг | ~4ч | 1.3 |
-| 1.6 | API endpoints (permissions, roles) | ~6ч | 1.4, 1.5 |
-| 1.7 | JWT: system permissions в токене | ~2ч | 1.3 |
-| 1.8 | Тесты auth-service RBAC | ~6ч | 1.6 |
-| **Фаза 2** | **Интеграция** | | |
-| 2.1 | auth-proxy: permissions injection + script-service routing | ~6ч | 1.6 |
-| 2.2 | experiment-service: ensure_permission | ~5ч | 1.2 |
-| 2.3 | Redis-кэш permissions | ~3ч | 2.1 |
-| 2.4 | Тесты интеграции | ~4ч | 2.1, 2.2 |
-| **Фаза 3** | **Аудит** | | |
-| 3.1 | AuditService + AuditRepo | ~4ч | 1.1 |
-| 3.2 | Аудит в auth-service | ~4ч | 3.1 |
-| 3.3 | Аудит в experiment-service | ~3ч | 3.1 |
-| 3.4 | API аудит-лога | ~3ч | 3.1 |
-| 3.5 | Тесты аудита | ~3ч | 3.2, 3.3, 3.4 |
-| **Фаза 4** | **Script Service** | | |
-| 4.1 | Scaffold + DB + Docker | ~4ч | 1.1 |
-| 4.2 | Git Integration + Script CRUD API | ~8ч | 4.1 |
-| 4.3 | Execution API + RabbitMQ | ~6ч | 4.2 |
-| 4.4 | Тесты script-service | ~4ч | 4.3 |
-| **Фаза 5** | **Script Runner** | | |
-| 5.1 | Модуль script_runner | ~6ч | 4.3 |
-| 5.2 | Интеграция в сервисы | ~3ч | 5.1 |
-| 5.3 | Тесты script runner | ~4ч | 5.2 |
-| **Фаза 6** | **Frontend** | | |
-| 6.1 | Типы, usePermissions, PermissionGate, API | ~5ч | 1.6 |
-| 6.2 | AdminUsers — «Пользователи» | ~5ч | 6.1 |
-| 6.3 | «Системные роли» + PermissionPicker | ~6ч | 6.1 |
-| 6.4 | ProjectMembersModal рефакторинг | ~4ч | 6.1 |
-| 6.5 | Страница «Аудит» | ~5ч | 6.1, 3.4 |
-| 6.6 | Скрипты — реестр | ~6ч | 6.1, 4.2 |
-| 6.7 | Скрипты — выполнение | ~7ч | 6.6, 4.3 |
-| 6.8 | Тесты фронта | ~5ч | 6.2–6.7 |
+> Статусы актуализированы 2026-03-30 по результатам проверки кодовой базы.
 
-**Итого backend: ~110ч (~14 рабочих дней)**
-**Frontend: ~48ч (~6 рабочих дней)**
-**Всего: ~158ч (~20 рабочих дней)**
+| # | Задача | Оценка | Статус | Зависит от |
+|---|--------|--------|--------|------------|
+| **Фаза 1** | **RBAC v2 в auth-service** | | | |
+| 1.1 | Новая схема БД | ~4ч | ✅ | — |
+| 1.2 | Domain models и DTO | ~3ч | ✅ | 1.1 |
+| 1.3 | Repositories (permissions, roles, user_roles) | ~5ч | ✅ | 1.2 |
+| 1.4 | PermissionService + AuthService рефакторинг | ~6ч | ✅ | 1.3 |
+| 1.5 | ProjectService рефакторинг | ~4ч | ✅ | 1.3 |
+| 1.6 | API endpoints (permissions, roles) | ~6ч | ✅ | 1.4, 1.5 |
+| 1.7 | JWT: system permissions в токене | ~2ч | ✅ | 1.3 |
+| 1.8 | Тесты auth-service RBAC | ~6ч | ✅ | 1.6 |
+| **Фаза 2** | **Интеграция** | | | |
+| 2.1 | auth-proxy: permissions injection + script-service routing | ~6ч | ✅ | 1.6 |
+| 2.2 | experiment-service: ensure_permission | ~5ч | ✅ | 1.2 |
+| 2.3 | Redis-кэш permissions | ~3ч | ✅ | 2.1 |
+| 2.4 | Тесты интеграции | ~4ч | ✅ | 2.1, 2.2 |
+| **Фаза 3** | **Аудит** | | | |
+| 3.1 | AuditService + AuditRepo | ~4ч | ✅ | 1.1 |
+| 3.2 | Аудит в auth-service | ~4ч | ✅ | 3.1 |
+| 3.3 | Аудит в experiment-service | ~3ч | ✅ | 3.1 |
+| 3.4 | API аудит-лога | ~3ч | ✅ | 3.1 |
+| 3.5 | Тесты аудита | ~3ч | ✅ | 3.2, 3.3, 3.4 |
+| **Фаза 4** | **Script Service** | | | |
+| 4.1 | Scaffold + DB + Docker | ~4ч | ✅ | 1.1 |
+| 4.2 | Git Integration + Script CRUD API | ~8ч | ⚠️ CRUD ✅, git_client.py ❌ | 4.1 |
+| 4.3 | Execution API + RabbitMQ | ~6ч | ✅ | 4.2 |
+| 4.4 | Тесты script-service | ~4ч | ✅ | 4.3 |
+| **Фаза 5** | **Script Runner** | | | |
+| 5.1 | Модуль script_runner | ~6ч | ⚠️ executor/consumer/runner ✅, git_client.py ❌ | 4.3 |
+| 5.2 | Интеграция в сервисы | ~3ч | ✅ | 5.1 |
+| 5.3 | Тесты script runner | ~4ч | ✅ | 5.2 |
+| **Фаза 6** | **Frontend** | | | |
+| 6.1 | Типы, usePermissions, PermissionGate, API | ~5ч | ❌ | 1.6 |
+| 6.2 | AdminUsers — «Пользователи» | ~5ч | ❌ | 6.1 |
+| 6.3 | «Системные роли» + PermissionPicker | ~6ч | ❌ | 6.1 |
+| 6.4 | ProjectMembersModal рефакторинг | ~4ч | ❌ | 6.1 |
+| 6.5 | Страница «Аудит» | ~5ч | ❌ | 6.1, 3.4 |
+| 6.6 | Скрипты — реестр | ~6ч | ❌ | 6.1, 4.2 |
+| 6.7 | Скрипты — выполнение | ~7ч | ❌ | 6.6, 4.3 |
+| 6.8 | Тесты фронта | ~5ч | ❌ | 6.2–6.7 |
+
+**Backend (фазы 1–5): выполнено ~107ч из ~110ч. Остаток: `git_client.py` (~3ч)**
+**Frontend (фаза 6): не начато, ~48ч**
+**Остаток: ~51ч (~6–7 рабочих дней)**
 
 ---
 

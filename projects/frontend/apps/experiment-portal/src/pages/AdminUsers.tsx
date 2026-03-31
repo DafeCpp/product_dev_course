@@ -1,13 +1,27 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
+import {
+    Button,
+    TextField,
+    Typography,
+    Box,
+    Chip,
+    List,
+    ListItem,
+    ListItemText,
+} from '@mui/material'
 import { authApi } from '../api/auth'
+import { permissionsApi } from '../api/permissions'
 import type { AdminUser, AdminInviteToken } from '../types'
+import type { Role } from '../types/permissions'
 import { Loading, Error as ErrorComponent, EmptyState } from '../components/common'
 import { notifyError, notifySuccess } from '../utils/notify'
+import PermissionGate from '../components/PermissionGate'
+import UserRolesModal from '../components/UserRolesModal'
 import './AdminUsers.scss'
 
-type Tab = 'users' | 'invites'
+type Tab = 'users' | 'invites' | 'system-roles'
 
 function AdminUsers() {
     const queryClient = useQueryClient()
@@ -162,17 +176,77 @@ function AdminUsers() {
         }
     }
 
+    // --- System Roles tab state ---
+    const [rolesModalUser, setRolesModalUser] = useState<{ id: string; username: string } | null>(null)
+    const [showCreateRole, setShowCreateRole] = useState(false)
+    const [newRoleName, setNewRoleName] = useState('')
+    const [newRoleDescription, setNewRoleDescription] = useState('')
+
+    const systemRolesQuery = useQuery({
+        queryKey: ['system-roles'],
+        queryFn: () => permissionsApi.listSystemRoles(),
+        enabled: tab === 'system-roles',
+    })
+
+    const createRoleMutation = useMutation({
+        mutationFn: () =>
+            permissionsApi.createSystemRole({
+                name: newRoleName.trim(),
+                description: newRoleDescription.trim() || null,
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['system-roles'] })
+            setShowCreateRole(false)
+            setNewRoleName('')
+            setNewRoleDescription('')
+            notifySuccess('Роль создана')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка создания роли'
+            notifyError(msg)
+        },
+    })
+
+    const deleteRoleMutation = useMutation({
+        mutationFn: (roleId: string) => permissionsApi.deleteSystemRole(roleId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['system-roles'] })
+            notifySuccess('Роль удалена')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления роли'
+            notifyError(msg)
+        },
+    })
+
+    const systemRoles: Role[] = systemRolesQuery.data ?? []
+
     const users: AdminUser[] = usersQuery.data ?? []
     const invites: AdminInviteToken[] = invitesQuery.data ?? []
 
     return (
         <div className="admin-users-page">
+            {rolesModalUser && (
+                <UserRolesModal
+                    userId={rolesModalUser.id}
+                    username={rolesModalUser.username}
+                    isOpen={true}
+                    onClose={() => setRolesModalUser(null)}
+                />
+            )}
+
             <div className="page-tabs">
                 <button
                     className={`tab-btn ${tab === 'users' ? 'active' : ''}`}
                     onClick={() => setTab('users')}
                 >
                     Пользователи
+                </button>
+                <button
+                    className={`tab-btn ${tab === 'system-roles' ? 'active' : ''}`}
+                    onClick={() => setTab('system-roles')}
+                >
+                    Системные роли
                 </button>
                 <button
                     className={`tab-btn ${tab === 'invites' ? 'active' : ''}`}
@@ -294,6 +368,15 @@ function AdminUsers() {
                                                 </button>
                                                 <button
                                                     className="btn btn-secondary btn-xs"
+                                                    title="Управление ролями"
+                                                    onClick={() =>
+                                                        setRolesModalUser({ id: u.id, username: u.username })
+                                                    }
+                                                >
+                                                    Роли
+                                                </button>
+                                                <button
+                                                    className="btn btn-secondary btn-xs"
                                                     title="Сбросить пароль"
                                                     onClick={() => resetPasswordMutation.mutate(u.id)}
                                                     disabled={resetPasswordMutation.isPending}
@@ -332,6 +415,127 @@ function AdminUsers() {
                                 </tbody>
                             </table>
                         </div>
+                    )}
+                </div>
+            )}
+
+            {tab === 'system-roles' && (
+                <div className="tab-panel card">
+                    <div className="card-header">
+                        <h3>Системные роли</h3>
+                        <div className="header-controls">
+                            <PermissionGate permission="roles.manage" system>
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => setShowCreateRole((v) => !v)}
+                                >
+                                    {showCreateRole ? 'Отмена' : 'Создать роль'}
+                                </button>
+                            </PermissionGate>
+                        </div>
+                    </div>
+
+                    {showCreateRole && (
+                        <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'grey.50' }}>
+                            <Typography variant="subtitle2" gutterBottom>
+                                Новая системная роль
+                            </Typography>
+                            <Box display="flex" flexDirection="column" gap={1.5} maxWidth={480}>
+                                <TextField
+                                    label="Название"
+                                    size="small"
+                                    value={newRoleName}
+                                    onChange={(e) => setNewRoleName(e.target.value)}
+                                    required
+                                />
+                                <TextField
+                                    label="Описание (необязательно)"
+                                    size="small"
+                                    value={newRoleDescription}
+                                    onChange={(e) => setNewRoleDescription(e.target.value)}
+                                    multiline
+                                    minRows={2}
+                                />
+                                <Box display="flex" gap={1} justifyContent="flex-end">
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        onClick={() => setShowCreateRole(false)}
+                                    >
+                                        Отмена
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        disabled={!newRoleName.trim() || createRoleMutation.isPending}
+                                        onClick={() => createRoleMutation.mutate()}
+                                    >
+                                        {createRoleMutation.isPending ? 'Создание...' : 'Создать'}
+                                    </Button>
+                                </Box>
+                            </Box>
+                        </Box>
+                    )}
+
+                    {systemRolesQuery.isLoading && <Loading message="Загрузка ролей..." />}
+                    {systemRolesQuery.isError && (
+                        <ErrorComponent
+                            message={
+                                systemRolesQuery.error instanceof Error
+                                    ? systemRolesQuery.error.message
+                                    : 'Ошибка загрузки ролей'
+                            }
+                        />
+                    )}
+
+                    {!systemRolesQuery.isLoading && !systemRolesQuery.isError && systemRoles.length === 0 && (
+                        <EmptyState message="Системных ролей нет" />
+                    )}
+
+                    {systemRoles.length > 0 && (
+                        <List dense>
+                            {systemRoles.map((role) => (
+                                <ListItem
+                                    key={role.id}
+                                    divider
+                                    secondaryAction={
+                                        role.is_builtin ? (
+                                            <Chip label="встроенная" size="small" variant="outlined" />
+                                        ) : (
+                                            <PermissionGate permission="roles.manage" system>
+                                                <Button
+                                                    size="small"
+                                                    color="error"
+                                                    variant="outlined"
+                                                    disabled={deleteRoleMutation.isPending}
+                                                    onClick={() => {
+                                                        if (confirm(`Удалить роль «${role.name}»?`)) {
+                                                            deleteRoleMutation.mutate(role.id)
+                                                        }
+                                                    }}
+                                                >
+                                                    Удалить
+                                                </Button>
+                                            </PermissionGate>
+                                        )
+                                    }
+                                >
+                                    <ListItemText
+                                        primary={
+                                            <Box display="flex" alignItems="center" gap={1}>
+                                                <Typography variant="body2" fontWeight={600}>
+                                                    {role.name}
+                                                </Typography>
+                                                {role.is_builtin && (
+                                                    <Chip label="builtin" size="small" color="default" />
+                                                )}
+                                            </Box>
+                                        }
+                                        secondary={role.description ?? undefined}
+                                    />
+                                </ListItem>
+                            ))}
+                        </List>
                     )}
                 </div>
             )}

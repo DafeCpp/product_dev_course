@@ -67,7 +67,7 @@ import {
 // API работает через Auth Proxy, который автоматически добавляет токен из куки
 const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
 
-const apiClient = axios.create({
+export const apiClient = axios.create({
   baseURL: AUTH_PROXY_URL,
   headers: {
     'Content-Type': 'application/json',
@@ -114,13 +114,13 @@ function _withProjectIdConfig(
   return next
 }
 
-async function apiGet<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+export async function apiGet<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const cfg = _withProjectIdConfig(url, config)
   const response = cfg ? await apiClient.get(url, cfg) : await apiClient.get(url)
   return response.data
 }
 
-async function apiPost<T = any>(
+export async function apiPost<T = any>(
   url: string,
   data?: any,
   config?: AxiosRequestConfig
@@ -130,7 +130,7 @@ async function apiPost<T = any>(
   return response.data
 }
 
-async function apiPatch<T = any>(
+export async function apiPatch<T = any>(
   url: string,
   data?: any,
   config?: AxiosRequestConfig
@@ -140,7 +140,7 @@ async function apiPatch<T = any>(
   return response.data
 }
 
-async function apiDelete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+export async function apiDelete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const cfg = _withProjectIdConfig(url, config)
   const response = cfg ? await apiClient.delete(url, cfg) : await apiClient.delete(url)
   return response.data

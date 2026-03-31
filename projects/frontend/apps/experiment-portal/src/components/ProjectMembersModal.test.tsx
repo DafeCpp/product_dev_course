@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ProjectMembersModal from './ProjectMembersModal'
 import { projectsApi, usersApi } from '../api/client'
 import { authApi } from '../api/auth'
-// Мокаем API
+import { permissionsApi } from '../api/permissions'
+
 vi.mock('../api/client', () => ({
     projectsApi: {
         listMembers: vi.fn(),
@@ -21,6 +22,18 @@ vi.mock('../api/client', () => ({
 vi.mock('../api/auth', () => ({
     authApi: {
         me: vi.fn(),
+    },
+}))
+
+vi.mock('../api/permissions', () => ({
+    permissionsApi: {
+        listProjectRoles: vi.fn(),
+        listPermissions: vi.fn(),
+        getEffectivePermissions: vi.fn(),
+        grantProjectRole: vi.fn(),
+        revokeProjectRole: vi.fn(),
+        createProjectRole: vi.fn(),
+        deleteProjectRole: vi.fn(),
     },
 }))
 
@@ -74,20 +87,56 @@ describe('ProjectMembersModal', () => {
         created_at: '2024-01-01T00:00:00Z',
     }
 
+    const mockProjectRoles = [
+        {
+            id: 'role-owner',
+            name: 'owner',
+            description: 'Владелец',
+            scope: 'project' as const,
+            is_builtin: true,
+            project_id: projectId,
+            permissions: [],
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+        },
+        {
+            id: 'role-editor',
+            name: 'editor',
+            description: 'Редактор',
+            scope: 'project' as const,
+            is_builtin: true,
+            project_id: projectId,
+            permissions: [],
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+        },
+        {
+            id: 'role-viewer',
+            name: 'viewer',
+            description: 'Наблюдатель',
+            scope: 'project' as const,
+            is_builtin: true,
+            project_id: projectId,
+            permissions: [],
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+        },
+    ]
+
     beforeEach(() => {
         vi.clearAllMocks()
         mockOnClose.mockClear()
 
-        const mockAuthApi = vi.mocked(authApi)
-        mockAuthApi.me.mockResolvedValue(mockCurrentUser)
-
-        const mockProjectsApi = vi.mocked(projectsApi)
-        mockProjectsApi.listMembers.mockResolvedValue({
-            members: mockMembers,
+        vi.mocked(authApi).me.mockResolvedValue(mockCurrentUser)
+        vi.mocked(projectsApi).listMembers.mockResolvedValue({ members: mockMembers })
+        vi.mocked(usersApi).search.mockResolvedValue({ users: [] })
+        vi.mocked(permissionsApi).listProjectRoles.mockResolvedValue(mockProjectRoles)
+        vi.mocked(permissionsApi).listPermissions.mockResolvedValue([])
+        vi.mocked(permissionsApi).getEffectivePermissions.mockResolvedValue({
+            system_permissions: [],
+            project_permissions: [],
+            is_superadmin: false,
         })
-
-        const mockUsersApi = vi.mocked(usersApi)
-        mockUsersApi.search.mockResolvedValue({ users: [] })
     })
 
     it('does not render when isOpen is false', () => {
@@ -143,8 +192,7 @@ describe('ProjectMembersModal', () => {
     })
 
     it('shows loading state while fetching members', () => {
-        const mockProjectsApi = vi.mocked(projectsApi)
-        mockProjectsApi.listMembers.mockImplementation(
+        vi.mocked(projectsApi).listMembers.mockImplementation(
             () => new Promise(() => {}) // Never resolves
         )
 
@@ -162,8 +210,7 @@ describe('ProjectMembersModal', () => {
     })
 
     it('shows error message when loading members fails', async () => {
-        const mockProjectsApi = vi.mocked(projectsApi)
-        mockProjectsApi.listMembers.mockRejectedValueOnce(new Error('Failed to load members'))
+        vi.mocked(projectsApi).listMembers.mockRejectedValueOnce(new Error('Failed to load members'))
 
         render(
             <ProjectMembersModal
@@ -181,8 +228,7 @@ describe('ProjectMembersModal', () => {
     })
 
     it('displays empty message when no members', async () => {
-        const mockProjectsApi = vi.mocked(projectsApi)
-        mockProjectsApi.listMembers.mockResolvedValueOnce({ members: [] })
+        vi.mocked(projectsApi).listMembers.mockResolvedValueOnce({ members: [] })
 
         render(
             <ProjectMembersModal
@@ -219,8 +265,7 @@ describe('ProjectMembersModal', () => {
 
     it('does not show add member form for non-owner', async () => {
         const nonOwnerId = 'editor-1'
-        const mockAuthApi = vi.mocked(authApi)
-        mockAuthApi.me.mockResolvedValueOnce({
+        vi.mocked(authApi).me.mockResolvedValueOnce({
             ...mockCurrentUser,
             id: nonOwnerId,
         })
@@ -242,13 +287,11 @@ describe('ProjectMembersModal', () => {
 
     it('searches users and selects from dropdown', async () => {
         const user = userEvent.setup()
-        const mockUsersApi = vi.mocked(usersApi)
-        mockUsersApi.search.mockResolvedValue({
+        vi.mocked(usersApi).search.mockResolvedValue({
             users: [{ id: 'new-user-1', username: 'newuser', email: 'new@example.com' }],
         })
 
-        const mockProjectsApi = vi.mocked(projectsApi)
-        mockProjectsApi.addMember.mockResolvedValueOnce({
+        vi.mocked(projectsApi).addMember.mockResolvedValueOnce({
             project_id: projectId,
             user_id: 'new-user-1',
             role: 'viewer' as const,
@@ -282,7 +325,7 @@ describe('ProjectMembersModal', () => {
         await user.click(addButton)
 
         await waitFor(() => {
-            expect(mockProjectsApi.addMember).toHaveBeenCalledWith(projectId, {
+            expect(vi.mocked(projectsApi).addMember).toHaveBeenCalledWith(projectId, {
                 user_id: 'new-user-1',
                 role: 'viewer',
             })
@@ -291,14 +334,13 @@ describe('ProjectMembersModal', () => {
 
     it('updates member role successfully', async () => {
         const user = userEvent.setup()
-        const mockProjectsApi = vi.mocked(projectsApi)
         const updatedMember = {
             project_id: projectId,
             user_id: 'editor-1',
             role: 'owner' as const,
             created_at: '2024-01-02T00:00:00Z',
         }
-        mockProjectsApi.updateMemberRole.mockResolvedValueOnce(updatedMember)
+        vi.mocked(projectsApi).updateMemberRole.mockResolvedValueOnce(updatedMember)
 
         render(
             <ProjectMembersModal
@@ -311,10 +353,13 @@ describe('ProjectMembersModal', () => {
         )
 
         await waitFor(() => {
-            expect(screen.getByText('editor')).toBeInTheDocument()
+            expect(screen.getAllByText('editor').length).toBeGreaterThan(0)
         })
 
-        const editorRow = screen.getByText('editor').closest('tr')
+        const editorCell = screen.getAllByText('editor').find(
+            (el) => el.tagName.toLowerCase() === 'td'
+        )!
+        const editorRow = editorCell.closest('tr')
         expect(editorRow).toBeInTheDocument()
 
         const editorRoleSelect = editorRow?.querySelector('select') as HTMLSelectElement
@@ -324,7 +369,7 @@ describe('ProjectMembersModal', () => {
         await user.selectOptions(editorRoleSelect, 'owner')
 
         await waitFor(() => {
-            expect(mockProjectsApi.updateMemberRole).toHaveBeenCalledWith(projectId, 'editor-1', {
+            expect(vi.mocked(projectsApi).updateMemberRole).toHaveBeenCalledWith(projectId, 'editor-1', {
                 role: 'owner',
             })
         })
@@ -332,8 +377,7 @@ describe('ProjectMembersModal', () => {
 
     it('removes member successfully', async () => {
         const user = userEvent.setup()
-        const mockProjectsApi = vi.mocked(projectsApi)
-        mockProjectsApi.removeMember.mockResolvedValueOnce(undefined)
+        vi.mocked(projectsApi).removeMember.mockResolvedValueOnce(undefined)
 
         const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -361,7 +405,7 @@ describe('ProjectMembersModal', () => {
 
         await waitFor(() => {
             expect(confirmSpy).toHaveBeenCalled()
-            expect(mockProjectsApi.removeMember).toHaveBeenCalledWith(projectId, 'editor-1')
+            expect(vi.mocked(projectsApi).removeMember).toHaveBeenCalledWith(projectId, 'editor-1')
         })
 
         confirmSpy.mockRestore()
@@ -369,7 +413,6 @@ describe('ProjectMembersModal', () => {
 
     it('does not remove member if confirmation is cancelled', async () => {
         const user = userEvent.setup()
-        const mockProjectsApi = vi.mocked(projectsApi)
 
         const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
 
@@ -399,7 +442,7 @@ describe('ProjectMembersModal', () => {
             expect(confirmSpy).toHaveBeenCalled()
         })
 
-        expect(mockProjectsApi.removeMember).not.toHaveBeenCalled()
+        expect(vi.mocked(projectsApi).removeMember).not.toHaveBeenCalled()
 
         confirmSpy.mockRestore()
     })
@@ -416,10 +459,13 @@ describe('ProjectMembersModal', () => {
         )
 
         await waitFor(() => {
-            expect(screen.getByText('owner')).toBeInTheDocument()
+            expect(screen.getAllByText('owner').length).toBeGreaterThan(0)
         })
 
-        const ownerRow = screen.getByText('owner').closest('tr')
+        const ownerCell = screen.getAllByText('owner').find(
+            (el) => el.tagName.toLowerCase() === 'td'
+        )!
+        const ownerRow = ownerCell.closest('tr')
         expect(ownerRow).toBeInTheDocument()
         expect(ownerRow).toHaveTextContent(/нельзя удалить/i)
     })
@@ -484,7 +530,7 @@ describe('ProjectMembersModal', () => {
         expect(addButton).toBeDisabled()
     })
 
-    it('shows role labels correctly', async () => {
+    it('shows role labels correctly for owner row', async () => {
         render(
             <ProjectMembersModal
                 isOpen={true}
@@ -496,25 +542,102 @@ describe('ProjectMembersModal', () => {
         )
 
         await waitFor(() => {
-            expect(screen.getByText('owner')).toBeInTheDocument()
-            expect(screen.getByText('editor')).toBeInTheDocument()
-            expect(screen.getByText('viewer')).toBeInTheDocument()
+            expect(screen.getAllByText('owner').length).toBeGreaterThan(0)
         })
 
-        const ownerRow = screen.getByText('owner').closest('tr')
+        const ownerCell = screen.getAllByText('owner').find(
+            (el) => el.tagName.toLowerCase() === 'td'
+        )!
+        const ownerRow = ownerCell.closest('tr')
         expect(ownerRow).toBeInTheDocument()
+        // Владелец проекта — нет select для изменения роли (canEdit=false)
         const ownerSelect = ownerRow?.querySelector('select')
         expect(ownerSelect).not.toBeInTheDocument()
-        expect(ownerRow).toHaveTextContent(/владелец/i)
 
-        const editorRow = screen.getByText('editor').closest('tr')
+        // Редактор — есть select (canEdit=true)
+        const editorCell = screen.getAllByText('editor').find(
+            (el) => el.tagName.toLowerCase() === 'td'
+        )!
+        const editorRow = editorCell.closest('tr')
         expect(editorRow).toBeInTheDocument()
         const editorSelect = editorRow?.querySelector('select')
         expect(editorSelect).toBeInTheDocument()
 
-        const viewerRow = screen.getByText('viewer').closest('tr')
+        // Наблюдатель — есть select (canEdit=true)
+        const viewerCell = screen.getAllByText('viewer').find(
+            (el) => el.tagName.toLowerCase() === 'td'
+        )!
+        const viewerRow = viewerCell.closest('tr')
         expect(viewerRow).toBeInTheDocument()
         const viewerSelect = viewerRow?.querySelector('select')
         expect(viewerSelect).toBeInTheDocument()
+    })
+
+    it('shows role management button for non-owner members', async () => {
+        render(
+            <ProjectMembersModal
+                isOpen={true}
+                onClose={mockOnClose}
+                projectId={projectId}
+                projectOwnerId={projectOwnerId}
+            />,
+            { wrapper: createWrapper() }
+        )
+
+        await waitFor(() => {
+            expect(screen.getByText('editor')).toBeInTheDocument()
+        })
+
+        const manageButtons = screen.getAllByRole('button', { name: /управление ролями/i })
+        expect(manageButtons.length).toBeGreaterThan(0)
+    })
+
+    it('opens MemberRolesModal when manage roles button clicked', async () => {
+        const user = userEvent.setup()
+        vi.mocked(permissionsApi).listProjectRoles.mockResolvedValue(mockProjectRoles)
+
+        render(
+            <ProjectMembersModal
+                isOpen={true}
+                onClose={mockOnClose}
+                projectId={projectId}
+                projectOwnerId={projectOwnerId}
+            />,
+            { wrapper: createWrapper() }
+        )
+
+        await waitFor(() => {
+            expect(screen.getAllByText('editor').length).toBeGreaterThan(0)
+        })
+
+        const editorCell = screen.getAllByText('editor').find(
+            (el) => el.tagName.toLowerCase() === 'td'
+        )!
+        const editorRow = editorCell.closest('tr')
+        const manageBtn = editorRow?.querySelector('button[class*="secondary"]') as HTMLButtonElement
+        expect(manageBtn).toBeInTheDocument()
+        await user.click(manageBtn!)
+
+        await waitFor(() => {
+            expect(screen.getByRole('heading', { name: /роли участника/i })).toBeInTheDocument()
+        })
+    })
+
+    it('role dropdown for add member uses project roles from API', async () => {
+        render(
+            <ProjectMembersModal
+                isOpen={true}
+                onClose={mockOnClose}
+                projectId={projectId}
+                projectOwnerId={projectOwnerId}
+            />,
+            { wrapper: createWrapper() }
+        )
+
+        await waitFor(() => {
+            expect(screen.getByRole('heading', { name: /добавить участника/i })).toBeInTheDocument()
+        })
+
+        expect(vi.mocked(permissionsApi).listProjectRoles).toHaveBeenCalledWith(projectId)
     })
 })
