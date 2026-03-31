@@ -134,4 +134,4 @@ def test_worker_has_scheduled_profiles_task() -> None:
     """The module-level worker must include the activate_scheduled_profiles task (8th)."""
     task_names = [t.name for t in worker.tasks]
     assert "activate_scheduled_profiles" in task_names
-    assert len(task_names) == 8
+    assert len(task_names) == 9

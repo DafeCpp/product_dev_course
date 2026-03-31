@@ -47,7 +47,8 @@ class RunRepository(BaseRepository):
                 status,
                 started_at,
                 finished_at,
-                duration_seconds
+                duration_seconds,
+                auto_complete_after_minutes
             )
             VALUES (
                 $1,
@@ -62,7 +63,8 @@ class RunRepository(BaseRepository):
                 $10,
                 $11,
                 $12,
-                $13
+                $13,
+                $14
             )
             RETURNING *
         """
@@ -81,6 +83,7 @@ class RunRepository(BaseRepository):
             data.started_at,
             data.finished_at,
             data.duration_seconds,
+            data.auto_complete_after_minutes,
         )
         assert record is not None
         return self._to_model(record)
@@ -369,3 +372,16 @@ class RunRepository(BaseRepository):
                 raise NotFoundError("One or more runs not found")
 
             return [self._to_model(record) for record in records]
+
+    async def get_overdue_runs(self, now: datetime) -> list[Run]:
+        """Return running runs whose auto_complete deadline has passed."""
+        records = await self._fetch(
+            """
+            SELECT * FROM runs
+            WHERE status = 'running'
+              AND auto_complete_after_minutes IS NOT NULL
+              AND started_at + (auto_complete_after_minutes * interval '1 minute') <= $1
+            """,
+            now,
+        )
+        return [self._to_model(record) for record in records]

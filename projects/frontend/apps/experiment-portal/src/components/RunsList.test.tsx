@@ -39,6 +39,7 @@ const mockRun = {
     finished_at: '2024-01-01T11:00:00Z',
     duration_seconds: 3600,
     metadata: {},
+    auto_complete_after_minutes: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T12:00:00Z',
 }

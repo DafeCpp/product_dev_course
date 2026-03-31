@@ -62,6 +62,7 @@ class RunCreateDTO(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     duration_seconds: int | None = None
+    auto_complete_after_minutes: int | None = None
 
 
 class RunUpdateDTO(BaseModel):
@@ -77,6 +78,7 @@ class RunUpdateDTO(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     duration_seconds: int | None = None
+    auto_complete_after_minutes: int | None = None
 
 
 class CaptureSessionCreateDTO(BaseModel):

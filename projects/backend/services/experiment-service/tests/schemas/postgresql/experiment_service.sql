@@ -90,6 +90,7 @@ CREATE TABLE runs (
     duration_seconds integer,
     notes text,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    auto_complete_after_minutes integer,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (id, project_id),

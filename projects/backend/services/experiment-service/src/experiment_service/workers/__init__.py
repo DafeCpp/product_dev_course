@@ -13,6 +13,7 @@ from backend_common.worker import BackgroundWorker, WorkerTask
 from experiment_service.settings import settings
 from experiment_service.workers.activate_scheduled_profiles import activate_scheduled_profiles
 from experiment_service.workers.audit_log_cleanup import audit_log_cleanup
+from experiment_service.workers.auto_complete_runs import auto_complete_runs
 from experiment_service.workers.conversion_backfill import conversion_backfill
 from experiment_service.workers.idempotency_cleanup import idempotency_cleanup
 from experiment_service.workers.scheduled_profile_activation import scheduled_profile_activation
@@ -31,6 +32,7 @@ worker = BackgroundWorker(
         WorkerTask(name="conversion_backfill", fn=conversion_backfill),
         WorkerTask(name="audit_log_cleanup", fn=audit_log_cleanup),
         WorkerTask(name="activate_scheduled_profiles", fn=activate_scheduled_profiles),
+        WorkerTask(name="auto_complete_runs", fn=auto_complete_runs),
     ],
 )
 

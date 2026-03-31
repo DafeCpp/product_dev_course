@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 import UserRolesModal from './UserRolesModal'
 import { permissionsApi } from '../api/permissions'
+import type { UserSystemRole } from '../types/permissions'
 
 vi.mock('../api/permissions', () => ({
     permissionsApi: {
@@ -87,7 +88,7 @@ describe('UserRolesModal', () => {
             is_superadmin: false,
         })
         vi.mocked(permissionsApi).listSystemRoles.mockResolvedValue(mockSystemRoles)
-        vi.mocked(permissionsApi).grantSystemRole.mockResolvedValue(undefined)
+        vi.mocked(permissionsApi).grantSystemRole.mockResolvedValue({} as UserSystemRole)
         vi.mocked(permissionsApi).revokeSystemRole.mockResolvedValue(undefined)
     })
 

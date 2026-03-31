@@ -49,6 +49,7 @@ class Run(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     duration_seconds: int | None = None
+    auto_complete_after_minutes: int | None = None
     created_at: datetime
     updated_at: datetime
 
