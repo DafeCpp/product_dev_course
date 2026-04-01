@@ -12,6 +12,7 @@ type Config = {
     port: number
     targetExperimentUrl: string
     targetTelemetryUrl: string
+    targetScriptUrl: string
     authUrl: string
     corsOrigins: string[]
     cookieDomain?: string
@@ -46,6 +47,8 @@ export function parseConfig(): Config {
             // In Docker, `localhost` would mean "inside auth-proxy container".
             // Default to the docker-compose service name so telemetry proxy works out of the box.
             process.env.TARGET_TELEMETRY_URL || 'http://telemetry-ingest-service:8003',
+        targetScriptUrl:
+            process.env.TARGET_SCRIPT_URL || 'http://script-service:8004',
         authUrl: process.env.AUTH_URL || 'http://localhost:8001',
         corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000')
             .split(',')
@@ -1273,6 +1276,46 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
             },
         },
     })
+
+    // Script service proxy — /api/v1/scripts and /api/v1/executions → script-service
+    for (const prefix of ['/api/v1/scripts', '/api/v1/executions']) {
+        await app.register(httpProxy, {
+            prefix,
+            upstream: config.targetScriptUrl,
+            rewritePrefix: prefix,
+            http2: false,
+            replyOptions: {
+                rewriteRequestHeaders: (req, headers) => {
+                    const cookies = parseCookies(req.headers.cookie as string | undefined)
+                    const access = cookies[config.accessCookieName]
+                    const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                    const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+                    const newHeaders: Record<string, string> = {}
+                    for (const [key, value] of Object.entries(headers)) {
+                        if (typeof value === 'string') newHeaders[key] = value
+                        else if (Array.isArray(value) && value.length > 0) newHeaders[key] = String(value[0])
+                    }
+                    newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                    newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+                    if (access) {
+                        newHeaders['authorization'] = `Bearer ${access}`
+                        const decoded = decodeJWT(access)
+                        if (decoded?.user_id) {
+                            newHeaders['X-User-Id'] = decoded.user_id
+                        }
+                    }
+                    const permIsSuperadmin = (req as any).permissionsIsSuperadmin
+                    if (permIsSuperadmin !== undefined) {
+                        newHeaders['X-User-Is-Superadmin'] = permIsSuperadmin ? 'true' : 'false'
+                        newHeaders['X-User-System-Permissions'] = (req as any).permissionsSystemPerms ?? ''
+                        newHeaders['X-User-Permissions'] = (req as any).permissionsProjectPerms ?? ''
+                    }
+                    delete newHeaders['cookie']
+                    return newHeaders
+                },
+            },
+        })
+    }
 
     // Users API proxy — forward /api/v1/users/* to Auth Service (must be before generic /api proxy)
     await app.register(httpProxy, {

@@ -96,6 +96,7 @@ describe('full cycle integration (auth-proxy)', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${expPort}`,
             targetTelemetryUrl: `http://127.0.0.1:${telPort}`,
+            targetScriptUrl: 'http://example.invalid',
             authUrl: `http://127.0.0.1:${authPort}`,
             corsOrigins: ['http://localhost:3000'],
             cookieSecure: false,

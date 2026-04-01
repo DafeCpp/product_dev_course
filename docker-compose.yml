@@ -331,6 +331,7 @@ services:
       - PORT=${AUTH_PROXY_PORT:-8080}
       - TARGET_EXPERIMENT_URL=${TARGET_EXPERIMENT_URL:-http://experiment-service:8002}
       - TARGET_TELEMETRY_URL=${TARGET_TELEMETRY_URL:-http://telemetry-ingest-service:8003}
+      - TARGET_SCRIPT_URL=${TARGET_SCRIPT_URL:-http://script-service:8004}
       - AUTH_URL=${AUTH_URL:-http://auth-service:8001}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
@@ -353,6 +354,8 @@ services:
       auth-service:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      script-service:
         condition: service_healthy
     networks:
       - experiment-tracking-network

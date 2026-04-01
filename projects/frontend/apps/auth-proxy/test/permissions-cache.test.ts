@@ -6,6 +6,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
         port: 0,
         targetExperimentUrl: 'http://example.invalid',
         targetTelemetryUrl: 'http://example.invalid',
+        targetScriptUrl: 'http://example.invalid',
         authUrl: 'http://example.invalid',
         corsOrigins: ['http://localhost:3000'],
         cookieSecure: false,

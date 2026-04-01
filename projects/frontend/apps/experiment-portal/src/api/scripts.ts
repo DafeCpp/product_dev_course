@@ -59,8 +59,8 @@ export const scriptsApi = {
   executeScript: async (
     id: string,
     params: { parameters?: Record<string, unknown>; target_instance?: string }
-  ): Promise<{ execution_id: string }> => {
-    const res = await client.post<{ execution_id: string }>(
+  ): Promise<ScriptExecution> => {
+    const res = await client.post<ScriptExecution>(
       `/api/v1/scripts/${id}/execute`,
       params
     )
