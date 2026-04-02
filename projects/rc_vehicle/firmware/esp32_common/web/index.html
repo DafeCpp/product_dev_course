@@ -279,6 +279,57 @@
             </div>
         </section>
 
+        <!-- Магнитометр -->
+        <section class="panel" id="panel-mag">
+            <button class="panel-header" aria-expanded="false">
+                <span class="panel-icon">&#9654;</span>
+                <span>Магнитометр</span>
+                <span id="mag-calib-badge" class="badge badge-unknown" style="margin-left:auto">—</span>
+            </button>
+            <div class="panel-body" hidden>
+
+                <!-- Компас -->
+                <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px">
+                    <canvas id="mag-compass" width="80" height="80" style="flex-shrink:0"></canvas>
+                    <div style="flex:1">
+                        <div class="kv-row">
+                            <span class="kv-k">Курс (абс.)</span>
+                            <span id="mag-heading-abs" class="kv-v">—</span>
+                        </div>
+                        <div class="kv-row">
+                            <span class="kv-k">Курс (отн.)</span>
+                            <span id="mag-heading-rel" class="kv-v">—</span>
+                        </div>
+                        <div class="kv-row">
+                            <span class="kv-k">Mx / My / Mz</span>
+                            <span id="mag-xyz" class="kv-v">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-reset-heading-ref" class="btn btn-outline" style="width:100%;margin-bottom:12px">
+                    Сбросить нулевой курс
+                </button>
+
+                <!-- Hard iron калибровка -->
+                <p class="hint" style="margin-bottom:4px">
+                    <strong>Hard iron калибровка:</strong> медленно вращать машину на 360° в горизонтальной плоскости.
+                </p>
+                <div class="kv-row" style="margin-bottom:8px">
+                    <span class="kv-k">Статус:</span>
+                    <span id="mag-calib-status" class="kv-v">—</span>
+                </div>
+                <div class="btn-row">
+                    <button id="btn-mag-start"  class="btn btn-accent">Начать</button>
+                    <button id="btn-mag-finish" class="btn btn-accent" disabled>Завершить</button>
+                    <button id="btn-mag-cancel" class="btn btn-outline" disabled>Отмена</button>
+                    <button id="btn-mag-erase"  class="btn btn-outline" style="color:#e05;border-color:#e05">Стереть</button>
+                </div>
+                <p id="mag-calib-msg" class="hint" style="display:none;margin-top:6px"></p>
+
+            </div>
+        </section>
+
         <!-- Тестовые манёвры -->
         <section class="panel" id="panel-test">
             <button class="panel-header" aria-expanded="false">

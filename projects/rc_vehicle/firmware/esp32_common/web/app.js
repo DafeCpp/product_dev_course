@@ -70,6 +70,20 @@ const btnStaConnect    = $('btn-sta-connect');
 const btnStaDisconnect = $('btn-sta-disconnect');
 const btnStaForget     = $('btn-sta-forget');
 
+// Магнитометр
+const magCalibBadge   = $('mag-calib-badge');
+const magHeadingAbs   = $('mag-heading-abs');
+const magHeadingRel   = $('mag-heading-rel');
+const magXyz          = $('mag-xyz');
+const magCalibStatus  = $('mag-calib-status');
+const magCalibMsg     = $('mag-calib-msg');
+const btnMagStart     = $('btn-mag-start');
+const btnMagFinish    = $('btn-mag-finish');
+const btnMagCancel    = $('btn-mag-cancel');
+const btnMagErase     = $('btn-mag-erase');
+const btnResetHeading = $('btn-reset-heading-ref');
+const magCompassCanvas= $('mag-compass');
+
 // ── State ──
 let lastCommandSeq = 0;
 let commandSendInterval = null;
@@ -79,6 +93,7 @@ let telemRxCount = 0;
 const MCU_TIMEOUT_MS = 1500;
 let mcuStatusCheckInterval = null;
 let wifiStatusInterval = null;
+let magCalibPollTimer = null;
 
 // ── Accordion ──
 document.querySelectorAll('.panel-header').forEach(hdr => {
@@ -126,6 +141,7 @@ function connectWebSocket() {
             startMcuStatusCheck();
             startCommandSending();
             requestWakeLock();
+            wsSend({ type: 'get_mag_calib_status' });
         };
 
         ws.onmessage = (event) => {
@@ -191,6 +207,12 @@ function connectWebSocket() {
                 } else if (data.type === 'stop_speed_calib_ack') {
                     if (speedCalibStatusEl) speedCalibStatusEl.textContent = 'Остановлено';
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
+                } else if (data.type === 'calibrate_mag_ack') {
+                    updateMagCalibUI(data.status, data.ok ? null : 'Ошибка операции');
+                } else if (data.type === 'mag_calib_status') {
+                    updateMagCalibUI(data.status, null);
+                } else if (data.type === 'reset_heading_ref_ack') {
+                    if (magCalibMsg) { magCalibMsg.textContent = 'Нулевой курс сброшен'; magCalibMsg.style.display = 'block'; setTimeout(() => { if (magCalibMsg) magCalibMsg.style.display = 'none'; }, 2000); }
                 }
             } catch (e) {
                 console.error('Parse error:', e, event.data?.slice(0, 200));
@@ -364,6 +386,74 @@ async function scanWifiNetworks() {
     } catch (e) { /* ignore */ }
     btnStaScan.disabled = false;
     btnStaScan.textContent = prev;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Magnetometer UI
+// ═══════════════════════════════════════════════════════════════════
+
+function updateMagCalibUI(status, msg) {
+    const collecting = status === 'collecting';
+    const done       = status === 'done';
+    const failed     = status === 'failed';
+
+    // Кнопки
+    if (btnMagStart)  btnMagStart.disabled  = collecting;
+    if (btnMagFinish) btnMagFinish.disabled = !collecting;
+    if (btnMagCancel) btnMagCancel.disabled = !collecting;
+
+    // Бейдж в заголовке панели
+    const badgeClass = done ? 'badge-ok' : failed ? 'badge-err' : collecting ? 'badge-warn' : 'badge-unknown';
+    const badgeText  = { idle: '—', collecting: 'Сбор', done: 'OK', failed: 'Ошибка' }[status] ?? '—';
+    if (magCalibBadge) { magCalibBadge.className = `badge ${badgeClass}`; magCalibBadge.textContent = badgeText; }
+
+    // Статус-строка
+    const statusText = { idle: 'Ожидание', collecting: 'Сбор данных...', done: 'Калибровка OK', failed: 'Ошибка' }[status] ?? status;
+    if (magCalibStatus) magCalibStatus.textContent = statusText;
+
+    // Сообщение
+    if (msg && magCalibMsg) {
+        magCalibMsg.textContent = msg;
+        magCalibMsg.style.display = 'block';
+    }
+
+    // Polling пока collecting
+    if (collecting && !magCalibPollTimer) {
+        magCalibPollTimer = setInterval(() => wsSend({ type: 'get_mag_calib_status' }), 1000);
+    } else if (!collecting && magCalibPollTimer) {
+        clearInterval(magCalibPollTimer);
+        magCalibPollTimer = null;
+    }
+}
+
+function drawCompass(headingDeg) {
+    if (!magCompassCanvas) return;
+    const ctx = magCompassCanvas.getContext('2d');
+    const w = magCompassCanvas.width, h = magCompassCanvas.height;
+    const cx = w / 2, cy = h / 2, r = Math.min(cx, cy) - 4;
+    ctx.clearRect(0, 0, w, h);
+
+    // Круг
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Стрелка (красная — направление относительного нуля)
+    const rad = (headingDeg - 90) * Math.PI / 180;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(rad) * r * 0.75, cy + Math.sin(rad) * r * 0.75);
+    ctx.lineTo(cx - Math.cos(rad) * r * 0.35, cy - Math.sin(rad) * r * 0.35);
+    ctx.strokeStyle = '#e05';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Метка N
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('N', cx, cy - r + 12);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -743,6 +833,16 @@ function updateTelem(data) {
         html += row('Roll', (o.roll?.toFixed(1) ?? 'N/A') + ' °');
         html += row('Yaw', (o.yaw?.toFixed(1) ?? 'N/A') + ' °');
     }
+    if (data.mag) {
+        html += row('Heading (abs)', (data.mag.heading_deg?.toFixed(1) ?? 'N/A') + ' °');
+        html += row('Heading (rel)', (data.mag.heading_rel_deg?.toFixed(1) ?? 'N/A') + ' °');
+        html += row('Mx/My/Mz', `${data.mag.mx?.toFixed(0) ?? '?'} / ${data.mag.my?.toFixed(0) ?? '?'} / ${data.mag.mz?.toFixed(0) ?? '?'} mG`);
+        // Обновить панель компаса
+        if (magHeadingAbs) magHeadingAbs.textContent = (data.mag.heading_deg?.toFixed(1) ?? '—') + ' °';
+        if (magHeadingRel) magHeadingRel.textContent = (data.mag.heading_rel_deg?.toFixed(1) ?? '—') + ' °';
+        if (magXyz) magXyz.textContent = `${data.mag.mx?.toFixed(0) ?? '?'} / ${data.mag.my?.toFixed(0) ?? '?'} / ${data.mag.mz?.toFixed(0) ?? '?'} mG`;
+        if (data.mag.heading_rel_deg != null) drawCompass(data.mag.heading_rel_deg);
+    }
 
     telemDataEl.innerHTML = html || '<p class="placeholder">Нет данных</p>';
 
@@ -981,9 +1081,9 @@ function handleLogData(frames) {
 
 function exportLogCsv(frames) {
     if (!frames || !frames.length) { alert('Нет данных'); return; }
-    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,test_marker\n';
+    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,mx,my,mz,heading_deg,heading_rel_deg,test_marker\n';
     const rows = frames.map(f =>
-        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.test_marker??0}`
+        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.mx??0},${f.my??0},${f.mz??0},${f.heading_deg??0},${f.heading_rel_deg??0},${f.test_marker??0}`
     ).join('\n');
     const blob = new Blob([hdr + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -1033,10 +1133,15 @@ async function downloadBinaryLog() {
             { name: 'rc_steering', off: 76, type: 'f32' },
             { name: 'cmd_throttle', off: 80, type: 'f32' },
             { name: 'cmd_steering', off: 84, type: 'f32' },
-            { name: 'ekf_vx_var',  off: 88, type: 'f32' },
-            { name: 'ekf_vy_var',  off: 92, type: 'f32' },
-            { name: 'ekf_r_var',   off: 96, type: 'f32' },
-            { name: 'test_marker', off: 100, type: 'u8' },
+            { name: 'ekf_vx_var',      off: 88,  type: 'f32' },
+            { name: 'ekf_vy_var',      off: 92,  type: 'f32' },
+            { name: 'ekf_r_var',       off: 96,  type: 'f32' },
+            { name: 'mx',              off: 100, type: 'f32' },
+            { name: 'my',              off: 104, type: 'f32' },
+            { name: 'mz',              off: 108, type: 'f32' },
+            { name: 'heading_deg',     off: 112, type: 'f32' },
+            { name: 'heading_rel_deg', off: 116, type: 'f32' },
+            { name: 'test_marker',     off: 120, type: 'u8'  },
         ];
 
         const hdr = FIELD_OFFSETS.map(f => f.name).join(',') + '\n';
@@ -1305,6 +1410,13 @@ if (btnTestStart) btnTestStart.addEventListener('click', () => {
 if (btnTestStop) btnTestStop.addEventListener('click', () => {
     wsSend({ type: 'stop_test' });
 });
+
+// ── Magnetometer buttons ──
+if (btnMagStart)  btnMagStart.addEventListener('click',  () => wsSend({ type: 'calibrate_mag', action: 'start' }));
+if (btnMagFinish) btnMagFinish.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'finish' }));
+if (btnMagCancel) btnMagCancel.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'cancel' }));
+if (btnMagErase)  btnMagErase.addEventListener('click',  () => { if (confirm('Стереть калибровку магнитометра?')) wsSend({ type: 'calibrate_mag', action: 'erase' }); });
+if (btnResetHeading) btnResetHeading.addEventListener('click', () => wsSend({ type: 'reset_heading_ref' }));
 
 // ── Speed Calibration ──
 const btnSpeedCalibStart  = $('btn-speed-calib-start');
