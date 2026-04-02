@@ -30,6 +30,7 @@ TelemetrySnapshot BuildTelemetrySnapshot(
     snap.mag_enabled = true;
     snap.mag_data = sensors.mag_data;
     snap.heading_deg = sensors.heading_deg;
+    snap.heading_rel_deg = sensors.heading_rel_deg;
   }
 
   if (sensors.imu_enabled) {
@@ -95,6 +96,7 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
     frame.my = sensors.mag_data.my;
     frame.mz = sensors.mag_data.mz;
     frame.heading_deg = sensors.heading_deg;
+    frame.heading_rel_deg = sensors.heading_rel_deg;
   }
   frame.test_marker = ctx.auto_drive.GetTestMarker();
   return frame;

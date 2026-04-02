@@ -219,6 +219,18 @@ class ImuHandler : public ControlComponent {
    */
   [[nodiscard]] float GetHeadingDeg() const noexcept { return heading_deg_; }
 
+  /**
+   * @brief Относительный курс [°, -180..180]: Δ = heading_deg_ - heading_ref_.
+   * Валиден только если IsMagEnabled() == true.
+   */
+  [[nodiscard]] float GetRelativeHeadingDeg() const noexcept;
+
+  /**
+   * @brief Сбросить опорный курс.
+   * При следующем Update() с валидным магнитометром heading_ref_ запишет текущий heading_deg_.
+   */
+  void ResetHeadingRef() noexcept { heading_ref_set_ = false; }
+
  private:
   VehicleControlPlatform& platform_;
   ImuCalibration& calib_;
@@ -242,6 +254,10 @@ class ImuHandler : public ControlComponent {
 
   // Tilt-compensated heading [°]
   float heading_deg_{0.f};
+
+  // Относительный курс
+  float heading_ref_{0.f};   ///< Опорное значение курса [°]
+  bool  heading_ref_set_{false};
 };
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -272,7 +288,8 @@ struct SensorSnapshot {
   // Магнетометр
   bool mag_enabled{false};
   MagData mag_data{};
-  float heading_deg{0.f};  ///< Tilt-compensated heading [°, 0=N, 90=E]
+  float heading_deg{0.f};      ///< Tilt-compensated heading [°, 0=N, 90=E]
+  float heading_rel_deg{0.f};  ///< Относительный курс [°, -180..180]
 };
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -302,7 +319,8 @@ struct TelemetrySnapshot {
   // Магнетометр
   bool mag_enabled{false};
   MagData mag_data{};
-  float heading_deg{0.f};  ///< Tilt-compensated heading [°, 0=N, 90=E]
+  float heading_deg{0.f};      ///< Tilt-compensated heading [°, 0=N, 90=E]
+  float heading_rel_deg{0.f};  ///< Относительный курс [°, -180..180]
 
   // Calibration
   CalibStatus calib_status{CalibStatus::Idle};

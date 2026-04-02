@@ -96,6 +96,13 @@ class VehicleControlUnified : public IVehicleControl {
    */
   [[nodiscard]] int GetCalibStage() const override { return calib_mgr_->GetStage(); }
 
+  // ─── Относительный курс ──────────────────────────────────────────────────
+
+  /** Сбросить опорный курс (установится при следующем Update() с магнитометром). */
+  void ResetHeadingRef() override {
+    if (imu_handler_) imu_handler_->ResetHeadingRef();
+  }
+
   // ─── Калибровка магнитометра ─────────────────────────────────────────────
 
   /** Запустить сбор семплов калибровки магнитометра. */

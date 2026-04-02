@@ -144,12 +144,25 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
     const float my_h = mag_cal.my * cr + mag_cal.mz * sr;
     const float h = std::atan2(-my_h, mx_h) * (180.f / 3.14159265f);
     heading_deg_ = (h < 0.f) ? h + 360.f : h;
+
+    // Установить опорный курс при первом валидном чтении (или после сброса)
+    if (!heading_ref_set_) {
+      heading_ref_ = heading_deg_;
+      heading_ref_set_ = true;
+    }
   } else {
     if (madgwick_enabled_) {
       filter_.Update(raw_ax, raw_ay, raw_az, data_.gx, data_.gy, data_.gz,
                      dt_sec);
     }
   }
+}
+
+float ImuHandler::GetRelativeHeadingDeg() const noexcept {
+  float delta = heading_deg_ - heading_ref_;
+  if (delta >  180.f) delta -= 360.f;
+  if (delta <= -180.f) delta += 360.f;
+  return delta;
 }
 
 void ImuHandler::SetLpfCutoff(float cutoff_hz) {
@@ -280,6 +293,7 @@ std::string TelemetryHandler::BuildTelemJson(
         cJSON_AddNumberToObject(mag, "my", snap.mag_data.my);
         cJSON_AddNumberToObject(mag, "mz", snap.mag_data.mz);
         cJSON_AddNumberToObject(mag, "heading_deg", snap.heading_deg);
+        cJSON_AddNumberToObject(mag, "heading_rel_deg", snap.heading_rel_deg);
       }
     }
 

@@ -297,3 +297,93 @@ TEST(BuildSelfTestInputTest, CalibValidReflected) {
                       nullptr, nullptr, calib, nullptr, true, true};
   EXPECT_TRUE(BuildSelfTestInput(ctx).calib_valid);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ImuHandler::GetRelativeHeadingDeg
+// ═══════════════════════════════════════════════════════════════════════════
+
+// FakePlatform subclass that returns controllable mag data
+class FakePlatformWithMag : public FakePlatform {
+ public:
+  void SetMagData(MagData data) { mag_data_ = data; }
+  std::optional<MagData> ReadMag() override { return mag_data_; }
+ private:
+  std::optional<MagData> mag_data_;
+};
+
+class ImuHandlerRelHeadingTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Provide valid IMU data so Update() doesn't bail early
+    platform_.SetImuData(ImuData{0.f, 0.f, 1.f, 0.f, 0.f, 0.f});
+    // Provide mag data that produces a predictable heading (flat, pointing N)
+    // mx>0, my=0 → atan2(-my, mx) = atan2(0, positive) = 0° → heading = 0°
+    platform_.SetMagData(MagData{1000.f, 0.f, 0.f});
+    handler_ = std::make_unique<ImuHandler>(platform_, calib_, filter_);
+    handler_->SetEnabled(true);
+  }
+
+  FakePlatformWithMag platform_;
+  ImuCalibration calib_;
+  MadgwickFilter filter_;
+  std::unique_ptr<ImuHandler> handler_;
+};
+
+TEST_F(ImuHandlerRelHeadingTest, InitialRelHeading_IsZero) {
+  // Before any Update() with mag, relative heading should be 0
+  EXPECT_FLOAT_EQ(handler_->GetRelativeHeadingDeg(), 0.f);
+}
+
+TEST_F(ImuHandlerRelHeadingTest, AfterFirstUpdate_RelHeadingIsZero) {
+  // After first update, ref is set to current heading → delta = 0
+  handler_->Update(2, 2);
+  EXPECT_NEAR(handler_->GetRelativeHeadingDeg(), 0.f, 1.f);
+}
+
+TEST_F(ImuHandlerRelHeadingTest, ResetHeadingRef_ResetsOnNextUpdate) {
+  handler_->Update(2, 2);
+  handler_->ResetHeadingRef();
+  handler_->Update(4, 2);
+  // Still same mag data → same heading → delta still 0
+  EXPECT_NEAR(handler_->GetRelativeHeadingDeg(), 0.f, 1.f);
+}
+
+// Pure math tests for the wrap-around logic (independent of ImuHandler Update)
+TEST(RelativeHeadingMathTest, WrapAround_PositiveDelta_Over180) {
+  // Δ = 350 → should wrap to -10
+  float delta = 350.f - 0.f;
+  if (delta >  180.f) delta -= 360.f;
+  if (delta <= -180.f) delta += 360.f;
+  EXPECT_NEAR(delta, -10.f, 1e-4f);
+}
+
+TEST(RelativeHeadingMathTest, WrapAround_NegativeDelta_Under180) {
+  // Δ = -190 → should wrap to +170
+  float delta = 170.f - 360.f;
+  if (delta >  180.f) delta -= 360.f;
+  if (delta <= -180.f) delta += 360.f;
+  EXPECT_NEAR(delta, 170.f, 1e-4f);
+}
+
+TEST(RelativeHeadingMathTest, WrapAround_Exactly180) {
+  // Δ = 180 → stays 180 (not wrapped; condition is > 180)
+  float delta = 180.f;
+  if (delta >  180.f) delta -= 360.f;
+  if (delta <= -180.f) delta += 360.f;
+  EXPECT_FLOAT_EQ(delta, 180.f);
+}
+
+TEST(RelativeHeadingMathTest, WrapAround_ExactlyMinus180) {
+  // Δ = -180 → wraps to +180
+  float delta = -180.f;
+  if (delta >  180.f) delta -= 360.f;
+  if (delta <= -180.f) delta += 360.f;
+  EXPECT_FLOAT_EQ(delta, 180.f);
+}
+
+TEST(RelativeHeadingMathTest, NoDelta_Zero) {
+  float delta = 45.f - 45.f;
+  if (delta >  180.f) delta -= 360.f;
+  if (delta <= -180.f) delta += 360.f;
+  EXPECT_FLOAT_EQ(delta, 0.f);
+}

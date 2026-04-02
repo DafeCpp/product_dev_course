@@ -39,12 +39,13 @@ struct TelemetryLogFrame {
   float my{0};                   // Магнитное поле Y [мГс]
   float mz{0};                   // Магнитное поле Z [мГс]
   float heading_deg{0};          // Tilt-compensated magnetic heading [°, 0=N, 90=E]
+  float heading_rel_deg{0};      // Относительный курс [°, -180..180]
   uint8_t test_marker{0};       // Маркер теста (0 = нет, >0 = ID теста)
   uint8_t _pad[3]{};            // Выравнивание до 4 байт
-};  // sizeof == 120 bytes (28 × float + uint32_t + uint8_t + 3 pad)
+};  // sizeof == 124 bytes (29 × float + uint32_t + uint8_t + 3 pad)
 
 // Compile-time проверка размера структуры
-static_assert(sizeof(TelemetryLogFrame) == 120,
+static_assert(sizeof(TelemetryLogFrame) == 124,
               "TelemetryLogFrame size mismatch");
 
 /**

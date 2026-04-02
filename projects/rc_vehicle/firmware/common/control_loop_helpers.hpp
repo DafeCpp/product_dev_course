@@ -122,6 +122,7 @@ inline SensorSnapshot BuildSensorSnapshot(const RcInputHandler* rc_handler,
     if (s.mag_enabled) {
       s.mag_data = imu_handler->GetMagData();
       s.heading_deg = imu_handler->GetHeadingDeg();
+      s.heading_rel_deg = imu_handler->GetRelativeHeadingDeg();
     }
   }
   return s;

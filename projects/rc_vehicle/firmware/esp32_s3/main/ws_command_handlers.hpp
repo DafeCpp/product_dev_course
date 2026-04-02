@@ -48,5 +48,6 @@ void HandleUdpStreamStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
                              httpd_req_t* req);
+void HandleResetHeadingRef(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 
 }  // namespace rc_vehicle

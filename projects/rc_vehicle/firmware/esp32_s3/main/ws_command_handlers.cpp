@@ -821,4 +821,20 @@ void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
   }
 }
 
+void HandleResetHeadingRef(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
+  (void)json;
+  vc.ResetHeadingRef();
+
+  cJSON* reply = cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "reset_heading_ref_ack");
+    cJSON_AddBoolToObject(reply, "ok", true);
+    cJSON_AddStringToObject(reply, "status", "heading ref reset");
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+
+  ESP_LOGI(TAG, "reset_heading_ref");
+}
+
 }  // namespace rc_vehicle

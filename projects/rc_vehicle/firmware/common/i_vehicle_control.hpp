@@ -73,6 +73,9 @@ class IVehicleControl {
   [[nodiscard]] virtual SpeedCalibration::Result
   GetSpeedCalibResult() const = 0;
 
+  // Относительный курс
+  virtual void ResetHeadingRef() = 0;
+
   // Калибровка магнитометра
   virtual void StartMagCalibration() = 0;
   virtual void FinishMagCalibration() = 0;
