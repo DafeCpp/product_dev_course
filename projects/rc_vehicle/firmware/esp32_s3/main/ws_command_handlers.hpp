@@ -45,5 +45,8 @@ void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleUdpStreamStart(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleUdpStreamStop(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleUdpStreamStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
+                             httpd_req_t* req);
 
 }  // namespace rc_vehicle

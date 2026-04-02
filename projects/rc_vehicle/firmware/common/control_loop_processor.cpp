@@ -59,6 +59,10 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
                            sensors_.imu_data.az, sensors_.filtered_gz,
                            static_cast<float>(dt_ms) * 0.001f);
   }
+  if (ekf_active && sensors_.imu_enabled && sensors_.mag_enabled) {
+    constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+    ctx_.ekf.UpdateHeading(sensors_.heading_deg * kDegToRad);
+  }
 }
 
 void ControlLoopProcessor::UpdateAutoDrive(uint32_t dt_ms) {

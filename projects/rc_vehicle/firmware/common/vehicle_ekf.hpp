@@ -25,37 +25,51 @@ struct VehicleEkfNoiseParams {
    * По умолчанию 5.0 с⁻¹ → постоянная времени ~200 мс.
    */
   float vy_decay_hz{5.0f};
+  /**
+   * Шум процесса курсового угла ψ [рад²].
+   * Малый — ψ хорошо интегрируется из r; ненулевой для стабильности.
+   */
+  float q_psi{0.001f};
+  /**
+   * Шум измерения курса от магнитометра [рад²].
+   * 0.01 ≈ (5.7°)² — типовая точность tilt-compensated heading.
+   */
+  float r_heading{0.01f};
 };
 
 /**
  * @brief Extended Kalman Filter (EKF) для оценки динамического состояния
- *        RC-машины на основе IMU.
+ *        RC-машины на основе IMU + магнитометра.
  *
- * Вектор состояния: X = [vx, vy, r]ᵀ
+ * Вектор состояния: X = [vx, vy, r, ψ]ᵀ
  *   vx — продольная скорость в СК машины [м/с]
  *   vy — боковая скорость в СК машины [м/с]  (>0 = влево)
  *   r  — угловая скорость рыскания [рад/с]   (>0 = влево, CCW сверху)
+ *   ψ  — курсовой угол в мировой СК [рад]    (диапазон [-π, π])
  *
  * Угол заноса (slip angle): β = atan2(vy, vx) [рад]
- *   β > 0 → занос влево (машина скользит вправо относительно движения)
- *   β < 0 → занос вправо
  *
- * Модель предсказания (bicycle model, IMU-only):
+ * Модель предсказания (bicycle model + интеграция курса):
  *   vx(k+1) = vx(k) + dt * (ax_imu + r * vy)
- *   vy(k+1) = vy(k) + dt * (ay_imu - r * vx)
+ *   vy(k+1) = vy(k) + dt * (ay_imu - r * vx)   [+ vy damping]
  *   r(k+1)  = r(k)   [random walk, корректируется по gyro_z]
+ *   ψ(k+1)  = ψ(k) + dt * r
  *
- *   Вывод: из уравнений движения в СК машины:
- *     ax_imu = vx_dot - r * vy  →  vx_dot = ax_imu + r * vy
- *     ay_imu = vy_dot + r * vx  →  vy_dot = ay_imu - r * vx
+ * Якобиан F (4×4):
+ *   F = [ 1,       dt·r,   dt·vy,  0 ]
+ *       [ -dt·r,   vy_dmp, -dt·vx, 0 ]
+ *       [ 0,       0,      1,      0 ]
+ *       [ 0,       0,      dt,     1 ]
  *
- * Модель измерения:
- *   z = gz_imu [рад/с]  →  H = [0, 0, 1]
+ * Модели измерений:
+ *   UpdateGyroZ:   H = [0, 0, 1, 0]  →  z = gz [рад/с]
+ *   UpdateHeading: H = [0, 0, 0, 1]  →  z = ψ_mag [рад], с обёрткой угла
  *
  * Ограничения (IMU-only без датчиков скорости):
  *   - vx и vy накапливают дрейф из-за интеграции ускорений
  *   - При добавлении датчиков Холла или optical flow EKF расширяется
  *   - Yaw rate оценивается точно (прямое измерение gyro_z)
+ *   - Курс ψ корректируется магнитометром через UpdateHeading()
  */
 class VehicleEkf {
  public:
@@ -80,10 +94,13 @@ class VehicleEkf {
   void SetState(float vx, float vy, float r) noexcept;
 
   /**
-   * @brief Шаг предсказания (bicycle model).
-   *
-   * Интегрирует модель движения на шаг dt, используя ускорения IMU как
-   * управляющий вход. Обновляет вектор состояния и матрицу ковариации.
+   * @brief Установить начальный курсовой угол.
+   * @param yaw_rad Курсовой угол в радианах [-π, π]
+   */
+  void SetYaw(float yaw_rad) noexcept;
+
+  /**
+   * @brief Шаг предсказания (bicycle model + интеграция ψ).
    *
    * @param ax  Ускорение по оси X (продольное) в СК машины [м/с²], без g
    * @param ay  Ускорение по оси Y (боковое) в СК машины [м/с²], без g
@@ -93,37 +110,30 @@ class VehicleEkf {
 
   /**
    * @brief Шаг обновления по измерению угловой скорости рыскания.
-   *
-   * Корректирует оценку состояния по измерению gyro_z.
-   * H = [0, 0, 1] → измерение напрямую влияет на r и через ковариацию
-   * подтягивает vx и vy.
-   *
+   * H = [0, 0, 1, 0]
    * @param gz  Угловая скорость по Z от IMU [рад/с]
    */
   void UpdateGyroZ(float gz) noexcept;
 
   /**
+   * @brief Шаг обновления по измерению курса от магнитометра.
+   * H = [0, 0, 0, 1]. Инновация с обёрткой: atan2(sin(z-ψ), cos(z-ψ)).
+   * @param heading_rad  Tilt-compensated heading [рад], любой диапазон
+   */
+  void UpdateHeading(float heading_rad) noexcept;
+
+  /**
    * @brief Zero Velocity Update (ZUPT): псевдо-измерение vx=0, vy=0.
-   *
-   * Вызывается когда детектировано стояночное состояние (|a|≈1g, |gyro|≈0).
-   * Выполняет два скалярных обновления Калмана: z=0 для vx и z=0 для vy.
-   * Плавно подтягивает скорости к нулю через Kalman gain (не жёсткий сброс).
-   *
-   * @param r_zupt  Шум псевдо-измерения [м²/с²]. Меньше → агрессивнее сброс.
-   *                По умолчанию 0.1 — мягкий, но быстрый сброс дрейфа.
+   * @param r_zupt  Шум псевдо-измерения [м²/с²]. По умолчанию 0.1.
    */
   void UpdateZeroVelocity(float r_zupt = 0.1f) noexcept;
 
   /**
    * @brief Высокоуровневое обновление из IMU (Predict + GyroZ + ZUPT).
-   *
-   * Объединяет типичный цикл: предсказание по акселерометру,
-   * обновление по гироскопу и ZUPT при неподвижности.
-   *
-   * @param ax_g Ускорение по X в g (после калибровки)
+   * @param ax_g Ускорение по X в g
    * @param ay_g Ускорение по Y в g
    * @param az_g Ускорение по Z в g
-   * @param gz_dps Угловая скорость Z после LPF в °/с
+   * @param gz_dps Угловая скорость Z в °/с
    * @param dt_sec Шаг времени в секундах
    */
   void UpdateFromImu(float ax_g, float ay_g, float az_g, float gz_dps,
@@ -140,21 +150,21 @@ class VehicleEkf {
   /** Оценка угловой скорости рыскания [рад/с]. */
   [[nodiscard]] float GetYawRate() const noexcept { return x_[2]; }
 
+  /** Оценка курсового угла [рад], диапазон [-π, π]. */
+  [[nodiscard]] float GetYawRad() const noexcept { return x_[3]; }
+
+  /** Оценка курсового угла [°], диапазон [-180, 180]. */
+  [[nodiscard]] float GetYawDeg() const noexcept;
+
   /** Модуль скорости в горизонтальной плоскости [м/с]. */
   [[nodiscard]] float GetSpeedMs() const noexcept {
     return std::sqrt(x_[0] * x_[0] + x_[1] * x_[1]);
   }
 
-  /**
-   * @brief Угол заноса в радианах: β = atan2(vy, vx).
-   * Диапазон: [-π, π]. При нулевой скорости возвращает 0.
-   */
+  /** Угол заноса [рад]: β = atan2(vy, vx). При малой скорости — 0. */
   [[nodiscard]] float GetSlipAngleRad() const noexcept;
 
-  /**
-   * @brief Угол заноса в градусах.
-   * Диапазон: [-180, 180]. При нулевой скорости возвращает 0.
-   */
+  /** Угол заноса [°]. При малой скорости — 0. */
   [[nodiscard]] float GetSlipAngleDeg() const noexcept;
 
   // ─── Неопределённость (диагональные элементы P) ──────────────────────
@@ -163,20 +173,23 @@ class VehicleEkf {
   [[nodiscard]] float GetVxVariance() const noexcept { return P_[0]; }
 
   /** Дисперсия оценки vy: P[1][1]. */
-  [[nodiscard]] float GetVyVariance() const noexcept { return P_[4]; }
+  [[nodiscard]] float GetVyVariance() const noexcept { return P_[5]; }
 
   /** Дисперсия оценки r: P[2][2]. */
-  [[nodiscard]] float GetRVariance() const noexcept { return P_[8]; }
+  [[nodiscard]] float GetRVariance() const noexcept { return P_[10]; }
+
+  /** Дисперсия оценки ψ: P[3][3]. */
+  [[nodiscard]] float GetYawVariance() const noexcept { return P_[15]; }
 
   /** Установить параметры шума. */
   void SetNoiseParams(NoiseParams params) noexcept { params_ = params; }
 
  private:
-  // Вектор состояния: [vx, vy, r]
-  float x_[3]{0.0f, 0.0f, 0.0f};
+  // Вектор состояния: [vx, vy, r, ψ]
+  float x_[4]{0.0f, 0.0f, 0.0f, 0.0f};
 
-  // Матрица ковариации 3×3 (row-major: P_[i*3+j] = P[i][j])
-  float P_[9]{};
+  // Матрица ковариации 4×4 (row-major: P_[i*4+j] = P[i][j])
+  float P_[16]{};
 
   // Параметры шума
   NoiseParams params_;
@@ -186,27 +199,27 @@ class VehicleEkf {
 
   /**
    * Проверяет P на NaN/Inf (→ сброс к InitP) и ограничивает диагональные
-   * элементы отрезком [kPDiagMin, kPDiagMax], предотвращая расходимость
-   * ковариации при отсутствии измерений скорости.
+   * элементы отрезком [kPDiagMin, kPDiagMax].
    */
   void ClampP() noexcept;
 
   /**
    * Скалярное Kalman-обновление с нулевым измерением: z = 0, H = e_col^T.
-   * Обновляет состояние x_ и матрицу P_ по Joseph form:
-   *   P_new[i][j] = P[i][j] − K[i]·P[j][col] − K[j]·P[i][col] + K[i]·K[j]·S
-   * Симметрия P_new гарантируется аналитически.
+   * Joseph form гарантирует сохранение положительной полуопределённости P.
    */
   void ScalarZeroUpdate(int col, float r) noexcept;
 
-  static void MatMul3x3(const float A[9], const float B[9],
-                        float C[9]) noexcept;
-  static void MatTranspose3x3(const float A[9], float At[9]) noexcept;
-  static void SymmetrizeP(float P[9]) noexcept;
+  static void MatMul4x4(const float A[16], const float B[16],
+                        float C[16]) noexcept;
+  static void MatTranspose4x4(const float A[16], float At[16]) noexcept;
+  static void SymmetrizeP(float P[16]) noexcept;
 
-  // Границы диагональных элементов P: RC-машина, скорость ≤ 10 м/с, r ≤ 10 рад/с
-  static constexpr float kPDiagMax = 1e3f;   // Верхний предел дисперсии
-  static constexpr float kPDiagMin = 1e-6f;  // Нижний предел (защита от вырождения)
+  /** Нормализация угла в [-π, π]. */
+  static float WrapAngle(float a) noexcept;
+
+  // Границы диагональных элементов P
+  static constexpr float kPDiagMax = 1e3f;
+  static constexpr float kPDiagMin = 1e-6f;
 };
 
 }  // namespace rc_vehicle

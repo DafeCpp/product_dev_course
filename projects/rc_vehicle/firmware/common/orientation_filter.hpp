@@ -37,6 +37,25 @@ class IOrientationFilter {
   virtual void Update(const struct ImuData& imu, float dt_sec) = 0;
 
   /**
+   * Обновить ориентацию с данными магнитометра (9DOF MARG).
+   * При наличии магнетометра yaw перестаёт дрейфовать.
+   * @param ax, ay, az — ускорение в g
+   * @param gx, gy, gz — угловая скорость в град/с
+   * @param mx, my, mz — магнитное поле в произвольных единицах (нужна только
+   *                      нормировка — размерность не важна)
+   * @param dt_sec — период семпла в секундах
+   *
+   * По умолчанию игнорирует магнетометр и вызывает 6DOF Update() —
+   * реализации без MARG не обязаны переопределять этот метод.
+   */
+  virtual void UpdateWithMag(float ax, float ay, float az, float gx, float gy,
+                              float gz, float mx, float my, float mz,
+                              float dt_sec) {
+    Update(ax, ay, az, gx, gy, gz, dt_sec);
+    (void)mx; (void)my; (void)mz;
+  }
+
+  /**
    * Задать опорную СК, связанную с машиной (g и направление движения).
    * Векторы в СК датчика в момент калибровки (gravity_vec, accel_forward_vec из
    * ImuCalibData). После вызова GetQuaternion/GetEuler возвращают ориентацию

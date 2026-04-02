@@ -26,6 +26,12 @@ TelemetrySnapshot BuildTelemetrySnapshot(
   snap.kids_anti_spin_active = ctx.kids_processor.IsAntiSpinActive();
   snap.kids_throttle_limit = stab_cfg.kids_mode.throttle_limit;
 
+  if (sensors.mag_enabled) {
+    snap.mag_enabled = true;
+    snap.mag_data = sensors.mag_data;
+    snap.heading_deg = sensors.heading_deg;
+  }
+
   if (sensors.imu_enabled) {
     snap.imu_enabled = true;
     snap.imu_data = sensors.imu_data;
@@ -84,6 +90,12 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
   frame.ekf_vx_var = ctx.ekf.GetVxVariance();
   frame.ekf_vy_var = ctx.ekf.GetVyVariance();
   frame.ekf_r_var = ctx.ekf.GetRVariance();
+  if (sensors.mag_enabled) {
+    frame.mx = sensors.mag_data.mx;
+    frame.my = sensors.mag_data.my;
+    frame.mz = sensors.mag_data.mz;
+    frame.heading_deg = sensors.heading_deg;
+  }
   frame.test_marker = ctx.auto_drive.GetTestMarker();
   return frame;
 }

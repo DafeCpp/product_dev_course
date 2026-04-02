@@ -118,6 +118,11 @@ inline SensorSnapshot BuildSensorSnapshot(const RcInputHandler* rc_handler,
   if (s.imu_enabled) {
     s.imu_data = imu_handler->GetData();
     s.filtered_gz = imu_handler->GetFilteredGyroZ();
+    s.mag_enabled = imu_handler->IsMagEnabled();
+    if (s.mag_enabled) {
+      s.mag_data = imu_handler->GetMagData();
+      s.heading_deg = imu_handler->GetHeadingDeg();
+    }
   }
   return s;
 }

@@ -118,6 +118,120 @@ void MadgwickFilter::Update(const ImuData& imu, float dt_sec) {
   Update(imu.ax, imu.ay, imu.az, imu.gx, imu.gy, imu.gz, dt_sec);
 }
 
+void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
+                                   float gy, float gz, float mx, float my,
+                                   float mz, float dt_sec) {
+  if (dt_sec <= 0.f) return;
+
+  const float gx_rad = gx * kDegToRad;
+  const float gy_rad = gy * kDegToRad;
+  const float gz_rad = gz * kDegToRad;
+
+  // Производная кватерниона от гироскопа
+  float qDot1 = 0.5f * (-q1_ * gx_rad - q2_ * gy_rad - q3_ * gz_rad);
+  float qDot2 = 0.5f * (q0_ * gx_rad + q2_ * gz_rad - q3_ * gy_rad);
+  float qDot3 = 0.5f * (q0_ * gy_rad - q1_ * gz_rad + q3_ * gx_rad);
+  float qDot4 = 0.5f * (q0_ * gz_rad + q1_ * gy_rad - q2_ * gx_rad);
+
+  const float anorm2 = ax * ax + ay * ay + az * az;
+  const float mnorm2 = mx * mx + my * my + mz * mz;
+
+  if (anorm2 > 1e-12f && mnorm2 > 1e-12f) {
+    // Адаптивный beta по акселерометру
+    float effective_beta = beta_;
+    if (adaptive_enabled_) {
+      const float accel_mag = std::sqrt(anorm2);
+      if (std::fabs(accel_mag - 1.0f) > adaptive_threshold_g_) {
+        effective_beta = 0.0f;
+      }
+    }
+
+    const float an = InvSqrt(anorm2);
+    const float ax_n = ax * an, ay_n = ay * an, az_n = az * an;
+    const float mn = InvSqrt(mnorm2);
+    const float mx_n = mx * mn, my_n = my * mn, mz_n = mz * mn;
+
+    // Вспомогательные произведения компонент кватерниона
+    const float q0q0 = q0_ * q0_, q0q1 = q0_ * q1_, q0q2 = q0_ * q2_,
+                q0q3 = q0_ * q3_;
+    const float q1q1 = q1_ * q1_, q1q2 = q1_ * q2_, q1q3 = q1_ * q3_;
+    const float q2q2 = q2_ * q2_, q2q3 = q2_ * q3_;
+    const float q3q3 = q3_ * q3_;
+
+    // Вычисляем опорное магнитное поле Земли из текущего кватерниона:
+    // h = q ⊗ [0, mx, my, mz] ⊗ q* — поле в earth-frame
+    const float hx = mx_n * (q0q0 + q1q1 - q2q2 - q3q3) +
+                     2.f * my_n * (q1q2 - q0q3) +
+                     2.f * mz_n * (q1q3 + q0q2);
+    const float hy = 2.f * mx_n * (q1q2 + q0q3) +
+                     my_n * (q0q0 - q1q1 + q2q2 - q3q3) +
+                     2.f * mz_n * (q2q3 - q0q1);
+    const float hz = 2.f * mx_n * (q1q3 - q0q2) +
+                     2.f * my_n * (q2q3 + q0q1) +
+                     mz_n * (q0q0 - q1q1 - q2q2 + q3q3);
+
+    // Проецируем в горизонтальную плоскость: bx = sqrt(hx²+hy²), bz = hz.
+    // Это устраняет зависимость от магнитного склонения.
+    const float bx = std::sqrt(hx * hx + hy * hy);
+    const float bz = hz;
+    const float _2bx = 2.f * bx, _2bz = 2.f * bz;
+    const float _4bx = 2.f * _2bx, _4bz = 2.f * _2bz;
+
+    // Целевые функции: f_g (акселерометр) + f_b (магнетометр)
+    // f_g: оценка разницы между предсказанным и измеренным вектором g
+    const float fg1 = 2.f * (q1q3 - q0q2) - ax_n;
+    const float fg2 = 2.f * (q0q1 + q2q3) - ay_n;
+    const float fg3 = 2.f * (0.5f - q1q1 - q2q2) - az_n;
+    // f_b: оценка разницы предсказанного и измеренного поля в earth-frame
+    const float fb1 = _2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx_n;
+    const float fb2 = _2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my_n;
+    const float fb3 = _2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz_n;
+
+    // Градиент: J^T * f (объединённый для g и b)
+    float s0 = -2.f * q2_ * fg1 + 2.f * q1_ * fg2 +
+               (-_2bz * q2_) * fb1 + (-_2bx * q3_ + _2bz * q1_) * fb2 +
+               _2bx * q2_ * fb3;
+    float s1 = 2.f * q3_ * fg1 + 2.f * q0_ * fg2 - 4.f * q1_ * fg3 +
+               _2bz * q3_ * fb1 + (_2bx * q2_ + _2bz * q0_) * fb2 +
+               (_2bx * q3_ - _4bz * q1_) * fb3;
+    float s2 = -2.f * q0_ * fg1 + 2.f * q3_ * fg2 - 4.f * q2_ * fg3 +
+               (-_4bx * q2_ - _2bz * q0_) * fb1 +
+               (_2bx * q1_ + _2bz * q3_) * fb2 +
+               (_2bx * q0_ - _4bz * q2_) * fb3;
+    float s3 = 2.f * q1_ * fg1 + 2.f * q2_ * fg2 +
+               (-_4bx * q3_ + _2bz * q1_) * fb1 +
+               (-_2bx * q0_ + _2bz * q2_) * fb2 + _2bx * q1_ * fb3;
+
+    const float sSqNorm = s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3;
+    if (sSqNorm >= 1e-20f) {
+      const float sNorm = InvSqrt(sSqNorm);
+      s0 *= sNorm; s1 *= sNorm; s2 *= sNorm; s3 *= sNorm;
+      qDot1 -= effective_beta * s0;
+      qDot2 -= effective_beta * s1;
+      qDot3 -= effective_beta * s2;
+      qDot4 -= effective_beta * s3;
+    }
+  } else if (anorm2 > 1e-12f) {
+    // Нет mag — деградируем до 6DOF
+    Update(ax, ay, az, gx, gy, gz, dt_sec);
+    return;
+  }
+
+  // Интегрирование и нормализация
+  q0_ += qDot1 * dt_sec;
+  q1_ += qDot2 * dt_sec;
+  q2_ += qDot3 * dt_sec;
+  q3_ += qDot4 * dt_sec;
+
+  const float qSqNorm = q0_ * q0_ + q1_ * q1_ + q2_ * q2_ + q3_ * q3_;
+  if (qSqNorm < 1e-12f) {
+    q0_ = 1.f; q1_ = 0.f; q2_ = 0.f; q3_ = 0.f;
+    return;
+  }
+  const float qNorm = InvSqrt(qSqNorm);
+  q0_ *= qNorm; q1_ *= qNorm; q2_ *= qNorm; q3_ *= qNorm;
+}
+
 void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
                                      const float forward_vec[3], bool valid) {
   use_vehicle_frame_ = false;

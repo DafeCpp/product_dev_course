@@ -1,8 +1,11 @@
 #include "control_components.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+
+#include "mag_calibration.hpp"
 
 #include "cJSON.h"
 #include "config.hpp"
@@ -103,8 +106,49 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
                            ? (read_interval_ms_ / 1000.0f)
                            : (static_cast<float>(now_ms - prev_read_ms) / 1000.0f);
   first_read_ = false;
-  if (madgwick_enabled_) {
-    filter_.Update(raw_ax, raw_ay, raw_az, data_.gx, data_.gy, data_.gz, dt_sec);
+
+  // Пробуем прочитать магнетометр; если успешно — 9DOF, иначе 6DOF.
+  const auto mag_opt = platform_.ReadMag();
+  if (mag_opt) {
+    mag_data_ = *mag_opt;
+    mag_enabled_ = true;
+  }
+
+  if (mag_enabled_) {
+    // Подача семпла в калибровку магнетометра (если идёт сбор)
+    if (mag_calib_ && mag_calib_->IsCollecting()) {
+      mag_calib_->FeedSample(mag_data_);
+    }
+
+    // Применяем hard iron коррекцию для фильтра (работаем с копией)
+    MagData mag_cal = mag_data_;
+    if (mag_calib_) {
+      mag_calib_->Apply(mag_cal);
+    }
+
+    if (madgwick_enabled_) {
+      filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
+                            data_.gz, mag_cal.mx, mag_cal.my, mag_cal.mz,
+                            dt_sec);
+    }
+
+    // Tilt-compensated heading (NED formula)
+    float pitch_rad = 0.f, roll_rad = 0.f, yaw_rad = 0.f;
+    filter_.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
+    const float cp = std::cos(pitch_rad);
+    const float sp = std::sin(pitch_rad);
+    const float cr = std::cos(roll_rad);
+    const float sr = std::sin(roll_rad);
+    const float mx_h =
+        mag_cal.mx * cp + mag_cal.my * sr * sp - mag_cal.mz * cr * sp;
+    const float my_h = mag_cal.my * cr + mag_cal.mz * sr;
+    const float h = std::atan2(-my_h, mx_h) * (180.f / 3.14159265f);
+    heading_deg_ = (h < 0.f) ? h + 360.f : h;
+  } else {
+    if (madgwick_enabled_) {
+      filter_.Update(raw_ax, raw_ay, raw_az, data_.gx, data_.gy, data_.gz,
+                     dt_sec);
+    }
   }
 }
 
@@ -225,6 +269,17 @@ std::string TelemetryHandler::BuildTelemJson(
           cJSON_AddItemToArray(forward,
                                cJSON_CreateNumber(cd.accel_forward_vec[2]));
         }
+      }
+    }
+
+    // Магнетометр
+    if (snap.mag_enabled) {
+      cJSON* mag = cJSON_AddObjectToObject(root, "mag");
+      if (mag) {
+        cJSON_AddNumberToObject(mag, "mx", snap.mag_data.mx);
+        cJSON_AddNumberToObject(mag, "my", snap.mag_data.my);
+        cJSON_AddNumberToObject(mag, "mz", snap.mag_data.mz);
+        cJSON_AddNumberToObject(mag, "heading_deg", snap.heading_deg);
       }
     }
 

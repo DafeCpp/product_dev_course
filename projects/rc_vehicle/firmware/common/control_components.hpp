@@ -7,6 +7,8 @@
 #include "imu_calibration.hpp"
 #include "lpf_butterworth.hpp"
 #include "madgwick_filter.hpp"
+#include "mag_calibration.hpp"
+#include "mag_sensor.hpp"
 #include "vehicle_control_platform.hpp"
 
 namespace rc_vehicle {
@@ -192,6 +194,31 @@ class ImuHandler : public ControlComponent {
    */
   void SetMadgwickEnabled(bool enabled) noexcept { madgwick_enabled_ = enabled; }
 
+  /**
+   * @brief Последние данные магнитометра (мГс).
+   * Валидны только если mag_enabled() == true.
+   */
+  [[nodiscard]] const MagData& GetMagData() const noexcept { return mag_data_; }
+
+  /**
+   * @brief Доступен ли магнитометр (инициализирован и есть данные).
+   */
+  [[nodiscard]] bool IsMagEnabled() const noexcept { return mag_enabled_; }
+
+  /**
+   * @brief Установить объект калибровки магнитометра.
+   * @param calib Указатель на MagCalibration (не владеет), nullptr — отключить.
+   */
+  void SetMagCalibration(MagCalibration* calib) noexcept {
+    mag_calib_ = calib;
+  }
+
+  /**
+   * @brief Tilt-compensated magnetic heading [°, 0=N, 90=E].
+   * Валиден только если IsMagEnabled() == true.
+   */
+  [[nodiscard]] float GetHeadingDeg() const noexcept { return heading_deg_; }
+
  private:
   VehicleControlPlatform& platform_;
   ImuCalibration& calib_;
@@ -205,6 +232,16 @@ class ImuHandler : public ControlComponent {
   LpfButterworth2 lpf_gyro_z_{};
   float filtered_gz_{0.f};
   bool veh_frame_set_{false};  ///< Vehicle frame уже передан в фильтр
+
+  // Магнетометр (опционален)
+  MagData mag_data_{};
+  bool mag_enabled_{false};
+
+  // Калибровка магнитометра (не владеет)
+  MagCalibration* mag_calib_{nullptr};
+
+  // Tilt-compensated heading [°]
+  float heading_deg_{0.f};
 };
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -231,6 +268,11 @@ struct SensorSnapshot {
   bool imu_enabled{false};
   ImuData imu_data{};
   float filtered_gz{0.0f};
+
+  // Магнетометр
+  bool mag_enabled{false};
+  MagData mag_data{};
+  float heading_deg{0.f};  ///< Tilt-compensated heading [°, 0=N, 90=E]
 };
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -256,6 +298,11 @@ struct TelemetrySnapshot {
   float pitch_deg{0.0f};
   float roll_deg{0.0f};
   float yaw_deg{0.0f};
+
+  // Магнетометр
+  bool mag_enabled{false};
+  MagData mag_data{};
+  float heading_deg{0.f};  ///< Tilt-compensated heading [°, 0=N, 90=E]
 
   // Calibration
   CalibStatus calib_status{CalibStatus::Idle};

@@ -11,6 +11,8 @@
 #include "freertos/task.h"
 #include "imu.hpp"
 #include "imu_calibration_nvs.hpp"
+#include "mag_calibration_nvs.hpp"
+#include "mag.hpp"
 #include "pwm_control.hpp"
 #include "rc_input.hpp"
 #include "rc_vehicle_common.hpp"
@@ -122,6 +124,38 @@ std::optional<ImuData> VehicleControlPlatformEsp32::ReadImu() {
 
 int VehicleControlPlatformEsp32::GetImuLastWhoAmI() const noexcept {
   return ImuGetLastWhoAmI();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Магнитометр
+// ─────────────────────────────────────────────────────────────────────────
+
+bool VehicleControlPlatformEsp32::InitMag() {
+  return MagInit() == 0;
+}
+
+std::optional<MagData> VehicleControlPlatformEsp32::ReadMag() {
+  MagData data{};
+  if (MagRead(data) == 0) {
+    return data;
+  }
+  return std::nullopt;
+}
+
+const char* VehicleControlPlatformEsp32::GetMagSensorName() const noexcept {
+  return MagGetSensorName();
+}
+
+bool VehicleControlPlatformEsp32::SaveMagCalib(const MagCalibData& data) {
+  return mag_nvs::Save(data) == ESP_OK;
+}
+
+bool VehicleControlPlatformEsp32::LoadMagCalib(MagCalibData& data) {
+  return mag_nvs::Load(data) == ESP_OK;
+}
+
+bool VehicleControlPlatformEsp32::EraseMagCalib() {
+  return mag_nvs::Erase() == ESP_OK;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

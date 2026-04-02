@@ -31,6 +31,14 @@ class MadgwickFilter : public IOrientationFilter {
   void Update(float ax, float ay, float az, float gx, float gy, float gz,
               float dt_sec) override;
   void Update(const struct ImuData& imu, float dt_sec) override;
+
+  /**
+   * 9DOF MARG-обновление (акселерометр + гироскоп + магнетометр).
+   * Стабилизирует yaw по магнитному полю Земли — устраняет дрейф рыскания.
+   * Алгоритм: Madgwick MARG, градиентный спуск по объединённой целевой функции.
+   */
+  void UpdateWithMag(float ax, float ay, float az, float gx, float gy, float gz,
+                     float mx, float my, float mz, float dt_sec) override;
   void SetVehicleFrame(const float gravity_vec[3], const float forward_vec[3],
                        bool valid = true) override;
   void GetQuaternion(float& qw, float& qx, float& qy, float& qz) const override;

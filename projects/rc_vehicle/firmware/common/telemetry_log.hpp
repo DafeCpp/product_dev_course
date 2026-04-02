@@ -7,10 +7,10 @@
 /**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 104 байта (25 × float + uint32_t + uint8_t + padding).
+ * Размер: 116 байт (27 × float + uint32_t + uint8_t + padding).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
  *
- * Буфер 60000 кадров × 104 байт ≈ 6.0 МБ (PSRAM из 16 МБ).
+ * Буфер 60000 кадров × 116 байт ≈ 6.6 МБ (PSRAM из 16 МБ).
  */
 struct TelemetryLogFrame {
   uint32_t ts_ms{0};           // Метка времени [мс]
@@ -34,12 +34,17 @@ struct TelemetryLogFrame {
   float ekf_vx_var{0};          // EKF: дисперсия vx [м²/с²]
   float ekf_vy_var{0};          // EKF: дисперсия vy [м²/с²]
   float ekf_r_var{0};           // EKF: дисперсия yaw rate [рад²/с²]
+  // --- Магнетометр MMC5983MA ---
+  float mx{0};                   // Магнитное поле X [мГс]
+  float my{0};                   // Магнитное поле Y [мГс]
+  float mz{0};                   // Магнитное поле Z [мГс]
+  float heading_deg{0};          // Tilt-compensated magnetic heading [°, 0=N, 90=E]
   uint8_t test_marker{0};       // Маркер теста (0 = нет, >0 = ID теста)
   uint8_t _pad[3]{};            // Выравнивание до 4 байт
-};  // sizeof == 104 bytes (25 × float + uint32_t + uint8_t + 3 pad)
+};  // sizeof == 120 bytes (28 × float + uint32_t + uint8_t + 3 pad)
 
 // Compile-time проверка размера структуры
-static_assert(sizeof(TelemetryLogFrame) == 104,
+static_assert(sizeof(TelemetryLogFrame) == 120,
               "TelemetryLogFrame size mismatch");
 
 /**

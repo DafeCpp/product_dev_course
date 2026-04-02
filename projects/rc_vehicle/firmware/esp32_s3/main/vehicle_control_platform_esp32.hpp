@@ -48,6 +48,16 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   [[nodiscard]] std::optional<ImuData> ReadImu() override;
   [[nodiscard]] int GetImuLastWhoAmI() const noexcept override;
 
+  // Магнитометр
+  bool InitMag() override;
+  [[nodiscard]] std::optional<MagData> ReadMag() override;
+  [[nodiscard]] const char* GetMagSensorName() const noexcept override;
+
+  // Калибровка магнитометра
+  bool SaveMagCalib(const MagCalibData& data) override;
+  bool LoadMagCalib(MagCalibData& data) override;
+  bool EraseMagCalib() override;
+
   // Калибровка
   [[nodiscard]] std::optional<ImuCalibData> LoadCalib() override;
   [[nodiscard]] Result<Unit, PlatformError> SaveCalib(

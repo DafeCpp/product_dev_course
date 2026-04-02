@@ -9,6 +9,7 @@
 #include "drive_mode_registry.hpp"
 #include "i_vehicle_control.hpp"
 #include "imu_calibration.hpp"
+#include "mag_calibration.hpp"
 #include "self_test.hpp"
 #include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
@@ -94,6 +95,38 @@ class VehicleControlUnified : public IVehicleControl {
    * @return 0, 1 (стояние), 2 (вперёд/назад)
    */
   [[nodiscard]] int GetCalibStage() const override { return calib_mgr_->GetStage(); }
+
+  // ─── Калибровка магнитометра ─────────────────────────────────────────────
+
+  /** Запустить сбор семплов калибровки магнитометра. */
+  void StartMagCalibration() override { mag_calib_.Start(); }
+
+  /** Завершить сбор, вычислить offset и сохранить в NVS (если валидно). */
+  void FinishMagCalibration() override {
+    mag_calib_.Finish();
+    if (mag_calib_.IsValid()) {
+      platform_->SaveMagCalib(mag_calib_.GetData());
+    }
+  }
+
+  /** Прервать сбор, вернуться в Idle. */
+  void CancelMagCalibration() override { mag_calib_.Cancel(); }
+
+  /** Строковый статус калибровки магнитометра. */
+  [[nodiscard]] const char* GetMagCalibStatus() const override {
+    switch (mag_calib_.GetStatus()) {
+      case MagCalibStatus::Idle:       return "idle";
+      case MagCalibStatus::Collecting: return "collecting";
+      case MagCalibStatus::Done:       return "done";
+      case MagCalibStatus::Failed:     return "failed";
+    }
+    return "idle";
+  }
+
+  /** Удалить калибровку магнитометра из NVS. */
+  bool EraseMagCalibration() override {
+    return platform_->EraseMagCalib();
+  }
 
   /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
@@ -314,6 +347,7 @@ class VehicleControlUnified : public IVehicleControl {
 
   // Калибровка, фильтр
   ImuCalibration imu_calib_;
+  MagCalibration mag_calib_;
   MadgwickFilter madgwick_;
 
   // Стратегии стабилизации (pipeline)

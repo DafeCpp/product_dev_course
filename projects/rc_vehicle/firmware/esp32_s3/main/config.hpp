@@ -42,6 +42,15 @@
 #define IMU_SPI_MISO_PIN GPIO_NUM_13
 #define IMU_SPI_BAUD_HZ 500000  // 500 kHz (1 MHz нестабильно на длинных проводах)
 
+// Магнитометр (MMC5983MA по SPI, разделяет шину SPI2 с IMU)
+// Расположить как можно дальше от мотора/ESC (источников магнитных помех).
+#define MAG_SPI_HOST    SPI2_HOST
+#define MAG_SPI_CS_PIN  GPIO_NUM_5
+#define MAG_SPI_SCK_PIN  IMU_SPI_SCK_PIN   // Общие линии шины
+#define MAG_SPI_MOSI_PIN IMU_SPI_MOSI_PIN
+#define MAG_SPI_MISO_PIN IMU_SPI_MISO_PIN
+#define MAG_SPI_BAUD_HZ 1000000  // 1 МГц (max 10 МГц, умеренно для надёжности)
+
 // Тайминги (в миллисекундах)
 #define CONTROL_LOOP_PERIOD_MS 2   // 500 Hz — основной цикл Core 1
 #define PWM_UPDATE_INTERVAL_MS 20  // 50 Hz (каждые 10 итераций control loop)

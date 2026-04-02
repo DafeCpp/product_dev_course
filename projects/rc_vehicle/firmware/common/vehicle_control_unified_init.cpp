@@ -34,6 +34,12 @@ PlatformError VehicleControlUnified::Init() {
                    "RC input init failed — continuing without RC-in");
   }
 
+  if (platform_->InitMag()) {
+    platform_->Log(LogLevel::Info, "Magnetometer initialized");
+  } else {
+    platform_->Log(LogLevel::Info, "Magnetometer not available");
+  }
+
   InitImuSubsystem();
   InitTelemetryLog();
 
@@ -121,6 +127,14 @@ bool VehicleControlUnified::InitializeComponents() {
                                              slip_ctrl_, imu_handler_.get()));
     stab_mgr_->LoadFromNvs();
     stab_mgr_->ApplyConfig();
+
+    // Загрузить калибровку магнитометра из NVS
+    MagCalibData mag_calib_data{};
+    if (platform_->LoadMagCalib(mag_calib_data)) {
+      mag_calib_.SetData(mag_calib_data);
+      platform_->Log(LogLevel::Info, "Mag calibration loaded from NVS");
+    }
+    imu_handler_->SetMagCalibration(&mag_calib_);
   }
 
   if (!rc_handler_)  rc_handler_.reset(new RcInputHandler(*platform_, 0));

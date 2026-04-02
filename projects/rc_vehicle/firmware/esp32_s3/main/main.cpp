@@ -125,6 +125,9 @@ extern "C" void app_main(void) {
                               rc_vehicle::HandleUdpStreamStop);
   g_command_registry.Register("udp_stream_status",
                               rc_vehicle::HandleUdpStreamStatus);
+  g_command_registry.Register("calibrate_mag", rc_vehicle::HandleCalibrateMag);
+  g_command_registry.Register("get_mag_calib_status",
+                              rc_vehicle::HandleGetMagCalibStatus);
   ESP_LOGI(TAG, "Registered %zu command handlers",
            g_command_registry.GetHandlerCount());
 

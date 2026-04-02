@@ -774,4 +774,51 @@ void HandleUdpStreamStatus(IVehicleControl& vc, cJSON* json,
   }
 }
 
+void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
+  cJSON* action_item = cJSON_GetObjectItem(json, "action");
+  const char* action = (action_item && cJSON_IsString(action_item))
+                           ? action_item->valuestring
+                           : "";
+
+  bool ok = true;
+  if (strcmp(action, "start") == 0) {
+    vc.StartMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: start");
+  } else if (strcmp(action, "finish") == 0) {
+    vc.FinishMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: finish -> %s", vc.GetMagCalibStatus());
+  } else if (strcmp(action, "cancel") == 0) {
+    vc.CancelMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: cancel");
+  } else if (strcmp(action, "erase") == 0) {
+    ok = vc.EraseMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: erase -> %s", ok ? "ok" : "failed");
+  } else {
+    ok = false;
+    ESP_LOGW(TAG, "calibrate_mag: unknown action '%s'", action);
+  }
+
+  cJSON* reply = cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "calibrate_mag_ack");
+    cJSON_AddStringToObject(reply, "status", vc.GetMagCalibStatus());
+    cJSON_AddBoolToObject(reply, "ok", ok);
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+}
+
+void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
+                              httpd_req_t* req) {
+  (void)json;
+
+  cJSON* reply = cJSON_CreateObject();
+  if (reply) {
+    cJSON_AddStringToObject(reply, "type", "mag_calib_status");
+    cJSON_AddStringToObject(reply, "status", vc.GetMagCalibStatus());
+    WsSendJsonReply(req, reply);
+    cJSON_Delete(reply);
+  }
+}
+
 }  // namespace rc_vehicle

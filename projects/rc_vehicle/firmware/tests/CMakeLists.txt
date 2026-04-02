@@ -66,6 +66,8 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/diagnostics_reporter.cpp
     ${COMMON_DIR}/control_loop_helpers.cpp
     ${COMMON_DIR}/control_loop_processor.cpp
+    ${COMMON_DIR}/mmc5983_spi.cpp
+    ${COMMON_DIR}/mag_calibration.cpp
 )
 
 # Include directories
@@ -116,6 +118,8 @@ add_executable(unit_tests
     unit/test_com_offset_correction.cpp
     unit/test_control_loop_helpers.cpp
     unit/test_control_loop_processor.cpp
+    unit/test_mmc5983.cpp
+    unit/test_mag_calibration.cpp
     integration/test_control_loop.cpp
 )
 

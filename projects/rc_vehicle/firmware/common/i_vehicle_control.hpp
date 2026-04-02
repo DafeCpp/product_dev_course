@@ -73,6 +73,13 @@ class IVehicleControl {
   [[nodiscard]] virtual SpeedCalibration::Result
   GetSpeedCalibResult() const = 0;
 
+  // Калибровка магнитометра
+  virtual void StartMagCalibration() = 0;
+  virtual void FinishMagCalibration() = 0;
+  virtual void CancelMagCalibration() = 0;
+  [[nodiscard]] virtual const char* GetMagCalibStatus() const = 0;
+  virtual bool EraseMagCalibration() = 0;
+
   // Телеметрия лог
   virtual void GetLogInfo(size_t& count_out, size_t& cap_out) const = 0;
   virtual bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const = 0;

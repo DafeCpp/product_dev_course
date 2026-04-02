@@ -24,7 +24,7 @@
 │  Core 0: Wi-Fi AP + WebSocket                        │
 │  Core 1: Control Loop (IMU + фильтрация + PID + PWM)│
 │                                                      │
-│  SPI2 ──► MPU-6500 (IMU)                             │
+│  SPI2 ──► MPU-6500 (IMU) + MMC5983MA (MAG)           │
 │  MCPWM0 ──► ESC (Throttle)                           │
 │  MCPWM0 ──► Servo (Steering)                         │
 │  GPIO ──► RC Receiver CH1 (Throttle)                 │
@@ -51,6 +51,22 @@
 | 3V3          | VCC               | **VCC**            | Питание 3.3 V     |
 | GND          | GND               | **GND**            | Земля             |
 
+**SPI2 к MMC5983MA (магнитометр), разделяет шину с IMU:**
+
+> SCK/MOSI/MISO — общие линии с MPU-6500. Только CS отдельный.
+
+| ESP32-S3    | MMC5983MA          | Надпись на плате   | Назначение        |
+|-------------|--------------------|--------------------|-------------------|
+| GPIO5 (CS)  | CS                 | **CS**             | Chip Select (MAG) |
+| GPIO12 (SCK)| SCL / CLK          | **SCL**            | SPI SCK (общий)   |
+| GPIO11 (MOSI)| SDA / SDI         | **SDA**            | SPI MOSI (общий)  |
+| GPIO13 (MISO)| SDO               | **SDO**            | SPI MISO (общий)  |
+| 3V3         | VCC                | **VCC**            | Питание 3.3 V     |
+| GND         | GND                | **GND**            | Земля             |
+
+> **SPI режим:** Mode 3 (CPOL=1, CPHA=1). Скорость: 1 МГц (max 10 МГц).  
+> **Calibration:** hard-iron offset сохраняется в NVS. WS-команда `calibrate_mag`.
+
 **MCPWM выходы (50 Hz, 1-2 мс):**
 - `GPIO14 (MCPWM0)` → Signal вход ESC (Throttle)
 - `GPIO21 (MCPWM0)` → Signal вход Servo (Steering)
@@ -72,6 +88,11 @@
 | MPU-6500          | MOSI      | **SDA / SDI**      | GPIO11        | SPI2 MOSI              |
 | MPU-6500          | MISO      | **ADO / SDO**      | GPIO13        | SPI2 MISO              |
 | MPU-6500          | VCC       | **VCC**            | 3V3           | Питание                |
+| MMC5983MA         | CS        | **CS**             | GPIO5         | SPI2 CS (MAG)          |
+| MMC5983MA         | SCL       | **SCL**            | GPIO12        | SPI2 SCK (общий)       |
+| MMC5983MA         | SDA       | **SDA**            | GPIO11        | SPI2 MOSI (общий)      |
+| MMC5983MA         | SDO       | **SDO**            | GPIO13        | SPI2 MISO (общий)      |
+| MMC5983MA         | VCC       | **VCC**            | 3V3           | Питание                |
 | ESC               | Signal    |                    | GPIO14        | MCPWM0, 50Hz           |
 | Servo             | Signal    |                    | GPIO21        | MCPWM0, 50Hz           |
 | RC RX             | CH1       |                    | GPIO16        | Через делитель если 5V |
@@ -82,7 +103,8 @@
 
 | GPIO         | Статус                                    |
 |--------------|-------------------------------------------|
-| GPIO1–9      | Свободны                                  |
+| GPIO1–4, GPIO6–9 | Свободны                              |
+| GPIO5        | MMC5983MA CS (MAG)                        |
 | GPIO15, GPIO18 | Свободны                                |
 | GPIO38–48    | Свободны (GPIO48 — встроенный RGB LED)    |
 | GPIO19, GPIO20 | USB D-/D+ (не использовать если USB нужен) |
@@ -181,7 +203,8 @@ idf.py set-target esp32s3   # или esp32c6
 
 | Функция       | ESP32-C6 | ESP32-S3 | Отличие в коде           |
 |---------------|----------|----------|--------------------------|
-| SPI CS        | GPIO10   | GPIO10   | Одинаковый               |
+| SPI CS (IMU)  | GPIO10   | GPIO10   | Одинаковый               |
+| SPI CS (MAG)  | —        | GPIO5    | Только ESP32-S3          |
 | SPI SCK       | GPIO6    | GPIO12   | Только pin config        |
 | SPI MOSI      | GPIO7    | GPIO11   | Только pin config        |
 | SPI MISO      | GPIO2    | GPIO13   | Только pin config        |

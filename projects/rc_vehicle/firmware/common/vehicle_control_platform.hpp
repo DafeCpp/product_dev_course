@@ -5,6 +5,8 @@
 #include <string_view>
 
 #include "imu_calibration.hpp"
+#include "mag_calibration.hpp"
+#include "mag_sensor.hpp"
 #include "mpu6050_spi.hpp"
 #include "result.hpp"
 #include "stabilization_config.hpp"
@@ -124,6 +126,34 @@ class VehicleControlPlatform {
    * @return Значение регистра или -1, если не читали
    */
   [[nodiscard]] virtual int GetImuLastWhoAmI() const noexcept = 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Магнитометр (необязательный датчик)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * @brief Инициализация магнитометра (если есть).
+   * @return true при успехе, false если датчик отсутствует или не ответил.
+   * По умолчанию возвращает false — платформы без магнетометра не обязаны
+   * переопределять этот метод.
+   */
+  virtual bool InitMag() { return false; }
+
+  /**
+   * @brief Прочитать данные магнитометра.
+   * @return MagData в мГс, если датчик инициализирован и чтение успешно,
+   *         иначе nullopt.
+   */
+  [[nodiscard]] virtual std::optional<MagData> ReadMag() {
+    return std::nullopt;
+  }
+
+  /**
+   * @brief Имя активного магнитометра ("MMC5983MA", "none" и т.п.)
+   */
+  [[nodiscard]] virtual const char* GetMagSensorName() const noexcept {
+    return "none";
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Калибровка IMU
@@ -273,6 +303,36 @@ class VehicleControlPlatform {
    * @param period_ms Период в миллисекундах от предыдущего пробуждения
    */
   virtual void DelayUntilNextTick(uint32_t period_ms) = 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Калибровка магнитометра (NVS)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * @brief Сохранить калибровку магнитометра в NVS.
+   * @param data Данные калибровки
+   * @return true при успехе
+   */
+  virtual bool SaveMagCalib(const MagCalibData& data) {
+    (void)data;
+    return false;
+  }
+
+  /**
+   * @brief Загрузить калибровку магнитометра из NVS.
+   * @param data Выходные данные калибровки
+   * @return true при успехе
+   */
+  virtual bool LoadMagCalib(MagCalibData& data) {
+    (void)data;
+    return false;
+  }
+
+  /**
+   * @brief Удалить калибровку магнитометра из NVS.
+   * @return true при успехе
+   */
+  virtual bool EraseMagCalib() { return false; }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Watchdog
