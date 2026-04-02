@@ -51,21 +51,39 @@
 | 3V3          | VCC               | **VCC**            | Питание 3.3 V     |
 | GND          | GND               | **GND**            | Земля             |
 
-**SPI2 к MMC5983MA (магнитометр), разделяет шину с IMU:**
+**MMC5983MA (магнитометр) — два варианта подключения:**
+
+Интерфейс выбирается в `config.hpp` определением `MAG_USE_I2C`.
+
+#### Вариант A: I2C (4-пиновый модуль) — **активен по умолчанию**
+
+| ESP32-S3       | MMC5983MA | Надпись на плате | Назначение    |
+|----------------|-----------|------------------|---------------|
+| GPIO8 (SDA)    | SDA       | **SDA**          | I2C данные    |
+| GPIO9 (SCL)    | SCL       | **SCL**          | I2C тактирование |
+| 3V3            | VCC       | **VCC**          | Питание 3.3 V |
+| GND            | GND       | **GND**          | Земля         |
+
+> **I2C адрес:** 0x30 (фиксированный). **Скорость:** 400 кГц (Fast Mode).  
+> Активируется через `#define MAG_USE_I2C` в `config.hpp`.
+
+#### Вариант B: SPI (6-пиновый модуль), разделяет шину с IMU
 
 > SCK/MOSI/MISO — общие линии с MPU-6500. Только CS отдельный.
 
-| ESP32-S3    | MMC5983MA          | Надпись на плате   | Назначение        |
-|-------------|--------------------|--------------------|-------------------|
-| GPIO5 (CS)  | CS                 | **CS**             | Chip Select (MAG) |
-| GPIO12 (SCK)| SCL / CLK          | **SCL**            | SPI SCK (общий)   |
-| GPIO11 (MOSI)| SDA / SDI         | **SDA**            | SPI MOSI (общий)  |
-| GPIO13 (MISO)| SDO               | **SDO**            | SPI MISO (общий)  |
-| 3V3         | VCC                | **VCC**            | Питание 3.3 V     |
-| GND         | GND                | **GND**            | Земля             |
+| ESP32-S3     | MMC5983MA  | Надпись на плате | Назначение        |
+|--------------|------------|------------------|-------------------|
+| GPIO5 (CS)   | CS         | **CS**           | Chip Select (MAG) |
+| GPIO12 (SCK) | SCL / CLK  | **SCL**          | SPI SCK (общий)   |
+| GPIO11 (MOSI)| SDA / SDI  | **SDA**          | SPI MOSI (общий)  |
+| GPIO13 (MISO)| SDO        | **SDO**          | SPI MISO (общий)  |
+| 3V3          | VCC        | **VCC**          | Питание 3.3 V     |
+| GND          | GND        | **GND**          | Земля             |
 
 > **SPI режим:** Mode 3 (CPOL=1, CPHA=1). Скорость: 1 МГц (max 10 МГц).  
-> **Calibration:** hard-iron offset сохраняется в NVS. WS-команда `calibrate_mag`.
+> Закомментировать `MAG_USE_I2C` в `config.hpp` для переключения на SPI.
+
+> **Calibration (оба варианта):** hard-iron offset сохраняется в NVS. WS-команда `calibrate_mag`.
 
 **MCPWM выходы (50 Hz, 1-2 мс):**
 - `GPIO14 (MCPWM0)` → Signal вход ESC (Throttle)
@@ -88,11 +106,14 @@
 | MPU-6500          | MOSI      | **SDA / SDI**      | GPIO11        | SPI2 MOSI              |
 | MPU-6500          | MISO      | **ADO / SDO**      | GPIO13        | SPI2 MISO              |
 | MPU-6500          | VCC       | **VCC**            | 3V3           | Питание                |
-| MMC5983MA         | CS        | **CS**             | GPIO5         | SPI2 CS (MAG)          |
-| MMC5983MA         | SCL       | **SCL**            | GPIO12        | SPI2 SCK (общий)       |
-| MMC5983MA         | SDA       | **SDA**            | GPIO11        | SPI2 MOSI (общий)      |
-| MMC5983MA         | SDO       | **SDO**            | GPIO13        | SPI2 MISO (общий)      |
-| MMC5983MA         | VCC       | **VCC**            | 3V3           | Питание                |
+| MMC5983MA (I2C)   | SDA       | **SDA**            | GPIO8         | I2C SDA                |
+| MMC5983MA (I2C)   | SCL       | **SCL**            | GPIO9         | I2C SCL                |
+| MMC5983MA (I2C)   | VCC       | **VCC**            | 3V3           | Питание                |
+| MMC5983MA (SPI)   | CS        | **CS**             | GPIO5         | SPI2 CS (если SPI)     |
+| MMC5983MA (SPI)   | SCL       | **SCL**            | GPIO12        | SPI2 SCK (если SPI)    |
+| MMC5983MA (SPI)   | SDA       | **SDA**            | GPIO11        | SPI2 MOSI (если SPI)   |
+| MMC5983MA (SPI)   | SDO       | **SDO**            | GPIO13        | SPI2 MISO (если SPI)   |
+| MMC5983MA (SPI)   | VCC       | **VCC**            | 3V3           | Питание (если SPI)     |
 | ESC               | Signal    |                    | GPIO14        | MCPWM0, 50Hz           |
 | Servo             | Signal    |                    | GPIO21        | MCPWM0, 50Hz           |
 | RC RX             | CH1       |                    | GPIO16        | Через делитель если 5V |
@@ -103,8 +124,10 @@
 
 | GPIO         | Статус                                    |
 |--------------|-------------------------------------------|
-| GPIO1–4, GPIO6–9 | Свободны                              |
-| GPIO5        | MMC5983MA CS (MAG)                        |
+| GPIO1–4, GPIO6–7 | Свободны                              |
+| GPIO8        | MMC5983MA SDA (I2C MAG)                   |
+| GPIO9        | MMC5983MA SCL (I2C MAG)                   |
+| GPIO5        | MMC5983MA CS (только при SPI MAG)         |
 | GPIO15, GPIO18 | Свободны                                |
 | GPIO38–48    | Свободны (GPIO48 — встроенный RGB LED)    |
 | GPIO19, GPIO20 | USB D-/D+ (не использовать если USB нужен) |
