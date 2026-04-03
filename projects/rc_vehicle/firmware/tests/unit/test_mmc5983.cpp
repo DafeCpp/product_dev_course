@@ -196,9 +196,9 @@ TEST(Mmc5983Test, ReadMaxPositiveField) {
   Mmc5983Spi drv(&spi);
   ASSERT_EQ(drv.Init(), 0);
 
-  // raw = 262143 (2^18 - 1) → (262143 - 131072) * scale = 131071 * (800/131072)
+  // raw = 262143 (2^18 - 1) → (262143 - 131072) * scale = 131071 * (8000/131072)
   constexpr uint32_t kMax = 262143;
-  constexpr float kExpected = (kMax - 131072.f) * (800.f / 131072.f);
+  constexpr float kExpected = (kMax - 131072.f) * (8000.f / 131072.f);
   spi.PushResponse(MakeBurstResponse(kMax, kMax, kMax));
 
   MagData data;
@@ -214,14 +214,14 @@ TEST(Mmc5983Test, ReadMaxNegativeField) {
   Mmc5983Spi drv(&spi);
   ASSERT_EQ(drv.Init(), 0);
 
-  // raw = 0 → (0 - 131072) * scale = -800 мГс
+  // raw = 0 → (0 - 131072) * scale = -8000 мГс
   spi.PushResponse(MakeBurstResponse(0, 0, 0));
 
   MagData data;
   ASSERT_EQ(drv.Read(data), 0);
-  EXPECT_NEAR(data.mx, -800.f, 0.01f);
-  EXPECT_NEAR(data.my, -800.f, 0.01f);
-  EXPECT_NEAR(data.mz, -800.f, 0.01f);
+  EXPECT_NEAR(data.mx, -8000.f, 0.01f);
+  EXPECT_NEAR(data.my, -8000.f, 0.01f);
+  EXPECT_NEAR(data.mz, -8000.f, 0.01f);
 }
 
 TEST(Mmc5983Test, ReadIndependentAxes) {
@@ -230,14 +230,14 @@ TEST(Mmc5983Test, ReadIndependentAxes) {
   Mmc5983Spi drv(&spi);
   ASSERT_EQ(drv.Init(), 0);
 
-  // X = 0 (−800 мГс), Y = 131072 (0 мГс), Z = 262143 (+~800 мГс)
+  // X = 0 (−8000 мГс), Y = 131072 (0 мГс), Z = 262143 (+~8000 мГс)
   spi.PushResponse(MakeBurstResponse(0, 131072, 262143));
 
   MagData data;
   ASSERT_EQ(drv.Read(data), 0);
-  EXPECT_NEAR(data.mx, -800.f, 0.01f);
+  EXPECT_NEAR(data.mx, -8000.f, 0.01f);
   EXPECT_NEAR(data.my, 0.f, 0.01f);
-  EXPECT_GT(data.mz, 799.f);
+  EXPECT_GT(data.mz, 7999.f);
 }
 
 TEST(Mmc5983Test, ReadBurstUsesCorrectStartRegister) {
@@ -289,7 +289,7 @@ TEST(Mmc5983Test, PeriodicSetResetDoesNotBreakReads) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(Mmc5983Test, ScaleMatchesDatasheet) {
-  // 1 LSB = 800 мГс / 131072 ≈ 0.006104 мГс
+  // 1 LSB = 8000 мГс / 131072 ≈ 0.06104 мГс
   FakeSpiDevice spi;
   SetupSuccessfulInit(spi);
   Mmc5983Spi drv(&spi);
@@ -297,7 +297,7 @@ TEST(Mmc5983Test, ScaleMatchesDatasheet) {
 
   // +1 LSB от нуля поля
   constexpr uint32_t kHalfPlus1 = 131073;
-  constexpr float kExpected1Lsb = 800.f / 131072.f;  // ~0.006104 мГс
+  constexpr float kExpected1Lsb = 8000.f / 131072.f;  // ~0.006104 мГс
   spi.PushResponse(MakeBurstResponse(kHalfPlus1, kHalfPlus1, kHalfPlus1));
 
   MagData data;

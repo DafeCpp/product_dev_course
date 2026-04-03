@@ -122,7 +122,8 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
 
   if (mag_enabled_) {
     MagData mag_cal = mag_data_;
-    if (mag_calib_) {
+    const bool have_calib = mag_calib_ && mag_calib_->IsValid();
+    if (have_calib) {
       mag_calib_->Apply(mag_cal);
     }
 
@@ -132,26 +133,45 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
         mag_calib_->FeedSample(mag_data_);
       }
 
-      // 9DOF fusion — только когда пришли свежие данные,
-      // чтобы не завышать вес магнитометра в фильтре.
-      if (madgwick_enabled_) {
-        filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
-                              data_.gz, mag_cal.mx, mag_cal.my, mag_cal.mz,
-                              dt_sec);
-      }
+      if (have_calib) {
+        // ── PCA heading: проекция на калибровочную плоскость ────────────
+        const auto& cd = mag_calib_->GetData();
 
-      // Tilt-compensated heading (NED formula)
-      float pitch_rad = 0.f, roll_rad = 0.f, yaw_rad = 0.f;
-      filter_.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
-      const float cp = std::cos(pitch_rad);
-      const float sp = std::sin(pitch_rad);
-      const float cr = std::cos(roll_rad);
-      const float sr = std::sin(roll_rad);
-      const float mx_h =
-          mag_cal.mx * cp + mag_cal.my * sr * sp - mag_cal.mz * cr * sp;
-      const float my_h = mag_cal.my * cr + mag_cal.mz * sr;
-      const float h = std::atan2(-my_h, mx_h) * (180.f / 3.14159265f);
-      heading_deg_ = (h < 0.f) ? h + 360.f : h;
+        // Проекция mag на горизонтальную плоскость (перпендикулярную normal)
+        const float dot_n = mag_cal.mx * cd.normal[0] +
+                            mag_cal.my * cd.normal[1] +
+                            mag_cal.mz * cd.normal[2];
+        const float px = mag_cal.mx - dot_n * cd.normal[0];
+        const float py = mag_cal.my - dot_n * cd.normal[1];
+        const float pz = mag_cal.mz - dot_n * cd.normal[2];
+
+        const float comp1 = px * cd.basis1[0] + py * cd.basis1[1] + pz * cd.basis1[2];
+        const float comp2 = px * cd.basis2[0] + py * cd.basis2[1] + pz * cd.basis2[2];
+
+        const float h = std::atan2(comp2, comp1) * (180.f / 3.14159265f);
+        heading_deg_ = (h < 0.f) ? h + 360.f : h;
+
+        // Подать mag в Madgwick 9DOF, повёрнутый в систему basis:
+        // basis1 ≈ body X, basis2 ≈ body Y, normal ≈ body Z
+        if (madgwick_enabled_) {
+          const float rmx = comp1;
+          const float rmy = comp2;
+          const float rmz = dot_n;
+          filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
+                                data_.gz, rmx, rmy, rmz, dt_sec);
+        }
+      } else {
+        // Нет калибровки — fallback: простой atan2 без проекции
+        const float h = std::atan2(mag_cal.my, mag_cal.mx) * (180.f / 3.14159265f);
+        heading_deg_ = (h < 0.f) ? h + 360.f : h;
+
+        // 9DOF с сырыми mag данными (лучше чем 6DOF, но heading неточный)
+        if (madgwick_enabled_) {
+          filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
+                                data_.gz, mag_cal.mx, mag_cal.my, mag_cal.mz,
+                                dt_sec);
+        }
+      }
 
       // Установить опорный курс при первом валидном чтении (или после сброса)
       if (!heading_ref_set_) {
