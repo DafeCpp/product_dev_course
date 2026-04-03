@@ -15,7 +15,7 @@ include = ["src/backend_common/py.typed"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-aiohttp = "^3.13.3"
+aiohttp = "^3.13.4"
 asyncpg = "^0.31.0"
 pydantic-settings = "^2.4.0"
 structlog = "^24.2.0"
