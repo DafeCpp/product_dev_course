@@ -107,7 +107,8 @@ bool AutoDriveCoordinator::StartTrimCalib(float target_accel_g,
     return false;
   }
   if (event_log_) {
-    event_log_->Push({0, TelemetryEventType::TrimCalibStart, 0});
+    event_log_->Push({0, TelemetryEventType::TrimCalibStart, 0, {},
+                      target_accel_g, 0.0f});
   }
   return true;
 }
@@ -122,7 +123,8 @@ bool AutoDriveCoordinator::StartComCalib(float target_accel_g,
     return false;
   }
   if (event_log_) {
-    event_log_->Push({0, TelemetryEventType::ComCalibStart, 0});
+    event_log_->Push({0, TelemetryEventType::ComCalibStart, 0, {},
+                      target_accel_g, steering_magnitude});
   }
   return true;
 }
@@ -132,7 +134,8 @@ bool AutoDriveCoordinator::StartTest(const TestParams& params) {
   if (!test_runner_.Start(params)) return false;
   if (event_log_) {
     event_log_->Push({0, TelemetryEventType::TestStart,
-                      static_cast<uint8_t>(params.type)});
+                      static_cast<uint8_t>(params.type), {},
+                      params.duration_sec, params.steering});
   }
   return true;
 }
@@ -142,7 +145,8 @@ bool AutoDriveCoordinator::StartSpeedCalib(float target_throttle,
   if (IsAnyActive()) return false;
   if (!speed_calib_.Start(target_throttle, cruise_duration_sec)) return false;
   if (event_log_) {
-    event_log_->Push({0, TelemetryEventType::SpeedCalibStart, 0});
+    event_log_->Push({0, TelemetryEventType::SpeedCalibStart, 0, {},
+                      target_throttle, cruise_duration_sec});
   }
   return true;
 }

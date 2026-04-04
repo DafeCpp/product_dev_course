@@ -1197,7 +1197,7 @@ async function downloadBinaryLog() {
 
         // ── Section 2: parse events into a map keyed by ts_ms ─────────────
         // Events are sparse — join them into frame rows by closest timestamp.
-        // Map: ts_ms → { name, param_desc }
+        // Map: ts_ms → { name, param_desc, value1, value2 }
         const eventByTs = new Map();
         if (framesEnd + 8 <= buf.byteLength) {
             const eventCount = view.getUint32(framesEnd,     true);
@@ -1208,22 +1208,29 @@ async function downloadBinaryLog() {
                 const ts     = view.getUint32(base,     true);
                 const typeId = view.getUint8 (base + 4);
                 const param  = view.getUint8 (base + 5);
+                // value1/value2 at bytes 8-15 (present if eventSize >= 16)
+                const value1 = eventSize >= 16 ? view.getFloat32(base + 8,  true) : NaN;
+                const value2 = eventSize >= 16 ? view.getFloat32(base + 12, true) : NaN;
                 const name   = EVENT_TYPE_NAMES[typeId] || 'Unknown_' + typeId;
                 const desc   = eventParamDesc(typeId, param);
+                const v1str  = isNaN(value1) || value1 === 0 ? '' : value1.toFixed(4);
+                const v2str  = isNaN(value2) || value2 === 0 ? '' : value2.toFixed(4);
                 // Multiple events at same ts: concatenate with '|'
                 if (eventByTs.has(ts)) {
                     const prev = eventByTs.get(ts);
                     eventByTs.set(ts, { name: prev.name + '|' + name,
-                                        desc: prev.desc + '|' + desc });
+                                        desc: prev.desc + '|' + desc,
+                                        v1:   prev.v1   + '|' + v1str,
+                                        v2:   prev.v2   + '|' + v2str });
                 } else {
-                    eventByTs.set(ts, { name, desc });
+                    eventByTs.set(ts, { name, desc, v1: v1str, v2: v2str });
                 }
             }
         }
 
         // ── Build single combined CSV ──────────────────────────────────────
         const header = FIELD_OFFSETS.map(f => f.name).join(',') +
-                       ',event_type,event_param';
+                       ',event_type,event_param,event_value1,event_value2';
         const frameLines = [];
         for (let i = 0; i < frameCount; i++) {
             const base = 8 + i * frameSize;
@@ -1236,7 +1243,8 @@ async function downloadBinaryLog() {
             });
             const ts = vals[0]; // ts_ms is first field
             const ev = eventByTs.get(ts);
-            vals.push(ev ? ev.name : '', ev ? ev.desc : '');
+            vals.push(ev ? ev.name : '', ev ? ev.desc : '',
+                      ev ? ev.v1   : '', ev ? ev.v2   : '');
             frameLines.push(vals.join(','));
         }
         const csv = header + '\n' + frameLines.join('\n');

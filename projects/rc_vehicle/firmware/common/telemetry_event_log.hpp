@@ -48,17 +48,26 @@ enum class TelemetryEventType : uint8_t {
 };
 
 /**
- * @brief Одно событие телеметрии (8 байт).
+ * @brief Одно событие телеметрии (16 байт).
  *
  * Записывается только при изменении состояния (старт или стоп).
+ *
+ * Семантика value1/value2 по типу события (только Start-события):
+ *   TestStart:        value1 = duration_sec,     value2 = steering [-1..1]
+ *   TrimCalibStart:   value1 = target_accel_g,   value2 = 0
+ *   ComCalibStart:    value1 = target_accel_g,   value2 = steering_magnitude
+ *   SpeedCalibStart:  value1 = target_throttle,  value2 = cruise_duration_sec
+ *   ImuCalibStart:    value1 = target_accel_g (auto_forward), value2 = 0
  */
 struct TelemetryEvent {
-  uint32_t           ts_ms{0};   ///< Метка времени события [мс]
-  TelemetryEventType type{};     ///< Тип события
-  uint8_t            param{0};   ///< Доп. параметр (TestType, CalibMode и т.п.)
-  uint8_t            _pad[2]{};  ///< Выравнивание до 8 байт
+  uint32_t           ts_ms{0};    ///< Метка времени события [мс]
+  TelemetryEventType type{};      ///< Тип события
+  uint8_t            param{0};    ///< Доп. параметр (TestType, CalibMode и т.п.)
+  uint8_t            _pad[2]{};   ///< Выравнивание
+  float              value1{0.0f}; ///< Первичный параметр режима
+  float              value2{0.0f}; ///< Вторичный параметр режима
 };
-static_assert(sizeof(TelemetryEvent) == 8, "TelemetryEvent size mismatch");
+static_assert(sizeof(TelemetryEvent) == 16, "TelemetryEvent size mismatch");
 
 /**
  * @brief Потокобезопасный кольцевой буфер событий телеметрии.

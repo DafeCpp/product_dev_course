@@ -49,7 +49,8 @@ bool CalibrationManager::StartAutoForwardCalibration(float target_accel_g) {
   platform_.Log(LogLevel::Info, msg);
   if (event_log_) {
     // param: 2 = auto_forward (stage 2)
-    event_log_->Push({0, TelemetryEventType::ImuCalibStart, 2});
+    event_log_->Push({0, TelemetryEventType::ImuCalibStart, 2, {},
+                      cfg.target_value, 0.0f});
   }
   return true;
 }
