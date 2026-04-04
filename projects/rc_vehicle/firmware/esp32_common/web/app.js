@@ -1195,6 +1195,35 @@ async function downloadBinaryLog() {
             { name: 'test_marker',    off: 120, type: 'u8'  },
         ];
 
+        // ── Section 2: parse events into a map keyed by ts_ms ─────────────
+        // Events are sparse — join them into frame rows by closest timestamp.
+        // Map: ts_ms → { name, param_desc }
+        const eventByTs = new Map();
+        if (framesEnd + 8 <= buf.byteLength) {
+            const eventCount = view.getUint32(framesEnd,     true);
+            const eventSize  = view.getUint32(framesEnd + 4, true);
+            for (let i = 0; i < eventCount; i++) {
+                const base = framesEnd + 8 + i * eventSize;
+                if (base + eventSize > buf.byteLength) break;
+                const ts     = view.getUint32(base,     true);
+                const typeId = view.getUint8 (base + 4);
+                const param  = view.getUint8 (base + 5);
+                const name   = EVENT_TYPE_NAMES[typeId] || 'Unknown_' + typeId;
+                const desc   = eventParamDesc(typeId, param);
+                // Multiple events at same ts: concatenate with '|'
+                if (eventByTs.has(ts)) {
+                    const prev = eventByTs.get(ts);
+                    eventByTs.set(ts, { name: prev.name + '|' + name,
+                                        desc: prev.desc + '|' + desc });
+                } else {
+                    eventByTs.set(ts, { name, desc });
+                }
+            }
+        }
+
+        // ── Build single combined CSV ──────────────────────────────────────
+        const header = FIELD_OFFSETS.map(f => f.name).join(',') +
+                       ',event_type,event_param';
         const frameLines = [];
         for (let i = 0; i < frameCount; i++) {
             const base = 8 + i * frameSize;
@@ -1205,33 +1234,13 @@ async function downloadBinaryLog() {
                 if (f.type === 'u8')  return view.getUint8(o);
                 return view.getFloat32(o, true);
             });
+            const ts = vals[0]; // ts_ms is first field
+            const ev = eventByTs.get(ts);
+            vals.push(ev ? ev.name : '', ev ? ev.desc : '');
             frameLines.push(vals.join(','));
         }
-        const framesCsv = FIELD_OFFSETS.map(f => f.name).join(',') + '\n' +
-                          frameLines.join('\n');
-        triggerDownload(framesCsv, 'telemetry_log.csv', 'text/csv');
-
-        // ── Section 2: events ──────────────────────────────────────────────
-        if (framesEnd + 8 > buf.byteLength) return; // нет секции событий
-
-        const eventCount = view.getUint32(framesEnd,     true);
-        const eventSize  = view.getUint32(framesEnd + 4, true);
-        if (eventCount === 0) return;
-
-        const eventLines = [];
-        for (let i = 0; i < eventCount; i++) {
-            const base = framesEnd + 8 + i * eventSize;
-            if (base + eventSize > buf.byteLength) break;
-            const ts     = view.getUint32(base,     true);
-            const typeId = view.getUint8 (base + 4);
-            const param  = view.getUint8 (base + 5);
-            const name   = EVENT_TYPE_NAMES[typeId] || 'Unknown_' + typeId;
-            const desc   = eventParamDesc(typeId, param);
-            eventLines.push([ts, typeId, name, param, desc].join(','));
-        }
-        const eventsCsv = 'ts_ms,type_id,type_name,param,param_desc\n' +
-                          eventLines.join('\n');
-        triggerDownload(eventsCsv, 'telemetry_events.csv', 'text/csv');
+        const csv = header + '\n' + frameLines.join('\n');
+        triggerDownload(csv, 'telemetry_log.csv', 'text/csv');
 
     } catch (e) {
         alert('Ошибка скачивания: ' + e.message);
