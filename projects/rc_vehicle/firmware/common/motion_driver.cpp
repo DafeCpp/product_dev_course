@@ -11,6 +11,9 @@ void MotionDriver::Start(const Config& config) {
   pid_.Reset();
   phase_elapsed_sec_ = 0.0f;
   cruise_throttle_ = 0.0f;
+  breakaway_detected_ = false;
+  base_throttle_ = 0.0f;
+  breakaway_confirm_count_ = 0;
   phase_ = MotionPhase::Accelerate;
 }
 
@@ -18,6 +21,9 @@ void MotionDriver::Reset() {
   phase_ = MotionPhase::Idle;
   phase_elapsed_sec_ = 0.0f;
   cruise_throttle_ = 0.0f;
+  breakaway_detected_ = false;
+  base_throttle_ = 0.0f;
+  breakaway_confirm_count_ = 0;
   pid_.Reset();
 }
 
@@ -61,16 +67,41 @@ float MotionDriver::UpdateAccelerate(float current_accel_g, float dt_sec) {
   float throttle = 0.0f;
 
   if (config_.accel_mode == AccelMode::Pid) {
-    float error = config_.target_value - current_accel_g;
-    throttle = pid_.Step(error, dt_sec);
-    throttle = std::clamp(throttle, 0.0f, config_.pid_gains.max_output);
+    const auto& bk = config_.breakaway;
+
+    if (!breakaway_detected_) {
+      // ── Фаза A: open-loop рампа до отрыва ──
+      throttle = bk.ramp_rate * phase_elapsed_sec_;
+      throttle = std::min(throttle, bk.max_throttle);
+
+      // Детекция отрыва: accel выше порога N тиков подряд
+      if (current_accel_g > bk.accel_thresh_g) {
+        ++breakaway_confirm_count_;
+      } else {
+        breakaway_confirm_count_ = 0;
+      }
+
+      // Переход в PI: подтверждённый отрыв или fallback (рампа на максимуме)
+      if (breakaway_confirm_count_ >= bk.confirm_ticks ||
+          throttle >= bk.max_throttle) {
+        breakaway_detected_ = true;
+        base_throttle_ = throttle;
+        pid_.Reset();
+      }
+    } else {
+      // ── Фаза B: base_throttle + PI-коррекция ──
+      float error = config_.target_value - current_accel_g;
+      float correction = pid_.Step(error, dt_sec);
+      throttle = base_throttle_ + correction;
+      throttle = std::clamp(throttle, 0.0f, config_.pid_gains.max_output);
+    }
   } else {
     // LinearRamp: 0 → target_value за accel_duration_sec
     float t = std::min(phase_elapsed_sec_ / config_.accel_duration_sec, 1.0f);
     throttle = config_.target_value * t;
   }
 
-  // Минимальный рабочий газ (преодоление мёртвой зоны ESC)
+  // Минимальный рабочий газ (только для LinearRamp)
   if (config_.min_effective_throttle > 0.0f && throttle > 0.0f &&
       throttle < config_.min_effective_throttle) {
     throttle = config_.min_effective_throttle;

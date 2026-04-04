@@ -9,13 +9,14 @@ namespace {
 MotionDriver::Config MakeDriverConfig(float target_accel_g) {
   MotionDriver::Config cfg;
   cfg.accel_mode = MotionDriver::AccelMode::Pid;
-  cfg.pid_gains = {1.0f, 0.5f, 0.05f, 0.4f, 0.5f};
+  cfg.pid_gains = {0.3f, 0.2f, 0.0f, 0.15f, 0.5f};
   cfg.target_value = target_accel_g;
   cfg.accel_duration_sec = 1.5f;
-  cfg.min_effective_throttle = 0.15f;
+  cfg.min_effective_throttle = 0.0f;
   cfg.brake_throttle = 0.0f;
   cfg.brake_timeout_sec = 3.0f;
   cfg.zupt = {0.05f, 3.0f};
+  cfg.breakaway = {0.5f, 0.25f, 0.03f, 25};
   return cfg;
 }
 }  // namespace
