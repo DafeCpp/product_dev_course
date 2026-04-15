@@ -22,8 +22,8 @@ COPY services/auth-service/src ./src
 COPY services/auth-service/bin ./bin
 COPY services/auth-service/migrations ./migrations
 
-# Set PYTHONPATH to include src directory
-ENV PYTHONPATH=/app/services/auth-service/src
+# Set PYTHONPATH to include src directory and backend-common
+ENV PYTHONPATH=/app/services/auth-service/src:/app/common/src
 
 EXPOSE 8001
 

@@ -23,8 +23,8 @@ COPY services/experiment-service/src ./src
 COPY services/experiment-service/bin ./bin
 COPY services/experiment-service/migrations ./migrations
 
-# Set PYTHONPATH to include src directory
-ENV PYTHONPATH=/app/services/experiment-service/src
+# Set PYTHONPATH to include src directory and backend-common
+ENV PYTHONPATH=/app/services/experiment-service/src:/app/common/src
 
 EXPOSE 8002
 

@@ -21,8 +21,8 @@ RUN poetry install --no-root
 COPY services/telemetry-ingest-service/src ./src
 COPY services/telemetry-ingest-service/openapi ./openapi
 
-# Set PYTHONPATH to include src directory
-ENV PYTHONPATH=/app/services/telemetry-ingest-service/src
+# Set PYTHONPATH to include src directory and backend-common
+ENV PYTHONPATH=/app/services/telemetry-ingest-service/src:/app/common/src
 
 EXPOSE 8003
 
