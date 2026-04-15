@@ -583,15 +583,28 @@ dev: dev-up
 dev-clean:
 	@echo "⚠️  ВНИМАНИЕ: Эта команда удалит все данные из базы данных и все логи!"
 	@echo "Остановка всех dev-сервисов..."
-	@$(DOCKER_COMPOSE) stop $(DEV_ALL_SERVICES) 2>/dev/null || true
-	@cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml stop loki alloy grafana 2>/dev/null || true
+	@$(DOCKER_COMPOSE) kill $(DEV_ALL_SERVICES) 2>/dev/null || true
+	@cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml kill loki alloy grafana 2>/dev/null || true
 	@echo "Удаление контейнеров..."
 	@$(DOCKER_COMPOSE) rm -f $(DEV_ALL_SERVICES) 2>/dev/null || true
 	@cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml rm -f loki alloy grafana 2>/dev/null || true
+	@echo "Проверка оставшихся контейнеров проекта..."
+	@docker ps -a --filter "name=backend-postgres" --filter "name=redis" --filter "name=auth-service" --filter "name=experiment-service" --filter "name=telemetry-ingest-service" --filter "name=auth-proxy" --filter "name=experiment-portal" --filter "name=sensor-simulator" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+	@echo "Ожидание освобождения volumes..."
+	@sleep 3
 	@echo "Удаление volumes (база данных и логи)..."
-	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
-	@docker volume rm -f $${LOKI_DATA_VOLUME:-experiment-loki-data} 2>/dev/null || true
-	@docker volume rm -f $${GRAFANA_DATA_VOLUME:-experiment-grafana-data} 2>/dev/null || true
+	@for vol in $${POSTGRES_DATA_VOLUME:-backend-postgres-data} $${LOKI_DATA_VOLUME:-experiment-loki-data} $${GRAFANA_DATA_VOLUME:-experiment-grafana-data}; do \
+		if docker volume inspect "$$vol" >/dev/null 2>&1; then \
+			echo "  Удаляю volume: $$vol"; \
+			timeout 10 docker volume rm "$$vol" 2>/dev/null || { \
+				echo "  ⚠️  Timeout при удалении $$vol — пробую через docker compose down..."; \
+				$(DOCKER_COMPOSE) down -v --remove-orphans 2>/dev/null || true; \
+				docker volume rm -f "$$vol" 2>/dev/null || true; \
+			}; \
+		else \
+			echo "  Volume $$vol уже удалён"; \
+		fi; \
+	done
 	@echo "✅ Все данные очищены!"
 	@echo ""
 	@echo "💡 Для запуска сервисов заново выполните: make dev-up"
