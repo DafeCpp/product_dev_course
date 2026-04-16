@@ -1,6 +1,6 @@
 # Code Review: RC Vehicle Firmware
 
-**Дата:** 2026-03-05
+**Дата:** 2026-04-10
 **Scope:** `projects/rc_vehicle/firmware/` (common, esp32_common, esp32_s3, tests)
 
 ---
@@ -12,6 +12,7 @@
 | 1 | ~~**Переполнение стека в HTTP POST-хэндлерах**~~ — FALSE POSITIVE: `ReadJsonBody()` уже проверяет `total_len >= buf_len` на строке 556 до начала записи | `esp32_common/http_server.cpp` | 556 |
 | 2 | ~~**Race condition: статический буфер WebSocket**~~ — **ИСПРАВЛЕНО**: `static uint8_t buf` заменён на локальный. Также добавлен `NOLINT`-комментарий к `const_cast` в `WebSocketSendTelem` | `esp32_common/websocket_server.cpp` | 32, 123 |
 | 3 | ~~**MockPlatform не совпадает с API**~~ — **ИСПРАВЛЕНО**: `MOCK_METHOD` и `FakePlatform`-методы обновлены на `Result<Unit, PlatformError>`; `InitPwm/Rc/Imu/Failsafe`, `SaveCalib`, `SaveStabilizationConfig`, `CreateTask` | `tests/mocks/mock_platform.hpp` | 29-32, 59-60, 113, 140-143 |
+| 4 | **BUG: Ошибка при скачивании файлов телеметрии (`/api/log.bin`)** — при нажатии кнопки «CSV» скачивание завершается ошибкой. Появилась **недавно**, ранее работало корректно. Возможные причины: (а) несоответшение размера `TelemetryLogFrame` (128 байт `static_assert` vs JS-парсер с FIELD_OFFSETS до offset 124 + u8); (б) обрыв chunked HTTP-соединения при больших объёмах данных; (в) ring buffer пуст или PSRAM не выделилась при `TelemetryLog::Init()`; (г) ошибка в `VehicleControlGetLogFrame`/`VehicleControlGetLogInfo`/`VehicleControlGetEventCount`; (д) Section 2 (events) добавлен недавно — клиент может некорректно рассчитать `framesEnd` | `esp32_common/http_server.cpp` | 756–820 |
 
 ---
 
