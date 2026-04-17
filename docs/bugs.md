@@ -149,18 +149,19 @@ invalid input value for enum conversion_profile_status: "archived"
 
 ### BUG-B-003 — `GET /api/v1/sensors/{sensor_id}/error-log` возвращает 404
 **Приоритет:** HIGH
-**Статус:** [ ] Открыт
+**Статус:** [x] Исправлен
+**Файл:** `projects/frontend/apps/auth-proxy/src/index.ts`
 
 Запрос с фронта:
 ```
 GET /api/v1/sensors/1a9d0362-815e-4683-94b1-2767dfa501f5/error-log
   ?limit=25&offset=0&project_id=3739a924-37e1-402c-b9c7-fbf27f118ded
 ```
-Ответ: `404 Not Found` (тело: `404: Not Found`).
+Отвечал: `404 Not Found`.
 
-**Correlation (пример):** `trace_id: ec90bb6b-bbd6-4a11-9722-da75b1ec223a`, `request_id: 13cf1d18-cadf-4ce9-a3b7-b4044e944da4`.
+**Корневая причина:** эндпоинт реализован в **telemetry-ingest-service** (таблица `sensor_error_log`, REST/WS обработчики ingest пишут в неё). Но auth-proxy маршрутизировал все `/api/v1/sensors/*` в experiment-service через generic `/api`-префикс — там обработчика нет, отсюда 404.
 
-**Возможные причины:** маршрут не реализован в experiment-service; неверный путь на фронте (должен быть другой префикс или имя ресурса); прокси/nginx не прокидывает этот путь.
+**Исправление:** в auth-proxy перед регистрацией `/api`-прокси добавлен явный маршрут `GET /api/v1/sensors/:sensorId/error-log`, пробрасывающий запрос в `targetTelemetryUrl` с сохранением trace/request-id и access-токена из cookie. Добавлен тест, проверяющий что запрос уходит в telemetry-ingest, а не в experiment-service.
 
 ---
 

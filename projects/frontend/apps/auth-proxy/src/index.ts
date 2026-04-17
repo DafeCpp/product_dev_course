@@ -1342,6 +1342,48 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         },
     })
 
+    // Sensor error log lives on telemetry-ingest-service, not experiment-service.
+    // Must be registered BEFORE the generic `/api` proxy so it wins route matching.
+    app.get<{ Params: { sensorId: string } }>(
+        '/api/v1/sensors/:sensorId/error-log',
+        async (req, reply) => {
+            const cookies = parseCookies(req.headers.cookie as string | undefined)
+            const access = cookies[config.accessCookieName]
+            const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+            const outgoing = getOutgoingRequestHeaders(traceId)
+
+            const incomingUrl = String(req.url || '')
+            const queryIdx = incomingUrl.indexOf('?')
+            const search = queryIdx >= 0 ? incomingUrl.slice(queryIdx) : ''
+            const targetUrl =
+                `${config.targetTelemetryUrl}/api/v1/sensors/${encodeURIComponent(req.params.sensorId)}/error-log${search}`
+
+            const outHeaders: Record<string, string> = {
+                'X-Trace-Id': outgoing['X-Trace-Id'],
+                'X-Request-Id': outgoing['X-Request-Id'],
+            }
+            if (access) outHeaders['authorization'] = `Bearer ${access}`
+            const accept = req.headers['accept']
+            if (typeof accept === 'string') outHeaders['accept'] = accept
+
+            app.log.info({
+                method: 'GET',
+                url: req.url,
+                upstream: config.targetTelemetryUrl,
+                has_authorization: !!outHeaders['authorization'],
+                trace_id: outgoing['X-Trace-Id'],
+                request_id: outgoing['X-Request-Id'],
+            }, 'Proxying sensor error-log to Telemetry Ingest Service')
+
+            const upstream = await fetch(targetUrl, { method: 'GET', headers: outHeaders })
+            reply.code(upstream.status)
+            const contentType = upstream.headers.get('content-type')
+            if (contentType) reply.header('content-type', contentType)
+            const body = await upstream.arrayBuffer()
+            return reply.send(Buffer.from(body))
+        }
+    )
+
     // Experiment service proxy (+future gateway), with WS/SSE
     await app.register(httpProxy, {
         prefix: '/api',

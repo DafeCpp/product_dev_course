@@ -97,6 +97,83 @@ describe('auth-proxy server', () => {
         await upstream.close()
     })
 
+    test('routes GET /api/v1/sensors/:id/error-log to telemetry-ingest, not experiment-service', async () => {
+        const telemetryUpstream = (await import('fastify')).default({ logger: false })
+        const seen: Array<{ url: string | undefined; authorization: string | undefined }> = []
+        telemetryUpstream.get('/api/v1/sensors/:sensorId/error-log', async (req, reply) => {
+            seen.push({
+                url: req.url,
+                authorization: req.headers.authorization as string | undefined,
+            })
+            reply.header('content-type', 'application/json')
+            return {
+                sensor_id: (req.params as { sensorId: string }).sensorId,
+                entries: [],
+                total: 0,
+                limit: 25,
+                offset: 0,
+            }
+        })
+        await telemetryUpstream.listen({ port: 0, host: '127.0.0.1' })
+        const telemetryAddr = telemetryUpstream.server.address()
+        const telemetryPort =
+            typeof telemetryAddr === 'object' && telemetryAddr ? telemetryAddr.port : 0
+
+        // experiment-service upstream that would incorrectly return 404 if misrouted
+        const experimentUpstream = (await import('fastify')).default({ logger: false })
+        experimentUpstream.get('/api/v1/sensors/:sensorId/error-log', async (_req, reply) => {
+            reply.status(404).send({ error: 'Not Found' })
+        })
+        await experimentUpstream.listen({ port: 0, host: '127.0.0.1' })
+        const expAddr = experimentUpstream.server.address()
+        const experimentPort = typeof expAddr === 'object' && expAddr ? expAddr.port : 0
+
+        const app = await buildServer({
+            port: 0,
+            targetExperimentUrl: `http://127.0.0.1:${experimentPort}`,
+            targetTelemetryUrl: `http://127.0.0.1:${telemetryPort}`,
+            targetScriptUrl: 'http://example.invalid',
+            authUrl: 'http://example.invalid',
+            corsOrigins: ['http://localhost:3000'],
+            cookieSecure: false,
+            cookieSameSite: 'lax',
+            accessCookieName: 'access_token',
+            refreshCookieName: 'refresh_token',
+            accessTtlSec: 900,
+            refreshTtlSec: 1209600,
+            rateLimitWindowMs: 60000,
+            rateLimitMax: 60,
+            logLevel: 'silent',
+        })
+        await app.ready()
+
+        try {
+            const res = await app.inject({
+                method: 'GET',
+                url: '/api/v1/sensors/1a9d0362-815e-4683-94b1-2767dfa501f5/error-log?limit=25&offset=0&project_id=3739a924-37e1-402c-b9c7-fbf27f118ded',
+                headers: {
+                    cookie: 'access_token=fake.jwt.token',
+                },
+            })
+
+            expect(res.statusCode).toBe(200)
+            expect(res.headers['content-type']).toContain('application/json')
+            const body = res.json()
+            expect(body.sensor_id).toBe('1a9d0362-815e-4683-94b1-2767dfa501f5')
+            expect(body.entries).toEqual([])
+
+            expect(seen).toHaveLength(1)
+            expect(seen[0].url).toContain('limit=25')
+            expect(seen[0].url).toContain('offset=0')
+            expect(seen[0].url).toContain('project_id=3739a924-37e1-402c-b9c7-fbf27f118ded')
+            expect(seen[0].authorization).toBe('Bearer fake.jwt.token')
+        } finally {
+            await app.close()
+            await telemetryUpstream.close()
+            await experimentUpstream.close()
+        }
+    })
+
     test('blocks state-changing /api requests with session cookie but without CSRF header', async () => {
         const upstream = (await import('fastify')).default({ logger: false })
         upstream.post('/api/v1/ping', async () => ({ ok: true }))
