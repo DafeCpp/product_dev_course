@@ -184,8 +184,16 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
 
-    // Если получили 401 и это не повторный запрос
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Если получили 401 и это не повторный запрос.
+    // Флаг `_skipAuthInterceptor` — для запросов с нестандартной авторизацией
+    // (например, отправка телеметрии по sensor-токену): 401 там говорит о
+    // неверном sensor-токене, а не о протухшей user-сессии, поэтому
+    // refresh/logout делать не нужно.
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest._skipAuthInterceptor
+    ) {
       originalRequest._retry = true
 
       try {
@@ -542,7 +550,8 @@ export const telemetryApi = {
           'Authorization': `Bearer ${sensorToken}`,
           'Content-Type': 'application/json',
         },
-      }
+        _skipAuthInterceptor: true,
+      } as AxiosRequestConfig & { _skipAuthInterceptor: boolean }
     )
     return response.data
   },

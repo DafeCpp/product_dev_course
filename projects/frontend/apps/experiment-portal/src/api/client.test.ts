@@ -51,6 +51,11 @@ const requestInterceptor = mockAxiosInstance.interceptors.request.use.mock.calls
 // Interceptor устанавливается при импорте модуля client.ts
 const initialInterceptorCallCount = mockAxiosInstance.interceptors.response.use.mock.calls.length
 
+// Захватываем error-handler interceptor'а ДО любого clearAllMocks
+const responseErrorHandler = mockAxiosInstance.interceptors.response.use.mock.calls[0]?.[1] as
+    | ((err: any) => Promise<any>)
+    | undefined
+
 describe('API Client', () => {
     beforeEach(() => {
         vi.clearAllMocks()
@@ -458,6 +463,24 @@ describe('API Client', () => {
             // Также проверяем, что метод use существует и является мок-функцией
             expect(mockAxiosInstance.interceptors.response.use).toBeDefined()
             expect(vi.isMockFunction(mockAxiosInstance.interceptors.response.use)).toBe(true)
+        })
+
+        it('does not refresh or redirect on 401 when _skipAuthInterceptor is set', async () => {
+            // Регрессия на BUG-F-008: запросы с sensor-токеном не должны
+            // дергать refresh/logout при 401, т.к. это ошибка sensor-токена,
+            // а не user-сессии.
+            expect(responseErrorHandler).toBeDefined()
+            mockAxiosPost.mockClear()
+            mockLocation.href = ''
+
+            const mockError = {
+                response: { status: 401, data: { error: 'invalid sensor token' } },
+                config: { _retry: false, _skipAuthInterceptor: true },
+            }
+
+            await expect(responseErrorHandler!(mockError)).rejects.toBe(mockError)
+            expect(mockAxiosPost).not.toHaveBeenCalled()
+            expect(mockLocation.href).toBe('')
         })
     })
 
