@@ -66,13 +66,8 @@ function CreateSensor() {
                 setAdditionalProjectsError(null)
             }
 
-            // Показываем токен пользователю
             setShowToken(true)
             notifySuccess('Датчик зарегистрирован')
-            // Можно сохранить токен в state для отображения
-            setTimeout(() => {
-                navigate(`/sensors/${response.sensor.id}`)
-            }, 3000) // Через 3 секунды переходим на страницу датчика
         },
         onError: (err: any) => {
             const msg = err.response?.data?.error || 'Ошибка регистрации датчика'
@@ -152,7 +147,7 @@ function CreateSensor() {
                         </div>
                     </div>
                     <p className="redirect-info">
-                        Через несколько секунд вы будете перенаправлены на страницу датчика...
+                        Сохраните токен и нажмите «Перейти к датчику». Токен больше не будет показан.
                     </p>
                     <button
                         type="button"

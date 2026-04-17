@@ -261,6 +261,49 @@ describe('CreateSensor', () => {
         })
     })
 
+    it('keeps token visible and does not auto-navigate after registration', async () => {
+        const user = userEvent.setup()
+        const mockCreate = vi.mocked(sensorsApi.create)
+        mockCreate.mockResolvedValueOnce({
+            sensor: {
+                id: 'sensor-1',
+                project_id: 'project-1',
+                name: 'Test Sensor',
+                type: 'temperature',
+                input_unit: 'V',
+                display_unit: '°C',
+                status: 'registering' as const,
+                created_at: '2024-01-01T00:00:00Z',
+                updated_at: '2024-01-01T00:00:00Z',
+            },
+            token: 'test-token-12345',
+        })
+
+        render(<CreateSensor />, { wrapper: createWrapper() })
+
+        await waitFor(() => {
+            expect(screen.getByLabelText(/проект/i)).toBeInTheDocument()
+        })
+        await user.selectOptions(screen.getByLabelText(/проект/i), ['project-1'])
+        await user.type(screen.getByLabelText(/название/i), 'Test Sensor')
+        await pickMaterialSelectOption(user, /тип датчика/i, 'Температура')
+        await user.type(screen.getByLabelText(/входная единица измерения/i), 'V')
+        await user.type(screen.getByLabelText(/единица отображения/i), '°C')
+
+        await user.click(screen.getByRole('button', { name: /зарегистрировать/i }))
+
+        await waitFor(() => {
+            expect(screen.getByText('test-token-12345')).toBeInTheDocument()
+        })
+
+        // Ждём заметно дольше, чем старый авто-таймер (3000 мс).
+        await new Promise((resolve) => setTimeout(resolve, 3500))
+
+        expect(screen.getByText('test-token-12345')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /перейти к датчику/i })).toBeInTheDocument()
+        expect(mockNavigate).not.toHaveBeenCalled()
+    })
+
     it('allows copying token to clipboard', async () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(sensorsApi.create)
