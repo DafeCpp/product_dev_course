@@ -1,12 +1,22 @@
 """User repository."""
 from __future__ import annotations
 
+from typing import TypedDict
 from uuid import UUID
-
-import asyncpg  # type: ignore[import-untyped]
 
 from auth_service.domain.models import User
 from auth_service.repositories.base import BaseRepository
+
+
+class UserSearchRow(TypedDict):
+    """Row shape returned by search_by_username."""
+
+    id: str
+    username: str
+    email: str
+    is_active: bool
+
+_SELECT_COLS = "id, username, email, hashed_password, password_change_required, is_active, created_at, updated_at"
 
 
 class UserRepository(BaseRepository):
@@ -20,10 +30,10 @@ class UserRepository(BaseRepository):
         password_change_required: bool = False,
     ) -> User:
         """Create a new user."""
-        query = """
+        query = f"""
             INSERT INTO users (username, email, hashed_password, password_change_required)
             VALUES ($1, $2, $3, $4)
-            RETURNING id, username, email, hashed_password, password_change_required, created_at, updated_at
+            RETURNING {_SELECT_COLS}
         """
         row = await self._fetchrow(query, username, email, hashed_password, password_change_required)
         if not row:
@@ -32,11 +42,7 @@ class UserRepository(BaseRepository):
 
     async def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
-        query = """
-            SELECT id, username, email, hashed_password, password_change_required, created_at, updated_at
-            FROM users
-            WHERE id = $1
-        """
+        query = f"SELECT {_SELECT_COLS} FROM users WHERE id = $1"
         row = await self._fetchrow(query, user_id)
         if not row:
             return None
@@ -44,11 +50,7 @@ class UserRepository(BaseRepository):
 
     async def get_by_username(self, username: str) -> User | None:
         """Get user by username."""
-        query = """
-            SELECT id, username, email, hashed_password, password_change_required, created_at, updated_at
-            FROM users
-            WHERE username = $1
-        """
+        query = f"SELECT {_SELECT_COLS} FROM users WHERE username = $1"
         row = await self._fetchrow(query, username)
         if not row:
             return None
@@ -56,11 +58,7 @@ class UserRepository(BaseRepository):
 
     async def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
-        query = """
-            SELECT id, username, email, hashed_password, password_change_required, created_at, updated_at
-            FROM users
-            WHERE email = $1
-        """
+        query = f"SELECT {_SELECT_COLS} FROM users WHERE email = $1"
         row = await self._fetchrow(query, email)
         if not row:
             return None
@@ -73,13 +71,13 @@ class UserRepository(BaseRepository):
         password_change_required: bool = False,
     ) -> User:
         """Update user password."""
-        query = """
+        query = f"""
             UPDATE users
             SET hashed_password = $2,
                 password_change_required = $3,
                 updated_at = now()
             WHERE id = $1
-            RETURNING id, username, email, hashed_password, password_change_required, created_at, updated_at
+            RETURNING {_SELECT_COLS}
         """
         row = await self._fetchrow(query, user_id, new_hashed_password, password_change_required)
         if not row:
@@ -97,3 +95,63 @@ class UserRepository(BaseRepository):
         row = await self._fetchrow(query, username, email)
         return bool(row["exists"]) if row else False
 
+    async def list_all(self, search: str | None = None) -> list[User]:
+        """List all users, optionally filtered by username/email substring."""
+        if search:
+            query = f"""
+                SELECT {_SELECT_COLS} FROM users
+                WHERE username ILIKE $1 OR email ILIKE $1
+                ORDER BY created_at DESC
+            """
+            rows = await self._fetch(query, f"%{search}%")
+        else:
+            query = f"SELECT {_SELECT_COLS} FROM users ORDER BY created_at DESC"
+            rows = await self._fetch(query)
+        return [User.from_row(dict(r)) for r in rows]
+
+    async def set_active(self, user_id: UUID, is_active: bool) -> User:
+        """Set user is_active flag."""
+        query = f"""
+            UPDATE users SET is_active = $2, updated_at = now()
+            WHERE id = $1
+            RETURNING {_SELECT_COLS}
+        """
+        row = await self._fetchrow(query, user_id, is_active)
+        if not row:
+            raise RuntimeError("User not found")
+        return User.from_row(dict(row))
+
+    async def delete(self, user_id: UUID) -> bool:
+        """Delete user by ID. Returns True if a row was deleted."""
+        query = "DELETE FROM users WHERE id = $1"
+        result = await self._execute(query, user_id)
+        return result == "DELETE 1"
+
+    async def search_by_username(
+        self,
+        query: str,
+        limit: int = 10,
+        exclude_project_id: UUID | None = None,
+    ) -> list[UserSearchRow]:
+        """Search active users by username prefix, optionally excluding project members."""
+        sql = """
+            SELECT id, username, email, is_active
+            FROM users
+            WHERE username ILIKE $1 || '%'
+              AND is_active = true
+              AND ($2::uuid IS NULL OR id NOT IN (
+                  SELECT user_id FROM user_project_roles WHERE project_id = $2
+              ))
+            ORDER BY username
+            LIMIT $3
+        """
+        rows = await self._fetch(sql, query, exclude_project_id, limit)
+        return [
+            UserSearchRow(
+                id=str(row["id"]),
+                username=str(row["username"]),
+                email=str(row["email"]),
+                is_active=bool(row["is_active"]),
+            )
+            for row in rows
+        ]

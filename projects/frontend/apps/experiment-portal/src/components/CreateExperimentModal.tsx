@@ -8,6 +8,7 @@ import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
 import { Loading, MaterialSelect } from './common'
+import { createExperimentSchema, flatFieldErrors } from '../schemas/forms'
 import './CreateRunModal.scss'
 
 interface CreateExperimentModalProps {
@@ -30,6 +31,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
     const [tagsInput, setTagsInput] = useState('')
     const [metadataInput, setMetadataInput] = useState('{}')
     const [error, setError] = useState<string | null>(null)
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({})
 
     const { data: projectsData, isLoading: projectsLoading } = useQuery({
         queryKey: ['projects'],
@@ -71,53 +73,33 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
+        setFieldErrors({})
 
-        if (!formData.project_id) {
-            const msg = 'Выберите проект'
-            setError(msg)
-            notifyError(msg)
+        const result = createExperimentSchema.safeParse({
+            project_id: formData.project_id,
+            name: formData.name,
+            description: formData.description,
+            experiment_type: formData.experiment_type,
+            tagsInput,
+            metadataInput,
+        })
+
+        if (!result.success) {
+            const errors = flatFieldErrors(result.error)
+            setFieldErrors(errors)
+            const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
+            setError(first)
+            notifyError(first)
             return
         }
 
-        if (!formData.name.trim()) {
-            const msg = 'Название эксперимента обязательно'
-            setError(msg)
-            notifyError(msg)
-            return
-        }
-
-        // Парсинг тегов
-        const tags = tagsInput
-            .split(',')
-            .map((t) => t.trim())
-            .filter((t) => t.length > 0)
-
-        // Парсинг metadata (должен быть объект, не массив)
-        let metadata: Record<string, unknown> = {}
-        try {
-            const parsed = JSON.parse(metadataInput || '{}')
-            if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                metadata = parsed
-            } else {
-                const msg = 'Метаданные должны быть JSON-объектом (например, {})'
-                setError(msg)
-                notifyError(msg)
-                return
-            }
-        } catch {
-            const msg = 'Неверный формат JSON в метаданных'
-            setError(msg)
-            notifyError(msg)
-            return
-        }
-
+        const { tagsInput: tags, metadataInput: metadata, ...rest } = result.data
         createMutation.mutate({
-            ...formData,
-            name: formData.name.trim(),
+            ...rest,
             tags,
             metadata,
-            description: formData.description || undefined,
-            experiment_type: formData.experiment_type || undefined,
+            description: rest.description || undefined,
+            experiment_type: rest.experiment_type || undefined,
         })
     }
 
@@ -134,6 +116,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             setTagsInput('')
             setMetadataInput('{}')
             setError(null)
+            setFieldErrors({})
             onClose()
         }
     }
@@ -178,6 +161,9 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                                     У вас нет проектов. Перейдите на страницу проектов, чтобы создать проект.
                                 </small>
                             )}
+                            {fieldErrors.project_id && (
+                                <small className="field-error">{fieldErrors.project_id}</small>
+                            )}
                         </>
                     )}
                 </div>
@@ -195,6 +181,9 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                         placeholder="Например: Аэродинамические испытания крыла"
                         disabled={createMutation.isPending}
                     />
+                    {fieldErrors.name && (
+                        <small className="field-error">{fieldErrors.name}</small>
+                    )}
                 </div>
 
                 <div className="form-group">
@@ -259,6 +248,9 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                     <small className="form-hint">
                         Дополнительные данные эксперимента в формате JSON
                     </small>
+                    {fieldErrors.metadataInput && (
+                        <small className="field-error">{fieldErrors.metadataInput}</small>
+                    )}
                 </div>
 
                 <div className="modal-actions">

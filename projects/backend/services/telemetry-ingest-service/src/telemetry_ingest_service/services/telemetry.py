@@ -1,13 +1,18 @@
 """Telemetry ingest business logic."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import structlog
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Sequence, cast
 from uuid import UUID
 
+from asyncpg.exceptions import PostgresError  # type: ignore[import-untyped]
+
+from backend_common.conversion import apply_conversion
 from backend_common.db.pool import get_pool_service as get_pool
 
 from telemetry_ingest_service.core.exceptions import (
@@ -16,7 +21,11 @@ from telemetry_ingest_service.core.exceptions import (
     UnauthorizedError,
 )
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO, TelemetryReadingDTO
+from telemetry_ingest_service.services.profile_cache import profile_cache
+from telemetry_ingest_service.services.spool import SpoolRecord, write_spool
 from telemetry_ingest_service.settings import settings
+
+logger = structlog.get_logger(__name__)
 
 
 def hash_sensor_token(token: str) -> bytes:
@@ -28,22 +37,107 @@ class _SensorAuth:
     project_id: UUID
 
 
+# ---------------------------------------------------------------------------
+# INSERT query — shared with the flush worker
+# ---------------------------------------------------------------------------
+
+_INSERT_QUERY = """
+    INSERT INTO telemetry_records (
+        project_id,
+        sensor_id,
+        run_id,
+        capture_session_id,
+        timestamp,
+        raw_value,
+        physical_value,
+        meta,
+        conversion_status,
+        conversion_profile_id
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+    ON CONFLICT (sensor_id, timestamp, signal) DO NOTHING
+"""
+
+
+# ---------------------------------------------------------------------------
+# Spool serialization helpers
+# ---------------------------------------------------------------------------
+
+def _items_to_dicts(items: list[tuple]) -> list[dict[str, Any]]:
+    """Convert INSERT tuples to JSON-serializable dicts for spool storage."""
+    result: list[dict[str, Any]] = []
+    for (proj_id, sens_id, run_id, cap_id, ts, raw, phys, meta, conv_st, conv_prof) in items:
+        result.append({
+            "project_id": str(proj_id),
+            "sensor_id": str(sens_id),
+            "run_id": str(run_id) if run_id else None,
+            "capture_session_id": str(cap_id) if cap_id else None,
+            "timestamp": ts.isoformat() if isinstance(ts, datetime) else str(ts),
+            "raw_value": raw,
+            "physical_value": phys,
+            "meta": meta,  # already a JSON string
+            "conversion_status": conv_st,
+            "conversion_profile_id": str(conv_prof) if conv_prof else None,
+        })
+    return result
+
+
+def items_from_dicts(dicts: list[dict[str, Any]]) -> list[tuple]:
+    """Restore INSERT tuples from spool item dicts."""
+    result: list[tuple] = []
+    for item in dicts:
+        ts_raw = item["timestamp"]
+        ts = datetime.fromisoformat(ts_raw) if isinstance(ts_raw, str) else ts_raw
+        result.append((
+            UUID(item["project_id"]),
+            UUID(item["sensor_id"]),
+            UUID(item["run_id"]) if item.get("run_id") else None,
+            UUID(item["capture_session_id"]) if item.get("capture_session_id") else None,
+            ts,
+            item["raw_value"],
+            item["physical_value"],
+            item["meta"],  # JSON string — asyncpg handles the ::jsonb cast
+            item["conversion_status"],
+            UUID(item["conversion_profile_id"]) if item.get("conversion_profile_id") else None,
+        ))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+
 class TelemetryIngestService:
-    """Validates telemetry payloads and persists telemetry_records."""
+    """Validates telemetry payloads and persists telemetry_records.
+
+    ``ingest()`` runs in two phases:
+
+    Phase 1 (reads):
+        Authenticate the sensor, resolve run/capture context, compute
+        insertion rows (including conversion profile application from cache).
+        All DB access is read-only; no explicit transaction is needed.
+
+    Phase 2 (write):
+        Execute the bulk INSERT + sensor heartbeat UPDATE inside a single
+        transaction.  If this phase raises ``PostgresError`` and
+        ``settings.spool_enabled`` is True, the pre-computed rows are
+        serialised to a spool file on disk for later replay by the flush
+        worker.  The caller receives an optimistic 202 response.
+    """
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
 
     async def ingest(self, payload: TelemetryIngestDTO, *, token: str) -> int:
         pool = await get_pool()
         token_hash = hash_sensor_token(token)
 
-        async with pool.acquire() as conn, conn.transaction():
+        # --- Phase 1: reads (auth + scope resolution + row preparation) ---
+        async with pool.acquire() as conn:
             sensor = await self._authenticate_sensor(conn, payload.sensor_id, token_hash)
             project_id = sensor.project_id
 
-            # Resolve run/capture context.
-            # Desired behavior:
-            #  - Sensors may send run_id only (recommended); service auto-attaches active capture_session_id.
-            #  - If capture_session_id is provided but session is not active, we do NOT attach it to records
-            #    (recording should stop after session stop), but we keep a marker in meta.
             run_id = await self._ensure_run_scope(conn, project_id, payload.run_id)
 
             requested_capture_session_id = payload.capture_session_id
@@ -57,13 +151,13 @@ class TelemetryIngestService:
             if run_id is None:
                 run_id = requested_capture_run_id
 
-            # Sensors are NOT tied to runs/experiments. If client didn't provide run/capture context,
-            # we infer it from the *project's* currently active capture session (single recording window).
             inferred_capture: tuple[UUID, UUID, str] | None = None
             if run_id is None and requested_capture_session_id is None:
-                inferred_capture = await self._find_active_capture_session_in_project(conn, project_id)
+                inferred_capture = await self._find_active_capture_session_in_project(
+                    conn, project_id
+                )
                 if inferred_capture is not None:
-                    inferred_run_id, inferred_capture_id, inferred_status = inferred_capture
+                    inferred_run_id, inferred_capture_id, _ = inferred_capture
                     run_id = inferred_run_id
                     requested_capture_session_id = inferred_capture_id
                     requested_capture_run_id = inferred_run_id
@@ -73,7 +167,9 @@ class TelemetryIngestService:
             system_meta: dict[str, object] = {}
 
             if requested_capture_session_id is not None:
-                capture_status = await self._get_capture_status(conn, project_id, requested_capture_session_id)
+                capture_status = await self._get_capture_status(
+                    conn, project_id, requested_capture_session_id
+                )
                 status_lower = (capture_status or "").lower()
                 is_active = status_lower in ("running", "backfilling")
                 if is_active:
@@ -92,11 +188,11 @@ class TelemetryIngestService:
                     stored_capture_session_id, capture_status = active
                     system_meta = {"__system": {"capture_session_auto_attached": True}}
 
-            # If we inferred a capture session id, always mark it (debug/traceability).
             if inferred_capture is not None and "__system" not in system_meta:
                 system_meta = {"__system": {"capture_session_inferred_from_project": True}}
 
-            await self._bulk_insert(
+            # Prepare INSERT rows (conversion profile lookup goes via in-memory cache).
+            items, last_ts = await self._prepare_items(
                 conn,
                 project_id,
                 payload,
@@ -105,18 +201,56 @@ class TelemetryIngestService:
                 capture_status=capture_status,
                 system_meta=system_meta,
             )
-            await self._update_sensor_heartbeat(conn, payload.sensor_id, payload.readings)
 
-        return len(payload.readings)
+        # --- Phase 2: write (INSERT + heartbeat) with spool fallback ---
+        try:
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    inserted = await self._do_insert(conn, items)
+                    await self._update_sensor_heartbeat_ts(conn, payload.sensor_id, last_ts)
+        except PostgresError as exc:
+            if settings.spool_enabled:
+                logger.warning(
+                    "ingest_write_failed_spooling",
+                    sensor_id=str(payload.sensor_id),
+                    error=str(exc),
+                )
+                record = SpoolRecord(
+                    sensor_id=payload.sensor_id,
+                    items=_items_to_dicts(items),
+                    last_reading_ts=last_ts.isoformat(),
+                )
+                # File I/O off the event loop to avoid blocking ingest latency.
+                await asyncio.to_thread(write_spool, record)
+                return len(payload.readings)
+            raise
 
-    async def _authenticate_sensor(self, conn, sensor_id: UUID, token_hash: bytes) -> _SensorAuth:
+        return inserted
+
+    async def _flush_spool_record(self, conn, record: SpoolRecord) -> int:
+        """Replay one spooled batch.  Must be called within an open transaction.
+
+        Returns the number of rows actually inserted (duplicates silently skipped).
+        """
+        items = items_from_dicts(record.items)
+        inserted = await self._do_insert(conn, items)
+        last_ts = datetime.fromisoformat(record.last_reading_ts)
+        await self._update_sensor_heartbeat_ts(conn, record.sensor_id, last_ts)
+        return inserted
+
+    # ------------------------------------------------------------------
+    # Auth / scope resolution (read-only DB queries)
+    # ------------------------------------------------------------------
+
+    async def _authenticate_sensor(
+        self, conn, sensor_id: UUID, token_hash: bytes
+    ) -> _SensorAuth:
         row = await conn.fetchrow(
             "SELECT project_id FROM sensors WHERE id = $1 AND token_hash = $2",
             sensor_id,
             token_hash,
         )
         if row is None:
-            # Do not leak whether sensor exists
             raise UnauthorizedError("Invalid sensor credentials")
         return _SensorAuth(project_id=UUID(str(row["project_id"])))
 
@@ -143,7 +277,8 @@ class TelemetryIngestService:
         if capture_session_id is None:
             return None
         row = await conn.fetchrow(
-            "SELECT run_id, status, archived FROM capture_sessions WHERE project_id = $1 AND id = $2",
+            "SELECT run_id, status, archived FROM capture_sessions "
+            "WHERE project_id = $1 AND id = $2",
             project_id,
             capture_session_id,
         )
@@ -194,10 +329,6 @@ class TelemetryIngestService:
     async def _find_active_capture_session_in_project(
         self, conn, project_id: UUID
     ) -> tuple[UUID, UUID, str] | None:
-        """
-        Find the project's active capture session (single recording window).
-        Returns (run_id, capture_session_id, status).
-        """
         row = await conn.fetchrow(
             """
             SELECT run_id, id AS capture_session_id, status
@@ -218,10 +349,12 @@ class TelemetryIngestService:
             str(row["status"]),
         )
 
+    # ------------------------------------------------------------------
+    # Row preparation and DB write
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _json_size_bytes(value: object) -> int:
-        # Approximate payload size in bytes after json serialization.
-        # Keep stable formatting to be predictable.
         return len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
 
     def _validate_meta_sizes(self, payload: TelemetryIngestDTO) -> None:
@@ -231,7 +364,7 @@ class TelemetryIngestService:
             if self._json_size_bytes(reading.meta or {}) > settings.telemetry_max_reading_meta_bytes:
                 raise ScopeMismatchError("Reading meta is too large")
 
-    async def _bulk_insert(
+    async def _prepare_items(
         self,
         conn,
         project_id: UUID,
@@ -241,12 +374,20 @@ class TelemetryIngestService:
         capture_session_id: UUID | None,
         capture_status: str | None,
         system_meta: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> tuple[list[tuple], datetime]:
+        """Build INSERT tuples (with conversion applied).
+
+        Returns ``(items, last_reading_ts)`` where ``last_reading_ts`` is the
+        maximum timestamp across all readings, used for the heartbeat UPDATE.
+        """
         self._validate_meta_sizes(payload)
         batch_meta = payload.meta or {}
         if system_meta:
-            # merge, with system_meta taking precedence for __system
-            if "__system" in system_meta and "__system" in batch_meta and isinstance(batch_meta.get("__system"), dict):
+            if (
+                "__system" in system_meta
+                and "__system" in batch_meta
+                and isinstance(batch_meta.get("__system"), dict)
+            ):
                 base_sys = cast(dict[str, Any], batch_meta.get("__system", {}))
                 next_sys = cast(dict[str, Any], system_meta.get("__system", {}))
                 merged_sys = {**base_sys, **next_sys}
@@ -256,9 +397,7 @@ class TelemetryIngestService:
 
         is_late = False
         if capture_status is not None:
-            status_lower = capture_status.lower()
-            # Consider data late if session is already finalized.
-            is_late = status_lower in ("succeeded", "failed")
+            is_late = capture_status.lower() in ("succeeded", "failed")
 
         def _with_late_marker(meta: dict) -> dict:
             if not is_late:
@@ -268,42 +407,80 @@ class TelemetryIngestService:
                 return {**meta, "__system": {**sys_meta, "late": True}}
             return {**meta, "__system": {"late": True}}
 
-        items = [
-            (
+        active_profile = await profile_cache.get_active_profile(conn, payload.sensor_id)
+
+        items: list[tuple] = []
+        last_ts: datetime | None = None
+
+        for reading in payload.readings:
+            physical_value = reading.physical_value
+            conversion_status = "client_provided" if physical_value is not None else "raw_only"
+            conversion_profile_id = None
+
+            if physical_value is None and active_profile is not None:
+                try:
+                    result = apply_conversion(
+                        active_profile.kind, active_profile.payload, reading.raw_value,
+                    )
+                    if result is not None:
+                        physical_value = result
+                        conversion_status = "converted"
+                    else:
+                        conversion_status = "conversion_failed"
+                    conversion_profile_id = active_profile.profile_id
+                except Exception:
+                    logger.warning(
+                        "conversion_apply_error",
+                        sensor_id=str(payload.sensor_id),
+                        kind=active_profile.kind,
+                    )
+                    conversion_status = "conversion_failed"
+                    conversion_profile_id = active_profile.profile_id
+            elif physical_value is not None and active_profile is not None:
+                conversion_profile_id = active_profile.profile_id
+
+            if last_ts is None or reading.timestamp > last_ts:
+                last_ts = reading.timestamp
+
+            items.append((
                 project_id,
                 payload.sensor_id,
                 run_id,
                 capture_session_id,
                 reading.timestamp,
                 reading.raw_value,
-                reading.physical_value,
-                json.dumps(_with_late_marker({**batch_meta, **reading.meta})),
-                "client_provided" if reading.physical_value is not None else "raw_only",
-                None,  # conversion_profile_id (MVP: not computed here)
-            )
-            for reading in payload.readings
-        ]
-        query = """
-            INSERT INTO telemetry_records (
-                project_id,
-                sensor_id,
-                run_id,
-                capture_session_id,
-                timestamp,
-                raw_value,
                 physical_value,
-                meta,
+                json.dumps(_with_late_marker({**batch_meta, **reading.meta})),
                 conversion_status,
-                conversion_profile_id
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
-        """
-        await conn.executemany(query, items)
+                conversion_profile_id,
+            ))
 
-    async def _update_sensor_heartbeat(
-        self, conn, sensor_id: UUID, readings: Sequence[TelemetryReadingDTO]
+        assert last_ts is not None  # payload has min_length=1 constraint
+        return items, last_ts
+
+    async def _do_insert(self, conn, items: list[tuple]) -> int:
+        """Execute bulk INSERT with ON CONFLICT DO NOTHING.
+
+        Returns the number of rows actually inserted (duplicates are skipped).
+        asyncpg.executemany does not expose per-statement status tags, so we
+        use ``execute`` in a loop and parse the ``INSERT 0 N`` status tag to
+        accumulate the real insert count.
+        """
+        inserted = 0
+        for row in items:
+            status: str = await conn.execute(_INSERT_QUERY, *row)
+            # status has the form "INSERT 0 N" where N is 0 or 1
+            try:
+                inserted += int(status.split()[-1])
+            except (IndexError, ValueError):
+                # Defensive fallback — should not happen with a well-formed
+                # INSERT statement, but we prefer not to crash ingest.
+                inserted += 1
+        return inserted
+
+    async def _update_sensor_heartbeat_ts(
+        self, conn, sensor_id: UUID, last_ts: datetime
     ) -> None:
-        last_timestamp: datetime = max(r.timestamp for r in readings)
         await conn.execute(
             """
             UPDATE sensors
@@ -313,6 +490,12 @@ class TelemetryIngestService:
             WHERE id = $1
             """,
             sensor_id,
-            last_timestamp,
+            last_ts,
         )
 
+    async def _update_sensor_heartbeat(
+        self, conn, sensor_id: UUID, readings: Sequence[TelemetryReadingDTO]
+    ) -> None:
+        """Convenience wrapper kept for backwards compatibility."""
+        last_ts: datetime = max(r.timestamp for r in readings)
+        await self._update_sensor_heartbeat_ts(conn, sensor_id, last_ts)

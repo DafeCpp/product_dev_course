@@ -36,6 +36,49 @@ collection:
       409:
         description: Idempotency key conflicts with another payload
 
+item:
+  get:
+    tags: [sensors]
+    summary: Get sensor
+    operationId: getSensor
+    parameters:
+      - $ref: ../components/parameters.yaml#/SensorId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      200:
+        description: Sensor with connection_status
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Sensor
+      404:
+        description: Sensor not found
+
+statusSummary:
+  get:
+    tags: [sensors]
+    summary: Get sensor connection status summary for a project
+    operationId: getSensorStatusSummary
+    parameters:
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      200:
+        description: Counts of online/delayed/offline sensors
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                online:
+                  type: integer
+                delayed:
+                  type: integer
+                offline:
+                  type: integer
+                total:
+                  type: integer
+              required: [online, delayed, offline, total]
+
 rotateToken:
   post:
     tags: [sensors]
@@ -50,6 +93,43 @@ rotateToken:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/SensorTokenResponse
+
+heartbeatHistory:
+  get:
+    tags: [sensors]
+    summary: Get sensor heartbeat history (per-minute buckets for sparkline)
+    operationId: getSensorHeartbeatHistory
+    parameters:
+      - $ref: ../components/parameters.yaml#/SensorId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: minutes
+        in: query
+        schema:
+          type: integer
+          default: 60
+          minimum: 1
+          maximum: 1440
+    responses:
+      200:
+        description: List of per-minute bucket timestamps
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sensor_id:
+                  type: string
+                  format: uuid
+                timestamps:
+                  type: array
+                  items:
+                    type: string
+                    format: date-time
+                count:
+                  type: integer
+              required: [sensor_id, timestamps, count]
+      404:
+        description: Sensor not found
 
 conversionProfiles:
   get:

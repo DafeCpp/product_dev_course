@@ -9,7 +9,7 @@ from experiment_service.core.exceptions import InvalidStatusTransitionError, Not
 from experiment_service.domain.dto import ConversionProfileInputDTO
 from experiment_service.domain.models import ConversionProfile
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_conversion_profile_service,
     require_current_user,
     resolve_project_id,
@@ -25,9 +25,8 @@ def _profile_response(profile: ConversionProfile) -> dict:
 @routes.post("/api/v1/sensors/{sensor_id}/conversion-profiles")
 async def create_profile(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.create")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     payload = await read_json(request)
     try:
@@ -52,6 +51,7 @@ async def create_profile(request: web.Request):
 async def list_profiles(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     service = await get_conversion_profile_service(request)
     limit, offset = pagination_params(request)
@@ -71,9 +71,8 @@ async def list_profiles(request: web.Request):
 @routes.post("/api/v1/sensors/{sensor_id}/conversion-profiles/{profile_id}/publish")
 async def publish_profile(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner",)
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "project.settings.update")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     profile_id = parse_uuid(request.match_info["profile_id"], "profile_id")
     service = await get_conversion_profile_service(request)

@@ -83,9 +83,362 @@ ESP32-S3 общается с основным контроллером по UART
 - `GPIO1-8`, `GPIO9-10`, `GPIO11-21` (кроме USB и strapping)
 - Конкретный набор зависит от модели платы
 
-## 3. Настройка прошивки
+## 3. Настройка WSL для разработки на Windows
 
-### 3.1. Установка инструментов разработки
+WSL (Windows Subsystem for Linux) — рекомендуемая среда для разработки прошивок ESP32 на Windows. Она обеспечивает полностью Linux-совместимое окружение, где ESP-IDF работает без проблем совместимости.
+
+### 3.1. Требования
+
+- Windows 10 версии 2004+ (Build 19041+) или Windows 11
+- Права администратора для установки WSL и usbipd-win
+- USB-кабель для подключения ESP32-S3
+
+### 3.2. Установка WSL2 и Ubuntu
+
+#### Шаг 1: Включение WSL2
+
+Откройте **PowerShell** от имени администратора и выполните:
+
+```powershell
+# Установка WSL с Ubuntu по умолчанию
+wsl --install
+
+# Если WSL уже установлен, но нужна Ubuntu:
+wsl --install -d Ubuntu-24.04
+
+# Убедиться что используется WSL2 (а не WSL1)
+wsl --set-default-version 2
+```
+
+После установки система потребует перезагрузки. После перезагрузки откроется терминал Ubuntu для первоначальной настройки (задайте имя пользователя и пароль).
+
+#### Шаг 2: Проверка установки
+
+```powershell
+# Список установленных дистрибутивов и их версий
+wsl --list --verbose
+```
+
+Вывод должен показывать `VERSION 2` для Ubuntu:
+
+```
+  NAME            STATE           VERSION
+* Ubuntu-24.04    Running         2
+```
+
+#### Шаг 3: Обновление системы внутри WSL
+
+Откройте Ubuntu (через меню Пуск или `wsl` в терминале) и выполните:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+### 3.3. Проброс USB-устройства в WSL (usbipd-win)
+
+По умолчанию WSL не имеет доступа к USB-устройствам Windows. Для прошивки ESP32 нужен проброс USB через **usbipd-win**.
+
+#### Шаг 1: Установка usbipd-win на Windows
+
+```powershell
+# Через winget (рекомендуется)
+winget install --interactive --exact dorssel.usbipd-win
+```
+
+Либо скачайте `.msi` установщик с [GitHub Releases](https://github.com/dorssel/usbipd-win/releases).
+
+После установки **перезапустите PowerShell** (usbipd добавляется в PATH).
+
+#### Шаг 2: Установка клиента usbip в WSL
+
+В терминале Ubuntu:
+
+```bash
+sudo apt install linux-tools-generic hwdata -y
+sudo update-alternatives --install /usr/local/bin/usbip usbip \
+    /usr/lib/linux-tools/*-generic/usbip 20
+```
+
+#### Шаг 3: Привязка и подключение ESP32
+
+Подключите ESP32-S3 через USB к компьютеру. Затем в **PowerShell от имени администратора**:
+
+```powershell
+# Посмотреть список USB устройств
+usbipd list
+```
+
+Пример вывода:
+
+```
+BUSID  VID:PID    DEVICE                          STATE
+2-3    303a:1001  USB JTAG/serial debug unit       Not shared
+2-4    046d:c52b  USB Input Device                 Not shared
+```
+
+ESP32-S3 обычно определяется как `USB JTAG/serial debug unit` (VID `303a`) или `CP210x`/`CH340` (в зависимости от платы).
+
+```powershell
+# Привязать устройство (один раз после установки usbipd)
+usbipd bind --busid 2-3
+
+# Подключить устройство в WSL (каждый раз при новом подключении)
+usbipd attach --wsl --busid 2-3
+```
+
+Проверить в WSL:
+
+```bash
+ls /dev/ttyACM* /dev/ttyUSB*
+# Должно появиться /dev/ttyACM0 или /dev/ttyUSB0
+```
+
+#### Шаг 4: Отключение устройства
+
+Когда USB устройство больше не нужно в WSL:
+
+```powershell
+usbipd detach --busid 2-3
+```
+
+#### Скрипт автоматизации (attach-esp32.ps1)
+
+Создайте файл `scripts/attach-esp32.ps1` в корне репозитория для удобного подключения:
+
+```powershell
+# scripts/attach-esp32.ps1
+# Запуск: PowerShell от имени администратора -> .\scripts\attach-esp32.ps1
+
+$esp32VidPid = "303a:1001"  # ESP32-S3 JTAG. Измените под вашу плату
+
+Write-Host "Поиск ESP32-S3..." -ForegroundColor Cyan
+$devices = usbipd list | Select-String $esp32VidPid
+
+if (-not $devices) {
+    Write-Host "ESP32-S3 не найден. Проверьте подключение USB." -ForegroundColor Red
+    exit 1
+}
+
+# Извлечь BUSID (формат: "2-3")
+$busId = ($devices -split "\s+")[0].Trim()
+Write-Host "Найдено устройство: $devices" -ForegroundColor Green
+
+# Привязать если ещё не привязано
+usbipd bind --busid $busId 2>$null
+
+# Подключить в WSL
+Write-Host "Подключение $busId в WSL..." -ForegroundColor Cyan
+usbipd attach --wsl --busid $busId
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Готово! Устройство доступно в WSL." -ForegroundColor Green
+    Write-Host "В WSL выполните: ls /dev/ttyACM* /dev/ttyUSB*" -ForegroundColor Yellow
+} else {
+    Write-Host "Ошибка подключения. Запустите PowerShell от имени администратора." -ForegroundColor Red
+}
+```
+
+### 3.4. Настройка прав на последовательный порт в WSL
+
+По умолчанию `/dev/ttyACM0` требует прав root. Добавьте пользователя в группу `dialout`:
+
+```bash
+# Добавить пользователя в группу dialout (один раз)
+sudo usermod -aG dialout $USER
+
+# Применить без перезапуска сессии
+newgrp dialout
+```
+
+Для постоянного автоматического назначения прав создайте правило udev:
+
+```bash
+# Создать файл правила udev для ESP32-S3 (VID 303a)
+sudo tee /etc/udev/rules.d/99-esp32.rules << 'EOF'
+# ESP32-S3 (USB JTAG)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0666", GROUP="dialout"
+# ESP32 с CP2102 (Silicon Labs)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", MODE="0666", GROUP="dialout"
+# ESP32 с CH340
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", MODE="0666", GROUP="dialout"
+EOF
+
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+### 3.5. Интеграция с VS Code (Remote - WSL)
+
+VS Code с расширением Remote - WSL позволяет разрабатывать прямо в WSL с полным IntelliSense и доступом к инструментам Linux.
+
+#### Установка расширения
+
+```bash
+# В PowerShell
+code --install-extension ms-vscode-remote.remote-wsl
+```
+
+#### Открытие проекта в WSL
+
+Вариант 1 — из терминала WSL:
+
+```bash
+# Перейти в папку проекта и открыть VS Code
+cd ~/esp/my_esp32s3_project
+code .
+```
+
+Вариант 2 — из VS Code:
+- Нажмите `F1` → `Remote-WSL: New WSL Window`
+- Или нажмите на иконку `><` в левом нижнем углу → `Connect to WSL`
+
+#### Рекомендуемые расширения для C/ESP-IDF в WSL
+
+```bash
+# Устанавливаются в WSL окружение
+code --install-extension ms-vscode.cpptools
+code --install-extension ms-vscode.cmake-tools
+code --install-extension espressif.esp-idf-extension
+```
+
+Расширение `espressif.esp-idf-extension` предоставляет интеграцию с ESP-IDF прямо в VS Code: сборка, прошивка, монитор порта через GUI.
+
+### 3.6. Проверка настройки WSL
+
+Последовательность проверки перед разработкой:
+
+```bash
+# 1. Проверить что ESP32 виден в WSL
+ls /dev/ttyACM* /dev/ttyUSB*
+
+# 2. Проверить что ESP-IDF активирован
+echo $IDF_PATH
+# Должно вывести: /home/<user>/esp/esp-idf
+
+# 3. Если IDF_PATH пустой — активировать окружение
+. ~/esp/esp-idf/export.sh
+
+# 4. Проверить версию idf.py
+idf.py --version
+
+# 5. Тестовое подключение к ESP32
+idf.py -p /dev/ttyACM0 monitor
+# Ctrl+] для выхода из монитора
+```
+
+### 3.7. Типовой рабочий процесс в WSL
+
+```
+1. Подключить ESP32-S3 по USB к Windows
+2. PowerShell (admin): usbipd attach --wsl --busid <BUSID>
+   или запустить scripts/attach-esp32.ps1
+3. WSL: . ~/esp/esp-idf/export.sh  (если не добавлено в ~/.bashrc)
+4. WSL: idf.py build
+5. WSL: idf.py -p /dev/ttyACM0 flash monitor
+6. После работы: PowerShell: usbipd detach --busid <BUSID>
+```
+
+**Добавьте активацию ESP-IDF в `~/.bashrc` (один раз) чтобы не запускать вручную:**
+
+```bash
+echo '. ~/esp/esp-idf/export.sh' >> ~/.bashrc
+```
+
+---
+
+## 4. Настройка прошивки
+
+### 4.1. Установка инструментов разработки
+
+#### ESP-IDF 6.0 (нативный фреймворк Espressif, рекомендуется)
+
+ESP-IDF даёт полный контроль над железом и производительностью — предпочтительный вариант для production-прошивок.
+
+**Требования:**
+- Git
+- Python 3.9+
+- CMake 3.24+
+
+**Установка в WSL (Ubuntu) — рекомендуется на Windows:**
+
+```bash
+# Зависимости
+sudo apt update && sudo apt install -y \
+    git wget flex bison gperf python3 python3-pip python3-venv \
+    cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+
+# Клонирование ESP-IDF v6.0
+mkdir -p ~/esp
+cd ~/esp
+git clone -b v6.0 --recursive https://github.com/espressif/esp-idf.git
+
+# Установка инструментов для ESP32-S3
+cd ~/esp/esp-idf
+./install.sh esp32s3
+
+# Активация окружения (добавить в ~/.bashrc для постоянного использования)
+. ~/esp/esp-idf/export.sh
+```
+
+**Установка в Windows (PowerShell, нативно):**
+
+```powershell
+# Клонирование ESP-IDF v6.0
+mkdir $HOME\esp
+cd $HOME\esp
+git clone -b v6.0 --recursive https://github.com/espressif/esp-idf.git
+
+# Установка инструментов
+cd $HOME\esp\esp-idf
+.\install.ps1 esp32s3
+
+# Активация окружения
+.$HOME\esp\esp-idf\export.ps1
+```
+
+**Создание и сборка проекта:**
+
+```bash
+# Создать проект из шаблона
+cd ~/esp
+idf.py create-project my_esp32s3_project
+cd my_esp32s3_project
+
+# Выбрать целевую платформу
+idf.py set-target esp32s3
+
+# Настройка (menuconfig открывает TUI-конфигуратор)
+idf.py menuconfig
+
+# Сборка
+idf.py build
+
+# Прошивка и мониторинг (/dev/ttyUSB0 — порт устройства)
+idf.py -p /dev/ttyUSB0 flash monitor
+```
+
+**Минимальный `CMakeLists.txt` для проекта:**
+
+```cmake
+cmake_minimum_required(VERSION 3.24)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(my_esp32s3_project)
+```
+
+**Структура проекта:**
+
+```
+my_esp32s3_project/
+├── CMakeLists.txt
+├── sdkconfig              # генерируется после menuconfig
+└── main/
+    ├── CMakeLists.txt
+    └── main.c
+```
+
+> **Доступ к USB-порту в WSL:** см. раздел [3.3](#33-проброс-usb-устройства-в-wsl-usbipd-win) выше.
+
+---
 
 #### Arduino IDE
 1. Установите [Arduino IDE](https://www.arduino.cc/en/software)
@@ -95,7 +448,7 @@ ESP32-S3 общается с основным контроллером по UART
 3. Tools → Board → Boards Manager → найдите "esp32" → установите "esp32 by Espressif Systems"
 4. Выберите плату: Tools → Board → ESP32 Arduino → ESP32S3 Dev Module
 
-#### PlatformIO (рекомендуется)
+#### PlatformIO
 1. Установите [PlatformIO](https://platformio.org/)
 2. Создайте проект:
    ```bash
@@ -110,7 +463,7 @@ ESP32-S3 общается с основным контроллером по UART
    monitor_speed = 115200
    ```
 
-### 3.2. Базовые настройки прошивки
+### 4.2. Базовые настройки прошивки
 
 #### Wi-Fi точка доступа
 ```cpp
@@ -172,7 +525,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 }
 ```
 
-### 3.3. Протокол UART с STM32/RP2040
+### 4.3. Протокол UART с STM32/RP2040
 
 Реализация протокола согласно `docs/interfaces_protocols.md`:
 
@@ -226,7 +579,7 @@ void sendCommand(uint16_t seq, float throttle, float steering) {
 }
 ```
 
-### 3.4. Формат телеметрии для WebSocket
+### 4.4. Формат телеметрии для WebSocket
 
 Отправка телеметрии в формате, совместимом с `telemetry-cli`:
 
@@ -262,9 +615,9 @@ void sendTelemetry(uint64_t ts_ms, float imu_ax, float imu_ay, float imu_az,
 }
 ```
 
-## 4. Подключение к сети и тестирование
+## 5. Подключение к сети и тестирование
 
-### 4.1. Первый запуск
+### 5.1. Первый запуск
 
 1. **Загрузите прошивку** в ESP32-S3 через USB
 2. **Откройте Serial Monitor** (115200 baud)
@@ -272,13 +625,13 @@ void sendTelemetry(uint64_t ts_ms, float imu_ax, float imu_ay, float imu_az,
    - Должно появиться сообщение о создании Wi-Fi точки доступа
    - Должен быть указан IP адрес (обычно `192.168.4.1`)
 
-### 4.2. Подключение к Wi-Fi точке доступа
+### 5.2. Подключение к Wi-Fi точке доступа
 
 1. На вашем компьютере/телефоне найдите Wi-Fi сеть с именем `RC-Vehicle-AP` (или как настроено в прошивке)
 2. Подключитесь с паролем (по умолчанию `rc12345678`)
 3. Откройте браузер и перейдите по адресу `http://192.168.4.1` (или IP из Serial Monitor)
 
-### 4.3. Тестирование WebSocket
+### 5.3. Тестирование WebSocket
 
 #### Через браузер (консоль разработчика)
 ```javascript
@@ -338,16 +691,16 @@ cd projects/telemetry_cli
 telemetry-cli --config configs/esp32_ws.yaml
 ```
 
-## 5. Интеграция с Experiment Service
+## 6. Интеграция с Experiment Service
 
-### 5.1. Получение sensor_token
+### 6.1. Получение sensor_token
 
 1. Зарегистрируйтесь в Experiment Service через Auth Service
 2. Создайте сенсор через API или веб-интерфейс
 3. Получите `sensor_token` для созданного сенсора
 4. Укажите токен в конфигурации `telemetry-cli`
 
-### 5.2. Настройка метаданных
+### 6.2. Настройка метаданных
 
 В конфигурации `telemetry-cli` укажите метаданные устройства:
 
@@ -364,16 +717,16 @@ target:
 
 Эти метаданные будут добавлены к каждой точке телеметрии.
 
-### 5.3. Проверка работы
+### 6.3. Проверка работы
 
 1. Убедитесь, что Experiment Service запущен и доступен
 2. Запустите `telemetry-cli` с правильной конфигурацией
 3. Проверьте логи telemetry-cli на наличие ошибок
 4. В Experiment Service должны появляться записи телеметрии
 
-## 6. Устранение неполадок
+## 7. Устранение неполадок
 
-### 6.1. ESP32-S3 не запускается
+### 7.1. ESP32-S3 не запускается
 
 **Симптомы:** нет индикации, не видно в Serial Monitor
 
@@ -384,7 +737,7 @@ target:
 - Проверьте, что кнопка BOOT не зажата
 - Попробуйте нажать кнопку RESET
 
-### 6.2. Wi-Fi точка доступа не создаётся
+### 7.2. Wi-Fi точка доступа не создаётся
 
 **Симптомы:** не видно сети в списке Wi-Fi
 
@@ -394,7 +747,7 @@ target:
 - Проверьте, что SSID и пароль соответствуют требованиям (пароль минимум 8 символов)
 - Попробуйте перезагрузить ESP32-S3
 
-### 6.3. WebSocket не подключается
+### 7.3. WebSocket не подключается
 
 **Симптомы:** telemetry-cli не может подключиться, ошибки в логах
 
@@ -405,7 +758,7 @@ target:
 - Проверьте, что WebSocket сервер запущен в прошивке
 - Проверьте firewall на компьютере
 
-### 6.4. UART не работает
+### 7.4. UART не работает
 
 **Симптомы:** нет связи между ESP32-S3 и STM32/RP2040
 
@@ -416,7 +769,7 @@ target:
 - Проверьте скорость UART (должна совпадать на обеих сторонах)
 - Используйте Serial Monitor для отладки UART на ESP32-S3
 
-### 6.5. Телеметрия не отправляется в Experiment Service
+### 7.5. Телеметрия не отправляется в Experiment Service
 
 **Симптомы:** telemetry-cli работает, но данные не появляются в сервисе
 
@@ -426,51 +779,85 @@ target:
 - Проверьте логи telemetry-cli на наличие ошибок HTTP
 - Убедитесь, что формат телеметрии соответствует ожидаемому (поле `type: "telem"`)
 
-## 7. Рекомендации по безопасности
+### 7.6. ESP32 не виден в WSL
 
-### 7.1. Wi-Fi точка доступа
+**Симптомы:** `/dev/ttyACM0` или `/dev/ttyUSB0` не появляется в WSL
+
+**Решения:**
+- Убедитесь, что usbipd-win установлен на Windows
+- Запустите PowerShell **от имени администратора**
+- Проверьте `usbipd list` — устройство должно быть в статусе `Shared` или `Not shared`
+- Выполните `usbipd bind --busid <BUSID>` а затем `usbipd attach --wsl --busid <BUSID>`
+- Убедитесь, что WSL запущен (`wsl --list --running`)
+- После `attach` проверьте в WSL: `dmesg | tail -20` (должно быть сообщение об обнаружении ttyACM/ttyUSB)
+
+### 7.7. Permission denied при обращении к /dev/ttyACM0
+
+**Симптомы:** `idf.py flash` завершается с ошибкой прав доступа
+
+**Решения:**
+```bash
+# Временное решение (действует до перезапуска WSL)
+sudo chmod 666 /dev/ttyACM0
+
+# Постоянное решение — добавить в группу dialout
+sudo usermod -aG dialout $USER
+newgrp dialout
+
+# Или создать правило udev (см. раздел 3.4)
+```
+
+## 8. Рекомендации по безопасности
+
+### 8.1. Wi-Fi точка доступа
 
 - **Измените пароль по умолчанию** на более сложный
 - Используйте WPA2 (реализовано по умолчанию в ESP32)
 - Рассмотрите возможность отключения точки доступа в production и использование подключения к существующей Wi-Fi сети
 
-### 7.2. WebSocket
+### 8.2. WebSocket
 
 - В production добавьте аутентификацию для WebSocket соединений
 - Ограничьте доступ к веб-интерфейсу (например, по IP)
 - Используйте HTTPS/WSS для защищённого соединения (требует сертификата)
 
-### 7.3. UART протокол
+### 8.3. UART протокол
 
 - Используйте CRC для проверки целостности данных
 - Реализуйте таймауты для обнаружения потери связи
 - Добавьте проверку версии протокола
 
-## 8. Дополнительные ресурсы
+## 9. Дополнительные ресурсы
 
-### 8.1. Документация
+### 9.1. Документация
 
 - [ESP32-S3 Technical Reference Manual](https://www.espressif.com/sites/default/files/documentation/esp32-s3_technical_reference_manual_en.pdf)
 - [ESP32 Arduino Core Documentation](https://docs.espressif.com/projects/arduino-esp32/en/latest/)
 - [WebSocketsServer Library](https://github.com/Links2004/arduinoWebSockets)
+- [usbipd-win GitHub](https://github.com/dorssel/usbipd-win) — USB passthrough для WSL
+- [WSL USB Connect Docs](https://learn.microsoft.com/en-us/windows/wsl/connect-usb) — официальная документация Microsoft
 
-### 8.2. Связанные документы проекта
+### 9.2. Связанные документы проекта
 
 - `docs/telemetry-rc-stm32.md` — формат телеметрии для Experiment Service
 - `docs/telemetry-cli-ts.md` — документация telemetry-cli
 - `projects/rc_vehicle/docs/interfaces_protocols.md` — протоколы UART и WebSocket
 - `projects/rc_vehicle/docs/bom_ru.md` — список компонентов и рекомендации по выбору платы
 
-### 8.3. Примеры кода
+### 9.3. Примеры кода
 
 Примеры прошивок для ESP32-S3 можно найти в:
 - `projects/rc_vehicle/firmware/esp32/` (когда будет добавлено)
 
-## 9. Чек-лист подключения
+## 10. Чек-лист подключения
 
 - [ ] ESP32-S3 плата выбрана и приобретена
 - [ ] Питание настроено (5V 2-3A с конденсаторами)
 - [ ] UART подключен к STM32/RP2040 (TX→RX, RX→TX, GND)
+- [ ] **WSL (Windows):** WSL2 + Ubuntu установлены
+- [ ] **WSL (Windows):** usbipd-win установлен, ESP32 привязан (`usbipd bind`)
+- [ ] **WSL (Windows):** пользователь добавлен в группу `dialout`
+- [ ] ESP-IDF установлен и активирован (`echo $IDF_PATH`)
 - [ ] Прошивка загружена в ESP32-S3
 - [ ] Wi-Fi точка доступа создаётся (проверено через Serial Monitor)
 - [ ] Подключение к точке доступа работает
@@ -479,7 +866,7 @@ target:
 - [ ] Данные появляются в Experiment Service
 - [ ] UART связь с STM32/RP2040 работает
 
-## 10. Следующие шаги
+## 11. Следующие шаги
 
 После успешного подключения ESP32-S3:
 
@@ -488,4 +875,3 @@ target:
 3. **Реализация failsafe** логики
 4. **Оптимизация протокола UART** для минимальной задержки
 5. **Добавление логирования** и диагностики
-

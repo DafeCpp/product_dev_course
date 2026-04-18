@@ -1,22 +1,20 @@
-# Прошивки RC Vehicle
+# Прошивка RC Vehicle (ESP32-S3)
 
-Общий код и платформенные прошивки для RC Vehicle (UART-мост ESP32 ↔ MCU, протокол, телеметрия, команды).
+Единая прошивка для RC Vehicle на **ESP32-S3**: Wi‑Fi AP, HTTP, WebSocket, управление (PWM, RC-in, IMU, failsafe) и система стабилизации в одном чипе.
 
 ## Структура
 
-| Каталог    | Описание |
-|-----------|----------|
-| `common/` | Общий код: протокол UART (`protocol.hpp/cpp`), базовый класс UART-моста (`uart_bridge_base.hpp/cpp`). Используется всеми платформами. |
-| `esp32/`  | Прошивка ESP32-C3 (ESP-IDF): Wi‑Fi AP, HTTP, WebSocket, UART-мост к MCU. |
-| `esp32_s3/` | Прошивка ESP32-S3 (ESP-IDF): Wi‑Fi AP, HTTP, WebSocket + управление (PWM/RC/IMU/failsafe) в одном чипе. |
-| `rp2040/` | Прошивка Raspberry Pi Pico (Pico SDK): UART, PWM, RC-in, IMU, failsafe. |
-| `stm32/`  | Прошивка STM32 (libopencm3): UART, PWM, RC-in, IMU, failsafe. |
+| Каталог         | Описание |
+|-----------------|----------|
+| `common/`       | Общий код: протокол, UART-мост (база), SPI/IMU драйверы, калибровка IMU, Madgwick, control loop. |
+| `esp32_common/` | Общий код для ESP32 (Wi‑Fi AP, HTTP, WebSocket, NVS калибровки). |
+| `esp32_s3/`     | Прошивка ESP32-S3 (ESP-IDF): точка входа, HAL, PWM, RC, IMU, стабилизация. |
 
-Подробнее по каждому подпроекту — в `README.md` внутри соответствующего каталога.
+Подробнее — в `README.md` внутри `esp32_s3/`.
 
 ## Сборка, заливка и монитор (Makefile)
 
-В корне `firmware/` есть **Makefile** для сборки всех прошивок, заливки и мониторинга логов.
+В корне `firmware/` есть **Makefile**:
 
 ```bash
 cd projects/rc_vehicle/firmware
@@ -24,42 +22,28 @@ make help
 ```
 
 Основные цели:
-- **Сборка:** `make build-all` или по отдельности: `make build-esp32`, `make build-esp32-s3`, `make build-rp2040`, `make build-stm32`
-- **Очистка:** `make clean-all` или `make clean-esp32` / `clean-esp32-s3` / `clean-rp2040` / `clean-stm32`
-- **Заливка:** `make flash-esp32`, `make flash-esp32-s3`, `make flash-rp2040` (копирование .uf2 в RPI-RP2), `make flash-stm32` (st-flash)
-- **Монитор логов:** `make monitor-esp32`, `make monitor-esp32-s3`, `make monitor-rp2040`, `make monitor-stm32`
-- **Заливка + монитор:** `make flash-monitor-esp32`, `make flash-monitor-esp32-s3`, `make flash-monitor-rp2040`, `make flash-monitor-stm32`
+- **Сборка:** `make build`
+- **Очистка:** `make clean`
+- **Заливка:** `make flash` (опционально `ESP32_S3_PORT=/dev/cu.usbserial-XXX`)
+- **Монитор логов:** `make monitor`
+- **Заливка + монитор:** `make flash-monitor`
 
-Переменные (при необходимости): `ESP32_PORT`, `RP2040_PORT`, `RP2040_UF2_VOL`, `STM32_PORT`, `STM32_MCU`. Подробнее: `make help`.
-
-**Требования:** для сборки ESP32 нужен активированный ESP-IDF (`. export.sh`); для RP2040 — `PICO_SDK_PATH`; для STM32 — `LIBOPENCM3_PATH`. Для заливки STM32 — утилита `st-flash` (stlink).
+**Требования:** активированный ESP-IDF (`. export.sh` или `get_idf`).
 
 ## Сборка вручную (без Makefile)
 
-- **ESP32-C3:** нужен [ESP-IDF](https://docs.espressif.com/projects/esp-idf/). Из `esp32/`: `idf.py build`.
-- **ESP32-S3:** нужен [ESP-IDF](https://docs.espressif.com/projects/esp-idf/). Из `esp32_s3/`: `idf.py build`.
-- **RP2040:** нужен [Pico SDK](https://github.com/raspberrypi/pico-sdk). Из `rp2040/`: `make` или `cmake -B build -S . && cmake --build build`.
-- **STM32:** нужны пакеты [STM32Cube](https://github.com/STMicroelectronics/STM32CubeF1) (F1/F4/G4). Из `stm32/`: задать `STM32CUBE_F1_PATH` (или F4/G4), затем `make` или `make MCU=STM32F411CE`.
+Нужен [ESP-IDF](https://docs.espressif.com/projects/esp-idf/). Из каталога `esp32_s3/`:
+
+```bash
+idf.py build
+idf.py flash
+idf.py monitor
+```
 
 ## Стандарты кода
 
-Для всех прошивок (включая `common/`) действуют единые правила:
+- **C++23 (C++26 при поддержке тулчейна)** — стандарт задан в CMake/IDF.
+- **Форматирование** — [Google style](https://google.github.io/styleguide/cppguide.html) через clang-format. Конфиг: `firmware/.clang-format`.
+- **Буферы** — по возможности `std::array`, `std::vector`, `std::span`; минимизация сырых указателей.
 
-1. **C++23 (C++26 при поддержке тулчейна)** — стандарт задан в CMake/IDF; если компилятор поддерживает C++26 (обычно GCC 14+), прошивки собираются с C++26, иначе автоматически используется C++23.
-2. **Форматирование** — [Google style](https://google.github.io/styleguide/cppguide.html) через clang-format. Конфиг: `firmware/.clang-format`.
-   Пример (из корня `firmware/`):
-   ```bash
-   clang-format -i common/protocol.cpp main/uart_bridge.cpp
-   ```
-   Или для всех исходников:
-   ```bash
-   find . -name '*.cpp' -o -name '*.hpp' -o -name '*.h' | xargs clang-format -i
-   ```
-3. **Буферы** — по возможности без сырых указателей:
-   - фиксированный размер → `std::array<uint8_t, N>`;
-   - динамический размер → `std::vector<uint8_t>`;
-   - API приёма/передачи буфера → `std::span<uint8_t>` / `std::span<const uint8_t>`.
-   Виртуальные методы драйверов `Write(const uint8_t* data, size_t len)` и `ReadAvailable(uint8_t* buf, size_t max_len)` оставлены с указателями для совместимости с C-API (ESP-IDF, Pico SDK, libopencm3).
-4. Минимизировать использование указателей: в параметрах функций использовать ссылки. Если функция принимает параметр, в который записывается результат, и возвращает bool — заменить на возврат `std::optional<T>`.
-
-Соблюдение этих правил упрощает поддержку и перенос кода между платформами.
+Подробнее — в корневом README репозитория и `docs/cpp_coding_style.md`.

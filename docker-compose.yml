@@ -25,6 +25,8 @@ services:
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_password}
       EXPERIMENT_DB_USER: ${EXPERIMENT_DB_USER:-experiment_user}
       EXPERIMENT_DB_PASSWORD: ${EXPERIMENT_DB_PASSWORD:-experiment_password}
+      SCRIPT_DB_USER: ${SCRIPT_DB_USER:-script_user}
+      SCRIPT_DB_PASSWORD: ${SCRIPT_DB_PASSWORD:-script_password}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
@@ -37,8 +39,133 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
+
+  # Redis — кэш для прав пользователей (auth-proxy) и брокер телеметрии
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mailpit — SMTP-сервер для разработки (перехватывает исходящие письма)
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    ports:
+      - "${MAILPIT_PORT:-1025}:1025"
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+
+  # MinIO — S3-совместимое хранилище для артефактов
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Prometheus — сбор метрик со всех сервисов
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/monitoring/rules:/etc/prometheus/rules:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Alertmanager — маршрутизация и отправка алёртов
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./infrastructure/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9093/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Auth DB migrations — запускается один раз перед auth-service
+  auth-migrate:
+    build:
+      context: ./projects/backend
+      dockerfile: services/auth-service/Dockerfile
+    container_name: auth-migrate
+    environment:
+      - DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}
+    command: ["python", "-m", "bin.migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-tracking-network
+    restart: "no"
+
+  # Experiment DB migrations — запускается один раз перед experiment-service
+  experiment-migrate:
+    build:
+      context: ./projects/backend
+      dockerfile: services/experiment-service/Dockerfile
+    container_name: experiment-migrate
+    environment:
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}
+    command: ["python", "-m", "bin.migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-tracking-network
+    restart: "no"
 
   # Auth Service - сервис аутентификации
   auth-service:
@@ -61,13 +188,22 @@ services:
       - REFRESH_TOKEN_TTL_SEC=${REFRESH_TTL_SEC:-1209600}
       - BCRYPT_ROUNDS=${BCRYPT_ROUNDS:-12}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      - ADMIN_BOOTSTRAP_SECRET=${ADMIN_BOOTSTRAP_SECRET:-dev-bootstrap-secret}
+      - SMTP_HOST=${SMTP_HOST:-mailpit}
+      - SMTP_PORT=${SMTP_PORT:-1025}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@experiment-platform.local}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Experiment Platform}
+      - SMTP_ENABLED=${SMTP_ENABLED:-true}
+      - APP_URL=${APP_URL:-http://localhost:3000}
     ports:
       - "${AUTH_SERVICE_PORT:-8001}:8001"
     depends_on:
-      postgres:
-        condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()\" || exit 1"]
@@ -94,14 +230,22 @@ services:
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
       - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       - TELEMETRY_BROKER_URL=${TELEMETRY_BROKER_URL:-redis://redis:6379/0}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
+      - S3_BUCKET=${S3_BUCKET:-artifacts}
+      - S3_PRESIGN_EXPIRE_SECONDS=${S3_PRESIGN_EXPIRE_SECONDS:-3600}
+      - S3_PUBLIC_ENDPOINT_URL=${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
     command: ["python", "-m", "experiment_service.main"]
     ports:
       - "${EXPERIMENT_SERVICE_PORT:-8002}:8002"
     depends_on:
-      postgres:
+      experiment-migrate:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read()\" || exit 1"]
@@ -133,7 +277,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health').read()\" || exit 1"]
@@ -141,6 +285,38 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # Script Service - управление и выполнение скриптов
+  script-service:
+    build:
+      context: ./projects/backend
+      dockerfile: services/script-service/Dockerfile
+    container_name: script-service
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${SCRIPT_DATABASE_URL:-postgresql://script_user:script_password@postgres:5432/script_db}
+      - ENV=${SCRIPT_SERVICE_ENV:-development}
+      - HOST=${SCRIPT_SERVICE_HOST:-0.0.0.0}
+      - PORT=${SCRIPT_SERVICE_PORT:-8004}
+      - DB_POOL_SIZE=${SCRIPT_SERVICE_DB_POOL_SIZE:-10}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+    command: ["python", "-m", "script_service.main"]
+    ports:
+      - "${SCRIPT_SERVICE_PORT:-8004}:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8004/health').read()\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Auth Proxy - BFF для фронтенда
   auth-proxy:
@@ -155,6 +331,7 @@ services:
       - PORT=${AUTH_PROXY_PORT:-8080}
       - TARGET_EXPERIMENT_URL=${TARGET_EXPERIMENT_URL:-http://experiment-service:8002}
       - TARGET_TELEMETRY_URL=${TARGET_TELEMETRY_URL:-http://telemetry-ingest-service:8003}
+      - TARGET_SCRIPT_URL=${TARGET_SCRIPT_URL:-http://script-service:8004}
       - AUTH_URL=${AUTH_URL:-http://auth-service:8001}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
@@ -168,6 +345,7 @@ services:
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-60}
       - LOG_LEVEL=${AUTH_PROXY_LOG_LEVEL:-info}
       - NODE_ENV=production
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "${AUTH_PROXY_PORT:-8080}:8080"
     depends_on:
@@ -175,8 +353,12 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      script-service:
+        condition: service_healthy
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))\" || exit 1"]
@@ -199,7 +381,7 @@ services:
     depends_on:
       - auth-proxy
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"]
@@ -223,10 +405,10 @@ services:
       telemetry-ingest-service:
         condition: service_healthy
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -243,7 +425,7 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1"]
@@ -265,7 +447,7 @@ services:
       loki:
         condition: service_healthy
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     ports:
       - "12345:12345"  # HTTP сервер для метрик и UI
@@ -290,8 +472,10 @@ services:
     depends_on:
       loki:
         condition: service_healthy
+      prometheus:
+        condition: service_healthy
     networks:
-      - experiment-network
+      - experiment-tracking-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
@@ -308,10 +492,13 @@ volumes:
     name: ${LOKI_DATA_VOLUME:-experiment-loki-data}
   grafana_data:
     name: ${GRAFANA_DATA_VOLUME:-experiment-grafana-data}
+  minio_data:
+    name: ${MINIO_DATA_VOLUME:-experiment-minio-data}
 
 # Docker network для взаимодействия сервисов
+# Ключ сети должен совпадать с name (или с меткой существующей сети), иначе compose не найдёт сеть
 networks:
-  experiment-network:
+  experiment-tracking-network:
     name: ${DOCKER_NETWORK_NAME:-experiment-tracking-network}
     driver: bridge
 

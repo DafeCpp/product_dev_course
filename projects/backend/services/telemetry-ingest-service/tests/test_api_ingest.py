@@ -862,3 +862,71 @@ async def test_ingest_rejects_archived_capture_session_400(service_client, pgsql
     )
     assert resp.status == 400
 
+
+# ---------------------------------------------------------------------------
+# REST ingest rate limiting
+# ---------------------------------------------------------------------------
+
+
+async def test_ingest_returns_429_when_rate_limited(service_client, monkeypatch):
+    """When the request limit is 1, the second request returns 429."""
+    from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
+
+    tight = WsRateLimiter(max_messages=1, max_readings=100_000, window_seconds=60.0)
+    monkeypatch.setattr(
+        "telemetry_ingest_service.api.routes.telemetry._rest_limiter",
+        tight,
+    )
+
+    sensor_id = uuid4()
+    payload = {
+        "sensor_id": str(sensor_id),
+        "readings": [{"timestamp": "2026-01-01T00:00:00Z", "raw_value": 1.0}],
+    }
+
+    # First request — may fail for any reason (no DB seed), but quota is consumed.
+    await service_client.post(
+        "/api/v1/telemetry",
+        json=payload,
+        headers={"Authorization": "Bearer some-token"},
+    )
+
+    # Second request — must be 429 before auth/DB even runs.
+    resp = await service_client.post(
+        "/api/v1/telemetry",
+        json=payload,
+        headers={"Authorization": "Bearer some-token"},
+    )
+    assert resp.status == 429
+    assert "Retry-After" in resp.headers
+    assert "X-RateLimit-Limit" in resp.headers
+
+
+async def test_ingest_rate_limit_sensor_isolation(service_client, monkeypatch):
+    """Different sensor_ids have independent quotas."""
+    from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
+
+    tight = WsRateLimiter(max_messages=1, max_readings=100_000, window_seconds=60.0)
+    monkeypatch.setattr(
+        "telemetry_ingest_service.api.routes.telemetry._rest_limiter",
+        tight,
+    )
+
+    sensor_a = uuid4()
+    sensor_b = uuid4()
+
+    # Exhaust sensor_a quota
+    await service_client.post(
+        "/api/v1/telemetry",
+        json={"sensor_id": str(sensor_a), "readings": [{"timestamp": "2026-01-01T00:00:00Z", "raw_value": 1.0}]},
+        headers={"Authorization": "Bearer tok"},
+    )
+
+    # sensor_b must NOT be rate limited (different bucket)
+    resp = await service_client.post(
+        "/api/v1/telemetry",
+        json={"sensor_id": str(sensor_b), "readings": [{"timestamp": "2026-01-01T00:00:00Z", "raw_value": 1.0}]},
+        headers={"Authorization": "Bearer tok"},
+    )
+    assert resp.status != 429
+

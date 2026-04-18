@@ -7,6 +7,7 @@ import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
+import { createSensorSchema, flatFieldErrors } from '../schemas/forms'
 import './CreateSensor.scss'
 
 function CreateSensor() {
@@ -22,6 +23,7 @@ function CreateSensor() {
     const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
     const [showToken, setShowToken] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({})
     const [additionalProjectsStatus, setAdditionalProjectsStatus] = useState<
         'idle' | 'adding' | 'done' | 'error'
     >('idle')
@@ -82,49 +84,29 @@ function CreateSensor() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
+        setFieldErrors({})
 
-        // На всякий случай: если пользователь не выбрал проект через multi-select
-        if (!formData.project_id) {
-            const msg = 'Выберите хотя бы один проект'
-            setError(msg)
-            notifyError(msg)
-            return
-        }
+        const result = createSensorSchema.safeParse({
+            project_id: formData.project_id,
+            name: formData.name,
+            type: formData.type,
+            input_unit: formData.input_unit,
+            display_unit: formData.display_unit,
+            calibration_notes: formData.calibration_notes,
+        })
 
-        if (!formData.name.trim()) {
-            const msg = 'Название датчика обязательно'
-            setError(msg)
-            notifyError(msg)
-            return
-        }
-
-        if (!formData.type) {
-            const msg = 'Выберите тип датчика'
-            setError(msg)
-            notifyError(msg)
-            return
-        }
-
-        if (!formData.input_unit.trim()) {
-            const msg = 'Укажите входную единицу измерения'
-            setError(msg)
-            notifyError(msg)
-            return
-        }
-
-        if (!formData.display_unit.trim()) {
-            const msg = 'Укажите единицу отображения'
-            setError(msg)
-            notifyError(msg)
+        if (!result.success) {
+            const errors = flatFieldErrors(result.error)
+            setFieldErrors(errors)
+            const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
+            setError(first)
+            notifyError(first)
             return
         }
 
         createMutation.mutate({
-            ...formData,
-            name: formData.name.trim(),
-            input_unit: formData.input_unit.trim(),
-            display_unit: formData.display_unit.trim(),
-            calibration_notes: formData.calibration_notes || undefined,
+            ...result.data,
+            calibration_notes: result.data.calibration_notes || undefined,
         })
     }
 
@@ -201,6 +183,7 @@ function CreateSensor() {
                                 multiple
                                 value={selectedProjectIds}
                                 onChange={(_, event) => {
+                                    if (!event) return
                                     const ids = Array.from(event.target.selectedOptions)
                                         .map((o) => o.value)
                                         .filter(Boolean)
@@ -230,6 +213,9 @@ function CreateSensor() {
                                     </Link>
                                 </div>
                             )}
+                            {fieldErrors.project_id && (
+                                <small className="field-error">{fieldErrors.project_id}</small>
+                            )}
                         </>
                     )}
                 </FormGroup>
@@ -243,6 +229,9 @@ function CreateSensor() {
                         required
                         placeholder="Например: Датчик температуры #1"
                     />
+                    {fieldErrors.name && (
+                        <small className="field-error">{fieldErrors.name}</small>
+                    )}
                 </FormGroup>
 
                 <FormGroup label="Тип датчика" htmlFor="sensor_type" required>
@@ -261,6 +250,9 @@ function CreateSensor() {
                         <option value="humidity">Влажность</option>
                         <option value="other">Другое</option>
                     </MaterialSelect>
+                    {fieldErrors.type && (
+                        <small className="field-error">{fieldErrors.type}</small>
+                    )}
                 </FormGroup>
 
                 <FormGroup
@@ -279,6 +271,9 @@ function CreateSensor() {
                         required
                         placeholder="Например: V (вольты), mV, ADC"
                     />
+                    {fieldErrors.input_unit && (
+                        <small className="field-error">{fieldErrors.input_unit}</small>
+                    )}
                 </FormGroup>
 
                 <FormGroup
@@ -297,6 +292,9 @@ function CreateSensor() {
                         required
                         placeholder="Например: °C, Pa, Hz"
                     />
+                    {fieldErrors.display_unit && (
+                        <small className="field-error">{fieldErrors.display_unit}</small>
+                    )}
                 </FormGroup>
 
                 <FormGroup label="Заметки по калибровке" htmlFor="calibration_notes">

@@ -22,6 +22,11 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
+# VITE_ vars are baked in at build time.
+# Empty = use same-origin (nginx proxies /auth /api /projects → auth-proxy).
+ARG VITE_AUTH_PROXY_URL=
+ENV VITE_AUTH_PROXY_URL=${VITE_AUTH_PROXY_URL}
+
 # Copy package files
 COPY package*.json ./
 

@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import type { WebhookSubscription, WebhookDelivery } from '../types'
 import { Loading, Error as ErrorComponent, EmptyState } from '../components/common'
 import { notifyError, notifySuccess } from '../utils/notify'
+import { createWebhookSchema, flatFieldErrors } from '../schemas/forms'
 import './Webhooks.scss'
 
 const PAGE_SIZE = 20
@@ -28,6 +29,7 @@ function Webhooks() {
   const [formUrl, setFormUrl] = useState('')
   const [formEventTypes, setFormEventTypes] = useState('')
   const [formSecret, setFormSecret] = useState('')
+  const [formFieldErrors, setFormFieldErrors] = useState<Record<string, string | undefined>>({})
 
   const {
     data: subscriptionsData,
@@ -38,26 +40,33 @@ function Webhooks() {
     queryFn: () => webhooksApi.list({ page_size: 100 }),
   })
 
+  const handleCreateWebhook = () => {
+    setFormFieldErrors({})
+    const result = createWebhookSchema.safeParse({
+      target_url: formUrl,
+      event_types: formEventTypes,
+      secret: formSecret,
+    })
+    if (!result.success) {
+      const errors = flatFieldErrors(result.error)
+      setFormFieldErrors(errors)
+      const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
+      notifyError(first)
+      return
+    }
+    createMutation.mutate(result.data)
+  }
+
   const createMutation = useMutation({
-    mutationFn: () => {
-      const eventTypes = formEventTypes
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-      if (!formUrl.trim()) throw new Error('URL обязателен')
-      if (eventTypes.length === 0) throw new Error('Укажите хотя бы один тип события')
-      return webhooksApi.create({
-        target_url: formUrl.trim(),
-        event_types: eventTypes,
-        secret: formSecret.trim() || undefined,
-      })
-    },
+    mutationFn: (data: { target_url: string; event_types: string[]; secret?: string }) =>
+      webhooksApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['webhooks'] })
       setShowCreateForm(false)
       setFormUrl('')
       setFormEventTypes('')
       setFormSecret('')
+      setFormFieldErrors({})
       notifySuccess('Webhook создан')
     },
     onError: (err: any) => {
@@ -164,6 +173,9 @@ function Webhooks() {
                   value={formUrl}
                   onChange={(e) => setFormUrl(e.target.value)}
                 />
+                {formFieldErrors.target_url && (
+                  <small className="field-error">{formFieldErrors.target_url}</small>
+                )}
               </div>
               <div className="form-group">
                 <label htmlFor="wh-events">Типы событий (через запятую)</label>
@@ -177,6 +189,9 @@ function Webhooks() {
                 <span className="hint">
                   Доступные: {KNOWN_EVENT_TYPES.join(', ')}
                 </span>
+                {formFieldErrors.event_types && (
+                  <small className="field-error">{formFieldErrors.event_types}</small>
+                )}
               </div>
               <div className="form-group">
                 <label htmlFor="wh-secret">Secret (опционально)</label>
@@ -201,7 +216,7 @@ function Webhooks() {
               </button>
               <button
                 className="btn btn-primary btn-sm"
-                onClick={() => createMutation.mutate()}
+                onClick={handleCreateWebhook}
                 disabled={createMutation.isPending}
               >
                 {createMutation.isPending ? 'Создание...' : 'Создать webhook'}

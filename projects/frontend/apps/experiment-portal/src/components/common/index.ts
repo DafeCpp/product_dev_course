@@ -1,4 +1,5 @@
 export { default as StatusBadge } from './StatusBadge'
+export { default as ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 export { default as Loading } from './Loading'
 export { default as Error } from './Error'
 export { default as EmptyState } from './EmptyState'

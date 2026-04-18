@@ -1,47 +1,69 @@
 .fab {
-    position: fixed !important;
-    bottom: 24px !important;
-    right: 24px !important;
-    width: 56px !important;
-    height: 56px !important;
-    min-width: 56px !important;
-    min-height: 56px !important;
-    border-radius: 50% !important;
-    background-color: var(--primary) !important;
-    color: white !important;
-    border: none !important;
-    box-shadow: var(--elevation-3) !important;
-    font-size: 42px !important;
-    font-weight: 300 !important;
-    line-height: 1 !important;
-    cursor: pointer !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    transition: all 0.3s ease !important;
-    z-index: 1000 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    user-select: none !important;
-    -webkit-user-select: none !important;
-    -moz-user-select: none !important;
-    -ms-user-select: none !important;
+  position: fixed !important;
+  right: 28px !important;
+  bottom: 28px !important;
+  width: 68px !important;
+  height: 68px !important;
+  min-width: 68px !important;
+  min-height: 68px !important;
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  background: var(--button-gradient) !important;
+  color: #fffdf8 !important;
+  box-shadow: var(--elevation-3) !important;
+  backdrop-filter: blur(16px) !important;
+  font-size: 42px !important;
+  font-weight: 300 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, filter 0.24s ease !important;
+  z-index: 1000 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.fab::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
 }
 
 .fab svg {
-    width: 24px;
-    height: 24px;
-    display: block;
+  position: relative;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
 }
 
-.fab:hover {
-    background-color: var(--primary-hover) !important;
-    box-shadow: var(--elevation-3) !important;
-    transform: scale(1.1) !important;
+.fab:hover:not(:disabled) {
+  transform: translateY(-3px) scale(1.03) !important;
+  box-shadow: 0 34px 82px rgba(13, 27, 42, 0.2) !important;
+  filter: saturate(1.06) !important;
 }
 
-.fab:active {
-    transform: scale(0.95) !important;
+.fab:active:not(:disabled) {
+  transform: translateY(0) scale(0.98) !important;
+}
+
+.fab:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 720px) {
+  .fab {
+    right: 18px !important;
+    bottom: 18px !important;
+    width: 60px !important;
+    height: 60px !important;
+    min-width: 60px !important;
+    min-height: 60px !important;
+    border-radius: 20px !important;
+  }
 }

@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from testsuite.databases.pgsql import discover
+from testsuite.databases.pgsql import discover, service as pgsql_service
 
 from experiment_service.main import create_app
 from experiment_service.settings import settings
@@ -11,6 +11,21 @@ pytest_plugins = (
     "testsuite.pytest_plugin",
     "testsuite.databases.pgsql.pytest_plugin",
 )
+
+_PGSQL_CONFIG_DIR = Path(__file__).parent / "pgsql_config"
+
+
+def pytest_service_register(register_service):
+    """Override postgresql service to use custom config dir with TimescaleDB."""
+    def create_pgsql_service_with_timescaledb(service_name, working_dir, settings=None, env=None):
+        return pgsql_service.create_pgsql_service(
+            service_name,
+            working_dir,
+            settings=settings,
+            env={**(env or {}), "POSTGRESQL_CONFIGS_DIR": str(_PGSQL_CONFIG_DIR)},
+        )
+
+    register_service("postgresql", create_pgsql_service_with_timescaledb)
 
 PG_SCHEMAS_PATH = Path(__file__).parent / "schemas" / "postgresql"
 

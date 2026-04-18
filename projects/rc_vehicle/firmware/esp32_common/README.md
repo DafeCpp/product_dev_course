@@ -2,8 +2,7 @@
 
 Этот каталог содержит общий код для ESP‑IDF прошивок:
 
-- `firmware/esp32/` (ESP32‑C3 шлюз: Wi‑Fi + Web + UART→MCU)
-- `firmware/esp32_s3/` (ESP32‑S3 all‑in‑one: Wi‑Fi + Web + управление)
+- `firmware/esp32_s3/` (ESP32‑S3: Wi‑Fi + Web + управление + стабилизация)
 
 Сюда вынесены:
 

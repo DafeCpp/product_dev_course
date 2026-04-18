@@ -1,321 +1,648 @@
 @import '../styles/colors';
 
+.telemetry-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.telemetry-view__hero {
+  margin-bottom: 0;
+  padding: 16px 18px;
+  gap: 12px;
+}
+
+.telemetry-view__workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.telemetry-view__hero-pills .meta-chip {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: rgba(16, 34, 58, 0.08);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 0.68rem;
+}
+
 .telemetry-view__filters {
-    max-width: none;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .telemetry-view__filters--collapsed {
-    padding: 0;
+  gap: 0;
 }
 
-.telemetry-view__filters--collapsed.card {
-    padding: 0;
+.telemetry-view__filters-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.telemetry-view__filters-copy {
+  display: grid;
+  gap: 6px;
 }
 
 .telemetry-view__filters-body {
-    overflow: hidden;
-    max-height: 0;
-    opacity: 0;
-    transform: translateY(-6px);
-    transition: max-height 0.5s ease, opacity 0.2s ease, transform 0.2s ease;
-    pointer-events: none;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: max-height 0.45s ease, opacity 0.24s ease, transform 0.24s ease;
+  pointer-events: none;
 }
 
 .telemetry-view__filters-body--open {
-    max-height: 800px;
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
+  max-height: 2800px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.telemetry-view__status-stack {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .telemetry-view__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.telemetry-view__grid > * {
+  grid-column: span 3;
+}
+
+.telemetry-view__grid > .telemetry-view__mode,
+.telemetry-view__grid > .telemetry-view__capture-actions,
+.telemetry-view__grid > .telemetry-view__backfill-actions {
+  grid-column: span 3;
 }
 
 .telemetry-view__menu {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .telemetry-view__menu-item {
-    min-width: 200px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    background: var(--surface-variant);
+  min-width: 152px;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(16, 34, 58, 0.08);
 }
 
 .telemetry-view__menu-label {
-    font-size: 12px;
-    color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 .telemetry-view__menu-value {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .telemetry-view__collapse {
-    width: calc(100% + 40px);
-    margin: auto -20px -20px;
-    border: none;
-    border-top: 1px solid $border-subtle;
-    background: $surface-muted;
-    color: $text-muted;
-    padding: 4px 0 6px;
-    font-size: 14px;
-    cursor: pointer;
-    border-radius: var(--radius-lg);
-    transition: background-color 0.2s;
-}
-
-.telemetry-view__filters--collapsed .telemetry-view__collapse {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    flex: 1 1 auto;
-    border-radius: var(--radius-lg);
-    padding: 0;
-}
-
-.telemetry-view__collapse-wrap {
-    margin-top: 0px;
-}
-
-.telemetry-view__filters--collapsed .telemetry-view__collapse-wrap {
-    margin-top: 0;
+  min-width: 132px;
+  min-height: 38px;
+  align-self: start;
+  border: 1px solid rgba(16, 34, 58, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--text);
+  font-weight: 700;
+  padding: 0 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.64);
+  transition: background-color 0.18s ease, transform 0.18s ease;
 }
 
 .telemetry-view__collapse:hover {
-    background: $surface-hover;
+  background: rgba(255, 255, 255, 0.78);
+  transform: translateY(-1px);
 }
 
 .telemetry-view__mode {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .telemetry-view__mode-toggle {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    align-items: center;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
-.telemetry-view__history {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+.telemetry-view__mode-toggle label,
+.telemetry-view__history-options label,
+.telemetry-view__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+  border: 1px solid rgba(16, 34, 58, 0.08);
+  color: var(--text);
+  font-size: 0.8rem;
 }
 
-.telemetry-view__history-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+.telemetry-view__mode-toggle input,
+.telemetry-view__history-options input[type='checkbox'],
+.telemetry-view__history-options input[type='radio'],
+.telemetry-view__checkbox input {
+  accent-color: var(--primary);
 }
 
-.telemetry-view__history-sensors {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.telemetry-view__sensor-filter label {
-    display: block;
-    font-size: 12px;
-    color: $text-muted;
-    margin-bottom: 4px;
-}
-
-.telemetry-view__sensor-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.telemetry-view__sensor-meta {
-    font-size: 12px;
-    color: $text-muted;
-}
-
-.telemetry-view__sensor-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.telemetry-view__sensor-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: $surface-pill;
-    font-size: 12px;
-}
-
-.telemetry-view__sensor-pill button {
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 14px;
-    line-height: 1;
-}
-
-.telemetry-view__hint {
-    color: $text-hint;
-    font-size: 12px;
-}
-
-.telemetry-view__history-options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-}
-
-.telemetry-view__history-options label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-}
-
-.telemetry-view__history-options input[type='number'] {
-    width: 120px;
-}
-
-.telemetry-view__capture-actions {
-    margin-top: 4px;
+.telemetry-view__capture-actions,
+.telemetry-view__backfill-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .telemetry-view__capture-actions-label {
-    display: block;
-    font-size: 12px;
-    color: $text-secondary;
-    margin-bottom: 6px;
+  margin-bottom: 0;
 }
 
-.telemetry-view__capture-actions-btns {
-    display: flex;
-    gap: 8px;
-}
-
-.telemetry-view__backfill-actions {
-    margin-top: 4px;
-}
-
-.telemetry-view__backfill-btns {
-    display: flex;
-    gap: 8px;
+.telemetry-view__capture-actions-btns,
+.telemetry-view__backfill-btns,
+.telemetry-view__sensor-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .telemetry-view__text-input {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid $input-border;
-    border-radius: 10px;
-    font-size: 13px;
-    background: $surface-base;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid rgba(16, 34, 58, 0.1);
+  border-radius: 16px;
+  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+.telemetry-view__text-input:focus {
+  outline: none;
+  border-color: rgba(15, 118, 110, 0.42);
+  box-shadow: var(--focus-ring);
+}
+
+.telemetry-view__live-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.telemetry-view__live-stage,
+.telemetry-view__history {
+  overflow: visible;
+}
+
+.telemetry-view__history {
+  gap: 14px;
+}
+
+.telemetry-view__history-controls {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px;
+}
+
+.telemetry-view__history-sensors {
+  display: grid;
+  gap: 10px;
+}
+
+.telemetry-view__sensor-filter label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.telemetry-view__sensor-meta,
 .telemetry-view__history-summary {
-    font-size: 12px;
-    color: $text-muted;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
 }
 
-.telemetry-view__checkbox {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
+.telemetry-view__sensor-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.telemetry-view__sensor-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.08);
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.telemetry-view__sensor-pill button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: currentColor;
+}
+
+.telemetry-view__hint {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.telemetry-view__history-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  align-content: start;
+}
+
+.telemetry-view__history-options input[type='number'] {
+  width: 108px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid rgba(16, 34, 58, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.84);
 }
 
 .telemetry-view__history-chart {
-    position: relative;
-    min-height: 360px;
+  position: relative;
+  min-height: 320px;
+  padding: 10px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(16, 34, 58, 0.08);
 }
 
 .telemetry-view__plotly {
-    width: 100%;
-    height: 360px;
+  width: 100%;
+  height: 320px;
+}
+
+.telemetry-view__empty,
+.telemetry-view__history-loading {
+  position: absolute;
+  inset: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 14px;
 }
 
 .telemetry-view__empty {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: $text-hint;
-    font-size: 14px;
-    background: $overlay-empty-bg;
-    border-radius: 12px;
+  color: $text-hint;
+  font-size: 0.95rem;
+  background: rgba(255, 253, 248, 0.85);
 }
 
 .telemetry-view__history-loading {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: $text-strong;
-    font-size: 14px;
-    font-weight: 500;
-    background: $overlay-loading-bg;
-    border-radius: 12px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  background: rgba(255, 253, 248, 0.78);
 }
 
 .telemetry-view__error {
-    color: $text-danger;
-    font-size: 13px;
+  color: var(--error);
+  font-size: 0.92rem;
 }
 
 .telemetry-view__panels {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(320px, 1fr));
-    gap: 16px;
-    align-items: stretch;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  gap: 14px;
+  align-items: stretch;
 }
 
 .telemetry-view__panel-item {
-    position: relative;
-    overflow: visible;
-    min-height: 380px;
+  position: relative;
+  overflow: visible;
+  min-height: 330px;
 }
 
 .telemetry-view__panel-item--full {
-    grid-column: 1 / -1;
+  grid-column: 1 / -1;
 }
 
 .telemetry-view__panel-item--over {
-    outline: 2px dashed $outline-muted;
-    outline-offset: 4px;
+  outline: 2px dashed rgba(15, 118, 110, 0.34);
+  outline-offset: 6px;
+  border-radius: 28px;
 }
 
 .telemetry-view__panel-item--dragging {
-    opacity: 0.6;
+  opacity: 0.62;
+}
+
+@media (min-width: 1920px) {
+  .telemetry-view {
+    gap: 14px;
+  }
+
+  .telemetry-view__hero {
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .telemetry-view__workspace {
+    grid-template-columns: 430px minmax(0, 1fr);
+    align-items: start;
+    gap: 14px;
+  }
+
+  .telemetry-view__filters {
+    position: sticky;
+    top: 88px;
+    max-height: calc(100vh - 110px);
+    overflow: auto;
+    gap: 10px;
+  }
+
+  .telemetry-view__filters-topbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .telemetry-view__menu {
+    justify-content: flex-start;
+  }
+
+  .telemetry-view__menu-item {
+    min-width: 124px;
+    flex: 1 1 0;
+  }
+
+  .telemetry-view__collapse {
+    width: 100%;
+  }
+
+  .telemetry-view__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .telemetry-view__grid > *,
+  .telemetry-view__grid > .telemetry-view__mode,
+  .telemetry-view__grid > .telemetry-view__capture-actions,
+  .telemetry-view__grid > .telemetry-view__backfill-actions {
+    grid-column: auto;
+  }
+
+  .telemetry-view__status-stack {
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .telemetry-view__status-stack .loading,
+  .telemetry-view__status-stack .empty-state,
+  .telemetry-view__status-stack .error {
+    min-height: auto;
+    padding: 12px 14px;
+  }
+
+  .telemetry-view__live-layout {
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
+
+  .telemetry-view__live-stage,
+  .telemetry-view__history {
+    min-height: calc(100vh - 238px);
+    padding: 16px;
+  }
+
+  .telemetry-view__panels {
+    grid-template-columns: repeat(3, minmax(290px, 1fr));
+    gap: 12px;
+  }
+
+  .telemetry-view__panel-item {
+    min-height: 290px;
+  }
+
+  .telemetry-view__history {
+    gap: 12px;
+  }
+
+  .telemetry-view__history-controls {
+    grid-template-columns: minmax(360px, 0.72fr) minmax(0, 1.28fr);
+    gap: 12px;
+    align-items: start;
+  }
+
+  .telemetry-view__history-options {
+    gap: 6px;
+  }
+
+  .telemetry-view__history-chart {
+    min-height: min(56vh, 560px);
+  }
+
+  .telemetry-view__plotly {
+    height: min(56vh, 560px);
+  }
+}
+
+@media (min-width: 2560px) {
+  .telemetry-view {
+    gap: 12px;
+  }
+
+  .telemetry-view__hero {
+    grid-template-columns: minmax(0, 1.5fr) minmax(420px, 0.55fr);
+    gap: 12px;
+    padding: 16px 18px;
+  }
+
+  .telemetry-view__workspace {
+    grid-template-columns: 480px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .telemetry-view__filters {
+    top: 84px;
+    max-height: calc(100vh - 100px);
+    padding: 16px;
+  }
+
+  .telemetry-view__filters-topbar {
+    gap: 8px;
+  }
+
+  .telemetry-view__filters-copy .filter-panel__subtitle {
+    font-size: 0.88rem;
+  }
+
+  .telemetry-view__menu {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .telemetry-view__menu-item {
+    min-width: 0;
+    padding: 8px 10px;
+  }
+
+  .telemetry-view__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .telemetry-view__status-stack {
+    gap: 5px;
+    margin-top: 8px;
+  }
+
+  .telemetry-view__status-stack .loading,
+  .telemetry-view__status-stack .empty-state,
+  .telemetry-view__status-stack .error {
+    padding: 10px 12px;
+    border-radius: 18px;
+  }
+
+  .telemetry-view__live-layout {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+
+  .telemetry-view__live-stage,
+  .telemetry-view__history {
+    min-height: calc(100vh - 214px);
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .telemetry-view__live-stage .detail-section-header__copy p,
+  .telemetry-view__history .detail-section-header__copy p {
+    font-size: 0.88rem;
+  }
+
+  .telemetry-view__panels {
+    grid-template-columns: repeat(4, minmax(300px, 1fr));
+    gap: 10px;
+  }
+
+  .telemetry-view__panel-item {
+    min-height: 270px;
+  }
+
+  .telemetry-view__history-controls {
+    grid-template-columns: minmax(420px, 0.62fr) minmax(0, 1.38fr);
+    gap: 10px;
+  }
+
+  .telemetry-view__history-sensors {
+    gap: 8px;
+  }
+
+  .telemetry-view__history-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, max-content));
+    justify-content: start;
+    gap: 6px;
+  }
+
+  .telemetry-view__history-chart {
+    min-height: min(60vh, 680px);
+    padding: 8px;
+  }
+
+  .telemetry-view__plotly {
+    height: min(60vh, 680px);
+  }
+
+  .telemetry-view__empty,
+  .telemetry-view__history-loading {
+    inset: 8px;
+  }
 }
 
 @media (max-width: 1100px) {
-    .telemetry-view__panels {
-        grid-template-columns: 1fr;
-    }
+  .telemetry-view__hero {
+    padding: 14px;
+  }
 }
 
-@media (max-width: 900px) {
-    .telemetry-view__grid {
-        grid-template-columns: 1fr;
-    }
+@media (max-width: 1200px) {
+  .telemetry-view__filters-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .telemetry-view__menu {
+    justify-content: flex-start;
+  }
+
+  .telemetry-view__grid > * {
+    grid-column: span 6;
+  }
+
+  .telemetry-view__history-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1100px) {
+  .telemetry-view__live-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .telemetry-view__panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .telemetry-view__grid > * {
+    grid-column: span 12;
+  }
+
+  .telemetry-view__capture-actions-btns,
+  .telemetry-view__backfill-btns,
+  .telemetry-view__sensor-actions,
+  .telemetry-view__history-options,
+  .telemetry-view__mode-toggle {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .telemetry-view__menu-item,
+  .telemetry-view__collapse {
+    width: 100%;
+  }
 }

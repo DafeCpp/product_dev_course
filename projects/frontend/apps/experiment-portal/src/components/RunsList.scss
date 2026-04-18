@@ -1,5 +1,10 @@
 @import '../styles/components';
 
+.runs-list {
+  display: grid;
+  gap: 16px;
+}
+
 .runs-table {
   overflow-x: auto;
 }
@@ -7,7 +12,8 @@
 .runs-actions {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .runs-select-col {
@@ -17,53 +23,63 @@
 .runs-table table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 24px;
   overflow: hidden;
-  box-shadow: var(--elevation-1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .runs-table thead {
-  background-color: var(--surface-variant);
+  background: rgba(15, 118, 110, 0.08);
 }
 
 .runs-table th {
-  padding: 12px;
+  padding: 14px 16px;
   text-align: left;
-  font-weight: 600;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--text-secondary);
-  border-bottom: 2px solid var(--outline);
+  border-bottom: 1px solid rgba(16, 34, 58, 0.08);
 }
 
 .runs-table td {
-  padding: 12px;
-  border-bottom: 1px solid var(--outline);
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(16, 34, 58, 0.08);
+  vertical-align: top;
 }
 
 .runs-table tbody tr:hover {
-  background-color: var(--surface-variant);
+  background: rgba(15, 118, 110, 0.04);
 }
 
 .run-link {
-  font-weight: 500;
+  font-weight: 700;
   color: var(--primary);
-}
-
-.run-link:hover {
-  text-decoration: underline;
 }
 
 .parameters-preview {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .param-item,
 .param-more {
-  padding: 2px 6px;
-  background-color: var(--surface-variant);
+  padding: 5px 8px;
+  background-color: rgba(16, 34, 58, 0.06);
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: 0.72rem;
   color: var(--text-secondary);
+}
+
+@media (max-width: 720px) {
+  .runs-actions {
+    justify-content: stretch;
+  }
+
+  .runs-actions > * {
+    width: 100%;
+  }
 }

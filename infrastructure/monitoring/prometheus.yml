@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: 'development'
+    project: 'experiment-platform'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'auth-service'
+    static_configs:
+      - targets: ['auth-service:8001']
+    metrics_path: /metrics
+
+  - job_name: 'experiment-service'
+    static_configs:
+      - targets: ['experiment-service:8002']
+    metrics_path: /metrics
+
+  - job_name: 'telemetry-ingest-service'
+    static_configs:
+      - targets: ['telemetry-ingest-service:8003']
+    metrics_path: /metrics

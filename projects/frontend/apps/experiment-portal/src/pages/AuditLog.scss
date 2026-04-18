@@ -1,0 +1,192 @@
+.audit-log-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  &__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  &__no-access {
+    padding: 48px;
+    text-align: center;
+    color: var(--color-text-secondary, #888);
+    font-size: 1rem;
+  }
+}
+
+.audit-log-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+
+  &__fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 160px;
+      flex: 1 1 160px;
+
+      label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--color-text-secondary, #888);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      input {
+        padding: 6px 10px;
+        border: 1px solid var(--color-border, #333);
+        border-radius: 4px;
+        background: var(--color-bg-input, #1a1a1a);
+        color: var(--color-text, #fff);
+        font-size: 0.875rem;
+
+        &:focus {
+          outline: none;
+          border-color: var(--color-primary, #4f8ef7);
+        }
+      }
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+}
+
+.audit-log-table-wrap {
+  padding: 0;
+  overflow-x: auto;
+}
+
+.audit-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+
+  th {
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary, #888);
+    border-bottom: 1px solid var(--color-border, #333);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-border, #222);
+    vertical-align: middle;
+    color: var(--color-text, #e0e0e0);
+  }
+
+  &__row {
+    cursor: pointer;
+    transition: background 0.12s;
+
+    &:hover {
+      background: var(--color-bg-row-hover, rgba(255, 255, 255, 0.04));
+    }
+
+    &:last-child td {
+      border-bottom: none;
+    }
+
+    &:focus {
+      outline: 2px solid var(--color-primary, #4f8ef7);
+      outline-offset: -2px;
+    }
+  }
+
+  &__time {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary, #aaa);
+  }
+
+  &__action {
+    font-family: monospace;
+    font-size: 0.8rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--color-bg-code, rgba(79, 142, 247, 0.1));
+    color: var(--color-primary, #4f8ef7);
+  }
+}
+
+.audit-log-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+
+  &__row {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+
+  &__label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary, #888);
+    min-width: 100px;
+    flex-shrink: 0;
+  }
+
+  &__value {
+    font-size: 0.875rem;
+    color: var(--color-text, #e0e0e0);
+    word-break: break-all;
+  }
+
+  &__sub {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary, #888);
+  }
+
+  &__details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  &__json {
+    margin: 0;
+    padding: 12px;
+    border-radius: 4px;
+    background: var(--color-bg-code, #111);
+    border: 1px solid var(--color-border, #333);
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--color-text, #e0e0e0);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+}
+
+.audit-log-detail-modal {
+  max-width: 640px;
+  width: 100%;
+}

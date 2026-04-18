@@ -62,3 +62,11 @@ class TelemetryConversionStatus(str, Enum):
     CONVERSION_FAILED = "conversion_failed"
 
 
+class ConnectionStatus(str, Enum):
+    """Computed sensor connection status based on last_heartbeat age."""
+
+    ONLINE = "online"
+    DELAYED = "delayed"
+    OFFLINE = "offline"
+
+

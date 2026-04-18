@@ -6,3 +6,14 @@ CONFIG_HTTPD_WS_SUPPORT=y
 # `x509_crt_bundle.S` during the build.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 
+# FreeRTOS tick rate 1000 Hz (1 мс/тик) — нужно для control loop 500 Гц (период 2 мс)
+CONFIG_FREERTOS_HZ=1000
+
+# app_main выполняет тяжелую C++ инициализацию (Wi-Fi/HTTP/vehicle control),
+# поэтому увеличиваем стек main task, чтобы избежать stack overflow на старте.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+
+# Таблица разделов: приложение ~1.1 MB, раздел factory увеличен до 2 MB
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+

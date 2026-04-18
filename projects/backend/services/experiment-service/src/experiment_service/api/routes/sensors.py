@@ -26,7 +26,7 @@ from experiment_service.domain.dto import (
 from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_idempotency_service,
     get_sensor_service,
     require_current_user,
@@ -46,9 +46,8 @@ async def register_sensor(request: web.Request):
     user = await require_current_user(request)
     idempotency_service = await get_idempotency_service(request)
     body = await read_json(request)
-    project_id = resolve_project_id(
-        user, body.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, body.get("project_id"))
+    ensure_permission(user, "experiments.create")
     body["project_id"] = project_id
     conversion_payload = body.pop("conversion_profile", None)
     try:
@@ -125,6 +124,7 @@ async def list_sensors(request: web.Request):
     project_id_query = request.rel_url.query.get("project_id")
     if project_id_query:
         project_id = resolve_project_id(user, project_id_query)
+        ensure_permission(user, "experiments.view")
         sensors, total = await service.list_sensors(
             project_id, limit=limit, offset=offset,
             status=sensor_status,
@@ -140,7 +140,7 @@ async def list_sensors(request: web.Request):
                 project_ids, limit=limit, offset=offset
             )
         elif user.active_project_id:
-            ensure_project_access(user, user.active_project_id)
+            ensure_permission(user, "experiments.view")
             sensors, total = await service.list_sensors(
                 user.active_project_id, limit=limit, offset=offset,
                 status=sensor_status,
@@ -164,22 +164,21 @@ async def list_sensors(request: web.Request):
 async def get_sensor(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     service = await get_sensor_service(request)
     try:
         sensor = await service.get_sensor(project_id, sensor_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
-    ensure_project_access(user, sensor.project_id)
     return web.json_response(_sensor_response(sensor))
 
 
 @routes.patch("/api/v1/sensors/{sensor_id}")
 async def update_sensor(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.update")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     body = await read_json(request)
     try:
@@ -197,9 +196,8 @@ async def update_sensor(request: web.Request):
 @routes.delete("/api/v1/sensors/{sensor_id}")
 async def delete_sensor(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.delete")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     service = await get_sensor_service(request)
     try:
@@ -214,9 +212,8 @@ async def delete_sensor(request: web.Request):
 @routes.post("/api/v1/sensors/{sensor_id}/rotate-token")
 async def rotate_sensor_token(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.update")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     service = await get_sensor_service(request)
     try:
@@ -236,10 +233,9 @@ async def add_sensor_project(request: web.Request):
     if "project_id" not in body:
         raise web.HTTPBadRequest(text="project_id is required")
 
-    # Verify user has owner/editor role in the target project
-    project_id = resolve_project_id(
-        user, body["project_id"], require_role=("owner", "editor")
-    )
+    # Verify user has permission to add sensor to the target project
+    project_id = resolve_project_id(user, body["project_id"])
+    ensure_permission(user, "experiments.create")
 
     # Verify sensor exists
     # We don't require access to existing projects - if user has owner/editor role
@@ -271,9 +267,7 @@ async def remove_sensor_project(request: web.Request):
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     project_id = parse_uuid(request.match_info["project_id"], "project_id")
 
-    # Verify user has owner/editor role in the project
-    resolve_project_id(user, str(project_id), require_role=("owner", "editor"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    ensure_permission(user, "experiments.delete")
 
     service = await get_sensor_service(request)
     try:
@@ -284,26 +278,56 @@ async def remove_sensor_project(request: web.Request):
     return web.Response(status=204)
 
 
+@routes.get("/api/v1/sensors/status-summary")
+async def get_sensor_status_summary(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
+    service = await get_sensor_service(request)
+    summary = await service.get_status_summary(project_id)
+    return web.json_response(summary)
+
+
+@routes.get("/api/v1/sensors/{sensor_id}/heartbeat-history")
+async def get_sensor_heartbeat_history(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
+    sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
+    minutes_raw = request.rel_url.query.get("minutes", "60")
+    try:
+        minutes = int(minutes_raw)
+        if minutes < 1 or minutes > 1440:
+            raise ValueError("out of range")
+    except ValueError:
+        raise web.HTTPBadRequest(text="minutes must be an integer between 1 and 1440")
+    service = await get_sensor_service(request)
+    try:
+        await service.get_sensor(project_id, sensor_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    timestamps = await service.get_heartbeat_history(sensor_id, minutes)
+    return web.json_response(
+        {
+            "sensor_id": str(sensor_id),
+            "timestamps": [ts.isoformat() for ts in timestamps],
+            "count": len(timestamps),
+        }
+    )
+
+
 @routes.get("/api/v1/sensors/{sensor_id}/projects")
 async def get_sensor_projects(request: web.Request):
     """Get all projects associated with a sensor."""
     user = await require_current_user(request)
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
 
+    ensure_permission(user, "experiments.view")
     service = await get_sensor_service(request)
     try:
         project_ids = await service.get_sensor_projects(sensor_id)
         if not project_ids:
             raise web.HTTPNotFound(text="Sensor not found")
-        # Filter to only projects user has access to
-        accessible_projects = []
-        for pid in project_ids:
-            # Check if project is in user's project_roles
-            if pid in user.project_roles:
-                accessible_projects.append(str(pid))
-        # If user has no access to any project, return 403
-        if not accessible_projects:
-            raise web.HTTPForbidden(text="Access denied to sensor")
-        return web.json_response({"project_ids": accessible_projects})
+        return web.json_response({"project_ids": [str(pid) for pid in project_ids]})
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc

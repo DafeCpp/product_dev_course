@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { sensorsApi, projectsApi } from '../api/client'
+import { sensorsApi, projectsApi, conversionProfilesApi, backfillApi } from '../api/client'
 import { format } from 'date-fns'
-import type { SensorTokenResponse } from '../types'
+import type { SensorTokenResponse, ConversionProfileStatus, BackfillTaskStatus, SensorErrorEntry } from '../types'
 import TestTelemetryModal from '../components/TestTelemetryModal'
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
+import ConversionProfileCreateModal from '../components/ConversionProfileCreateModal'
 import {
     StatusBadge,
     Loading,
@@ -29,6 +30,7 @@ function SensorDetail() {
     const [showTelemetryStreamModal, setShowTelemetryStreamModal] = useState(false)
     const [showAddProjectModal, setShowAddProjectModal] = useState(false)
     const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+    const [showCreateProfileModal, setShowCreateProfileModal] = useState(false)
 
     const { data: sensor, isLoading, error } = useQuery({
         queryKey: ['sensor', id],
@@ -106,6 +108,110 @@ function SensorDetail() {
         },
     })
 
+    // Conversion profiles
+    const {
+        data: profilesData,
+        isLoading: isLoadingProfiles,
+    } = useQuery({
+        queryKey: ['sensor', id, 'profiles'],
+        queryFn: () => conversionProfilesApi.list(id!),
+        enabled: !!id,
+    })
+
+    const publishProfileMutation = useMutation({
+        mutationFn: (profileId: string) => conversionProfilesApi.publish(id!, profileId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'profiles'] })
+            queryClient.invalidateQueries({ queryKey: ['sensor', id] })
+            notifySuccess('Профиль опубликован')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка публикации профиля'
+            notifyError(msg)
+        },
+    })
+
+    const profileStatusLabels: Record<ConversionProfileStatus, string> = {
+        draft: 'Черновик',
+        scheduled: 'Запланирован',
+        active: 'Активен',
+        deprecated: 'Устаревший',
+    }
+
+    const profileStatusColors: Record<ConversionProfileStatus, string> = {
+        draft: 'badge-secondary',
+        scheduled: 'badge-info',
+        active: 'badge-success',
+        deprecated: 'badge-muted',
+    }
+
+    const formatProfileKind = (kind: string) => {
+        const labels: Record<string, string> = {
+            linear: 'Линейное',
+            polynomial: 'Полиномиальное',
+            lookup_table: 'Таблица',
+        }
+        return labels[kind] || kind
+    }
+
+    // Backfill
+    const {
+        data: backfillData,
+        isLoading: isLoadingBackfill,
+    } = useQuery({
+        queryKey: ['sensor', id, 'backfill'],
+        queryFn: () => backfillApi.list(id!),
+        enabled: !!id,
+        refetchInterval: (query) => {
+            // Auto-refresh while there are running/pending tasks
+            const tasks = query.state.data?.backfill_tasks
+            if (tasks?.some(t => t.status === 'pending' || t.status === 'running')) {
+                return 3000
+            }
+            return false
+        },
+    })
+
+    // Error log
+    const [errorLogPage, setErrorLogPage] = useState(0)
+    const ERROR_LOG_LIMIT = 25
+    const {
+        data: errorLogData,
+        isLoading: isLoadingErrorLog,
+    } = useQuery({
+        queryKey: ['sensor', id, 'error-log', errorLogPage],
+        queryFn: () => sensorsApi.getErrorLog(id!, { limit: ERROR_LOG_LIMIT, offset: errorLogPage * ERROR_LOG_LIMIT }),
+        enabled: !!id,
+        refetchInterval: 30_000,
+        staleTime: 15_000,
+    })
+
+    const startBackfillMutation = useMutation({
+        mutationFn: () => backfillApi.start(id!),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'backfill'] })
+            notifySuccess('Задача пересчёта создана')
+        },
+        onError: (err: any) => {
+            const msg = err?.response?.data?.error || err?.message || 'Ошибка запуска пересчёта'
+            notifyError(msg)
+        },
+    })
+
+    const backfillStatusLabels: Record<BackfillTaskStatus, string> = {
+        pending: 'Ожидает',
+        running: 'Выполняется',
+        completed: 'Завершён',
+        failed: 'Ошибка',
+    }
+
+    const backfillStatusColors: Record<BackfillTaskStatus, string> = {
+        pending: 'badge-secondary',
+        running: 'badge-info',
+        completed: 'badge-success',
+        failed: 'badge-danger',
+    }
+
     const formatLastHeartbeat = (heartbeat?: string | null) => {
         if (!heartbeat) return 'Никогда'
         const date = new Date(heartbeat)
@@ -176,12 +282,35 @@ function SensorDetail() {
                             <button
                                 type="button"
                                 className="btn btn-secondary btn-sm"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(newToken)
-                                    notifySuccessSticky(
-                                        'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
-                                        'Токен скопирован'
-                                    )
+                                onClick={async () => {
+                                    let copied = false
+                                    if (navigator.clipboard) {
+                                        try {
+                                            await navigator.clipboard.writeText(newToken)
+                                            copied = true
+                                        } catch { /* fallback below */ }
+                                    }
+                                    if (!copied) {
+                                        try {
+                                            const ta = document.createElement('textarea')
+                                            ta.value = newToken
+                                            ta.style.position = 'fixed'
+                                            ta.style.left = '-9999px'
+                                            document.body.appendChild(ta)
+                                            ta.select()
+                                            document.execCommand('copy')
+                                            document.body.removeChild(ta)
+                                            copied = true
+                                        } catch { /* ignore */ }
+                                    }
+                                    if (copied) {
+                                        notifySuccessSticky(
+                                            'Токен в буфере обмена. Не закрывайте, пока не сохраните.',
+                                            'Токен скопирован'
+                                        )
+                                    } else {
+                                        notifyError('Не удалось скопировать токен — скопируйте вручную')
+                                    }
                                 }}
                             >
                                 Копировать
@@ -412,6 +541,260 @@ function SensorDetail() {
                         </div>
                     )}
                 </div>
+
+                {/* Секция профилей преобразования */}
+                <div className="sensor-profiles-section">
+                    <div className="section-header">
+                        <h3>Профили преобразования</h3>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setShowCreateProfileModal(true)}
+                        >
+                            Создать профиль
+                        </button>
+                    </div>
+
+                    {isLoadingProfiles && <Loading />}
+
+                    {!isLoadingProfiles && profilesData && (
+                        <>
+                            {profilesData.conversion_profiles.length === 0 ? (
+                                <p className="text-muted">Нет профилей преобразования</p>
+                            ) : (
+                                <div className="profiles-list">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Версия</th>
+                                                <th>Тип</th>
+                                                <th>Статус</th>
+                                                <th>Создан</th>
+                                                <th>Действия</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {profilesData.conversion_profiles.map((profile) => (
+                                                <tr key={profile.id} className={profile.status === 'active' ? 'row-active' : ''}>
+                                                    <td>
+                                                        <strong>{profile.version}</strong>
+                                                    </td>
+                                                    <td>{formatProfileKind(profile.kind)}</td>
+                                                    <td>
+                                                        <span className={`badge ${profileStatusColors[profile.status]}`}>
+                                                            {profileStatusLabels[profile.status]}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        {format(new Date(profile.created_at), 'dd MMM yyyy HH:mm')}
+                                                    </td>
+                                                    <td>
+                                                        {(profile.status === 'draft' || profile.status === 'scheduled') && (
+                                                            <button
+                                                                className="btn btn-primary btn-sm"
+                                                                onClick={() => {
+                                                                    if (confirm('Опубликовать профиль? Текущий активный профиль будет деактивирован.')) {
+                                                                        publishProfileMutation.mutate(profile.id)
+                                                                    }
+                                                                }}
+                                                                disabled={publishProfileMutation.isPending}
+                                                            >
+                                                                {publishProfileMutation.isPending ? 'Публикация...' : 'Опубликовать'}
+                                                            </button>
+                                                        )}
+                                                        {profile.status === 'active' && (
+                                                            <span className="text-muted">Активный профиль</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+
+                {/* Журнал ошибок ingest */}
+                <div className="sensor-error-log-section">
+                    <div className="section-header">
+                        <h3>
+                            Журнал ошибок
+                            {errorLogData && errorLogData.total > 0 && (
+                                <span className="badge badge-danger" style={{ marginLeft: 8 }}>
+                                    {errorLogData.total}
+                                </span>
+                            )}
+                        </h3>
+                    </div>
+
+                    {isLoadingErrorLog && <Loading />}
+
+                    {!isLoadingErrorLog && errorLogData && errorLogData.entries.length > 0 && (
+                        <>
+                            <div className="table-responsive">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Время</th>
+                                            <th>Код ошибки</th>
+                                            <th>Канал</th>
+                                            <th>Чтений</th>
+                                            <th>Сообщение</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {errorLogData.entries.map((entry: SensorErrorEntry) => (
+                                            <tr key={entry.id}>
+                                                <td style={{ whiteSpace: 'nowrap' }}>
+                                                    {format(new Date(entry.occurred_at), 'dd MMM HH:mm:ss')}
+                                                </td>
+                                                <td>
+                                                    <span className={`badge ${
+                                                        entry.error_code === 'rate_limited' ? 'badge-warning' :
+                                                        entry.error_code === 'unauthorized' ? 'badge-danger' :
+                                                        entry.error_code === 'validation_error' ? 'badge-info' :
+                                                        'badge-secondary'
+                                                    }`}>
+                                                        {entry.error_code}
+                                                    </span>
+                                                </td>
+                                                <td>{entry.endpoint}</td>
+                                                <td>{entry.readings_count ?? '—'}</td>
+                                                <td className="text-muted" style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {entry.error_message ?? '—'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {errorLogData.total > ERROR_LOG_LIMIT && (
+                                <div className="pagination-row" style={{ marginTop: 8 }}>
+                                    <button
+                                        className="btn btn-sm btn-secondary"
+                                        disabled={errorLogPage === 0}
+                                        onClick={() => setErrorLogPage(p => p - 1)}
+                                    >
+                                        ← Назад
+                                    </button>
+                                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                        {errorLogPage * ERROR_LOG_LIMIT + 1}–{Math.min((errorLogPage + 1) * ERROR_LOG_LIMIT, errorLogData.total)} из {errorLogData.total}
+                                    </span>
+                                    <button
+                                        className="btn btn-sm btn-secondary"
+                                        disabled={(errorLogPage + 1) * ERROR_LOG_LIMIT >= errorLogData.total}
+                                        onClick={() => setErrorLogPage(p => p + 1)}
+                                    >
+                                        Вперёд →
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {!isLoadingErrorLog && errorLogData && errorLogData.entries.length === 0 && (
+                        <p className="text-muted">Ошибок нет</p>
+                    )}
+                </div>
+
+                {/* Секция backfill (пересчёт данных) */}
+                <div className="sensor-backfill-section">
+                    <div className="section-header">
+                        <h3>Пересчёт данных</h3>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => {
+                                if (confirm('Запустить пересчёт physical_value для всех записей по активному профилю?')) {
+                                    startBackfillMutation.mutate()
+                                }
+                            }}
+                            disabled={startBackfillMutation.isPending || !sensor.active_profile_id}
+                            title={!sensor.active_profile_id ? 'Нет активного профиля' : ''}
+                        >
+                            {startBackfillMutation.isPending ? 'Запуск...' : 'Запустить пересчёт'}
+                        </button>
+                    </div>
+
+                    {isLoadingBackfill && <Loading />}
+
+                    {!isLoadingBackfill && backfillData && backfillData.backfill_tasks.length > 0 && (
+                        <div className="backfill-list">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Статус</th>
+                                        <th>Прогресс</th>
+                                        <th>Создан</th>
+                                        <th>Ошибка</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {backfillData.backfill_tasks.map((task) => {
+                                        const progress = task.total_records
+                                            ? Math.round((task.processed_records / task.total_records) * 100)
+                                            : 0
+                                        return (
+                                            <tr key={task.id}>
+                                                <td>
+                                                    <span className={`badge ${backfillStatusColors[task.status]}`}>
+                                                        {backfillStatusLabels[task.status]}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    {task.total_records !== null ? (
+                                                        <>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                <div style={{
+                                                                    flex: 1,
+                                                                    height: '8px',
+                                                                    background: 'var(--border-color, #e0e0e0)',
+                                                                    borderRadius: '4px',
+                                                                    overflow: 'hidden',
+                                                                }}>
+                                                                    <div style={{
+                                                                        width: `${progress}%`,
+                                                                        height: '100%',
+                                                                        background: task.status === 'failed'
+                                                                            ? 'var(--color-danger, #dc3545)'
+                                                                            : 'var(--color-primary, #1976d2)',
+                                                                        borderRadius: '4px',
+                                                                        transition: 'width 0.3s',
+                                                                    }} />
+                                                                </div>
+                                                                <span style={{ fontSize: '0.85em', minWidth: '80px' }}>
+                                                                    {task.processed_records} / {task.total_records}
+                                                                </span>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-muted">—</span>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    {format(new Date(task.created_at), 'dd MMM HH:mm')}
+                                                </td>
+                                                <td>
+                                                    {task.error_message && (
+                                                        <span className="text-danger" title={task.error_message}>
+                                                            {task.error_message.length > 50
+                                                                ? task.error_message.slice(0, 50) + '...'
+                                                                : task.error_message}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {!isLoadingBackfill && backfillData && backfillData.backfill_tasks.length === 0 && (
+                        <p className="text-muted">Нет задач пересчёта</p>
+                    )}
+                </div>
             </div>
 
             {id && (
@@ -426,6 +809,11 @@ function SensorDetail() {
                         sensorId={id}
                         isOpen={showTelemetryStreamModal}
                         onClose={() => setShowTelemetryStreamModal(false)}
+                    />
+                    <ConversionProfileCreateModal
+                        sensorId={id}
+                        isOpen={showCreateProfileModal}
+                        onClose={() => setShowCreateProfileModal(false)}
                     />
                 </>
             )}

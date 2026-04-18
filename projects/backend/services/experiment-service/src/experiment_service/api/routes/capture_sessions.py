@@ -16,12 +16,13 @@ from experiment_service.domain.dto import CaptureSessionCreateDTO, CaptureSessio
 from experiment_service.domain.enums import CaptureSessionStatus
 from experiment_service.domain.models import CaptureSession
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_capture_session_service,
     get_capture_session_event_service,
     get_idempotency_service,
     get_run_service,
     get_webhook_service,
+    infer_project_role,
     require_current_user,
     resolve_project_id,
 )
@@ -51,7 +52,7 @@ async def _ensure_run(request: web.Request, project_id, run_id):
 async def list_capture_sessions(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     await _ensure_run(request, project_id, run_id)
     service = await get_capture_session_service(request)
@@ -73,7 +74,7 @@ async def list_capture_sessions(request: web.Request):
 async def create_capture_session(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    ensure_permission(user, "runs.create")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     await _ensure_run(request, project_id, run_id)
     body = await read_json(request)
@@ -106,33 +107,31 @@ async def create_capture_session(request: web.Request):
         session = await service.create_session(dto)
     except InvalidStatusTransitionError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
-    actor_role = user.project_roles.get(project_id)
-    if actor_role:
-        audit = await get_capture_session_event_service(request)
-        await audit.record_event(
-            capture_session_id=session.id,
-            event_type=EVENT_CREATED,
-            actor_id=user.user_id,
-            actor_role=actor_role,
-            payload={
-                "run_id": str(run_id),
-                "ordinal_number": session.ordinal_number,
-                "status": session.status.value,
-                "notes": session.notes,
-            },
-        )
-        webhooks = await get_webhook_service(request)
-        await webhooks.emit(
-            project_id=project_id,
-            event_type=EVENT_CREATED,
-            payload={
-                "run_id": str(run_id),
-                "capture_session_id": str(session.id),
-                "ordinal_number": session.ordinal_number,
-                "status": session.status.value,
-                "notes": session.notes,
-            },
-        )
+    audit = await get_capture_session_event_service(request)
+    await audit.record_event(
+        capture_session_id=session.id,
+        event_type=EVENT_CREATED,
+        actor_id=user.user_id,
+        actor_role=infer_project_role(user),
+        payload={
+            "run_id": str(run_id),
+            "ordinal_number": session.ordinal_number,
+            "status": session.status.value,
+            "notes": session.notes,
+        },
+    )
+    webhooks = await get_webhook_service(request)
+    await webhooks.emit(
+        project_id=project_id,
+        event_type=EVENT_CREATED,
+        payload={
+            "run_id": str(run_id),
+            "capture_session_id": str(session.id),
+            "ordinal_number": session.ordinal_number,
+            "status": session.status.value,
+            "notes": session.notes,
+        },
+    )
     response_payload = _session_response(session)
     if idempotency_key:
         try:
@@ -153,7 +152,7 @@ async def create_capture_session(request: web.Request):
 async def stop_capture_session(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     session_id = parse_uuid(request.match_info["session_id"], "session_id")
     await _ensure_run(request, project_id, run_id)
@@ -175,35 +174,33 @@ async def stop_capture_session(request: web.Request):
         session = await service.update_session(project_id, session_id, dto)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
-    actor_role = user.project_roles.get(project_id)
-    if actor_role:
-        audit = await get_capture_session_event_service(request)
-        await audit.record_event(
-            capture_session_id=session.id,
-            event_type=EVENT_STOPPED,
-            actor_id=user.user_id,
-            actor_role=actor_role,
-            payload={
-                "run_id": str(run_id),
-                "status": session.status.value,
-                "stopped_at": session.stopped_at.isoformat() if session.stopped_at else None,
-                "archived": session.archived,
-                "notes": session.notes,
-            },
-        )
-        webhooks = await get_webhook_service(request)
-        await webhooks.emit(
-            project_id=project_id,
-            event_type=EVENT_STOPPED,
-            payload={
-                "run_id": str(run_id),
-                "capture_session_id": str(session.id),
-                "status": session.status.value,
-                "stopped_at": session.stopped_at.isoformat() if session.stopped_at else None,
-                "archived": session.archived,
-                "notes": session.notes,
-            },
-        )
+    audit = await get_capture_session_event_service(request)
+    await audit.record_event(
+        capture_session_id=session.id,
+        event_type=EVENT_STOPPED,
+        actor_id=user.user_id,
+        actor_role=infer_project_role(user),
+        payload={
+            "run_id": str(run_id),
+            "status": session.status.value,
+            "stopped_at": session.stopped_at.isoformat() if session.stopped_at else None,
+            "archived": session.archived,
+            "notes": session.notes,
+        },
+    )
+    webhooks = await get_webhook_service(request)
+    await webhooks.emit(
+        project_id=project_id,
+        event_type=EVENT_STOPPED,
+        payload={
+            "run_id": str(run_id),
+            "capture_session_id": str(session.id),
+            "status": session.status.value,
+            "stopped_at": session.stopped_at.isoformat() if session.stopped_at else None,
+            "archived": session.archived,
+            "notes": session.notes,
+        },
+    )
     return web.json_response(_session_response(session))
 
 
@@ -211,7 +208,7 @@ async def stop_capture_session(request: web.Request):
 async def list_capture_session_events(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     session_id = parse_uuid(request.match_info["session_id"], "session_id")
     await _ensure_run(request, project_id, run_id)
@@ -244,7 +241,7 @@ async def start_backfill(request: web.Request):
     """
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     session_id = parse_uuid(request.match_info["session_id"], "session_id")
     await _ensure_run(request, project_id, run_id)
@@ -256,29 +253,27 @@ async def start_backfill(request: web.Request):
     except InvalidStatusTransitionError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
 
-    actor_role = user.project_roles.get(project_id)
-    if actor_role:
-        audit = await get_capture_session_event_service(request)
-        await audit.record_event(
-            capture_session_id=session.id,
-            event_type=EVENT_BACKFILL_STARTED,
-            actor_id=user.user_id,
-            actor_role=actor_role,
-            payload={
-                "run_id": str(run_id),
-                "status": session.status.value,
-            },
-        )
-        webhooks = await get_webhook_service(request)
-        await webhooks.emit(
-            project_id=project_id,
-            event_type=EVENT_BACKFILL_STARTED,
-            payload={
-                "run_id": str(run_id),
-                "capture_session_id": str(session.id),
-                "status": session.status.value,
-            },
-        )
+    audit = await get_capture_session_event_service(request)
+    await audit.record_event(
+        capture_session_id=session.id,
+        event_type=EVENT_BACKFILL_STARTED,
+        actor_id=user.user_id,
+        actor_role=infer_project_role(user),
+        payload={
+            "run_id": str(run_id),
+            "status": session.status.value,
+        },
+    )
+    webhooks = await get_webhook_service(request)
+    await webhooks.emit(
+        project_id=project_id,
+        event_type=EVENT_BACKFILL_STARTED,
+        payload={
+            "run_id": str(run_id),
+            "capture_session_id": str(session.id),
+            "status": session.status.value,
+        },
+    )
     return web.json_response(_session_response(session))
 
 
@@ -291,7 +286,7 @@ async def complete_backfill(request: web.Request):
     """
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     session_id = parse_uuid(request.match_info["session_id"], "session_id")
     await _ensure_run(request, project_id, run_id)
@@ -303,31 +298,29 @@ async def complete_backfill(request: web.Request):
     except InvalidStatusTransitionError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
 
-    actor_role = user.project_roles.get(project_id)
-    if actor_role:
-        audit = await get_capture_session_event_service(request)
-        await audit.record_event(
-            capture_session_id=session.id,
-            event_type=EVENT_BACKFILL_COMPLETED,
-            actor_id=user.user_id,
-            actor_role=actor_role,
-            payload={
-                "run_id": str(run_id),
-                "status": session.status.value,
-                "attached_records": attached,
-            },
-        )
-        webhooks = await get_webhook_service(request)
-        await webhooks.emit(
-            project_id=project_id,
-            event_type=EVENT_BACKFILL_COMPLETED,
-            payload={
-                "run_id": str(run_id),
-                "capture_session_id": str(session.id),
-                "status": session.status.value,
-                "attached_records": attached,
-            },
-        )
+    audit = await get_capture_session_event_service(request)
+    await audit.record_event(
+        capture_session_id=session.id,
+        event_type=EVENT_BACKFILL_COMPLETED,
+        actor_id=user.user_id,
+        actor_role=infer_project_role(user),
+        payload={
+            "run_id": str(run_id),
+            "status": session.status.value,
+            "attached_records": attached,
+        },
+    )
+    webhooks = await get_webhook_service(request)
+    await webhooks.emit(
+        project_id=project_id,
+        event_type=EVENT_BACKFILL_COMPLETED,
+        payload={
+            "run_id": str(run_id),
+            "capture_session_id": str(session.id),
+            "status": session.status.value,
+            "attached_records": attached,
+        },
+    )
     resp = _session_response(session)
     resp["attached_records"] = attached
     return web.json_response(resp)
@@ -337,7 +330,7 @@ async def complete_backfill(request: web.Request):
 async def delete_capture_session(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id, require_role=("owner", "editor"))
+    ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     session_id = parse_uuid(request.match_info["session_id"], "session_id")
     await _ensure_run(request, project_id, run_id)

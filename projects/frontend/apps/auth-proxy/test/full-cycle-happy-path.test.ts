@@ -36,7 +36,7 @@ describe('full cycle happy path (auth-proxy)', () => {
 
         // ---------- mock auth-service ----------
         const authUpstream = fastify({ logger: false })
-        const accessToken = makeJwt({ sub: userId })
+        const accessToken = makeJwt({ sub: userId, sa: false, sys: [] })
         const refreshToken = 'refresh-123'
 
         // Login/refresh
@@ -61,10 +61,16 @@ describe('full cycle happy path (auth-proxy)', () => {
             authSeen.push({ path: '/projects', headers: req.headers, body: req.body })
             return { id: projectId, name: (req.body as any)?.name || 'P', owner_id: userId }
         })
-        // Membership lookup used by auth-proxy to set X-Project-Role
-        authUpstream.get(`/projects/${projectId}/members`, async () => ({
-            members: [{ user_id: userId, role: 'owner' }],
-        }))
+        // Effective permissions lookup used by auth-proxy to inject RBAC headers
+        authUpstream.get('/api/v1/users/:userId/effective-permissions', async (req) => {
+            const query = req.query as Record<string, string>
+            return {
+                user_id: userId,
+                is_superadmin: false,
+                system_permissions: [],
+                project_permissions: query.project_id ? ['experiments.create', 'experiments.view'] : [],
+            }
+        })
 
         await authUpstream.listen({ port: 0, host: '127.0.0.1' })
         const authAddr = authUpstream.server.address()
@@ -125,6 +131,7 @@ describe('full cycle happy path (auth-proxy)', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${expPort}`,
             targetTelemetryUrl: `http://127.0.0.1:${telPort}`,
+            targetScriptUrl: 'http://example.invalid',
             authUrl: `http://127.0.0.1:${authPort}`,
             corsOrigins: ['http://localhost:3000'],
             cookieSecure: false,
@@ -201,8 +208,11 @@ describe('full cycle happy path (auth-proxy)', () => {
             expect(expCall.headers.authorization).toBe(`Bearer ${access}`)
             expect(expCall.headers['x-user-id']).toBe(userId)
             expect(expCall.headers['x-project-id']).toBe(projectId)
-            // role is populated via auth-service membership endpoint
-            expect(expCall.headers['x-project-role']).toBe('owner')
+            // RBAC headers injected by auth-proxy from effective-permissions endpoint
+            expect(expCall.headers['x-user-is-superadmin']).toBe('false')
+            expect(expCall.headers['x-user-permissions']).toBe('experiments.create,experiments.view')
+            // Old X-Project-Role header must NOT be forwarded
+            expect(expCall.headers['x-project-role']).toBeUndefined()
 
             // 4) create run
             const runRes = await app.inject({

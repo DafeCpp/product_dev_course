@@ -157,7 +157,7 @@ function CreateExperiment() {
         <FormGroup label="Тип эксперимента">
           <MaterialSelect
             id="create_experiment_type"
-            value={formData.experiment_type}
+            value={formData.experiment_type ?? ''}
             onChange={(value) =>
               setFormData({ ...formData, experiment_type: value })
             }

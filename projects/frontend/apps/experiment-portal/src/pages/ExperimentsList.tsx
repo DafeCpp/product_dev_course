@@ -31,13 +31,11 @@ function ExperimentsList() {
   const [exporting, setExporting] = useState(false)
   const pageSize = 20
 
-  // Загружаем список проектов для автоматического выбора первого проекта
   const { data: projectsData, isLoading: projectsLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
   })
 
-  // Автоматически выбираем первый проект, если project_id не указан
   useEffect(() => {
     if (!projectId && projectsData?.projects && projectsData.projects.length > 0) {
       const id = projectsData.projects[0].id
@@ -57,6 +55,7 @@ function ExperimentsList() {
           page_size: pageSize,
         })
       }
+
       return experimentsApi.list({
         project_id: projectId,
         status: status || undefined,
@@ -64,13 +63,35 @@ function ExperimentsList() {
         page_size: pageSize,
       })
     },
-    enabled: !!projectId, // Запрос выполняется только если project_id выбран
+    enabled: !!projectId,
   })
+
   const isBusy = isLoading || projectsLoading
   const loadingMessage =
-    projectsLoading && !projectsData
-      ? 'Загрузка проектов...'
-      : 'Загрузка экспериментов...'
+    projectsLoading && !projectsData ? 'Загрузка проектов...' : 'Загрузка экспериментов...'
+
+  const handleExport = async (formatType: 'csv' | 'json') => {
+    setExporting(true)
+
+    try {
+      const blob = await experimentsApi.exportData({
+        project_id: projectId,
+        format: formatType,
+        status: status || undefined,
+      })
+
+      downloadBlob(
+        blob,
+        `experiments.${formatType}`,
+        formatType === 'csv' ? 'text/csv' : 'application/json'
+      )
+      notifySuccess(`${formatType.toUpperCase()} экспортирован`)
+    } catch {
+      notifyError(`Ошибка экспорта ${formatType.toUpperCase()}`)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="experiments-list">
@@ -93,11 +114,42 @@ function ExperimentsList() {
 
       {!isBusy && !error && (
         <>
-          <div className="filters card">
+          <div className="filters card filter-panel">
+            <div className="filter-panel__header">
+              <div>
+                <div className="filter-panel__title">Command Filters</div>
+                <p className="filter-panel__subtitle">
+                  Отберите нужный проект, статус или найдите эксперимент по названию и описанию.
+                </p>
+              </div>
+              <div className="experiments-filter-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={exporting || !projectId}
+                  onClick={() => handleExport('csv')}
+                >
+                  {exporting ? 'Экспорт...' : 'CSV'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={exporting || !projectId}
+                  onClick={() => handleExport('json')}
+                >
+                  JSON
+                </button>
+              </div>
+            </div>
+
             <div className="filters-grid">
-              <div className="form-group">
-                <label>Поиск</label>
+              <div className="form-group search-field">
+                <label htmlFor="experiment_search">Поиск</label>
+                <span className="search-field__icon" aria-hidden="true">
+                  / /
+                </span>
                 <input
+                  id="experiment_search"
                   type="text"
                   placeholder="Название, описание..."
                   value={searchQuery}
@@ -108,6 +160,7 @@ function ExperimentsList() {
                   disabled={isBusy}
                 />
               </div>
+
               <MaterialSelect
                 id="experiment_project_id"
                 label="Проект"
@@ -119,12 +172,13 @@ function ExperimentsList() {
                 }}
                 disabled={isBusy}
               >
-                {projectsData?.projects.map((project) => (
+                {projectsData?.projects?.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
                   </option>
                 ))}
               </MaterialSelect>
+
               <MaterialSelect
                 id="experiment_status"
                 label="Статус"
@@ -142,57 +196,6 @@ function ExperimentsList() {
                 <option value="failed">Ошибка</option>
                 <option value="archived">Архивирован</option>
               </MaterialSelect>
-              <div className="form-group export-actions">
-                <label>Экспорт</label>
-                <div className="export-btns">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={exporting || !projectId}
-                    onClick={async () => {
-                      setExporting(true)
-                      try {
-                        const csv = await experimentsApi.exportData({
-                          project_id: projectId,
-                          format: 'csv',
-                          status: status || undefined,
-                        })
-                        downloadBlob(csv, 'experiments.csv', 'text/csv')
-                        notifySuccess('CSV экспортирован')
-                      } catch {
-                        notifyError('Ошибка экспорта CSV')
-                      } finally {
-                        setExporting(false)
-                      }
-                    }}
-                  >
-                    {exporting ? 'Экспорт...' : 'CSV'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={exporting || !projectId}
-                    onClick={async () => {
-                      setExporting(true)
-                      try {
-                        const json = await experimentsApi.exportData({
-                          project_id: projectId,
-                          format: 'json',
-                          status: status || undefined,
-                        })
-                        downloadBlob(json, 'experiments.json', 'application/json')
-                        notifySuccess('JSON экспортирован')
-                      } catch {
-                        notifyError('Ошибка экспорта JSON')
-                      } finally {
-                        setExporting(false)
-                      }
-                    }}
-                  >
-                    JSON
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -203,38 +206,36 @@ function ExperimentsList() {
                   <Link
                     key={experiment.id}
                     to={`/experiments/${experiment.id}`}
-                    className="experiment-card card"
+                    className="experiment-card card card-link"
                   >
-                    <div className="card-header">
-                      <h3 className="card-title">{experiment.name}</h3>
+                    <div className="experiment-card__topline">
+                      <span className="meta-chip">
+                        {experiment.experiment_type || 'General experiment'}
+                      </span>
                       <StatusBadge status={experiment.status} statusMap={experimentStatusMap} />
                     </div>
 
-                    {experiment.description && (
-                      <p className="experiment-description">{experiment.description}</p>
-                    )}
+                    <h3 className="experiment-card__title">{experiment.name}</h3>
 
-                    {experiment.experiment_type && (
-                      <div className="experiment-type">
-                        <strong>Тип:</strong> {experiment.experiment_type}
-                      </div>
-                    )}
+                    <p className="experiment-description">
+                      {experiment.description ||
+                        'Описание пока не добавлено. Откройте карточку, чтобы посмотреть детали конфигурации и запусков.'}
+                    </p>
 
                     <Tags tags={experiment.tags} />
 
-                    <div className="experiment-meta">
-                      <small>
-                        Создан:{' '}
-                        {format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')}
-                      </small>
+                    <div className="experiment-card__footer">
+                      <div className="experiment-card__meta">
+                        <span>Создан</span>
+                        <strong>{format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')}</strong>
+                      </div>
+                      <span className="experiment-card__cta">Открыть</span>
                     </div>
                   </Link>
                 ))}
               </div>
 
-              {data.experiments.length === 0 && (
-                <EmptyState message="Эксперименты не найдены" />
-              )}
+              {data.experiments.length === 0 && <EmptyState message="Эксперименты не найдены" />}
 
               <Pagination
                 currentPage={page}
@@ -267,4 +268,3 @@ function ExperimentsList() {
 }
 
 export default ExperimentsList
-

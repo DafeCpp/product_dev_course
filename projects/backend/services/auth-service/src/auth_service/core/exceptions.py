@@ -3,9 +3,15 @@ from __future__ import annotations
 
 from aiohttp import web
 
+from backend_common.core.exceptions import ServiceError
 
-class AuthError(Exception):
-    """Base authentication error."""
+
+class AuthError(ServiceError):
+    """Base authentication error.
+
+    Inherits from ``ServiceError`` so the common error-handling middleware
+    can map it to an HTTP response automatically via ``status_code``.
+    """
 
     status_code: int = 500
     message: str = "Authentication error"
@@ -55,6 +61,13 @@ class ForbiddenError(AuthError):
 
     status_code = 403
     message = "Access forbidden"
+
+
+class ConflictError(AuthError):
+    """Resource conflict."""
+
+    status_code = 409
+    message = "Conflict"
 
 
 def handle_auth_error(request: web.Request, error: AuthError) -> web.Response:

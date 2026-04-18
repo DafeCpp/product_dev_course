@@ -6,6 +6,7 @@ import type { RunCreate } from '../types'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
+import { createRunSchema, flatFieldErrors } from '../schemas/forms'
 import './CreateRunModal.scss'
 
 interface CreateRunModalProps {
@@ -22,11 +23,13 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         params: {},
         notes: '',
         metadata: {},
+        auto_complete_after_minutes: null,
     })
-    const [parametersJson, setParametersJson] = useState('{}')
+    const [paramsJson, setParamsJson] = useState('{}')
     const [metadataJson, setMetadataJson] = useState('{}')
-    const [jsonError, setJsonError] = useState<string | null>(null)
+    const [autoCompleteInput, setAutoCompleteInput] = useState('')
     const [error, setError] = useState<string | null>(null)
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({})
 
     const createMutation = useMutation({
         mutationFn: (data: RunCreate) => runsApi.create(experimentId, data),
@@ -47,62 +50,34 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
-        setJsonError(null)
+        setFieldErrors({})
 
-        if (!formData.name.trim()) {
-            const msg = 'Название запуска обязательно'
-            setError(msg)
-            notifyError(msg)
+        const result = createRunSchema.safeParse({
+            name: formData.name,
+            notes: formData.notes,
+            paramsJson,
+            metadataJson,
+        })
+
+        if (!result.success) {
+            const errors = flatFieldErrors(result.error)
+            setFieldErrors(errors)
+            const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
+            setError(first)
+            notifyError(first)
             return
         }
 
-        // Парсим JSON для params (должен быть объект)
-        let params: Record<string, any> = {}
-        if (parametersJson.trim()) {
-            try {
-                const parsed = JSON.parse(parametersJson)
-                if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                    params = parsed
-                } else {
-                    const msg = 'Параметры должны быть JSON-объектом (например, {})'
-                    setJsonError(msg)
-                    notifyError(msg)
-                    return
-                }
-            } catch {
-                const msg = 'Ошибка в формате JSON для параметров'
-                setJsonError(msg)
-                notifyError(msg)
-                return
-            }
-        }
-
-        // Парсим JSON для metadata (должен быть объект)
-        let metadata: Record<string, any> = {}
-        if (metadataJson.trim()) {
-            try {
-                const parsed = JSON.parse(metadataJson)
-                if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                    metadata = parsed
-                } else {
-                    const msg = 'Метаданные должны быть JSON-объектом (например, {})'
-                    setJsonError(msg)
-                    notifyError(msg)
-                    return
-                }
-            } catch {
-                const msg = 'Ошибка в формате JSON для метаданных'
-                setJsonError(msg)
-                notifyError(msg)
-                return
-            }
-        }
-
+        const { paramsJson: params, metadataJson: metadata, ...rest } = result.data
+        const autoCompleteMinutes = autoCompleteInput.trim() !== ''
+            ? parseInt(autoCompleteInput, 10)
+            : null
         createMutation.mutate({
-            name: formData.name.trim(),
+            ...rest,
             params,
-            notes: formData.notes || undefined,
+            notes: rest.notes || undefined,
             metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+            auto_complete_after_minutes: autoCompleteMinutes,
         })
     }
 
@@ -113,11 +88,13 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
                 params: {},
                 notes: '',
                 metadata: {},
+                auto_complete_after_minutes: null,
             })
-            setParametersJson('{}')
+            setParamsJson('{}')
             setMetadataJson('{}')
+            setAutoCompleteInput('')
             setError(null)
-            setJsonError(null)
+            setFieldErrors({})
             onClose()
         }
     }
@@ -131,7 +108,6 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         >
             <form onSubmit={handleSubmit} className="modal-form">
                 {IS_TEST && error && <div className="error">{error}</div>}
-                {IS_TEST && jsonError && <div className="error">{jsonError}</div>}
 
                 <div className="form-group">
                     <label htmlFor="run_name">
@@ -146,14 +122,17 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
                         placeholder="Например: Запуск #1"
                         disabled={createMutation.isPending}
                     />
+                    {fieldErrors.name && (
+                        <small className="field-error">{fieldErrors.name}</small>
+                    )}
                 </div>
 
                 <div className="form-group">
                     <label htmlFor="run_parameters">Параметры (JSON)</label>
                     <textarea
                         id="run_parameters"
-                        value={parametersJson}
-                        onChange={(e) => setParametersJson(e.target.value)}
+                        value={paramsJson}
+                        onChange={(e) => setParamsJson(e.target.value)}
                         placeholder='{"key": "value"}'
                         rows={6}
                         disabled={createMutation.isPending}
@@ -161,6 +140,9 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
                     <small className="form-hint">
                         JSON объект с параметрами запуска. Оставьте пустым или используйте {'{}'} для пустого объекта.
                     </small>
+                    {fieldErrors.paramsJson && (
+                        <small className="field-error">{fieldErrors.paramsJson}</small>
+                    )}
                 </div>
 
                 <div className="form-group">
@@ -176,6 +158,23 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
                 </div>
 
                 <div className="form-group">
+                    <label htmlFor="run_auto_complete">Автозавершение (минуты)</label>
+                    <input
+                        id="run_auto_complete"
+                        type="number"
+                        min="1"
+                        max="1440"
+                        value={autoCompleteInput}
+                        onChange={(e) => setAutoCompleteInput(e.target.value)}
+                        placeholder="Нет (без лимита)"
+                        disabled={createMutation.isPending}
+                    />
+                    <small className="form-hint">
+                        Через сколько минут после старта run завершится автоматически. Оставьте пустым для отключения.
+                    </small>
+                </div>
+
+                <div className="form-group">
                     <label htmlFor="run_metadata">Метаданные (JSON)</label>
                     <textarea
                         id="run_metadata"
@@ -188,6 +187,9 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
                     <small className="form-hint">
                         JSON объект с метаданными. Оставьте пустым или используйте {'{}'} для пустого объекта.
                     </small>
+                    {fieldErrors.metadataJson && (
+                        <small className="field-error">{fieldErrors.metadataJson}</small>
+                    )}
                 </div>
 
                 <div className="modal-actions">
@@ -213,4 +215,3 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
 }
 
 export default CreateRunModal
-

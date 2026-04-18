@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
 import { EmptyState, Error as ErrorComponent, FloatingActionButton, Loading, MaterialSelect } from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
+import TelemetryExportModal from '../components/TelemetryExportModal'
+import CaptureSessionTimeline from '../components/CaptureSessionTimeline'
+import LiveSensorPanel from '../components/LiveSensorPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
 import { notifyError, notifySuccess } from '../utils/notify'
@@ -74,6 +77,18 @@ function TelemetryViewer() {
     const [historyWasTruncated, setHistoryWasTruncated] = useState(false)
     const [historySessionFilter, setHistorySessionFilter] = useState('')
     const [historySensorFilter, setHistorySensorFilter] = useState('')
+    const [showExportModal, setShowExportModal] = useState(false)
+    const [historyTimeRange, setHistoryTimeRange] = useState<[string, string] | null>(null)
+    const [recentValuesBySensor, setRecentValuesBySensor] = useState<Record<string, number[]>>({})
+    const RECENT_VALUES_MAX = 30
+
+    const handleRecordReceived = useCallback((sensorId: string, value: number) => {
+        setRecentValuesBySensor(prev => {
+            const arr = prev[sensorId] ?? []
+            const next = arr.length >= RECENT_VALUES_MAX ? arr.slice(arr.length - RECENT_VALUES_MAX + 1) : arr
+            return { ...prev, [sensorId]: [...next, value] }
+        })
+    }, [])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -753,6 +768,28 @@ function TelemetryViewer() {
         return () => observer.disconnect()
     }, [])
 
+    // Track Plotly zoom/pan to sync CaptureSessionTimeline
+    useEffect(() => {
+        const element = historyPlotRef.current
+        if (!element) return
+        const handler = (eventData: any) => {
+            const xRange = eventData?.['xaxis.range']
+            const x0 = eventData?.['xaxis.range[0]']
+            const x1 = eventData?.['xaxis.range[1]']
+            if (xRange && xRange.length === 2) {
+                setHistoryTimeRange([String(xRange[0]), String(xRange[1])])
+            } else if (x0 && x1) {
+                setHistoryTimeRange([String(x0), String(x1)])
+            } else if (eventData?.['xaxis.autorange']) {
+                setHistoryTimeRange(null)
+            }
+        }
+        ;(element as any).on?.('plotly_relayout', handler)
+        return () => {
+            ;(element as any).removeAllListeners?.('plotly_relayout')
+        }
+    }, [historyHasData])
+
     useEffect(() => {
         return () => {
             const element = historyPlotRef.current
@@ -880,9 +917,24 @@ function TelemetryViewer() {
 
     // Placeholder for settings object used above (avoids introducing a new dependency)
     const settings = { telemetry_query_max_limit: HISTORY_MAX_POINTS_LIMIT }
+    const selectedProjectName =
+        projectsData?.projects.find((project) => project.id === projectId)?.name || 'Проект не выбран'
+    const selectedExperimentName =
+        experiments.find((experiment) => experiment.id === experimentId)?.name || 'Эксперимент не выбран'
+    const selectedRunName = runs.find((run) => run.id === runId)?.name || 'Пуск не выбран'
+    const selectedSessionLabel = selectedHistorySession
+        ? `#${selectedHistorySession.ordinal_number}`
+        : activeCaptureSession
+            ? `#${activeCaptureSession.ordinal_number}`
+            : 'Нет'
+    const telemetryModeLabel = viewMode === 'live' ? 'Live stream' : 'History review'
+    const telemetryModeDetail =
+        viewMode === 'live'
+            ? `${panelIds.length} панелей в рабочем полотне`
+            : `${historyLoadedCount || 0} ${historyUseAggregated ? 'бакетов' : 'точек'} в выборке`
 
     return (
-        <div className="telemetry-view">
+        <div className="telemetry-view detail-page">
             {projectsLoading && <Loading message="Загрузка проектов..." />}
 
             {!projectsLoading && !hasProjects && (
@@ -890,535 +942,713 @@ function TelemetryViewer() {
             )}
 
             {hasProjects && (
-                <div className={`telemetry-view__filters card${filtersOpen ? '' : ' telemetry-view__filters--collapsed'}`}>
-                    <div
-                        className={`telemetry-view__filters-body${filtersOpen ? ' telemetry-view__filters-body--open' : ''
-                            }`}
-                        aria-hidden={!filtersOpen}
-                    >
-                        <div className="telemetry-view__grid">
-                            <div className="form-group telemetry-view__mode">
-                                <label>Режим</label>
-                                <div className="telemetry-view__mode-toggle">
-                                    <label>
-                                        <input
-                                            type="radio"
-                                            name="telemetry-view-mode"
-                                            checked={viewMode === 'live'}
-                                            onChange={() => setViewMode('live')}
-                                        />
-                                        live
-                                    </label>
-                                    <label>
-                                        <input
-                                            type="radio"
-                                            name="telemetry-view-mode"
-                                            checked={viewMode === 'history'}
-                                            onChange={() => setViewMode('history')}
-                                        />
-                                        history
-                                    </label>
+                <>
+                    <section className="compact-page-header card telemetry-view__hero">
+                        <div className="compact-page-header__top">
+                            <div className="compact-page-header__main">
+                                <div className="compact-page-header__eyebrow">Signal Stream</div>
+                                <div className="compact-page-header__title-row">
+                                    <h2 className="compact-page-header__title">Telemetry Viewer</h2>
                                 </div>
+                                <p className="compact-page-header__description">Live и history в одном рабочем окне.</p>
                             </div>
-                            <MaterialSelect
-                                id="telemetry_project_id"
-                                label="Проект"
-                                placeholder="Выберите проект"
-                                value={projectId}
-                                onChange={(id) => {
-                                    setProjectId(id)
-                                    setActiveProjectId(id)
-                                    setExperimentId('')
-                                    setRunId('')
-                                }}
-                                disabled={projectsLoading}
-                            >
-                                {projectsData?.projects.map((project) => (
-                                    <option key={project.id} value={project.id}>
-                                        {project.name}
-                                    </option>
-                                ))}
-                            </MaterialSelect>
+                        </div>
+                        <div className="compact-page-header__meta telemetry-view__hero-pills">
+                            <span className="meta-chip">mode: {telemetryModeLabel}</span>
+                            <span className="meta-chip">project: {selectedProjectName}</span>
+                            {experimentId && <span className="meta-chip">experiment: {selectedExperimentName}</span>}
+                            {runId && <span className="meta-chip">run: {selectedRunName}</span>}
+                            <span className="meta-chip">sensors: {sensors.length}</span>
+                            <span className="meta-chip">session: {selectedSessionLabel}</span>
+                            <span className="meta-chip">{telemetryModeDetail}</span>
+                        </div>
+                    </section>
 
-                            <MaterialSelect
-                                id="telemetry_experiment_id"
-                                label="Эксперимент"
-                                placeholder="Выберите эксперимент"
-                                value={experimentId}
-                                onChange={(id) => {
-                                    setExperimentId(id)
-                                    setRunId('')
-                                }}
-                                disabled={!projectId || experimentsLoading || projectsLoading}
-                            >
-                                {experiments.map((experiment) => (
-                                    <option key={experiment.id} value={experiment.id}>
-                                        {experiment.name}
-                                    </option>
-                                ))}
-                            </MaterialSelect>
+                    <div className={`telemetry-view__workspace telemetry-view__workspace--${viewMode}`}>
+                        <section
+                            className={`telemetry-view__filters card${filtersOpen ? '' : ' telemetry-view__filters--collapsed'}`}
+                        >
+                            <div className="telemetry-view__filters-topbar">
+                                <div className="telemetry-view__filters-copy">
+                                    <div className="filter-panel__title">Signal Route</div>
+                                    <p className="filter-panel__subtitle">
+                                        Определите контур данных: проект, эксперимент, запуск и режим просмотра.
+                                    </p>
+                                </div>
 
-                            <MaterialSelect
-                                id="telemetry_run_id"
-                                label="Пуск"
-                                value={runId}
-                                onChange={setRunId}
-                                placeholder="Выберите пуск"
-                                disabled={!experimentId || runsLoading || experimentsLoading || projectsLoading}
-                            >
-                                {runs.map((run) => (
-                                    <option key={run.id} value={run.id}>
-                                        {run.name}
-                                    </option>
-                                ))}
-                            </MaterialSelect>
-
-                            {canManageCaptureSession && (
-                                <div className="telemetry-view__capture-actions form-group">
-                                    <label className="telemetry-view__capture-actions-label">Отсчёт (capture session)</label>
-                                    <div className="telemetry-view__capture-actions-btns">
-                                        {activeCaptureSession ? (
-                                            <button
-                                                type="button"
-                                                className="btn btn-danger btn-sm"
-                                                onClick={() => {
-                                                    if (window.confirm('Остановить отсчёт?')) {
-                                                        stopSessionMutation.mutate(activeCaptureSession.id)
-                                                    }
-                                                }}
-                                                disabled={stopSessionMutation.isPending}
-                                            >
-                                                {stopSessionMutation.isPending ? 'Остановка...' : 'Остановить отсчёт'}
-                                            </button>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                className="btn btn-primary btn-sm"
-                                                onClick={() => {
-                                                    const notes = window.prompt('Заметки (опционально):')
-                                                    if (notes === null) return
-                                                    createSessionMutation.mutate(notes.trim() || undefined)
-                                                }}
-                                                disabled={
-                                                    createSessionMutation.isPending ||
-                                                    runDetailLoading ||
-                                                    !runExperiment
-                                                }
-                                            >
-                                                {createSessionMutation.isPending
-                                                    ? 'Создание...'
-                                                    : 'Старт отсчёта'}
-                                            </button>
-                                        )}
+                                <div className="telemetry-view__menu">
+                                    <div className="telemetry-view__menu-item">
+                                        <span className="telemetry-view__menu-label">Mode</span>
+                                        <span className="telemetry-view__menu-value">{telemetryModeLabel}</span>
+                                    </div>
+                                    <div className="telemetry-view__menu-item">
+                                        <span className="telemetry-view__menu-label">Project</span>
+                                        <span className="telemetry-view__menu-value">{selectedProjectName}</span>
+                                    </div>
+                                    <div className="telemetry-view__menu-item">
+                                        <span className="telemetry-view__menu-label">Run</span>
+                                        <span className="telemetry-view__menu-value">{selectedRunName}</span>
                                     </div>
                                 </div>
-                            )}
 
-                            {viewMode === 'history' && (
-                                <div className="form-group">
-                                    <label htmlFor="telemetry_capture_session_filter">Фильтр сессий</label>
-                                    <input
-                                        id="telemetry_capture_session_filter"
-                                        type="text"
-                                        className="telemetry-view__text-input"
-                                        value={historySessionFilter}
-                                        onChange={(event) => setHistorySessionFilter(event.target.value)}
-                                        placeholder="Номер, статус, заметка, дата"
-                                    />
-                                </div>
-                            )}
-
-                            {viewMode === 'history' && (
-                                <MaterialSelect
-                                    id="telemetry_capture_session_id"
-                                    label="Capture session"
-                                    value={historyCaptureSessionId}
-                                    onChange={setHistoryCaptureSessionId}
-                                    placeholder="Выберите сессию"
-                                    disabled={!runId || captureSessionsLoading}
+                                <button
+                                    type="button"
+                                    className="telemetry-view__collapse"
+                                    onClick={() => setFiltersOpen((prev) => !prev)}
+                                    aria-label={filtersOpen ? 'Свернуть фильтры' : 'Развернуть фильтры'}
                                 >
-                                    {historySessionOptions.length === 0 && (
-                                        <option value="" disabled>
-                                            {historySessionFilter.trim()
-                                                ? 'Ничего не найдено'
-                                                : 'Нет доступных сессий'}
-                                        </option>
-                                    )}
-                                    {historySessionOptions.map((session) => (
-                                        <option key={session.id} value={session.id}>
-                                            {session.label}
+                                    {filtersOpen ? 'Свернуть' : 'Показать фильтры'}
+                                </button>
+                            </div>
+
+                            <div
+                                className={`telemetry-view__filters-body${filtersOpen ? ' telemetry-view__filters-body--open' : ''}`}
+                                aria-hidden={!filtersOpen}
+                            >
+                                <div className="telemetry-view__grid">
+                                <div className="form-group telemetry-view__mode">
+                                    <label>Режим</label>
+                                    <div className="telemetry-view__mode-toggle">
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="telemetry-view-mode"
+                                                checked={viewMode === 'live'}
+                                                onChange={() => setViewMode('live')}
+                                            />
+                                            live
+                                        </label>
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="telemetry-view-mode"
+                                                checked={viewMode === 'history'}
+                                                onChange={() => setViewMode('history')}
+                                            />
+                                            history
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <MaterialSelect
+                                    id="telemetry_project_id"
+                                    label="Проект"
+                                    placeholder="Выберите проект"
+                                    value={projectId}
+                                    onChange={(id) => {
+                                        setProjectId(id)
+                                        setActiveProjectId(id)
+                                        setExperimentId('')
+                                        setRunId('')
+                                    }}
+                                    disabled={projectsLoading}
+                                >
+                                    {projectsData?.projects.map((project) => (
+                                        <option key={project.id} value={project.id}>
+                                            {project.name}
                                         </option>
                                     ))}
                                 </MaterialSelect>
-                            )}
 
-                            {(canStartBackfill || canCompleteBackfill) && (
-                                <div className="telemetry-view__backfill-actions form-group">
-                                    <label>Догрузка данных (backfill)</label>
-                                    <div className="telemetry-view__backfill-btns">
-                                        {canStartBackfill && (
-                                            <button
-                                                type="button"
-                                                className="btn btn-secondary btn-sm"
-                                                disabled={startBackfillMutation.isPending}
-                                                onClick={() => {
-                                                    if (window.confirm(
-                                                        'Перевести сессию в режим догрузки (backfilling)?\n\n' +
-                                                        'Новые данные от датчиков будут привязаны к этой сессии.'
-                                                    )) {
-                                                        startBackfillMutation.mutate(historyCaptureSessionId)
+                                <MaterialSelect
+                                    id="telemetry_experiment_id"
+                                    label="Эксперимент"
+                                    placeholder="Выберите эксперимент"
+                                    value={experimentId}
+                                    onChange={(id) => {
+                                        setExperimentId(id)
+                                        setRunId('')
+                                    }}
+                                    disabled={!projectId || experimentsLoading || projectsLoading}
+                                >
+                                    {experiments.map((experiment) => (
+                                        <option key={experiment.id} value={experiment.id}>
+                                            {experiment.name}
+                                        </option>
+                                    ))}
+                                </MaterialSelect>
+
+                                <MaterialSelect
+                                    id="telemetry_run_id"
+                                    label="Пуск"
+                                    value={runId}
+                                    onChange={setRunId}
+                                    placeholder="Выберите пуск"
+                                    disabled={!experimentId || runsLoading || experimentsLoading || projectsLoading}
+                                >
+                                    {runs.map((run) => (
+                                        <option key={run.id} value={run.id}>
+                                            {run.name}
+                                        </option>
+                                    ))}
+                                </MaterialSelect>
+
+                                {canManageCaptureSession && (
+                                    <div className="telemetry-view__capture-actions form-group">
+                                        <label className="telemetry-view__capture-actions-label">
+                                            Отсчёт (capture session)
+                                        </label>
+                                        <div className="telemetry-view__capture-actions-btns">
+                                            {activeCaptureSession ? (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-danger btn-sm"
+                                                    onClick={() => {
+                                                        if (window.confirm('Остановить отсчёт?')) {
+                                                            stopSessionMutation.mutate(activeCaptureSession.id)
+                                                        }
+                                                    }}
+                                                    disabled={stopSessionMutation.isPending}
+                                                >
+                                                    {stopSessionMutation.isPending ? 'Остановка...' : 'Остановить отсчёт'}
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-primary btn-sm"
+                                                    onClick={() => {
+                                                        const notes = window.prompt('Заметки (опционально):')
+                                                        if (notes === null) return
+                                                        createSessionMutation.mutate(notes.trim() || undefined)
+                                                    }}
+                                                    disabled={
+                                                        createSessionMutation.isPending ||
+                                                        runDetailLoading ||
+                                                        !runExperiment
                                                     }
-                                                }}
-                                            >
-                                                {startBackfillMutation.isPending
-                                                    ? 'Запуск...'
-                                                    : 'Начать догрузку'}
-                                            </button>
+                                                >
+                                                    {createSessionMutation.isPending ? 'Создание...' : 'Старт отсчёта'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {viewMode === 'history' && (
+                                    <div className="form-group">
+                                        <label htmlFor="telemetry_capture_session_filter">Фильтр сессий</label>
+                                        <input
+                                            id="telemetry_capture_session_filter"
+                                            type="text"
+                                            className="telemetry-view__text-input"
+                                            value={historySessionFilter}
+                                            onChange={(event) => setHistorySessionFilter(event.target.value)}
+                                            placeholder="Номер, статус, заметка, дата"
+                                        />
+                                    </div>
+                                )}
+
+                                {viewMode === 'history' && (
+                                    <MaterialSelect
+                                        id="telemetry_capture_session_id"
+                                        label="Capture session"
+                                        value={historyCaptureSessionId}
+                                        onChange={setHistoryCaptureSessionId}
+                                        placeholder="Выберите сессию"
+                                        disabled={!runId || captureSessionsLoading}
+                                    >
+                                        {historySessionOptions.length === 0 && (
+                                            <option value="" disabled>
+                                                {historySessionFilter.trim()
+                                                    ? 'Ничего не найдено'
+                                                    : 'Нет доступных сессий'}
+                                            </option>
                                         )}
-                                        {canCompleteBackfill && (
-                                            <button
-                                                type="button"
-                                                className="btn btn-primary btn-sm"
-                                                disabled={completeBackfillMutation.isPending}
-                                                onClick={() => {
-                                                    if (window.confirm(
-                                                        'Завершить догрузку?\n\n' +
-                                                        'Все late-записи будут привязаны к сессии, статус вернётся в succeeded.'
-                                                    )) {
-                                                        completeBackfillMutation.mutate(historyCaptureSessionId)
-                                                    }
-                                                }}
-                                            >
-                                                {completeBackfillMutation.isPending
-                                                    ? 'Завершение...'
-                                                    : 'Завершить догрузку'}
-                                            </button>
-                                        )}
+                                        {historySessionOptions.map((session) => (
+                                            <option key={session.id} value={session.id}>
+                                                {session.label}
+                                            </option>
+                                        ))}
+                                    </MaterialSelect>
+                                )}
+
+                                {(canStartBackfill || canCompleteBackfill) && (
+                                    <div className="telemetry-view__backfill-actions form-group">
+                                        <label>Догрузка данных (backfill)</label>
+                                        <div className="telemetry-view__backfill-btns">
+                                            {canStartBackfill && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-secondary btn-sm"
+                                                    disabled={startBackfillMutation.isPending}
+                                                    onClick={() => {
+                                                        if (
+                                                            window.confirm(
+                                                                'Перевести сессию в режим догрузки (backfilling)?\n\n' +
+                                                                'Новые данные от датчиков будут привязаны к этой сессии.'
+                                                            )
+                                                        ) {
+                                                            startBackfillMutation.mutate(historyCaptureSessionId)
+                                                        }
+                                                    }}
+                                                >
+                                                    {startBackfillMutation.isPending ? 'Запуск...' : 'Начать догрузку'}
+                                                </button>
+                                            )}
+                                            {canCompleteBackfill && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-primary btn-sm"
+                                                    disabled={completeBackfillMutation.isPending}
+                                                    onClick={() => {
+                                                        if (
+                                                            window.confirm(
+                                                                'Завершить догрузку?\n\n' +
+                                                                'Все late-записи будут привязаны к сессии, статус вернётся в succeeded.'
+                                                            )
+                                                        ) {
+                                                            completeBackfillMutation.mutate(historyCaptureSessionId)
+                                                        }
+                                                    }}
+                                                >
+                                                    {completeBackfillMutation.isPending
+                                                        ? 'Завершение...'
+                                                        : 'Завершить догрузку'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            </div>
+                            <div className="telemetry-view__status-stack">
+                                {isLoading && <Loading message="Загрузка датчиков..." />}
+                                {error && (
+                                    <ErrorComponent
+                                        message={
+                                            error instanceof Error
+                                                ? error.message
+                                                : 'Ошибка загрузки датчиков. Убедитесь, что выбран проект.'
+                                        }
+                                    />
+                                )}
+                                {!isLoading && !error && projectId && sensors.length === 0 && (
+                                    <EmptyState message="В выбранном проекте нет датчиков." />
+                                )}
+                                {experimentsLoading && <Loading message="Загрузка экспериментов..." />}
+                                {!experimentsLoading && experimentsError && (
+                                    <ErrorComponent
+                                        message={
+                                            experimentsError instanceof Error
+                                                ? experimentsError.message
+                                                : 'Ошибка загрузки экспериментов.'
+                                        }
+                                    />
+                                )}
+                                {runsLoading && <Loading message="Загрузка запусков..." />}
+                                {!runsLoading && runsError && (
+                                    <ErrorComponent
+                                        message={
+                                            runsError instanceof Error ? runsError.message : 'Ошибка загрузки запусков.'
+                                        }
+                                    />
+                                )}
+                                {viewMode === 'history' && captureSessionsLoading && (
+                                    <Loading message="Загрузка сессий..." />
+                                )}
+                                {viewMode === 'history' && captureSessionsError && (
+                                    <ErrorComponent
+                                        message={
+                                            captureSessionsError instanceof Error
+                                                ? captureSessionsError.message
+                                                : 'Ошибка загрузки сессий.'
+                                        }
+                                    />
+                                )}
+                                {viewMode === 'history' &&
+                                    !captureSessionsLoading &&
+                                    !captureSessionsError &&
+                                    runId &&
+                                    captureSessions.length === 0 && (
+                                        <EmptyState message="В выбранном запуске нет capture sessions." />
+                                    )}
+                            </div>
+                        </section>
+
+                        {isLiveMode ? (
+                            <div className="telemetry-view__live-layout">
+                            <section className="telemetry-view__live-stage card detail-card">
+                                <div className="detail-section-header">
+                                    <div className="detail-section-header__copy">
+                                        <span className="detail-card__eyebrow">Live Canvas</span>
+                                        <h3 className="detail-card__title">Панели live-телеметрии</h3>
+                                        <p>
+                                            Добавляйте независимые панели, меняйте их порядок и отслеживайте
+                                            несколько сенсоров параллельно.
+                                        </p>
                                     </div>
                                 </div>
-                            )}
-                        </div>
 
-                        {isLoading && <Loading message="Загрузка датчиков..." />}
-                        {error && (
-                            <ErrorComponent
-                                message={
-                                    error instanceof Error
-                                        ? error.message
-                                        : 'Ошибка загрузки датчиков. Убедитесь, что выбран проект.'
-                                }
-                            />
-                        )}
-                        {!isLoading && !error && projectId && sensors.length === 0 && (
-                            <EmptyState message="В выбранном проекте нет датчиков." />
-                        )}
-                        {experimentsLoading && <Loading message="Загрузка экспериментов..." />}
-                        {!experimentsLoading && experimentsError && (
-                            <ErrorComponent
-                                message={
-                                    experimentsError instanceof Error
-                                        ? experimentsError.message
-                                        : 'Ошибка загрузки экспериментов.'
-                                }
-                            />
-                        )}
-                        {runsLoading && <Loading message="Загрузка запусков..." />}
-                        {!runsLoading && runsError && (
-                            <ErrorComponent
-                                message={runsError instanceof Error ? runsError.message : 'Ошибка загрузки запусков.'}
-                            />
-                        )}
-                        {viewMode === 'history' && captureSessionsLoading && <Loading message="Загрузка сессий..." />}
-                        {viewMode === 'history' && captureSessionsError && (
-                            <ErrorComponent
-                                message={
-                                    captureSessionsError instanceof Error
-                                        ? captureSessionsError.message
-                                        : 'Ошибка загрузки сессий.'
-                                }
-                            />
-                        )}
-                        {viewMode === 'history' &&
-                            !captureSessionsLoading &&
-                            !captureSessionsError &&
-                            runId &&
-                            captureSessions.length === 0 && (
-                                <EmptyState message="В выбранном запуске нет capture sessions." />
-                            )}
-                    </div>
-
-
-                    <button
-                        type="button"
-                        className="telemetry-view__collapse"
-                        onClick={() => setFiltersOpen((prev) => !prev)}
-                        aria-label={filtersOpen ? 'Свернуть фильтры' : 'Развернуть фильтры'}
-                    >
-                        {filtersOpen ? '︿' : '﹀'}
-                    </button>
-
-                </div>
-            )}
-
-            {canAddPanel && panelIds.length === 0 && (
-                <EmptyState message="Добавьте панель, чтобы начать просмотр графиков." />
-            )}
-
-            {isLiveMode ? (
-                <div className="telemetry-view__panels" ref={panelsWrapRef}>
-                    {panelIds.map((panelId, index) => {
-                        const panelSize = panelSizes[panelId]
-                        const isWide = panelsWrapWidth > 0 && panelSize ? panelSize.width > panelsWrapWidth / 2 : false
-                        return (
-                            <div
-                                key={panelId}
-                                className={`telemetry-view__panel-item${draggingPanelId === panelId ? ' telemetry-view__panel-item--dragging' : ''
-                                    }${dragOverPanelId === panelId ? ' telemetry-view__panel-item--over' : ''}${isWide ? ' telemetry-view__panel-item--full' : ''
-                                    }`}
-                                onDragOver={(event) => {
-                                    if (!draggingPanelId || draggingPanelId === panelId) return
-                                    event.preventDefault()
-                                    event.dataTransfer.dropEffect = 'move'
-                                    setDragOverPanelId(panelId)
-                                }}
-                                onDragLeave={(event) => {
-                                    if (event.currentTarget.contains(event.relatedTarget as Node)) return
-                                    setDragOverPanelId((prev) => (prev === panelId ? null : prev))
-                                }}
-                                onDrop={(event) => {
-                                    event.preventDefault()
-                                    if (draggingPanelId) movePanel(draggingPanelId, panelId)
-                                    setDragOverPanelId(null)
-                                    setDraggingPanelId(null)
-                                }}
-                            >
-                                <TelemetryPanel
-                                    panelId={panelId}
-                                    sensors={sensors}
-                                    sensorsLoading={isLoading}
-                                    sensorsError={error ? (typeof error === 'string' ? error : (error as Error)?.message ?? 'Ошибка загрузки сенсоров') : null}
-                                    title={`${panelTitleSeed} #${index + 1}`}
-                                    onRemove={() => removePanel(panelId)}
-                                    onSizeChange={(size) => handlePanelSizeChange(panelId, size)}
-                                    dragHandleProps={{
-                                        draggable: true,
-                                        onDragStart: (event) => {
-                                            setDraggingPanelId(panelId)
-                                            event.dataTransfer.effectAllowed = 'move'
-                                            event.dataTransfer.setData('text/plain', panelId)
-                                        },
-                                        onDragEnd: () => {
-                                            setDraggingPanelId(null)
-                                            setDragOverPanelId(null)
-                                        },
-                                    }}
-                                />
-                            </div>
-                        )
-                    })}
-                </div>
-            ) : (
-                <div className="telemetry-view__history card">
-                    <div className="telemetry-view__history-controls">
-                        <div className="telemetry-view__history-sensors">
-                            <div className="telemetry-view__sensor-filter">
-                                <label htmlFor="telemetry_history_sensor_filter">Фильтр сенсоров</label>
-                                <input
-                                    id="telemetry_history_sensor_filter"
-                                    type="text"
-                                    className="telemetry-view__text-input"
-                                    value={historySensorFilter}
-                                    onChange={(event) => setHistorySensorFilter(event.target.value)}
-                                    placeholder="Имя, тип, id"
-                                />
-                            </div>
-                            <MaterialSelect
-                                id="telemetry_history_sensors"
-                                value=""
-                                label="Сенсоры"
-                                onChange={(value, event) => {
-                                    addHistorySensor(value)
-                                    if (event?.currentTarget) {
-                                        event.currentTarget.value = ''
-                                    }
-                                }}
-                                disabled={filteredHistorySensors.length === 0 || historySensorLimitReached}
-                            >
-                                <option value="">Добавить сенсор</option>
-                                {filteredHistorySensors.map((sensor) => (
-                                    <option key={sensor.id} value={sensor.id}>
-                                        {sensor.name} ({sensor.type})
-                                    </option>
-                                ))}
-                            </MaterialSelect>
-                            <div className="telemetry-view__sensor-actions">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary btn-xs"
-                                    onClick={addAllHistorySensors}
-                                    disabled={availableHistorySensors.length === 0 || historySensorLimitReached}
-                                >
-                                    Добавить все
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn btn-ghost btn-xs"
-                                    onClick={clearHistorySensors}
-                                    disabled={historySensorIds.length === 0}
-                                >
-                                    Очистить
-                                </button>
-                            </div>
-                            <div className="telemetry-view__sensor-meta">
-                                Выбрано {historySensorIds.length} / {HISTORY_MAX_SENSORS}
-                            </div>
-                            <div className="telemetry-view__sensor-list">
-                                {historySensorIds.length === 0 && (
-                                    <span className="telemetry-view__hint">Сенсоры не выбраны</span>
+                                {captureSessions.length > 0 && (
+                                    <CaptureSessionTimeline
+                                        sessions={captureSessions}
+                                        onSessionClick={(sessionId) => {
+                                            setHistoryCaptureSessionId(sessionId)
+                                            setViewMode('history')
+                                        }}
+                                    />
                                 )}
-                                {historySensorIds.map((id) => {
-                                    const sensor = historySensorsById.get(id)
-                                    return (
-                                        <span key={id} className="telemetry-view__sensor-pill">
-                                            {sensor?.name || id}
-                                            <button type="button" onClick={() => removeHistorySensor(id)} aria-label="Удалить сенсор">
-                                                ×
-                                            </button>
-                                        </span>
-                                    )
-                                })}
-                            </div>
-                        </div>
 
-                        <div className="telemetry-view__history-options">
-                            <label>
-                                <span>max points</span>
-                                <input
-                                    type="number"
-                                    min={100}
-                                    max={20000}
-                                    value={historyMaxPoints}
-                                    onChange={(e) => setHistoryMaxPoints(Number(e.target.value || HISTORY_MAX_POINTS_DEFAULT))}
-                                />
-                            </label>
-                            <label className="telemetry-view__checkbox">
-                                <input
-                                    type="checkbox"
-                                    checked={historyIncludeLate}
-                                    onChange={(e) => setHistoryIncludeLate(e.target.checked)}
-                                    disabled={historyUseAggregated}
-                                />
-                                include late
-                            </label>
-                            <label className="telemetry-view__checkbox" title="Загрузить агрегированные данные (1-минутные бакеты: avg/min/max) вместо сырых точек">
-                                <input
-                                    type="checkbox"
-                                    checked={historyUseAggregated}
-                                    onChange={(e) => setHistoryUseAggregated(e.target.checked)}
-                                />
-                                агрегация 1m
-                            </label>
-                            <div className="telemetry-view__mode-toggle">
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name="history-order"
-                                        checked={historyOrder === 'asc'}
-                                        onChange={() => setHistoryOrder('asc')}
-                                    />
-                                    от начала
-                                </label>
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name="history-order"
-                                        checked={historyOrder === 'desc'}
-                                        onChange={() => setHistoryOrder('desc')}
-                                    />
-                                    последние
-                                </label>
+                                {panelIds.length === 0 ? (
+                                    <EmptyState message="Добавьте панель, чтобы начать просмотр графиков." />
+                                ) : (
+                                    <div className="telemetry-view__panels" ref={panelsWrapRef}>
+                                        {panelIds.map((panelId, index) => {
+                                            const panelSize = panelSizes[panelId]
+                                            const isWide =
+                                                panelsWrapWidth > 0 && panelSize
+                                                    ? panelSize.width > panelsWrapWidth / 2
+                                                    : false
+                                            return (
+                                                <div
+                                                    key={panelId}
+                                                    className={`telemetry-view__panel-item${
+                                                        draggingPanelId === panelId
+                                                            ? ' telemetry-view__panel-item--dragging'
+                                                            : ''
+                                                    }${
+                                                        dragOverPanelId === panelId
+                                                            ? ' telemetry-view__panel-item--over'
+                                                            : ''
+                                                    }${isWide ? ' telemetry-view__panel-item--full' : ''}`}
+                                                    onDragOver={(event) => {
+                                                        if (!draggingPanelId || draggingPanelId === panelId) return
+                                                        event.preventDefault()
+                                                        event.dataTransfer.dropEffect = 'move'
+                                                        setDragOverPanelId(panelId)
+                                                    }}
+                                                    onDragLeave={(event) => {
+                                                        if (event.currentTarget.contains(event.relatedTarget as Node))
+                                                            return
+                                                        setDragOverPanelId((prev) => (prev === panelId ? null : prev))
+                                                    }}
+                                                    onDrop={(event) => {
+                                                        event.preventDefault()
+                                                        if (draggingPanelId) movePanel(draggingPanelId, panelId)
+                                                        setDragOverPanelId(null)
+                                                        setDraggingPanelId(null)
+                                                    }}
+                                                >
+                                                    <TelemetryPanel
+                                                        panelId={panelId}
+                                                        sensors={sensors}
+                                                        sensorsLoading={isLoading}
+                                                        sensorsError={
+                                                            error
+                                                                ? typeof error === 'string'
+                                                                    ? error
+                                                                    : (error as Error)?.message ??
+                                                                      'Ошибка загрузки сенсоров'
+                                                                : null
+                                                        }
+                                                        title={`${panelTitleSeed} #${index + 1}`}
+                                                        onRemove={() => removePanel(panelId)}
+                                                        onSizeChange={(size) => handlePanelSizeChange(panelId, size)}
+                                                        onRecordReceived={handleRecordReceived}
+                                                        dragHandleProps={{
+                                                            draggable: true,
+                                                            onDragStart: (event) => {
+                                                                setDraggingPanelId(panelId)
+                                                                event.dataTransfer.effectAllowed = 'move'
+                                                                event.dataTransfer.setData('text/plain', panelId)
+                                                            },
+                                                            onDragEnd: () => {
+                                                                setDraggingPanelId(null)
+                                                                setDragOverPanelId(null)
+                                                            },
+                                                        }}
+                                                    />
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </section>
+
+                            {projectId && sensors.length > 0 && (
+                                <LiveSensorPanel sensors={sensors} projectId={projectId} recentValues={recentValuesBySensor} />
+                            )}
                             </div>
-                            <div className="telemetry-view__mode-toggle">
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name="history-value-mode"
-                                        checked={historyValueMode === 'physical'}
-                                        onChange={() => setHistoryValueMode('physical')}
+                        ) : (
+                            <section className="telemetry-view__history card detail-card">
+                                <div className="detail-section-header">
+                                    <div className="detail-section-header__copy">
+                                        <span className="detail-card__eyebrow">History Window</span>
+                                        <h3 className="detail-card__title">Историческая выборка</h3>
+                                        <p>
+                                            Собирайте срез по capture session, переключайте raw/physical и
+                                            продолжайте поток прямо из последней исторической точки.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="telemetry-view__history-controls">
+                                    <div className="telemetry-view__history-sensors">
+                                    <div className="telemetry-view__sensor-filter">
+                                        <label htmlFor="telemetry_history_sensor_filter">Фильтр сенсоров</label>
+                                        <input
+                                            id="telemetry_history_sensor_filter"
+                                            type="text"
+                                            className="telemetry-view__text-input"
+                                            value={historySensorFilter}
+                                            onChange={(event) => setHistorySensorFilter(event.target.value)}
+                                            placeholder="Имя, тип, id"
+                                        />
+                                    </div>
+                                    <MaterialSelect
+                                        id="telemetry_history_sensors"
+                                        value=""
+                                        label="Сенсоры"
+                                        onChange={(value, event) => {
+                                            addHistorySensor(value)
+                                            if (event?.currentTarget) {
+                                                event.currentTarget.value = ''
+                                            }
+                                        }}
+                                        disabled={
+                                            filteredHistorySensors.length === 0 || historySensorLimitReached
+                                        }
+                                    >
+                                        <option value="">Добавить сенсор</option>
+                                        {filteredHistorySensors.map((sensor) => (
+                                            <option key={sensor.id} value={sensor.id}>
+                                                {sensor.name} ({sensor.type})
+                                            </option>
+                                        ))}
+                                    </MaterialSelect>
+                                    <div className="telemetry-view__sensor-actions">
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary btn-xs"
+                                            onClick={addAllHistorySensors}
+                                            disabled={
+                                                availableHistorySensors.length === 0 || historySensorLimitReached
+                                            }
+                                        >
+                                            Добавить все
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-xs"
+                                            onClick={clearHistorySensors}
+                                            disabled={historySensorIds.length === 0}
+                                        >
+                                            Очистить
+                                        </button>
+                                    </div>
+                                    <div className="telemetry-view__sensor-meta">
+                                        Выбрано {historySensorIds.length} / {HISTORY_MAX_SENSORS}
+                                    </div>
+                                    <div className="telemetry-view__sensor-list">
+                                        {historySensorIds.length === 0 && (
+                                            <span className="telemetry-view__hint">Сенсоры не выбраны</span>
+                                        )}
+                                        {historySensorIds.map((id) => {
+                                            const sensor = historySensorsById.get(id)
+                                            return (
+                                                <span key={id} className="telemetry-view__sensor-pill">
+                                                    {sensor?.name || id}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeHistorySensor(id)}
+                                                        aria-label="Удалить сенсор"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            )
+                                        })}
+                                    </div>
+                                    </div>
+
+                                    <div className="telemetry-view__history-options">
+                                    <label>
+                                        <span>max points</span>
+                                        <input
+                                            type="number"
+                                            min={100}
+                                            max={20000}
+                                            value={historyMaxPoints}
+                                            onChange={(e) =>
+                                                setHistoryMaxPoints(
+                                                    Number(e.target.value || HISTORY_MAX_POINTS_DEFAULT)
+                                                )
+                                            }
+                                        />
+                                    </label>
+                                    <label className="telemetry-view__checkbox">
+                                        <input
+                                            type="checkbox"
+                                            checked={historyIncludeLate}
+                                            onChange={(e) => setHistoryIncludeLate(e.target.checked)}
+                                            disabled={historyUseAggregated}
+                                        />
+                                        include late
+                                    </label>
+                                    <label
+                                        className="telemetry-view__checkbox"
+                                        title="Загрузить агрегированные данные (1-минутные бакеты: avg/min/max) вместо сырых точек"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={historyUseAggregated}
+                                            onChange={(e) => setHistoryUseAggregated(e.target.checked)}
+                                        />
+                                        агрегация 1m
+                                    </label>
+                                    <div className="telemetry-view__mode-toggle">
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="history-order"
+                                                checked={historyOrder === 'asc'}
+                                                onChange={() => setHistoryOrder('asc')}
+                                            />
+                                            от начала
+                                        </label>
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="history-order"
+                                                checked={historyOrder === 'desc'}
+                                                onChange={() => setHistoryOrder('desc')}
+                                            />
+                                            последние
+                                        </label>
+                                    </div>
+                                    <div className="telemetry-view__mode-toggle">
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="history-value-mode"
+                                                checked={historyValueMode === 'physical'}
+                                                onChange={() => setHistoryValueMode('physical')}
+                                            />
+                                            physical
+                                        </label>
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="history-value-mode"
+                                                checked={historyValueMode === 'raw'}
+                                                onChange={() => setHistoryValueMode('raw')}
+                                            />
+                                            raw
+                                        </label>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary btn-sm"
+                                        onClick={loadHistory}
+                                        disabled={
+                                            historyLoading || !historyCaptureSessionId || historySensorOverLimit
+                                        }
+                                    >
+                                        {historyLoading ? 'Загрузка...' : 'Загрузить'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={continueHistoryInLive}
+                                        disabled={
+                                            historyLoading ||
+                                            historyEffectiveSensorIds.length === 0 ||
+                                            !historyLastTimestamp
+                                        }
+                                        title="Переключиться в live и продолжить с последних точек истории"
+                                    >
+                                        Продолжить в live
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => setShowExportModal(true)}
+                                        disabled={!historyCaptureSessionId || !runId}
+                                        title="Открыть диалог настроек экспорта телеметрии"
+                                    >
+                                        Экспорт данных…
+                                    </button>
+                                    </div>
+                                </div>
+
+                                {historyError && <div className="telemetry-view__error">{historyError}</div>}
+                                {(historyLoadedCount > 0 || historyWasTruncated) && (
+                                    <div className="telemetry-view__history-summary">
+                                        {historyUseAggregated
+                                            ? `Загружено бакетов (1m): ${historyLoadedCount}`
+                                            : `Загружено точек: ${historyLoadedCount}`}
+                                        {historyWasTruncated &&
+                                            ` (показаны ${
+                                                historyOrder === 'desc' ? 'последние' : 'первые'
+                                            } ${historyDisplayMaxPoints})`}
+                                    </div>
+                                )}
+
+                                {captureSessions.length > 0 && (
+                                    <CaptureSessionTimeline
+                                        sessions={captureSessions}
+                                        timeRange={historyTimeRange}
+                                        onSessionClick={(sessionId) => {
+                                            setHistoryCaptureSessionId(sessionId)
+                                        }}
                                     />
-                                    physical
-                                </label>
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name="history-value-mode"
-                                        checked={historyValueMode === 'raw'}
-                                        onChange={() => setHistoryValueMode('raw')}
-                                    />
-                                    raw
-                                </label>
-                            </div>
-                            <button
-                                type="button"
-                                className="btn btn-primary btn-sm"
-                                onClick={loadHistory}
-                                disabled={historyLoading || !historyCaptureSessionId || historySensorOverLimit}
-                            >
-                                {historyLoading ? 'Загрузка...' : 'Загрузить'}
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={continueHistoryInLive}
-                                disabled={historyLoading || historyEffectiveSensorIds.length === 0 || !historyLastTimestamp}
-                                title="Переключиться в live и продолжить с последних точек истории"
-                            >
-                                Продолжить в live
-                            </button>
-                        </div>
+                                )}
+
+                                <div className="telemetry-view__history-chart">
+                                    <div ref={historyPlotRef} className="telemetry-view__plotly" />
+                                    {historyLoading && (
+                                        <div className="telemetry-view__history-loading">
+                                            Загрузка истории…
+                                            {historyLoadedCount > 0 && (
+                                                <span>
+                                                    {' '}
+                                                    {historyLoadedCount} / {historyMaxPoints}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                    {!historyHasData && !historyLoading && (
+                                        <div className="telemetry-view__empty">Нет данных — нажмите «Загрузить»</div>
+                                    )}
+                                </div>
+                            </section>
+                                )}
                     </div>
 
-                    {historyError && <div className="telemetry-view__error">{historyError}</div>}
-                    {(historyLoadedCount > 0 || historyWasTruncated) && (
-                        <div className="telemetry-view__history-summary">
-                            {historyUseAggregated
-                                ? `Загружено бакетов (1m): ${historyLoadedCount}`
-                                : `Загружено точек: ${historyLoadedCount}`}
-                            {historyWasTruncated &&
-                                ` (показаны ${historyOrder === 'desc' ? 'последние' : 'первые'} ${historyDisplayMaxPoints})`}
-                        </div>
+                    {isLiveMode &&
+                        typeof document !== 'undefined' &&
+                        createPortal(
+                            <FloatingActionButton
+                                onClick={addPanel}
+                                title="Добавить панель"
+                                ariaLabel="Добавить панель"
+                                disabled={!canAddPanel}
+                            />,
+                            document.body
+                        )}
+
+                    {showExportModal && runId && (
+                        <TelemetryExportModal
+                            isOpen
+                            onClose={() => setShowExportModal(false)}
+                            runId={runId}
+                            mode="session"
+                            sessionId={historyCaptureSessionId || undefined}
+                            sessionOrdinal={
+                                captureSessions.find((s: CaptureSession) => s.id === historyCaptureSessionId)
+                                    ?.ordinal_number
+                            }
+                            sessions={captureSessions}
+                            sensors={sensors}
+                            initialCaptureSessionId={historyCaptureSessionId}
+                            initialSensorId={historyEffectiveSensorIds.length === 1 ? historyEffectiveSensorIds[0] : ''}
+                            initialRawOrPhysical={historyValueMode === 'raw' ? 'raw' : 'physical'}
+                            initialIncludeLate={historyIncludeLate}
+                            initialUseAggregation={historyUseAggregated}
+                        />
                     )}
-
-                    <div className="telemetry-view__history-chart">
-                        <div ref={historyPlotRef} className="telemetry-view__plotly" />
-                        {historyLoading && (
-                            <div className="telemetry-view__history-loading">
-                                Загрузка истории…
-                                {historyLoadedCount > 0 && (
-                                    <span>
-                                        {' '}
-                                        {historyLoadedCount} / {historyMaxPoints}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                        {!historyHasData && !historyLoading && (
-                            <div className="telemetry-view__empty">Нет данных — нажмите «Загрузить»</div>
-                        )}
-                    </div>
-                </div>
+                </>
             )}
-
-            {isLiveMode && typeof document !== 'undefined' &&
-                createPortal(
-                    <FloatingActionButton
-                        onClick={addPanel}
-                        title="Добавить панель"
-                        ariaLabel="Добавить панель"
-                        disabled={!canAddPanel}
-                    />,
-                    document.body
-                )}
         </div>
     )
 }

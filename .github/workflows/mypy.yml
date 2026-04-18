@@ -2,8 +2,9 @@ name: mypy
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "develop"]
   pull_request:
+    branches: ["main", "develop"]
 
 env:
   POETRY_VERSION: "1.8.3"

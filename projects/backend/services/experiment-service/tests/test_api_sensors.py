@@ -75,7 +75,7 @@ async def test_sensor_and_profiles_flow(service_client):
         json={
             "version": "v2",
             "kind": "polynomial",
-            "payload": {"a0": 0.2},
+            "payload": {"coefficients": [0.2, 1.5, 0.03]},
         },
         headers=headers,
     )
@@ -736,4 +736,194 @@ async def test_list_sensors_with_x_project_ids_without_sensor_projects_row(servi
     ids = [s["id"] for s in data["sensors"]]
     assert sensor1_id in ids
     assert sensor2_id in ids
+
+
+# ---------------------------------------------------------------------------
+# Conversion profile payload validation
+# ---------------------------------------------------------------------------
+
+async def _create_sensor_for_validation(service_client, project_id):
+    """Helper: create a sensor and return its id."""
+    from experiment_service.services.idempotency import IDEMPOTENCY_HEADER
+    headers = make_headers(project_id)
+    resp = await service_client.post(
+        "/api/v1/sensors",
+        json={
+            "project_id": str(project_id),
+            "name": f"val-sensor-{uuid.uuid4()}",
+            "type": "thermocouple",
+            "input_unit": "mV",
+            "display_unit": "C",
+        },
+        headers={**headers, IDEMPOTENCY_HEADER: str(uuid.uuid4())},
+    )
+    assert resp.status == 201
+    return (await resp.json())["sensor"]["id"], headers
+
+
+@pytest.mark.asyncio
+async def test_create_profile_valid_linear(service_client):
+    """Valid linear payload is accepted."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={"version": "v1", "kind": "linear", "payload": {"a": 2.5, "b": -1.0}},
+        headers=headers,
+    )
+    assert resp.status == 201
+
+
+@pytest.mark.asyncio
+async def test_create_profile_valid_polynomial(service_client):
+    """Valid polynomial payload is accepted."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={"version": "v1", "kind": "polynomial", "payload": {"coefficients": [0.0, 1.0, 0.5]}},
+        headers=headers,
+    )
+    assert resp.status == 201
+
+
+@pytest.mark.asyncio
+async def test_create_profile_valid_lookup_table(service_client):
+    """Valid lookup_table payload is accepted."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={
+            "version": "v1",
+            "kind": "lookup_table",
+            "payload": {"table": [{"raw": 0.0, "physical": 0.0}, {"raw": 10.0, "physical": 100.0}]},
+        },
+        headers=headers,
+    )
+    assert resp.status == 201
+
+
+@pytest.mark.asyncio
+async def test_create_profile_invalid_kind(service_client):
+    """Unknown kind is rejected with 400."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={"version": "v1", "kind": "custom_formula", "payload": {}},
+        headers=headers,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_profile_linear_missing_field(service_client):
+    """Linear payload missing 'b' is rejected with 400."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={"version": "v1", "kind": "linear", "payload": {"a": 2.0}},
+        headers=headers,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_profile_linear_wrong_type(service_client):
+    """Linear payload with string coefficient is rejected with 400."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={"version": "v1", "kind": "linear", "payload": {"a": "two", "b": 1.0}},
+        headers=headers,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_profile_polynomial_wrong_key(service_client):
+    """Polynomial payload without 'coefficients' key is rejected with 400."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={"version": "v1", "kind": "polynomial", "payload": {"a0": 0.2, "a1": 1.5}},
+        headers=headers,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_profile_polynomial_empty_coefficients(service_client):
+    """Polynomial payload with empty coefficients list is rejected with 400."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={"version": "v1", "kind": "polynomial", "payload": {"coefficients": []}},
+        headers=headers,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_profile_lookup_table_too_few_points(service_client):
+    """lookup_table payload with only 1 point is rejected with 400."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={
+            "version": "v1",
+            "kind": "lookup_table",
+            "payload": {"table": [{"raw": 0.0, "physical": 0.0}]},
+        },
+        headers=headers,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_profile_lookup_table_missing_raw(service_client):
+    """lookup_table payload with missing 'raw' key in a point is rejected with 400."""
+    project_id = uuid.uuid4()
+    sensor_id, headers = await _create_sensor_for_validation(service_client, project_id)
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/conversion-profiles",
+        json={
+            "version": "v1",
+            "kind": "lookup_table",
+            "payload": {"table": [{"physical": 0.0}, {"raw": 10.0, "physical": 100.0}]},
+        },
+        headers=headers,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_create_sensor_with_invalid_initial_profile(service_client):
+    """Sensor creation with invalid initial conversion_profile is rejected with 400."""
+    from experiment_service.services.idempotency import IDEMPOTENCY_HEADER
+    project_id = uuid.uuid4()
+    headers = make_headers(project_id)
+    resp = await service_client.post(
+        "/api/v1/sensors",
+        json={
+            "project_id": str(project_id),
+            "name": f"bad-profile-sensor-{uuid.uuid4()}",
+            "type": "thermocouple",
+            "input_unit": "mV",
+            "display_unit": "C",
+            "conversion_profile": {
+                "version": "v1",
+                "kind": "linear",
+                "payload": {"a": 1.0},  # missing 'b'
+            },
+        },
+        headers={**headers, IDEMPOTENCY_HEADER: str(uuid.uuid4())},
+    )
+    assert resp.status == 400
 

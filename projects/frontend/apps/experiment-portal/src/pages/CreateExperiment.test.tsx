@@ -242,7 +242,7 @@ describe('CreateExperimentModal', () => {
         await user.click(submitButton)
 
         await waitFor(() => {
-            expect(screen.getByText(/неверный формат json/i)).toBeInTheDocument()
+            expect(screen.getAllByText(/неверный формат json/i).length).toBeGreaterThan(0)
             expect(mockCreate).not.toHaveBeenCalled()
         })
     })

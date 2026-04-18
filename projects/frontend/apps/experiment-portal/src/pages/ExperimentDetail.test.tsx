@@ -111,7 +111,9 @@ describe('ExperimentDetail', () => {
         render(<ExperimentDetail />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            expect(screen.getByText('Черновик')).toBeInTheDocument()
+            // В UI есть два элемента "Черновик" (в заголовке и в действиях), используем getAllByText
+            const statusBadges = screen.getAllByText('Черновик')
+            expect(statusBadges.length).toBeGreaterThan(0)
         })
     })
 

@@ -1,0 +1,389 @@
+name: Release (Build & Deploy)
+
+# Сборка и деплой выполняются только при создании релизного тега v* (например v1.0.0).
+# См. docs/branching-model.md и docs/deployment-yandex-cloud.md.
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CR_REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
+  RELEASE_TAG: ${{ github.ref_name }}
+
+jobs:
+  # ==========================================
+  # 1. Запуск тестов (параллельно)
+  # ==========================================
+  test-auth-service:
+    name: Auth Service Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/services/auth-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql
+      - uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+      - run: poetry install --no-interaction --no-root
+      - run: poetry run pytest -q
+
+  test-experiment-service:
+    name: Experiment Service Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/services/experiment-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PostgreSQL + TimescaleDB
+        run: |
+          UBUNTU_CODENAME=$(lsb_release -cs)
+          # Use PGDG for postgresql-16 >= 16.13 (TimescaleDB loader requires it; Ubuntu has 16.12).
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+            sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${UBUNTU_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ ${UBUNTU_CODENAME} main" \
+            | sudo tee /etc/apt/sources.list.d/timescaledb.list
+          curl -sL https://packagecloud.io/timescale/timescaledb/gpgkey | \
+            gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-16
+          sudo apt-get install -y --no-install-recommends timescaledb-2-postgresql-16
+      - uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+      - run: poetry install --no-interaction --no-root
+      - name: Configure TimescaleDB for testsuite
+        run: |
+          PG_CONF=$(poetry run python -c "
+          import testsuite.databases.pgsql.service as s
+          print(s.CONFIGS_DIR / 'postgresql.conf')
+          ")
+          echo "shared_preload_libraries = 'timescaledb'" >> "$PG_CONF"
+      - run: poetry run pytest -q
+
+  test-frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/frontend/apps/experiment-portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm test -- --run
+
+  # ==========================================
+  # 2a. Базовый образ бэкенда (нужен для auth/experiment/telemetry-ingest)
+  # ==========================================
+  build-backend-base:
+    name: Build Backend Base
+    needs: [test-auth-service, test-experiment-service, test-frontend]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space (runner)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af 2>/dev/null || true
+          df -h
+      - name: Normalize YC_SA_JSON_KEY
+        run: |
+          COMPACT=$(python3 -c "import json,os; d=json.loads(os.environ['KEY']); print(json.dumps(d, separators=(',', ':')))")
+          echo "YC_SA_JSON_KEY_COMPACT<<EOF" >> $GITHUB_ENV
+          echo "$COMPACT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          KEY: ${{ secrets.YC_SA_JSON_KEY }}
+      - name: Login to Yandex Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: cr.yandex
+          username: json_key
+          password: ${{ env.YC_SA_JSON_KEY_COMPACT }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push backend base
+        uses: docker/build-push-action@v6
+        with:
+          context: ./projects/backend
+          file: ./projects/backend/Dockerfile.base
+          target: base
+          push: true
+          tags: ${{ env.CR_REGISTRY }}/backend-base:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================
+  # 2b. Сборка и пуш Docker-образов сервисов
+  # ==========================================
+  build-and-push:
+    name: Build & Push Images
+    needs: [build-backend-base]
+    runs-on: ubuntu-latest
+    environment: production  # нужен для доступа к YC_SA_JSON_KEY и YC_REGISTRY_ID (environment secrets)
+    strategy:
+      matrix:
+        include:
+          - service: auth-service
+            context: ./projects/backend
+            dockerfile: services/auth-service/Dockerfile
+          - service: experiment-service
+            context: ./projects/backend
+            dockerfile: services/experiment-service/Dockerfile
+          - service: telemetry-ingest-service
+            context: ./projects/backend
+            dockerfile: services/telemetry-ingest-service/Dockerfile
+          - service: auth-proxy
+            context: ./projects/frontend/apps/auth-proxy
+            dockerfile: Dockerfile
+          - service: experiment-portal
+            context: ./projects/frontend/apps/experiment-portal
+            dockerfile: Dockerfile
+          - service: sensor-simulator
+            context: ./projects/frontend/apps/sensor-simulator
+            dockerfile: Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space (runner)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af 2>/dev/null || true
+          df -h
+      - name: Check Yandex Registry secrets
+        run: |
+          if [ -z "${{ secrets.YC_REGISTRY_ID }}" ]; then
+            echo "::error::YC_REGISTRY_ID is not set. Add it in Settings → Secrets and variables → Actions (Repository secrets) or in Environment 'production' → Environment secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.YC_SA_JSON_KEY }}" ]; then
+            echo "::error::YC_SA_JSON_KEY is not set. Add it in Settings → Secrets and variables → Actions (Repository secrets) or in Environment 'production' → Environment secrets. Value = full JSON from: terraform output -raw ci_sa_key_json"
+            exit 1
+          fi
+          echo "YC_REGISTRY_ID and YC_SA_JSON_KEY are set."
+
+      - name: Normalize YC_SA_JSON_KEY to single line
+        run: |
+          COMPACT=$(python3 -c "import json,os; d=json.loads(os.environ['KEY']); print(json.dumps(d, separators=(',', ':')))")
+          echo "YC_SA_JSON_KEY_COMPACT<<EOF" >> $GITHUB_ENV
+          echo "$COMPACT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          KEY: ${{ secrets.YC_SA_JSON_KEY }}
+
+      - name: Login to Yandex Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: cr.yandex
+          username: json_key
+          password: ${{ env.YC_SA_JSON_KEY_COMPACT }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.CR_REGISTRY }}/${{ matrix.service }}
+          tags: |
+            type=raw,value=${{ env.RELEASE_TAG }}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/${{ matrix.dockerfile }}
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            BACKEND_BASE_IMAGE=${{ env.CR_REGISTRY }}/backend-base:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================
+  # 3. Деплой на VM
+  # ==========================================
+  deploy:
+    name: Deploy to VM
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure .env exists on VM (copy template if missing)
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          O="-o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key"
+          D="${VM_USER}@${VM_HOST}"
+
+          ssh $O "$D" "mkdir -p /opt/experiment-tracking"
+
+          if ssh $O "$D" "test -f /opt/experiment-tracking/.env"; then
+            echo ".env already exists"
+          else
+            scp $O env.production.example "$D:/opt/experiment-tracking/.env"
+            echo "Created .env from env.production.example — edit it on the VM and re-run deploy if needed."
+          fi
+
+          scp $O docker-compose.prod.yml "$D:/opt/experiment-tracking/docker-compose.prod.yml"
+
+          # Remove Docker-auto-created stub dirs (owned by root) and ensure deploy user owns the dir
+          ssh $O "$D" "sudo rm -rf /opt/experiment-tracking/infrastructure/logging" || true
+          ssh $O "$D" "sudo mkdir -p /opt/experiment-tracking/infrastructure && sudo chown \$(id -u):\$(id -g) /opt/experiment-tracking/infrastructure"
+          scp -r $O infrastructure/logging "$D:/opt/experiment-tracking/infrastructure/"
+
+          # Yandex Cloud CA certificate for managed PostgreSQL (SSL verify-full)
+          ssh $O "$D" "sudo rm -rf /opt/experiment-tracking/certs && mkdir -p /opt/experiment-tracking/certs && curl -sL https://storage.yandexcloud.net/cloud-certs/CA.pem -o /opt/experiment-tracking/certs/yandex-ca.pem"
+          echo "Copied docker-compose.prod.yml, infrastructure/logging, and Yandex CA cert to VM"
+
+      - name: Deploy via SSH
+        id: deploy
+        uses: appleboy/ssh-action@v1
+        env:
+          IMAGE_TAG: ${{ env.RELEASE_TAG }}
+          CR_REGISTRY: ${{ env.CR_REGISTRY }}
+          YC_SA_JSON_KEY: ${{ secrets.YC_SA_JSON_KEY }}
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+          envs: IMAGE_TAG,CR_REGISTRY,YC_SA_JSON_KEY
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/experiment-tracking
+
+            # Обновляем тег образа ( .env уже есть — создан выше при отсутствии)
+            sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
+
+            # Логинимся в Container Registry через ключ SA.
+            # Используем временный DOCKER_CONFIG, чтобы обойти docker-credential-ycr,
+            # который может быть настроен на VM и блокирует docker login.
+            _DCF=$(mktemp -d)
+            echo "$YC_SA_JSON_KEY" | docker --config "$_DCF" login cr.yandex -u json_key --password-stdin
+            export DOCKER_CONFIG="$_DCF"
+
+            # Останавливаем контейнеры и чистим место перед пуллом.
+            # Сначала останавливаем оба возможных имени проекта: старое (experiment-tracking,
+            # берётся из имени директории /opt/experiment-tracking) и новое (product_dev_course,
+            # явно задано через name: в docker-compose.prod.yml начиная с v1.0.1).
+            docker compose -p experiment-tracking -f docker-compose.prod.yml down --remove-orphans || true
+            docker compose -f docker-compose.prod.yml down --remove-orphans || true
+            # На случай если контейнеры остались с конфликтующими именами — удаляем принудительно
+            docker rm -f auth-service experiment-service telemetry-ingest-service \
+              auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
+            docker system prune -af --volumes || true
+
+            # Пуллим новые образы
+            docker compose -f docker-compose.prod.yml pull
+
+            # Запускаем все сервисы заново
+            docker compose -f docker-compose.prod.yml up -d
+
+            # Ждём health checks
+            sleep 15
+
+            # Проверяем статус
+            docker compose -f docker-compose.prod.yml ps
+
+            # Падаем, если какой-то контейнер в Restarting (тогда CI покажет логи)
+            if docker compose -f docker-compose.prod.yml ps -a 2>/dev/null | grep -q "Restarting"; then
+              echo "One or more containers are Restarting; failing deploy so logs are printed."
+              exit 1
+            fi
+
+            # Чистим старые образы
+            docker image prune -f
+
+      - name: Show service logs on deploy failure
+        if: failure() && steps.deploy.outcome == 'failure'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+          command_timeout: 1m
+          script: |
+            cd /opt/experiment-tracking
+            echo "=== docker compose ps ==="
+            docker compose -f docker-compose.prod.yml ps -a
+            echo "=== auth-service logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 auth-service || true
+            echo "=== experiment-service logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 experiment-service || true
+
+      - name: Health check (via SSH on VM — avoids dependency on public reachability from GitHub)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+          command_timeout: 2m
+          script: |
+            for i in $(seq 1 12); do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:80/" 2>/dev/null || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "Health check passed (attempt $i): portal on :80 returned 200"
+                exit 0
+              fi
+              echo "Attempt $i: status=$STATUS, retrying in 10s..."
+              sleep 10
+            done
+            echo "Health check failed: portal did not return 200 within 2 minutes"
+            exit 1
+
+  # ==========================================
+  # 4. Создание GitHub Release
+  # ==========================================
+  create-release:
+    name: Create GitHub Release
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Release ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          draft: false

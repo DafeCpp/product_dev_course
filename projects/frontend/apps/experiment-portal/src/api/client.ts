@@ -10,12 +10,18 @@ import type {
   RunCreate,
   RunUpdate,
   RunsListResponse,
+  RunMetricsResponse,
+  RunMetricsListResponse,
+  MetricSummaryResponse,
+  MetricAggregationsResponse,
   Sensor,
   SensorCreate,
   SensorUpdate,
   SensorsListResponse,
   SensorRegisterResponse,
   SensorTokenResponse,
+  StatusSummary,
+  HeartbeatHistory,
   CaptureSession,
   CaptureSessionCreate,
   CaptureSessionsListResponse,
@@ -37,6 +43,17 @@ import type {
   WebhookSubscriptionCreate,
   WebhooksListResponse,
   WebhookDeliveriesListResponse,
+  ConversionProfile,
+  ConversionProfileInput,
+  ConversionProfilesListResponse,
+  BackfillTask,
+  BackfillTasksListResponse,
+  ComparisonResponse,
+  Artifact,
+  ArtifactsListResponse,
+  CreateArtifactRequest,
+  SensorErrorLogResponse,
+  RunSensor,
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
@@ -50,9 +67,9 @@ import {
 } from '../utils/httpDebug'
 
 // API работает через Auth Proxy, который автоматически добавляет токен из куки
-const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL || 'http://localhost:8080'
+const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
 
-const apiClient = axios.create({
+export const apiClient = axios.create({
   baseURL: AUTH_PROXY_URL,
   headers: {
     'Content-Type': 'application/json',
@@ -99,13 +116,13 @@ function _withProjectIdConfig(
   return next
 }
 
-async function apiGet<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+export async function apiGet<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const cfg = _withProjectIdConfig(url, config)
   const response = cfg ? await apiClient.get(url, cfg) : await apiClient.get(url)
   return response.data
 }
 
-async function apiPost<T = any>(
+export async function apiPost<T = any>(
   url: string,
   data?: any,
   config?: AxiosRequestConfig
@@ -115,7 +132,7 @@ async function apiPost<T = any>(
   return response.data
 }
 
-async function apiPatch<T = any>(
+export async function apiPatch<T = any>(
   url: string,
   data?: any,
   config?: AxiosRequestConfig
@@ -125,7 +142,7 @@ async function apiPatch<T = any>(
   return response.data
 }
 
-async function apiDelete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+export async function apiDelete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const cfg = _withProjectIdConfig(url, config)
   const response = cfg ? await apiClient.delete(url, cfg) : await apiClient.delete(url)
   return response.data
@@ -351,6 +368,14 @@ export const sensorsApi = {
     return await apiPost(`/api/v1/sensors/${id}/rotate-token`, {}, { params })
   },
 
+  getStatusSummary: async (projectId: string): Promise<StatusSummary> => {
+    return await apiGet('/api/v1/sensors/status-summary', { params: { project_id: projectId } })
+  },
+
+  getHeartbeatHistory: async (sensorId: string, minutes: number = 60): Promise<HeartbeatHistory> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/heartbeat-history`, { params: { minutes } })
+  },
+
   // Multiple projects management
   getProjects: async (id: string): Promise<{ project_ids: string[] }> => {
     // IMPORTANT: use apiGet so project_id is auto-attached (auth-proxy derives X-Project-* from it)
@@ -364,6 +389,49 @@ export const sensorsApi = {
   removeProject: async (id: string, projectId: string): Promise<void> => {
     // Use explicit project_id context for permission checks in that project
     await apiDelete(`/api/v1/sensors/${id}/projects/${projectId}`, { params: { project_id: projectId } })
+  },
+
+  getErrorLog: async (
+    sensorId: string,
+    params?: { limit?: number; offset?: number }
+  ): Promise<SensorErrorLogResponse> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/error-log`, { params })
+  },
+}
+
+// Conversion Profiles API
+export const conversionProfilesApi = {
+  list: async (sensorId: string, params?: {
+    limit?: number
+    offset?: number
+  }): Promise<ConversionProfilesListResponse> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/conversion-profiles`, { params })
+  },
+
+  create: async (sensorId: string, data: ConversionProfileInput): Promise<ConversionProfile> => {
+    return await apiPost(`/api/v1/sensors/${sensorId}/conversion-profiles`, data)
+  },
+
+  publish: async (sensorId: string, profileId: string): Promise<ConversionProfile> => {
+    return await apiPost(`/api/v1/sensors/${sensorId}/conversion-profiles/${profileId}/publish`, {})
+  },
+}
+
+// Backfill API
+export const backfillApi = {
+  start: async (sensorId: string): Promise<BackfillTask> => {
+    return await apiPost(`/api/v1/sensors/${sensorId}/backfill`, {})
+  },
+
+  list: async (sensorId: string, params?: {
+    limit?: number
+    offset?: number
+  }): Promise<BackfillTasksListResponse> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/backfill`, { params })
+  },
+
+  get: async (sensorId: string, taskId: string): Promise<BackfillTask> => {
+    return await apiGet(`/api/v1/sensors/${sensorId}/backfill/${taskId}`)
   },
 }
 
@@ -404,6 +472,59 @@ export const captureSessionsApi = {
   },
 }
 
+// Telemetry Export API
+export const telemetryExportApi = {
+  /**
+   * Export telemetry readings for a single capture session.
+   */
+  exportSession: async (
+    runId: string,
+    sessionId: string,
+    params?: {
+      format?: 'csv' | 'json'
+      sensor_id?: string
+      signal?: string
+      include_late?: boolean
+      raw_or_physical?: 'raw' | 'physical' | 'both'
+      aggregation?: '1m'
+    }
+  ): Promise<string> => {
+    const response = await apiClient.get(
+      `/api/v1/runs/${runId}/capture-sessions/${sessionId}/telemetry/export`,
+      {
+        params: { ...params, project_id: getActiveProjectId() || undefined },
+        responseType: 'text',
+      },
+    )
+    return response.data
+  },
+
+  /**
+   * Export telemetry readings for all capture sessions of a run.
+   */
+  exportRun: async (
+    runId: string,
+    params?: {
+      format?: 'csv' | 'json'
+      capture_session_id?: string
+      sensor_id?: string
+      signal?: string
+      include_late?: boolean
+      raw_or_physical?: 'raw' | 'physical' | 'both'
+      aggregation?: '1m'
+    }
+  ): Promise<string> => {
+    const response = await apiClient.get(
+      `/api/v1/runs/${runId}/telemetry/export`,
+      {
+        params: { ...params, project_id: getActiveProjectId() || undefined },
+        responseType: 'text',
+      },
+    )
+    return response.data
+  },
+}
+
 // Telemetry API
 export const telemetryApi = {
   ingest: async (data: TelemetryIngest, sensorToken: string): Promise<TelemetryIngestResponse> => {
@@ -437,7 +558,8 @@ export const telemetryApi = {
   ): Promise<{ response: Response; debug: { url: string; headers: Record<string, string>; method: string } }> => {
     // Stream is user-authenticated via auth-proxy session cookies.
     // Do NOT attach sensor token here (UI doesn't ask for it anymore).
-    const url = new URL(`${AUTH_PROXY_URL}/api/v1/telemetry/stream`)
+    const streamBase = AUTH_PROXY_URL || window.location.origin
+    const url = new URL(`${streamBase}/api/v1/telemetry/stream`)
     url.searchParams.set('sensor_id', params.sensor_id)
     const activeProjectId = getActiveProjectId()
     if (activeProjectId) {
@@ -623,11 +745,30 @@ export const telemetryApi = {
   },
 }
 
+// Users API
+export const usersApi = {
+  search: async (params: {
+    q: string
+    exclude_project_id?: string
+  }): Promise<{ users: Array<{ id: string; username: string; email: string }> }> => {
+    const data = await apiGet<Array<{ id: string; username: string; email: string }>>(
+      '/api/v1/users/search',
+      { params },
+    )
+    return { users: Array.isArray(data) ? data : [] }
+  },
+}
+
 // Projects API
 export const projectsApi = {
-  list: async (): Promise<ProjectsListResponse> => {
-    const response = await apiClient.get<ProjectsListResponse>('/projects')
-    return response.data
+  list: async (params?: {
+    search?: string
+    role?: string
+    limit?: number
+    offset?: number
+  }): Promise<ProjectsListResponse> => {
+    const response = await apiClient.get<{ items: Project[]; total: number }>('/projects', { params })
+    return { projects: response.data.items ?? [], total: response.data.total }
   },
 
   get: async (id: string): Promise<Project> => {
@@ -681,6 +822,67 @@ export const projectsApi = {
   },
 }
 
+// Metrics API
+export const metricsApi = {
+  /** Legacy: returns series grouped by name. Kept for backward compat. */
+  query: async (
+    runId: string,
+    params?: {
+      name?: string
+      from_step?: number
+      to_step?: number
+    }
+  ): Promise<RunMetricsResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics`, { params })
+  },
+
+  /** Batch insert metrics for a run. */
+  record: async (
+    runId: string,
+    metrics: Array<{ name: string; step: number; value: number }>
+  ): Promise<{ accepted: number }> => {
+    return await apiPost(`/api/v1/runs/${runId}/metrics`, { metrics })
+  },
+
+  /** List raw metric points with optional filtering. */
+  list: async (
+    runId: string,
+    params?: {
+      names?: string
+      from_step?: number
+      to_step?: number
+      order?: string
+      limit?: number
+      offset?: number
+    }
+  ): Promise<RunMetricsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics`, { params })
+  },
+
+  /** Summary per metric name: last value, min, avg, max. */
+  summary: async (
+    runId: string,
+    names?: string
+  ): Promise<MetricSummaryResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics/summary`, {
+      params: names ? { names } : undefined,
+    })
+  },
+
+  /** Step-bucketed aggregations. Use for large datasets (>10K steps). */
+  aggregations: async (
+    runId: string,
+    params: {
+      names: string
+      from_step?: number
+      to_step?: number
+      bucket_size?: number
+    }
+  ): Promise<MetricAggregationsResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/metrics/aggregations`, { params })
+  },
+}
+
 // Run Events (Audit Log) API
 export const runEventsApi = {
   list: async (runId: string, params?: {
@@ -728,6 +930,83 @@ export const webhooksApi = {
 
   retryDelivery: async (deliveryId: string): Promise<void> => {
     await apiPost(`/api/v1/webhooks/deliveries/${deliveryId}:retry`)
+  },
+}
+
+// Comparison API
+export const comparisonApi = {
+  compare: async (
+    experimentId: string,
+    body: { run_ids: string[]; metric_names: string[] }
+  ): Promise<ComparisonResponse> => {
+    return await apiPost(`/api/v1/experiments/${experimentId}/compare`, body)
+  },
+
+  exportUrl: (
+    experimentId: string,
+    params: { run_ids: string[]; metric_names: string[]; format: 'csv' | 'json' }
+  ): string => {
+    const base = `/api/v1/experiments/${experimentId}/compare/export`
+    const q = new URLSearchParams({
+      run_ids: params.run_ids.join(','),
+      names: params.metric_names.join(','),
+      format: params.format,
+    })
+    return `${base}?${q.toString()}`
+  },
+}
+
+// Run Sensors API
+export const runSensorsApi = {
+  list: async (runId: string, params?: { project_id?: string }): Promise<{ sensors: RunSensor[] }> => {
+    return await apiGet(`/api/v1/runs/${runId}/sensors`, { params })
+  },
+  attach: async (runId: string, sensorId: string, params?: { project_id?: string }): Promise<RunSensor> => {
+    return await apiPost(`/api/v1/runs/${runId}/sensors/${sensorId}`, {}, { params })
+  },
+  detach: async (runId: string, sensorId: string, params?: { project_id?: string }): Promise<void> => {
+    await apiDelete(`/api/v1/runs/${runId}/sensors/${sensorId}`, { params })
+  },
+}
+
+// Artifacts API
+export const artifactsApi = {
+  list: async (
+    runId: string,
+    params?: { type?: string; limit?: number; offset?: number }
+  ): Promise<ArtifactsListResponse> => {
+    return await apiGet(`/api/v1/runs/${runId}/artifacts`, { params })
+  },
+
+  create: async (runId: string, data: CreateArtifactRequest): Promise<Artifact> => {
+    return await apiPost(`/api/v1/runs/${runId}/artifacts`, data)
+  },
+
+  delete: async (artifactId: string): Promise<void> => {
+    await apiDelete(`/api/v1/artifacts/${artifactId}`)
+  },
+
+  approve: async (artifactId: string): Promise<Artifact> => {
+    return await apiPost(`/api/v1/artifacts/${artifactId}/approve`, {})
+  },
+
+  requestUploadUrl: async (
+    runId: string,
+    data: {
+      filename: string
+      content_type: string
+      type: string
+      size_bytes?: number
+      metadata?: Record<string, unknown>
+    }
+  ): Promise<{ upload_url: string; artifact_id: string; s3_key: string }> => {
+    return await apiPost(`/api/v1/runs/${runId}/artifacts/upload-url`, data)
+  },
+
+  getDownloadUrl: async (
+    artifactId: string
+  ): Promise<{ download_url: string; expires_in: number | null }> => {
+    return await apiGet(`/api/v1/artifacts/${artifactId}/download-url`)
   },
 }
 

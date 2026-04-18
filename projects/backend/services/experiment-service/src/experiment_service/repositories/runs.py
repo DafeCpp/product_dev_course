@@ -11,7 +11,7 @@ from asyncpg import Pool, Record  # type: ignore[import-untyped]
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import RunCreateDTO, RunUpdateDTO
 from experiment_service.domain.enums import RunStatus
-from experiment_service.domain.models import Run
+from experiment_service.domain.models import Run, RunSensor
 from experiment_service.repositories.base import BaseRepository
 
 
@@ -47,7 +47,8 @@ class RunRepository(BaseRepository):
                 status,
                 started_at,
                 finished_at,
-                duration_seconds
+                duration_seconds,
+                auto_complete_after_minutes
             )
             VALUES (
                 $1,
@@ -62,7 +63,8 @@ class RunRepository(BaseRepository):
                 $10,
                 $11,
                 $12,
-                $13
+                $13,
+                $14
             )
             RETURNING *
         """
@@ -81,6 +83,7 @@ class RunRepository(BaseRepository):
             data.started_at,
             data.finished_at,
             data.duration_seconds,
+            data.auto_complete_after_minutes,
         )
         assert record is not None
         return self._to_model(record)
@@ -203,6 +206,24 @@ class RunRepository(BaseRepository):
         )
         return int(record["total"]) if record else 0
 
+    async def has_running_runs_for_experiment(
+        self, project_id: UUID, experiment_id: UUID
+    ) -> bool:
+        """Return True if there is at least one run in 'running' status for the experiment."""
+        record = await self._fetchrow(
+            """
+            SELECT 1
+            FROM runs
+            WHERE project_id = $1
+              AND experiment_id = $2
+              AND status = 'running'
+            LIMIT 1
+            """,
+            project_id,
+            experiment_id,
+        )
+        return record is not None
+
     async def update(
         self,
         project_id: UUID,
@@ -272,6 +293,23 @@ class RunRepository(BaseRepository):
                 raise NotFoundError("One or more runs not found")
             return [self._to_model(record) for record in records]
 
+    async def fetch_runs_brief(
+        self,
+        project_id: UUID,
+        experiment_id: UUID,
+        run_ids: list[UUID],
+    ) -> list[dict[str, Any]]:
+        """Return id, name, status for a batch of run_ids in one query."""
+        query = """
+            SELECT id, name, status, experiment_id
+            FROM runs
+            WHERE project_id = $1
+              AND experiment_id = $2
+              AND id = ANY($3)
+        """
+        records = await self._fetch(query, project_id, experiment_id, run_ids)
+        return [dict(r) for r in records]
+
     async def bulk_update_tags(
         self,
         project_id: UUID,
@@ -334,3 +372,65 @@ class RunRepository(BaseRepository):
                 raise NotFoundError("One or more runs not found")
 
             return [self._to_model(record) for record in records]
+
+    async def get_overdue_runs(self, now: datetime) -> list[Run]:
+        """Return running runs whose auto_complete deadline has passed."""
+        records = await self._fetch(
+            """
+            SELECT * FROM runs
+            WHERE status = 'running'
+              AND auto_complete_after_minutes IS NOT NULL
+              AND started_at + (auto_complete_after_minutes * interval '1 minute') <= $1
+            """,
+            now,
+        )
+        return [self._to_model(record) for record in records]
+
+    async def list_sensors(self, run_id: UUID) -> list[RunSensor]:
+        """List sensors attached to a run (not detached)."""
+        rows = await self._fetch(
+            """
+            SELECT run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by
+            FROM run_sensors
+            WHERE run_id = $1 AND detached_at IS NULL
+            ORDER BY attached_at
+            """,
+            run_id,
+        )
+        return [RunSensor(**dict(row)) for row in rows]
+
+    async def attach_sensor(
+        self,
+        run_id: UUID,
+        sensor_id: UUID,
+        project_id: UUID,
+        created_by: UUID,
+        mode: str = "passive",
+    ) -> RunSensor:
+        """Attach a sensor to a run (upsert — re-attaches if previously detached)."""
+        row = await self._fetchrow(
+            """
+            INSERT INTO run_sensors (run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by)
+            VALUES ($1, $2, $3, $4, now(), NULL, $5)
+            ON CONFLICT (run_id, sensor_id) DO UPDATE
+                SET mode = EXCLUDED.mode,
+                    attached_at = now(),
+                    detached_at = NULL,
+                    created_by = EXCLUDED.created_by
+            RETURNING run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by
+            """,
+            run_id, sensor_id, project_id, mode, created_by,
+        )
+        assert row is not None
+        return RunSensor(**dict(row))
+
+    async def detach_sensor(self, run_id: UUID, sensor_id: UUID) -> bool:
+        """Detach a sensor from a run (soft delete). Returns True if row existed."""
+        result = await self._execute(
+            """
+            UPDATE run_sensors SET detached_at = now()
+            WHERE run_id = $1 AND sensor_id = $2 AND detached_at IS NULL
+            """,
+            run_id, sensor_id,
+        )
+        return result != "UPDATE 0"

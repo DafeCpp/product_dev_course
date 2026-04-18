@@ -9,9 +9,11 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "log_format.hpp"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -25,6 +27,24 @@ static bool s_sta_should_connect = false;
 
 static char s_ap_ssid[32] = {};
 static WiFiStaStatus s_sta_status = {};
+
+// STA reconnect backoff: после kStaFastRetries быстрых попыток переходим
+// на медленный режим (раз в kStaSlowRetryMs), чтобы не мешать AP-клиентам.
+static int s_sta_retry_count = 0;
+static constexpr int kStaFastRetries = 3;
+static constexpr uint32_t kStaSlowRetryMs = 30000;  // 30 сек
+static esp_timer_handle_t s_sta_retry_timer = nullptr;
+
+static void sta_retry_timer_cb(void*) {
+  bool should = false;
+  portENTER_CRITICAL(&s_wifi_mux);
+  should = s_sta_should_connect;
+  portEXIT_CRITICAL(&s_wifi_mux);
+  if (should) {
+    ESP_LOGI(TAG, "STA slow retry: attempting reconnect...");
+    (void)esp_wifi_connect();
+  }
+}
 
 static constexpr const char* kStaNvsNamespace = "wifi_sta";
 static constexpr const char* kStaKeySsid = "ssid";
@@ -53,7 +73,9 @@ static void StaStatusSetConnected(bool connected) {
 
 static void StaStatusSetIp(const esp_netif_ip_info_t& ip_info) {
   portENTER_CRITICAL(&s_wifi_mux);
-  snprintf(s_sta_status.ip, sizeof(s_sta_status.ip), IPSTR, IP2STR(&ip_info.ip));
+  const std::string ip_str = rc_vehicle::FormatIp(ip_info.ip.addr);
+  strncpy(s_sta_status.ip, ip_str.c_str(), sizeof(s_sta_status.ip) - 1);
+  s_sta_status.ip[sizeof(s_sta_status.ip) - 1] = '\0';
   s_sta_status.connected = true;
   portEXIT_CRITICAL(&s_wifi_mux);
 }
@@ -142,15 +164,36 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
       const int reason = disc ? (int)disc->reason : 0;
       StaStatusSetConnected(false);
       StaStatusSetDisconnectReason(reason);
-      ESP_LOGW(TAG, "STA disconnected (reason=%d)", reason);
 
       bool should_connect = false;
       portENTER_CRITICAL(&s_wifi_mux);
       should_connect = s_sta_should_connect;
       portEXIT_CRITICAL(&s_wifi_mux);
+
       if (should_connect) {
-        // Автопереподключение, если есть сохранённая/активная конфигурация.
-        (void)esp_wifi_connect();
+        ++s_sta_retry_count;
+
+        // reason=201 (NO_AP_FOUND): сеть не в радиусе — быстрые ретраи
+        // бессмысленны, сканирование блокирует радио на сотни мс и мешает
+        // AP-клиентам.
+        const bool skip_fast = (reason == 201);
+
+        if (!skip_fast && s_sta_retry_count <= kStaFastRetries) {
+          ESP_LOGW(TAG, "STA disconnected (reason=%d), retry %d/%d", reason,
+                   s_sta_retry_count, kStaFastRetries);
+          (void)esp_wifi_connect();
+        } else {
+          if (s_sta_retry_count <= kStaFastRetries + 1) {
+            ESP_LOGW(TAG,
+                     "STA disconnected (reason=%d), slow retry every %lu s",
+                     reason, (unsigned long)(kStaSlowRetryMs / 1000));
+          }
+          if (s_sta_retry_timer) {
+            esp_timer_start_once(s_sta_retry_timer, kStaSlowRetryMs * 1000ULL);
+          }
+        }
+      } else {
+        ESP_LOGI(TAG, "STA disconnected (reason=%d), not reconnecting", reason);
       }
       return;
     }
@@ -160,6 +203,8 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     const auto* evt = reinterpret_cast<const ip_event_got_ip_t*>(event_data);
     if (evt) {
       StaStatusSetIp(evt->ip_info);
+      s_sta_retry_count = 0;  // Сброс: подключились успешно
+      if (s_sta_retry_timer) esp_timer_stop(s_sta_retry_timer);
       ESP_LOGI(TAG, "STA got IP: " IPSTR, IP2STR(&evt->ip_info.ip));
     }
     return;
@@ -193,17 +238,20 @@ esp_err_t WiFiApInit(void) {
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
   // События Wi‑Fi / IP (для STA статуса)
-  ESP_ERROR_CHECK(
-      esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                 &wifi_event_handler, nullptr));
+  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                             &wifi_event_handler, nullptr));
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                              &wifi_event_handler, nullptr));
 
   // Получить MAC адрес для уникального SSID
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-  snprintf(s_ap_ssid, sizeof(s_ap_ssid), "%s-%02X%02X", WIFI_AP_SSID_PREFIX,
-           mac[4], mac[5]);
+  rc_vehicle::LogFormat fmt;
+  fmt << WIFI_AP_SSID_PREFIX << "-" << std::hex << std::setw(2)
+      << std::setfill('0') << std::uppercase << static_cast<unsigned>(mac[4])
+      << std::setw(2) << std::setfill('0') << static_cast<unsigned>(mac[5]);
+  strncpy(s_ap_ssid, fmt.str().c_str(), sizeof(s_ap_ssid) - 1);
+  s_ap_ssid[sizeof(s_ap_ssid) - 1] = '\0';
 
   // Настройка AP
   wifi_config_t ap_cfg = {};
@@ -223,8 +271,15 @@ esp_err_t WiFiApInit(void) {
   // Настройка STA (опционально): пробуем загрузить из NVS и подключиться.
   char sta_ssid[33];
   char sta_pass[65];
-  bool have_sta = LoadStaCreds(sta_ssid, sizeof(sta_ssid), sta_pass,
-                               sizeof(sta_pass));
+  bool have_sta =
+      LoadStaCreds(sta_ssid, sizeof(sta_ssid), sta_pass, sizeof(sta_pass));
+
+  if (have_sta) {
+    ESP_LOGI(TAG, "NVS STA creds: SSID=[%s] (len=%d), pass_len=%d", sta_ssid,
+             (int)strlen(sta_ssid), (int)strlen(sta_pass));
+  } else {
+    ESP_LOGI(TAG, "No STA creds in NVS");
+  }
 
   wifi_config_t sta_cfg = {};
   if (have_sta) {
@@ -249,6 +304,17 @@ esp_err_t WiFiApInit(void) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
   }
   ESP_ERROR_CHECK(esp_wifi_start());
+
+  // Таймер для медленных STA-ретраев (esp_timer — свой таск с достаточным
+  // стеком)
+  const esp_timer_create_args_t retry_timer_args = {
+      .callback = sta_retry_timer_cb,
+      .arg = nullptr,
+      .dispatch_method = ESP_TIMER_TASK,
+      .name = "sta_retry",
+      .skip_unhandled_events = true,
+  };
+  esp_timer_create(&retry_timer_args, &s_sta_retry_timer);
 
   ESP_LOGI(TAG, "Wi-Fi AP initialized. SSID: %s", s_ap_ssid);
   if (have_sta) {
@@ -282,7 +348,9 @@ esp_err_t WiFiApGetIp(char* ip_str, size_t len) {
     return ESP_FAIL;
   }
 
-  snprintf(ip_str, len, IPSTR, IP2STR(&ip_info.ip));
+  const std::string formatted_ip = rc_vehicle::FormatIp(ip_info.ip.addr);
+  strncpy(ip_str, formatted_ip.c_str(), len - 1);
+  ip_str[len - 1] = '\0';
   return ESP_OK;
 }
 
@@ -315,6 +383,9 @@ esp_err_t WiFiStaConnect(const char* ssid, const char* password, bool save) {
   portENTER_CRITICAL(&s_wifi_mux);
   s_sta_should_connect = true;
   portEXIT_CRITICAL(&s_wifi_mux);
+
+  s_sta_retry_count = 0;  // Сброс backoff при ручном подключении
+  if (s_sta_retry_timer) esp_timer_stop(s_sta_retry_timer);
 
   // Обновить конфиг и начать подключение (AP остаётся включён).
   esp_err_t e = esp_wifi_set_mode(WIFI_MODE_APSTA);
@@ -364,8 +435,8 @@ esp_err_t WiFiStaScan(WiFiScanNetwork* out_networks, size_t* inout_count) {
   if (*inout_count == 0) return ESP_ERR_INVALID_ARG;
   if (!s_inited) return ESP_ERR_INVALID_STATE;
 
-  // Примечание: скан может занять несколько секунд и временно ухудшить связь AP,
-  // т.к. радио сканирует другие каналы.
+  // Примечание: скан может занять несколько секунд и временно ухудшить связь
+  // AP, т.к. радио сканирует другие каналы.
   wifi_scan_config_t scan_cfg = {};
   scan_cfg.show_hidden = true;
   scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
@@ -424,7 +495,8 @@ esp_err_t WiFiStaScan(WiFiScanNetwork* out_networks, size_t* inout_count) {
     out_networks[out_count].authmode = (int)records[i].authmode;
     strncpy(out_networks[out_count].ssid, ssid,
             sizeof(out_networks[out_count].ssid) - 1);
-    out_networks[out_count].ssid[sizeof(out_networks[out_count].ssid) - 1] = '\0';
+    out_networks[out_count].ssid[sizeof(out_networks[out_count].ssid) - 1] =
+        '\0';
     out_count++;
   }
 

@@ -4,7 +4,6 @@
 .pytest_cache
 coverage.xml
 dist/
-poetry.lock
 __pycache__/
 clients/
 

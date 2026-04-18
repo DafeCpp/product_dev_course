@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import warnings
 from functools import lru_cache
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import Field, PostgresDsn, model_validator
 
@@ -33,6 +33,24 @@ class Settings(BaseServiceSettings):
     refresh_token_ttl_sec: int = 1209600  # 14 days
 
     bcrypt_rounds: int = 12
+
+    registration_mode: Literal["open", "invite"] = "open"
+
+    # Секрет для одноразового создания первого admin-пользователя.
+    # Если не задан — endpoint POST /auth/admin/bootstrap отключён (404).
+    admin_bootstrap_secret: str | None = Field(default=None)
+
+    audit_retention_days: int = 365  # delete audit_log entries older than this
+    worker_interval_seconds: float = 60.0  # how often the background worker runs
+
+    smtp_enabled: bool = False
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@example.com"
+    smtp_from_name: str = "Experiment Platform"
+    app_url: str = "http://localhost:3000"
 
     @model_validator(mode="after")
     def _warn_insecure_jwt_secret(self) -> "Settings":

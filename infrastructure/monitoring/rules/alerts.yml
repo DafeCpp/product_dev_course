@@ -1,0 +1,82 @@
+groups:
+  - name: http_errors
+    interval: 30s
+    rules:
+      - alert: HighHTTPErrorRate
+        expr: |
+          (
+            sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum by (service) (rate(http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP error rate on {{ $labels.service }}"
+          description: "{{ $labels.service }} has >5% HTTP 5xx error rate (current: {{ $value | humanizePercentage }}) for 2+ minutes."
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}."
+
+      - alert: HighRequestLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.service }}"
+          description: "p95 latency on {{ $labels.service }} exceeds 1s (current: {{ $value | humanizeDuration }})."
+
+  - name: business
+    interval: 60s
+    rules:
+      - alert: NoTelemetryIngested
+        expr: |
+          sum(increase(telemetry_readings_ingested_total[10m])) == 0
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "No telemetry ingested in 10 minutes"
+          description: "No telemetry data has been received in the last 10 minutes. Check device connectivity."
+
+      - alert: HighSSEConnections
+        expr: sse_connections_active > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of active SSE connections"
+          description: "There are {{ $value }} active SSE connections (threshold: 50)."
+
+      - alert: AuthFailureSpike
+        expr: rate(auth_logins_total{result="failure"}[5m]) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Auth login failure spike"
+          description: "Auth service is seeing >0.5 login failures/sec for 3+ minutes — possible brute-force attack."
+
+  - name: database
+    interval: 30s
+    rules:
+      - alert: HighRequestVolume
+        expr: |
+          sum by (service) (rate(http_requests_total[1m])) > 100
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High request volume on {{ $labels.service }}"
+          description: "{{ $labels.service }} is receiving >100 req/s for 5+ minutes."

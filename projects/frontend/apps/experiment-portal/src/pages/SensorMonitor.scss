@@ -1,0 +1,73 @@
+@import '../styles/components';
+
+.sensor-monitor {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sensor-monitor__filters-grid > * {
+  grid-column: span 4;
+}
+
+.sensor-monitor__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.sensor-monitor__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 3px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sensor-monitor__card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elevation-2);
+}
+
+.sensor-monitor__card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sensor-monitor__card-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  margin: 0;
+}
+
+.sensor-monitor__card-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.sensor-monitor__ts {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 1100px) {
+  .sensor-monitor__filters-grid > * {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 720px) {
+  .sensor-monitor__filters-grid > * {
+    grid-column: span 12;
+  }
+
+  .sensor-monitor__card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -99,14 +99,6 @@ async def test_storage_layer_crud(db_pool):
     assert len(runs) == 1
     assert runs_total == 1
 
-    run = await runs_service.update_run(
-        project_id,
-        run.id,
-        RunUpdateDTO(status=RunStatus.SUCCEEDED, duration_seconds=42),
-    )
-    assert run.status == RunStatus.SUCCEEDED
-    assert run.duration_seconds == 42
-
     session = await sessions_service.create_session(
         CaptureSessionCreateDTO(
             run_id=run.id,
@@ -132,6 +124,14 @@ async def test_storage_layer_crud(db_pool):
     )
     assert session.status == CaptureSessionStatus.SUCCEEDED
     assert session.archived is True
+
+    run = await runs_service.update_run(
+        project_id,
+        run.id,
+        RunUpdateDTO(status=RunStatus.SUCCEEDED, duration_seconds=42),
+    )
+    assert run.status == RunStatus.SUCCEEDED
+    assert run.duration_seconds == 42
 
     await sessions_service.delete_session(project_id, session.id)
     await runs_service.delete_run(project_id, run.id)

@@ -14,6 +14,7 @@ EXPERIMENT_TRANSITIONS: dict[ExperimentStatus, set[ExperimentStatus]] = {
     ExperimentStatus.RUNNING: {ExperimentStatus.SUCCEEDED, ExperimentStatus.FAILED},
     ExperimentStatus.SUCCEEDED: {ExperimentStatus.ARCHIVED},
     ExperimentStatus.FAILED: {ExperimentStatus.ARCHIVED},
+    ExperimentStatus.ARCHIVED: set(),  # Terminal state
 }
 
 RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
@@ -21,6 +22,7 @@ RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
     RunStatus.RUNNING: {RunStatus.SUCCEEDED, RunStatus.FAILED},
     RunStatus.SUCCEEDED: {RunStatus.ARCHIVED},
     RunStatus.FAILED: {RunStatus.ARCHIVED},
+    RunStatus.ARCHIVED: set(),  # Terminal state
 }
 
 CAPTURE_TRANSITIONS: dict[CaptureSessionStatus, set[CaptureSessionStatus]] = {
@@ -38,6 +40,7 @@ CAPTURE_TRANSITIONS: dict[CaptureSessionStatus, set[CaptureSessionStatus]] = {
     },
     CaptureSessionStatus.BACKFILLING: {CaptureSessionStatus.SUCCEEDED},
     CaptureSessionStatus.FAILED: {CaptureSessionStatus.ARCHIVED},
+    CaptureSessionStatus.ARCHIVED: set(),  # Terminal state
 }
 
 CONVERSION_PROFILE_TRANSITIONS: dict[

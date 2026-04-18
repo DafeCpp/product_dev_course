@@ -4,10 +4,14 @@ on:
   push:
     branches:
       - main
+      - develop
     paths:
       - projects/backend/**
       - .github/workflows/backend-tests.yml
   pull_request:
+    branches:
+      - main
+      - develop
     paths:
       - projects/backend/**
       - .github/workflows/backend-tests.yml
@@ -62,22 +66,71 @@ jobs:
 
       - name: Install PostgreSQL + TimescaleDB
         run: |
-          # Determine the Ubuntu codename.
           UBUNTU_CODENAME=$(lsb_release -cs)
 
-          # Add the official TimescaleDB APT repository.
+          # Use PostgreSQL official repo (PGDG) for postgresql-16 >= 16.13;
+          # TimescaleDB loader requires 16.13+, Ubuntu default is 16.12.
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+            sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${UBUNTU_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+          # Add TimescaleDB APT repository.
           echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ ${UBUNTU_CODENAME} main" \
             | sudo tee /etc/apt/sources.list.d/timescaledb.list
           curl -sL https://packagecloud.io/timescale/timescaledb/gpgkey | \
             gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg >/dev/null
 
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql
+          sudo apt-get install -y --no-install-recommends postgresql-16 postgresql-contrib-16
 
-          # Detect installed PG major version (e.g. 16).
-          PG_MAJOR=$(pg_config --version | grep -oP '\d+' | head -1)
-
+          PG_MAJOR=16
           sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}"
+
+          # Copy TimescaleDB extension files to testsuite's PostgreSQL directory
+          # testsuite uses its own PostgreSQL, so we need to find where it is
+          echo "Finding testsuite PostgreSQL installation..."
+          
+          # Install poetry dependencies first to get testsuite
+          cd ${{ github.workspace }}/projects/backend/services/experiment-service
+          poetry install --no-interaction --no-root 2>/dev/null || true
+          
+          # Find testsuite's PostgreSQL bin directory
+          TS_PG_BIN=$(poetry run python -c "from testsuite.databases.pgsql import config; print(config.PG_BIN_DIR)" 2>/dev/null || echo "")
+          echo "Testsuite PG_BIN_DIR: $TS_PG_BIN"
+          
+          # Copy TimescaleDB files to both system and potential testsuite locations
+          echo "Copying TimescaleDB extension files..."
+          sudo cp -r /usr/share/timescaledb/* /usr/share/postgresql/16/extension/ 2>/dev/null || true
+          sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so /usr/lib/postgresql/16/lib/ 2>/dev/null || true
+          
+          # Also copy to common testsuite locations if they exist
+          for ts_dir in /usr/share/postgresql /usr/lib/postgresql; do
+            if [ -d "$ts_dir" ]; then
+              echo "Copying to $ts_dir..."
+              sudo cp -r /usr/share/timescaledb/* $ts_dir/*/extension/ 2>/dev/null || true
+              sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so $ts_dir/*/lib/ 2>/dev/null || true
+            fi
+          done
+
+          # Verify TimescaleDB is installed
+          echo "Verifying TimescaleDB installation..."
+          ls -la /usr/lib/postgresql/16/lib/timescaledb*.so || true
+          ls -la /usr/share/postgresql/16/extension/timescaledb*.control || true
+
+          # Ensure PostgreSQL 16 binaries are in PATH
+          echo "Adding PostgreSQL 16 to PATH..."
+          echo "/usr/lib/postgresql/16/bin" >> $GITHUB_PATH
+
+          # Verify pg_config points to PostgreSQL 16
+          echo "Verifying pg_config..."
+          which pg_config || true
+          pg_config --version || true
+          
+          # Set environment variables for testsuite
+          echo "PG_BIN=/usr/lib/postgresql/16/bin" >> $GITHUB_ENV
+          echo "PG_SHARE=/usr/share/postgresql/16" >> $GITHUB_ENV
+          echo "PG_LIB=/usr/lib/postgresql/16/lib" >> $GITHUB_ENV
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
@@ -87,18 +140,6 @@ jobs:
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
-
-      - name: Configure TimescaleDB for testsuite
-        run: |
-          # yandex-taxi-testsuite starts its own PostgreSQL instance using
-          # configs bundled inside the package.  We append shared_preload_libraries
-          # there so that CREATE EXTENSION timescaledb succeeds.
-          PG_CONF=$(poetry run python -c "
-          import testsuite.databases.pgsql.service as s
-          print(s.CONFIGS_DIR / 'postgresql.conf')
-          ")
-          echo "shared_preload_libraries = 'timescaledb'" >> "$PG_CONF"
-          echo ">> Appended timescaledb preload to $PG_CONF"
 
       - name: Run pytest
         run: poetry run pytest -q

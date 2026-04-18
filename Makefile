@@ -2,7 +2,9 @@
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
-.PHONY: dev dev-up dev-down dev-restart dev-rebuild dev-rebuild-changed dev-logs dev-fix dev-clean grafana-reset-password
+.PHONY: dev dev-up dev-down dev-restart dev-rebuild dev-rebuild-changed dev-logs dev-status dev-fix dev-clean dev-seed grafana-reset-password
+
+SHELL := /bin/bash
 
 BACKEND_SERVICES_DIR := projects/backend/services
 BACKEND_DIR := projects/backend/services/experiment-service
@@ -23,9 +25,24 @@ FRONTEND_NODE_IMAGE ?= node:24-alpine
 DOCKER_BUILDKIT ?= 1
 COMPOSE_DOCKER_CLI_BUILD ?= 1
 DOCKER_BUILD_ENV := DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) COMPOSE_DOCKER_CLI_BUILD=$(COMPOSE_DOCKER_CLI_BUILD)
+# Таймаут HTTP-запросов к Docker daemon (секунды). Увеличьте при медленной сборке/запуске контейнеров.
+# Prefer Docker Compose v2 (docker compose) over legacy v1 (docker-compose).
+# v1.29.2 is incompatible with newer Docker Engine ('ContainerConfig' KeyError).
+DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo "docker-compose"; fi)
+COMPOSE_HTTP_TIMEOUT ?= 120
 BACKEND_BASE_DOCKERFILE := projects/backend/Dockerfile.base
 BACKEND_BASE_HASH := $(shell sha256sum $(BACKEND_BASE_DOCKERFILE) 2>/dev/null | awk '{print $$1}')
 BACKEND_DEV_SERVICES := auth-service experiment-service telemetry-ingest-service
+# All services managed by `make dev-*` targets
+DEV_ALL_SERVICES := postgres redis auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+# Default dev credentials for `make dev-seed`
+DEV_ADMIN_USER     ?= admin
+DEV_ADMIN_EMAIL    ?= admin@example.com
+DEV_ADMIN_PASSWORD ?= Admin123
+DEV_BOOTSTRAP_SECRET ?= dev-bootstrap-secret
+AUTH_SERVICE_URL        ?= http://localhost:8001
+EXPERIMENT_SERVICE_URL  ?= http://localhost:8002
+TELEMETRY_SERVICE_URL   ?= http://localhost:8003
 # Backend tests require TimescaleDB (telemetry tables are hypertables).
 # By default we run tests against the docker-compose postgres container and
 # dynamically discover its credentials and mapped host port (so local .env works).
@@ -110,36 +127,42 @@ test-backend: backend-install
 		echo "⚠️  Не найдено ни одного backend сервиса в $(BACKEND_SERVICES_DIR)"; \
 		exit 1; \
 	fi; \
-	echo "🐘 Starting TimescaleDB (postgres) for backend tests..."; \
-	docker-compose up -d postgres >/dev/null 2>&1 || (echo "❌ docker-compose failed to start postgres" && exit 1); \
-	# Wait for readiness (up to ~30s). \
-	for i in $$(seq 1 60); do \
-		docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 && break; \
-		sleep 0.5; \
-	done; \
-	if ! docker-compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then \
-		echo "❌ Postgres is not ready"; \
-		docker-compose logs --tail=80 postgres; \
-		exit 1; \
-	fi; \
 	PG_TEST_DSN="$(TEST_POSTGRESQL_DSN)"; \
 	if [ -z "$$PG_TEST_DSN" ]; then \
-		hostport="$$(docker-compose port postgres 5432 2>/dev/null | tail -n 1 | sed 's/.*://')"; \
+		echo "🐘 Starting TimescaleDB (postgres) for backend tests..."; \
+		$(DOCKER_COMPOSE) up -d postgres >/dev/null 2>&1 || { \
+			echo "❌ docker compose failed to start postgres"; \
+			echo "   If you see 'Permission denied' on the Docker socket, add your user to the docker group:"; \
+			echo "   sudo usermod -aG docker \$$USER && newgrp docker"; \
+			echo "   Or run tests against an existing Postgres: make test-backend TEST_POSTGRESQL_DSN='postgresql://user:pass@host:5432/dbname'"; \
+			exit 1; \
+		}; \
+		for i in $$(seq 1 60); do \
+			$(DOCKER_COMPOSE) exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 && break; \
+			sleep 0.5; \
+		done; \
+		if ! $(DOCKER_COMPOSE) exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then \
+			echo "❌ Postgres is not ready"; \
+			$(DOCKER_COMPOSE) logs --tail=80 postgres; \
+			exit 1; \
+		fi; \
+		hostport="$$($(DOCKER_COMPOSE) port postgres 5432 2>/dev/null | tail -n 1 | sed 's/.*://')"; \
 		if [ -z "$$hostport" ]; then hostport=5433; fi; \
-		# Strip quotes if .env uses POSTGRES_USER="..." format. \
-		pg_user="$$(docker-compose exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_USER:-postgres}\"' | sed 's/\"//g')"; \
-		pg_pass="$$(docker-compose exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_PASSWORD:-postgres}\"' | sed 's/\"//g')"; \
-		# If the postgres volume already exists, POSTGRES_PASSWORD env won't update the actual role password. \
-		# Ensure the role password matches what we'll use in the DSN. \
-		docker-compose exec -T postgres psql -U postgres -d postgres -c "ALTER USER \"$${pg_user}\" WITH PASSWORD '$${pg_pass}';" >/dev/null 2>&1 || true; \
+		pg_user="$$($(DOCKER_COMPOSE) exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_USER:-postgres}\"' | sed 's/\"//g')"; \
+		pg_pass="$$($(DOCKER_COMPOSE) exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_PASSWORD:-postgres}\"' | sed 's/\"//g')"; \
+		$(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "ALTER USER \"$${pg_user}\" WITH PASSWORD '$${pg_pass}';" >/dev/null 2>&1 || true; \
 		PG_TEST_DSN="postgresql://$${pg_user}:$${pg_pass}@localhost:$${hostport}/postgres"; \
 	fi; \
 	echo "🔌 Using PostgreSQL DSN for tests: $$(echo $$PG_TEST_DSN | sed -E 's#(postgresql://[^:]+:)[^@]+@#\\1***@#')"; \
 	failed=0; \
+	out_file="$$(mktemp -t backend-pytest.XXXXXX.log)"; \
+	trap 'rm -f "$$out_file"' EXIT; \
 	for service in $(BACKEND_SERVICES); do \
 		echo "🧪 Running tests for $$(basename $$service)..."; \
-		(cd $$service && poetry run pytest --postgresql "$$PG_TEST_DSN") || failed=1; \
+		set -o pipefail; \
+		(cd $$service && poetry run pytest --postgresql "$$PG_TEST_DSN") 2>&1 | tee -a "$$out_file" || failed=1; \
 	done; \
+	"$(PYTHON)" scripts/pytest_totals.py "$$out_file" || true; \
 	exit $$failed
 
 test-telemetry-cli:
@@ -204,27 +227,27 @@ generate-sdk:
 # Просмотр всех логов в реальном времени
 logs:
 	@echo "Просмотр логов всех сервисов (Ctrl+C для выхода)"
-	docker-compose logs -f --tail=50
+	$(DOCKER_COMPOSE) logs -f --tail=50
 
 # Просмотр логов конкретного сервиса
 logs-service:
-	docker-compose logs -f --tail=100 experiment-service
+	$(DOCKER_COMPOSE) logs -f --tail=100 experiment-service
 
 logs-proxy:
-	docker-compose logs -f --tail=100 auth-proxy
+	$(DOCKER_COMPOSE) logs -f --tail=100 auth-proxy
 
 logs-auth-service:
-	docker-compose logs -f --tail=100 auth-service
+	$(DOCKER_COMPOSE) logs -f --tail=100 auth-service
 
 logs-portal:
-	docker-compose logs -f --tail=100 experiment-portal
+	$(DOCKER_COMPOSE) logs -f --tail=100 experiment-portal
 
 logs-postgres:
-	docker-compose logs -f --tail=100 postgres
+	$(DOCKER_COMPOSE) logs -f --tail=100 postgres
 
 # Просмотр только ошибок
 logs-errors:
-	docker-compose logs --tail=200 | grep -i "error\|fatal\|exception" --color=always
+	$(DOCKER_COMPOSE) logs --tail=200 | grep -i "error\|fatal\|exception" --color=always
 
 # ============================================
 # Grafana Stack (Loki + Alloy + Grafana)
@@ -233,7 +256,7 @@ logs-errors:
 # Запуск стека логирования
 logs-stack-up:
 	@echo "Запуск стека логирования (Loki + Alloy + Grafana)..."
-	cd infrastructure/logging && docker-compose -f docker-compose.yml up -d loki alloy grafana
+	cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml up -d loki alloy grafana
 	@echo ""
 	@echo "✅ Стек логирования запущен!"
 	@echo "📊 Grafana доступна на http://localhost:3001"
@@ -249,7 +272,7 @@ logs-stack-up:
 # Остановка стека логирования
 logs-stack-down:
 	@echo "Остановка стека логирования..."
-	cd infrastructure/logging && docker-compose -f docker-compose.yml stop loki alloy grafana
+	cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml stop loki alloy grafana
 
 # Перезапуск стека логирования
 logs-stack-restart: logs-stack-down logs-stack-up
@@ -261,7 +284,7 @@ logs-stack: logs-stack-up
 grafana-reset-password:
 	@echo "Сброс пароля администратора Grafana..."
 	@echo "Используется пароль из переменной GRAFANA_ADMIN_PASSWORD (по умолчанию: admin)"
-	cd infrastructure/logging && docker-compose -f docker-compose.yml exec -T grafana grafana cli admin reset-admin-password "$${GRAFANA_ADMIN_PASSWORD:-admin}" 2>&1 | grep -E "(Admin password|successfully|error)" || true
+	cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml exec -T grafana grafana cli admin reset-admin-password "$${GRAFANA_ADMIN_PASSWORD:-admin}" 2>&1 | grep -E "(Admin password|successfully|error)" || true
 	@echo ""
 	@echo "✅ Пароль администратора Grafana сброшен!"
 	@echo "👤 Логин: admin"
@@ -283,7 +306,8 @@ dev-up:
 		echo "⚠️  Файл .env не найден. Создаю из примера..."; \
 		cp env.docker.example .env 2>/dev/null || true; \
 	fi
-	docker-compose up -d postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+	COMPOSE_HTTP_TIMEOUT=$(COMPOSE_HTTP_TIMEOUT) $(DOCKER_COMPOSE) up -d $(DEV_ALL_SERVICES)
+	@$(MAKE) dev-seed
 	@echo ""
 	@echo "✅ Сервисы запущены!"
 	@echo "🌐 Фронтенд доступен на http://localhost:3000"
@@ -315,10 +339,57 @@ dev-up:
 	@echo "⚠️  Если возникла ошибка 'ContainerConfig', выполните: make dev-fix"
 	@echo "⚠️  Если не получается войти в Grafana, выполните: make grafana-reset-password"
 
+# Заполнение БД демо-данными: 2 проекта, 5 датчиков, 3 эксперимента, 5 запусков, телеметрия.
+# Требует: pip install requests (или pipx run requests)
+dev-seed-demo: dev-seed
+	@echo "Заполнение БД демо-данными..."
+	@python3 scripts/seed_demo.py \
+		--auth-url $(AUTH_SERVICE_URL) \
+		--exp-url $(EXPERIMENT_SERVICE_URL) \
+		--telem-url $(TELEMETRY_SERVICE_URL)
+
+# Создание dev-пользователя (superadmin) через bootstrap API.
+# Идемпотентно: если пользователь уже создан, просто пропускает.
+dev-seed:
+	@echo "Ожидание готовности auth-service..."
+	@for i in $$(seq 1 30); do \
+		if curl -sf $(AUTH_SERVICE_URL)/health >/dev/null 2>&1; then break; fi; \
+		if [ $$i -eq 30 ]; then echo "❌ auth-service не отвечает"; exit 1; fi; \
+		sleep 1; \
+	done
+	@echo "Создание dev-пользователя $(DEV_ADMIN_USER)..."
+	@status=$$(curl -s -o /dev/null -w '%{http_code}' -X POST $(AUTH_SERVICE_URL)/auth/admin/bootstrap \
+		-H 'Content-Type: application/json' \
+		-d '{"bootstrap_secret":"$(DEV_BOOTSTRAP_SECRET)","username":"$(DEV_ADMIN_USER)","email":"$(DEV_ADMIN_EMAIL)","password":"$(DEV_ADMIN_PASSWORD)"}'); \
+	if [ "$$status" = "201" ]; then \
+		echo "✅ Пользователь $(DEV_ADMIN_USER) создан (superadmin)"; \
+	elif [ "$$status" = "409" ]; then \
+		echo "ℹ️  Пользователь $(DEV_ADMIN_USER) уже существует — используй 'make dev-reset-admin' чтобы сбросить пароль на $(DEV_ADMIN_PASSWORD)"; \
+	else \
+		echo "⚠️  Bootstrap вернул HTTP $$status (возможно, пользователь уже создан)"; \
+	fi
+
+# Сброс пароля superadmin на дефолтный dev-пароль.
+# Используй когда пароль неизвестен после make dev-seed.
+dev-reset-admin:
+	@echo "Сброс пароля $(DEV_ADMIN_USER) на $(DEV_ADMIN_PASSWORD)..."
+	@$(DOCKER_COMPOSE) exec -T auth-service python -c "\
+import asyncio, asyncpg, os; \
+from auth_service.services.password import hash_password; \
+async def reset(): \
+    url = os.environ.get('DATABASE_URL', ''); \
+    conn = await asyncpg.connect(url); \
+    h = hash_password('$(DEV_ADMIN_PASSWORD)'); \
+    r = await conn.fetchrow(\"UPDATE users SET hashed_password=\$$1, password_change_required=false WHERE username=\$$2 RETURNING id\", h, '$(DEV_ADMIN_USER)'); \
+    await conn.close(); \
+    return r; \
+r = asyncio.run(reset()); \
+print('✅ Пароль сброшен' if r else '❌ Пользователь не найден')"
+
 # Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana
 dev-down:
 	@echo "Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana..."
-	docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+	$(DOCKER_COMPOSE) stop $(DEV_ALL_SERVICES)
 	@echo "✅ Сервисы остановлены"
 
 # Перезапуск фронтенда, бэкенда, auth-service, auth-proxy и Grafana
@@ -330,10 +401,10 @@ dev-rebuild: dev-down
 	@$(MAKE) backend-base-no-cache
 	@set -e; \
 	if docker buildx version >/dev/null 2>&1; then \
-		$(DOCKER_BUILD_ENV) docker-compose build --no-cache postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana; \
+		$(DOCKER_BUILD_ENV) $(DOCKER_COMPOSE) build --no-cache $(DEV_ALL_SERVICES); \
 	else \
-		echo "⚠️  buildx не найден — docker-compose build без BuildKit."; \
-		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose build --no-cache postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana; \
+		echo "⚠️  buildx не найден — docker compose build без BuildKit."; \
+		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 $(DOCKER_COMPOSE) build --no-cache $(DEV_ALL_SERVICES); \
 	fi
 	@$(MAKE) dev-up
 
@@ -390,12 +461,12 @@ dev-rebuild-changed:
 	fi; \
 	echo "Пересборка измененных сервисов: $$services"; \
 	if docker buildx version >/dev/null 2>&1; then \
-		$(DOCKER_BUILD_ENV) docker-compose build $$services; \
+		$(DOCKER_BUILD_ENV) $(DOCKER_COMPOSE) build $$services; \
 	else \
-		echo "⚠️  buildx не найден — docker-compose build без BuildKit."; \
-		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose build $$services; \
+		echo "⚠️  buildx не найден — docker compose build без BuildKit."; \
+		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 $(DOCKER_COMPOSE) build $$services; \
 	fi; \
-	docker-compose up -d $$services
+	$(DOCKER_COMPOSE) up -d $$services
 
 # Пересборка только одного backend сервиса (make dev-auth-service и т.д.)
 dev-%:
@@ -416,12 +487,12 @@ dev-%:
 	fi; \
 	echo "Пересборка $$service..."; \
 	if docker buildx version >/dev/null 2>&1; then \
-		$(DOCKER_BUILD_ENV) docker-compose build $$service; \
+		$(DOCKER_BUILD_ENV) $(DOCKER_COMPOSE) build $$service; \
 	else \
-		echo "⚠️  buildx не найден — docker-compose build без BuildKit."; \
-		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose build $$service; \
+		echo "⚠️  buildx не найден — docker compose build без BuildKit."; \
+		DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 $(DOCKER_COMPOSE) build $$service; \
 	fi; \
-	docker-compose up -d $$service
+	$(DOCKER_COMPOSE) up -d $$service
 
 backend-base:
 	@set -e; \
@@ -472,13 +543,18 @@ backend-base-check:
 # Просмотр логов всех dev-сервисов
 dev-logs:
 	@echo "Просмотр логов всех dev-сервисов (Ctrl+C для выхода)"
-	docker-compose logs -f --tail=50 postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+	$(DOCKER_COMPOSE) logs -f --tail=50 $(DEV_ALL_SERVICES)
+
+# Статус dev-сервисов (какие контейнеры запущены)
+dev-status:
+	@echo "Статус dev-сервисов:"
+	@$(DOCKER_COMPOSE) ps $(DEV_ALL_SERVICES) 2>/dev/null || $(DOCKER_COMPOSE) ps
 
 # Исправление ошибки ContainerConfig (удаление проблемных контейнеров и пересоздание)
 dev-fix:
 	@echo "Исправление ошибки ContainerConfig..."
 	@echo "Остановка всех dev-сервисов..."
-	docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
+	$(DOCKER_COMPOSE) stop $(DEV_ALL_SERVICES) 2>/dev/null || true
 	@echo "Удаление проблемных контейнеров..."
 	@docker ps -a --filter "name=experiment-service" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=auth-service" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
@@ -489,8 +565,9 @@ dev-fix:
 	@docker ps -a --filter "name=grafana" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=loki" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@docker ps -a --filter "name=backend-postgres" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+	@docker ps -a --filter "name=redis" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 	@echo "Удаление контейнеров с префиксом проекта..."
-	docker-compose rm -f postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
+	$(DOCKER_COMPOSE) rm -f $(DEV_ALL_SERVICES) 2>/dev/null || true
 	@echo "Удаление volume PostgreSQL для пересоздания с правильным паролем..."
 	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
 	@echo "Очистка неиспользуемых образов..."
@@ -506,11 +583,11 @@ dev: dev-up
 dev-clean:
 	@echo "⚠️  ВНИМАНИЕ: Эта команда удалит все данные из базы данных и все логи!"
 	@echo "Остановка всех dev-сервисов..."
-	@docker-compose stop postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
-	@cd infrastructure/logging && docker-compose -f docker-compose.yml stop loki alloy grafana 2>/dev/null || true
+	@$(DOCKER_COMPOSE) stop $(DEV_ALL_SERVICES) 2>/dev/null || true
+	@cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml stop loki alloy grafana 2>/dev/null || true
 	@echo "Удаление контейнеров..."
-	@docker-compose rm -f postgres auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
-	@cd infrastructure/logging && docker-compose -f docker-compose.yml rm -f loki alloy grafana 2>/dev/null || true
+	@$(DOCKER_COMPOSE) rm -f $(DEV_ALL_SERVICES) 2>/dev/null || true
+	@cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml rm -f loki alloy grafana 2>/dev/null || true
 	@echo "Удаление volumes (база данных и логи)..."
 	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
 	@docker volume rm -f $${LOKI_DATA_VOLUME:-experiment-loki-data} 2>/dev/null || true
@@ -524,12 +601,12 @@ dev-clean:
 dev-clean-all:
 	@echo "⚠️  ВНИМАНИЕ: Эта команда удалит ВСЕ контейнеры проекта, volumes и неиспользуемые образы!"
 	@echo "Остановка всех контейнеров проекта..."
-	@docker-compose down 2>/dev/null || true
-	@cd infrastructure/logging && docker-compose -f docker-compose.yml down 2>/dev/null || true
+	@$(DOCKER_COMPOSE) down 2>/dev/null || true
+	@cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml down 2>/dev/null || true
 	@echo "Удаление всех контейнеров проекта (включая остановленные)..."
-	@docker ps -a --filter "name=backend-postgres" --filter "name=auth-service" --filter "name=experiment-service" --filter "name=telemetry-ingest-service" --filter "name=auth-proxy" --filter "name=experiment-portal" --filter "name=sensor-simulator" --filter "name=loki" --filter "name=alloy" --filter "name=grafana" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
-	@docker-compose rm -f 2>/dev/null || true
-	@cd infrastructure/logging && docker-compose -f docker-compose.yml rm -f 2>/dev/null || true
+	@docker ps -a --filter "name=backend-postgres" --filter "name=redis" --filter "name=auth-service" --filter "name=experiment-service" --filter "name=telemetry-ingest-service" --filter "name=auth-proxy" --filter "name=experiment-portal" --filter "name=sensor-simulator" --filter "name=loki" --filter "name=alloy" --filter "name=grafana" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+	@$(DOCKER_COMPOSE) rm -f 2>/dev/null || true
+	@cd infrastructure/logging && $(DOCKER_COMPOSE) -f docker-compose.yml rm -f 2>/dev/null || true
 	@echo "Удаление volumes (база данных и логи)..."
 	@docker volume rm -f $${POSTGRES_DATA_VOLUME:-backend-postgres-data} 2>/dev/null || true
 	@docker volume rm -f $${LOKI_DATA_VOLUME:-experiment-loki-data} 2>/dev/null || true
@@ -548,16 +625,16 @@ dev-clean-all:
 # Применение миграций auth-service
 auth-migrate:
 	@echo "Применение миграций auth-service..."
-	@docker-compose exec -T auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}" || \
-		docker-compose exec auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}"
+	@$(DOCKER_COMPOSE) exec -T auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}" || \
+		$(DOCKER_COMPOSE) exec auth-service python -m bin.migrate --database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}"
 	@echo "✅ Миграции применены"
 
 # Создание базы данных auth_db (если не существует)
 auth-create-db:
 	@echo "Создание базы данных auth_db..."
-	@docker-compose exec -T postgres psql -U postgres -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'auth_db'" | grep -q 1 && \
+	@$(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'auth_db'" | grep -q 1 && \
 		echo "✅ База данных auth_db уже существует" || \
-		(docker-compose exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE auth_db;" && \
+		($(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE auth_db;" && \
 		echo "✅ База данных auth_db создана")
 
 # Инициализация auth-service (создание БД + миграции)
@@ -566,9 +643,47 @@ auth-init: auth-create-db auth-migrate
 # Применение миграций experiment-service
 experiment-migrate:
 	@echo "Применение миграций experiment-service..."
-	@docker-compose exec -T experiment-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}" || \
-		docker-compose exec experiment-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}"
+	@$(DOCKER_COMPOSE) exec -T experiment-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}" || \
+		$(DOCKER_COMPOSE) exec experiment-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}"
 	@echo "✅ Миграции применены"
+
+# Создание базы данных script-service
+script-create-db:
+	@echo "Создание базы данных script_db..."
+	@$(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'script_db'" | grep -q 1 && \
+		echo "✅ База данных script_db уже существует" || \
+		($(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE script_db;" && \
+		echo "✅ База данных script_db создана")
+
+# Применение миграций script-service
+script-migrate:
+	@echo "Применение миграций script-service..."
+	@$(DOCKER_COMPOSE) exec -T script-service python -m bin.migrate --database-url "$${SCRIPT_DATABASE_URL:-postgresql://script_user:script_password@postgres:5432/script_db}" || \
+		$(DOCKER_COMPOSE) exec script-service python -m bin.migrate --database-url "$${SCRIPT_DATABASE_URL:-postgresql://script_user:script_password@postgres:5432/script_db}"
+	@echo "✅ Миграции script-service применены"
+
+# Инициализация script-service (создание БД + миграции)
+script-init: script-create-db script-migrate
+	@echo "✅ Script-service инициализирован"
+
+# ============================================
+# Production Deploy (Yandex Cloud)
+# ============================================
+
+.PHONY: infra-init infra-plan infra-apply infra-destroy
+
+infra-init:
+	@cd infrastructure/yandex-cloud && terraform init
+
+infra-plan:
+	@cd infrastructure/yandex-cloud && terraform plan
+
+infra-apply:
+	@cd infrastructure/yandex-cloud && terraform apply
+
+infra-destroy:
+	@echo "ВНИМАНИЕ: удалит ВСЮ инфраструктуру в Yandex Cloud!"
+	@cd infrastructure/yandex-cloud && terraform destroy
 
 .PHONY: mvp-demo-check
 mvp-demo-check: dev-up auth-init experiment-migrate

@@ -7,7 +7,9 @@ from uuid import UUID
 
 # pyright: reportMissingImports=false
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from experiment_service.domain.enums import (
     CaptureSessionStatus,
@@ -60,6 +62,7 @@ class RunCreateDTO(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     duration_seconds: int | None = None
+    auto_complete_after_minutes: int | None = None
 
 
 class RunUpdateDTO(BaseModel):
@@ -75,6 +78,7 @@ class RunUpdateDTO(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     duration_seconds: int | None = None
+    auto_complete_after_minutes: int | None = None
 
 
 class CaptureSessionCreateDTO(BaseModel):
@@ -129,12 +133,22 @@ class SensorUpdateDTO(BaseModel):
 class ConversionProfileInputDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    version: str
-    kind: str
+    version: str = Field(..., min_length=1, max_length=50)
+    kind: Literal["linear", "polynomial", "lookup_table"]
     payload: dict[str, Any] = Field(default_factory=dict)
     status: ConversionProfileStatus = ConversionProfileStatus.DRAFT
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate_payload_for_kind(self) -> "ConversionProfileInputDTO":
+        from backend_common.conversion import validate_conversion_payload
+
+        try:
+            validate_conversion_payload(self.kind, self.payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
 
 
 class ConversionProfileCreateDTO(ConversionProfileInputDTO):

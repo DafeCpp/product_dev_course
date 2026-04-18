@@ -1,0 +1,262 @@
+@import '../styles/colors';
+
+.lsp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid $overlay-ink-08;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  position: sticky;
+  top: 88px;
+}
+
+.lsp__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lsp__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: $text-secondary;
+}
+
+.lsp__summary {
+  display: flex;
+  gap: 4px;
+}
+
+.lsp__summary-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.lsp__summary-chip--online {
+  background: #16a34a;
+}
+
+.lsp__summary-chip--delayed {
+  background: #d97706;
+}
+
+.lsp__summary-chip--offline {
+  background: #6b7280;
+}
+
+.lsp__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lsp__card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid $overlay-ink-08;
+  transition: border-color 0.15s ease;
+}
+
+.lsp__card:hover {
+  border-color: $overlay-ink-12;
+}
+
+.lsp__card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lsp__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lsp__dot--online {
+  animation: lsp-pulse 1s ease-in-out infinite;
+}
+
+.lsp__dot--delayed {
+  animation: lsp-pulse 3s ease-in-out infinite;
+}
+
+.lsp__dot--offline {
+  animation: none;
+  opacity: 0.4;
+}
+
+@keyframes lsp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.lsp__name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: $text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.lsp__type {
+  font-size: 0.65rem;
+  color: $text-hint;
+  flex-shrink: 0;
+}
+
+.lsp__card-mid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lsp__sparkline {
+  width: 100%;
+  height: 20px;
+  color: $primary;
+}
+
+.lsp__sparkline--empty {
+  background: $overlay-ink-02;
+  border-radius: 4px;
+  height: 20px;
+}
+
+// Value sparkline
+
+.lsp__value-sparkline-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lsp__value-sparkline {
+  flex: 1;
+  height: 16px;
+  min-width: 0;
+}
+
+.lsp__value-sparkline-last {
+  font-size: 0.75rem;
+  color: $text-hint;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lsp__value-sparkline-range {
+  font-size: 0.6rem;
+  color: $text-dim;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+// Bottom row
+
+.lsp__card-bot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lsp__last-value {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: $text;
+  white-space: nowrap;
+  margin-right: auto;
+}
+
+.lsp__heartbeat {
+  font-size: 0.65rem;
+  color: $text-hint;
+}
+
+// Latency badge
+
+.lsp__latency {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lsp__latency--green {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.lsp__latency--amber {
+  background: rgba(217, 119, 6, 0.12);
+  color: #d97706;
+}
+
+.lsp__latency--gray {
+  background: $overlay-ink-08;
+  color: #6b7280;
+}
+
+.lsp__status {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lsp__status--online {
+  color: #16a34a;
+}
+
+.lsp__status--delayed {
+  color: #d97706;
+}
+
+.lsp__status--offline {
+  color: #6b7280;
+}
+
+.lsp__error-badge {
+  margin-left: auto;
+  background: #dc2626;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}

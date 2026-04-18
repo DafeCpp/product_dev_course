@@ -1,34 +1,39 @@
 @import '../styles/colors';
 
 .audit-log {
+  display: grid;
+  gap: 12px;
+
   &__toggle {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    background: none;
-    border: none;
+    gap: 10px;
+    width: fit-content;
+    background: rgba(255, 255, 255, 0.56);
+    border: 1px solid rgba(16, 34, 58, 0.08);
     cursor: pointer;
-    padding: 8px 0;
-    color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 500;
+    padding: 10px 14px;
+    border-radius: 999px;
+    color: var(--text);
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
 
-    &:hover {
-      color: var(--text);
-    }
+  &__toggle:hover {
+    background: rgba(255, 255, 255, 0.76);
+  }
 
-    .chevron {
-      transition: transform 0.2s ease;
-      font-size: 12px;
+  .chevron {
+    transition: transform 0.2s ease;
+    font-size: 11px;
 
-      &.open {
-        transform: rotate(90deg);
-      }
+    &.open {
+      transform: rotate(90deg);
     }
   }
 
   &__content {
-    margin-top: 12px;
+    margin-top: 4px;
   }
 
   &__timeline {
@@ -40,27 +45,19 @@
     &::before {
       content: '';
       position: absolute;
-      left: 15px;
+      left: 16px;
       top: 8px;
       bottom: 8px;
       width: 2px;
-      background-color: var(--outline);
+      background: rgba(16, 34, 58, 0.1);
     }
   }
 
   &__item {
     display: flex;
     gap: 16px;
-    padding: 10px 0;
+    padding: 12px 0;
     position: relative;
-
-    &:first-child {
-      padding-top: 0;
-    }
-
-    &:last-child {
-      padding-bottom: 0;
-    }
   }
 
   &__dot {
@@ -69,37 +66,41 @@
     border-radius: 50%;
     background-color: $primary;
     flex-shrink: 0;
-    margin-top: 4px;
+    margin-top: 6px;
     position: relative;
     z-index: 1;
-    border: 2px solid $surface;
-    box-shadow: 0 0 0 2px $primary;
+    border: 3px solid $surface;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18);
 
     &--status {
       background-color: $info;
-      box-shadow: 0 0 0 2px $info;
+      box-shadow: 0 0 0 3px rgba(12, 74, 110, 0.16);
     }
 
     &--create {
       background-color: $success;
-      box-shadow: 0 0 0 2px $success;
+      box-shadow: 0 0 0 3px rgba(22, 101, 52, 0.16);
     }
 
     &--delete,
     &--error {
       background-color: $error;
-      box-shadow: 0 0 0 2px $error;
+      box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.16);
     }
 
     &--tag {
       background-color: $warning;
-      box-shadow: 0 0 0 2px $warning;
+      box-shadow: 0 0 0 3px rgba(154, 77, 2, 0.16);
     }
   }
 
   &__body {
     flex: 1;
     min-width: 0;
+    padding: 14px 16px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.52);
+    border: 1px solid rgba(16, 34, 58, 0.08);
   }
 
   &__header {
@@ -111,65 +112,71 @@
   }
 
   &__event-type {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 0.94rem;
+    font-weight: 700;
     color: var(--text);
 
     .event-badge {
       display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 600;
-      font-family: 'Courier New', monospace;
-      background-color: $surface-variant;
+      margin-left: 8px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: 'IBM Plex Mono', 'SFMono-Regular', 'Consolas', monospace;
+      background-color: rgba(16, 34, 58, 0.06);
       color: $text-secondary;
     }
   }
 
   &__time {
-    font-size: 12px;
+    font-size: 0.78rem;
     color: var(--text-secondary);
     white-space: nowrap;
   }
 
   &__actor {
-    font-size: 12px;
+    font-size: 0.8rem;
     color: var(--text-secondary);
-    margin-top: 2px;
+    margin-top: 8px;
 
     .role-badge {
       display: inline-block;
-      padding: 1px 6px;
-      border-radius: 3px;
-      font-size: 11px;
-      font-weight: 500;
-      background-color: $primary-container;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      background-color: rgba(15, 118, 110, 0.08);
       color: $primary;
-      margin-left: 4px;
+      margin-left: 6px;
     }
   }
 
   &__payload {
-    margin-top: 6px;
-    padding: 8px 12px;
-    background-color: $surface-muted;
-    border-radius: 6px;
-    border: 1px solid $border-subtle;
-    font-size: 12px;
-    font-family: 'Courier New', monospace;
+    margin-top: 10px;
+    padding: 12px 14px;
+    background-color: rgba(16, 34, 58, 0.04);
+    border-radius: 16px;
+    border: 1px solid rgba(16, 34, 58, 0.06);
+    font-size: 0.8rem;
+    font-family: 'IBM Plex Mono', 'SFMono-Regular', 'Consolas', monospace;
     color: $text-body;
-    max-height: 200px;
+    max-height: 220px;
     overflow: auto;
     white-space: pre-wrap;
-    word-break: break-all;
+    word-break: break-word;
   }
 
-  &__empty {
+  &__empty,
+  &__error,
+  &__loading {
+    padding: 18px;
     text-align: center;
-    padding: 24px;
     color: var(--text-secondary);
-    font-size: 14px;
+  }
+
+  &__error {
+    color: $error;
   }
 
   &__pagination {
@@ -178,20 +185,21 @@
     align-items: center;
     gap: 12px;
     margin-top: 16px;
-    font-size: 13px;
+    font-size: 0.82rem;
     color: var(--text-secondary);
 
     button {
-      padding: 4px 12px;
-      border: 1px solid var(--outline);
-      border-radius: 6px;
-      background: var(--surface);
+      padding: 8px 12px;
+      border: 1px solid rgba(16, 34, 58, 0.08);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
       color: var(--text);
       cursor: pointer;
-      font-size: 13px;
+      font-size: 0.82rem;
+      font-weight: 700;
 
       &:hover:not(:disabled) {
-        background: var(--surface-variant);
+        background: rgba(255, 255, 255, 0.92);
       }
 
       &:disabled {
@@ -199,19 +207,5 @@
         cursor: not-allowed;
       }
     }
-  }
-
-  &__error {
-    color: $error;
-    font-size: 14px;
-    padding: 12px;
-    text-align: center;
-  }
-
-  &__loading {
-    text-align: center;
-    padding: 16px;
-    color: var(--text-secondary);
-    font-size: 14px;
   }
 }

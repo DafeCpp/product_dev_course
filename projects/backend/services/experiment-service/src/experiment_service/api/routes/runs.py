@@ -24,16 +24,19 @@ from experiment_service.core.exceptions import (
 from experiment_service.domain.dto import RunCreateDTO, RunUpdateDTO
 from experiment_service.domain.enums import RunStatus
 from experiment_service.domain.models import Run
+from experiment_service.repositories.runs import RunRepository
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_idempotency_service,
     get_experiment_service,
     get_run_service,
     get_run_event_service,
     get_webhook_service,
+    infer_project_role,
     require_current_user,
     resolve_project_id,
 )
+from backend_common.db.pool import get_pool_service as _get_pool
 from experiment_service.services.idempotency import (
     IDEMPOTENCY_HEADER,
     IdempotencyService,
@@ -64,7 +67,7 @@ async def _ensure_experiment(request: web.Request, project_id: UUID, experiment_
 async def list_runs(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     await _ensure_experiment(request, project_id, experiment_id)
     service = await get_run_service(request)
@@ -100,9 +103,8 @@ async def list_runs(request: web.Request):
 @routes.post("/api/v1/experiments/{experiment_id}/runs")
 async def create_run(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "runs.create")
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     await _ensure_experiment(request, project_id, experiment_id)
     body = await read_json(request)
@@ -152,23 +154,21 @@ async def create_run(request: web.Request):
 async def get_run(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     service = await get_run_service(request)
     try:
         run = await service.get_run(project_id, run_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
-    ensure_project_access(user, run.project_id)
     return web.json_response(_run_response(run))
 
 
 @routes.patch("/api/v1/runs/{run_id}")
 async def update_run(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     body = await read_json(request)
     try:
@@ -189,14 +189,13 @@ async def update_run(request: web.Request):
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
     if dto.status is not None:
-        actor_role = user.project_roles.get(project_id)
-        if actor_role and before is not None:
+        if before is not None:
             audit = await get_run_event_service(request)
             await audit.record_event(
                 run_id=run.id,
                 event_type=EVENT_RUN_STATUS_CHANGED,
                 actor_id=user.user_id,
-                actor_role=actor_role,
+                actor_role=infer_project_role(user),
                 payload={
                     "from": before.status.value,
                     "to": run.status.value,
@@ -226,9 +225,8 @@ async def update_run(request: web.Request):
 @routes.post("/api/v1/runs:batch-status")
 async def batch_update_status(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "runs.update")
     body = await read_json(request)
     run_ids_raw = body.get("run_ids")
     status_value = body.get("status")
@@ -242,34 +240,31 @@ async def batch_update_status(request: web.Request):
         raise web.HTTPBadRequest(text="Invalid status value") from exc
     run_ids = [parse_uuid(value, "run_id") for value in run_ids_raw]
     service = await get_run_service(request)
-    actor_role = user.project_roles.get(project_id)
     before_status: dict[UUID, str] = {}
-    if actor_role:
-        for rid in run_ids:
-            try:
-                current = await service.get_run(project_id, rid)
-            except NotFoundError as exc:
-                raise web.HTTPNotFound(text=str(exc)) from exc
-            before_status[rid] = current.status.value
+    for rid in run_ids:
+        try:
+            current = await service.get_run(project_id, rid)
+        except NotFoundError as exc:
+            raise web.HTTPNotFound(text=str(exc)) from exc
+        before_status[rid] = current.status.value
     try:
         updated_runs = await service.batch_update_status(project_id, run_ids, status)
     except InvalidStatusTransitionError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
-    if actor_role:
-        audit = await get_run_event_service(request)
-        for run in updated_runs:
-            old = before_status.get(run.id)
-            if old is None:
-                continue
-            await audit.record_event(
-                run_id=run.id,
-                event_type=EVENT_RUN_STATUS_CHANGED,
-                actor_id=user.user_id,
-                actor_role=actor_role,
-                payload={"from": old, "to": run.status.value},
-            )
+    audit = await get_run_event_service(request)
+    for run in updated_runs:
+        old = before_status.get(run.id)
+        if old is None:
+            continue
+        await audit.record_event(
+            run_id=run.id,
+            event_type=EVENT_RUN_STATUS_CHANGED,
+            actor_id=user.user_id,
+            actor_role=infer_project_role(user),
+            payload={"from": old, "to": run.status.value},
+        )
     event_type: str | None = None
     if status == RunStatus.RUNNING:
         event_type = EVENT_RUN_STARTED
@@ -309,9 +304,8 @@ async def bulk_update_tags(request: web.Request):
       - add/remove (at least one non-empty)
     """
     user = await require_current_user(request)
-    project_id = resolve_project_id(
-        user, request.rel_url.query.get("project_id"), require_role=("owner", "editor")
-    )
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "runs.update")
     body = await read_json(request)
 
     run_ids_raw = body.get("run_ids")
@@ -362,21 +356,19 @@ async def bulk_update_tags(request: web.Request):
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
 
-    actor_role = user.project_roles.get(project_id)
-    if actor_role:
-        audit = await get_run_event_service(request)
-        for run in updated:
-            await audit.record_event(
-                run_id=run.id,
-                event_type=EVENT_RUN_TAGS_UPDATED,
-                actor_id=user.user_id,
-                actor_role=actor_role,
-                payload={
-                    "set_tags": _normalize_tags(set_tags_raw) if has_set else None,
-                    "add_tags": _normalize_tags(add_tags_raw) if not has_set else None,
-                    "remove_tags": _normalize_tags(remove_tags_raw) if not has_set else None,
-                },
-            )
+    audit = await get_run_event_service(request)
+    for run in updated:
+        await audit.record_event(
+            run_id=run.id,
+            event_type=EVENT_RUN_TAGS_UPDATED,
+            actor_id=user.user_id,
+            actor_role=infer_project_role(user),
+            payload={
+                "set_tags": _normalize_tags(set_tags_raw) if has_set else None,
+                "add_tags": _normalize_tags(add_tags_raw) if not has_set else None,
+                "remove_tags": _normalize_tags(remove_tags_raw) if not has_set else None,
+            },
+        )
 
     return web.json_response({"runs": [_run_response(run) for run in updated]})
 
@@ -385,14 +377,13 @@ async def bulk_update_tags(request: web.Request):
 async def list_run_events(request: web.Request):
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     run_service = await get_run_service(request)
     try:
         run = await run_service.get_run(project_id, run_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text=str(exc)) from exc
-    ensure_project_access(user, run.project_id)
 
     audit = await get_run_event_service(request)
     limit, offset = pagination_params(request)
@@ -405,3 +396,73 @@ async def list_run_events(request: web.Request):
         total=total,
     )
     return web.json_response(payload)
+
+
+@routes.delete("/api/v1/runs/{run_id}")
+async def delete_run(request: web.Request):
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "runs.update")
+    run_id = parse_uuid(request.match_info["run_id"], "run_id")
+    service = await get_run_service(request)
+    try:
+        await service.delete_run(project_id, run_id)
+    except InvalidStatusTransitionError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text=str(exc)) from exc
+    return web.Response(status=204)
+
+
+@routes.get("/api/v1/runs/{run_id}/sensors")
+async def list_run_sensors(request: web.Request) -> web.Response:
+    """List sensors attached to a run (viewer+)."""
+    user = await require_current_user(request)
+    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
+    run_id = parse_uuid(request.match_info["run_id"], "run_id")
+
+    pool = await _get_pool()
+    run_repo = RunRepository(pool)
+    sensors = await run_repo.list_sensors(run_id)
+    return web.json_response({"sensors": [s.model_dump(mode="json") for s in sensors]})
+
+
+@routes.post("/api/v1/runs/{run_id}/sensors/{sensor_id}")
+async def attach_run_sensor(request: web.Request) -> web.Response:
+    """Attach a sensor to a run (editor+)."""
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "runs.update")
+    run_id = parse_uuid(request.match_info["run_id"], "run_id")
+    sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
+    body = await read_json(request)
+    mode: str = (body or {}).get("mode", "passive")
+
+    pool = await _get_pool()
+    run_repo = RunRepository(pool)
+    rs = await run_repo.attach_sensor(
+        run_id=run_id,
+        sensor_id=sensor_id,
+        project_id=project_id,
+        created_by=user.user_id,
+        mode=mode,
+    )
+    return web.json_response(rs.model_dump(mode="json"), status=201)
+
+
+@routes.delete("/api/v1/runs/{run_id}/sensors/{sensor_id}")
+async def detach_run_sensor(request: web.Request) -> web.Response:
+    """Detach a sensor from a run (editor+)."""
+    user = await require_current_user(request)
+    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "runs.update")
+    run_id = parse_uuid(request.match_info["run_id"], "run_id")
+    sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
+
+    pool = await _get_pool()
+    run_repo = RunRepository(pool)
+    deleted = await run_repo.detach_sensor(run_id, sensor_id)
+    if not deleted:
+        raise web.HTTPNotFound(text="Sensor not attached to this run")
+    return web.Response(status=204)

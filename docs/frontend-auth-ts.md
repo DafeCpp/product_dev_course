@@ -61,7 +61,9 @@ Response: { user: User, access_token: string, refresh_token: string }
 
 **Маршрут:** `/register`
 
-**Описание:** Страница для регистрации нового пользователя.
+**Описание:** Страница для регистрации нового пользователя. Поддерживает два режима:
+- Открытая регистрация (без приглашения)
+- Регистрация по приглашению (через URL-параметр `?token=<invite_token>`)
 
 **Функциональность:**
 - Форма регистрации с полями:
@@ -72,13 +74,73 @@ Response: { user: User, access_token: string, refresh_token: string }
 - Кнопка "Зарегистрироваться"
 - Валидация на клиенте
 - Обработка ошибок (например, пользователь уже существует)
+- Поддержка режима регистрации по приглашению:
+  - Чтение токена из URL-параметра `?token=<invite_token>`
+  - Отображение информации о приглашении (email_hint, если доступен)
+  - Отправка токена приглашения вместе с данными регистрации
+  - Валидация токена приглашения (не истёк, не использован)
 - Редирект на страницу входа после успешной регистрации
 
 **API интеграция:**
 ```typescript
 POST /auth/register
-Body: { username: string, email: string, password: string }
+Body: { username: string, email: string, password: string, invite_token?: string }
 Response: { user: User, access_token: string, refresh_token: string }
+```
+
+#### 2.1.3. Админка: Управление приглашениями
+
+**Маршрут:** `/admin/users` (вкладка "Инвайты")
+
+**Описание:** Страница для создания и управления приглашениями на регистрацию.
+
+**Функциональность:**
+- Таблица активных приглашений с колонками:
+  - Токен (с кнопкой копирования)
+  - Email hint (подсказка, опционально)
+  - Статус (активен/использован/истёк)
+  - Дата истечения
+  - Дата использования
+  - Действия (отозвать)
+- Форма создания нового приглашения:
+  - Поле `email_hint` (опционально, подсказка для какого пользователя)
+  - Поле `expires_in_hours` (срок действия в часах, по умолчанию 72)
+- **Кнопка "Сгенерировать ссылку для регистрации"** — генерирует полную URL-ссылку вида:
+  - Формат: `{BASE_URL}/register?token={invite_token}`
+  - Копирование ссылки в буфер обмена при нажатии
+  - Визуальное подтверждение копирования (иконка ✓)
+- Возможность отозвать приглашение (с подтверждением)
+- Фильтр "Только активные"
+
+**API интеграция:**
+```typescript
+// Создание приглашения
+POST /auth/admin/invites
+Body: { email_hint?: string, expires_in_hours?: number }
+Response: { id: string, token: string, created_by: string, email_hint: string | null, expires_at: string, ... }
+
+// Список приглашений
+GET /auth/admin/invites?active_only=true
+Response: AdminInviteToken[]
+
+// Отзыв приглашения
+DELETE /auth/admin/invites/{token}
+Response: void
+```
+
+**Типы данных:**
+```typescript
+interface AdminInviteToken {
+  id: string
+  token: string
+  created_by: string
+  email_hint: string | null
+  expires_at: string
+  used_at: string | null
+  used_by: string | null
+  created_at: string
+  is_active: boolean
+}
 ```
 
 #### 2.1.3. Выход из системы

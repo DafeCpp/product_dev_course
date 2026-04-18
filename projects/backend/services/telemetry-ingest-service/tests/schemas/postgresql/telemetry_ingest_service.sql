@@ -12,6 +12,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'telemetry_conversion_status') THEN
         CREATE TYPE telemetry_conversion_status AS ENUM ('raw_only', 'converted', 'client_provided', 'conversion_failed');
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'conversion_profile_status') THEN
+        CREATE TYPE conversion_profile_status AS ENUM ('draft', 'active', 'scheduled', 'deprecated');
+    END IF;
 END$$;
 
 CREATE TABLE IF NOT EXISTS sensors (
@@ -30,6 +33,37 @@ CREATE TABLE IF NOT EXISTS sensors (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS conversion_profiles (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    sensor_id uuid NOT NULL,
+    project_id uuid NOT NULL,
+    version text NOT NULL DEFAULT '1',
+    kind text NOT NULL DEFAULT 'passthrough',
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status conversion_profile_status NOT NULL DEFAULT 'active',
+    valid_from timestamptz,
+    valid_to timestamptz,
+    created_by uuid NOT NULL DEFAULT gen_random_uuid(),
+    published_by uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (sensor_id, version),
+    FOREIGN KEY (sensor_id) REFERENCES sensors (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS conversion_profiles_project_status_idx ON conversion_profiles (project_id, status);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'sensors_active_profile_fk'
+    ) THEN
+        ALTER TABLE sensors
+            ADD CONSTRAINT sensors_active_profile_fk
+            FOREIGN KEY (active_profile_id) REFERENCES conversion_profiles (id) ON DELETE SET NULL;
+    END IF;
+END$$;
 
 CREATE TABLE IF NOT EXISTS runs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -97,9 +131,15 @@ SELECT create_hypertable(
 CREATE INDEX IF NOT EXISTS telemetry_records_project_sensor_ts_id_idx
     ON telemetry_records (project_id, sensor_id, timestamp ASC, id ASC);
 
+-- Dedup index: silently discard duplicate (sensor_id, timestamp, signal) tuples.
+-- TimescaleDB requires both partitioning columns (sensor_id + timestamp) in unique indexes.
+CREATE UNIQUE INDEX IF NOT EXISTS telemetry_records_dedup_idx
+    ON telemetry_records (sensor_id, timestamp, signal);
+
 -- Continuous aggregate for 1-minute downsampling.
-CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m
-WITH (timescaledb.continuous) AS
+-- NOTE: timescaledb.continuous aggregates require enterprise license.
+-- For OSS compatibility, we create a regular materialized view without continuous refresh.
+CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m AS
 SELECT
     time_bucket(INTERVAL '1 minute', "timestamp") AS bucket,
     sensor_id,
@@ -113,16 +153,30 @@ SELECT
     min(physical_value)         AS min_physical,
     max(physical_value)         AS max_physical
 FROM telemetry_records
-GROUP BY bucket, sensor_id, signal, capture_session_id
-WITH NO DATA;
+GROUP BY bucket, sensor_id, signal, capture_session_id;
 
-SELECT add_continuous_aggregate_policy(
-    'telemetry_1m',
-    start_offset    => INTERVAL '7 days',
-    end_offset      => INTERVAL '1 minute',
-    schedule_interval => INTERVAL '1 minute',
-    if_not_exists   => TRUE
+-- Skip continuous aggregate policy in OSS version (requires enterprise license)
+-- SELECT add_continuous_aggregate_policy(
+--     'telemetry_1m',
+--     start_offset    => INTERVAL '7 days',
+--     end_offset      => INTERVAL '1 minute',
+--     schedule_interval => INTERVAL '1 minute',
+--     if_not_exists   => TRUE
+-- );
+
+CREATE TABLE IF NOT EXISTS sensor_error_log (
+    id bigserial PRIMARY KEY,
+    sensor_id uuid NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    error_code text NOT NULL,
+    error_message text,
+    endpoint text NOT NULL DEFAULT 'rest',
+    readings_count integer,
+    meta jsonb NOT NULL DEFAULT '{}'
 );
+
+CREATE INDEX IF NOT EXISTS sensor_error_log_sensor_occurred ON sensor_error_log (sensor_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS sensor_error_log_occurred ON sensor_error_log (occurred_at DESC);
 
 COMMIT;
 

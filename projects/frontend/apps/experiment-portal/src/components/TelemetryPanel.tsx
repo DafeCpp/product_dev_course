@@ -18,6 +18,7 @@ type TelemetryPanelProps = {
     onRemove: () => void
     dragHandleProps?: React.ButtonHTMLAttributes<HTMLButtonElement>
     onSizeChange?: (size: { width: number; height: number }) => void
+    onRecordReceived?: (sensorId: string, value: number) => void
 }
 
 type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'error'
@@ -74,6 +75,7 @@ export default function TelemetryPanel({
     onRemove,
     dragHandleProps,
     onSizeChange,
+    onRecordReceived,
 }: TelemetryPanelProps) {
     const [panelTitle, setPanelTitle] = useState(title)
     const [selectedSensorIds, setSelectedSensorIds] = useState<string[]>([])
@@ -335,6 +337,10 @@ export default function TelemetryPanel({
                         next[sensorId] = updated.length > MAX_POINTS_CAP ? updated.slice(updated.length - MAX_POINTS_CAP) : updated
                         return next
                     })
+                    const val = valueMode === 'physical' ? parsed.physical_value : parsed.raw_value
+                    if (typeof val === 'number' && Number.isFinite(val)) {
+                        onRecordReceived?.(sensorId, val)
+                    }
                 } catch (e: any) {
                     setError(e?.message || 'Ошибка парсинга telemetry event')
                     setStatus('error')

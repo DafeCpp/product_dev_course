@@ -1,5 +1,7 @@
 /** Типы для экспериментов и runs */
 import type { TelemetryQueryRecord } from './telemetry'
+import type { UserProjectRole } from './permissions'
+export type { UserProjectRole }
 
 export interface Experiment {
   id: string
@@ -27,8 +29,19 @@ export interface Run {
   duration_seconds?: number
   notes?: string
   metadata: Record<string, any>
+  auto_complete_after_minutes: number | null
   created_at: string
   updated_at: string
+}
+
+export interface RunSensor {
+  run_id: string
+  sensor_id: string
+  project_id: string
+  mode: string
+  attached_at: string
+  detached_at: string | null
+  created_by: string
 }
 
 export interface ExperimentCreate {
@@ -54,6 +67,7 @@ export interface RunCreate {
   params: Record<string, any>
   notes?: string
   metadata?: Record<string, any>
+  auto_complete_after_minutes?: number | null
 }
 
 export interface RunUpdate {
@@ -85,8 +99,34 @@ export interface User {
   username: string
   email: string
   is_active: boolean
+  is_admin?: boolean            // kept for backward compat, computed from roles in backend
+  system_roles?: string[]       // role names like 'superadmin', 'admin'
+  effective_permissions?: string[]  // RBAC v2: resolved permission list
   password_change_required?: boolean
   created_at: string
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  email: string
+  is_active: boolean
+  is_admin: boolean
+  system_roles: string[]
+  password_change_required: boolean
+  created_at: string
+}
+
+export interface AdminInviteToken {
+  id: string
+  token: string
+  created_by: string
+  email_hint: string | null
+  expires_at: string
+  used_at: string | null
+  used_by: string | null
+  created_at: string
+  is_active: boolean
 }
 
 export interface LoginRequest {
@@ -98,6 +138,7 @@ export interface RegisterRequest {
   username: string
   email: string
   password: string
+  invite_token?: string
 }
 
 export interface AuthResponse {
@@ -110,9 +151,17 @@ export interface AuthResponse {
   [key: string]: unknown
 }
 
+export interface UserSearchResult {
+  id: string
+  username: string
+  email: string
+}
+
 /** Типы для датчиков */
 
 export type SensorStatus = 'registering' | 'active' | 'inactive' | 'archived'
+
+export type ConnectionStatus = 'online' | 'delayed' | 'offline'
 
 export interface Sensor {
   id: string
@@ -122,12 +171,45 @@ export interface Sensor {
   input_unit: string
   display_unit: string
   status: SensorStatus
+  connection_status?: ConnectionStatus
   token_preview?: string | null
   last_heartbeat?: string | null
   active_profile_id?: string | null
   calibration_notes?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface StatusSummary {
+  online: number
+  delayed: number
+  offline: number
+  total: number
+}
+
+export interface HeartbeatHistory {
+  sensor_id: string
+  timestamps: string[]
+  count: number
+}
+
+export interface SensorErrorEntry {
+  id: number
+  sensor_id: string
+  occurred_at: string
+  error_code: string
+  error_message: string | null
+  endpoint: string
+  readings_count: number | null
+  meta: Record<string, unknown>
+}
+
+export interface SensorErrorLogResponse {
+  sensor_id: string
+  entries: SensorErrorEntry[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface SensorCreate {
@@ -155,6 +237,55 @@ export interface ConversionProfileInput {
   status?: 'draft' | 'scheduled' | 'active' | 'deprecated'
   valid_from?: string
   valid_to?: string
+}
+
+export type ConversionProfileStatus = 'draft' | 'scheduled' | 'active' | 'deprecated'
+
+export interface ConversionProfile {
+  id: string
+  sensor_id: string
+  project_id: string
+  version: string
+  kind: string
+  payload: Record<string, any>
+  status: ConversionProfileStatus
+  valid_from?: string | null
+  valid_to?: string | null
+  created_by: string
+  published_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversionProfilesListResponse {
+  conversion_profiles: ConversionProfile[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type BackfillTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface BackfillTask {
+  id: string
+  sensor_id: string
+  project_id: string
+  conversion_profile_id: string
+  status: BackfillTaskStatus
+  total_records: number | null
+  processed_records: number
+  error_message: string | null
+  created_by: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface BackfillTasksListResponse {
+  backfill_tasks: BackfillTask[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface SensorRegisterResponse {
@@ -279,12 +410,15 @@ export interface ProjectUpdate {
 
 export interface ProjectsListResponse {
   projects: Project[]
+  total?: number
 }
 
 export interface ProjectMember {
   project_id: string
   user_id: string
-  role: 'owner' | 'editor' | 'viewer'
+  role: 'owner' | 'editor' | 'viewer'   // keep for backward compat
+  roles?: UserProjectRole[]               // RBAC v2 roles array
+  effective_permissions?: string[]        // computed permissions
   created_at: string
   username?: string | null
 }
@@ -336,6 +470,127 @@ export interface CaptureSessionEventsListResponse {
   total: number
   page: number
   page_size: number
+}
+
+/** Типы для метрик */
+
+export interface RunMetricPoint {
+  step: number
+  value: number
+  timestamp: string
+}
+
+export interface RunMetricSeries {
+  name: string
+  points: RunMetricPoint[]
+}
+
+export interface RunMetricsResponse {
+  run_id: string
+  series: RunMetricSeries[]
+}
+
+export interface RunMetric {
+  name: string
+  step: number
+  value: number
+  timestamp: string
+}
+
+export interface RunMetricsListResponse {
+  items: RunMetric[]
+  total: number
+}
+
+export interface MetricSummaryItem {
+  name: string
+  last_step: number
+  last_value: number
+  count: number
+  min: number
+  avg: number
+  max: number
+}
+
+export interface MetricSummaryResponse {
+  items: MetricSummaryItem[]
+}
+
+export interface MetricBucket {
+  name: string
+  bucket_start: number
+  bucket_end: number
+  min: number
+  avg: number
+  max: number
+  count: number
+}
+
+export interface MetricAggregationsResponse {
+  items: MetricBucket[]
+}
+
+/** Типы для сравнения runs */
+
+export interface ComparisonMetricSummary {
+  last: number | null
+  min: number | null
+  max: number | null
+  count: number
+}
+
+export interface ComparisonMetricPoint {
+  step: number
+  value: number
+}
+
+export interface ComparisonMetricData {
+  summary: ComparisonMetricSummary
+  series: ComparisonMetricPoint[]
+}
+
+export interface ComparisonRunEntry {
+  run_id: string
+  run_name: string
+  status: string
+  metrics: Record<string, ComparisonMetricData>
+}
+
+export interface ComparisonResponse {
+  runs: ComparisonRunEntry[]
+  metric_names: string[]
+}
+
+/** Типы для артефактов */
+
+export type ArtifactType = 'model' | 'dataset' | 'plot' | 'log' | 'config' | 'other'
+
+export interface Artifact {
+  id: string
+  run_id: string
+  type: ArtifactType | string
+  uri: string
+  checksum?: string | null
+  size_bytes?: number | null
+  metadata: Record<string, any>
+  approved_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ArtifactsListResponse {
+  artifacts: Artifact[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface CreateArtifactRequest {
+  type: ArtifactType | string
+  uri: string
+  checksum?: string
+  size_bytes?: number
+  metadata?: Record<string, any>
 }
 
 /** Типы для вебхуков */

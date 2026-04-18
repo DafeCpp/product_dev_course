@@ -38,6 +38,40 @@ npm run dev
 
 Приложение будет доступно на http://localhost:3000
 
+### Запуск только фронта локально (бэкенд в Docker)
+
+Если бэкенд и Auth Proxy уже подняты в Docker, можно запускать только портал на хосте — так удобнее разрабатывать UI с hot-reload.
+
+1. **Поднять бэкенд и Auth Proxy (без контейнера портала):**
+
+   Из корня репозитория:
+
+   ```bash
+   docker compose up -d postgres auth-service experiment-service telemetry-ingest-service auth-proxy
+   ```
+
+   Либо полный стек: `make dev` или `docker compose up -d`, тогда портал в Docker будет на 3000 — его можно остановить, чтобы освободить порт:
+
+   ```bash
+   docker compose stop experiment-portal
+   ```
+
+2. **Запустить портал локально:**
+
+   ```bash
+   cd projects/frontend/apps/experiment-portal
+   npm ci
+   npm run dev
+   ```
+
+3. Открыть в браузере: **http://localhost:3000**
+
+Фронт по умолчанию ходит в **http://localhost:8080** (Auth Proxy). Если Auth Proxy на другом хосте/порту, создайте `.env` в каталоге `experiment-portal`:
+
+```env
+VITE_AUTH_PROXY_URL=http://localhost:8080
+```
+
 ### Сборка для production
 
 ```bash

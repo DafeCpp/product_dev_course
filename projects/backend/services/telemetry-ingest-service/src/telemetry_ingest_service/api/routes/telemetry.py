@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import structlog
 import time
 from datetime import datetime, timezone
 from uuid import UUID
@@ -14,6 +15,13 @@ from pydantic import ValidationError
 from telemetry_ingest_service.api.utils import read_json
 from telemetry_ingest_service.core.exceptions import NotFoundError, ScopeMismatchError, UnauthorizedError
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO
+from telemetry_ingest_service.middleware.rest_rate_limit import IngestRateLimiter
+from telemetry_ingest_service.prometheus_metrics import (
+    INGEST_RATE_LIMITED,
+    SSE_CONNECTIONS_ACTIVE,
+    TELEMETRY_READINGS_INGESTED,
+)
+from telemetry_ingest_service.repositories.sensor_error_log import SensorErrorLogRepository
 from telemetry_ingest_service.services.telemetry import TelemetryIngestService
 from telemetry_ingest_service.services.telemetry import hash_sensor_token
 from telemetry_ingest_service.settings import settings
@@ -21,7 +29,49 @@ from telemetry_ingest_service.settings import settings
 from backend_common.aiohttp_app import extract_bearer_token as _extract_bearer_token
 from backend_common.db.pool import get_pool_service as get_pool
 
+logger = structlog.get_logger(__name__)
+
 routes = web.RouteTableDef()
+
+
+async def _get_error_log_repo() -> SensorErrorLogRepository:
+    pool = await get_pool()
+    return SensorErrorLogRepository(pool)
+
+
+def _fire_and_forget_error_log(
+    sensor_id: str,
+    error_code: str,
+    *,
+    error_message: str | None = None,
+    endpoint: str = "rest",
+    readings_count: int | None = None,
+    meta: dict | None = None,
+) -> None:
+    """Schedule error log insertion as a background task.  Never raises."""
+
+    async def _log() -> None:
+        try:
+            repo = await _get_error_log_repo()
+            await repo.insert(
+                sensor_id,
+                error_code,
+                error_message=error_message,
+                endpoint=endpoint,
+                readings_count=readings_count,
+                meta=meta,
+            )
+        except Exception:
+            logger.warning("sensor_error_log_write_failed", sensor_id=sensor_id, error_code=error_code)
+
+    asyncio.create_task(_log())
+
+
+_rest_limiter = IngestRateLimiter(
+    max_requests_per_window=settings.rest_rate_limit_requests_per_window,
+    max_readings_per_window=settings.rest_rate_limit_readings_per_window,
+    window_seconds=settings.rest_rate_limit_window_seconds,
+)
 
 
 def _normalize_bearer(value: str | None) -> str | None:
@@ -64,16 +114,56 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
     except ValidationError as exc:
         raise web.HTTPBadRequest(text=exc.json()) from exc
 
+    sensor_id_str = str(dto.sensor_id)
+    readings_count = len(dto.readings)
+
+    allowed, retry_after = _rest_limiter.check(dto.sensor_id, readings_count)
+    if not allowed:
+        INGEST_RATE_LIMITED.labels(transport="rest").inc()
+        _fire_and_forget_error_log(
+            sensor_id_str,
+            "rate_limited",
+            error_message=f"Rate limit exceeded. Retry in {retry_after}s.",
+            endpoint="rest",
+            readings_count=readings_count,
+        )
+        raise web.HTTPTooManyRequests(
+            text=f"Rate limit exceeded. Retry in {retry_after}s.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     service = TelemetryIngestService()
     try:
         accepted = await service.ingest(dto, token=token)
     except UnauthorizedError as exc:
+        _fire_and_forget_error_log(
+            sensor_id_str,
+            "unauthorized",
+            error_message=str(exc),
+            endpoint="rest",
+            readings_count=readings_count,
+        )
         raise web.HTTPUnauthorized(text=str(exc)) from exc
     except ScopeMismatchError as exc:
+        _fire_and_forget_error_log(
+            sensor_id_str,
+            "scope_mismatch",
+            error_message=str(exc),
+            endpoint="rest",
+            readings_count=readings_count,
+        )
         raise web.HTTPBadRequest(text=str(exc)) from exc
     except NotFoundError as exc:
+        _fire_and_forget_error_log(
+            sensor_id_str,
+            "not_found",
+            error_message=str(exc),
+            endpoint="rest",
+            readings_count=readings_count,
+        )
         raise web.HTTPNotFound(text=str(exc)) from exc
 
+    TELEMETRY_READINGS_INGESTED.labels(transport="rest").inc(accepted)
     return web.json_response({"status": "accepted", "accepted": accepted}, status=202)
 
 
@@ -264,6 +354,7 @@ async def telemetry_stream(request: web.Request) -> web.StreamResponse:
     cursor_ts = since_ts
     cursor_id = since_id
 
+    SSE_CONNECTIONS_ACTIVE.inc()
     try:
         while True:
             if request.transport is None or request.transport.is_closing():
@@ -320,6 +411,8 @@ async def telemetry_stream(request: web.Request) -> web.StreamResponse:
         await resp.write(b"event: error\n")
         await resp.write(b"data: " + str(exc).encode("utf-8") + b"\n\n")
         return resp
+    finally:
+        SSE_CONNECTIONS_ACTIVE.dec()
     return resp
 
 
@@ -587,3 +680,74 @@ async def telemetry_aggregated(request: web.Request) -> web.Response:
 
     buckets = [_serialize_aggregated_record(dict(r)) for r in rows]
     return web.json_response({"buckets": buckets, "bucket_interval": "1m"})
+
+
+@routes.get("/api/v1/sensors/{sensor_id}/error-log")
+async def sensor_error_log(request: web.Request) -> web.Response:
+    """Return the error log for a sensor.
+
+    Requires a user JWT (not a sensor token).
+
+    Path:
+      - sensor_id: UUID of the sensor
+
+    Query:
+      - limit  (int, default 50, max 200)
+      - offset (int, default 0)
+    """
+    token = _extract_stream_token(request)
+    if not _looks_like_jwt(token):
+        raise web.HTTPUnauthorized(text="User token is required")
+
+    sensor_id_raw = request.match_info["sensor_id"]
+    try:
+        sensor_id = UUID(sensor_id_raw)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="Invalid sensor_id") from exc
+
+    limit = _parse_int(request.rel_url.query.get("limit"), default=50)
+    if limit < 1:
+        raise web.HTTPBadRequest(text="limit must be >= 1")
+    if limit > 200:
+        limit = 200
+    offset = _parse_int(request.rel_url.query.get("offset"), default=0)
+    if offset < 0:
+        raise web.HTTPBadRequest(text="offset must be >= 0")
+
+    # Resolve the sensor's project so we can enforce project membership.
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT project_id FROM sensors WHERE id = $1", sensor_id)
+    if row is None:
+        raise web.HTTPNotFound(text="Sensor not found")
+    project_id = UUID(str(row["project_id"]))
+
+    await _authorize_user_token(token=token, project_id=project_id)
+
+    repo = SensorErrorLogRepository(pool)
+    entries = await repo.list_for_sensor(str(sensor_id), limit=limit, offset=offset)
+    total = await repo.count_for_sensor(str(sensor_id))
+
+    return web.json_response(
+        {
+            "sensor_id": str(sensor_id),
+            "entries": [
+                {
+                    "id": e.id,
+                    "sensor_id": e.sensor_id,
+                    "occurred_at": e.occurred_at.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "error_code": e.error_code,
+                    "error_message": e.error_message,
+                    "endpoint": e.endpoint,
+                    "readings_count": e.readings_count,
+                    "meta": e.meta,
+                }
+                for e in entries
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )

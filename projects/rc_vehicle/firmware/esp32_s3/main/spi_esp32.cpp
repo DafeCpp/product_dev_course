@@ -5,7 +5,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
-static const std::string_view TAG = "spi_esp32";
+static const char* TAG = "spi_esp32";
 
 SpiBusEsp32::SpiBusEsp32(spi_host_device_t host, gpio_num_t sck_pin,
                          gpio_num_t mosi_pin, gpio_num_t miso_pin,

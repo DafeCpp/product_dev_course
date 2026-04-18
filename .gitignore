@@ -1,3 +1,7 @@
+# AI assistants
+.claude/
+.qwen/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -75,6 +79,12 @@ test-results/
 
 # Docker
 docker-compose.override.yml
+
+# Terraform
+infrastructure/yandex-cloud/.terraform/
+infrastructure/yandex-cloud/.terraform.lock.hcl
+infrastructure/yandex-cloud/terraform.tfstate*
+infrastructure/yandex-cloud/terraform.tfvars
 
 # Temporary files
 *.tmp

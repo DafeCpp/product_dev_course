@@ -1,0 +1,40 @@
+#cloud-config
+
+users:
+  - name: ${ssh_user}
+    groups: docker, sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - docker.io
+  - docker-compose-plugin
+  - jq
+  - htop
+  - unzip
+
+runcmd:
+  # Docker уже установлен в COI, но на случай обычного Ubuntu:
+  - systemctl enable docker
+  - systemctl start docker
+  # Создаём директорию для приложения
+  - mkdir -p /opt/experiment-tracking
+  - chown ${ssh_user}:${ssh_user} /opt/experiment-tracking
+  # Авторизуемся в Container Registry через SA метаданных
+  - |
+    docker login \
+      --username iam \
+      --password $(curl -s -H Metadata-Flavor:Google http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token | jq -r .access_token) \
+      cr.yandex/${registry_id}
+
+write_files:
+  - path: /etc/cron.d/docker-cr-login
+    content: |
+      # Обновляем токен для Container Registry каждый час
+      0 * * * * root docker login --username iam --password $(curl -s -H Metadata-Flavor:Google http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token | jq -r .access_token) cr.yandex/${registry_id} > /dev/null 2>&1
+    permissions: "0644"

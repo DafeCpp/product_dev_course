@@ -1,202 +1,215 @@
 @import '../styles/colors';
 
-.run-header {
-  max-width: 1000px;
+.run-detail__hero {
+  margin-bottom: 0;
 }
 
 .run-detail .header-actions {
-  display: flex;
-  gap: 12px;
   align-items: center;
 }
 
-.run-detail__primary-actions {
+.run-detail__overview-grid {
+  align-items: stretch;
+}
+
+.run-detail__action-error {
+  margin: 0;
+}
+
+.run-info {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
 }
 
-.run-detail__countdown-actions {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
+.run-info .info-row strong,
+.session-info .info-row strong {
+  min-width: 150px;
 }
 
-.experiment-link {
-  display: inline-block;
-  margin-top: 8px;
-  font-size: 14px;
-  color: $accent-blue-legacy;
-}
-
-.notes-section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid $border-subtle;
-}
-
-.notes-section h3 {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: $text-body;
-}
-
-.notes-section p {
-  color: $text-dim;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-
+.notes-section,
 .parameters-section,
-.metadata-section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid $border-subtle;
-}
-
-.parameters-section h3,
-.metadata-section h3 {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: $text-body;
+.metadata-section,
+.metrics-section,
+.telemetry-section,
+.capture-sessions-section,
+.audit-section {
+  gap: 18px;
 }
 
 .parameters-json,
 .metadata-json {
-  background-color: $surface-muted-alt;
-  padding: 16px;
-  border-radius: 4px;
-  overflow-x: auto;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.telemetry-section {
-  margin-top: 24px;
-  max-width: 1000px;
-}
-
-.telemetry-section .card-header {
-  margin-bottom: 12px;
-}
-
-.telemetry-section .card-header h3 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .telemetry-controls {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
-
-.telemetry-controls .form-group {
-  min-width: 240px;
-  flex: 1 1 280px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
 }
 
 .telemetry-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .telemetry-hints {
-  margin-top: 8px;
   display: flex;
-  gap: 12px;
   flex-wrap: wrap;
-  font-size: 12px;
-  opacity: 0.8;
+  gap: 10px;
 }
 
-.capture-sessions-section {
-  margin-top: 24px;
-  max-width: 1000px;
-}
-
-.capture-sessions-section .card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.capture-sessions-section .card-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+.telemetry-hints .mono {
+  padding: 8px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(12, 74, 110, 0.08);
+  color: var(--info);
+  border: 1px solid rgba(12, 74, 110, 0.12);
 }
 
 .sessions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  gap: 18px;
 }
 
 .session-card {
-  border: 1px solid $border-muted;
-  border-radius: 8px;
-  padding: 16px;
-  background-color: $surface-base;
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(16, 34, 58, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
 }
 
 .session-card.active {
-  border-color: $accent-blue-legacy;
-  background-color: $surface-info;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.1), rgba(12, 74, 110, 0.08));
+  border-color: rgba(15, 118, 110, 0.18);
 }
 
 .session-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.session-header > div:first-child {
+  display: grid;
+  gap: 10px;
 }
 
 .session-header h4 {
-  margin: 0 8px 0 0;
-  font-size: 16px;
-  font-weight: 600;
-  display: inline-block;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
 }
 
-.session-header>div {
+.session-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .session-info {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-.session-info .info-row {
+.run-metrics__tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-}
-
-.session-info .info-row strong {
-  min-width: 100px;
-  color: $text-dim;
-}
-
-.session-info .info-row span {
-  color: $text-body;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-  color: $text-dim;
-}
-
-.empty-state p {
   margin-bottom: 16px;
+}
+
+.run-metrics__tab {
+  border: 1px solid rgba(16, 34, 58, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform 0.18s ease, border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
+}
+
+.run-metrics__tab.active {
+  color: var(--text);
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.run-metrics__tab:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.run-metrics__tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.run-metrics__summary {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.run-metrics__summary strong {
+  color: var(--text);
+}
+
+.run-countdown {
+  margin-top: 10px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--primary);
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: inline-block;
+
+  &.countdown-warning {
+    background: rgba(217, 119, 6, 0.1);
+    color: #b45309;
+    border-color: rgba(217, 119, 6, 0.25);
+  }
+}
+
+@media (max-width: 960px) {
+  .telemetry-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .run-detail .header-actions,
+  .session-header,
+  .session-actions,
+  .telemetry-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .run-info .info-row strong,
+  .session-info .info-row strong {
+    min-width: 0;
+  }
 }

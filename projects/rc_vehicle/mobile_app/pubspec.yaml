@@ -1,0 +1,30 @@
+name: rc_vehicle_app
+description: RC Vehicle mobile controller — drive, telemetry, setup.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.6.1
+  web_socket_channel: ^3.0.2
+  wakelock_plus: ^1.3.1
+  shared_preferences: ^2.5.3
+  http: ^1.3.0
+  fl_chart: ^0.70.2
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
+  network_info_plus: ^6.1.1
+  permission_handler: ^11.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

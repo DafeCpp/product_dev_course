@@ -16,6 +16,7 @@ from experiment_service.repositories.capture_sessions import CaptureSessionRepos
 from experiment_service.repositories.runs import RunRepository
 from experiment_service.repositories.telemetry import TelemetryRepository
 from experiment_service.services.state_machine import validate_capture_transition
+from experiment_service.prometheus_metrics import CAPTURE_SESSIONS_ACTIVE
 
 
 class CaptureSessionService:
@@ -31,16 +32,24 @@ class CaptureSessionService:
         self._run_repository = run_repository
         self._telemetry_repository = telemetry_repository
 
+    _TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "archived"})
+
     async def create_session(self, data: CaptureSessionCreateDTO) -> CaptureSession:
         run = await self._run_repository.get(data.project_id, data.run_id)
         if run.project_id != data.project_id:
             raise ScopeMismatchError("Run does not belong to project")
+        if run.status.value in self._TERMINAL_RUN_STATUSES:
+            raise InvalidStatusTransitionError(
+                f"Cannot create capture session for a run in '{run.status.value}' status"
+            )
         # Only one active capture session per project (recording window).
         if await self._repository.has_active_for_project(data.project_id):
             raise InvalidStatusTransitionError("Active capture session already exists for this project")
         if data.status != CaptureSessionStatus.DRAFT:
             validate_capture_transition(CaptureSessionStatus.DRAFT, data.status)
-        return await self._repository.create(data)
+        session = await self._repository.create(data)
+        CAPTURE_SESSIONS_ACTIVE.inc()
+        return session
 
     async def get_session(
         self, project_id: UUID, capture_session_id: UUID
@@ -59,6 +68,9 @@ class CaptureSessionService:
             project_id, run_id, limit=limit, offset=offset
         )
 
+    _ACTIVE_STATUSES = frozenset({CaptureSessionStatus.RUNNING, CaptureSessionStatus.BACKFILLING})
+    _TERMINAL_STATUSES = frozenset({CaptureSessionStatus.SUCCEEDED, CaptureSessionStatus.FAILED})
+
     async def update_session(
         self,
         project_id: UUID,
@@ -68,7 +80,12 @@ class CaptureSessionService:
         current = await self._repository.get(project_id, capture_session_id)
         if updates.status is not None:
             validate_capture_transition(current.status, updates.status)
-        return await self._repository.update(project_id, capture_session_id, updates)
+        result = await self._repository.update(project_id, capture_session_id, updates)
+        if updates.status is not None:
+            # Decrement when a session transitions to a terminal state.
+            if updates.status in self._TERMINAL_STATUSES and current.status in self._ACTIVE_STATUSES:
+                CAPTURE_SESSIONS_ACTIVE.dec()
+        return result
 
     async def delete_session(self, project_id: UUID, capture_session_id: UUID) -> None:
         session = await self._repository.get(project_id, capture_session_id)

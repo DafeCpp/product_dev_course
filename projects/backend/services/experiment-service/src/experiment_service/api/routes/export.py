@@ -16,7 +16,7 @@ from experiment_service.api.utils import (
 from experiment_service.domain.enums import ExperimentStatus, RunStatus
 from experiment_service.domain.models import Experiment, Run
 from experiment_service.services.dependencies import (
-    ensure_project_access,
+    ensure_permission,
     get_experiment_service,
     get_run_service,
     require_current_user,
@@ -114,11 +114,11 @@ async def export_experiments(request: web.Request):
       - status, tags, created_after, created_before — same filters as list
     """
     user = await require_current_user(request)
+    ensure_permission(user, "experiments.view")
     project_id_query = request.rel_url.query.get("project_id")
     if project_id_query:
         project_id = resolve_project_id(user, project_id_query)
     elif user.active_project_id:
-        ensure_project_access(user, user.active_project_id)
         project_id = user.active_project_id
     else:
         raise web.HTTPBadRequest(text="project_id is required")
@@ -173,7 +173,7 @@ async def export_runs(request: web.Request):
     """
     user = await require_current_user(request)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
-    ensure_project_access(user, project_id)
+    ensure_permission(user, "experiments.view")
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
 
     fmt = request.rel_url.query.get("format", "csv").lower()

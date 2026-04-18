@@ -1,0 +1,76 @@
+@import '../styles/colors';
+
+.cs-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cs-timeline__track {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  background: $overlay-ink-02;
+  border: 1px solid $overlay-ink-08;
+  overflow: hidden;
+}
+
+.cs-timeline__bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 4px;
+  opacity: 0.78;
+  cursor: pointer;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4px;
+}
+
+.cs-timeline__bar:hover {
+  opacity: 1;
+  filter: brightness(1.1);
+  z-index: 1;
+}
+
+.cs-timeline__bar:focus-visible {
+  outline: 2px solid $border-focus;
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.cs-timeline__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+}
+
+.cs-timeline__legend {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cs-timeline__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  color: $text-secondary;
+  font-weight: 600;
+}
+
+.cs-timeline__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

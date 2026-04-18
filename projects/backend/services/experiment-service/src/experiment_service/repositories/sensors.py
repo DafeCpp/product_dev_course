@@ -12,6 +12,16 @@ from experiment_service.domain.dto import SensorCreateDTO, SensorUpdateDTO
 from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
 from experiment_service.repositories.base import BaseRepository
+from experiment_service.settings import settings
+
+_CONNECTION_STATUS_EXPR = f"""
+    CASE
+        WHEN s.last_heartbeat IS NULL THEN 'offline'
+        WHEN s.last_heartbeat > now() - INTERVAL '{settings.sensor_online_threshold_seconds} seconds' THEN 'online'
+        WHEN s.last_heartbeat > now() - INTERVAL '{settings.sensor_delayed_threshold_seconds} seconds' THEN 'delayed'
+        ELSE 'offline'
+    END AS connection_status
+"""
 
 
 class SensorRepository(BaseRepository):
@@ -85,8 +95,8 @@ class SensorRepository(BaseRepository):
         # In practice, older deployments may have sensors without a backfilled `sensor_projects`
         # row. Treat `sensors.project_id` as authoritative membership as well.
         record = await self._fetchrow(
-            """
-            SELECT s.*
+            f"""
+            SELECT s.*, {_CONNECTION_STATUS_EXPR}
             FROM sensors s
             LEFT JOIN sensor_projects sp
               ON s.id = sp.sensor_id
@@ -104,7 +114,7 @@ class SensorRepository(BaseRepository):
     async def get_by_id(self, sensor_id: UUID) -> Sensor:
         """Get sensor by ID without project check (for internal use)."""
         record = await self._fetchrow(
-            "SELECT * FROM sensors WHERE id = $1",
+            f"SELECT s.*, {_CONNECTION_STATUS_EXPR} FROM sensors s WHERE s.id = $1",
             sensor_id,
         )
         if record is None:
@@ -150,6 +160,7 @@ class SensorRepository(BaseRepository):
             params.extend([limit, offset])
             query = f"""
                 SELECT s.*,
+                       {_CONNECTION_STATUS_EXPR},
                        COUNT(*) OVER() AS total_count
                 FROM sensors s
                 {where}
@@ -169,6 +180,7 @@ class SensorRepository(BaseRepository):
             params.extend([limit, offset])
             query = f"""
                 SELECT s.*,
+                       {_CONNECTION_STATUS_EXPR},
                        COUNT(*) OVER() AS total_count
                 FROM sensors s
                 LEFT JOIN sensor_projects sp
@@ -198,9 +210,10 @@ class SensorRepository(BaseRepository):
         if not project_ids:
             return [], 0
         records = await self._fetch(
-            """
+            f"""
             WITH filtered AS (
-                SELECT s.*
+                SELECT s.*,
+                       {_CONNECTION_STATUS_EXPR}
                 FROM sensors s
                 WHERE s.project_id = ANY($1::uuid[])
                    OR EXISTS (
@@ -340,6 +353,65 @@ class SensorRepository(BaseRepository):
             sensor_id,
         )
         return bool(record["has_active"]) if record else False
+
+    async def get_status_summary(self, project_id: UUID) -> dict[str, int]:
+        """Return counts of online/delayed/offline sensors for a project."""
+        online_sec = settings.sensor_online_threshold_seconds
+        delayed_sec = settings.sensor_delayed_threshold_seconds
+        record = await self._fetchrow(
+            f"""
+            SELECT
+                COUNT(*) FILTER (WHERE
+                    s.last_heartbeat IS NOT NULL
+                    AND s.last_heartbeat > now() - INTERVAL '{online_sec} seconds'
+                ) AS online,
+                COUNT(*) FILTER (WHERE
+                    s.last_heartbeat IS NOT NULL
+                    AND s.last_heartbeat <= now() - INTERVAL '{online_sec} seconds'
+                    AND s.last_heartbeat > now() - INTERVAL '{delayed_sec} seconds'
+                ) AS delayed,
+                COUNT(*) FILTER (WHERE
+                    s.last_heartbeat IS NULL
+                    OR s.last_heartbeat <= now() - INTERVAL '{delayed_sec} seconds'
+                ) AS offline,
+                COUNT(*) AS total
+            FROM sensors s
+            WHERE s.project_id = $1
+               OR EXISTS (
+                    SELECT 1
+                    FROM sensor_projects sp
+                    WHERE sp.sensor_id = s.id
+                      AND sp.project_id = $1
+               )
+            """,
+            project_id,
+        )
+        if record is None:
+            return {"online": 0, "delayed": 0, "offline": 0, "total": 0}
+        return {
+            "online": int(record["online"]),
+            "delayed": int(record["delayed"]),
+            "offline": int(record["offline"]),
+            "total": int(record["total"]),
+        }
+
+    async def get_heartbeat_history(
+        self, sensor_id: UUID, minutes: int
+    ) -> list[datetime]:
+        """Return per-minute bucketed timestamps from telemetry_records for sparkline."""
+        records = await self._fetch(
+            """
+            SELECT time_bucket(INTERVAL '1 minute', timestamp) AS bucket
+            FROM telemetry_records
+            WHERE sensor_id = $1
+              AND timestamp > now() - ($2 * INTERVAL '1 minute')
+            GROUP BY bucket
+            ORDER BY bucket ASC
+            """,
+            sensor_id,
+            minutes,
+        )
+        return [record["bucket"] for record in records]
 
     async def rotate_token(
         self,

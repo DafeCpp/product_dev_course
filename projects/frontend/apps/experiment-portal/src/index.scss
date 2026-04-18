@@ -36,40 +36,94 @@
   --radius-md: #{$radius-md};
   --radius-lg: #{$radius-lg};
   --radius-pill: #{$radius-pill};
+  --surface-raised: rgba(255, 255, 255, 0.88);
+  --surface-panel: rgba(241, 245, 249, 0.72);
+  --border-soft: rgba(15, 23, 42, 0.06);
+  --border-strong: rgba(15, 23, 42, 0.12);
+  --shadow-soft: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --shadow-strong: 0 4px 16px rgba(15, 23, 42, 0.1);
+  --focus-ring: 0 0 0 3px rgba(79, 70, 229, 0.2);
+  --page-max: 1360px;
+  --font-sans: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  --button-gradient: linear-gradient(135deg, #4f46e5 0%, #6366f1 60%, #818cf8 140%);
+  --card-gradient: linear-gradient(160deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.88) 50%, rgba(241, 245, 249, 0.92) 100%);
+  --sidebar-gradient: linear-gradient(180deg, #0f172a 0%, #1e293b 52%, #312e81 100%);
+}
+
+@media (min-width: 1920px) {
+  :root { --page-max: 1760px; }
+}
+
+@media (min-width: 2560px) {
+  :root { --page-max: 2280px; }
+}
+
+html, body, #root {
+  min-height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Oxygen', sans-serif;
+  position: relative;
+  min-height: 100vh;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--background);
+  background: #f8fafc;
   color: var(--text);
-  line-height: 1.5;
-  font-size: 16px;
+  line-height: 1.6;
+  font-size: 15px;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, rgba(79, 70, 229, 0.06), transparent),
+    radial-gradient(ellipse 60% 50% at 90% 10%, rgba(99, 102, 241, 0.04), transparent);
+  z-index: -2;
+}
+
+#root {
+  position: relative;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(79, 70, 229, 0.15);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: var(--font-mono);
+}
+
+img, svg {
+  display: block;
+  max-width: 100%;
+}
+
+button, input, textarea, select {
+  font: inherit;
 }
 
 a {
-  color: var(--primary);
+  color: inherit;
   text-decoration: none;
 }
 
 a:hover {
-  text-decoration: underline;
-}
-
-button {
-  cursor: pointer;
-  font-family: inherit;
-}
-
-input,
-textarea,
-select {
-  font-family: inherit;
+  text-decoration: none;
 }

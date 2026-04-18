@@ -1,0 +1,5 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# Флеш 2 MB: factory от 0x10000, макс. размер = 1984K (прошивка ~1.1 MB, запас)
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        1952K,

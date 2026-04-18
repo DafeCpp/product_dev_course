@@ -29,7 +29,7 @@ describe('full cycle integration (auth-proxy)', () => {
     test('login -> CSRF -> state-changing /api -> telemetry (no CSRF)', async () => {
         // ---------- mock auth-service ----------
         const authUpstream = fastify({ logger: false })
-        const accessToken = makeJwt({ sub: 'user-123' })
+        const accessToken = makeJwt({ sub: 'user-123', sa: false, sys: ['users.list', 'audit.read'] })
         const refreshToken = 'refresh-123'
 
         authUpstream.post('/auth/login', async () => ({
@@ -48,6 +48,15 @@ describe('full cycle integration (auth-proxy)', () => {
         }))
         authUpstream.post('/auth/logout', async () => ({ ok: true }))
         authUpstream.get('/auth/me', async () => ({ id: 'user-123', username: 'u', email: 'u@e', is_active: true }))
+        authUpstream.get('/api/v1/users/:userId/effective-permissions', async (req) => {
+            const query = req.query as Record<string, string>
+            return {
+                user_id: 'user-123',
+                is_superadmin: false,
+                system_permissions: ['users.list', 'audit.read'],
+                project_permissions: query.project_id ? ['experiments.create', 'experiments.view'] : [],
+            }
+        })
 
         await authUpstream.listen({ port: 0, host: '127.0.0.1' })
         const authAddr = authUpstream.server.address()
@@ -87,6 +96,7 @@ describe('full cycle integration (auth-proxy)', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${expPort}`,
             targetTelemetryUrl: `http://127.0.0.1:${telPort}`,
+            targetScriptUrl: 'http://example.invalid',
             authUrl: `http://127.0.0.1:${authPort}`,
             corsOrigins: ['http://localhost:3000'],
             cookieSecure: false,
@@ -153,6 +163,12 @@ describe('full cycle integration (auth-proxy)', () => {
             expect(forwardedHeaders.authorization).toBe(`Bearer ${access}`)
             // auth-proxy decodes JWT and forwards user id
             expect(forwardedHeaders['x-user-id']).toBe('user-123')
+            // new RBAC permission headers
+            expect(forwardedHeaders['x-user-is-superadmin']).toBe('false')
+            expect(forwardedHeaders['x-user-system-permissions']).toBe('users.list,audit.read')
+            expect(forwardedHeaders['x-user-permissions']).toBe('experiments.create,experiments.view')
+            // X-Project-Role must NOT be forwarded
+            expect(forwardedHeaders['x-project-role']).toBeUndefined()
 
             // 4) telemetry ingest should NOT require CSRF (uses Authorization sensor token)
             const tIngest = await app.inject({

@@ -14,6 +14,7 @@ from experiment_service.repositories.capture_sessions import CaptureSessionRepos
 from experiment_service.repositories.experiments import ExperimentRepository
 from experiment_service.repositories.runs import RunRepository
 from experiment_service.services.state_machine import validate_run_transition
+from experiment_service.prometheus_metrics import RUNS_CREATED
 
 
 class RunService:
@@ -42,7 +43,9 @@ class RunService:
             raise ScopeMismatchError("Experiment does not belong to project")
         if data.status != RunStatus.DRAFT:
             validate_run_transition(RunStatus.DRAFT, data.status)
-        return await self._repository.create(data)
+        run = await self._repository.create(data)
+        RUNS_CREATED.inc()
+        return run
 
     async def get_run(self, project_id: UUID, run_id: UUID) -> Run:
         return await self._repository.get(project_id, run_id)
@@ -89,6 +92,7 @@ class RunService:
         return await self._repository.update(project_id, run_id, updates)
 
     async def delete_run(self, project_id: UUID, run_id: UUID) -> None:
+        await self._ensure_no_active_capture_sessions(project_id, run_id)
         await self._repository.delete(project_id, run_id)
 
     async def batch_update_status(

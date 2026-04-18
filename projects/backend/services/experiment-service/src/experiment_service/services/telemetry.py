@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Tuple
 from uuid import UUID
+
+from backend_common.conversion import apply_conversion
 
 from experiment_service.domain.dto import (
     SensorUpdateDTO,
@@ -157,16 +158,10 @@ class TelemetryService:
     @staticmethod
     def _apply_conversion(
         profile: ConversionProfile, raw_value: float
-    ) -> Tuple[float | None, TelemetryConversionStatus]:
-        if profile.kind == "linear":
-            payload = profile.payload or {}
-            a_raw = payload.get("a")
-            b_raw = payload.get("b")
-            if not isinstance(a_raw, (int, float)) or not isinstance(b_raw, (int, float)):
-                return None, TelemetryConversionStatus.CONVERSION_FAILED
-            a = float(a_raw)
-            b = float(b_raw)
-            return a * raw_value + b, TelemetryConversionStatus.CONVERTED
+    ) -> tuple[float | None, TelemetryConversionStatus]:
+        result = apply_conversion(profile.kind, profile.payload or {}, raw_value)
+        if result is not None:
+            return result, TelemetryConversionStatus.CONVERTED
         return None, TelemetryConversionStatus.CONVERSION_FAILED
 
     @staticmethod
