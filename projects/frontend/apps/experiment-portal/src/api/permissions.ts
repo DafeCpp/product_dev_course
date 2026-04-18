@@ -1,4 +1,3 @@
-import axios from 'axios'
 import type {
   Permission,
   Role,
@@ -6,20 +5,12 @@ import type {
   UserSystemRole,
   UserProjectRole,
 } from '../types/permissions'
-
-const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
-
-const client = axios.create({
-  baseURL: AUTH_PROXY_URL,
-  headers: { 'Content-Type': 'application/json' },
-  withCredentials: true,
-})
+import { apiGet, apiPost, apiPatch, apiDelete } from './client'
 
 export const permissionsApi = {
   // Permission catalog
   listPermissions: async (): Promise<Permission[]> => {
-    const res = await client.get<Permission[]>('/api/v1/permissions')
-    return res.data
+    return apiGet<Permission[]>('/api/v1/permissions')
   },
 
   // Effective permissions for a user
@@ -28,17 +19,15 @@ export const permissionsApi = {
     projectId?: string
   ): Promise<EffectivePermissions> => {
     const params = projectId ? { project_id: projectId } : {}
-    const res = await client.get<EffectivePermissions>(
+    return apiGet<EffectivePermissions>(
       `/api/v1/users/${userId}/effective-permissions`,
       { params }
     )
-    return res.data
   },
 
   // System roles
   listSystemRoles: async (): Promise<Role[]> => {
-    const res = await client.get<Role[]>('/api/v1/system-roles')
-    return res.data
+    return apiGet<Role[]>('/api/v1/system-roles')
   },
 
   createSystemRole: async (data: {
@@ -46,20 +35,18 @@ export const permissionsApi = {
     description?: string
     permissions: string[]
   }): Promise<Role> => {
-    const res = await client.post<Role>('/api/v1/system-roles', data)
-    return res.data
+    return apiPost<Role>('/api/v1/system-roles', data)
   },
 
   updateSystemRole: async (
     roleId: string,
     data: { name?: string; description?: string; permissions?: string[] }
   ): Promise<Role> => {
-    const res = await client.patch<Role>(`/api/v1/system-roles/${roleId}`, data)
-    return res.data
+    return apiPatch<Role>(`/api/v1/system-roles/${roleId}`, data)
   },
 
   deleteSystemRole: async (roleId: string): Promise<void> => {
-    await client.delete(`/api/v1/system-roles/${roleId}`)
+    await apiDelete(`/api/v1/system-roles/${roleId}`)
   },
 
   // System role assignments
@@ -72,26 +59,23 @@ export const permissionsApi = {
       typeof roleIdOrBody === 'string'
         ? { role_id: roleIdOrBody, ...(expiresAt ? { expires_at: expiresAt } : {}) }
         : roleIdOrBody
-    const res = await client.post<UserSystemRole>(`/api/v1/users/${userId}/system-roles`, body)
-    return res.data
+    return apiPost<UserSystemRole>(`/api/v1/users/${userId}/system-roles`, body)
   },
 
   revokeSystemRole: async (userId: string, roleId: string): Promise<void> => {
-    await client.delete(`/api/v1/users/${userId}/system-roles/${roleId}`)
+    await apiDelete(`/api/v1/users/${userId}/system-roles/${roleId}`)
   },
 
   // Project roles
   listProjectRoles: async (projectId: string): Promise<Role[]> => {
-    const res = await client.get<Role[]>(`/api/v1/projects/${projectId}/roles`)
-    return res.data
+    return apiGet<Role[]>(`/api/v1/projects/${projectId}/roles`)
   },
 
   createProjectRole: async (
     projectId: string,
     data: { name: string; description?: string; permissions: string[] }
   ): Promise<Role> => {
-    const res = await client.post<Role>(`/api/v1/projects/${projectId}/roles`, data)
-    return res.data
+    return apiPost<Role>(`/api/v1/projects/${projectId}/roles`, data)
   },
 
   updateProjectRole: async (
@@ -99,15 +83,11 @@ export const permissionsApi = {
     roleId: string,
     data: { name?: string; description?: string; permissions?: string[] }
   ): Promise<Role> => {
-    const res = await client.patch<Role>(
-      `/api/v1/projects/${projectId}/roles/${roleId}`,
-      data
-    )
-    return res.data
+    return apiPatch<Role>(`/api/v1/projects/${projectId}/roles/${roleId}`, data)
   },
 
   deleteProjectRole: async (projectId: string, roleId: string): Promise<void> => {
-    await client.delete(`/api/v1/projects/${projectId}/roles/${roleId}`)
+    await apiDelete(`/api/v1/projects/${projectId}/roles/${roleId}`)
   },
 
   // Project role assignments
@@ -116,11 +96,10 @@ export const permissionsApi = {
     userId: string,
     roleId: string
   ): Promise<UserProjectRole> => {
-    const res = await client.post<UserProjectRole>(
+    return apiPost<UserProjectRole>(
       `/api/v1/projects/${projectId}/members/${userId}/roles`,
       { role_id: roleId }
     )
-    return res.data
   },
 
   revokeProjectRole: async (
@@ -128,8 +107,6 @@ export const permissionsApi = {
     userId: string,
     roleId: string
   ): Promise<void> => {
-    await client.delete(
-      `/api/v1/projects/${projectId}/members/${userId}/roles/${roleId}`
-    )
+    await apiDelete(`/api/v1/projects/${projectId}/members/${userId}/roles/${roleId}`)
   },
 }

@@ -1342,6 +1342,35 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         },
     })
 
+    // Auth Service API proxies — these endpoints live in auth-service, not experiment-service.
+    // Must be registered BEFORE the generic `/api` proxy so they win route matching.
+    for (const prefix of ['/api/v1/system-roles', '/api/v1/permissions', '/api/v1/audit-log']) {
+        await app.register(httpProxy, {
+            prefix,
+            upstream: config.authUrl,
+            rewritePrefix: prefix,
+            http2: false,
+            replyOptions: {
+                rewriteRequestHeaders: (req, headers) => {
+                    const cookies = parseCookies(req.headers.cookie as string | undefined)
+                    const access = cookies[config.accessCookieName]
+                    const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                    const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+                    const newHeaders: Record<string, string> = {}
+                    for (const [key, value] of Object.entries(headers)) {
+                        if (typeof value === 'string') newHeaders[key] = value
+                        else if (Array.isArray(value) && value.length > 0) newHeaders[key] = String(value[0])
+                    }
+                    newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                    newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+                    if (access) newHeaders['authorization'] = `Bearer ${access}`
+                    delete newHeaders['cookie']
+                    return newHeaders
+                },
+            },
+        })
+    }
+
     // Sensor error log lives on telemetry-ingest-service, not experiment-service.
     // Must be registered BEFORE the generic `/api` proxy so it wins route matching.
     app.get<{ Params: { sensorId: string } }>(

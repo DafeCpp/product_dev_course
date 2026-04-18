@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react'
+import { ReactNode, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import './Modal.scss'
 
@@ -12,9 +12,7 @@ interface ModalProps {
 }
 
 function Modal({ isOpen, onClose, title, children, disabled = false, className = '' }: ModalProps) {
-    if (!isOpen) {
-        return null
-    }
+    const mouseDownOnOverlay = useRef(false)
 
     useEffect(() => {
         const handleEscape = (event: KeyboardEvent) => {
@@ -29,14 +27,26 @@ function Modal({ isOpen, onClose, title, children, disabled = false, className =
         }
     }, [disabled, onClose])
 
-    const handleOverlayClick = () => {
-        if (!disabled) {
+    if (!isOpen) {
+        return null
+    }
+
+    const handleOverlayMouseDown = (e: React.MouseEvent) => {
+        mouseDownOnOverlay.current = e.target === e.currentTarget
+    }
+
+    const handleOverlayClick = (e: React.MouseEvent) => {
+        if (!disabled && mouseDownOnOverlay.current && e.target === e.currentTarget) {
             onClose()
         }
     }
 
     return createPortal(
-        <div className="modal-overlay" onClick={handleOverlayClick}>
+        <div
+            className="modal-overlay"
+            onMouseDown={handleOverlayMouseDown}
+            onClick={handleOverlayClick}
+        >
             <div className={`modal-content ${className}`} onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2>{title}</h2>

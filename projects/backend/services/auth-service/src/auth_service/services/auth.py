@@ -137,13 +137,18 @@ class AuthService:
         user_agent: str | None = None,
     ) -> tuple[User, AuthTokensResponse]:
         """Register a new user."""
+        validated_invite = None
+
         if self._registration_mode == "invite":
             if self._invite_repo is None:
                 raise ForbiddenError("Invite system is not configured")
             if invite_token is None:
                 raise ForbiddenError("Invite token required")
-            invite = await self._invite_repo.get_by_token(invite_token)
-            if not invite or not invite.is_active:
+
+        # Validate invite if provided (regardless of registration mode), so it gets marked used.
+        if invite_token is not None and self._invite_repo is not None:
+            validated_invite = await self._invite_repo.get_by_token(invite_token)
+            if not validated_invite or not validated_invite.is_active:
                 raise InvalidTokenError("Invalid or expired invite token")
 
         if await self._user_repo.user_exists(username, email):
@@ -152,7 +157,7 @@ class AuthService:
         hashed_pw = hash_password(password)
         user = await self._user_repo.create(username, email, hashed_pw, password_change_required=False)
 
-        if self._registration_mode == "invite" and self._invite_repo is not None and invite_token is not None:
+        if validated_invite is not None and self._invite_repo is not None and invite_token is not None:
             await self._invite_repo.mark_used(invite_token, user.id)
 
         tokens = await self._create_tokens(str(user.id))

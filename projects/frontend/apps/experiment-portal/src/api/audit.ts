@@ -1,13 +1,5 @@
-import axios from 'axios'
 import type { AuditLogResponse } from '../types/permissions'
-
-const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
-
-const client = axios.create({
-  baseURL: AUTH_PROXY_URL,
-  headers: { 'Content-Type': 'application/json' },
-  withCredentials: true,
-})
+import { apiGet } from './client'
 
 export interface AuditLogFilters {
   actor_id?: string
@@ -35,7 +27,6 @@ export const auditApi = {
     if (filters.to) params.to = filters.to
     if (filters.limit !== undefined) params.limit = filters.limit
     if (filters.offset !== undefined) params.offset = filters.offset
-    const res = await client.get<AuditLogResponse>('/api/v1/audit-log', { params })
-    return res.data
+    return apiGet<AuditLogResponse>('/api/v1/audit-log', { params })
   },
 }
