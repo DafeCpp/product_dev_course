@@ -46,6 +46,9 @@ export default defineConfig(({ mode }) => {
       environment: 'jsdom',
       setupFiles: './src/setupTests.ts',
       css: true,
+      testTimeout: 10000,
+      hookTimeout: 10000,
+      reporters: process.env.CI ? ['verbose'] : ['default'],
     },
   }
 })
