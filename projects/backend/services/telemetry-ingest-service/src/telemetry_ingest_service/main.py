@@ -51,8 +51,8 @@ async def _stop_spool_worker(app: web.Application) -> None:
 
 def create_app() -> web.Application:
     app, cors = create_base_app(settings)
-    app.middlewares.append(error_handling_middleware)
-    app.middlewares.append(metrics_middleware("telemetry-ingest-service"))
+    app.middlewares.append(error_handling_middleware)  # type: ignore[arg-type]
+    app.middlewares.append(metrics_middleware("telemetry-ingest-service"))  # type: ignore[arg-type]
 
     app.add_routes(health_routes)
     add_openapi_spec(app, OPENAPI_PATH)
