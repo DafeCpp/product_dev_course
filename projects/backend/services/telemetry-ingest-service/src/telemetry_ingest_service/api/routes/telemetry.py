@@ -117,21 +117,21 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
     sensor_id_str = str(dto.sensor_id)
     readings_count = len(dto.readings)
 
-    rate_limit_result = _rest_limiter.check(dto.sensor_id, readings_count)
-    if rate_limit_result is not None:
+    allowed, retry_after = _rest_limiter.check(dto.sensor_id, readings_count)
+    if not allowed:
         INGEST_RATE_LIMITED.labels(transport="rest").inc()
         _fire_and_forget_error_log(
             sensor_id_str,
             "rate_limited",
-            error_message=f"Rate limit exceeded. Retry in {rate_limit_result.retry_after}s.",
+            error_message=f"Rate limit exceeded. Retry in {retry_after}s.",
             endpoint="rest",
             readings_count=readings_count,
         )
         raise web.HTTPTooManyRequests(
-            text=f"Rate limit exceeded. Retry in {rate_limit_result.retry_after}s.",
+            text=f"Rate limit exceeded. Retry in {retry_after}s.",
             headers={
-                "Retry-After": str(rate_limit_result.retry_after),
-                "X-RateLimit-Limit": str(rate_limit_result.limit),
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(_rest_limiter._max_requests),
             },
         )
 
