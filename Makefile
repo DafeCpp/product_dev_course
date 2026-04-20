@@ -650,8 +650,18 @@ auth-create-db:
 		($(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE auth_db;" && \
 		echo "✅ База данных auth_db создана")
 
-# Инициализация auth-service (создание БД + миграции)
-auth-init: auth-create-db auth-migrate
+# Seed initial admin user (if not exists)
+auth-seed:
+	@echo "Создание первого админа (если не существует)..."
+	@$(DOCKER_COMPOSE) exec -T auth-service python -m bin.seed \
+		--database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}" \
+		--username "$${ADMIN_USERNAME:-admin}" \
+		--email "$${ADMIN_EMAIL:-admin@example.com}" \
+		--password "$${ADMIN_PASSWORD}" || true
+	@echo "✅ Seed completed"
+
+# Инициализация auth-service (создание БД + миграции + первый админ)
+auth-init: auth-create-db auth-migrate auth-seed
 	@echo "✅ Auth-service инициализирован"
 # Применение миграций experiment-service
 experiment-migrate:

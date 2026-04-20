@@ -301,7 +301,7 @@ VM_HOST=84.201.xxx.xxx REGISTRY_ID=crp... ./scripts/deploy.sh [v1.0.0]
 ```
 Если тег не указан, используется короткий SHA текущего коммита.
 
-## Миграции БД
+## Миграции БД и инициализация
 
 При первом запуске миграции должны применяться автоматически (если сервисы это поддерживают).
 
@@ -312,13 +312,30 @@ ssh deploy@<VM_IP>
 cd /opt/experiment-tracking
 
 # Auth Service миграции
-docker compose -f docker-compose.prod.yml exec auth-service \
-  python -m auth_service.migrate
+docker compose -f docker-compose.prod.yml exec -T auth-service \
+  python -m bin.migrate --database-url "$AUTH_DATABASE_URL"
+
+# Auth Service: создание первого админа (требуется ADMIN_PASSWORD)
+docker compose -f docker-compose.prod.yml exec -T auth-service \
+  python -m bin.seed \
+    --database-url "$AUTH_DATABASE_URL" \
+    --username admin \
+    --email admin@example.com \
+    --password "$ADMIN_PASSWORD"
 
 # Experiment Service миграции
-docker compose -f docker-compose.prod.yml exec experiment-service \
-  python -m experiment_service.migrate
+docker compose -f docker-compose.prod.yml exec -T experiment-service \
+  python -m bin.migrate --database-url "$EXPERIMENT_DATABASE_URL"
 ```
+
+### Инициализация админа при первом деплое
+
+При развёртывании в production необходимо:
+1. Установить переменную окружения `ADMIN_PASSWORD` перед запуском контейнеров (в `.env` или Terraform)
+2. Запустить `docker compose exec -T auth-service python -m bin.seed` (или просто запустить сервисы, если init-скрипты настроены)
+3. Первый админ будет создан с логином из `ADMIN_USERNAME` (по умолчанию: `admin`) и паролем из `ADMIN_PASSWORD`
+
+**Совет:** используйте сильные пароли для production. Админ может позже создать других пользователей через API или CSV-импорт.
 
 ## Мониторинг
 
