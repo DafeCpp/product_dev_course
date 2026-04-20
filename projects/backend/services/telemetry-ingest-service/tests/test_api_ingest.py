@@ -870,9 +870,9 @@ async def test_ingest_rejects_archived_capture_session_400(service_client, pgsql
 
 async def test_ingest_returns_429_when_rate_limited(service_client, monkeypatch):
     """When the request limit is 1, the second request returns 429."""
-    from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
+    from telemetry_ingest_service.middleware.rest_rate_limit import IngestRateLimiter
 
-    tight = WsRateLimiter(max_messages=1, max_readings=100_000, window_seconds=60.0)
+    tight = IngestRateLimiter(max_requests_per_window=1, max_readings_per_window=100_000, window_seconds=60.0)
     monkeypatch.setattr(
         "telemetry_ingest_service.api.routes.telemetry._rest_limiter",
         tight,
@@ -904,9 +904,9 @@ async def test_ingest_returns_429_when_rate_limited(service_client, monkeypatch)
 
 async def test_ingest_rate_limit_sensor_isolation(service_client, monkeypatch):
     """Different sensor_ids have independent quotas."""
-    from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
+    from telemetry_ingest_service.middleware.rest_rate_limit import IngestRateLimiter
 
-    tight = WsRateLimiter(max_messages=1, max_readings=100_000, window_seconds=60.0)
+    tight = IngestRateLimiter(max_requests_per_window=1, max_readings_per_window=100_000, window_seconds=60.0)
     monkeypatch.setattr(
         "telemetry_ingest_service.api.routes.telemetry._rest_limiter",
         tight,
