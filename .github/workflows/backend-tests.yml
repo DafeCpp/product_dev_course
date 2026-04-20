@@ -49,6 +49,38 @@ jobs:
       - name: Run pytest
         run: poetry run pytest -q
 
+  script-service:
+    name: script-service tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/services/script-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+          installer-parallel: true
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Run pytest
+        run: poetry run pytest -q
+
   experiment-service:
     name: experiment-service tests
     runs-on: ubuntu-latest
@@ -128,6 +160,87 @@ jobs:
           pg_config --version || true
           
           # Set environment variables for testsuite
+          echo "PG_BIN=/usr/lib/postgresql/16/bin" >> $GITHUB_ENV
+          echo "PG_SHARE=/usr/share/postgresql/16" >> $GITHUB_ENV
+          echo "PG_LIB=/usr/lib/postgresql/16/lib" >> $GITHUB_ENV
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+          installer-parallel: true
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Run pytest
+        run: poetry run pytest -q
+  telemetry-ingest-service:
+    name: telemetry-ingest-service tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/services/telemetry-ingest-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL + TimescaleDB
+        run: |
+          UBUNTU_CODENAME=$(lsb_release -cs)
+
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+            sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${UBUNTU_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+          echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ ${UBUNTU_CODENAME} main" \
+            | sudo tee /etc/apt/sources.list.d/timescaledb.list
+          curl -sL https://packagecloud.io/timescale/timescaledb/gpgkey | \
+            gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg >/dev/null
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-16 postgresql-contrib-16
+
+          PG_MAJOR=16
+          sudo apt-get install -y --no-install-recommends "timescaledb-2-postgresql-${PG_MAJOR}"
+
+          echo "Finding testsuite PostgreSQL installation..."
+
+          cd ${{ github.workspace }}/projects/backend/services/telemetry-ingest-service
+          poetry install --no-interaction --no-root 2>/dev/null || true
+
+          TS_PG_BIN=$(poetry run python -c "from testsuite.databases.pgsql import config; print(config.PG_BIN_DIR)" 2>/dev/null || echo "")
+          echo "Testsuite PG_BIN_DIR: $TS_PG_BIN"
+
+          echo "Copying TimescaleDB extension files..."
+          sudo cp -r /usr/share/timescaledb/* /usr/share/postgresql/16/extension/ 2>/dev/null || true
+          sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so /usr/lib/postgresql/16/lib/ 2>/dev/null || true
+
+          for ts_dir in /usr/share/postgresql /usr/lib/postgresql; do
+            if [ -d "$ts_dir" ]; then
+              echo "Copying to $ts_dir..."
+              sudo cp -r /usr/share/timescaledb/* $ts_dir/*/extension/ 2>/dev/null || true
+              sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so $ts_dir/*/lib/ 2>/dev/null || true
+            fi
+          done
+
+          echo "Verifying TimescaleDB installation..."
+          ls -la /usr/lib/postgresql/16/lib/timescaledb*.so || true
+          ls -la /usr/share/postgresql/16/extension/timescaledb*.control || true
+
+          echo "Adding PostgreSQL 16 to PATH..."
+          echo "/usr/lib/postgresql/16/bin" >> $GITHUB_PATH
+
+          echo "Verifying pg_config..."
+          which pg_config || true
+          pg_config --version || true
+
           echo "PG_BIN=/usr/lib/postgresql/16/bin" >> $GITHUB_ENV
           echo "PG_SHARE=/usr/share/postgresql/16" >> $GITHUB_ENV
           echo "PG_LIB=/usr/lib/postgresql/16/lib" >> $GITHUB_ENV
