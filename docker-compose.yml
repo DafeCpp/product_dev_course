@@ -27,6 +27,8 @@ services:
       EXPERIMENT_DB_PASSWORD: ${EXPERIMENT_DB_PASSWORD:-experiment_password}
       SCRIPT_DB_USER: ${SCRIPT_DB_USER:-script_user}
       SCRIPT_DB_PASSWORD: ${SCRIPT_DB_PASSWORD:-script_password}
+      CONFIG_DB_USER: ${CONFIG_DB_USER:-config_user}
+      CONFIG_DB_PASSWORD: ${CONFIG_DB_PASSWORD:-config_password}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
@@ -134,6 +136,22 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+
+  # Config DB migrations — запускается один раз перед config-service
+  config-migrate:
+    build:
+      context: ./projects/backend
+      dockerfile: services/config-service/Dockerfile
+    container_name: config-migrate
+    environment:
+      - DATABASE_URL=${CONFIG_DATABASE_URL:-postgresql://config_user:config_password@postgres:5432/config_db}
+    command: ["python", "-m", "bin.migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-tracking-network
+    restart: "no"
 
   # Auth DB migrations — запускается один раз перед auth-service
   auth-migrate:
@@ -317,6 +335,40 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # Config Service - runtime configuration (feature flags, QoS, kill-switches)
+  config-service:
+    build:
+      context: ./projects/backend
+      dockerfile: services/config-service/Dockerfile
+    container_name: config-service
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${CONFIG_DATABASE_URL:-postgresql://config_user:config_password@postgres:5432/config_db}
+      - ENV=${CONFIG_SERVICE_ENV:-development}
+      - HOST=${CONFIG_SERVICE_HOST:-0.0.0.0}
+      - PORT=${CONFIG_SERVICE_PORT:-8005}
+      - DB_POOL_SIZE=${CONFIG_SERVICE_DB_POOL_SIZE:-10}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+    command: ["python", "-m", "config_service.main"]
+    ports:
+      - "${CONFIG_SERVICE_PORT:-8005}:8005"
+    depends_on:
+      config-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-tracking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8005/health').read()\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # Auth Proxy - BFF для фронтенда
   auth-proxy:

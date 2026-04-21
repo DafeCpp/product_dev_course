@@ -1,6 +1,6 @@
 # RFC-0001: config-service
 
-**Статус:** Review
+**Статус:** Approved
 
 **Автор(ы):** Ivan Khokhlov
 

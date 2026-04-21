@@ -8,6 +8,8 @@ EXPERIMENT_DB_USER=${EXPERIMENT_DB_USER:-experiment_user}
 EXPERIMENT_DB_PASSWORD=${EXPERIMENT_DB_PASSWORD:-experiment_password}
 SCRIPT_DB_USER=${SCRIPT_DB_USER:-script_user}
 SCRIPT_DB_PASSWORD=${SCRIPT_DB_PASSWORD:-script_password}
+CONFIG_DB_USER=${CONFIG_DB_USER:-config_user}
+CONFIG_DB_PASSWORD=${CONFIG_DB_PASSWORD:-config_password}
 
 echo "Creating databases and users..."
 
@@ -103,6 +105,35 @@ psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "script_db" <<-EOSQ
     GRANT ALL ON SCHEMA public TO $SCRIPT_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $SCRIPT_DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $SCRIPT_DB_USER;
+EOSQL
+
+# Create config_db and config_user
+echo "Creating database: config_db"
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "CREATE DATABASE config_db;" 2>&1 | grep -v "already exists" || true
+
+echo "Creating user: $CONFIG_DB_USER"
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    DO \$\$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_user WHERE usename = '$CONFIG_DB_USER') THEN
+            CREATE USER $CONFIG_DB_USER WITH PASSWORD '$CONFIG_DB_PASSWORD';
+        ELSE
+            ALTER USER $CONFIG_DB_USER WITH PASSWORD '$CONFIG_DB_PASSWORD';
+        END IF;
+    END
+    \$\$;
+EOSQL
+
+echo "Granting privileges on config_db to $CONFIG_DB_USER"
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    GRANT ALL PRIVILEGES ON DATABASE config_db TO $CONFIG_DB_USER;
+EOSQL
+
+psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "config_db" <<-EOSQL
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    GRANT ALL ON SCHEMA public TO $CONFIG_DB_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $CONFIG_DB_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $CONFIG_DB_USER;
 EOSQL
 
 echo "✅ Multiple databases and users initialized"
