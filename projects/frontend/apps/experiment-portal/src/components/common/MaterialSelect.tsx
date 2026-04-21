@@ -260,7 +260,7 @@ function MaterialSelect({
                                 <span className="md-select__pill-icon">{icon}</span>
                             )}
                             <span className={`md-select__value${selectedValue ? '' : ' is-placeholder'}`}>
-                                {selectedLabel || (variant !== 'pill' ? placeholder : '')}
+                                {isPill ? (selectedValue ? selectedLabel : '') : (selectedLabel || placeholder)}
                             </span>
                             {isPill && label && (
                                 <span
