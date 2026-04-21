@@ -155,13 +155,6 @@ function ExperimentsList() {
                 <option value="failed">Ошибка</option>
                 <option value="archived">Архивирован</option>
               </MaterialSelect>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm filter-capsule__btn"
-                onClick={() => setIsCreateModalOpen(true)}
-              >
-                + Новый
-              </button>
             </div>
             <div className="experiments-filter-actions">
               <button type="button" className="btn btn-secondary btn-sm" disabled={exporting || !projectId} onClick={() => handleExport('csv')}>
