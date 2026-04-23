@@ -35,5 +35,9 @@
 
 ## Документы
 
-- [design-notes.md](design-notes.md) — варианты архитектуры, Gateway pattern,
-  latency-бюджет, open questions, следующие шаги.
+- [options-comparison.md](options-comparison.md) — сводная таблица вариантов
+  по нефункциональным параметрам (частота, задержка, отказоустойчивость,
+  стоимость, применимость). Для обсуждения верхнего уровня.
+- [design-notes.md](design-notes.md) — технические детали: варианты
+  архитектуры, Gateway pattern, latency-бюджет, протоколы, open questions,
+  следующие шаги.
