@@ -624,6 +624,8 @@
   margin: -20px -20px 0;
   padding: 16px 20px;
   border-bottom: 1px solid var(--outline);
+  position: relative;
+  z-index: 10;
 }
 
 .history-panel-header__copy {

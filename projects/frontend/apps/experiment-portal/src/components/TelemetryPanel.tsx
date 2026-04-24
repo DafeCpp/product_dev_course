@@ -3,8 +3,7 @@ import Plotly from 'plotly.js-dist-min'
 import type { Sensor, TelemetryStreamRecord } from '../types'
 import { telemetryApi } from '../api/client'
 import { createSSEParser } from '../utils/sse'
-import Modal from './Modal'
-import { MaterialSelect } from './common'
+import { MaterialSelect, PlayCircleIcon, StopCircleIcon, SettingsIcon, XIcon } from './common'
 import './TelemetryPanel.scss'
 
 type TelemetryPanelProps = {
@@ -54,11 +53,6 @@ const SERIES_COLORS = [
 ]
 const TIME_WINDOWS_SECONDS = [5, 10, 30, 60, 120, 300, 600] as const
 
-function formatWindow(seconds: number) {
-    if (seconds < 60) return `${seconds} сек`
-    if (seconds % 60 === 0) return `${seconds / 60} мин`
-    return `${seconds} сек`
-}
 
 function parseTimestampMs(value: string) {
     const parsed = Date.parse(value)
@@ -86,6 +80,7 @@ export default function TelemetryPanel({
     const [error, setError] = useState<string | null>(null)
     const [recordsBySensor, setRecordsBySensor] = useState<Record<string, TelemetryStreamRecord[]>>({})
     const [showSettings, setShowSettings] = useState(false)
+    const settingsPopoverRef = useRef<HTMLDivElement | null>(null)
     const [panelSize, setPanelSize] = useState<{ width: number; height: number } | null>(null)
     const [startFromTimestamp, setStartFromTimestamp] = useState<string | null>(null)
     const [startFromCursorBySensor, setStartFromCursorBySensor] = useState<Record<string, StreamCursor> | null>(
@@ -562,8 +557,24 @@ export default function TelemetryPanel({
         }
     }, [])
 
+    useEffect(() => {
+        if (!showSettings) return
+        const handleClickOutside = (e: MouseEvent) => {
+            if (settingsPopoverRef.current && !settingsPopoverRef.current.contains(e.target as Node)) {
+                setShowSettings(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [showSettings])
+
     const canStart = selectedSensorIds.length > 0 && status !== 'connecting'
     const availableSensors = sensors.filter((s) => !selectedSensorIds.includes(s.id))
+
+    const formatWindowCompact = (seconds: number) => {
+        if (seconds < 60) return `${seconds}с`
+        return `${seconds / 60}м`
+    }
 
     return (
         <div
@@ -589,31 +600,114 @@ export default function TelemetryPanel({
                     placeholder="Название панели"
                 />
                 <div className="telemetry-panel__actions">
-                    <button className="btn btn-secondary btn-sm" onClick={() => setShowSettings(true)}>
-                        Настройки
-                    </button>
                     {status !== 'streaming' ? (
-                        <button className="btn btn-primary btn-sm" onClick={startStreams} disabled={!canStart}>
-                            {status === 'connecting' ? 'Подключение...' : 'Старт'}
+                        <button className="tp-pill tp-pill--primary" onClick={startStreams} disabled={!canStart}>
+                            <PlayCircleIcon />
+                            {status === 'connecting' ? 'Подключение…' : 'Старт'}
                         </button>
                     ) : (
-                        <button className="btn btn-secondary btn-sm" onClick={stopStreams}>
+                        <button className="tp-pill" onClick={stopStreams}>
+                            <StopCircleIcon />
                             Стоп
                         </button>
                     )}
-                    <button className="btn btn-danger btn-sm" onClick={onRemove}>
-                        Удалить
+                    <div className="tp-settings-wrap" ref={settingsPopoverRef}>
+                        <button
+                            className="tp-pill"
+                            aria-expanded={showSettings}
+                            onClick={() => setShowSettings((p) => !p)}
+                        >
+                            <SettingsIcon />
+                            Настройки
+                        </button>
+                        {showSettings && (
+                            <div className="tp-settings-popover" role="dialog" aria-label="Настройки панели">
+                                <span className="tp-sp-arrow" />
+                                <div className="tp-sp-title">Сенсоры</div>
+                                {sensorsLoading && (
+                                    <p className="telemetry-panel__hint telemetry-panel__hint--loading">Загрузка списка сенсоров…</p>
+                                )}
+                                {!sensorsLoading && sensorsError && (
+                                    <p className="telemetry-panel__hint telemetry-panel__hint--error">{sensorsError}</p>
+                                )}
+                                {!sensorsLoading && !sensorsError && sensors.length === 0 && (
+                                    <p className="telemetry-panel__hint telemetry-panel__hint--empty">
+                                        Выберите проект с сенсорами в фильтрах выше.
+                                    </p>
+                                )}
+                                <div className="telemetry-panel__sensor-picker">
+                                    <MaterialSelect
+                                        id={`telemetry_panel_sensor_${panelId}`}
+                                        value=""
+                                        onChange={(value, event) => {
+                                            addSensor(value)
+                                            if (event?.currentTarget) event.currentTarget.value = ''
+                                        }}
+                                        disabled={availableSensors.length === 0 || sensorsLoading}
+                                    >
+                                        <option value="">Добавить сенсор</option>
+                                        {availableSensors.map((sensor) => (
+                                            <option key={sensor.id} value={sensor.id}>
+                                                {sensor.name} ({sensor.type})
+                                            </option>
+                                        ))}
+                                    </MaterialSelect>
+                                    <div className="telemetry-panel__sensor-list">
+                                        {selectedSensorIds.length === 0 && (
+                                            <span className="telemetry-panel__hint">Сенсоры не выбраны</span>
+                                        )}
+                                        {filteredSensors.map((sensor) => (
+                                            <span key={sensor.id} className="telemetry-panel__sensor-pill">
+                                                {sensor.name}
+                                                <button type="button" onClick={() => removeSensor(sensor.id)} aria-label="Удалить сенсор">
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <button className="tp-pill tp-pill--danger" onClick={onRemove} aria-label="Удалить панель" title="Удалить панель">
+                        <XIcon />
                     </button>
                 </div>
             </div>
 
-            <div className="telemetry-panel__meta">
-                <span className="telemetry-panel__meta-item">
-                    сенсоры: {selectedSensorIds.length || 'нет'}
-                </span>
-                <span className="telemetry-panel__meta-item">режим: {valueMode}</span>
-                <span className="telemetry-panel__meta-item">окно: {formatWindow(timeWindowSeconds)}</span>
-                <span className="telemetry-panel__meta-item">якорь: {useLatestAnchor ? 'последние данные' : 'сейчас'}</span>
+            <div className="tp-settings-tile">
+                <div className="tp-seg">
+                    {TIME_WINDOWS_SECONDS.map((seconds) => (
+                        <label key={seconds} className={timeWindowSeconds === seconds ? 'on' : ''}>
+                            <input
+                                type="radio"
+                                name={`tp-win-${panelId}`}
+                                checked={timeWindowSeconds === seconds}
+                                onChange={() => setTimeWindowSeconds(seconds as TimeWindowSeconds)}
+                            />
+                            <span>{formatWindowCompact(seconds)}</span>
+                        </label>
+                    ))}
+                </div>
+                <span className="tp-settings-tile__divider" />
+                <div className="tp-seg">
+                    <label className={valueMode === 'physical' ? 'on' : ''}>
+                        <input type="radio" name={`tp-vm-${panelId}`} checked={valueMode === 'physical'} onChange={() => setValueMode('physical')} />
+                        <span>physical</span>
+                    </label>
+                    <label className={valueMode === 'raw' ? 'on' : ''}>
+                        <input type="radio" name={`tp-vm-${panelId}`} checked={valueMode === 'raw'} onChange={() => setValueMode('raw')} />
+                        <span>raw</span>
+                    </label>
+                </div>
+                <label className="tp-toggle" title="Якорить окно на последних данных">
+                    <input
+                        type="checkbox"
+                        checked={useLatestAnchor}
+                        onChange={(e) => setUseLatestAnchor(e.target.checked)}
+                    />
+                    <span>последние</span>
+                </label>
             </div>
 
             {error && <div className="telemetry-panel__error">{error}</div>}
@@ -642,118 +736,6 @@ export default function TelemetryPanel({
                 </div>
             </div>
 
-            <Modal
-                isOpen={showSettings}
-                onClose={() => setShowSettings(false)}
-                title="Настройки панели"
-                className="telemetry-panel__settings-modal"
-            >
-                <div className="telemetry-panel__settings">
-                    <div className="form-group">
-                        <label>Сенсоры</label>
-                        {sensorsLoading && (
-                            <p className="telemetry-panel__hint telemetry-panel__hint--loading">Загрузка списка сенсоров…</p>
-                        )}
-                        {!sensorsLoading && sensorsError && (
-                            <p className="telemetry-panel__hint telemetry-panel__hint--error">{sensorsError}</p>
-                        )}
-                        {!sensorsLoading && !sensorsError && sensors.length === 0 && (
-                            <p className="telemetry-panel__hint telemetry-panel__hint--empty">
-                                Список сенсоров пуст. Выберите проект с сенсорами в фильтрах выше.
-                            </p>
-                        )}
-                        <div className="telemetry-panel__sensor-picker">
-                            <MaterialSelect
-                                id={`telemetry_panel_sensor_${panelId}`}
-                                value=""
-                                onChange={(value, event) => {
-                                    addSensor(value)
-                                    if (event?.currentTarget) {
-                                        event.currentTarget.value = ''
-                                    }
-                                }}
-                                disabled={availableSensors.length === 0 || sensorsLoading}
-                            >
-                                <option value="">Добавить сенсор</option>
-                                {availableSensors.map((sensor) => (
-                                    <option key={sensor.id} value={sensor.id}>
-                                        {sensor.name} ({sensor.type})
-                                    </option>
-                                ))}
-                            </MaterialSelect>
-                            <div className="telemetry-panel__sensor-list">
-                                {selectedSensorIds.length === 0 && <span className="telemetry-panel__hint">Сенсоры не выбраны</span>}
-                                {filteredSensors.map((sensor) => (
-                                    <span key={sensor.id} className="telemetry-panel__sensor-pill">
-                                        {sensor.name}
-                                        <button type="button" onClick={() => removeSensor(sensor.id)} aria-label="Удалить сенсор">
-                                            ×
-                                        </button>
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="telemetry-panel__settings-grid">
-                        <div className="form-group telemetry-panel__inline">
-                            <label>Значение</label>
-                            <div className="telemetry-panel__mode">
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name={`panel-mode-${panelId}`}
-                                        checked={valueMode === 'physical'}
-                                        onChange={() => setValueMode('physical')}
-                                    />
-                                    physical
-                                </label>
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name={`panel-mode-${panelId}`}
-                                        checked={valueMode === 'raw'}
-                                        onChange={() => setValueMode('raw')}
-                                    />
-                                    raw
-                                </label>
-                            </div>
-                        </div>
-
-                        <div className="form-group telemetry-panel__inline">
-                            <label>Окно</label>
-                            <MaterialSelect
-                                id={`telemetry_panel_window_${panelId}`}
-                                value={String(timeWindowSeconds)}
-                                onChange={(value) => {
-                                    const next = Number(value)
-                                    if (TIME_WINDOWS_SECONDS.includes(next as TimeWindowSeconds)) {
-                                        setTimeWindowSeconds(next as TimeWindowSeconds)
-                                    }
-                                }}
-                            >
-                                {TIME_WINDOWS_SECONDS.map((seconds) => (
-                                    <option key={seconds} value={seconds}>
-                                        {formatWindow(seconds)}
-                                    </option>
-                                ))}
-                            </MaterialSelect>
-                        </div>
-
-                        <div className="form-group telemetry-panel__inline">
-                            <label>Окно от</label>
-                            <label className="telemetry-panel__checkbox">
-                                <input
-                                    type="checkbox"
-                                    checked={useLatestAnchor}
-                                    onChange={(e) => setUseLatestAnchor(e.target.checked)}
-                                />
-                                последних данных
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            </Modal>
         </div>
     )
 }

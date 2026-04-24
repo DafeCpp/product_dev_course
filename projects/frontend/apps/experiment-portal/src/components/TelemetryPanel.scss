@@ -17,6 +17,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  position: relative;
+  z-index: 10;
 }
 
 .telemetry-panel__drag-handle {
@@ -300,9 +302,182 @@
 
 @media (max-width: 720px) {
   .telemetry-panel__header,
-  .telemetry-panel__actions,
-  .telemetry-panel__mode {
-    flex-direction: column;
-    align-items: stretch;
+  .telemetry-panel__actions {
+    flex-wrap: wrap;
+  }
+}
+
+// ── Pill buttons ──
+.tp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+
+  svg { flex-shrink: 0; }
+
+  &:hover { background: var(--surface-variant); border-color: #cbd5e1; }
+  &:disabled { opacity: 0.45; cursor: not-allowed; }
+}
+
+.tp-pill--primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  &:hover:not(:disabled) { background: var(--primary-hover, #4338ca); border-color: var(--primary-hover, #4338ca); }
+}
+
+.tp-pill--danger {
+  color: var(--error, #dc2626);
+  &:hover { border-color: var(--error, #dc2626); background: rgba(220, 38, 38, 0.06); }
+}
+
+// ── Settings popover ──
+.tp-settings-wrap {
+  position: relative;
+}
+
+.tp-settings-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 200;
+  width: 320px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.10);
+  display: grid;
+  gap: 10px;
+}
+
+.tp-sp-arrow {
+  position: absolute;
+  top: -6px;
+  right: 18px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-left: 1px solid var(--outline);
+  border-top: 1px solid var(--outline);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.tp-sp-title {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-hint, #94a3b8);
+}
+
+// ── Settings tile (replaces meta bar) ──
+.tp-settings-tile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-variant, #f1f5f9);
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  position: relative;
+  z-index: 5;
+}
+
+.tp-settings-tile__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--outline);
+  flex-shrink: 0;
+}
+
+// ── Capsule segment ──
+.tp-seg {
+  display: inline-flex;
+  padding: 2px;
+  background: #fff;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  flex-shrink: 0;
+
+  label {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+
+    &.on {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    input { display: none; }
+  }
+}
+
+// ── Toggle (anchor) ──
+.tp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+
+  input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 28px;
+    height: 16px;
+    background: #cbd5e1;
+    border-radius: 999px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 12px;
+      height: 12px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.15s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+
+    &:checked { background: var(--primary); }
+    &:checked::after { transform: translateX(12px); }
   }
 }
