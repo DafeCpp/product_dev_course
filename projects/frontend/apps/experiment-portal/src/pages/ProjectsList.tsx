@@ -140,33 +140,32 @@ function ProjectsList() {
                     </div>
 
                     <div className="project-card-header">
-                      <div>
-                        <h3>{project.name}</h3>
-                        <p className="project-card__supporting-text">
-                          {owner
-                            ? 'Полный доступ к конфигурации проекта и составу команды.'
-                            : 'Доступ к просмотру и совместной работе в рамках проекта.'}
-                        </p>
-                      </div>
-
-                      <div className="project-card-actions">
+                      <h3>{project.name}</h3>
+                      <p className="project-card__supporting-text">
+                        {owner
+                          ? 'Полный доступ к конфигурации проекта и составу команды.'
+                          : 'Доступ к просмотру и совместной работе в рамках проекта.'}
+                      </p>
+                      <div className="pill-actions">
                         <button
-                          className="btn btn-secondary btn-sm"
+                          className="pill-btn"
                           onClick={() => openProject(project.id, project.owner_id)}
                           title={owner ? 'Просмотр и редактирование' : 'Просмотр'}
                           aria-label="Открыть проект"
                           disabled={actionsDisabled}
                         >
-                          {owner ? 'Открыть' : 'Просмотр'}
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                          Подробнее
                         </button>
                         {owner && (
                           <button
-                            className="btn btn-secondary btn-sm"
+                            className="pill-btn"
                             onClick={() => handleManageMembers(project.id, project.owner_id)}
                             title="Управление участниками"
                             aria-label="Управление участниками"
                             disabled={actionsDisabled}
                           >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 21a7 7 0 0 1 14 0"/><circle cx="17" cy="7" r="2.5"/><path d="M22 18a5 5 0 0 0-8-3.5"/></svg>
                             Команда
                           </button>
                         )}
