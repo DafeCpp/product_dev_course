@@ -6,85 +6,15 @@
   gap: 18px;
 }
 
-.telemetry-view__hero {
-  margin-bottom: 0;
-  padding: 16px 18px;
-  gap: 12px;
-}
-
 .telemetry-view__workspace {
   display: grid;
   gap: 18px;
 }
 
-.telemetry-view__hero-pills .meta-chip {
-  background: rgba(255, 255, 255, 0.76);
-  border-color: rgba(16, 34, 58, 0.08);
-  color: var(--text);
-  padding: 4px 8px;
-  font-size: 0.68rem;
-}
-
 .telemetry-view__filters {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
-.telemetry-view__filters--collapsed {
-  gap: 0;
-}
-
-.telemetry-view__filters-topbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
-}
-
-.telemetry-view__filters-copy {
-  display: grid;
-  gap: 6px;
-}
-
-.telemetry-view__filters-body {
-  overflow: hidden;
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-6px);
-  transition: max-height 0.45s ease, opacity 0.24s ease, transform 0.24s ease;
-  pointer-events: none;
-}
-
-.telemetry-view__filters-body--open {
-  max-height: 2800px;
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.telemetry-view__status-stack {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.telemetry-view__grid {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.telemetry-view__grid > * {
-  grid-column: span 3;
-}
-
-.telemetry-view__grid > .telemetry-view__mode,
-.telemetry-view__grid > .telemetry-view__capture-actions,
-.telemetry-view__grid > .telemetry-view__backfill-actions {
-  grid-column: span 3;
-}
 
 .telemetry-view__menu {
   display: flex;

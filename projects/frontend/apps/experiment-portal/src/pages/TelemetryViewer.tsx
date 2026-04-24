@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
-import { EmptyState, Error as ErrorComponent, FloatingActionButton, LiveSwitch, Loading, MaterialSelect, FolderIcon, FlaskIcon, PlayCircleIcon, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
+import { EmptyState, FloatingActionButton, LiveSwitch, Loading, MaterialSelect, FolderIcon, FlaskIcon, PlayCircleIcon, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
 import TelemetryExportModal from '../components/TelemetryExportModal'
 import CaptureSessionTimeline from '../components/CaptureSessionTimeline'
 import LiveSensorPanel from '../components/LiveSensorPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
-import { notifyError, notifySuccess } from '../utils/notify'
 import type { CaptureSession, Sensor, TelemetryQueryRecord, TelemetryAggregatedRecord } from '../types'
 import './TelemetryViewer.scss'
 
@@ -25,7 +24,6 @@ type TelemetryViewerState = {
     projectId: string
     experimentId: string
     runId: string
-    filtersOpen: boolean
     viewMode: TelemetryViewMode
 }
 
@@ -50,7 +48,6 @@ function TelemetryViewer() {
     const [experimentId, setExperimentId] = useState<string>('')
     const [runId, setRunId] = useState<string>('')
     const [panelIds, setPanelIds] = useState<string[]>([])
-    const [filtersOpen, setFiltersOpen] = useState(true)
     const [viewMode, setViewMode] = useState<TelemetryViewMode>('live')
     const [draggingPanelId, setDraggingPanelId] = useState<string | null>(null)
     const [dragOverPanelId, setDragOverPanelId] = useState<string | null>(null)
@@ -75,7 +72,6 @@ function TelemetryViewer() {
     const [historyAggBuckets, setHistoryAggBuckets] = useState<TelemetryAggregatedRecord[]>([])
     const [historyLoadedCount, setHistoryLoadedCount] = useState(0)
     const [historyWasTruncated, setHistoryWasTruncated] = useState(false)
-    const [historySessionFilter, setHistorySessionFilter] = useState('')
     const [historySensorFilter, setHistorySensorFilter] = useState('')
     const [showExportModal, setShowExportModal] = useState(false)
     const [historyTimeRange, setHistoryTimeRange] = useState<[string, string] | null>(null)
@@ -124,7 +120,6 @@ function TelemetryViewer() {
             if (typeof parsed.projectId === 'string') setProjectId(parsed.projectId)
             if (typeof parsed.experimentId === 'string') setExperimentId(parsed.experimentId)
             if (typeof parsed.runId === 'string') setRunId(parsed.runId)
-            if (typeof parsed.filtersOpen === 'boolean') setFiltersOpen(parsed.filtersOpen)
             if (parsed.viewMode === 'live' || parsed.viewMode === 'history') setViewMode(parsed.viewMode)
         } catch {
             // ignore malformed local storage
@@ -139,11 +134,10 @@ function TelemetryViewer() {
             projectId,
             experimentId,
             runId,
-            filtersOpen,
             viewMode,
         }
         window.localStorage.setItem('telemetry_viewer_state', JSON.stringify(payload))
-    }, [projectId, experimentId, runId, filtersOpen, viewMode])
+    }, [projectId, experimentId, runId, viewMode])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -275,31 +269,19 @@ function TelemetryViewer() {
         enabled: !!projectId,
     })
 
-    const { data: experimentsData, isLoading: experimentsLoading, error: experimentsError } = useQuery({
+    const { data: experimentsData, isLoading: experimentsLoading } = useQuery({
         queryKey: ['experiments', projectId],
         queryFn: () => experimentsApi.list({ project_id: projectId, page_size: 100 }),
         enabled: !!projectId,
     })
 
-    const { data: runsData, isLoading: runsLoading, error: runsError } = useQuery({
+    const { data: runsData, isLoading: runsLoading } = useQuery({
         queryKey: ['runs', experimentId],
         queryFn: () => runsApi.list(experimentId, { page_size: 100 }),
         enabled: !!experimentId,
     })
 
-    const { data: runDetail, isLoading: runDetailLoading } = useQuery({
-        queryKey: ['run', runId],
-        queryFn: () => runsApi.get(runId),
-        enabled: !!runId,
-    })
-
-    const { data: runExperiment } = useQuery({
-        queryKey: ['experiment', runDetail?.experiment_id],
-        queryFn: () => experimentsApi.get(runDetail!.experiment_id),
-        enabled: !!runDetail?.experiment_id,
-    })
-
-    const { data: captureSessionsData, isLoading: captureSessionsLoading, error: captureSessionsError } = useQuery({
+    const { data: captureSessionsData } = useQuery({
         queryKey: ['capture-sessions', runId],
         queryFn: () => captureSessionsApi.list(runId, { page_size: 200 }),
         enabled: !!runId,
@@ -333,104 +315,10 @@ function TelemetryViewer() {
     const experiments = experimentsData?.experiments || []
     const runs = runsData?.runs || []
     const captureSessions = captureSessionsData?.capture_sessions || []
-    const activeCaptureSession = captureSessions.find(
-        (s: CaptureSession) => s.status === 'running' || s.status === 'backfilling'
-    )
-    const canManageCaptureSession =
-        !!runId &&
-        !!runDetail &&
-        !!runExperiment &&
-        (runDetail.status === 'draft' || runDetail.status === 'running')
-
-    const queryClient = useQueryClient()
-    const createSessionMutation = useMutation({
-        mutationFn: (notes?: string) => {
-            if (!runExperiment) throw new Error('Experiment not loaded')
-            const nextOrdinal =
-                captureSessions.length > 0
-                    ? Math.max(...captureSessions.map((s: CaptureSession) => s.ordinal_number)) + 1
-                    : 1
-            return captureSessionsApi.create(runId, {
-                project_id: runExperiment.project_id,
-                run_id: runId,
-                ordinal_number: nextOrdinal,
-                notes: notes || undefined,
-            }, { project_id: runExperiment.project_id })
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
-            notifySuccess('Отсчёт запущен')
-        },
-        onError: (err: unknown) => {
-            const msg =
-                (err as any)?.response?.data?.message ||
-                (err as any)?.response?.data?.error ||
-                (err as Error)?.message ||
-                'Не удалось запустить отсчёт'
-            notifyError(msg)
-        },
-    })
-
-    const stopSessionMutation = useMutation({
-        mutationFn: (sessionId: string) => captureSessionsApi.stop(runId, sessionId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
-            notifySuccess('Отсчёт остановлен')
-        },
-        onError: (err: unknown) => {
-            const msg =
-                (err as any)?.response?.data?.message ||
-                (err as any)?.response?.data?.error ||
-                (err as Error)?.message ||
-                'Не удалось остановить отсчёт'
-            notifyError(msg)
-        },
-    })
-
-    const startBackfillMutation = useMutation({
-        mutationFn: (sessionId: string) => captureSessionsApi.startBackfill(runId, sessionId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
-            notifySuccess('Догрузка запущена — сессия в режиме backfilling')
-        },
-        onError: (err: unknown) => {
-            const msg =
-                (err as any)?.response?.data?.message ||
-                (err as any)?.response?.data?.error ||
-                (err as Error)?.message ||
-                'Не удалось запустить догрузку'
-            notifyError(msg)
-        },
-    })
-
-    const completeBackfillMutation = useMutation({
-        mutationFn: (sessionId: string) => captureSessionsApi.completeBackfill(runId, sessionId),
-        onSuccess: (data) => {
-            queryClient.invalidateQueries({ queryKey: ['capture-sessions', runId] })
-            const attached = (data as any)?.attached_records ?? 0
-            notifySuccess(`Догрузка завершена — привязано записей: ${attached}`)
-        },
-        onError: (err: unknown) => {
-            const msg =
-                (err as any)?.response?.data?.message ||
-                (err as any)?.response?.data?.error ||
-                (err as Error)?.message ||
-                'Не удалось завершить догрузку'
-            notifyError(msg)
-        },
-    })
 
     const selectedHistorySession = captureSessions.find(
         (s: CaptureSession) => s.id === historyCaptureSessionId
     )
-    const canStartBackfill =
-        viewMode === 'history' &&
-        !!selectedHistorySession &&
-        selectedHistorySession.status === 'succeeded'
-    const canCompleteBackfill =
-        viewMode === 'history' &&
-        !!selectedHistorySession &&
-        selectedHistorySession.status === 'backfilling'
 
     const hasProjects = !!projectsData?.projects?.length
     const isLiveMode = viewMode === 'live'
@@ -617,38 +505,6 @@ function TelemetryViewer() {
             Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
         return Math.min(HISTORY_MAX_POINTS_LIMIT, value)
     }, [historyMaxPoints])
-
-    const historySessionOptions = useMemo(() => {
-        const query = historySessionFilter.trim().toLowerCase()
-        const formatTimestamp = (value?: string | null) => {
-            if (!value) return '—'
-            const date = new Date(value)
-            return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-        }
-        const matchesQuery = (session: CaptureSession) => {
-            if (!query) return true
-            const parts = [
-                session.id,
-                session.ordinal_number,
-                session.status,
-                session.notes,
-                session.started_at,
-                session.stopped_at,
-            ]
-                .filter(Boolean)
-                .join(' ')
-                .toLowerCase()
-            return parts.includes(query)
-        }
-        return captureSessions
-            .filter(matchesQuery)
-            .map((session) => ({
-                id: session.id,
-                label: `#${session.ordinal_number} · ${session.status} · ${formatTimestamp(session.started_at)} → ${formatTimestamp(
-                    session.stopped_at
-                )}`,
-            }))
-    }, [captureSessions, historySessionFilter])
 
     const historyHasData = useMemo(
         () =>
@@ -883,7 +739,7 @@ function TelemetryViewer() {
             if (historyUseAggregated) {
                 // --- Aggregated (1m buckets from continuous aggregate) ---
                 const safeLimit = Math.min(
-                    settings.telemetry_query_max_limit ?? HISTORY_MAX_POINTS_LIMIT,
+                    HISTORY_MAX_POINTS_LIMIT,
                     Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT,
                 )
                 const resp = await telemetryApi.aggregated({
@@ -928,24 +784,6 @@ function TelemetryViewer() {
         }
     }
 
-    // Placeholder for settings object used above (avoids introducing a new dependency)
-    const settings = { telemetry_query_max_limit: HISTORY_MAX_POINTS_LIMIT }
-    const selectedProjectName =
-        projectsData?.projects.find((project) => project.id === projectId)?.name || 'Проект не выбран'
-    const selectedExperimentName =
-        experiments.find((experiment) => experiment.id === experimentId)?.name || 'Эксперимент не выбран'
-    const selectedRunName = runs.find((run) => run.id === runId)?.name || 'Пуск не выбран'
-    const selectedSessionLabel = selectedHistorySession
-        ? `#${selectedHistorySession.ordinal_number}`
-        : activeCaptureSession
-            ? `#${activeCaptureSession.ordinal_number}`
-            : 'Нет'
-    const telemetryModeLabel = viewMode === 'live' ? 'Live stream' : 'History review'
-    const telemetryModeDetail =
-        viewMode === 'live'
-            ? `${panelIds.length} панелей в рабочем полотне`
-            : `${historyLoadedCount || 0} ${historyUseAggregated ? 'бакетов' : 'точек'} в выборке`
-
     return (
         <div className="telemetry-view detail-page">
             {projectsLoading && <Loading message="Загрузка проектов..." />}
@@ -956,49 +794,8 @@ function TelemetryViewer() {
 
             {hasProjects && (
                 <>
-                    <section className="compact-page-header card telemetry-view__hero">
-                        <div className="compact-page-header__top">
-                            <div className="compact-page-header__main">
-                                <div className="compact-page-header__eyebrow">Signal Stream</div>
-                                <div className="compact-page-header__title-row">
-                                    <h2 className="compact-page-header__title">Telemetry Viewer</h2>
-                                </div>
-                                <p className="compact-page-header__description">Live и history в одном рабочем окне.</p>
-                            </div>
-                        </div>
-                        <div className="compact-page-header__meta telemetry-view__hero-pills">
-                            <span className="meta-chip">mode: {telemetryModeLabel}</span>
-                            <span className="meta-chip">project: {selectedProjectName}</span>
-                            {experimentId && <span className="meta-chip">experiment: {selectedExperimentName}</span>}
-                            {runId && <span className="meta-chip">run: {selectedRunName}</span>}
-                            <span className="meta-chip">sensors: {sensors.length}</span>
-                            <span className="meta-chip">session: {selectedSessionLabel}</span>
-                            <span className="meta-chip">{telemetryModeDetail}</span>
-                        </div>
-                    </section>
-
                     <div className={`telemetry-view__workspace telemetry-view__workspace--${viewMode}`}>
-                        <section
-                            className={`telemetry-view__filters card${filtersOpen ? '' : ' telemetry-view__filters--collapsed'}`}
-                        >
-                            <div className="telemetry-view__filters-topbar">
-                                <div className="telemetry-view__filters-copy">
-                                    <div className="filter-panel__title">Signal Route</div>
-                                    <p className="filter-panel__subtitle">
-                                        Определите контур данных: проект, эксперимент, запуск и режим просмотра.
-                                    </p>
-                                </div>
-
-                                <button
-                                    type="button"
-                                    className="telemetry-view__collapse"
-                                    onClick={() => setFiltersOpen((prev) => !prev)}
-                                    aria-label={filtersOpen ? 'Свернуть фильтры' : 'Развернуть фильтры'}
-                                >
-                                    {filtersOpen ? 'Свернуть' : 'Показать фильтры'}
-                                </button>
-                            </div>
-
+                        <section className="telemetry-view__filters card">
                             <div className="filter-capsule signal-route-capsule">
                                 <LiveSwitch
                                     live={viewMode === 'live'}
@@ -1060,192 +857,6 @@ function TelemetryViewer() {
                                         </option>
                                     ))}
                                 </MaterialSelect>
-                            </div>
-
-                            <div
-                                className={`telemetry-view__filters-body${filtersOpen ? ' telemetry-view__filters-body--open' : ''}`}
-                                aria-hidden={!filtersOpen}
-                            >
-                                <div className="telemetry-view__grid">
-                                {canManageCaptureSession && (
-                                    <div className="telemetry-view__capture-actions form-group">
-                                        <label className="telemetry-view__capture-actions-label">
-                                            Отсчёт (capture session)
-                                        </label>
-                                        <div className="telemetry-view__capture-actions-btns">
-                                            {activeCaptureSession ? (
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-danger btn-sm"
-                                                    onClick={() => {
-                                                        if (window.confirm('Остановить отсчёт?')) {
-                                                            stopSessionMutation.mutate(activeCaptureSession.id)
-                                                        }
-                                                    }}
-                                                    disabled={stopSessionMutation.isPending}
-                                                >
-                                                    {stopSessionMutation.isPending ? 'Остановка...' : 'Остановить отсчёт'}
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-primary btn-sm"
-                                                    onClick={() => {
-                                                        const notes = window.prompt('Заметки (опционально):')
-                                                        if (notes === null) return
-                                                        createSessionMutation.mutate(notes.trim() || undefined)
-                                                    }}
-                                                    disabled={
-                                                        createSessionMutation.isPending ||
-                                                        runDetailLoading ||
-                                                        !runExperiment
-                                                    }
-                                                >
-                                                    {createSessionMutation.isPending ? 'Создание...' : 'Старт отсчёта'}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {viewMode === 'history' && (
-                                    <div className="form-group">
-                                        <label htmlFor="telemetry_capture_session_filter">Фильтр сессий</label>
-                                        <input
-                                            id="telemetry_capture_session_filter"
-                                            type="text"
-                                            className="telemetry-view__text-input"
-                                            value={historySessionFilter}
-                                            onChange={(event) => setHistorySessionFilter(event.target.value)}
-                                            placeholder="Номер, статус, заметка, дата"
-                                        />
-                                    </div>
-                                )}
-
-                                {viewMode === 'history' && (
-                                    <MaterialSelect
-                                        id="telemetry_capture_session_id"
-                                        label="Capture session"
-                                        value={historyCaptureSessionId}
-                                        onChange={setHistoryCaptureSessionId}
-                                        placeholder="Выберите сессию"
-                                        disabled={!runId || captureSessionsLoading}
-                                    >
-                                        {historySessionOptions.length === 0 && (
-                                            <option value="" disabled>
-                                                {historySessionFilter.trim()
-                                                    ? 'Ничего не найдено'
-                                                    : 'Нет доступных сессий'}
-                                            </option>
-                                        )}
-                                        {historySessionOptions.map((session) => (
-                                            <option key={session.id} value={session.id}>
-                                                {session.label}
-                                            </option>
-                                        ))}
-                                    </MaterialSelect>
-                                )}
-
-                                {(canStartBackfill || canCompleteBackfill) && (
-                                    <div className="telemetry-view__backfill-actions form-group">
-                                        <label>Догрузка данных (backfill)</label>
-                                        <div className="telemetry-view__backfill-btns">
-                                            {canStartBackfill && (
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-secondary btn-sm"
-                                                    disabled={startBackfillMutation.isPending}
-                                                    onClick={() => {
-                                                        if (
-                                                            window.confirm(
-                                                                'Перевести сессию в режим догрузки (backfilling)?\n\n' +
-                                                                'Новые данные от датчиков будут привязаны к этой сессии.'
-                                                            )
-                                                        ) {
-                                                            startBackfillMutation.mutate(historyCaptureSessionId)
-                                                        }
-                                                    }}
-                                                >
-                                                    {startBackfillMutation.isPending ? 'Запуск...' : 'Начать догрузку'}
-                                                </button>
-                                            )}
-                                            {canCompleteBackfill && (
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-primary btn-sm"
-                                                    disabled={completeBackfillMutation.isPending}
-                                                    onClick={() => {
-                                                        if (
-                                                            window.confirm(
-                                                                'Завершить догрузку?\n\n' +
-                                                                'Все late-записи будут привязаны к сессии, статус вернётся в succeeded.'
-                                                            )
-                                                        ) {
-                                                            completeBackfillMutation.mutate(historyCaptureSessionId)
-                                                        }
-                                                    }}
-                                                >
-                                                    {completeBackfillMutation.isPending
-                                                        ? 'Завершение...'
-                                                        : 'Завершить догрузку'}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            </div>
-                            <div className="telemetry-view__status-stack">
-                                {isLoading && <Loading message="Загрузка датчиков..." />}
-                                {error && (
-                                    <ErrorComponent
-                                        message={
-                                            error instanceof Error
-                                                ? error.message
-                                                : 'Ошибка загрузки датчиков. Убедитесь, что выбран проект.'
-                                        }
-                                    />
-                                )}
-                                {!isLoading && !error && projectId && sensors.length === 0 && (
-                                    <EmptyState message="В выбранном проекте нет датчиков." />
-                                )}
-                                {experimentsLoading && <Loading message="Загрузка экспериментов..." />}
-                                {!experimentsLoading && experimentsError && (
-                                    <ErrorComponent
-                                        message={
-                                            experimentsError instanceof Error
-                                                ? experimentsError.message
-                                                : 'Ошибка загрузки экспериментов.'
-                                        }
-                                    />
-                                )}
-                                {runsLoading && <Loading message="Загрузка запусков..." />}
-                                {!runsLoading && runsError && (
-                                    <ErrorComponent
-                                        message={
-                                            runsError instanceof Error ? runsError.message : 'Ошибка загрузки запусков.'
-                                        }
-                                    />
-                                )}
-                                {viewMode === 'history' && captureSessionsLoading && (
-                                    <Loading message="Загрузка сессий..." />
-                                )}
-                                {viewMode === 'history' && captureSessionsError && (
-                                    <ErrorComponent
-                                        message={
-                                            captureSessionsError instanceof Error
-                                                ? captureSessionsError.message
-                                                : 'Ошибка загрузки сессий.'
-                                        }
-                                    />
-                                )}
-                                {viewMode === 'history' &&
-                                    !captureSessionsLoading &&
-                                    !captureSessionsError &&
-                                    runId &&
-                                    captureSessions.length === 0 && (
-                                        <EmptyState message="В выбранном запуске нет capture sessions." />
-                                    )}
                             </div>
                         </section>
 
