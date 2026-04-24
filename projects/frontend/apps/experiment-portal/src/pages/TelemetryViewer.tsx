@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
-import { EmptyState, Error as ErrorComponent, FloatingActionButton, LiveSwitch, Loading, MaterialSelect, FolderIcon, FlaskIcon, PlayCircleIcon } from '../components/common'
+import { EmptyState, Error as ErrorComponent, FloatingActionButton, LiveSwitch, Loading, MaterialSelect, FolderIcon, FlaskIcon, PlayCircleIcon, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
 import TelemetryExportModal from '../components/TelemetryExportModal'
 import CaptureSessionTimeline from '../components/CaptureSessionTimeline'
@@ -81,6 +81,8 @@ function TelemetryViewer() {
     const [historyTimeRange, setHistoryTimeRange] = useState<[string, string] | null>(null)
     const [recentValuesBySensor, setRecentValuesBySensor] = useState<Record<string, number[]>>({})
     const RECENT_VALUES_MAX = 30
+    const [showHistorySettings, setShowHistorySettings] = useState(false)
+    const historySettingsRef = useRef<HTMLDivElement | null>(null)
 
     const handleRecordReceived = useCallback((sensorId: string, value: number) => {
         setRecentValuesBySensor(prev => {
@@ -797,6 +799,17 @@ function TelemetryViewer() {
         }
     }, [])
 
+    useEffect(() => {
+        if (!showHistorySettings) return
+        const handleClickOutside = (e: MouseEvent) => {
+            if (historySettingsRef.current && !historySettingsRef.current.contains(e.target as Node)) {
+                setShowHistorySettings(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [showHistorySettings])
+
     const addHistorySensor = (sensorId: string) => {
         if (!sensorId) return
         setHistorySensorIds((prev) => {
@@ -1342,14 +1355,134 @@ function TelemetryViewer() {
                             </div>
                         ) : (
                             <section className="telemetry-view__history card detail-card">
-                                <div className="detail-section-header">
-                                    <div className="detail-section-header__copy">
-                                        <span className="detail-card__eyebrow">History Window</span>
-                                        <h3 className="detail-card__title">Историческая выборка</h3>
-                                        <p>
-                                            Собирайте срез по capture session, переключайте raw/physical и
-                                            продолжайте поток прямо из последней исторической точки.
-                                        </p>
+                                <div className="history-panel-header">
+                                    <div className="history-panel-header__copy">
+                                        <span className="detail-card__eyebrow">History</span>
+                                        <h3 className="detail-card__title">
+                                            {selectedHistorySession
+                                                ? `Capture #${selectedHistorySession.ordinal_number}`
+                                                : 'Историческая выборка'}
+                                        </h3>
+                                        {selectedHistorySession?.started_at && (
+                                            <div className="history-panel-header__sub">
+                                                {new Date(selectedHistorySession.started_at).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                                                {selectedHistorySession.stopped_at && ` → ${new Date(selectedHistorySession.stopped_at).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}`}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="history-panel-header__actions">
+                                        <button
+                                            type="button"
+                                            className="pill-btn pill-btn--primary"
+                                            onClick={loadHistory}
+                                            disabled={historyLoading || !historyCaptureSessionId || historySensorOverLimit}
+                                        >
+                                            <RefreshCwIcon />
+                                            {historyLoading ? 'Загрузка…' : 'Загрузить'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="pill-btn"
+                                            onClick={continueHistoryInLive}
+                                            disabled={historyLoading || historyEffectiveSensorIds.length === 0 || !historyLastTimestamp}
+                                            title="Переключиться в live и продолжить с последних точек истории"
+                                        >
+                                            <ArrowRightIcon />
+                                            Продолжить в live
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="pill-btn"
+                                            onClick={() => setShowExportModal(true)}
+                                            disabled={!historyCaptureSessionId || !runId}
+                                            title="Открыть диалог настроек экспорта телеметрии"
+                                        >
+                                            <ExportIcon />
+                                            Экспорт…
+                                        </button>
+                                        <div className="history-settings-wrap" ref={historySettingsRef}>
+                                            <button
+                                                type="button"
+                                                className="pill-btn"
+                                                aria-expanded={showHistorySettings}
+                                                onClick={() => setShowHistorySettings((prev) => !prev)}
+                                            >
+                                                <SettingsIcon />
+                                                Настройки
+                                            </button>
+                                            {showHistorySettings && (
+                                                <div className="history-settings-popover" role="dialog" aria-label="Дополнительные настройки">
+                                                    <span className="hsp-arrow" />
+                                                    <div className="hsp-section-title">Данные</div>
+                                                    <div className="hsp-row">
+                                                        <span className="hsp-name">
+                                                            Включать поздние точки
+                                                            <span className="hsp-hint"> (include late)</span>
+                                                        </span>
+                                                        <label className="history-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={historyIncludeLate}
+                                                                onChange={(e) => setHistoryIncludeLate(e.target.checked)}
+                                                                disabled={historyUseAggregated}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    <div className="hsp-row">
+                                                        <span className="hsp-name">
+                                                            Агрегация 1 мин
+                                                            <span className="hsp-hint"> (avg / min / max)</span>
+                                                        </span>
+                                                        <label className="history-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={historyUseAggregated}
+                                                                onChange={(e) => setHistoryUseAggregated(e.target.checked)}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    <div className="hsp-section-title">Отображение</div>
+                                                    <div className="hsp-row">
+                                                        <span className="hsp-name">Порядок</span>
+                                                        <div className="history-seg">
+                                                            <label className={historyOrder === 'asc' ? 'on' : ''}>
+                                                                <input type="radio" name="hsp-order" checked={historyOrder === 'asc'} onChange={() => setHistoryOrder('asc')} />
+                                                                <span>от начала</span>
+                                                            </label>
+                                                            <label className={historyOrder === 'desc' ? 'on' : ''}>
+                                                                <input type="radio" name="hsp-order" checked={historyOrder === 'desc'} onChange={() => setHistoryOrder('desc')} />
+                                                                <span>последние</span>
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div className="hsp-row">
+                                                        <span className="hsp-name">Значения</span>
+                                                        <div className="history-seg">
+                                                            <label className={historyValueMode === 'physical' ? 'on' : ''}>
+                                                                <input type="radio" name="hsp-value-mode" checked={historyValueMode === 'physical'} onChange={() => setHistoryValueMode('physical')} />
+                                                                <span>physical</span>
+                                                            </label>
+                                                            <label className={historyValueMode === 'raw' ? 'on' : ''}>
+                                                                <input type="radio" name="hsp-value-mode" checked={historyValueMode === 'raw'} onChange={() => setHistoryValueMode('raw')} />
+                                                                <span>raw</span>
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div className="hsp-section-title">Данные</div>
+                                                    <div className="hsp-row">
+                                                        <span className="hsp-name">Максимум точек</span>
+                                                        <input
+                                                            type="number"
+                                                            min={100}
+                                                            max={20000}
+                                                            className="hsp-number-input"
+                                                            value={historyMaxPoints}
+                                                            onChange={(e) => setHistoryMaxPoints(Number(e.target.value || HISTORY_MAX_POINTS_DEFAULT))}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1430,115 +1563,6 @@ function TelemetryViewer() {
                                             )
                                         })}
                                     </div>
-                                    </div>
-
-                                    <div className="telemetry-view__history-options">
-                                    <label>
-                                        <span>max points</span>
-                                        <input
-                                            type="number"
-                                            min={100}
-                                            max={20000}
-                                            value={historyMaxPoints}
-                                            onChange={(e) =>
-                                                setHistoryMaxPoints(
-                                                    Number(e.target.value || HISTORY_MAX_POINTS_DEFAULT)
-                                                )
-                                            }
-                                        />
-                                    </label>
-                                    <label className="telemetry-view__checkbox">
-                                        <input
-                                            type="checkbox"
-                                            checked={historyIncludeLate}
-                                            onChange={(e) => setHistoryIncludeLate(e.target.checked)}
-                                            disabled={historyUseAggregated}
-                                        />
-                                        include late
-                                    </label>
-                                    <label
-                                        className="telemetry-view__checkbox"
-                                        title="Загрузить агрегированные данные (1-минутные бакеты: avg/min/max) вместо сырых точек"
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={historyUseAggregated}
-                                            onChange={(e) => setHistoryUseAggregated(e.target.checked)}
-                                        />
-                                        агрегация 1m
-                                    </label>
-                                    <div className="telemetry-view__mode-toggle">
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="history-order"
-                                                checked={historyOrder === 'asc'}
-                                                onChange={() => setHistoryOrder('asc')}
-                                            />
-                                            от начала
-                                        </label>
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="history-order"
-                                                checked={historyOrder === 'desc'}
-                                                onChange={() => setHistoryOrder('desc')}
-                                            />
-                                            последние
-                                        </label>
-                                    </div>
-                                    <div className="telemetry-view__mode-toggle">
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="history-value-mode"
-                                                checked={historyValueMode === 'physical'}
-                                                onChange={() => setHistoryValueMode('physical')}
-                                            />
-                                            physical
-                                        </label>
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="history-value-mode"
-                                                checked={historyValueMode === 'raw'}
-                                                onChange={() => setHistoryValueMode('raw')}
-                                            />
-                                            raw
-                                        </label>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        className="btn btn-primary btn-sm"
-                                        onClick={loadHistory}
-                                        disabled={
-                                            historyLoading || !historyCaptureSessionId || historySensorOverLimit
-                                        }
-                                    >
-                                        {historyLoading ? 'Загрузка...' : 'Загрузить'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary btn-sm"
-                                        onClick={continueHistoryInLive}
-                                        disabled={
-                                            historyLoading ||
-                                            historyEffectiveSensorIds.length === 0 ||
-                                            !historyLastTimestamp
-                                        }
-                                        title="Переключиться в live и продолжить с последних точек истории"
-                                    >
-                                        Продолжить в live
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary btn-sm"
-                                        onClick={() => setShowExportModal(true)}
-                                        disabled={!historyCaptureSessionId || !runId}
-                                        title="Открыть диалог настроек экспорта телеметрии"
-                                    >
-                                        Экспорт данных…
-                                    </button>
                                     </div>
                                 </div>
 
