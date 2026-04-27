@@ -55,18 +55,12 @@ import type {
   SensorErrorLogResponse,
   RunSensor,
 } from '../types'
-import { generateRequestId } from '../utils/uuid'
-import { getTraceId } from '../utils/trace'
 import { getCsrfToken } from '../utils/csrf'
 import { getActiveProjectId } from '../utils/activeProject'
-import {
-  buildHttpDebugInfoFromFetch,
-  maybeEmitHttpErrorToast,
-  maybeEmitHttpErrorToastFromAxiosError,
-  truncateString,
-} from '../utils/httpDebug'
+import { maybeEmitHttpErrorToastFromAxiosError } from '../utils/httpDebug'
 import { createAuthProxyClient } from './http/axiosInstance'
 import { AUTH_PROXY_URL, TELEMETRY_BASE_URL } from './http/baseUrl'
+import { apiFetch, makeFetchHeaders } from './http/apiFetch'
 
 export const apiClient = createAuthProxyClient({ timeout: 30000, skipDebugToast: true })
 
@@ -544,22 +538,12 @@ export const telemetryApi = {
       url.searchParams.set('idle_timeout_seconds', String(params.idle_timeout_seconds))
     }
 
-    const makeHeaders = () => {
-      const traceId = getTraceId()
-      const requestId = generateRequestId()
-      return {
-        'X-Trace-Id': traceId,
-        'X-Request-Id': requestId,
-      } as Record<string, string>
-    }
-
     const tryRefresh = async () => {
-      const refreshHeaders = makeHeaders()
       const csrf = getCsrfToken()
       const refreshResp = await fetch(`${AUTH_PROXY_URL}/auth/refresh`, {
         method: 'POST',
         headers: {
-          ...refreshHeaders,
+          ...makeFetchHeaders(),
           'Content-Type': 'application/json',
           ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
         },
@@ -569,7 +553,7 @@ export const telemetryApi = {
       return refreshResp.ok
     }
 
-    const headers = makeHeaders()
+    const headers = makeFetchHeaders()
     const debug = { url: url.toString(), headers, method: 'GET' }
     try {
       const response = await fetch(debug.url, {
@@ -580,7 +564,7 @@ export const telemetryApi = {
       if (response.status === 401) {
         const refreshed = await tryRefresh()
         if (refreshed) {
-          const retryHeaders = makeHeaders()
+          const retryHeaders = makeFetchHeaders()
           const retryDebug = { url: url.toString(), headers: retryHeaders, method: 'GET' }
           const retryResponse = await fetch(retryDebug.url, {
             method: retryDebug.method,
@@ -622,36 +606,7 @@ export const telemetryApi = {
       url.searchParams.set('order', params.order)
     }
 
-    const headers = {
-      'X-Trace-Id': getTraceId(),
-      'X-Request-Id': generateRequestId(),
-    }
-
-    const resp = await fetch(url.toString(), {
-      method: 'GET',
-      headers,
-      credentials: 'include',
-    })
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '')
-      const bodyText = truncateString(text || '')
-      maybeEmitHttpErrorToast(
-        buildHttpDebugInfoFromFetch({
-          message: text || `Ошибка запроса: HTTP ${resp.status}`,
-          request: { method: 'GET', url: url.toString(), headers },
-          response: {
-            status: resp.status,
-            statusText: resp.statusText,
-            headers: Object.fromEntries(resp.headers.entries()),
-            body: bodyText,
-          },
-        })
-      )
-      throw new Error(text || `Ошибка запроса: HTTP ${resp.status}`)
-    }
-
-    return (await resp.json()) as TelemetryQueryResponse
+    return apiFetch<TelemetryQueryResponse>(url.toString())
   },
 
   aggregated: async (params: {
@@ -678,36 +633,7 @@ export const telemetryApi = {
       url.searchParams.set('order', params.order)
     }
 
-    const headers = {
-      'X-Trace-Id': getTraceId(),
-      'X-Request-Id': generateRequestId(),
-    }
-
-    const resp = await fetch(url.toString(), {
-      method: 'GET',
-      headers,
-      credentials: 'include',
-    })
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '')
-      const bodyText = truncateString(text || '')
-      maybeEmitHttpErrorToast(
-        buildHttpDebugInfoFromFetch({
-          message: text || `Ошибка запроса: HTTP ${resp.status}`,
-          request: { method: 'GET', url: url.toString(), headers },
-          response: {
-            status: resp.status,
-            statusText: resp.statusText,
-            headers: Object.fromEntries(resp.headers.entries()),
-            body: bodyText,
-          },
-        })
-      )
-      throw new Error(text || `Ошибка запроса: HTTP ${resp.status}`)
-    }
-
-    return (await resp.json()) as TelemetryAggregatedResponse
+    return apiFetch<TelemetryAggregatedResponse>(url.toString())
   },
 }
 
