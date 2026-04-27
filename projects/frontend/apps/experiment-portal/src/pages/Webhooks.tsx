@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { webhooksApi } from '../api/client'
 import { format } from 'date-fns'
 import type { WebhookSubscription, WebhookDelivery } from '../types'
 import { Loading, Error as ErrorComponent, EmptyState } from '../components/common'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifyError } from '../utils/notify'
 import { createWebhookSchema, flatFieldErrors } from '../schemas/forms'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './Webhooks.scss'
 
 const PAGE_SIZE = 20
@@ -22,7 +23,6 @@ const KNOWN_EVENT_TYPES = [
 ]
 
 function Webhooks() {
-  const queryClient = useQueryClient()
 
   // --- Subscriptions ---
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -57,42 +57,26 @@ function Webhooks() {
     createMutation.mutate(result.data)
   }
 
-  const createMutation = useMutation({
+  const createMutation = useApiMutation({
     mutationFn: (data: { target_url: string; event_types: string[]; secret?: string }) =>
       webhooksApi.create(data),
+    invalidateKeys: [['webhooks']],
+    successMessage: 'Webhook создан',
+    errorFallback: 'Не удалось создать webhook',
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['webhooks'] })
       setShowCreateForm(false)
       setFormUrl('')
       setFormEventTypes('')
       setFormSecret('')
       setFormFieldErrors({})
-      notifySuccess('Webhook создан')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось создать webhook'
-      notifyError(msg)
     },
   })
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useApiMutation({
     mutationFn: (id: string) => webhooksApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['webhooks'] })
-      notifySuccess('Webhook удалён')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось удалить webhook'
-      notifyError(msg)
-    },
+    invalidateKeys: [['webhooks']],
+    successMessage: 'Webhook удалён',
+    errorFallback: 'Не удалось удалить webhook',
   })
 
   // --- Deliveries ---
@@ -113,20 +97,11 @@ function Webhooks() {
       }),
   })
 
-  const retryMutation = useMutation({
+  const retryMutation = useApiMutation({
     mutationFn: (deliveryId: string) => webhooksApi.retryDelivery(deliveryId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['webhook-deliveries'] })
-      notifySuccess('Повторная доставка запрошена')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось повторить доставку'
-      notifyError(msg)
-    },
+    invalidateKeys: [['webhook-deliveries']],
+    successMessage: 'Повторная доставка запрошена',
+    errorFallback: 'Не удалось повторить доставку',
   })
 
   const subscriptions = subscriptionsData?.webhooks || []
