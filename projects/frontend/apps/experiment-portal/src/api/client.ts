@@ -57,26 +57,18 @@ import type {
 } from '../types'
 import { generateRequestId } from '../utils/uuid'
 import { getTraceId } from '../utils/trace'
-import { getActiveProjectId } from '../utils/activeProject'
 import { getCsrfToken } from '../utils/csrf'
+import { getActiveProjectId } from '../utils/activeProject'
 import {
   buildHttpDebugInfoFromFetch,
   maybeEmitHttpErrorToast,
   maybeEmitHttpErrorToastFromAxiosError,
   truncateString,
 } from '../utils/httpDebug'
+import { createAuthProxyClient } from './http/axiosInstance'
+import { AUTH_PROXY_URL, TELEMETRY_BASE_URL } from './http/baseUrl'
 
-// API работает через Auth Proxy, который автоматически добавляет токен из куки
-const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
-
-export const apiClient = axios.create({
-  baseURL: AUTH_PROXY_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true, // Важно для работы с HttpOnly куками
-  timeout: 30000, // 30 секунд таймаут
-})
+export const apiClient = createAuthProxyClient({ timeout: 30000, skipDebugToast: true })
 
 function _extractProjectIdFromData(data: unknown): string | undefined {
   if (!data) return undefined
@@ -148,35 +140,7 @@ export async function apiDelete<T = any>(url: string, config?: AxiosRequestConfi
   return response.data
 }
 
-// Interceptor для добавления trace_id и request_id в заголовки
-apiClient.interceptors.request.use(
-  (config) => {
-    // Генерируем request_id для каждого запроса
-    const requestId = generateRequestId()
-    const traceId = getTraceId()
-
-    // Добавляем заголовки
-    config.headers['X-Trace-Id'] = traceId
-    config.headers['X-Request-Id'] = requestId
-
-    // CSRF (double-submit cookie) for cookie-authenticated, state-changing requests.
-    const method = (config.method || 'get').toUpperCase()
-    const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
-    if (isStateChanging) {
-      const csrf = getCsrfToken()
-      if (csrf) {
-        config.headers['X-CSRF-Token'] = csrf
-      }
-    }
-
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
-
-// Обработка ошибок и автоматическое обновление токена
+// 401-refresh and debug toast — layered on top of the shared createAuthProxyClient interceptors
 apiClient.interceptors.response.use(
   (response) => {
     return response
@@ -198,9 +162,8 @@ apiClient.interceptors.response.use(
 
       try {
         // Пытаемся обновить токен через Auth Proxy
-        const authProxyUrl = import.meta.env.VITE_AUTH_PROXY_URL || 'http://localhost:8080'
         await axios.post(
-          `${authProxyUrl}/auth/refresh`,
+          `${AUTH_PROXY_URL}/auth/refresh`,
           {},
           { withCredentials: true }
         )
@@ -539,13 +502,12 @@ export const telemetryApi = {
     // By default, route telemetry through Auth Proxy (same-origin / unified CORS),
     // while preserving sensor token via Authorization header.
     // You can override with direct telemetry-ingest-service URL via VITE_TELEMETRY_INGEST_URL.
-    const TELEMETRY_BASE_URL =
-      import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
     const response = await apiClient.post<TelemetryIngestResponse>(
       '/api/v1/telemetry',
       data,
       {
         baseURL: TELEMETRY_BASE_URL,
+
         headers: {
           'Authorization': `Bearer ${sensorToken}`,
           'Content-Type': 'application/json',
@@ -567,8 +529,7 @@ export const telemetryApi = {
   ): Promise<{ response: Response; debug: { url: string; headers: Record<string, string>; method: string } }> => {
     // Stream is user-authenticated via auth-proxy session cookies.
     // Do NOT attach sensor token here (UI doesn't ask for it anymore).
-    const streamBase = AUTH_PROXY_URL || window.location.origin
-    const url = new URL(`${streamBase}/api/v1/telemetry/stream`)
+    const url = new URL(`${AUTH_PROXY_URL}/api/v1/telemetry/stream`)
     url.searchParams.set('sensor_id', params.sensor_id)
     const activeProjectId = getActiveProjectId()
     if (activeProjectId) {
@@ -645,8 +606,6 @@ export const telemetryApi = {
     include_late?: boolean
     order?: 'asc' | 'desc'
   }): Promise<TelemetryQueryResponse> => {
-    const TELEMETRY_BASE_URL =
-      import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
     const url = new URL(`${TELEMETRY_BASE_URL}/api/v1/telemetry/query`)
     url.searchParams.set('capture_session_id', params.capture_session_id)
     if (Array.isArray(params.sensor_id)) {
@@ -704,8 +663,6 @@ export const telemetryApi = {
     limit?: number
     order?: 'asc' | 'desc'
   }): Promise<TelemetryAggregatedResponse> => {
-    const TELEMETRY_BASE_URL =
-      import.meta.env.VITE_TELEMETRY_INGEST_URL || AUTH_PROXY_URL
     const url = new URL(`${TELEMETRY_BASE_URL}/api/v1/telemetry/aggregated`)
     url.searchParams.set('capture_session_id', params.capture_session_id)
     if (Array.isArray(params.sensor_id)) {

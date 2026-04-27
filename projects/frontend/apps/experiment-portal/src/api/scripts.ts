@@ -1,4 +1,3 @@
-import axios from 'axios'
 import type {
   Script,
   ScriptCreate,
@@ -7,14 +6,9 @@ import type {
   ScriptsListResponse,
   ExecutionsListResponse,
 } from '../types/scripts'
+import { createAuthProxyClient } from './http/axiosInstance'
 
-const AUTH_PROXY_URL = import.meta.env.VITE_AUTH_PROXY_URL ?? 'http://localhost:8080'
-
-const client = axios.create({
-  baseURL: AUTH_PROXY_URL,
-  headers: { 'Content-Type': 'application/json' },
-  withCredentials: true,
-})
+const client = createAuthProxyClient()
 
 export interface ScriptsListParams {
   target_service?: string
