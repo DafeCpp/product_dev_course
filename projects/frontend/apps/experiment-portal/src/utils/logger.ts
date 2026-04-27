@@ -1,11 +1,6 @@
-/**
- * Logger utility with DEV-only output.
- * In test/production modes, logs are suppressed.
- */
-const isDev = import.meta.env.DEV
-
+/** Logger utility with DEV-only output. Suppressed in test and production. */
 function shouldLog(): boolean {
-  return isDev
+  return import.meta.env.DEV
 }
 
 export const logger = {

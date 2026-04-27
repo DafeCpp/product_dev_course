@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { logger } from './logger'
 
-describe('logger', () => {
+describe('logger in DEV mode', () => {
   beforeEach(() => {
+    vi.stubEnv('DEV', 'true')
     vi.spyOn(console, 'debug').mockImplementation(() => {})
     vi.spyOn(console, 'info').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -10,58 +11,63 @@ describe('logger', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
   })
 
-  it('logger methods exist', () => {
-    expect(typeof logger.debug).toBe('function')
-    expect(typeof logger.info).toBe('function')
-    expect(typeof logger.warn).toBe('function')
-    expect(typeof logger.error).toBe('function')
-  })
-
-  it('debug logs only in DEV mode', () => {
-    const isDev = import.meta.env.DEV
+  it('debug calls console.debug with formatted message', () => {
     logger.debug('test message', { data: 123 })
-
-    if (isDev) {
-      expect(console.debug).toHaveBeenCalledWith('[DEBUG] test message', { data: 123 })
-    } else {
-      expect(console.debug).not.toHaveBeenCalled()
-    }
+    expect(console.debug).toHaveBeenCalledWith('[DEBUG] test message', { data: 123 })
   })
 
-  it('info logs only in DEV mode', () => {
-    const isDev = import.meta.env.DEV
+  it('info calls console.info', () => {
     logger.info('info message')
-
-    if (isDev) {
-      expect(console.info).toHaveBeenCalledWith('[INFO] info message', undefined)
-    } else {
-      expect(console.info).not.toHaveBeenCalled()
-    }
+    expect(console.info).toHaveBeenCalledWith('[INFO] info message', undefined)
   })
 
-  it('warn logs only in DEV mode', () => {
-    const isDev = import.meta.env.DEV
+  it('warn calls console.warn', () => {
     logger.warn('warn message')
-
-    if (isDev) {
-      expect(console.warn).toHaveBeenCalledWith('[WARN] warn message', undefined)
-    } else {
-      expect(console.warn).not.toHaveBeenCalled()
-    }
+    expect(console.warn).toHaveBeenCalledWith('[WARN] warn message', undefined)
   })
 
-  it('error logs only in DEV mode', () => {
-    const isDev = import.meta.env.DEV
+  it('error calls console.error', () => {
     const err = new Error('test error')
     logger.error('error occurred', err)
+    expect(console.error).toHaveBeenCalledWith('[ERROR] error occurred', err)
+  })
+})
 
-    if (isDev) {
-      expect(console.error).toHaveBeenCalledWith('[ERROR] error occurred', err)
-    } else {
-      expect(console.error).not.toHaveBeenCalled()
-    }
+describe('logger in non-DEV mode', () => {
+  beforeEach(() => {
+    vi.stubEnv('DEV', '')
+    vi.spyOn(console, 'debug').mockImplementation(() => {})
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it('suppresses debug logs', () => {
+    logger.debug('test')
+    expect(console.debug).not.toHaveBeenCalled()
+  })
+
+  it('suppresses info logs', () => {
+    logger.info('test')
+    expect(console.info).not.toHaveBeenCalled()
+  })
+
+  it('suppresses warn logs', () => {
+    logger.warn('test')
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('suppresses error logs', () => {
+    logger.error('test')
+    expect(console.error).not.toHaveBeenCalled()
   })
 })
