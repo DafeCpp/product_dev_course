@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
 import { telemetryApi } from '../api/client'
 import type { TelemetryIngest } from '../types'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifyError } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './TestTelemetryModal.scss'
 
 interface TestTelemetryModalProps {
@@ -21,29 +21,23 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
     const [error, setError] = useState<string | null>(null)
     const [success, setSuccess] = useState<string | null>(null)
 
-    const ingestMutation = useMutation({
+    const ingestMutation = useApiMutation({
         mutationFn: (data: TelemetryIngest) => {
             if (!token) {
                 throw new Error('Токен датчика обязателен')
             }
             return telemetryApi.ingest(data, token)
         },
+        successMessage: 'Телеметрия отправлена',
+        errorFallback: 'Ошибка отправки телеметрии',
         onSuccess: (response) => {
             setSuccess(`Телеметрия успешно отправлена. Принято записей: ${response.accepted}`)
             setError(null)
-            notifySuccess('Телеметрия отправлена')
-            // Очищаем форму через 2 секунды
-            setTimeout(() => {
-                setMetaJson('{}')
-                setReadingsJson('')
-                setSuccess(null)
-            }, 2000)
+            setTimeout(() => { setMetaJson('{}'); setReadingsJson(''); setSuccess(null) }, 2000)
         },
         onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка отправки телеметрии'
-            setError(msg)
+            setError(err?.response?.data?.error || err?.message || 'Ошибка отправки телеметрии')
             setSuccess(null)
-            notifyError(msg)
         },
     })
 

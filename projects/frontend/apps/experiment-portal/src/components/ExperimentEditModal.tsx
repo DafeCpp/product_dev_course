@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
 import type { Experiment, ExperimentUpdate } from '../types'
 import Modal from './Modal'
 import { experimentStatusMap } from './common/statusMaps'
 import { MaterialSelect } from './common'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifyError } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateRunModal.scss'
 
 interface ExperimentEditModalProps {
@@ -16,8 +16,6 @@ interface ExperimentEditModalProps {
 }
 
 function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModalProps) {
-    const queryClient = useQueryClient()
-
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [experimentType, setExperimentType] = useState('')
@@ -37,42 +35,22 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         setStatus(experiment.status)
     }, [experiment, isOpen])
 
-    const updateMutation = useMutation({
-        mutationFn: async (data: ExperimentUpdate) => experimentsApi.update(experiment.id, data),
-        onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ['experiments'] })
-            await queryClient.invalidateQueries({ queryKey: ['experiment', experiment.id] })
-            notifySuccess('Эксперимент обновлён')
-            onClose()
-        },
-        onError: (err: any) => {
-            const msg =
-                err?.response?.data?.error ||
-                err?.response?.data?.message ||
-                err?.message ||
-                'Ошибка обновления эксперимента'
-            setError(msg)
-            notifyError(msg)
-        },
+    const updateMutation = useApiMutation({
+        mutationFn: (data: ExperimentUpdate) => experimentsApi.update(experiment.id, data),
+        invalidateKeys: [['experiments'], ['experiment', experiment.id]],
+        successMessage: 'Эксперимент обновлён',
+        errorFallback: 'Ошибка обновления эксперимента',
+        onSuccess: () => onClose(),
+        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка обновления эксперимента'),
     })
 
-    const archiveMutation = useMutation({
-        mutationFn: async () => experimentsApi.archive(experiment.id, { project_id: experiment.project_id }),
-        onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ['experiments'] })
-            await queryClient.invalidateQueries({ queryKey: ['experiment', experiment.id] })
-            notifySuccess('Эксперимент архивирован')
-            onClose()
-        },
-        onError: (err: any) => {
-            const msg =
-                err?.response?.data?.error ||
-                err?.response?.data?.message ||
-                err?.message ||
-                'Ошибка архивации эксперимента'
-            setError(msg)
-            notifyError(msg)
-        },
+    const archiveMutation = useApiMutation({
+        mutationFn: () => experimentsApi.archive(experiment.id, { project_id: experiment.project_id }),
+        invalidateKeys: [['experiments'], ['experiment', experiment.id]],
+        successMessage: 'Эксперимент архивирован',
+        errorFallback: 'Ошибка архивации эксперимента',
+        onSuccess: () => onClose(),
+        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка архивации эксперимента'),
     })
 
     const isBusy = updateMutation.isPending || archiveMutation.isPending

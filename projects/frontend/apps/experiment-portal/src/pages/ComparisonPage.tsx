@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import {
   Box,
   Button,
@@ -141,12 +142,12 @@ export default function ComparisonPage() {
     return comparisonResult.metric_names
   }, [comparisonResult])
 
-  const compareMutation = useMutation({
+  const compareMutation = useApiMutation({
     mutationFn: (body: { run_ids: string[]; metric_names: string[] }) =>
       comparisonApi.compare(experimentId!, body),
+    errorFallback: 'Ошибка сравнения',
     onSuccess: (data) => {
       setComparisonResult(data)
-      // auto-select all returned metric names on first compare
       if (selectedMetrics.length === 0) {
         setSelectedMetrics(data.metric_names)
       }

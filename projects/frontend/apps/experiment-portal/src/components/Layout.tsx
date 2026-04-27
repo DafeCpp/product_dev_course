@@ -1,10 +1,10 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import { usePermissions } from '../hooks/usePermissions'
 import UserProfileModal from './UserProfileModal'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './Layout.scss'
 
 interface LayoutProps {
@@ -170,21 +170,11 @@ function Layout({ children }: LayoutProps) {
     staleTime: 5 * 60 * 1000,
   })
 
-  const logoutMutation = useMutation({
+  const logoutMutation = useApiMutation({
     mutationFn: () => authApi.logout(),
-    onSuccess: () => {
-      queryClient.clear()
-      notifySuccess('Выход выполнен')
-      navigate('/login')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        err?.message ||
-        'Ошибка выхода'
-      notifyError(msg)
-    },
+    successMessage: 'Выход выполнен',
+    errorFallback: 'Ошибка выхода',
+    onSuccess: () => { queryClient.clear(); navigate('/login') },
   })
 
   const { hasAnyPermission, isSuperadmin } = usePermissions()

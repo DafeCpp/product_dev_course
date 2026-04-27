@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
 import { format } from 'date-fns'
 import RunsList from '../components/RunsList'
@@ -18,12 +18,11 @@ import {
 import './ExperimentDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 
 function ExperimentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [showEditForm, setShowEditForm] = useState(false)
   const [showCreateRunModal, setShowCreateRunModal] = useState(false)
 
@@ -38,21 +37,12 @@ function ExperimentDetail() {
     setActiveProjectId(experiment.project_id)
   }, [experiment?.project_id])
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useApiMutation({
     mutationFn: () => experimentsApi.delete(id!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['experiments'] })
-      notifySuccess('Эксперимент удалён')
-      navigate('/experiments')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        err?.message ||
-        'Ошибка удаления эксперимента'
-      notifyError(msg)
-    },
+    invalidateKeys: [['experiments']],
+    successMessage: 'Эксперимент удалён',
+    errorFallback: 'Ошибка удаления эксперимента',
+    onSuccess: () => navigate('/experiments'),
   })
 
   if (isLoading) {
