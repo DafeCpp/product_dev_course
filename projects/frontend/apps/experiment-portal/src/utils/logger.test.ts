@@ -3,7 +3,7 @@ import { logger } from './logger'
 
 describe('logger in DEV mode', () => {
   beforeEach(() => {
-    vi.stubEnv('DEV', 'true')
+    vi.stubEnv('DEV', true)
     vi.spyOn(console, 'debug').mockImplementation(() => {})
     vi.spyOn(console, 'info').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -39,7 +39,7 @@ describe('logger in DEV mode', () => {
 
 describe('logger in non-DEV mode', () => {
   beforeEach(() => {
-    vi.stubEnv('DEV', '')
+    vi.stubEnv('DEV', false)
     vi.spyOn(console, 'debug').mockImplementation(() => {})
     vi.spyOn(console, 'info').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
