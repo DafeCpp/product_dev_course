@@ -14,6 +14,9 @@
 static const char* TAG = "websocket";
 static httpd_handle_t ws_server_handle = NULL;
 
+/** Макс. число HTTP-соединений httpd (для httpd_get_client_list). */
+static constexpr size_t MAX_HTTPD_CLIENTS = 8;
+
 /** Размер одного буфера телеметрии (JSON). */
 static constexpr size_t TELEM_BUF_SIZE = 2048;
 /** Очередь длины 1: индекс буфера (0 или 1), готового к отправке. */
@@ -74,11 +77,17 @@ void WebSocketSetJsonHandler(WebSocketJsonHandler handler) {
 static esp_err_t ws_handler(httpd_req_t* req) {
   if (req->method == HTTP_GET) {
     ESP_LOGI(TAG, "WebSocket connection request");
-    // Обновить кеш при новом подключении
-    int fds[WEBSOCKET_MAX_CLIENTS];
-    size_t cnt = WEBSOCKET_MAX_CLIENTS;
+    // При WebSocket handshake клиент уже в списке httpd, но может ещё
+    // не быть помечен как WS. Гарантируем count >= 1.
+    int fds[MAX_HTTPD_CLIENTS];
+    size_t cnt = MAX_HTTPD_CLIENTS;
     if (httpd_get_client_list(ws_server_handle, &cnt, fds) == ESP_OK) {
-      s_cached_client_count.store(static_cast<uint8_t>(cnt), std::memory_order_relaxed);
+      ESP_LOGI(TAG, "httpd_get_client_list: %zu clients", cnt);
+      uint8_t count = (cnt > 0) ? static_cast<uint8_t>(cnt) : 1;
+      s_cached_client_count.store(count, std::memory_order_relaxed);
+    } else {
+      // Если список не получен, всё равно знаем что есть хотя бы 1 клиент
+      s_cached_client_count.store(1, std::memory_order_relaxed);
     }
     return ESP_OK;
   }
@@ -197,8 +206,8 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
 
   // Получить список клиентов (вызывается из telem_sender_task, не из control
   // loop). Заодно обновляем кеш для GetWebSocketClientCount().
-  int client_fds[WEBSOCKET_MAX_CLIENTS];
-  size_t client_count = WEBSOCKET_MAX_CLIENTS;
+  int client_fds[MAX_HTTPD_CLIENTS];
+  size_t client_count = MAX_HTTPD_CLIENTS;
   esp_err_t list_err =
       httpd_get_client_list(ws_server_handle, &client_count, client_fds);
   if (list_err != ESP_OK) {
