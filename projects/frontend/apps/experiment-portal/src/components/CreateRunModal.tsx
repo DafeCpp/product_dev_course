@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { runsApi } from '../api/client'
-import type { RunCreate } from '../types'
+import type { Run, RunCreate } from '../types'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
-import { createRunSchema, flatFieldErrors } from '../schemas/forms'
+import { createRunSchema } from '../schemas/forms'
+import { useFormErrors } from '../hooks/useFormErrors'
 import './CreateRunModal.scss'
 
 interface CreateRunModalProps {
@@ -17,7 +17,6 @@ interface CreateRunModalProps {
 
 function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) {
     const navigate = useNavigate()
-    const queryClient = useQueryClient()
     const [formData, setFormData] = useState<RunCreate>({
         name: '',
         params: {},
@@ -28,47 +27,34 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
     const [paramsJson, setParamsJson] = useState('{}')
     const [metadataJson, setMetadataJson] = useState('{}')
     const [autoCompleteInput, setAutoCompleteInput] = useState('')
-    const [error, setError] = useState<string | null>(null)
-    const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({})
+    const { error, fieldErrors, clearErrors, validate, setError } = useFormErrors()
 
-    const createMutation = useMutation({
-        mutationFn: (data: RunCreate) => runsApi.create(experimentId, data),
+    const createMutation = useApiMutation<Run, RunCreate>({
+        mutationFn: (data) => runsApi.create(experimentId, data),
+        invalidateKeys: [['runs', experimentId], ['experiment', experimentId]],
+        successMessage: 'Запуск создан',
         onSuccess: (run) => {
-            queryClient.invalidateQueries({ queryKey: ['runs', experimentId] })
-            queryClient.invalidateQueries({ queryKey: ['experiment', experimentId] })
-            notifySuccess('Запуск создан')
             onClose()
             navigate(`/runs/${run.id}`)
         },
         onError: (err: any) => {
-            const msg = err.response?.data?.error || 'Ошибка создания запуска'
-            setError(msg)
-            notifyError(msg)
+            setError(err?.response?.data?.error || 'Ошибка создания запуска')
         },
     })
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        setError(null)
-        setFieldErrors({})
+        clearErrors()
 
-        const result = createRunSchema.safeParse({
+        const data = validate(createRunSchema, {
             name: formData.name,
             notes: formData.notes,
             paramsJson,
             metadataJson,
         })
+        if (!data) return
 
-        if (!result.success) {
-            const errors = flatFieldErrors(result.error)
-            setFieldErrors(errors)
-            const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
-            setError(first)
-            notifyError(first)
-            return
-        }
-
-        const { paramsJson: params, metadataJson: metadata, ...rest } = result.data
+        const { paramsJson: params, metadataJson: metadata, ...rest } = data
         const autoCompleteMinutes = autoCompleteInput.trim() !== ''
             ? parseInt(autoCompleteInput, 10)
             : null
@@ -93,8 +79,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             setParamsJson('{}')
             setMetadataJson('{}')
             setAutoCompleteInput('')
-            setError(null)
-            setFieldErrors({})
+            clearErrors()
             onClose()
         }
     }

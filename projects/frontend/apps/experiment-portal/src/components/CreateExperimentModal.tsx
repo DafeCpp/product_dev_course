@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { experimentsApi, projectsApi } from '../api/client'
-import type { ExperimentCreate } from '../types'
+import type { Experiment, ExperimentCreate } from '../types'
 import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import Modal from './Modal'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
 import { Loading, MaterialSelect } from './common'
-import { createExperimentSchema, flatFieldErrors } from '../schemas/forms'
+import { createExperimentSchema } from '../schemas/forms'
+import { useFormErrors } from '../hooks/useFormErrors'
 import './CreateRunModal.scss'
 
 interface CreateExperimentModalProps {
@@ -19,7 +20,6 @@ interface CreateExperimentModalProps {
 
 function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExperimentModalProps) {
     const navigate = useNavigate()
-    const queryClient = useQueryClient()
     const [formData, setFormData] = useState<ExperimentCreate>({
         project_id: defaultProjectId || '',
         name: '',
@@ -30,26 +30,23 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
     })
     const [tagsInput, setTagsInput] = useState('')
     const [metadataInput, setMetadataInput] = useState('{}')
-    const [error, setError] = useState<string | null>(null)
-    const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({})
+    const { error, fieldErrors, clearErrors, validate, setError } = useFormErrors()
 
     const { data: projectsData, isLoading: projectsLoading } = useQuery({
         queryKey: ['projects'],
         queryFn: () => projectsApi.list(),
     })
 
-    const createMutation = useMutation({
-        mutationFn: (data: ExperimentCreate) => experimentsApi.create(data),
+    const createMutation = useApiMutation<Experiment, ExperimentCreate>({
+        mutationFn: (data) => experimentsApi.create(data),
+        invalidateKeys: [['experiments']],
+        successMessage: 'Эксперимент создан',
         onSuccess: (experiment) => {
-            queryClient.invalidateQueries({ queryKey: ['experiments'] })
-            notifySuccess('Эксперимент создан')
             onClose()
             navigate(`/experiments/${experiment.id}`)
         },
         onError: (err: any) => {
-            const msg = err.response?.data?.error || 'Ошибка создания эксперимента'
-            setError(msg)
-            notifyError(msg)
+            setError(err?.response?.data?.error || 'Ошибка создания эксперимента')
         },
     })
 
@@ -72,10 +69,9 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        setError(null)
-        setFieldErrors({})
+        clearErrors()
 
-        const result = createExperimentSchema.safeParse({
+        const data = validate(createExperimentSchema, {
             project_id: formData.project_id,
             name: formData.name,
             description: formData.description,
@@ -83,17 +79,9 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             tagsInput,
             metadataInput,
         })
+        if (!data) return
 
-        if (!result.success) {
-            const errors = flatFieldErrors(result.error)
-            setFieldErrors(errors)
-            const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
-            setError(first)
-            notifyError(first)
-            return
-        }
-
-        const { tagsInput: tags, metadataInput: metadata, ...rest } = result.data
+        const { tagsInput: tags, metadataInput: metadata, ...rest } = data
         createMutation.mutate({
             ...rest,
             tags,
@@ -115,8 +103,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             })
             setTagsInput('')
             setMetadataInput('{}')
-            setError(null)
-            setFieldErrors({})
+            clearErrors()
             onClose()
         }
     }
