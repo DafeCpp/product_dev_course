@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { sensorsApi, projectsApi, conversionProfilesApi, backfillApi } from '../api/client'
 import { format } from 'date-fns'
 import type { SensorTokenResponse, ConversionProfileStatus, BackfillTaskStatus, SensorErrorEntry } from '../types'
@@ -18,12 +19,11 @@ import {
 } from '../components/common'
 import './SensorDetail.scss'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
+import { notifyError, notifySuccessSticky } from '../utils/notify'
 
 function SensorDetail() {
     const { id } = useParams<{ id: string }>()
     const navigate = useNavigate()
-    const queryClient = useQueryClient()
     const [showToken, setShowToken] = useState(false)
     const [newToken, setNewToken] = useState<string | null>(null)
     const [showTestTelemetryModal, setShowTestTelemetryModal] = useState(false)
@@ -54,58 +54,36 @@ function SensorDetail() {
         queryFn: () => projectsApi.list(),
     })
 
-    const deleteMutation = useMutation({
+    const deleteMutation = useApiMutation({
         mutationFn: () => sensorsApi.delete(id!),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensors'] })
-            notifySuccess('Датчик удалён')
-            navigate('/sensors')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления датчика'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensors']],
+        successMessage: 'Датчик удалён',
+        errorFallback: 'Ошибка удаления датчика',
+        onSuccess: () => navigate('/sensors'),
     })
 
-    const rotateTokenMutation = useMutation({
+    const rotateTokenMutation = useApiMutation<SensorTokenResponse>({
         mutationFn: () => sensorsApi.rotateToken(id!),
-        onSuccess: (response: SensorTokenResponse) => {
-            setNewToken(response.token)
-            setShowToken(true)
-            queryClient.invalidateQueries({ queryKey: ['sensor', id] })
-            notifySuccess('Токен обновлён')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка ротации токена'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id]],
+        successMessage: 'Токен обновлён',
+        errorFallback: 'Ошибка ротации токена',
+        onSuccess: (response) => { setNewToken(response.token); setShowToken(true) },
     })
 
     // Мутации для управления проектами
-    const addProjectMutation = useMutation({
+    const addProjectMutation = useApiMutation<unknown, string>({
         mutationFn: (projectId: string) => sensorsApi.addProject(id!, projectId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
-            setShowAddProjectModal(false)
-            setSelectedProjectId('')
-            notifySuccess('Проект добавлен')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка добавления проекта'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'projects']],
+        successMessage: 'Проект добавлен',
+        errorFallback: 'Ошибка добавления проекта',
+        onSuccess: () => { setShowAddProjectModal(false); setSelectedProjectId('') },
     })
 
-    const removeProjectMutation = useMutation({
+    const removeProjectMutation = useApiMutation<unknown, string>({
         mutationFn: (projectId: string) => sensorsApi.removeProject(id!, projectId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
-            notifySuccess('Проект удалён')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления проекта'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'projects']],
+        successMessage: 'Проект удалён',
+        errorFallback: 'Ошибка удаления проекта',
     })
 
     // Conversion profiles
@@ -118,17 +96,11 @@ function SensorDetail() {
         enabled: !!id,
     })
 
-    const publishProfileMutation = useMutation({
+    const publishProfileMutation = useApiMutation<unknown, string>({
         mutationFn: (profileId: string) => conversionProfilesApi.publish(id!, profileId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'profiles'] })
-            queryClient.invalidateQueries({ queryKey: ['sensor', id] })
-            notifySuccess('Профиль опубликован')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка публикации профиля'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'profiles'], ['sensor', id]],
+        successMessage: 'Профиль опубликован',
+        errorFallback: 'Ошибка публикации профиля',
     })
 
     const profileStatusLabels: Record<ConversionProfileStatus, string> = {
@@ -186,16 +158,11 @@ function SensorDetail() {
         staleTime: 15_000,
     })
 
-    const startBackfillMutation = useMutation({
+    const startBackfillMutation = useApiMutation({
         mutationFn: () => backfillApi.start(id!),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'backfill'] })
-            notifySuccess('Задача пересчёта создана')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка запуска пересчёта'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'backfill']],
+        successMessage: 'Задача пересчёта создана',
+        errorFallback: 'Ошибка запуска пересчёта',
     })
 
     const backfillStatusLabels: Record<BackfillTaskStatus, string> = {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi, runSensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
@@ -22,7 +23,6 @@ import ArtifactsPanel from '../components/ArtifactsPanel'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
 import { useCountdown } from '../hooks/useCountdown'
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,6 @@ import { useCountdown } from '../hooks/useCountdown'
 // ---------------------------------------------------------------------------
 
 function RunSensorsPanel({ runId, projectId }: { runId: string; projectId: string }) {
-  const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
 
   const { data: attachedData, isLoading } = useQuery({
@@ -45,25 +44,19 @@ function RunSensorsPanel({ runId, projectId }: { runId: string; projectId: strin
     enabled: !!projectId,
   })
 
-  const attachMutation = useMutation({
-    mutationFn: (sensorId: string) =>
-      runSensorsApi.attach(runId, sensorId, { project_id: projectId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run-sensors', runId] })
-      setShowAdd(false)
-      notifySuccess('Датчик привязан')
-    },
-    onError: () => notifyError('Не удалось привязать датчик'),
+  const attachMutation = useApiMutation<unknown, string>({
+    mutationFn: (sensorId) => runSensorsApi.attach(runId, sensorId, { project_id: projectId }),
+    invalidateKeys: [['run-sensors', runId]],
+    successMessage: 'Датчик привязан',
+    errorFallback: 'Не удалось привязать датчик',
+    onSuccess: () => setShowAdd(false),
   })
 
-  const detachMutation = useMutation({
-    mutationFn: (sensorId: string) =>
-      runSensorsApi.detach(runId, sensorId, { project_id: projectId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run-sensors', runId] })
-      notifySuccess('Датчик откреплён')
-    },
-    onError: () => notifyError('Не удалось открепить датчик'),
+  const detachMutation = useApiMutation<unknown, string>({
+    mutationFn: (sensorId) => runSensorsApi.detach(runId, sensorId, { project_id: projectId }),
+    invalidateKeys: [['run-sensors', runId]],
+    successMessage: 'Датчик откреплён',
+    errorFallback: 'Не удалось открепить датчик',
   })
 
   const attached = attachedData?.sensors ?? []
@@ -130,7 +123,6 @@ function RunSensorsPanel({ runId, projectId }: { runId: string; projectId: strin
 
 function RunDetail() {
   const { id } = useParams<{ id: string }>()
-  const queryClient = useQueryClient()
   const [actionError, setActionError] = useState<string | null>(null)
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<string | null>(null)
   const [selectedSensorId, setSelectedSensorId] = useState<string>('')
@@ -188,66 +180,36 @@ function RunDetail() {
     }
   }, [sensors, selectedSensorId])
 
-  const completeMutation = useMutation({
+  const completeMutation = useApiMutation({
     mutationFn: () => runsApi.complete(id!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run', id] })
-      queryClient.invalidateQueries({ queryKey: ['runs'] })
-      notifySuccess('Run завершён')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось завершить run'
-      setActionError(msg)
-      notifyError(msg)
-    },
+    invalidateKeys: [['run', id], ['runs']],
+    successMessage: 'Run завершён',
+    errorFallback: 'Не удалось завершить run',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось завершить run'),
   })
 
-  const startRunMutation = useMutation({
+  const startRunMutation = useApiMutation({
     mutationFn: () => {
       setActionError(null)
       return runsApi.update(id!, { status: 'running' })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run', id] })
-      queryClient.invalidateQueries({ queryKey: ['runs'] })
-      notifySuccess('Run запущен')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось запустить run'
-      setActionError(msg)
-      notifyError(msg)
-    },
+    invalidateKeys: [['run', id], ['runs']],
+    successMessage: 'Run запущен',
+    errorFallback: 'Не удалось запустить run',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить run'),
   })
 
-  const failMutation = useMutation({
-    mutationFn: (reason?: string) => runsApi.fail(id!, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run', id] })
-      queryClient.invalidateQueries({ queryKey: ['runs'] })
-      notifySuccess('Run помечен как failed')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось пометить run как failed'
-      setActionError(msg)
-      notifyError(msg)
-    },
+  const failMutation = useApiMutation<unknown, string | undefined>({
+    mutationFn: (reason) => runsApi.fail(id!, reason),
+    invalidateKeys: [['run', id], ['runs']],
+    successMessage: 'Run помечен как failed',
+    errorFallback: 'Не удалось пометить run как failed',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось пометить run как failed'),
   })
 
   // Создание capture session
-  const createSessionMutation = useMutation({
-    mutationFn: (notes?: string) => {
+  const createSessionMutation = useApiMutation<unknown, string | undefined>({
+    mutationFn: (notes) => {
       if (!experiment) throw new Error('Experiment not loaded')
       const nextOrdinal = sessions.length > 0
         ? Math.max(...sessions.map((s: CaptureSession) => s.ordinal_number)) + 1
@@ -259,56 +221,29 @@ function RunDetail() {
         notes: notes || undefined,
       }, { project_id: experiment.project_id })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
-      notifySuccess('Отсчёт запущен')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось запустить отсчёт'
-      setActionError(msg)
-      notifyError(msg)
-    },
+    invalidateKeys: [['capture-sessions', id]],
+    successMessage: 'Отсчёт запущен',
+    errorFallback: 'Не удалось запустить отсчёт',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить отсчёт'),
   })
 
   // Остановка capture session
-  const stopSessionMutation = useMutation({
-    mutationFn: (sessionId: string) => captureSessionsApi.stop(id!, sessionId),
-    onSuccess: () => {
-      setOptimisticActiveSessionId(null)
-      queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
-      notifySuccess('Отсчёт остановлен')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось остановить отсчёт'
-      setActionError(msg)
-      notifyError(msg)
-    },
+  const stopSessionMutation = useApiMutation<unknown, string>({
+    mutationFn: (sessionId) => captureSessionsApi.stop(id!, sessionId),
+    invalidateKeys: [['capture-sessions', id]],
+    successMessage: 'Отсчёт остановлен',
+    errorFallback: 'Не удалось остановить отсчёт',
+    onSuccess: () => setOptimisticActiveSessionId(null),
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось остановить отсчёт'),
   })
 
   // Удаление capture session
-  const deleteSessionMutation = useMutation({
-    mutationFn: (sessionId: string) => captureSessionsApi.delete(id!, sessionId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
-      notifySuccess('Сессия удалена')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось удалить сессию'
-      setActionError(msg)
-      notifyError(msg)
-    },
+  const deleteSessionMutation = useApiMutation<unknown, string>({
+    mutationFn: (sessionId) => captureSessionsApi.delete(id!, sessionId),
+    invalidateKeys: [['capture-sessions', id]],
+    successMessage: 'Сессия удалена',
+    errorFallback: 'Не удалось удалить сессию',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось удалить сессию'),
   })
 
   const countdownDeadline = useMemo(() => {

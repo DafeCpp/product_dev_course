@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import {
   Alert,
   Box,
@@ -399,32 +400,25 @@ export default function ArtifactsPanel({ runId, projectId, isOwner = false }: Pr
   const artifacts = data?.artifacts ?? []
   const total = data?.total ?? 0
 
-  const createMutation = useMutation({
-    mutationFn: (body: { type: string; uri: string; checksum?: string; size_bytes?: number; metadata?: Record<string, any> }) =>
-      artifactsApi.create(runId, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['artifacts', runId] })
-      setShowAdd(false)
-      setAddError(null)
-    },
-    onError: (err: any) => {
-      setAddError(err?.response?.data?.error || err?.message || 'Ошибка создания артефакта')
-    },
+  const createMutation = useApiMutation<unknown, { type: string; uri: string; checksum?: string; size_bytes?: number; metadata?: Record<string, any> }>({
+    mutationFn: (body) => artifactsApi.create(runId, body),
+    invalidateKeys: [['artifacts', runId]],
+    errorFallback: 'Ошибка создания артефакта',
+    onSuccess: () => { setShowAdd(false); setAddError(null) },
+    onError: (err: any) => setAddError(err?.response?.data?.error || err?.message || 'Ошибка создания артефакта'),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (artifactId: string) => artifactsApi.delete(artifactId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['artifacts', runId] })
-      setDeleteTarget(null)
-    },
+  const deleteMutation = useApiMutation<unknown, string>({
+    mutationFn: (artifactId) => artifactsApi.delete(artifactId),
+    invalidateKeys: [['artifacts', runId]],
+    errorFallback: 'Ошибка удаления артефакта',
+    onSuccess: () => setDeleteTarget(null),
   })
 
-  const approveMutation = useMutation({
-    mutationFn: (artifactId: string) => artifactsApi.approve(artifactId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['artifacts', runId] })
-    },
+  const approveMutation = useApiMutation<unknown, string>({
+    mutationFn: (artifactId) => artifactsApi.approve(artifactId),
+    invalidateKeys: [['artifacts', runId]],
+    errorFallback: 'Ошибка подтверждения артефакта',
   })
 
   function handleAddSubmit(formData: {

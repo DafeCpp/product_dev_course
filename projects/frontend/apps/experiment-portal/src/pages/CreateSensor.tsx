@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { sensorsApi, projectsApi } from '../api/client'
 import type { SensorCreate, SensorRegisterResponse } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
@@ -34,45 +35,42 @@ function CreateSensor() {
         queryFn: () => projectsApi.list(),
     })
 
-    const createMutation = useMutation({
-        mutationFn: (data: SensorCreate) => sensorsApi.create(data),
-        onSuccess: (response: SensorRegisterResponse) => {
+    const createMutation = useApiMutation<SensorRegisterResponse, SensorCreate>({
+        mutationFn: (data) => sensorsApi.create(data),
+        successMessage: 'Датчик зарегистрирован',
+        errorFallback: 'Ошибка регистрации датчика',
+        onSuccess: (response) => {
             const extraProjectIds = selectedProjectIds.filter(
                 (pid) => pid && pid !== response.sensor.project_id
             )
-
             if (extraProjectIds.length > 0) {
                 setAdditionalProjectsStatus('adding')
                 setAdditionalProjectsError(null)
-                    ; (async () => {
-                        try {
-                            await Promise.all(
-                                extraProjectIds.map((pid) => sensorsApi.addProject(response.sensor.id, pid))
-                            )
-                            setAdditionalProjectsStatus('done')
-                            notifySuccess('Датчик добавлен в дополнительные проекты')
-                        } catch (e: any) {
-                            setAdditionalProjectsStatus('error')
-                            const msg =
-                                e?.response?.data?.error ||
-                                e?.message ||
-                                'Не удалось добавить датчик в дополнительные проекты'
-                            setAdditionalProjectsError(msg)
-                            notifyError(msg)
-                        }
-                    })()
+                ;(async () => {
+                    try {
+                        await Promise.all(
+                            extraProjectIds.map((pid) => sensorsApi.addProject(response.sensor.id, pid))
+                        )
+                        setAdditionalProjectsStatus('done')
+                        notifySuccess('Датчик добавлен в дополнительные проекты')
+                    } catch (e: any) {
+                        setAdditionalProjectsStatus('error')
+                        const msg =
+                            e?.response?.data?.error ||
+                            e?.message ||
+                            'Не удалось добавить датчик в дополнительные проекты'
+                        setAdditionalProjectsError(msg)
+                        notifyError(msg)
+                    }
+                })()
             } else {
                 setAdditionalProjectsStatus('idle')
                 setAdditionalProjectsError(null)
             }
-
             setShowToken(true)
-            notifySuccess('Датчик зарегистрирован')
         },
         onError: (err: any) => {
-            const msg = err.response?.data?.error || 'Ошибка регистрации датчика'
-            setError(msg)
-            notifyError(msg)
+            setError(err?.response?.data?.error || 'Ошибка регистрации датчика')
         },
     })
 

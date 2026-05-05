@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { format } from 'date-fns'
 import {
     Button,
@@ -24,7 +25,6 @@ import './AdminUsers.scss'
 type Tab = 'users' | 'invites' | 'system-roles'
 
 function AdminUsers() {
-    const queryClient = useQueryClient()
     const [tab, setTab] = useState<Tab>('users')
 
     // --- Users ---
@@ -50,41 +50,25 @@ function AdminUsers() {
         retry: 1,
     })
 
-    const updateUserMutation = useMutation({
-        mutationFn: (args: { userId: string; data: { is_active?: boolean; is_admin?: boolean } }) =>
-            authApi.adminUpdateUser(args.userId, args.data),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка обновления'
-            notifyError(msg)
-        },
+    const updateUserMutation = useApiMutation<unknown, { userId: string; data: { is_active?: boolean; is_admin?: boolean } }>({
+        mutationFn: (args) => authApi.adminUpdateUser(args.userId, args.data),
+        invalidateKeys: [['admin', 'users']],
+        errorFallback: 'Ошибка обновления',
     })
 
-    const deleteUserMutation = useMutation({
-        mutationFn: (userId: string) => authApi.adminDeleteUser(userId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
-            notifySuccess('Пользователь удалён')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления'
-            notifyError(msg)
-        },
+    const deleteUserMutation = useApiMutation<unknown, string>({
+        mutationFn: (userId) => authApi.adminDeleteUser(userId),
+        invalidateKeys: [['admin', 'users']],
+        successMessage: 'Пользователь удалён',
+        errorFallback: 'Ошибка удаления',
     })
 
-    const resetPasswordMutation = useMutation({
-        mutationFn: (userId: string) => authApi.adminResetUserPassword(userId),
-        onSuccess: (data) => {
-            setResetResult({ userId: data.user.id, password: data.new_password })
-            queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
-            notifySuccess('Пароль сброшен')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка сброса пароля'
-            notifyError(msg)
-        },
+    const resetPasswordMutation = useApiMutation<any, string>({
+        mutationFn: (userId) => authApi.adminResetUserPassword(userId),
+        invalidateKeys: [['admin', 'users']],
+        successMessage: 'Пароль сброшен',
+        errorFallback: 'Ошибка сброса пароля',
+        onSuccess: (data) => setResetResult({ userId: data.user.id, password: data.new_password }),
     })
 
     // --- Invites ---
@@ -100,35 +84,23 @@ function AdminUsers() {
         retry: 1,
     })
 
-    const createInviteMutation = useMutation({
+    const createInviteMutation = useApiMutation({
         mutationFn: () =>
             authApi.adminCreateInvite({
                 email_hint: inviteEmailHint.trim() || undefined,
                 expires_in_hours: parseInt(inviteExpires) || 72,
             }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
-            setShowCreateInvite(false)
-            setInviteEmailHint('')
-            setInviteExpires('72')
-            notifySuccess('Инвайт создан')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка создания инвайта'
-            notifyError(msg)
-        },
+        invalidateKeys: [['admin', 'invites']],
+        successMessage: 'Инвайт создан',
+        errorFallback: 'Ошибка создания инвайта',
+        onSuccess: () => { setShowCreateInvite(false); setInviteEmailHint(''); setInviteExpires('72') },
     })
 
-    const revokeInviteMutation = useMutation({
-        mutationFn: (token: string) => authApi.adminRevokeInvite(token),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
-            notifySuccess('Инвайт отозван')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка отзыва инвайта'
-            notifyError(msg)
-        },
+    const revokeInviteMutation = useApiMutation<unknown, string>({
+        mutationFn: (token) => authApi.adminRevokeInvite(token),
+        invalidateKeys: [['admin', 'invites']],
+        successMessage: 'Инвайт отозван',
+        errorFallback: 'Ошибка отзыва инвайта',
     })
 
     async function copyText(text: string): Promise<boolean> {
@@ -188,36 +160,24 @@ function AdminUsers() {
         enabled: tab === 'system-roles',
     })
 
-    const createRoleMutation = useMutation({
+    const createRoleMutation = useApiMutation({
         mutationFn: () =>
             permissionsApi.createSystemRole({
                 name: newRoleName.trim(),
                 description: newRoleDescription.trim() || undefined,
                 permissions: [],
             }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['system-roles'] })
-            setShowCreateRole(false)
-            setNewRoleName('')
-            setNewRoleDescription('')
-            notifySuccess('Роль создана')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка создания роли'
-            notifyError(msg)
-        },
+        invalidateKeys: [['system-roles']],
+        successMessage: 'Роль создана',
+        errorFallback: 'Ошибка создания роли',
+        onSuccess: () => { setShowCreateRole(false); setNewRoleName(''); setNewRoleDescription('') },
     })
 
-    const deleteRoleMutation = useMutation({
-        mutationFn: (roleId: string) => permissionsApi.deleteSystemRole(roleId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['system-roles'] })
-            notifySuccess('Роль удалена')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления роли'
-            notifyError(msg)
-        },
+    const deleteRoleMutation = useApiMutation<unknown, string>({
+        mutationFn: (roleId) => permissionsApi.deleteSystemRole(roleId),
+        invalidateKeys: [['system-roles']],
+        successMessage: 'Роль удалена',
+        errorFallback: 'Ошибка удаления роли',
     })
 
     const systemRoles: Role[] = systemRolesQuery.data ?? []
