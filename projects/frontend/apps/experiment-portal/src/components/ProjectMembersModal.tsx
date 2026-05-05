@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import Autocomplete from '@mui/material/Autocomplete'
 import TextField from '@mui/material/TextField'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -13,7 +14,7 @@ import Modal from './Modal'
 import PermissionGate from './PermissionGate'
 import { Loading, Error, MaterialSelect } from './common'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifyError } from '../utils/notify'
 import './CreateRunModal.scss'
 
 // ---------------------------------------------------------------------------
@@ -89,8 +90,6 @@ function MemberRolesModal({
     username,
     assignedRoleIds,
 }: MemberRolesModalProps) {
-    const queryClient = useQueryClient()
-
     const { data: projectRoles = [], isLoading: rolesLoading } = useQuery({
         queryKey: ['projects', projectId, 'roles'],
         queryFn: () => permissionsApi.listProjectRoles(projectId),
@@ -98,30 +97,18 @@ function MemberRolesModal({
         staleTime: 30_000,
     })
 
-    const grantMutation = useMutation({
-        mutationFn: (roleId: string) =>
-            permissionsApi.grantProjectRole(projectId, userId, roleId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
-            notifySuccess('Роль назначена')
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка назначения роли'
-            notifyError(msg)
-        },
+    const grantMutation = useApiMutation<unknown, string>({
+        mutationFn: (roleId) => permissionsApi.grantProjectRole(projectId, userId, roleId),
+        invalidateKeys: [['projects', projectId, 'members']],
+        successMessage: 'Роль назначена',
+        errorFallback: 'Ошибка назначения роли',
     })
 
-    const revokeMutation = useMutation({
-        mutationFn: (roleId: string) =>
-            permissionsApi.revokeProjectRole(projectId, userId, roleId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
-            notifySuccess('Роль отозвана')
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка отзыва роли'
-            notifyError(msg)
-        },
+    const revokeMutation = useApiMutation<unknown, string>({
+        mutationFn: (roleId) => permissionsApi.revokeProjectRole(projectId, userId, roleId),
+        invalidateKeys: [['projects', projectId, 'members']],
+        successMessage: 'Роль отозвана',
+        errorFallback: 'Ошибка отзыва роли',
     })
 
     const isPending = grantMutation.isPending || revokeMutation.isPending
@@ -217,30 +204,21 @@ interface CreateProjectRoleModalProps {
 }
 
 function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRoleModalProps) {
-    const queryClient = useQueryClient()
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [permissionIds, setPermissionIds] = useState<string[]>([])
 
-    const createMutation = useMutation({
+    const createMutation = useApiMutation({
         mutationFn: () =>
             permissionsApi.createProjectRole(projectId, {
                 name,
                 description: description || undefined,
                 permissions: permissionIds,
             }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'roles'] })
-            setName('')
-            setDescription('')
-            setPermissionIds([])
-            notifySuccess('Роль создана')
-            onClose()
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка создания роли'
-            notifyError(msg)
-        },
+        invalidateKeys: [['projects', projectId, 'roles']],
+        successMessage: 'Роль создана',
+        errorFallback: 'Ошибка создания роли',
+        onSuccess: () => { setName(''); setDescription(''); setPermissionIds([]); onClose() },
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -339,7 +317,6 @@ interface ProjectRolesSectionProps {
 }
 
 function ProjectRolesSection({ projectId }: ProjectRolesSectionProps) {
-    const queryClient = useQueryClient()
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
     const [isExpanded, setIsExpanded] = useState(false)  // collapsible section
 
@@ -349,16 +326,11 @@ function ProjectRolesSection({ projectId }: ProjectRolesSectionProps) {
         staleTime: 30_000,
     })
 
-    const deleteMutation = useMutation({
-        mutationFn: (roleId: string) => permissionsApi.deleteProjectRole(projectId, roleId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'roles'] })
-            notifySuccess('Роль удалена')
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка удаления роли'
-            notifyError(msg)
-        },
+    const deleteMutation = useApiMutation<unknown, string>({
+        mutationFn: (roleId) => permissionsApi.deleteProjectRole(projectId, roleId),
+        invalidateKeys: [['projects', projectId, 'roles']],
+        successMessage: 'Роль удалена',
+        errorFallback: 'Ошибка удаления роли',
     })
 
     const handleDeleteRole = (role: Role) => {
@@ -462,7 +434,6 @@ interface ProjectMembersModalProps {
 }
 
 function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: ProjectMembersModalProps) {
-    const queryClient = useQueryClient()
     const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [isOwner, setIsOwner] = useState(false)
     const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
@@ -559,54 +530,33 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
     }, [currentUser, projectOwnerId, membersData])
 
     // Мутация для добавления участника
-    const addMemberMutation = useMutation({
-        mutationFn: (data: ProjectMemberAdd) => projectsApi.addMember(projectId, data),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
-            setSelectedUser(null)
-            setUserSearchInput('')
-            setDebouncedQuery('')
-            setNewMemberRoleId('')
-            setError(null)
-            notifySuccess('Участник добавлен')
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка добавления участника'
-            setError(msg)
-            notifyError(msg)
-        },
+    const addMemberMutation = useApiMutation<unknown, ProjectMemberAdd>({
+        mutationFn: (data) => projectsApi.addMember(projectId, data),
+        invalidateKeys: [['projects', projectId, 'members']],
+        successMessage: 'Участник добавлен',
+        errorFallback: 'Ошибка добавления участника',
+        onSuccess: () => { setSelectedUser(null); setUserSearchInput(''); setDebouncedQuery(''); setNewMemberRoleId(''); setError(null) },
+        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка добавления участника'),
     })
 
     // Мутация для удаления участника
-    const removeMemberMutation = useMutation({
-        mutationFn: (userId: string) => projectsApi.removeMember(projectId, userId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
-            queryClient.invalidateQueries({ queryKey: ['projects'] })
-            setError(null)
-            notifySuccess('Участник удалён')
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка удаления участника'
-            setError(msg)
-            notifyError(msg)
-        },
+    const removeMemberMutation = useApiMutation<unknown, string>({
+        mutationFn: (userId) => projectsApi.removeMember(projectId, userId),
+        invalidateKeys: [['projects', projectId, 'members'], ['projects']],
+        successMessage: 'Участник удалён',
+        errorFallback: 'Ошибка удаления участника',
+        onSuccess: () => setError(null),
+        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка удаления участника'),
     })
 
     // Мутация для изменения роли участника (legacy)
-    const updateRoleMutation = useMutation({
-        mutationFn: ({ userId, data }: { userId: string; data: ProjectMemberUpdate }) =>
-            projectsApi.updateMemberRole(projectId, userId, data),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'members'] })
-            setError(null)
-            notifySuccess('Роль обновлена')
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || err.message || 'Ошибка изменения роли'
-            setError(msg)
-            notifyError(msg)
-        },
+    const updateRoleMutation = useApiMutation<unknown, { userId: string; data: ProjectMemberUpdate }>({
+        mutationFn: ({ userId, data }) => projectsApi.updateMemberRole(projectId, userId, data),
+        invalidateKeys: [['projects', projectId, 'members']],
+        successMessage: 'Роль обновлена',
+        errorFallback: 'Ошибка изменения роли',
+        onSuccess: () => setError(null),
+        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка изменения роли'),
     })
 
     const handleAddMember = (e: React.FormEvent) => {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { format } from 'date-fns'
 import { scriptsApi } from '../api/scripts'
 import type { Script, ScriptExecution, ExecutionStatus, ScriptType } from '../types/scripts'
@@ -123,7 +124,7 @@ function ScriptFormModal({ script, onClose, onSaved }: ScriptFormModalProps) {
     return Object.keys(next).length === 0
   }
 
-  const saveMutation = useMutation({
+  const saveMutation = useApiMutation({
     mutationFn: async () => {
       const parameters_schema: Record<string, unknown> = form.parameters_schema_raw.trim()
         ? (JSON.parse(form.parameters_schema_raw) as Record<string, unknown>)
@@ -142,19 +143,8 @@ function ScriptFormModal({ script, onClose, onSaved }: ScriptFormModalProps) {
       }
       return scriptsApi.createScript(payload)
     },
-    onSuccess: () => {
-      notifySuccess(isEdit ? 'Скрипт обновлён' : 'Скрипт создан')
-      onSaved()
-    },
-    onError: (err: unknown) => {
-      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
-      notifyError(
-        e?.response?.data?.error ||
-          e?.response?.data?.message ||
-          e?.message ||
-          'Не удалось сохранить скрипт'
-      )
-    },
+    errorFallback: 'Не удалось сохранить скрипт',
+    onSuccess: () => { notifySuccess(isEdit ? 'Скрипт обновлён' : 'Скрипт создан'); onSaved() },
   })
 
   const handleSubmit = () => {
@@ -290,7 +280,7 @@ function ExecuteScriptModal({ scripts, onClose, onExecuted }: ExecuteScriptModal
   const [paramsRaw, setParamsRaw] = useState('')
   const [paramsError, setParamsError] = useState('')
 
-  const executeMutation = useMutation({
+  const executeMutation = useApiMutation({
     mutationFn: async () => {
       if (!selectedScript) throw new Error('Скрипт не выбран')
       let parameters: Record<string, unknown> = {}
@@ -299,19 +289,9 @@ function ExecuteScriptModal({ scripts, onClose, onExecuted }: ExecuteScriptModal
       }
       return scriptsApi.executeScript(selectedScript.id, { parameters })
     },
-    onSuccess: () => {
-      notifySuccess('Скрипт запущен')
-      onExecuted()
-    },
-    onError: (err: unknown) => {
-      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
-      notifyError(
-        e?.response?.data?.error ||
-          e?.response?.data?.message ||
-          e?.message ||
-          'Не удалось запустить скрипт'
-      )
-    },
+    successMessage: 'Скрипт запущен',
+    errorFallback: 'Не удалось запустить скрипт',
+    onSuccess: () => onExecuted(),
   })
 
   const goToStep2 = () => {
@@ -503,21 +483,11 @@ function ExecutionDetailModal({
   onClose,
   onCancelled,
 }: ExecutionDetailModalProps) {
-  const cancelMutation = useMutation({
+  const cancelMutation = useApiMutation({
     mutationFn: () => scriptsApi.cancelExecution(execution.id),
-    onSuccess: () => {
-      notifySuccess('Выполнение отменено')
-      onCancelled()
-    },
-    onError: (err: unknown) => {
-      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
-      notifyError(
-        e?.response?.data?.error ||
-          e?.response?.data?.message ||
-          e?.message ||
-          'Не удалось отменить выполнение'
-      )
-    },
+    successMessage: 'Выполнение отменено',
+    errorFallback: 'Не удалось отменить выполнение',
+    onSuccess: () => onCancelled(),
   })
 
   const canCancel = execution.status === 'pending' || execution.status === 'running'
@@ -659,39 +629,18 @@ function RegistryTab({ onScriptExecuted: _onScriptExecuted }: RegistryTabProps) 
     refetchOnWindowFocus: false,
   })
 
-  const toggleActiveMutation = useMutation({
-    mutationFn: (script: Script) =>
-      scriptsApi.updateScript(script.id, { is_active: !script.is_active }),
-    onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ['scripts'] })
-      notifySuccess(updated.is_active ? 'Скрипт активирован' : 'Скрипт деактивирован')
-    },
-    onError: (err: unknown) => {
-      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
-      notifyError(
-        e?.response?.data?.error ||
-          e?.response?.data?.message ||
-          e?.message ||
-          'Не удалось изменить статус скрипта'
-      )
-    },
+  const toggleActiveMutation = useApiMutation<Script, Script>({
+    mutationFn: (script) => scriptsApi.updateScript(script.id, { is_active: !script.is_active }),
+    invalidateKeys: [['scripts']],
+    errorFallback: 'Не удалось изменить статус скрипта',
+    onSuccess: (updated) => notifySuccess(updated.is_active ? 'Скрипт активирован' : 'Скрипт деактивирован'),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => scriptsApi.deleteScript(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scripts'] })
-      notifySuccess('Скрипт удалён')
-    },
-    onError: (err: unknown) => {
-      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
-      notifyError(
-        e?.response?.data?.error ||
-          e?.response?.data?.message ||
-          e?.message ||
-          'Не удалось удалить скрипт'
-      )
-    },
+  const deleteMutation = useApiMutation<unknown, string>({
+    mutationFn: (id) => scriptsApi.deleteScript(id),
+    invalidateKeys: [['scripts']],
+    successMessage: 'Скрипт удалён',
+    errorFallback: 'Не удалось удалить скрипт',
   })
 
   const scripts = data?.scripts ?? []
