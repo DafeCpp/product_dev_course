@@ -154,6 +154,43 @@ class TestExecuteScript:
         assert resp.status == 202
         mock_rabbitmq.publish.assert_awaited_once()
 
+    async def test_execute_parameters_persisted_on_execution(
+        self, service_client, mock_rabbitmq
+    ):
+        script_id = await _create_script(service_client, "exec-params-script")
+        resp = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={"parameters": {"foo": "bar", "n": 42}},
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 202
+        data = await resp.json()
+        assert data["parameters"] == {"foo": "bar", "n": 42}
+
+    async def test_execute_target_instance_persisted_on_execution(
+        self, service_client, mock_rabbitmq
+    ):
+        script_id = await _create_script(service_client, "exec-target-script")
+        resp = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={"target_instance": "instance-7"},
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 202
+        data = await resp.json()
+        assert data["target_instance"] == "instance-7"
+
+    async def test_execute_superadmin_can_execute(
+        self, service_client, mock_rabbitmq
+    ):
+        script_id = await _create_script(service_client, "exec-superadmin-script")
+        resp = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={},
+            headers=make_superadmin_headers(),
+        )
+        assert resp.status == 202
+
 
 # ===========================================================================
 # TestCancelExecution
@@ -206,6 +243,46 @@ class TestCancelExecution:
             headers=make_no_perm_headers(),
         )
         assert cancel_resp.status == 403
+
+    async def test_cancel_invalid_uuid_returns_400(self, service_client):
+        resp = await service_client.post(
+            "/api/v1/executions/not-a-uuid/cancel",
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 400
+
+    async def test_cancel_manage_only_returns_403(
+        self, service_client, mock_rabbitmq
+    ):
+        # scripts.manage alone (without execute) must NOT be able to cancel.
+        script_id = await _create_script(service_client, "cancel-manage-only-script")
+        exec_resp = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={},
+            headers=make_executor_headers(),
+        )
+        execution_id = (await exec_resp.json())["id"]
+        cancel_resp = await service_client.post(
+            f"/api/v1/executions/{execution_id}/cancel",
+            headers=make_manage_only_headers(),
+        )
+        assert cancel_resp.status == 403
+
+    async def test_cancel_superadmin_can_cancel(
+        self, service_client, mock_rabbitmq
+    ):
+        script_id = await _create_script(service_client, "cancel-superadmin-script")
+        exec_resp = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={},
+            headers=make_executor_headers(),
+        )
+        execution_id = (await exec_resp.json())["id"]
+        resp = await service_client.post(
+            f"/api/v1/executions/{execution_id}/cancel",
+            headers=make_superadmin_headers(),
+        )
+        assert resp.status == 200
 
 
 # ===========================================================================
@@ -308,6 +385,71 @@ class TestListExecutions:
         )
         assert resp.status == 200
 
+    async def test_list_invalid_limit_returns_400(self, service_client):
+        resp = await service_client.get(
+            "/api/v1/executions?limit=abc",
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 400
+
+    async def test_list_invalid_offset_returns_400(self, service_client):
+        resp = await service_client.get(
+            "/api/v1/executions?offset=xyz",
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 400
+
+    async def test_list_invalid_status_returns_400(self, service_client):
+        resp = await service_client.get(
+            "/api/v1/executions?status=totally_made_up",
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 400
+
+    async def test_list_invalid_script_id_uuid_returns_400(self, service_client):
+        resp = await service_client.get(
+            "/api/v1/executions?script_id=not-a-uuid",
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 400
+
+    async def test_list_invalid_requested_by_uuid_returns_400(self, service_client):
+        resp = await service_client.get(
+            "/api/v1/executions?requested_by=not-a-uuid",
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 400
+
+    async def test_list_filter_by_requested_by_returns_only_matching(
+        self, service_client, mock_rabbitmq
+    ):
+        # Two different users execute the same script — filter must isolate.
+        script_id = await _create_script(service_client, "list-by-requestedby-script")
+        exec1 = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={},
+            headers=make_executor_headers(),  # uses fixed user_id 550e8400-...-002
+        )
+        assert exec1.status == 202
+        executor_id = make_executor_headers()["X-User-Id"]
+
+        list_resp = await service_client.get(
+            f"/api/v1/executions?requested_by={executor_id}",
+            headers=make_executor_headers(),
+        )
+        assert list_resp.status == 200
+        data = await list_resp.json()
+        assert len(data["executions"]) >= 1
+        for execution in data["executions"]:
+            assert execution["requested_by"] == executor_id
+
+    async def test_list_superadmin_can_view(self, service_client):
+        resp = await service_client.get(
+            "/api/v1/executions",
+            headers=make_superadmin_headers(),
+        )
+        assert resp.status == 200
+
 
 # ===========================================================================
 # TestGetExecution
@@ -353,3 +495,42 @@ class TestGetExecution:
             headers=make_no_perm_headers(),
         )
         assert resp.status == 403
+
+    async def test_get_execution_invalid_uuid_returns_400(self, service_client):
+        resp = await service_client.get(
+            "/api/v1/executions/not-a-uuid",
+            headers=make_executor_headers(),
+        )
+        assert resp.status == 400
+
+    async def test_get_execution_view_logs_can_view(
+        self, service_client, mock_rabbitmq
+    ):
+        script_id = await _create_script(service_client, "get-exec-viewlogs-script")
+        exec_resp = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={},
+            headers=make_executor_headers(),
+        )
+        execution_id = (await exec_resp.json())["id"]
+        resp = await service_client.get(
+            f"/api/v1/executions/{execution_id}",
+            headers=make_view_logs_headers(),
+        )
+        assert resp.status == 200
+
+    async def test_get_execution_superadmin_can_view(
+        self, service_client, mock_rabbitmq
+    ):
+        script_id = await _create_script(service_client, "get-exec-superadmin-script")
+        exec_resp = await service_client.post(
+            f"/api/v1/scripts/{script_id}/execute",
+            json={},
+            headers=make_executor_headers(),
+        )
+        execution_id = (await exec_resp.json())["id"]
+        resp = await service_client.get(
+            f"/api/v1/executions/{execution_id}",
+            headers=make_superadmin_headers(),
+        )
+        assert resp.status == 200
