@@ -47,7 +47,18 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -q
+        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.job }}
+          path: |
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   script-service:
     name: script-service tests
@@ -79,7 +90,18 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -q
+        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.job }}
+          path: |
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   experiment-service:
     name: experiment-service tests
@@ -174,7 +196,18 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -q
+        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.job }}
+          path: |
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 14
   telemetry-ingest-service:
     name: telemetry-ingest-service tests
     runs-on: ubuntu-latest
@@ -255,4 +288,15 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -q
+        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.job }}
+          path: |
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 14

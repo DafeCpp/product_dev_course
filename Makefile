@@ -1,4 +1,5 @@
 .PHONY: test test-backend test-frontend test-telemetry-cli type-check backend-install frontend-install
+.PHONY: test-coverage test-coverage-backend test-coverage-frontend test-coverage-firmware
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
 .PHONY: logs-stack logs-stack-up logs-stack-down logs-stack-restart
@@ -204,6 +205,80 @@ test-frontend: frontend-install
 .PHONY: test-frontend-docker
 test-frontend-docker:
 	@docker run --rm -v "$$(pwd)":/repo -w /repo/$(FRONTEND_DIR) $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test"
+
+# ============================================
+# Coverage
+# ============================================
+
+# Запуск всех coverage-репортов (backend + frontend + firmware).
+test-coverage: test-coverage-backend test-coverage-frontend test-coverage-firmware
+
+# Coverage по всем backend сервисам (pytest-cov). Использует ту же логику postgres, что и test-backend.
+test-coverage-backend: backend-install
+	@if [ -z "$(BACKEND_SERVICES)" ]; then \
+		echo "⚠️  Не найдено ни одного backend сервиса в $(BACKEND_SERVICES_DIR)"; \
+		exit 1; \
+	fi; \
+	PG_TEST_DSN="$(TEST_POSTGRESQL_DSN)"; \
+	if [ -z "$$PG_TEST_DSN" ]; then \
+		echo "🐘 Starting TimescaleDB (postgres) for backend coverage..."; \
+		$(DOCKER_COMPOSE) up -d postgres >/dev/null 2>&1 || { \
+			echo "❌ docker compose failed to start postgres"; \
+			exit 1; \
+		}; \
+		for i in $$(seq 1 60); do \
+			$(DOCKER_COMPOSE) exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1 && break; \
+			sleep 0.5; \
+		done; \
+		hostport="$$($(DOCKER_COMPOSE) port postgres 5432 2>/dev/null | tail -n 1 | sed 's/.*://')"; \
+		if [ -z "$$hostport" ]; then hostport=5433; fi; \
+		pg_user="$$($(DOCKER_COMPOSE) exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_USER:-postgres}\"' | sed 's/\"//g')"; \
+		pg_pass="$$($(DOCKER_COMPOSE) exec -T postgres sh -lc 'printf \"%s\" \"$${POSTGRES_PASSWORD:-postgres}\"' | sed 's/\"//g')"; \
+		PG_TEST_DSN="postgresql://$${pg_user}:$${pg_pass}@localhost:$${hostport}/postgres"; \
+	fi; \
+	failed=0; \
+	for service in $(BACKEND_SERVICES); do \
+		echo "📊 Coverage for $$(basename $$service)..."; \
+		(cd $$service && poetry run pytest --postgresql "$$PG_TEST_DSN" --cov --cov-report=term-missing --cov-report=html --cov-report=xml) || failed=1; \
+	done; \
+	exit $$failed
+
+# Coverage по фронту (vitest --coverage для experiment-portal, jest --coverage для auth-proxy).
+test-coverage-frontend: frontend-install
+	@cd $(FRONTEND_DIR) && \
+		if command -v "$(NODE)" >/dev/null 2>&1 && "$(NODE)" -e 'const [maj]=process.versions.node.split(\".\"); process.exit(Number(maj) >= 24 ? 0 : 1)' >/dev/null 2>&1; then \
+			npm run test:coverage; \
+		elif command -v docker >/dev/null 2>&1; then \
+			echo "⚠️  Запускаю frontend coverage в Docker ($(FRONTEND_NODE_IMAGE))."; \
+			docker run --rm -v "$$(pwd)/../../..":/repo -w /repo/$(FRONTEND_DIR) $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test:coverage"; \
+		else \
+			echo "❌ Нужен Node.js 24+ или Docker для запуска frontend coverage."; \
+			exit 1; \
+		fi
+	@cd projects/frontend/apps/auth-proxy && \
+		if [ -d node_modules ]; then \
+			npm run test:coverage; \
+		else \
+			echo "ℹ️  auth-proxy не установлен — пропускаю (выполните 'npm ci' в projects/frontend/apps/auth-proxy)."; \
+		fi
+
+# Coverage прошивки (host-сборка GTest с lcov).
+test-coverage-firmware:
+	@if ! command -v cmake >/dev/null 2>&1; then \
+		echo "❌ cmake не найден — установите cmake для firmware coverage."; \
+		exit 1; \
+	fi; \
+	if ! command -v lcov >/dev/null 2>&1; then \
+		echo "⚠️  lcov не найден — будет сгенерирован .gcda/.gcno без HTML-репорта."; \
+	fi; \
+	cd projects/rc_vehicle/firmware/tests && \
+		cmake -B build-coverage -DENABLE_COVERAGE=ON && \
+		cmake --build build-coverage -j && \
+		(if command -v lcov >/dev/null 2>&1 && command -v genhtml >/dev/null 2>&1; then \
+			cmake --build build-coverage --target coverage; \
+		else \
+			cd build-coverage && ctest --output-on-failure; \
+		fi)
 
 .PHONY: generate-sdk
 generate-sdk:
