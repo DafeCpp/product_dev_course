@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -17,6 +18,18 @@ export default defineConfig({
                 //   /telemetry/api/v1/telemetry/stream -> /api/v1/telemetry/stream
                 rewrite: (path) => path.replace(/^\/telemetry/, ''),
             },
+        },
+    },
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        setupFiles: ['./src/setupTests.ts'],
+        css: false,
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'html'],
+            include: ['src/**/*.{ts,tsx}'],
+            exclude: ['src/main.tsx', 'src/setupTests.ts', '**/*.test.{ts,tsx}'],
         },
     },
 })
