@@ -32,5 +32,8 @@
     "ts-jest": "^29.4.4",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.2"
   }
 }
