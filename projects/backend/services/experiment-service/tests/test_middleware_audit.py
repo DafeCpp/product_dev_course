@@ -6,6 +6,7 @@ parsing, and the AuditClient hand-off.
 """
 from __future__ import annotations
 
+from typing import TypedDict, Unpack
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,13 +19,22 @@ from experiment_service.middleware.audit import (
 )
 
 
+class _AuditLogActionKwargs(TypedDict, total=False):
+    actor_id: UUID
+    action: str
+    resource_type: str
+    resource_id: UUID | str
+    project_id: UUID
+    details: dict[str, object]
+
+
 class _StubAuditClient:
     """Captures every log_action call without doing HTTP."""
 
     def __init__(self) -> None:
-        self.calls: list[dict] = []
+        self.calls: list[_AuditLogActionKwargs] = []
 
-    def log_action(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    def log_action(self, **kwargs: Unpack[_AuditLogActionKwargs]) -> None:
         self.calls.append(kwargs)
 
 
