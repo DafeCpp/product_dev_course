@@ -180,7 +180,7 @@ function ExecutionsTab({ onTabChange: _onTabChange }: ExecutionsTabProps) {
     staleTime: 5_000,
     refetchOnWindowFocus: false,
     refetchInterval: (query) => {
-      const executions = query.state.data as ScriptExecution[] | undefined
+      const executions = query.state.data?.executions
       if (
         executions?.some(
           (e) => e.status === 'pending' || e.status === 'running'
