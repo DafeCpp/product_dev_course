@@ -2,24 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import AdminUsers from './AdminUsers'
+import ComparisonPage from './ComparisonPage'
 
 vi.mock('../api/client', () => ({
-  authApi: {
-    listUsers: vi.fn().mockResolvedValue({ users: [] }),
-  },
-  permissionsApi: {
-    listUserPermissions: vi.fn().mockResolvedValue({ permissions: [] }),
-  },
+  runsApi: { list: vi.fn().mockResolvedValue({ runs: [] }) },
+  comparisonApi: { compare: vi.fn().mockResolvedValue({ runs: [] }) },
 }))
 
-vi.mock('../hooks/usePermissions', () => ({
-  usePermissions: vi.fn(() => ({
-    hasPermission: vi.fn(() => true),
-  })),
+vi.mock('plotly.js-dist-min', () => ({
+  default: { react: vi.fn() },
 }))
 
-describe('AdminUsers', () => {
+describe('ComparisonPage', () => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -32,29 +26,18 @@ describe('AdminUsers', () => {
     const { container } = render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
-          <AdminUsers />
+          <ComparisonPage />
         </QueryClientProvider>
       </BrowserRouter>
     )
     expect(container.firstChild).toBeInTheDocument()
   })
 
-  it('displays user management interface', () => {
+  it('shows loading or empty state', () => {
     const { container } = render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
-          <AdminUsers />
-        </QueryClientProvider>
-      </BrowserRouter>
-    )
-    expect(container).toBeInTheDocument()
-  })
-
-  it('respects user permissions', () => {
-    const { container } = render(
-      <BrowserRouter>
-        <QueryClientProvider client={queryClient}>
-          <AdminUsers />
+          <ComparisonPage />
         </QueryClientProvider>
       </BrowserRouter>
     )

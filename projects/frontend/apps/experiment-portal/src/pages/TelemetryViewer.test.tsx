@@ -2,24 +2,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import AdminUsers from './AdminUsers'
+import TelemetryViewer from './TelemetryViewer'
 
 vi.mock('../api/client', () => ({
-  authApi: {
-    listUsers: vi.fn().mockResolvedValue({ users: [] }),
+  runsApi: {
+    get: vi.fn().mockResolvedValue({
+      id: 'run-1',
+      name: 'Test Run',
+      experiment_id: 'exp-1',
+    }),
   },
-  permissionsApi: {
-    listUserPermissions: vi.fn().mockResolvedValue({ permissions: [] }),
+  telemetryApi: {
+    list: vi.fn().mockResolvedValue({ telemetry: [] }),
   },
 }))
 
-vi.mock('../hooks/usePermissions', () => ({
-  usePermissions: vi.fn(() => ({
-    hasPermission: vi.fn(() => true),
-  })),
+vi.mock('plotly.js-dist-min', () => ({
+  default: { react: vi.fn(), purge: vi.fn() },
 }))
 
-describe('AdminUsers', () => {
+describe('TelemetryViewer', () => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -32,29 +34,29 @@ describe('AdminUsers', () => {
     const { container } = render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
-          <AdminUsers />
+          <TelemetryViewer />
         </QueryClientProvider>
       </BrowserRouter>
     )
     expect(container.firstChild).toBeInTheDocument()
   })
 
-  it('displays user management interface', () => {
+  it('displays telemetry interface', () => {
     const { container } = render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
-          <AdminUsers />
+          <TelemetryViewer />
         </QueryClientProvider>
       </BrowserRouter>
     )
     expect(container).toBeInTheDocument()
   })
 
-  it('respects user permissions', () => {
+  it('handles empty telemetry gracefully', () => {
     const { container } = render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
-          <AdminUsers />
+          <TelemetryViewer />
         </QueryClientProvider>
       </BrowserRouter>
     )

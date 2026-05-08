@@ -2,24 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import AdminUsers from './AdminUsers'
+import SensorMonitor from './SensorMonitor'
 
 vi.mock('../api/client', () => ({
-  authApi: {
-    listUsers: vi.fn().mockResolvedValue({ users: [] }),
-  },
-  permissionsApi: {
-    listUserPermissions: vi.fn().mockResolvedValue({ permissions: [] }),
+  sensorsApi: {
+    get: vi.fn().mockResolvedValue({
+      id: 'sensor-1',
+      name: 'Test Sensor',
+      last_reading: null,
+    }),
   },
 }))
 
-vi.mock('../hooks/usePermissions', () => ({
-  usePermissions: vi.fn(() => ({
-    hasPermission: vi.fn(() => true),
-  })),
-}))
-
-describe('AdminUsers', () => {
+describe('SensorMonitor', () => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -32,29 +27,18 @@ describe('AdminUsers', () => {
     const { container } = render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
-          <AdminUsers />
+          <SensorMonitor />
         </QueryClientProvider>
       </BrowserRouter>
     )
     expect(container.firstChild).toBeInTheDocument()
   })
 
-  it('displays user management interface', () => {
+  it('shows sensor monitoring interface', () => {
     const { container } = render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
-          <AdminUsers />
-        </QueryClientProvider>
-      </BrowserRouter>
-    )
-    expect(container).toBeInTheDocument()
-  })
-
-  it('respects user permissions', () => {
-    const { container } = render(
-      <BrowserRouter>
-        <QueryClientProvider client={queryClient}>
-          <AdminUsers />
+          <SensorMonitor />
         </QueryClientProvider>
       </BrowserRouter>
     )
