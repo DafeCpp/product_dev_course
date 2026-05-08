@@ -9,9 +9,9 @@ Cypress.Commands.add('loginAsAdmin', () => {
 })
 
 Cypress.Commands.add('createProject', (projectName: string) => {
-  cy.contains('button', /\+ create|новый проект/i).click()
-  cy.get('input[name="project_name"]').type(projectName)
-  cy.contains('button', /save|создать|сохранить/i).click()
+  cy.contains('button', /\+ create|новый проект|create\s+project/i).click()
+  cy.get('#project_modal_name').type(projectName)
+  cy.contains('button', /создать проект|save|create/i).click()
   cy.contains(projectName).should('be.visible')
 })
 
@@ -23,9 +23,9 @@ Cypress.Commands.add('openProject', (projectName: string) => {
 })
 
 Cypress.Commands.add('createExperiment', (experimentName: string) => {
-  cy.contains('button', /\+ create|новый эксперимент/i).click()
-  cy.get('input[name="name"]').type(experimentName)
-  cy.contains('button', /save|создать|сохранить/i).click()
+  cy.contains('button', /\+ create|новый эксперимент|create\s+experiment/i).click()
+  cy.get('#experiment_name').type(experimentName)
+  cy.contains('button', /создать эксперимент|create/i).click()
   cy.contains(experimentName).should('be.visible')
 })
 
@@ -37,9 +37,11 @@ Cypress.Commands.add('openExperiment', (experimentName: string) => {
 })
 
 Cypress.Commands.add('createRun', () => {
-  cy.contains('button', /\+ create|новый запуск|start/i).click()
-  cy.get('button').contains(/save|create|start|запустить/i, { timeout: 5000 }).click()
-  cy.contains(/run|запуск/i).should('be.visible')
+  const runName = `Run ${Date.now()}`
+  cy.contains('button', /\+ create|новый запуск|create\s+run/i).click()
+  cy.get('#run_name').type(runName)
+  cy.contains('button', /создать запуск|create/i).click()
+  cy.contains(runName).should('be.visible')
 })
 
 Cypress.Commands.add('logout', () => {
