@@ -16,6 +16,9 @@ on:
       - projects/backend/**
       - .github/workflows/backend-tests.yml
 
+permissions:
+  contents: read
+
 jobs:
   detect-changes:
     name: Detect changed services
