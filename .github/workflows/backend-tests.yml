@@ -17,8 +17,48 @@ on:
       - .github/workflows/backend-tests.yml
 
 jobs:
+  detect-changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      auth-service: ${{ steps.detect.outputs.auth-service }}
+      script-service: ${{ steps.detect.outputs.script-service }}
+      experiment-service: ${{ steps.detect.outputs.experiment-service }}
+      telemetry-ingest-service: ${{ steps.detect.outputs.telemetry-ingest-service }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed services
+        id: detect
+        run: |
+          # Get changed files
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.event.after }})
+          fi
+
+          # Check each service
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo ""
+
+          for service in auth-service script-service experiment-service telemetry-ingest-service; do
+            if echo "$CHANGED_FILES" | grep -E "^projects/backend/(services/$service|common)/|\.github/workflows/backend-tests\.yml" > /dev/null; then
+              echo "$service=true" >> $GITHUB_OUTPUT
+              echo "✓ $service changed"
+            else
+              echo "$service=false" >> $GITHUB_OUTPUT
+              echo "✗ $service not changed"
+            fi
+          done
+
   auth-service:
     name: auth-service tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.auth-service == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -62,6 +102,8 @@ jobs:
 
   script-service:
     name: script-service tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.script-service == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -105,6 +147,8 @@ jobs:
 
   experiment-service:
     name: experiment-service tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.experiment-service == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -210,6 +254,8 @@ jobs:
           retention-days: 14
   telemetry-ingest-service:
     name: telemetry-ingest-service tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.telemetry-ingest-service == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
