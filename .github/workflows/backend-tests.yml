@@ -146,10 +146,14 @@ jobs:
           retention-days: 14
 
   experiment-service:
-    name: experiment-service tests
+    name: experiment-service tests (shard ${{ matrix.shard }}/4)
     needs: detect-changes
     if: needs.detect-changes.outputs.experiment-service == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: projects/backend/services/experiment-service
@@ -188,20 +192,20 @@ jobs:
           # Copy TimescaleDB extension files to testsuite's PostgreSQL directory
           # testsuite uses its own PostgreSQL, so we need to find where it is
           echo "Finding testsuite PostgreSQL installation..."
-          
+
           # Install poetry dependencies first to get testsuite
           cd ${{ github.workspace }}/projects/backend/services/experiment-service
           poetry install --no-interaction --no-root 2>/dev/null || true
-          
+
           # Find testsuite's PostgreSQL bin directory
           TS_PG_BIN=$(poetry run python -c "from testsuite.databases.pgsql import config; print(config.PG_BIN_DIR)" 2>/dev/null || echo "")
           echo "Testsuite PG_BIN_DIR: $TS_PG_BIN"
-          
+
           # Copy TimescaleDB files to both system and potential testsuite locations
           echo "Copying TimescaleDB extension files..."
           sudo cp -r /usr/share/timescaledb/* /usr/share/postgresql/16/extension/ 2>/dev/null || true
           sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so /usr/lib/postgresql/16/lib/ 2>/dev/null || true
-          
+
           # Also copy to common testsuite locations if they exist
           for ts_dir in /usr/share/postgresql /usr/lib/postgresql; do
             if [ -d "$ts_dir" ]; then
@@ -224,7 +228,7 @@ jobs:
           echo "Verifying pg_config..."
           which pg_config || true
           pg_config --version || true
-          
+
           # Set environment variables for testsuite
           echo "PG_BIN=/usr/lib/postgresql/16/bin" >> $GITHUB_ENV
           echo "PG_SHARE=/usr/share/postgresql/16" >> $GITHUB_ENV
@@ -239,19 +243,71 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
 
-      - name: Run pytest
-        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+      - name: Run pytest (shard ${{ matrix.shard }}/4)
+        env:
+          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+        run: |
+          poetry run pytest -q \
+            --shard-id=$(( ${{ matrix.shard }} - 1 )) \
+            --num-shards=4 \
+            --cov --cov-report=
 
-      - name: Upload coverage report
+      - name: Upload coverage data (shard ${{ matrix.shard }})
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ github.job }}
+          name: coverage-data-experiment-service-${{ matrix.shard }}
+          path: projects/backend/services/experiment-service/.coverage.shard-${{ matrix.shard }}
+          if-no-files-found: ignore
+          retention-days: 1
+
+  experiment-service-coverage:
+    name: experiment-service coverage merge
+    needs: [detect-changes, experiment-service]
+    if: always() && needs.detect-changes.outputs.experiment-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/services/experiment-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install coverage
+        run: pip install coverage==7.13.4
+
+      - name: Download all shard coverage data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-data-experiment-service-*
+          path: projects/backend/services/experiment-service/_cov_data
+          merge-multiple: true
+
+      - name: Combine and report
+        run: |
+          set -euo pipefail
+          mv _cov_data/.coverage.shard-* . 2>/dev/null || true
+          coverage combine
+          coverage xml -o coverage.xml
+          coverage html -d htmlcov
+          coverage report
+
+      - name: Upload merged coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-experiment-service
           path: |
-            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
-            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+            projects/backend/services/experiment-service/htmlcov
+            projects/backend/services/experiment-service/coverage.xml
           if-no-files-found: ignore
           retention-days: 14
+
   telemetry-ingest-service:
     name: telemetry-ingest-service tests
     needs: detect-changes
