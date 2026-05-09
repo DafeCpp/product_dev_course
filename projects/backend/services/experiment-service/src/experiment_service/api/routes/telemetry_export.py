@@ -304,12 +304,12 @@ async def export_session_telemetry(request: web.Request):
     try:
         await run_service.get_run(project_id, run_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     cs_service = await get_capture_session_service(request)
     try:
         await cs_service.get_session(project_id, session_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     fmt = request.rel_url.query.get("format", "csv").lower()
     if fmt not in ("csv", "json"):
@@ -387,7 +387,7 @@ async def export_run_telemetry(request: web.Request):
     try:
         await run_service.get_run(project_id, run_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     fmt = request.rel_url.query.get("format", "csv").lower()
     if fmt not in ("csv", "json"):

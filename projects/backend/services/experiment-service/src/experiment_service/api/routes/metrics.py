@@ -55,9 +55,9 @@ async def ingest_metrics(request: web.Request) -> web.Response:
     try:
         accepted = await service.ingest_metrics(project_id, run_id, points)
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response({"status": "accepted", "accepted": accepted}, status=202)
 
 
@@ -95,7 +95,7 @@ async def query_metrics(request: web.Request) -> web.Response:
             offset=offset,
         )
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(payload)
 
 
@@ -112,7 +112,7 @@ async def metrics_summary(request: web.Request) -> web.Response:
     try:
         payload = await service.get_summary(project_id, run_id, names=names)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(payload)
 
 
@@ -148,5 +148,5 @@ async def metrics_aggregations(request: web.Request) -> web.Response:
             bucket_size=bucket_size,
         )
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(payload)

@@ -41,9 +41,10 @@ async def create_profile(request: web.Request):
             dto,
             created_by=user.user_id,
         )
-    except (InvalidStatusTransitionError, NotFoundError) as exc:
-        status = web.HTTPBadRequest if isinstance(exc, InvalidStatusTransitionError) else web.HTTPNotFound
-        raise status(text=str(exc)) from exc
+    except InvalidStatusTransitionError as exc:
+        raise web.HTTPBadRequest(text="Bad request") from exc
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_profile_response(profile), status=201)
 
 
@@ -84,7 +85,7 @@ async def publish_profile(request: web.Request):
             published_by=user.user_id,
         )
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_profile_response(profile))

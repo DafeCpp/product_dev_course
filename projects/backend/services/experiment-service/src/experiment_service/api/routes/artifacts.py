@@ -65,7 +65,7 @@ async def create_artifact(request: web.Request) -> web.Response:
             is_restricted=is_restricted,
         )
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_artifact_response(artifact), status=201)
 
 
@@ -108,7 +108,7 @@ async def get_artifact(request: web.Request) -> web.Response:
     try:
         artifact = await service.get_artifact(artifact_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_artifact_response(artifact))
 
 
@@ -124,7 +124,7 @@ async def delete_artifact(request: web.Request) -> web.Response:
     try:
         await service.delete_artifact(artifact_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)
 
 
@@ -142,7 +142,7 @@ async def approve_artifact(request: web.Request) -> web.Response:
     try:
         artifact = await service.approve_artifact(artifact_id, user.user_id, note)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_artifact_response(artifact))
 
 
@@ -198,7 +198,7 @@ async def request_upload_url(request: web.Request) -> web.Response:
             is_restricted=is_restricted,
         )
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     s3 = get_s3_client()
     try:
@@ -230,7 +230,7 @@ async def get_download_url(request: web.Request) -> web.Response:
     try:
         artifact = await service.get_artifact(artifact_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     # URI format: "s3://<key>" or legacy plain string
     uri = artifact.uri

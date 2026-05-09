@@ -47,7 +47,7 @@ async def export_experiment_zip(request: web.Request) -> web.Response:
     try:
         archive_bytes = await service.build_zip(project_id, experiment_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     filename = f"experiment_{experiment_id}.zip"
     return web.Response(
