@@ -59,7 +59,7 @@ async def execute_script(request: web.Request) -> web.Response:
             target_instance=target_instance,
         )
     except ScriptNotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Script not found") from exc
     return web.json_response(execution.to_dict(), status=202)
 
 
@@ -73,7 +73,7 @@ async def cancel_execution(request: web.Request) -> web.Response:
     try:
         execution = await dispatcher.cancel(user_id=user.user_id, execution_id=execution_id)
     except ExecutionNotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Execution not found") from exc
     return web.json_response(execution.to_dict())
 
 
@@ -134,5 +134,5 @@ async def get_execution(request: web.Request) -> web.Response:
     try:
         execution = await dispatcher.get_execution(execution_id)
     except ExecutionNotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Execution not found") from exc
     return web.json_response(execution.to_dict())
