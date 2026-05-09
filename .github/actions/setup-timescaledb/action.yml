@@ -1,0 +1,93 @@
+name: 'Setup PostgreSQL 16 + TimescaleDB'
+description: >
+  Installs PostgreSQL 16 (PGDG) and TimescaleDB extension, copies extension
+  files into PostgreSQL share/lib dirs, and exports PG_BIN/PG_SHARE/PG_LIB env
+  vars. Caches the downloaded .deb archives between runs.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache apt archives (PostgreSQL 16 + TimescaleDB)
+      id: apt-cache
+      uses: actions/cache@v4
+      with:
+        path: /tmp/apt-archives
+        key: apt-pg16-timescaledb-${{ runner.os }}-v1
+
+    - name: Configure APT sources (PGDG + TimescaleDB)
+      shell: bash
+      run: |
+        set -euo pipefail
+        UBUNTU_CODENAME=$(lsb_release -cs)
+
+        # PostgreSQL official repo (PGDG): TimescaleDB loader requires 16.13+,
+        # Ubuntu default ships 16.12.
+        curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+          | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+        echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${UBUNTU_CODENAME}-pgdg main" \
+          | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+
+        # TimescaleDB packagecloud repo
+        echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ ${UBUNTU_CODENAME} main" \
+          | sudo tee /etc/apt/sources.list.d/timescaledb.list > /dev/null
+        curl -sL https://packagecloud.io/timescale/timescaledb/gpgkey \
+          | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg > /dev/null
+
+        sudo apt-get update
+
+    - name: Restore cached .deb files (if hit)
+      if: steps.apt-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo mkdir -p /var/cache/apt/archives
+        sudo cp -n /tmp/apt-archives/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+        echo "Restored $(ls /tmp/apt-archives/*.deb 2>/dev/null | wc -l) cached .deb files"
+
+    - name: Install PostgreSQL 16 + TimescaleDB
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get install -y --no-install-recommends \
+          postgresql-16 postgresql-contrib-16 timescaledb-2-postgresql-16
+
+    - name: Save .deb files for cache
+      if: steps.apt-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p /tmp/apt-archives
+        sudo cp /var/cache/apt/archives/postgresql-16_*.deb            /tmp/apt-archives/ 2>/dev/null || true
+        sudo cp /var/cache/apt/archives/postgresql-contrib-16_*.deb    /tmp/apt-archives/ 2>/dev/null || true
+        sudo cp /var/cache/apt/archives/postgresql-client-16_*.deb     /tmp/apt-archives/ 2>/dev/null || true
+        sudo cp /var/cache/apt/archives/timescaledb-2-postgresql-16_*.deb /tmp/apt-archives/ 2>/dev/null || true
+        sudo cp /var/cache/apt/archives/timescaledb-2-loader-postgresql-16_*.deb /tmp/apt-archives/ 2>/dev/null || true
+        sudo chown -R "$USER" /tmp/apt-archives
+        echo "Cached $(ls /tmp/apt-archives/*.deb | wc -l) .deb files"
+
+    - name: Copy TimescaleDB extension files
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo cp -r /usr/share/timescaledb/* /usr/share/postgresql/16/extension/ 2>/dev/null || true
+        sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so /usr/lib/postgresql/16/lib/ 2>/dev/null || true
+
+        # Mirror to alternate testsuite-discoverable locations
+        for ts_dir in /usr/share/postgresql /usr/lib/postgresql; do
+          if [ -d "$ts_dir" ]; then
+            sudo cp -r /usr/share/timescaledb/* "$ts_dir"/*/extension/ 2>/dev/null || true
+            sudo cp /usr/lib/postgresql/16/lib/timescaledb*.so "$ts_dir"/*/lib/ 2>/dev/null || true
+          fi
+        done
+
+        # Verify
+        ls -la /usr/lib/postgresql/16/lib/timescaledb*.so
+        ls -la /usr/share/postgresql/16/extension/timescaledb*.control
+
+    - name: Export PostgreSQL paths
+      shell: bash
+      run: |
+        echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+        echo "PG_BIN=/usr/lib/postgresql/16/bin"   >> "$GITHUB_ENV"
+        echo "PG_SHARE=/usr/share/postgresql/16"   >> "$GITHUB_ENV"
+        echo "PG_LIB=/usr/lib/postgresql/16/lib"   >> "$GITHUB_ENV"

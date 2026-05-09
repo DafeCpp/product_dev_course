@@ -77,7 +77,7 @@ async def delete_webhook(request: web.Request):
     try:
         await service.delete_subscription(project_id, webhook_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)
 
 
@@ -110,6 +110,6 @@ async def retry_webhook_delivery(request: web.Request):
     try:
         await service.retry_delivery(project_id, delivery_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)
 

@@ -16,6 +16,9 @@ on:
       - 'projects/frontend/**'
       - '.github/workflows/frontend-tests.yml'
 
+permissions:
+  contents: read
+
 jobs:
   detect-changes:
     name: Detect changed frontend apps

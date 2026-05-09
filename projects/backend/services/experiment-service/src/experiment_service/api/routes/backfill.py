@@ -41,7 +41,7 @@ async def start_backfill(request: web.Request):
             project_id, sensor_id, created_by=user.user_id
         )
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_serialize_task(task), status=201)
 
 
@@ -74,5 +74,5 @@ async def get_backfill_task(request: web.Request):
     try:
         task = await service.get_task(task_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_serialize_task(task))
