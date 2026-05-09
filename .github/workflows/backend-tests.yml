@@ -56,10 +56,14 @@ jobs:
           done
 
   auth-service:
-    name: auth-service tests
+    name: auth-service tests (shard ${{ matrix.shard }}/2)
     needs: detect-changes
     if: needs.detect-changes.outputs.auth-service == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     defaults:
       run:
         working-directory: projects/backend/services/auth-service
@@ -86,17 +90,68 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
 
-      - name: Run pytest
-        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+      - name: Run pytest (shard ${{ matrix.shard }}/2)
+        env:
+          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+        run: |
+          poetry run pytest -q \
+            --shard-id=$(( ${{ matrix.shard }} - 1 )) \
+            --num-shards=2 \
+            --cov --cov-report=
 
-      - name: Upload coverage report
+      - name: Upload coverage data (shard ${{ matrix.shard }})
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ github.job }}
+          name: coverage-data-auth-service-${{ matrix.shard }}
+          path: projects/backend/services/auth-service/.coverage.shard-${{ matrix.shard }}
+          if-no-files-found: ignore
+          retention-days: 1
+
+  auth-service-coverage:
+    name: auth-service coverage merge
+    needs: [detect-changes, auth-service]
+    if: always() && needs.detect-changes.outputs.auth-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/services/auth-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install coverage
+        run: pip install coverage==7.13.4
+
+      - name: Download all shard coverage data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-data-auth-service-*
+          path: projects/backend/services/auth-service/_cov_data
+          merge-multiple: true
+
+      - name: Combine and report
+        run: |
+          set -euo pipefail
+          mv _cov_data/.coverage.shard-* . 2>/dev/null || true
+          coverage combine
+          coverage xml -o coverage.xml
+          coverage html -d htmlcov
+          coverage report
+
+      - name: Upload merged coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-auth-service
           path: |
-            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
-            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+            projects/backend/services/auth-service/htmlcov
+            projects/backend/services/auth-service/coverage.xml
           if-no-files-found: ignore
           retention-days: 14
 
@@ -253,10 +308,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   telemetry-ingest-service:
-    name: telemetry-ingest-service tests
+    name: telemetry-ingest-service tests (shard ${{ matrix.shard }}/2)
     needs: detect-changes
     if: needs.detect-changes.outputs.telemetry-ingest-service == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     defaults:
       run:
         working-directory: projects/backend/services/telemetry-ingest-service
@@ -333,16 +392,67 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
 
-      - name: Run pytest
-        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+      - name: Run pytest (shard ${{ matrix.shard }}/2)
+        env:
+          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+        run: |
+          poetry run pytest -q \
+            --shard-id=$(( ${{ matrix.shard }} - 1 )) \
+            --num-shards=2 \
+            --cov --cov-report=
 
-      - name: Upload coverage report
+      - name: Upload coverage data (shard ${{ matrix.shard }})
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ github.job }}
+          name: coverage-data-telemetry-ingest-service-${{ matrix.shard }}
+          path: projects/backend/services/telemetry-ingest-service/.coverage.shard-${{ matrix.shard }}
+          if-no-files-found: ignore
+          retention-days: 1
+
+  telemetry-ingest-service-coverage:
+    name: telemetry-ingest-service coverage merge
+    needs: [detect-changes, telemetry-ingest-service]
+    if: always() && needs.detect-changes.outputs.telemetry-ingest-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/services/telemetry-ingest-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install coverage
+        run: pip install coverage==7.13.4
+
+      - name: Download all shard coverage data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-data-telemetry-ingest-service-*
+          path: projects/backend/services/telemetry-ingest-service/_cov_data
+          merge-multiple: true
+
+      - name: Combine and report
+        run: |
+          set -euo pipefail
+          mv _cov_data/.coverage.shard-* . 2>/dev/null || true
+          coverage combine
+          coverage xml -o coverage.xml
+          coverage html -d htmlcov
+          coverage report
+
+      - name: Upload merged coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-telemetry-ingest-service
           path: |
-            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
-            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+            projects/backend/services/telemetry-ingest-service/htmlcov
+            projects/backend/services/telemetry-ingest-service/coverage.xml
           if-no-files-found: ignore
           retention-days: 14
