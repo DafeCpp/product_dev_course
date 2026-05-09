@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import uuid
 
+import structlog
 from aiohttp import web
 from pydantic import ValidationError
+
+logger = structlog.get_logger(__name__)
 
 from experiment_service.api.utils import (
     paginated_response,
@@ -203,8 +206,9 @@ async def request_upload_url(request: web.Request) -> web.Response:
     s3 = get_s3_client()
     try:
         upload_url = await s3.presign_upload(object_key, content_type)
-    except Exception as exc:
-        raise web.HTTPServiceUnavailable(text=f"S3 unavailable: {exc}") from exc
+    except Exception:
+        logger.exception("S3 presign failed")
+        raise web.HTTPServiceUnavailable(text="S3 unavailable")
 
     return web.json_response({
         "upload_url": upload_url,
@@ -246,8 +250,9 @@ async def get_download_url(request: web.Request) -> web.Response:
     s3 = get_s3_client()
     try:
         download_url = await s3.presign_download(object_key, filename=filename)
-    except Exception as exc:
-        raise web.HTTPServiceUnavailable(text=f"S3 unavailable: {exc}") from exc
+    except Exception:
+        logger.exception("S3 presign failed")
+        raise web.HTTPServiceUnavailable(text="S3 unavailable")
 
     return web.json_response({
         "download_url": download_url,
