@@ -675,7 +675,15 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
     })
 
     // Auth routes (login/refresh/logout/me) — устанавливают куки
-    app.post('/auth/login', async (request, reply) => {
+    //
+    // Per-route `config.rateLimit` is set explicitly on each authenticator/credential
+    // handler so static analysis (CodeQL js/missing-rate-limiting) recognises that
+    // the route is protected, and so we can apply stricter limits than the global
+    // default for credential-handling endpoints (login/register).
+    const authLoginRateLimit = { max: 10, timeWindow: config.rateLimitWindowMs }
+    const authRegisterRateLimit = { max: 5, timeWindow: config.rateLimitWindowMs }
+    const authMutationRateLimit = { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs }
+    app.post('/auth/login', { config: { rateLimit: authLoginRateLimit } }, async (request, reply) => {
         const { traceId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
@@ -712,7 +720,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         return rest
     })
 
-    app.post('/auth/register', async (request, reply) => {
+    app.post('/auth/register', { config: { rateLimit: authRegisterRateLimit } }, async (request, reply) => {
         const { traceId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
@@ -743,7 +751,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         return rest
     })
 
-    app.post('/auth/refresh', async (request, reply) => {
+    app.post('/auth/refresh', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const refreshToken =
             request.cookies[config.refreshCookieName] ??
             (request.body as Record<string, unknown> | undefined)?.[
@@ -785,7 +793,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         return rest
     })
 
-    app.post('/auth/logout', async (request, reply) => {
+    app.post('/auth/logout', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const { traceId, requestId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
@@ -862,7 +870,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         return data
     })
 
-    app.get('/auth/me', async (request, reply) => {
+    app.get('/auth/me', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const access = request.cookies[config.accessCookieName]
         if (!access) {
             reply.status(401)
