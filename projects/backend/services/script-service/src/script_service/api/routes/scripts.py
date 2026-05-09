@@ -119,7 +119,7 @@ async def get_script(request: web.Request) -> web.Response:
     try:
         script = await manager.get_script(script_id)
     except ScriptNotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Script not found") from exc
     return web.json_response(script.to_dict())
 
 
@@ -147,7 +147,7 @@ async def update_script(request: web.Request) -> web.Response:
     try:
         script = await manager.update_script(script_id, **fields)
     except ScriptNotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Script not found") from exc
     return web.json_response(script.to_dict())
 
 
@@ -161,5 +161,5 @@ async def delete_script(request: web.Request) -> web.Response:
     try:
         await manager.delete_script(script_id)
     except ScriptNotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Script not found") from exc
     return web.Response(status=204)

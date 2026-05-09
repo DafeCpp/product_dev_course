@@ -6,6 +6,9 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: read
+
 env:
   CR_REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
   RELEASE_TAG: ${{ github.ref_name }}

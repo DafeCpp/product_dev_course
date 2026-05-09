@@ -60,7 +60,7 @@ async def _ensure_experiment(request: web.Request, project_id: UUID, experiment_
     try:
         await experiment_service.get_experiment(project_id, experiment_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
 
 @routes.get("/api/v1/experiments/{experiment_id}/runs")
@@ -124,16 +124,16 @@ async def create_run(request: web.Request):
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text=str(exc)) from exc
+            raise web.HTTPConflict(text="Conflict") from exc
         if cached:
             return IdempotencyService.build_response(cached)
     service = await get_run_service(request)
     try:
         run = await service.create_run(dto)
     except ScopeMismatchError as exc:
-        raise web.HTTPForbidden(text=str(exc)) from exc
+        raise web.HTTPForbidden(text="Forbidden") from exc
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     response_payload = _run_response(run)
     if idempotency_key:
         try:
@@ -146,7 +146,7 @@ async def create_run(request: web.Request):
                 response_payload,
             )
         except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text=str(exc)) from exc
+            raise web.HTTPConflict(text="Conflict") from exc
     return web.json_response(response_payload, status=201)
 
 
@@ -160,7 +160,7 @@ async def get_run(request: web.Request):
     try:
         run = await service.get_run(project_id, run_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_run_response(run))
 
 
@@ -181,13 +181,13 @@ async def update_run(request: web.Request):
         try:
             before = await service.get_run(project_id, run_id)
         except NotFoundError as exc:
-            raise web.HTTPNotFound(text=str(exc)) from exc
+            raise web.HTTPNotFound(text="Resource not found") from exc
     try:
         run = await service.update_run(project_id, run_id, dto)
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     if dto.status is not None:
         if before is not None:
             audit = await get_run_event_service(request)
@@ -245,14 +245,14 @@ async def batch_update_status(request: web.Request):
         try:
             current = await service.get_run(project_id, rid)
         except NotFoundError as exc:
-            raise web.HTTPNotFound(text=str(exc)) from exc
+            raise web.HTTPNotFound(text="Resource not found") from exc
         before_status[rid] = current.status.value
     try:
         updated_runs = await service.batch_update_status(project_id, run_ids, status)
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     audit = await get_run_event_service(request)
     for run in updated_runs:
         old = before_status.get(run.id)
@@ -354,7 +354,7 @@ async def bulk_update_tags(request: web.Request):
                 project_id, run_ids, add_tags=add_tags, remove_tags=remove_tags
             )
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     audit = await get_run_event_service(request)
     for run in updated:
@@ -383,7 +383,7 @@ async def list_run_events(request: web.Request):
     try:
         run = await run_service.get_run(project_id, run_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     audit = await get_run_event_service(request)
     limit, offset = pagination_params(request)
@@ -408,9 +408,9 @@ async def delete_run(request: web.Request):
     try:
         await service.delete_run(project_id, run_id)
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)
 
 
