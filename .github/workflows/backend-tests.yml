@@ -244,13 +244,20 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest (shard ${{ matrix.shard }}/4)
-        env:
-          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
         run: |
           poetry run pytest -q \
             --shard-id=$(( ${{ matrix.shard }} - 1 )) \
             --num-shards=4 \
-            --cov --cov-report=
+            --cov --cov-report= \
+            --cov-fail-under=0
+
+      - name: Rename coverage data file
+        if: always()
+        run: |
+          ls -la .coverage* 2>/dev/null || true
+          if [ -f .coverage ]; then
+            mv .coverage .coverage.shard-${{ matrix.shard }}
+          fi
 
       - name: Upload coverage data (shard ${{ matrix.shard }})
         if: always()
@@ -258,7 +265,7 @@ jobs:
         with:
           name: coverage-data-experiment-service-${{ matrix.shard }}
           path: projects/backend/services/experiment-service/.coverage.shard-${{ matrix.shard }}
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 1
 
   experiment-service-coverage:
