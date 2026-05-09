@@ -112,6 +112,7 @@ jobs:
         with:
           name: coverage-data-auth-service-${{ matrix.shard }}
           path: projects/backend/services/auth-service/.coverage.shard-${{ matrix.shard }}
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 1
 
@@ -421,6 +422,7 @@ jobs:
         with:
           name: coverage-data-telemetry-ingest-service-${{ matrix.shard }}
           path: projects/backend/services/telemetry-ingest-service/.coverage.shard-${{ matrix.shard }}
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 1
 
