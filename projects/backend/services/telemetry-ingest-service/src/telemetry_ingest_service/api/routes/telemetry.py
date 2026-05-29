@@ -270,26 +270,32 @@ async def _authorize_user_token(*, token: str, project_id: UUID) -> None:
         base = base[: -len("/api/v1")]
     headers = {"Authorization": f"Bearer {token}"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{base}/auth/me", headers=headers) as resp:
-            if resp.status != 200:
-                raise web.HTTPUnauthorized(text="Unauthorized")
-            me = await resp.json()
-            user_id = me.get("id")
-            if not user_id:
-                raise web.HTTPUnauthorized(text="Unauthorized")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{base}/auth/me", headers=headers) as resp:
+                if resp.status != 200:
+                    raise web.HTTPUnauthorized(text="Unauthorized")
+                me = await resp.json()
+                user_id = me.get("id")
+                if not user_id:
+                    raise web.HTTPUnauthorized(text="Unauthorized")
 
-        async with session.get(f"{base}/projects/{project_id}/members", headers=headers) as resp:
-            if resp.status == 403:
-                raise web.HTTPForbidden(text="Forbidden")
-            if resp.status == 404:
-                raise web.HTTPNotFound(text="Project not found")
-            if resp.status != 200:
-                raise web.HTTPBadGateway(text="Auth service error")
-            data = await resp.json()
-            members = data.get("members") or []
-            if not any(str(m.get("user_id")) == str(user_id) for m in members):
-                raise web.HTTPForbidden(text="Forbidden")
+            async with session.get(f"{base}/projects/{project_id}/members", headers=headers) as resp:
+                if resp.status == 403:
+                    raise web.HTTPForbidden(text="Forbidden")
+                if resp.status == 404:
+                    raise web.HTTPNotFound(text="Project not found")
+                if resp.status != 200:
+                    raise web.HTTPBadGateway(text="Auth service error")
+                data = await resp.json()
+                members = data.get("members") or []
+                if not any(str(m.get("user_id")) == str(user_id) for m in members):
+                    raise web.HTTPForbidden(text="Forbidden")
+    except web.HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("auth_service_error", error=str(exc))
+        raise web.HTTPBadGateway(text="Auth service error") from exc
 
 
 @routes.get("/api/v1/telemetry/stream")
