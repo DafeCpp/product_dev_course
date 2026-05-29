@@ -824,7 +824,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
     })
 
     // Password reset routes — public, no auth/CSRF required
-    app.post('/auth/password-reset/request', async (request, reply) => {
+    app.post('/auth/password-reset/request', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const { traceId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
@@ -841,7 +841,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         return res.json().catch(() => ({}))
     })
 
-    app.post('/auth/password-reset/confirm', async (request, reply) => {
+    app.post('/auth/password-reset/confirm', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const { traceId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
