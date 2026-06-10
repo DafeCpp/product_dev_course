@@ -1,8 +1,11 @@
-# Ручное тестирование (E2E): Portal → Auth Proxy → Services → DB
+# E2E happy-path: Portal → Auth Proxy → Services → DB
 
 Документ — практический чеклист “пройти полный путь руками”: поднять стек, залогиниться в Portal через `auth-proxy`, создать сущности (project/experiment/run/capture session/sensor), отправить телеметрию и проверить результат в UI и в PostgreSQL.
 
 См. также:
+- [`README.md`](README.md) — индекс сценариев ручного тестирования.
+- [`auth-flow.md`](auth-flow.md) — сценарии аутентификации (логин/логаут/защита роутов).
+- [`smoke-navigation.md`](smoke-navigation.md) — smoke-проверка загрузки всех разделов.
 - `docs/demo-flow.md` — короткий сценарий демо (5–7 минут, минимум шагов).
 - `docs/mvp-acceptance-checklist.md` — технический чеклист приемки MVP.
 

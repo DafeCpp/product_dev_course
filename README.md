@@ -141,7 +141,7 @@ docker-compose down
 - [Инвентаризация сервисов](docs/local-dev-inventory.md)
 - [Нормализация окружения](docs/local-dev-env-normalization.md)
 - [Настройка Docker и hot-reload](docs/local-dev-docker-setup.md)
-- [Ручное тестирование (E2E)](docs/manual-testing.md)
+- [Ручное тестирование (сценарии)](docs/manual-testing/README.md)
 
 ## Итоговый проект
 
