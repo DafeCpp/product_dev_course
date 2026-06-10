@@ -817,5 +817,5 @@
 - **Трассировка (OpenTelemetry):** ✅ Реализовано: `TracerProvider` + OTLP HTTP exporter + авто-инструментализация aiohttp-server (`opentelemetry-instrumentation-aiohttp-server`); активируется при наличии `OTEL_EXPORTER_ENDPOINT`; `get_tracer()` доступен для ручных спанов в сервисном/репозиторном коде; graceful shutdown с flush спанов.
 - **Chaos-тесты и отказоустойчивость:** ❌
 - **Telemetry ingest disk spool:** ✅ Реализовано (см. раздел «WebSocket ingest» выше для контекста; детали ниже).
-- **Документация:** ✅ (индекс `docs/README.md`, quickstart `docs/local-dev-docker-setup.md`, demo `docs/demo-flow.md`, E2E чеклист `docs/manual-testing.md`, дебаг `docs/ui-debugging.md`)
+- **Документация:** ✅ (индекс `docs/README.md`, quickstart `docs/local-dev-docker-setup.md`, demo `docs/demo-flow.md`, сценарии ручного тестирования `docs/manual-testing/`, дебаг `docs/ui-debugging.md`)
 

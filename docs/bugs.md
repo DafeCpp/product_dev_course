@@ -146,6 +146,28 @@ Request failed with status code 404
 
 ---
 
+### BUG-F-015 — Управление проектными ролями (RBAC) возвращает 404: `/api/v1/projects/*/roles` не маршрутизируется на auth-service
+**Приоритет:** HIGH
+**Статус:** [ ] Не исправлен
+**Файлы:** `projects/frontend/apps/auth-proxy/src/index.ts` (нет явного маршрута), `projects/frontend/apps/experiment-portal/src/api/permissions.ts`
+
+Любые операции управления проектными ролями через auth-proxy возвращают **404 Not Found**:
+- `GET /api/v1/projects/{id}/roles` (список ролей проекта)
+- `POST/PATCH/DELETE /api/v1/projects/{id}/roles[/{role_id}]`
+- `POST/DELETE /api/v1/projects/{id}/members/{user_id}/roles[/{role_id}]` (выдача/отзыв роли участнику)
+
+Фронт (`permissions.ts`) дёргает именно эти пути → раздел управления доступом проекта не работает. Найдено через RBAC-прогон (2026-06-10).
+
+**Корневая причина:** эти эндпоинты реализованы в **auth-service** (`api/routes/project_roles.py`), но в auth-proxy нет явного маршрута для `/api/v1/projects/*` — generic `/api`-прокси (`prefix: '/api'`, `upstream: targetExperimentUrl`) отправляет всё в **experiment-service**, где таких роутов нет → 404. В auth-proxy явно проброшены только `/api/v1/users`, `/api/v1/system-roles`, `/api/v1/permissions`, `/api/v1/audit-log` — `/api/v1/projects/*/roles` забыли. Тот же класс, что [BUG-B-003](#bug-b-003)/BUG-F-009/F-010/F-012.
+
+**Подтверждение:** `GET /api/v1/projects/{id}/roles` через прокси → 404; прямой запрос в auth-service `:8001` → 401 (роут существует). Выдача ролей для прогона RBAC выполнена в обход прокси (прямо в auth-service) — enforcement при этом работает (viewer read-only, editor не управляет ролями, защита sole-owner, IDOR между проектами — всё ✅).
+
+**Связанная вторичная проблема:** хендлер назначения роли (`POST .../members/{user_id}/roles`) при передаче `{"role":"editor"}` (имя роли) падает с **HTTP 500** `{"error":"'role_id'"}` (KeyError), хотя `dto.py` декларирует приём и `role_id`, и `role`. Корректно отрабатывает только `{"role_id":"<uuid>"}`. Должен принимать имя роли или возвращать 400, а не 500.
+
+**Исправление (кандидат):** добавить в auth-proxy явный маршрут `/api/v1/projects` → auth-service ПЕРЕД generic `/api`-прокси (по аналогии с `/api/v1/system-roles`). Отдельно — починить приём `role` по имени в хендлере assign-role (или явный 400). Перепроверить весь класс «голый /api → experiment-service» (см. заметку про схему маршрутизации auth-proxy).
+
+---
+
 ### BUG-F-003 — Не работает кнопка копирования токена датчика
 **Приоритет:** HIGH
 **Статус:** [x] Исправлен
@@ -179,6 +201,32 @@ if (navigator.clipboard) {
     // fallback или toast с текстом для ручного копирования
 }
 ```
+
+---
+
+### BUG-F-013 — Страница «Проекты» (`/projects`) падает с HTTP 500 при прямом заходе / перезагрузке
+**Приоритет:** HIGH
+**Статус:** [ ] Не исправлен
+**Файлы:** `projects/frontend/apps/experiment-portal/vite.config.ts`, `projects/frontend/apps/experiment-portal/src/api/projects.ts`
+
+Прямой переход по ссылке или перезагрузка (F5) на `http://localhost:3000/projects` отдаёт **HTTP 500** (`Content-Type: text/plain`). Client-side навигация на ту же страницу (клик по пункту меню «Проекты») работает — поэтому при обычной работе баг не виден, но любой reload на этой странице её ломает. Найдено через Playwright smoke-тест (2026-06-10). Затронут только этот роут — остальные (`/experiments`, `/sensors`, `/telemetry`, `/admin/*`) отдают 200.
+
+**Корневая причина:** `src/api/projects.ts` ходит в API по «голому» префиксу `/projects` (без `/api/v1/`), в отличие от всех остальных API-клиентов (`/api/v1/...`). Из-за этого в `vite.config.ts` стоит прокси-правило `'/projects' → authProxyUrl`, которое перехватывает и одноимённый SPA-роут страницы «Проекты»: Vite проксирует запрос на бэкенд вместо отдачи `index.html` → 500. Это тот же класс проблем, что BUG-B-003 (коллизия схемы маршрутизации).
+
+**Исправление:** перевести projects API на консистентный префикс `/api/v1/projects` и убрать спец-правило `'/projects'` из `vite.config.ts`. Проверить, что та же коллизия не воспроизводится в prod nginx-конфиге.
+
+---
+
+### BUG-F-014 — Страница Webhooks шлёт запросы без `project_id` → 400 Bad Request
+**Приоритет:** MEDIUM
+**Статус:** [ ] Не исправлен
+**Файл:** `projects/frontend/apps/experiment-portal` (страница Webhooks / её API-клиент)
+
+При открытии `/webhooks` фронт делает `GET /api/v1/webhooks?page_size=100` и `GET /api/v1/webhooks/deliveries?page=1&page_size=20` без параметра `project_id`. Бэкенд требует его и отвечает `400: project_id is required. Provide it in query parameter, request body, or X-Project-Id header`. Воспроизводится на пустом воркспейсе (нет проектов → нечего подставить). Найдено через Playwright smoke-тест (2026-06-10).
+
+**Возможная причина:** запрос летит на маунте компонента без guard'а на выбранный проект.
+
+**Исправление:** не отправлять запросы webhooks, пока проект не выбран (показывать состояние «выберите проект»), либо корректно прокидывать `project_id`/`X-Project-Id`.
 
 ---
 
@@ -229,6 +277,40 @@ GET /api/v1/sensors/1a9d0362-815e-4683-94b1-2767dfa501f5/error-log
 **Корневая причина:** эндпоинт реализован в **telemetry-ingest-service** (таблица `sensor_error_log`, REST/WS обработчики ingest пишут в неё). Но auth-proxy маршрутизировал все `/api/v1/sensors/*` в experiment-service через generic `/api`-префикс — там обработчика нет, отсюда 404.
 
 **Исправление:** в auth-proxy перед регистрацией `/api`-прокси добавлен явный маршрут `GET /api/v1/sensors/:sensorId/error-log`, пробрасывающий запрос в `targetTelemetryUrl` с сохранением trace/request-id и access-токена из cookie. Добавлен тест, проверяющий что запрос уходит в telemetry-ingest, а не в experiment-service.
+
+---
+
+### BUG-B-004 — Конкурентные POST с одним `Idempotency-Key` → HTTP 500 (UniqueViolationError протекает)
+**Приоритет:** MEDIUM
+**Статус:** [ ] Не исправлен
+**Файлы:** `projects/backend/services/experiment-service/src/experiment_service/api/routes/experiments.py:123-157`, `services/idempotency.py`
+
+Два одновременных идентичных `POST /api/v1/experiments` с одним `Idempotency-Key` (и одинаковым телом): один запрос получает `201`, второй — **HTTP 500** (`{"error":"Internal server error"}`). Найдено через ручной прогон TC-IDEM-03 (2026-06-10), воспроизводится стабильно.
+
+**Корневая причина:** idempotency-ключ «застолбляется» через `store_response()` **после** `service.create_experiment()`, а не до бизнес-операции. При гонке оба запроса проходят `get_cached_response()` (записи в кэше ещё нет) и оба вызывают `create`. Победитель создаёт эксперимент, проигравший упирается в БД-constraint `experiments_project_name_uindex` → `asyncpg.exceptions.UniqueViolationError`, которое не перехватывается в `create_experiment` (ловятся только `IdempotencyConflictError` и `InvalidStatusTransitionError`) → необработанное исключение → 500.
+
+Целостность данных при этом **сохраняется** (в БД ровно 1 объект) — но исключительно благодаря побочному unique-constraint на `(project_id, lower(name))`, а не самому idempotency-механизму. Для эндпоинтов без такого «страхующего» уникального индекса гонка могла бы привести к дублям.
+
+**Ожидаемое поведение:** проигравший конкурентный запрос должен получить либо реплей ответа победителя (`201` с тем же телом), либо чистый `409` — но не `500`.
+
+**Исправление (кандидат):** застолбить ключ ДО бизнес-операции (вставка idempotency-записи в состоянии `in_progress` с уникальным индексом по ключу, конкурент получает 409/ждёт результат), либо как минимум перехватывать `UniqueViolationError` в `create_experiment` и конвертировать в replay/409. Распространить на runs/sensors/capture-sessions (тот же паттерн). Связано с `feb640e`.
+
+---
+
+### BUG-B-005 — `GET /api/v1/sensors/{id}/error-log` → 500: таблица `sensor_error_log` не создаётся (нет авто-миграции telemetry-ingest)
+**Приоритет:** MEDIUM
+**Статус:** [ ] Не исправлен
+**Файлы:** `docker-compose.yml` (нет сервиса telemetry-migrate), `projects/backend/services/telemetry-ingest-service/migrations/005_sensor_error_log.sql`
+
+На странице датчика (`/sensors/{id}`) всплывает тост «Ошибка запроса», в консоли — `GET /api/v1/sensors/{id}/error-log → 500`. Найдено через Playwright-прогон telemetry e2e (2026-06-10).
+
+**Корневая причина:** в логах telemetry-ingest — `asyncpg.exceptions.UndefinedTableError: relation "sensor_error_log" does not exist`. Таблица создаётся миграцией `005_sensor_error_log.sql`, но в `docker-compose.yml` есть авто-сервисы только `auth-migrate` и `experiment-migrate` — **сервиса для миграций telemetry-ingest нет**. Миграции telemetry-ingest применяются лишь вручную через `make telemetry-ingest-migrate`. На чистом `make dev-up` миграция 005 не применяется → в `experiment_db` есть только 001-004 (experiment-service), а `sensor_error_log` отсутствует → эндпоинт 500 «из коробки».
+
+Это развитие [BUG-B-003](#bug-b-003): после фикса роутинга запрос доходит до telemetry-ingest, но падает уже на уровне БД. Риск распространяется на прод/CI, если деплой-пайплайн тоже не применяет миграции telemetry-ingest.
+
+**Подтверждение:** после `make telemetry-ingest-migrate` таблица создаётся, эндпоинт возвращает `200 {"entries":[],"total":0,...}`.
+
+**Исправление (кандидат):** добавить в `docker-compose.yml` init-сервис `telemetry-migrate` (по аналогии с `experiment-migrate`), от которого зависит `telemetry-ingest-service`. Проверить деплой-пайплайн (Terraform/CI) на применение миграций telemetry-ingest.
 
 ---
 
