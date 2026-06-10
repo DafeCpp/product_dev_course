@@ -308,11 +308,9 @@ async def admin_reset_user(request: web.Request) -> web.Response:
     try:
         auth_service = await get_auth_service(request)
         requester_id = await _get_requester_id(request, auth_service)
-        # The plaintext password is intentionally NOT returned in the response
-        # body (it would leak into proxy/access logs and browser history). The
-        # account is flagged ``password_change_required`` and must obtain its
-        # new credential out-of-band (admin-chosen password or the reset-email
-        # flow).
+        # The plaintext password is not echoed back: the admin chose it and
+        # already knows it. The account is flagged password_change_required so
+        # the user must change it on next login.
         updated_user, _new_password = await auth_service.admin_reset_user(
             requester_id, target_user_id, req.new_password,
         )

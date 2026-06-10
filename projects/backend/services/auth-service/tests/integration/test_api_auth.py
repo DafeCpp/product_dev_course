@@ -748,7 +748,7 @@ async def test_admin_reset_forbidden(service_client):
     response = await service_client.post(
         f"/auth/admin/users/{victim_id}/reset",
         headers={"Authorization": f"Bearer {token}"},
-        json={},
+        json={"new_password": "AdminSet123"},
     )
     assert response.status == 403
     payload = await response.json()
@@ -762,7 +762,7 @@ async def test_admin_reset_user_not_found(service_client, admin_token):
     response = await service_client.post(
         f"/auth/admin/users/{fake_id}/reset",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={},
+        json={"new_password": "AdminSet123"},
     )
     assert response.status == 404
     payload = await response.json()

@@ -163,7 +163,13 @@ class AuthService:
             if claimed is None:
                 raise InvalidTokenError("Invalid or expired invite token")
 
-        user = await self._user_repo.create(username, email, hashed_pw, password_change_required=False)
+        try:
+            user = await self._user_repo.create(username, email, hashed_pw, password_change_required=False)
+        except Exception:
+            # Roll back the invite claim so the token remains usable on retry.
+            if validated_invite is not None and self._invite_repo is not None and invite_token is not None:
+                await self._invite_repo.unclaim(invite_token)
+            raise
 
         if validated_invite is not None and self._invite_repo is not None and invite_token is not None:
             # Record the consumer now that the user row exists (used_by FK).

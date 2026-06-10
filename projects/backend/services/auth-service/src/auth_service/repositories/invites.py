@@ -99,6 +99,21 @@ class InviteRepository(BaseRepository):
         assert row is not None
         return InviteToken.from_row(dict(row))
 
+    async def unclaim(self, token: UUID) -> None:
+        """Release a previously claimed invite when user creation failed.
+
+        Only resets used_at when used_by IS NULL (no user was ever linked),
+        so a successfully consumed invite can never be recycled.
+        """
+        await self._execute(
+            """
+            UPDATE invite_tokens
+            SET used_at = NULL
+            WHERE token = $1 AND used_by IS NULL
+            """,
+            token,
+        )
+
     async def delete(self, token: UUID) -> bool:
         """Delete an invite token. Returns True if a row was deleted."""
         result = await self._execute(
