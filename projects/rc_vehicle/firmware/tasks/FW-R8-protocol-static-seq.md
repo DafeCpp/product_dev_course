@@ -2,7 +2,7 @@
 
 **Источник:** `firmware/CODE_REVIEW.md` → Review 2026-06-10, R8
 **Приоритет:** LOW
-**Статус:** [ ] Не начато
+**Статус:** [x] Выполнено (2026-06-11)
 **Файлы:** `common/protocol.cpp:11`, `common/protocol.hpp`
 
 ## Проблема
