@@ -223,37 +223,61 @@ Result<size_t> Protocol::BuildPong(std::span<uint8_t> buffer) noexcept {
 // Парсинг кадров
 // ─────────────────────────────────────────────────────────────────────────
 
-Result<TelemetryData> Protocol::ParseTelemetry(
-    std::span<const uint8_t> buffer) noexcept {
-  // Валидация заголовка
+namespace {
+
+/**
+ * Общая валидация кадра: заголовок (prefix, версия), тип сообщения,
+ * длина payload, размер буфера, CRC.
+ *
+ * @param expected_len Точная ожидаемая длина payload; nullopt — переменная
+ * @param max_len Верхняя граница длины (для переменной длины);
+ *                проверяется ДО CRC — порядок ошибок сохранён
+ * @return Длина payload или ошибка
+ */
+Result<uint16_t> ValidateFrame(std::span<const uint8_t> buffer,
+                               MessageType expected_type,
+                               std::optional<uint16_t> expected_len,
+                               uint16_t max_len = UINT16_MAX) noexcept {
   auto type_result = FrameParser::ValidateHeader(buffer);
   if (IsError(type_result)) {
     return GetError(type_result);
   }
-
-  if (GetValue(type_result) != MessageType::Telemetry) {
+  if (GetValue(type_result) != expected_type) {
     return ParseError::InvalidType;
   }
 
-  // Проверка длины payload
   auto payload_len_result = FrameParser::GetPayloadLength(buffer);
   if (IsError(payload_len_result)) {
     return GetError(payload_len_result);
   }
-
-  uint16_t payload_len = GetValue(payload_len_result);
-  if (payload_len != TelemetryData::PAYLOAD_SIZE) {
+  const uint16_t payload_len = GetValue(payload_len_result);
+  if (expected_len && payload_len != *expected_len) {
+    return ParseError::InvalidPayloadLength;
+  }
+  if (payload_len > max_len) {
     return ParseError::InvalidPayloadLength;
   }
 
-  size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
+  const size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
   if (buffer.size() < frame_size) {
     return ParseError::InsufficientData;
   }
 
-  // Проверка CRC
   if (!FrameParser::ValidateCrc(buffer)) {
     return ParseError::CrcMismatch;
+  }
+
+  return payload_len;
+}
+
+}  // namespace
+
+Result<TelemetryData> Protocol::ParseTelemetry(
+    std::span<const uint8_t> buffer) noexcept {
+  auto validated = ValidateFrame(buffer, MessageType::Telemetry,
+                                 TelemetryData::PAYLOAD_SIZE);
+  if (IsError(validated)) {
+    return GetError(validated);
   }
 
   // Десериализация
@@ -272,35 +296,10 @@ Result<TelemetryData> Protocol::ParseTelemetry(
 
 Result<CommandData> Protocol::ParseCommand(
     std::span<const uint8_t> buffer) noexcept {
-  // Валидация заголовка
-  auto type_result = FrameParser::ValidateHeader(buffer);
-  if (IsError(type_result)) {
-    return GetError(type_result);
-  }
-
-  if (GetValue(type_result) != MessageType::Command) {
-    return ParseError::InvalidType;
-  }
-
-  // Проверка длины payload
-  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
-  if (IsError(payload_len_result)) {
-    return GetError(payload_len_result);
-  }
-
-  uint16_t payload_len = GetValue(payload_len_result);
-  if (payload_len != CommandData::PAYLOAD_SIZE) {
-    return ParseError::InvalidPayloadLength;
-  }
-
-  size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
-  if (buffer.size() < frame_size) {
-    return ParseError::InsufficientData;
-  }
-
-  // Проверка CRC
-  if (!FrameParser::ValidateCrc(buffer)) {
-    return ParseError::CrcMismatch;
+  auto validated = ValidateFrame(buffer, MessageType::Command,
+                                 CommandData::PAYLOAD_SIZE);
+  if (IsError(validated)) {
+    return GetError(validated);
   }
 
   // Десериализация
@@ -319,106 +318,32 @@ Result<CommandData> Protocol::ParseCommand(
 
 Result<std::string_view> Protocol::ParseLog(
     std::span<const uint8_t> buffer) noexcept {
-  // Валидация заголовка
-  auto type_result = FrameParser::ValidateHeader(buffer);
-  if (IsError(type_result)) {
-    return GetError(type_result);
-  }
-
-  if (GetValue(type_result) != MessageType::Log) {
-    return ParseError::InvalidType;
-  }
-
-  // Проверка длины payload
-  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
-  if (IsError(payload_len_result)) {
-    return GetError(payload_len_result);
-  }
-
-  uint16_t payload_len = GetValue(payload_len_result);
-  if (payload_len > LOG_MAX_PAYLOAD) {
-    return ParseError::InvalidPayloadLength;
-  }
-
-  size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
-  if (buffer.size() < frame_size) {
-    return ParseError::InsufficientData;
-  }
-
-  // Проверка CRC
-  if (!FrameParser::ValidateCrc(buffer)) {
-    return ParseError::CrcMismatch;
+  // Переменная длина payload, не больше LOG_MAX_PAYLOAD
+  auto validated = ValidateFrame(buffer, MessageType::Log, std::nullopt,
+                                 LOG_MAX_PAYLOAD);
+  if (IsError(validated)) {
+    return GetError(validated);
   }
 
   // Возвращаем view на payload
   const char* msg_ptr =
       reinterpret_cast<const char*>(buffer.data() + HEADER_SIZE);
-  return std::string_view(msg_ptr, payload_len);
+  return std::string_view(msg_ptr, GetValue(validated));
 }
 
 Result<bool> Protocol::ParsePing(std::span<const uint8_t> buffer) noexcept {
-  // Валидация заголовка
-  auto type_result = FrameParser::ValidateHeader(buffer);
-  if (IsError(type_result)) {
-    return GetError(type_result);
+  auto validated = ValidateFrame(buffer, MessageType::Ping, uint16_t{0});
+  if (IsError(validated)) {
+    return GetError(validated);
   }
-
-  if (GetValue(type_result) != MessageType::Ping) {
-    return ParseError::InvalidType;
-  }
-
-  // Проверка длины payload (должна быть 0)
-  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
-  if (IsError(payload_len_result)) {
-    return GetError(payload_len_result);
-  }
-
-  if (GetValue(payload_len_result) != 0) {
-    return ParseError::InvalidPayloadLength;
-  }
-
-  if (buffer.size() < MIN_FRAME_SIZE) {
-    return ParseError::InsufficientData;
-  }
-
-  // Проверка CRC
-  if (!FrameParser::ValidateCrc(buffer)) {
-    return ParseError::CrcMismatch;
-  }
-
   return true;
 }
 
 Result<bool> Protocol::ParsePong(std::span<const uint8_t> buffer) noexcept {
-  // Валидация заголовка
-  auto type_result = FrameParser::ValidateHeader(buffer);
-  if (IsError(type_result)) {
-    return GetError(type_result);
+  auto validated = ValidateFrame(buffer, MessageType::Pong, uint16_t{0});
+  if (IsError(validated)) {
+    return GetError(validated);
   }
-
-  if (GetValue(type_result) != MessageType::Pong) {
-    return ParseError::InvalidType;
-  }
-
-  // Проверка длины payload (должна быть 0)
-  auto payload_len_result = FrameParser::GetPayloadLength(buffer);
-  if (IsError(payload_len_result)) {
-    return GetError(payload_len_result);
-  }
-
-  if (GetValue(payload_len_result) != 0) {
-    return ParseError::InvalidPayloadLength;
-  }
-
-  if (buffer.size() < MIN_FRAME_SIZE) {
-    return ParseError::InsufficientData;
-  }
-
-  // Проверка CRC
-  if (!FrameParser::ValidateCrc(buffer)) {
-    return ParseError::CrcMismatch;
-  }
-
   return true;
 }
 
