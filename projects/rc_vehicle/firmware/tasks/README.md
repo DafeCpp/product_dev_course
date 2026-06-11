@@ -10,7 +10,7 @@
 | [FW-R1](FW-R1-failsafe-trim-override.md) | Failsafe: нейтраль перезаписывается trim'ом | HIGH (safety) | [ ] |
 | [FW-R2](FW-R2-oversteer-slip-rate-spike.md) | OversteerGuard: ложный всплеск slip_rate | HIGH | [ ] |
 | [FW-R3](FW-R3-mag-frame-mix.md) | Смесь СК при передаче mag в Madgwick | MEDIUM | [ ] |
-| [FW-R4](FW-R4-failsafe-wraparound-check.md) | Failsafe: wrap-around-проверка вредна (нужно решение) | LOW | [ ] |
+| [FW-R4](FW-R4-failsafe-wraparound-check.md) | Failsafe: wrap-around-проверка вредна (нужно решение) | LOW | [x] wontfix |
 | [FW-R5](FW-R5-motion-driver-min-throttle.md) | MotionDriver: min_throttle vs комментарий | LOW | [ ] |
 | [FW-R6](FW-R6-ws-telem-double-buffer-race.md) | Гонка двойной буферизации WS-телеметрии | MEDIUM | [ ] |
 | [FW-R7](FW-R7-ws-udp-param-truncation.md) | Усечение hz/port до валидации | LOW | [ ] |
@@ -45,7 +45,9 @@
   комментарии — в PID-режиме до breakaway уже работает open-loop рампа,
   ступенька поверх PI-выхода мешает сходимости.
 
-Статус решений: [ ] FW-R4 — не принято; [ ] FW-R5 — не принято.
+Статус решений (2026-06-11): [x] FW-R4 — **оставить как есть (wontfix)**: ложный
+failsafe раз в ~49.7 суток аптайма — ошибка в безопасную сторону, осознанно принято;
+[x] FW-R5 — **ограничить LinearRamp'ом** (по рекомендации ревью).
 
 ### Батч 1 — Разогрев: механика без изменения поведения (~полдня)
 
@@ -79,8 +81,7 @@
 
 9. **FW-R1** — failsafe + trim (меняет структуру `Step()`)
 10. **FW-RF5** — snapshot конфига (ложится на уже перестроенный `Step()`)
-11. **FW-R4** — wrap-around в failsafe (если решение «убрать») + фикс
-    теста `TimeWrapAround` без ASSERT
+11. ~~**FW-R4**~~ — закрыто wontfix (решение 2026-06-11), код не меняется
 12. **FW-R2** — oversteer spike (отдельный файл, но та же тестовая зона
     стабилизации — добиваем в той же сессии)
 
