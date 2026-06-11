@@ -11,7 +11,7 @@
 | [FW-R2](FW-R2-oversteer-slip-rate-spike.md) | OversteerGuard: ложный всплеск slip_rate | HIGH | [ ] |
 | [FW-R3](FW-R3-mag-frame-mix.md) | Смесь СК при передаче mag в Madgwick | MEDIUM | [ ] |
 | [FW-R4](FW-R4-failsafe-wraparound-check.md) | Failsafe: wrap-around-проверка вредна (нужно решение) | LOW | [x] wontfix |
-| [FW-R5](FW-R5-motion-driver-min-throttle.md) | MotionDriver: min_throttle vs комментарий | LOW | [ ] |
+| [FW-R5](FW-R5-motion-driver-min-throttle.md) | MotionDriver: min_throttle vs комментарий | LOW | [x] |
 | [FW-R6](FW-R6-ws-telem-double-buffer-race.md) | Гонка двойной буферизации WS-телеметрии | MEDIUM | [ ] |
 | [FW-R7](FW-R7-ws-udp-param-truncation.md) | Усечение hz/port до валидации | LOW | [ ] |
 | [FW-R8](FW-R8-protocol-static-seq.md) | Protocol: static неатомарный seq | LOW | [x] |
