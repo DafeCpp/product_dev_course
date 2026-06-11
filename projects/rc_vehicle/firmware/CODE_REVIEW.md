@@ -1,6 +1,6 @@
 # Code Review: RC Vehicle Firmware
 
-**Дата:** 2026-04-10
+**Дата:** 2026-04-10 (обновлено 2026-06-10 — см. секцию «Review 2026-06-10» ниже)
 **Scope:** `projects/rc_vehicle/firmware/` (common, esp32_common, esp32_s3, tests)
 
 ---
@@ -115,3 +115,36 @@ if (req->content_len >= sizeof(body)) {
 - **Const-correctness** — последовательное использование const в query-методах
 - **Anti-windup** в PID-контроллере
 - **Bilinear transform** в Butterworth LPF — корректная реализация
+
+---
+
+# Review 2026-06-10
+
+**Scope:** control path (control loop, failsafe, Madgwick, EKF, стабилизация), WS/UDP-слой, протокол.
+Статус всех пунктов: **OPEN** (не исправлено на момент ревью).
+**Задачи:** каждый пункт оформлен отдельным файлом в [`tasks/`](tasks/README.md) (FW-R* / FW-RF*), там же план реализации по этапам.
+
+## Баги
+
+| # | Приоритет | Проблема | Файл | Строки |
+|---|-----------|----------|------|--------|
+| R1 | **HIGH (safety)** | **Failsafe-нейтраль перезаписывается trim'ом.** В `Step()` после `HandleFailsafe()` безусловно вызывается `UpdatePwm()`: `HandleFailsafe()` ставит `SetPwmNeutral()`, но в той же итерации `UpdatePwm()` выполняет `SetPwm(0 + throttle_trim, 0 + steering_trim)`. При ненулевом `throttle_trim` во время потери сигнала моторы получают trim вместо нейтрали — машина может ползти. Fix: ранний выход из `Step()` при активном failsafe (или флаг, пропускающий `UpdatePwm`/`UpdateStabilization`) | `common/control_loop_processor.cpp` | 33-34, 134, 157-159 |
+| R2 | **HIGH** | **OversteerGuard: ложный всплеск slip_rate после простоя.** В ветке «малая скорость / малый yaw rate» сбрасывается `prev_slip_deg_ = 0.0f`. На первом тике после превышения порогов `slip_rate = (slip − 0) / 0.002` — гигантское значение, условие `rate_thresh_deg_s` выполняется всегда → детекция вырождается в проверку одного `slip_thresh_deg`, ложные срабатывания (и сброс газа) при входе в поворот. Fix: сохранять `prev_slip_deg_ = slip` и/или пропускать первый тик после реактивации | `common/stabilization_pipeline.cpp` | 137-152 |
+| R3 | **MEDIUM** | **Смесь систем координат в mag → Madgwick.** При валидной mag-калибровке в `UpdateWithMag` передаётся `(px, py, dot_n)`: `px, py` — x/y-компоненты проекции вектора на калибровочную плоскость **в СК датчика**, `dot_n` — скаляр вдоль нормали плоскости. Корректно только если нормаль ≈ ось Z датчика; при наклонном монтаже IMU (который vehicle-frame-механизм специально поддерживает) yaw искажается. Madgwick 9DOF сам устраняет склонение (`bx = sqrt(hx²+hy²)`) — передавать полный калиброванный вектор `mag_cal.mx/my/mz`, как в ветке без калибровки. Проверить на реальных данных с наклонным монтажом | `common/control_components.cpp` | 178-179 |
+| R4 | **LOW** | **«Защита от переполнения» в Failsafe срабатывает наоборот.** Беззнаковое `now_ms - last_active_ms_` само корректно обрабатывает wrap uint32 (~49.7 суток аптайма); явная проверка `last_active_ms_ > now_ms` превращает корректные «прошло 11 мс» в «таймаут истёк» → ложный failsafe в момент переполнения. ⚠️ Конфликтует с пунктом 9 ревью 2026-04-10, где эта проверка была *добавлена* как фикс. Направление ошибки безопасное (failsafe лишний раз сработает), поэтому LOW — но математически проверка не нужна и вредна (то же в `GetTimeSinceLastActive`) | `common/failsafe.cpp` | 37-38, 67 |
+| R5 | **LOW** | **MotionDriver: код противоречит комментарию.** Комментарий «Минимальный рабочий газ (только для LinearRamp)», но условие не проверяет `accel_mode` и применяется и в PID-режиме, где может подбросить throttle поверх PI-коррекции. Добавить проверку режима или исправить комментарий | `common/motion_driver.cpp` | 104-108 |
+| R6 | **MEDIUM** | **Гонка в двойной буферизации WS-телеметрии.** Очередь длины 1 + 2 буфера не защищают от медленного клиента: пока `telem_sender_task` шлёт из `buf[0]`, два следующих `WebSocketEnqueueTelem` (20 Гц) снова пишут в `buf[0]` → рваный JSON при тормозящем `httpd_ws_send_data` | `esp32_common/websocket_server.cpp` | 183-200 |
+| R7 | **LOW** | **Молчаливое усечение hz/port в WS-команде.** `(uint8_t)hz_item->valueint` до валидации: `hz=266` → `10` и молча принимается как валидное (`is_valid_hz` в UDP-слое проверяет уже усечённое значение). Аналогично port → uint16_t. Валидировать в int до каста | `esp32_s3/main/ws_command_handlers.cpp` | 711-715 |
+| R8 | **LOW** | **`Protocol::next_command_seq_` — static, не атомарный.** Общий мутируемый счётчик для всех вызовов `BuildCommand` без синхронизации; гонка при сборке команд из двух задач, плюс seq общий для всех инстансов | `common/protocol.cpp` | 11 |
+
+## Рефакторинг
+
+| # | Предложение | Файл |
+|---|-------------|------|
+| RF1 | **Дедупликация WS-хендлеров** (842 строки): каждый из ~25 хендлеров повторяет скелет `cJSON_CreateObject` → `AddString("type", …)` → `WsSendJsonReply` → `cJSON_Delete`. RAII-обёртка над `cJSON` + хелпер `SendAck(req, type, fill_fn)` и `GetFloat/GetInt(json, key, default)` сократят файл вдвое и уберут риск утечек при ранних return | `esp32_s3/main/ws_command_handlers.cpp` |
+| RF2 | **Общая валидация кадров протокола**: пять `Parse*`-функций дословно повторяют блок header/length/CRC (~30 строк каждая) → `ValidateFrame(buffer, expected_type, expected_len)` | `common/protocol.cpp` |
+| RF3 | **`ImuHandler::Update` (~140 строк)**: проекция магнитометра на калибровочную плоскость продублирована дважды (строки 140-150 и 171-177) → `ProjectMagOntoCalibPlane()`; метод разбить на чтение IMU / mag-heading / Madgwick-фидинг | `common/control_components.cpp` |
+| RF4 | **Kids-пресеты — единый источник истины**: `HandleGetKidsPresets` хардкодит значения в JSON вручную, дублируя `KidsConfig::ApplyPreset` → таблица структур + цикл | `esp32_s3/main/ws_command_handlers.cpp:310-368` |
+| RF5 | **Копирование конфига под мьютексом на 500 Гц**: за итерацию `Step()` конфиг копируется минимум трижды (`GetConfig` в `Step`, ещё раз в `UpdateWeights`, плюс диагностика) — ~1500 копий крупной структуры/с и contention с WS-задачей. Брать один snapshot в начале итерации и передавать вниз параметром | `common/control_loop_processor.cpp`, `common/stabilization_manager.cpp` |
+| RF6 | **`SetConfig` vs `ApplyConfig`**: блок «применить beta/LPF/gains к фильтрам» продублирован (строки 80-92 и 148-157) → extract; magic `0x53544232` в логе захардкожен вместо константы | `common/stabilization_manager.cpp` |
+| RF7 | **`slew_rate.hpp`**: вне `namespace rc_vehicle`, устаревший комментарий «main loop RP2040/STM32» (платформа давно ESP32) | `common/slew_rate.hpp` |
