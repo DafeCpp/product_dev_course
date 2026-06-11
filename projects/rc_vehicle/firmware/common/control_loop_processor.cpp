@@ -30,8 +30,12 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
 
   UpdateStabilization(dt_ms);
-  HandleFailsafe();
-  UpdatePwm(now, dt_ms);
+  // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
+  // перезаписал бы нейтраль ненулевым trim'ом — моторы ползли бы при
+  // потере сигнала (FW-R1).
+  if (!HandleFailsafe()) {
+    UpdatePwm(now, dt_ms);
+  }
   UpdateTelemetry(now, dt_ms);
 
   {
@@ -115,23 +119,35 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
                                  traits.oversteer_reduces_throttle);
 }
 
-void ControlLoopProcessor::HandleFailsafe() {
-  if (!ctx_.platform.FailsafeUpdate(sensors_.rc_active, sensors_.wifi_active))
-    return;
+bool ControlLoopProcessor::HandleFailsafe() {
+  if (!ctx_.platform.FailsafeUpdate(sensors_.rc_active, sensors_.wifi_active)) {
+    failsafe_was_active_ = false;
+    return false;
+  }
 
   commanded_throttle_ = 0.0f;
   commanded_steering_ = 0.0f;
   applied_throttle_ = 0.0f;
   applied_steering_ = 0.0f;
-  ctx_.yaw_ctrl.Reset();
-  ctx_.slip_ctrl.Reset();
-  ctx_.oversteer_guard.Reset();
-  ctx_.kids_processor.Reset();
-  ctx_.ekf.Reset();
-  if (ctx_.stab_mgr) ctx_.stab_mgr->ResetWeights();
-  if (ctx_.telem_mgr) ctx_.telem_mgr->ResetLastLogTime();
-  ctx_.auto_drive.StopAll();
+
+  // Сброс подсистем — однократно на переходе Inactive→Active.
+  // Повторять каждые 2 мс бессмысленно (EKF/ПИД и так пусты), а EKF
+  // при длительном failsafe может продолжать оценку без помех.
+  if (!failsafe_was_active_) {
+    failsafe_was_active_ = true;
+    ctx_.yaw_ctrl.Reset();
+    ctx_.slip_ctrl.Reset();
+    ctx_.oversteer_guard.Reset();
+    ctx_.kids_processor.Reset();
+    ctx_.ekf.Reset();
+    if (ctx_.stab_mgr) ctx_.stab_mgr->ResetWeights();
+    if (ctx_.telem_mgr) ctx_.telem_mgr->ResetLastLogTime();
+    ctx_.auto_drive.StopAll();
+  }
+
+  // Нейтраль удерживается каждый тик (defense-in-depth)
   ctx_.platform.SetPwmNeutral();
+  return true;
 }
 
 void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
