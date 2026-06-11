@@ -73,7 +73,8 @@ class ControlLoopProcessor {
   void UpdateSensorsAndEkf(uint32_t dt_ms);
   void UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms);
   void UpdateStabilization(uint32_t dt_ms);
-  void HandleFailsafe();
+  /** @return true — failsafe активен, PWM удерживается в нейтрали. */
+  bool HandleFailsafe();
   void UpdatePwm(uint32_t now, uint32_t dt_ms);
   void UpdateTelemetry(uint32_t now, uint32_t dt_ms);
 
@@ -85,6 +86,7 @@ class ControlLoopProcessor {
   float applied_throttle_{0.0f};
   float applied_steering_{0.0f};
   float prev_gz_rad_s_{0.0f};
+  bool failsafe_was_active_{false};
   uint32_t last_pwm_update_;
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;

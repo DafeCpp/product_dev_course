@@ -126,6 +126,37 @@ TEST_F(ProcessorTest, WifiActive_NoFailsafe) {
   EXPECT_GT(platform_.GetLastThrottle(), 0.0f);
 }
 
+TEST_F(ProcessorTest, Failsafe_WithTrim_PwmStaysNeutral) {
+  // FW-R1: при активном failsafe trim НЕ должен попадать в PWM.
+  // До фикса UpdatePwm после SetPwmNeutral записывал SetPwm(0+trim, 0+trim).
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.throttle_trim = 0.1f;
+  cfg.steering_trim = 0.05f;
+  stab_mgr_->SetConfig(cfg);
+
+  // Нет RC, нет Wi-Fi → failsafe на первом же шаге
+  RunSteps(10);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f)
+      << "Моторы должны стоять в нейтрали, а не ползти на trim";
+  EXPECT_FLOAT_EQ(platform_.GetLastSteering(), 0.0f);
+}
+
+TEST_F(ProcessorTest, FailsafeRecovery_TrimAppliedAgain) {
+  // После восстановления сигнала trim снова применяется к PWM
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.throttle_trim = 0.1f;
+  stab_mgr_->SetConfig(cfg);
+
+  RunSteps(5);  // failsafe активен
+  ASSERT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  RunSteps(3);  // восстановление: Active → Recovering → Inactive
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f + 0.1f, 1e-4f);
+}
+
 TEST_F(ProcessorTest, Failsafe_ResetsToNeutral) {
   SetDirectLaw();
   // Инжектировать команду, потом убрать → failsafe должен обнулить
