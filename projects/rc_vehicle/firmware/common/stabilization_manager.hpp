@@ -89,6 +89,9 @@ class StabilizationManager {
   void ResetWeights();
 
  private:
+  /** Применить параметры конфига к фильтрам (Madgwick beta, LPF, enable). */
+  void ApplyToFilters(const StabilizationConfig& cfg);
+
   VehicleControlPlatform& platform_;
   MadgwickFilter& madgwick_;
   YawRateController& yaw_ctrl_;
