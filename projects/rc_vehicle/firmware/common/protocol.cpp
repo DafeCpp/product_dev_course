@@ -8,7 +8,7 @@ namespace rc_vehicle::protocol {
 // Статические переменные
 // ═══════════════════════════════════════════════════════════════════════════
 
-uint16_t Protocol::next_command_seq_ = 0;
+std::atomic<uint16_t> Protocol::next_command_seq_{0};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FrameBuilder - построение кадров
@@ -177,9 +177,10 @@ Result<size_t> Protocol::BuildCommand(std::span<uint8_t> buffer,
 
   // Сериализуем payload
   std::array<uint8_t, CommandData::PAYLOAD_SIZE> payload{};
-  payload[0] = next_command_seq_ & 0xFF;
-  payload[1] = (next_command_seq_ >> 8) & 0xFF;
-  next_command_seq_++;
+  const uint16_t seq =
+      next_command_seq_.fetch_add(1, std::memory_order_relaxed);
+  payload[0] = seq & 0xFF;
+  payload[1] = (seq >> 8) & 0xFF;
 
   int16_t thr_i16 = static_cast<int16_t>(clamped.throttle * 32767.0f);
   int16_t steer_i16 = static_cast<int16_t>(clamped.steering * 32767.0f);

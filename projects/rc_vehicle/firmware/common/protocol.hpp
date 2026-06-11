@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -314,7 +315,9 @@ class Protocol {
   }
 
  private:
-  static uint16_t next_command_seq_;  // Счётчик последовательности команд
+  // Счётчик последовательности команд. Атомарный: BuildCommand может
+  // вызываться из разных задач (UART bridge, будущие каналы).
+  static std::atomic<uint16_t> next_command_seq_;
 };
 
 }  // namespace rc_vehicle::protocol

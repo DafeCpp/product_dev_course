@@ -14,7 +14,7 @@
 | [FW-R5](FW-R5-motion-driver-min-throttle.md) | MotionDriver: min_throttle vs комментарий | LOW | [ ] |
 | [FW-R6](FW-R6-ws-telem-double-buffer-race.md) | Гонка двойной буферизации WS-телеметрии | MEDIUM | [ ] |
 | [FW-R7](FW-R7-ws-udp-param-truncation.md) | Усечение hz/port до валидации | LOW | [ ] |
-| [FW-R8](FW-R8-protocol-static-seq.md) | Protocol: static неатомарный seq | LOW | [ ] |
+| [FW-R8](FW-R8-protocol-static-seq.md) | Protocol: static неатомарный seq | LOW | [x] |
 | [FW-RF1](FW-RF1-ws-handlers-dedup.md) | Дедупликация WS-хендлеров | MEDIUM | [ ] |
 | [FW-RF2](FW-RF2-protocol-validate-frame.md) | Общая валидация кадров протокола | LOW | [ ] |
 | [FW-RF3](FW-RF3-imu-handler-split.md) | ImuHandler::Update: разбиение + дедуп проекции | MEDIUM | [ ] |
