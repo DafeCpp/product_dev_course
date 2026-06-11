@@ -21,7 +21,7 @@
 | [FW-RF4](FW-RF4-kids-presets-single-source.md) | Kids-пресеты: единый источник истины | LOW | [ ] |
 | [FW-RF5](FW-RF5-config-snapshot-per-tick.md) | Один snapshot конфига на итерацию | MEDIUM | [ ] |
 | [FW-RF6](FW-RF6-stab-manager-apply-dedup.md) | StabilizationManager: дедуп Apply | LOW | [ ] |
-| [FW-RF7](FW-RF7-slew-rate-namespace.md) | slew_rate.hpp: namespace, комментарий | LOW | [ ] |
+| [FW-RF7](FW-RF7-slew-rate-namespace.md) | slew_rate.hpp: namespace, комментарий | LOW | [x] |
 
 ## План выполнения (по удобству)
 
