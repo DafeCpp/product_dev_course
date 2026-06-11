@@ -151,15 +151,10 @@ void StabilizationManager::ApplyToFilters(const StabilizationConfig& cfg) {
   }
 }
 
-void StabilizationManager::UpdateWeights(uint32_t dt_ms) {
+void StabilizationManager::UpdateWeights(const StabilizationConfig& cfg,
+                                         uint32_t dt_ms) {
   if (dt_ms == 0) {
     return;
-  }
-
-  StabilizationConfig cfg;
-  {
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    cfg = config_;
   }
 
   // ─────────────────────────────────────────────────────────────────────
