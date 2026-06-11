@@ -16,6 +16,10 @@ namespace rc_vehicle {
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   ++diag_loop_count_;
 
+  // Единственный snapshot конфига на итерацию (FW-RF5): одна копия под
+  // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
+  stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+
   UpdateComponents(now, dt_ms);
   UpdateSensorsAndEkf(dt_ms);
 
@@ -26,8 +30,6 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
   UpdateAutoDrive(now, dt_ms);
-
-  stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
 
   UpdateStabilization(dt_ms);
   // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
@@ -42,7 +44,7 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
     const DiagnosticsContext dctx{ctx_.platform, *ctx_.stab_mgr, ctx_.madgwick,
                                   ctx_.ekf, ctx_.imu_handler,
                                   ctx_.last_loop_hz};
-    PrintDiagnostics(dctx, now, diag_loop_count_, diag_start_ms_);
+    PrintDiagnostics(dctx, stab_cfg_, now, diag_loop_count_, diag_start_ms_);
   }
 }
 
@@ -58,8 +60,7 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   prev_gz_rad_s_ =
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
 
-  const bool ekf_active =
-      ctx_.stab_mgr && ctx_.stab_mgr->GetConfig().filter.ekf_enabled;
+  const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
   if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
@@ -91,7 +92,7 @@ void ControlLoopProcessor::UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms) {
 void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
   if (!ctx_.stab_mgr) return;
 
-  ctx_.stab_mgr->UpdateWeights(dt_ms);
+  ctx_.stab_mgr->UpdateWeights(stab_cfg_, dt_ms);
 
   const DriveMode drive_mode = stab_cfg_.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
