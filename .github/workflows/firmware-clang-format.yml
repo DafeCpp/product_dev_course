@@ -1,0 +1,43 @@
+name: Firmware clang-format
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/rc_vehicle/firmware/**
+      - .github/workflows/firmware-clang-format.yml
+
+permissions:
+  contents: read
+
+jobs:
+  clang-format:
+    name: clang-format (изменённые строки)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Нужна история до базовой ветки для merge-base
+          fetch-depth: 0
+
+      # Версия закреплена: разные мажорные версии clang-format
+      # форматируют по-разному
+      - name: Install clang-format
+        run: pip install clang-format==22.1.5
+
+      # Проверяются только строки, изменённые в PR: дерево прошивки пока
+      # не полностью отформатировано, полная проверка дала бы шум по
+      # незатронутым файлам. git-clang-format возвращает ненулевой код,
+      # если изменённые строки отличаются от канонического форматирования.
+      - name: Check changed lines
+        run: |
+          base="$(git merge-base "origin/${GITHUB_BASE_REF}" HEAD)"
+          if git clang-format --diff "$base" -- projects/rc_vehicle/firmware/ > cf.diff; then
+            echo "clang-format: OK"
+          else
+            echo "::error::Изменённые строки не соответствуют .clang-format. Исправить: git clang-format $(git merge-base origin/develop HEAD) -- projects/rc_vehicle/firmware/"
+            cat cf.diff
+            exit 1
+          fi
