@@ -14,9 +14,12 @@ static const char *LSM_TAG = "lsm6ds3_spi";
 #define LSM6DS3_REG_CTRL3_C  0x12  // BDU, IF_INC
 #define LSM6DS3_REG_OUTX_L_G 0x22  // Начало блока выходных данных (gyro + accel)
 
-#define LSM6DS3_WHO_AM_I_VALUE  0x6A  // LSM6DS3
-#define LSM6DSL_WHO_AM_I_VALUE  0x6C  // LSM6DSL (совместим)
-#define LSM6DS3_SPI_READ_BIT    0x80
+// WHO_AM_I по даташитам ST: регистровая карта используемых регистров
+// (CTRL1_XL/CTRL2_G/CTRL3_C, OUTX_L_G) и чувствительности совпадают.
+#define LSM6DS3_WHO_AM_I_VALUE 0x69     // LSM6DS3 (оригинальный)
+#define LSM6DS3TRC_WHO_AM_I_VALUE 0x6A  // LSM6DS3TR-C / LSM6DSL / LSM6DSM
+#define LSM6DSO_WHO_AM_I_VALUE 0x6C     // LSM6DSO
+#define LSM6DS3_SPI_READ_BIT 0x80
 
 // Конфигурация:
 // CTRL1_XL = 0x60: ODR_XL=416Hz (0110), FS_XL=±2g (00)
@@ -70,7 +73,8 @@ int Lsm6ds3Spi::Init() {
              who_am_i);
 #endif
     if (rc == 0 && (who_am_i == LSM6DS3_WHO_AM_I_VALUE ||
-                    who_am_i == LSM6DSL_WHO_AM_I_VALUE)) {
+                    who_am_i == LSM6DS3TRC_WHO_AM_I_VALUE ||
+                    who_am_i == LSM6DSO_WHO_AM_I_VALUE)) {
       break;
     }
 #ifdef ESP_PLATFORM
@@ -79,7 +83,9 @@ int Lsm6ds3Spi::Init() {
   }
 
   last_who_am_i_ = static_cast<int>(who_am_i);
-  if (who_am_i != LSM6DS3_WHO_AM_I_VALUE && who_am_i != LSM6DSL_WHO_AM_I_VALUE)
+  if (who_am_i != LSM6DS3_WHO_AM_I_VALUE &&
+      who_am_i != LSM6DS3TRC_WHO_AM_I_VALUE &&
+      who_am_i != LSM6DSO_WHO_AM_I_VALUE)
     return -1;
 
   // Настройка акселерометра: ODR=416Hz, FS=±2g
