@@ -2,9 +2,37 @@
 
 **Источник:** железная сессия 2026-06-13 (тест ветки test/wave-4-and-rf1)
 **Приоритет:** HIGH (наблюдаемость через Web UI не работает)
-**Статус:** [ ] Не начато
-**Файлы (кандидаты):** `common/control_components.cpp`,
-`esp32_common/websocket_server.cpp`, `esp32_common/web/app.js`
+**Статус:** [x] Исправлено (подтверждено на железе 2026-06-14)
+**Файлы:** `common/control_components.cpp` (фикс), тесты
+`tests/unit/test_telemetry_handler.cpp`
+
+## Корень (подтверждён на железе)
+
+Диагностическая прошивка (ветка `test/fw-r12-r13-diagnostics`, ворота обойдены
++ логи) дала однозначную картину:
+
+```
+TELEM-DIAG clients=0 gate_would=BLOCK          ← до подключения
+WS-DIAG httpd_total=2 ws_matched=0 sent_ok=0    ← страница есть, WS ещё нет
+WS-DIAG httpd_total=3 ws_matched=1 sent_ok=1    ← WS открылся, кадры пошли
+telem_sender: 199 frames sent in 10s, clients=3 (~20 Гц)
+```
+
+С обойдёнными воротами телеметрия идёт идеально (`ws_matched=1, sent_ok=1,
+sent_fail=0`). Значит весь конвейер исправен, а блокировал ровно гейт
+`if (GetWebSocketClientCount()==0) return;` в `SendTelemetry`.
+
+**Причина:** циклическая зависимость. Счётчик клиентов обновляется в основном
+из самого пути отправки (`WebSocketSendTelem` через `httpd_get_client_list`),
+а единственный bootstrap (`ws_handler` HTTP_GET handshake) на ESP-IDF v6.0
+срабатывает ненадёжно. При `count==0` телеметрия не ставится в очередь →
+`WebSocketSendTelem` не вызывается → `count` остаётся 0. Самоисцеления нет.
+
+## Решение
+
+Убрать гейт из `TelemetryHandler::SendTelemetry`: решение о доставке принимает
+транспорт (`WebSocketSendTelem` уже шлёт кадры только реальным WS-fd; если их
+нет — никому). Постройка JSON на 20 Гц без слушателей по стоимости ничтожна.
 
 ## Симптом
 
@@ -56,8 +84,8 @@
 
 ## Критерии приёмки
 
-- [ ] При подключённом браузере в Web UI идёт телеметрия, строятся графики,
-      бейдж контроллера — «Подключено»
-- [ ] Лог `telem_sender: ... clients=K` показывает K>0 при открытом UI
-- [ ] Найдена точка обрыва (учёт клиентов / handshake / таск / формат) и
-      устранена
+- [x] При подключённом браузере в Web UI идёт телеметрия, строятся графики,
+      бейдж контроллера — «Подключено» (подтверждено на железе 2026-06-14)
+- [x] Лог `telem_sender: ... clients=K` показывает K>0 при открытом UI
+      (`clients=3`, `ws_matched=1`, `sent_ok=1`)
+- [x] Найдена точка обрыва (гейт client-count в `SendTelemetry`) и устранена

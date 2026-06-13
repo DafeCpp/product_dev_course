@@ -219,10 +219,15 @@ void TelemetryHandler::SendTelemetry(uint32_t now_ms,
   }
   last_send_ms_ = now_ms;
 
-  if (platform_.GetWebSocketClientCount() == 0) {
-    return;
-  }
-
+  // FW-R13: НЕ гейтим по GetWebSocketClientCount(). Ранее здесь был ранний
+  // выход при count==0, но счётчик клиентов обновляется в основном из самого
+  // пути отправки (WebSocketSendTelem), а единственный bootstrap при
+  // WS-handshake на ESP-IDF v6.0 срабатывает ненадёжно → возникала циклическая
+  // зависимость: телеметрия не шла, пока count==0, а count не рос, пока не идёт
+  // телеметрия. Итог — пустой Web UI (нет связи/телеметрии/графиков).
+  // Постройка JSON на send_interval_ms_ (20 Гц) ничтожна по стоимости, а сам
+  // путь отправки уже шлёт кадры ТОЛЬКО реальным WS-клиентам (если их нет —
+  // никому). Поэтому решение о доставке принимает транспорт, а не control loop.
   std::string json = BuildTelemJson(snap);
   platform_.SendTelem(json);
 }
