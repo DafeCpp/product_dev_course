@@ -232,6 +232,15 @@ class ImuHandler : public ControlComponent {
   void ResetHeadingRef() noexcept { heading_ref_set_ = false; }
 
  private:
+  /// Опорная СК фильтра — обновляется при смене состояния калибровки
+  void UpdateVehicleFrame();
+  /// Чтение mag (100 Гц), калибровка, PCA-heading, опорный курс
+  void UpdateMagAndHeading(uint32_t now_ms);
+  /// Heading через проекцию на калибровочную плоскость (PCA)
+  [[nodiscard]] float ComputePcaHeadingDeg(const MagData& mag_cal) const;
+  /// Шаг Madgwick: 9DOF при наличии mag, иначе 6DOF
+  void FeedMadgwick(float raw_ax, float raw_ay, float raw_az, float dt_sec);
+
   VehicleControlPlatform& platform_;
   ImuCalibration& calib_;
   MadgwickFilter& filter_;
@@ -247,6 +256,7 @@ class ImuHandler : public ControlComponent {
 
   // Магнетометр (опционален)
   MagData mag_data_{};
+  MagData mag_calibrated_{};  ///< Последний семпл после Apply() калибровки
   bool mag_enabled_{false};
   uint32_t last_mag_read_ms_{0};
   static constexpr uint32_t kMagReadIntervalMs = 10;  ///< 100 Hz
