@@ -166,22 +166,17 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
     // Всегда подаём mag в Madgwick 9DOF (даже без нового семпла).
     // Это предотвращает дрейф yaw между обновлениями магнитометра.
     // При отсутствии нового семпла используются последние mag данные.
+    //
+    // Передаём ПОЛНЫЙ калиброванный вектор в СК датчика (FW-R3): прежняя
+    // схема (px, py, dot_n) смешивала x/y-компоненты проекции на
+    // калибровочную плоскость с компонентой вдоль её нормали — корректно
+    // только при нормали ≈ оси Z датчика, при наклонном монтаже yaw
+    // искажался. Madgwick сам устраняет склонение (bx = sqrt(hx²+hy²)),
+    // предварительная проекция не нужна.
     if (madgwick_enabled_) {
-      if (have_calib) {
-        const auto& cd = mag_calib_->GetData();
-        const float dot_n = mag_cal.mx * cd.normal[0] +
-                            mag_cal.my * cd.normal[1] +
-                            mag_cal.mz * cd.normal[2];
-        const float px = mag_cal.mx - dot_n * cd.normal[0];
-        const float py = mag_cal.my - dot_n * cd.normal[1];
-        const float pz = mag_cal.mz - dot_n * cd.normal[2];
-        filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
-                              data_.gz, px, py, dot_n, dt_sec);
-      } else {
-        filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
-                              data_.gz, mag_cal.mx, mag_cal.my, mag_cal.mz,
-                              dt_sec);
-      }
+      filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
+                            data_.gz, mag_cal.mx, mag_cal.my, mag_cal.mz,
+                            dt_sec);
     }
   } else {
     if (madgwick_enabled_) {
