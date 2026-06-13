@@ -55,20 +55,25 @@ TEST_F(TelemetryHandlerTest, Sends_AtExactMultiples) {
   EXPECT_EQ(platform_.GetTelemSendCount(), 2);
 }
 
-TEST_F(TelemetryHandlerTest, DoesNotSend_WhenNoClients) {
+// FW-R13: control loop больше НЕ гейтит телеметрию по числу клиентов —
+// решение о доставке принимает транспорт (WebSocketSendTelem шлёт только
+// реальным WS-fd). Поэтому SendTelemetry ставит кадр в очередь независимо
+// от GetWebSocketClientCount() (раньше при count==0 был ранний выход, что
+// из-за ненадёжного bootstrap счётчика приводило к пустому Web UI).
+TEST_F(TelemetryHandlerTest, Sends_EvenWhenClientCountZero) {
   platform_.SetWebSocketClientCount(0);
   handler_->SendTelemetry(50, MakeSnap());
-  EXPECT_EQ(platform_.GetTelemSendCount(), 0);
+  EXPECT_EQ(platform_.GetTelemSendCount(), 1);
 }
 
-TEST_F(TelemetryHandlerTest, Sends_WhenClientsReappear) {
+TEST_F(TelemetryHandlerTest, Sends_RegardlessOfClientCountChanges) {
   platform_.SetWebSocketClientCount(0);
   handler_->SendTelemetry(50, MakeSnap());
-  EXPECT_EQ(platform_.GetTelemSendCount(), 0);
+  EXPECT_EQ(platform_.GetTelemSendCount(), 1);
 
   platform_.SetWebSocketClientCount(2);
   handler_->SendTelemetry(100, MakeSnap());
-  EXPECT_EQ(platform_.GetTelemSendCount(), 1);
+  EXPECT_EQ(platform_.GetTelemSendCount(), 2);
 }
 
 TEST_F(TelemetryHandlerTest, JsonContainsType) {
