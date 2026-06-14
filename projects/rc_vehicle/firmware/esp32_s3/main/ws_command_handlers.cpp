@@ -565,13 +565,25 @@ void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
 void HandleUdpStreamStart(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   (void)vc;
   const char* ip = JsonGetString(json, "ip", nullptr);
-  uint16_t port = (uint16_t)JsonGetInt(json, "port", 5555);
-  uint8_t hz = (uint8_t)JsonGetInt(json, "hz", 100);
+  // Валидируем в int ДО каста: иначе hz=266 молча усекается до 10
+  // (uint8_t) и is_valid_hz() его принимает — клиент получает не то, что
+  // просил, без ошибки. port [1024,65535], hz [0,255] (uint8_t).
+  bool params_ok = true;
+  int port_i = JsonGetIntChecked(json, "port", 5555, 1024, 65535, &params_ok);
+  int hz_i = JsonGetIntChecked(json, "hz", 100, 0, 255, &params_ok);
+  uint16_t port = (uint16_t)port_i;
+  uint8_t hz = (uint8_t)hz_i;
 
   WsReply(req, "udp_stream_start_ack", [&](cJSON* reply) {
     if (!ip) {
       cJSON_AddBoolToObject(reply, "ok", false);
       cJSON_AddStringToObject(reply, "error", "missing ip field");
+      return;
+    }
+    if (!params_ok) {
+      cJSON_AddBoolToObject(reply, "ok", false);
+      cJSON_AddStringToObject(reply, "error",
+                              "port out of [1024,65535] or hz out of [0,255]");
       return;
     }
     bool ok = UdpTelemStart(ip, port, hz);
@@ -585,8 +597,8 @@ void HandleUdpStreamStart(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     }
   });
 
-  ESP_LOGI(TAG, "udp_stream_start ip=%s port=%u hz=%u", ip ? ip : "null", port,
-           hz);
+  ESP_LOGI(TAG, "udp_stream_start ip=%s port=%u hz=%u ok=%d", ip ? ip : "null",
+           port, hz, (int)params_ok);
 }
 
 void HandleUdpStreamStop(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
