@@ -2,8 +2,8 @@
 
 **Источник:** `firmware/CODE_REVIEW.md` → Review 2026-06-10, R7
 **Приоритет:** LOW
-**Статус:** [ ] Не начато
-**Файлы:** `esp32_s3/main/ws_command_handlers.cpp:703-740`
+**Статус:** [x] Исправлено (PR, сборка esp32s3 зелёная)
+**Файлы:** `esp32_s3/main/ws_command_handlers.cpp` (`HandleUdpStreamStart`)
 
 ## Проблема
 
@@ -38,8 +38,33 @@ default)` + диапазонную проверку.
 
 ## Объём работ
 
-- [ ] Диапазонная валидация `hz`/`port` в int до каста, ошибка в ack при выходе за диапазон
-- [ ] Проверка: `udp_stream_start` с `hz=266` → `ok=false` (а не «успех» с hz=10)
+- [x] Диапазонная валидация `hz`/`port` в int до каста, ошибка в ack при выходе
+      за диапазон (через общий `JsonGetIntChecked` из FW-RF1: port [1024,65535],
+      hz [0,255]; `ok=false` при выходе)
+- [x] При `!params_ok` ack отвечает `ok=false` с `error` про диапазон **до**
+      вызова `UdpTelemStart` (усечения значений больше нет)
+
+## Реализация
+
+`HandleUdpStreamStart` теперь:
+
+```cpp
+bool params_ok = true;
+int port_i = JsonGetIntChecked(json, "port", 5555, 1024, 65535, &params_ok);
+int hz_i   = JsonGetIntChecked(json, "hz",   100,  0,    255,   &params_ok);
+...
+if (!params_ok) { ok=false; error="port out of [1024,65535] or hz out of [0,255]"; return; }
+```
+
+`hz=266` теперь даёт `ok=false`, а не молчаливое `hz=10`. Точную валидацию
+конкретных значений hz по-прежнему делает `is_valid_hz()` в `UdpTelemStart`.
+
+## Проверка
+
+- Сборка esp32s3 (ESP-IDF v6.0) зелёная; clang-format чистый.
+- Host-тестов нет: `ws_command_handlers.cpp` и `ws_json_util.hpp` зависят от
+  ESP-IDF (`esp_http_server.h`) и в host-сборку не входят (как и весь FW-RF1).
+  Поведенческая проверка `hz=266 → ok=false` — на железной WS-сессии.
 
 ## Критерии приёмки
 
