@@ -41,6 +41,16 @@
 | [FW-R14](FW-R14-madgwick-yaw-drift-at-tilt.md) | Слитый yaw Madgwick дрейфит на наклоне | LOW | [ ] |
 | [FW-RF8](FW-RF8-telemetry-off-control-loop.md) | Развязать телеметрию и control loop | MEDIUM | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
+| [FW-CI4](FW-CI4-coverage-ci.md) | CI-отчёт покрытия host-тестов прошивки | LOW | [ ] |
+
+## Реестр — исследования (spike)
+
+Задачи-исследования: артефакт — замеры + рекомендация/ADR, а не код в проде.
+
+| ID | Задача | Приоритет | Статус |
+|----|--------|-----------|--------|
+| [FW-S1](FW-S1-telemetry-transport-format-research.md) | Формат и транспорт телеметрии (binary, прямая отправка в backend, частота 100 Гц+) | LOW | [ ] |
+| [FW-S2](FW-S2-replay-regression-on-real-rides.md) | Регрессия на реальных поездках (replay записанной телеметрии) | LOW | [ ] |
 
 ## План выполнения (по удобству)
 
