@@ -39,6 +39,7 @@
 | [FW-R12](FW-R12-steering-throttle-limited-range.md) | Урезанный ход руля/газа | MEDIUM | [x] не-баг ПО |
 | [FW-R13](FW-R13-webui-no-telemetry-no-link.md) | Web UI: нет телеметрии/связи (гейт client-count) | HIGH | [x] |
 | [FW-R14](FW-R14-madgwick-yaw-drift-at-tilt.md) | Слитый yaw Madgwick дрейфит на наклоне | LOW | [ ] |
+| [FW-R15](FW-R15-stab-config-lost-on-mode-switch.md) | Кастом настройка режима теряется при переключении | MEDIUM | [ ] |
 | [FW-RF8](FW-RF8-telemetry-off-control-loop.md) | Развязать телеметрию и control loop | MEDIUM | [ ] |
 | [FW-R16](FW-R16-control-loop-below-500hz.md) | Control loop ~350 Гц вместо 500 при stab=ON | MEDIUM | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |

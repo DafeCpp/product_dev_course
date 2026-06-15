@@ -202,6 +202,15 @@ VehicleControlPlatformEsp32::LoadStabilizationConfig() {
   return std::nullopt;
 }
 
+std::optional<StabilizationConfig>
+VehicleControlPlatformEsp32::LoadStabilizationConfig(DriveMode mode) {
+  StabilizationConfig config{};
+  if (stab_config_nvs::Load(mode, config) == ESP_OK && config.IsValid()) {
+    return config;
+  }
+  return std::nullopt;
+}
+
 Result<Unit, PlatformError>
 VehicleControlPlatformEsp32::SaveStabilizationConfig(
     const StabilizationConfig& config) {

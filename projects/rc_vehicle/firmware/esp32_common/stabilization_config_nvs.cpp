@@ -1,16 +1,24 @@
 #include "stabilization_config_nvs.hpp"
 
+#include <cstdio>
 #include <cstring>
 
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
+using rc_vehicle::DriveMode;
 using rc_vehicle::StabilizationConfig;
 
 static const char* TAG = "stab_cfg_nvs";
 static const char* NVS_NAMESPACE = "stab_cfg";
-static const char* NVS_KEY = "config";
+// Legacy однослотовый ключ (до per-mode). Сохранён для миграции.
+static const char* NVS_LEGACY_KEY = "config";
+// Ключ с номером активного режима (uint8).
+static const char* NVS_ACTIVE_KEY = "active";
+
+/** Число режимов DriveMode (Normal..DirectLaw). */
+static constexpr uint8_t kDriveModeCount = 5;
 
 /** Текущая версия формата. Увеличивать при изменении StabilizationConfig. */
 // v2: добавлены FilterConfig::adaptive_beta_enabled, adaptive_accel_threshold_g
@@ -27,7 +35,69 @@ struct StabConfigBlob {
   StabilizationConfig config;
 };
 
+namespace {
+
+/** Сформировать ключ слота режима: "cfg0".."cfg4". */
+void ModeKey(DriveMode mode, char (&out)[8]) {
+  std::snprintf(out, sizeof(out), "cfg%u", static_cast<unsigned>(mode));
+}
+
+/** Прочитать blob по ключу из открытого хэндла, провалидировать. */
+esp_err_t ReadBlobKey(nvs_handle_t handle, const char* key,
+                      StabilizationConfig& config) {
+  StabConfigBlob blob{};
+  size_t required_size = sizeof(StabConfigBlob);
+  esp_err_t err = nvs_get_blob(handle, key, &blob, &required_size);
+  if (err != ESP_OK) {
+    return err;
+  }
+  if (required_size != sizeof(StabConfigBlob)) {
+    ESP_LOGW(TAG, "Config size mismatch (got=%zu expected=%zu) — discarding",
+             required_size, sizeof(StabConfigBlob));
+    return ESP_ERR_NOT_FOUND;
+  }
+  if (blob.version != kCurrentStabConfigVersion) {
+    ESP_LOGW(TAG, "Config version mismatch (got=%u expected=%u) — discarding",
+             blob.version, kCurrentStabConfigVersion);
+    return ESP_ERR_NOT_FOUND;
+  }
+  if (!blob.config.IsValid()) {
+    ESP_LOGW(TAG, "Loaded config failed validation — discarding");
+    return ESP_ERR_INVALID_STATE;
+  }
+  config = blob.config;
+  config.Clamp();
+  return ESP_OK;
+}
+
+}  // namespace
+
 namespace stab_config_nvs {
+
+esp_err_t Load(DriveMode mode, StabilizationConfig& config) {
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+  if (err != ESP_OK) {
+    if (err != ESP_ERR_NVS_NOT_FOUND) {
+      ESP_LOGW(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(err));
+    }
+    return err;
+  }
+
+  char key[8];
+  ModeKey(mode, key);
+  err = ReadBlobKey(handle, key, config);
+  nvs_close(handle);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "Loaded stabilization config for mode=%u: slew_steering=%.2f",
+             static_cast<unsigned>(mode), config.slew_steering);
+  } else if (err != ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGW(TAG, "Failed to read mode=%u config: %s",
+             static_cast<unsigned>(mode), esp_err_to_name(err));
+  }
+  return err;
+}
 
 esp_err_t Load(StabilizationConfig& config) {
   nvs_handle_t handle;
@@ -39,39 +109,32 @@ esp_err_t Load(StabilizationConfig& config) {
     return err;
   }
 
-  StabConfigBlob blob{};
-  size_t required_size = sizeof(StabConfigBlob);
-  err = nvs_get_blob(handle, NVS_KEY, &blob, &required_size);
-  nvs_close(handle);
-
-  if (err == ESP_OK) {
-    if (required_size != sizeof(StabConfigBlob)) {
-      ESP_LOGW(TAG, "Config size mismatch (got=%zu expected=%zu) — discarding",
-               required_size, sizeof(StabConfigBlob));
-      return ESP_ERR_NOT_FOUND;
+  // Активный режим → его слот.
+  uint8_t active = 0;
+  esp_err_t active_err = nvs_get_u8(handle, NVS_ACTIVE_KEY, &active);
+  if (active_err == ESP_OK && active < kDriveModeCount) {
+    char key[8];
+    ModeKey(static_cast<DriveMode>(active), key);
+    err = ReadBlobKey(handle, key, config);
+    if (err == ESP_OK) {
+      nvs_close(handle);
+      ESP_LOGI(TAG, "Loaded active stabilization config: mode=%u", active);
+      return ESP_OK;
     }
-    if (blob.version != kCurrentStabConfigVersion) {
-      ESP_LOGW(TAG, "Config version mismatch (got=%u expected=%u) — discarding",
-               blob.version, kCurrentStabConfigVersion);
-      return ESP_ERR_NOT_FOUND;
-    }
-    if (!blob.config.IsValid()) {
-      ESP_LOGW(TAG, "Loaded config failed validation — discarding");
-      return ESP_ERR_INVALID_STATE;
-    }
-    config = blob.config;
-    config.Clamp();
-    ESP_LOGI(TAG,
-             "Loaded stabilization config: enabled=%d beta=%.3f "
-             "lpf_cutoff=%.1f Hz mode=%d",
-             config.enabled, config.filter.madgwick_beta,
-             config.filter.lpf_cutoff_hz, static_cast<int>(config.mode));
-    return ESP_OK;
-  } else if (err != ESP_ERR_NVS_NOT_FOUND) {
-    ESP_LOGW(TAG, "Failed to read config from NVS: %s", esp_err_to_name(err));
   }
 
-  return err;
+  // Миграция: старый однослотовый ключ "config".
+  err = ReadBlobKey(handle, NVS_LEGACY_KEY, config);
+  nvs_close(handle);
+  if (err == ESP_OK) {
+    ESP_LOGW(TAG, "Migrated legacy single-slot config (mode=%u)",
+             static_cast<unsigned>(config.mode));
+    // Перенесём в per-mode слот, чтобы старый ключ больше не использовался.
+    Save(config);
+    return ESP_OK;
+  }
+
+  return ESP_ERR_NVS_NOT_FOUND;
 }
 
 esp_err_t Save(const StabilizationConfig& config) {
@@ -91,15 +154,18 @@ esp_err_t Save(const StabilizationConfig& config) {
   StabConfigBlob blob{};
   blob.version = kCurrentStabConfigVersion;
   blob.config = config;
-  err = nvs_set_blob(handle, NVS_KEY, &blob, sizeof(StabConfigBlob));
+
+  char key[8];
+  ModeKey(config.mode, key);
+  err = nvs_set_blob(handle, key, &blob, sizeof(StabConfigBlob));
+  if (err == ESP_OK) {
+    err = nvs_set_u8(handle, NVS_ACTIVE_KEY, static_cast<uint8_t>(config.mode));
+  }
   if (err == ESP_OK) {
     err = nvs_commit(handle);
     if (err == ESP_OK) {
-      ESP_LOGI(TAG,
-               "Saved stabilization config: enabled=%d beta=%.3f "
-               "lpf_cutoff=%.1f Hz mode=%d",
-               config.enabled, config.filter.madgwick_beta,
-               config.filter.lpf_cutoff_hz, static_cast<int>(config.mode));
+      ESP_LOGI(TAG, "Saved stabilization config: mode=%u slew_steering=%.2f",
+               static_cast<unsigned>(config.mode), config.slew_steering);
     } else {
       ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(err));
     }
@@ -120,17 +186,30 @@ esp_err_t Erase() {
     return err;
   }
 
-  err = nvs_erase_key(handle, NVS_KEY);
+  // Удаляем все per-mode слоты, активный режим и legacy-ключ. Отсутствующие
+  // ключи (ESP_ERR_NVS_NOT_FOUND) не считаем ошибкой.
+  for (uint8_t m = 0; m < kDriveModeCount; ++m) {
+    char key[8];
+    ModeKey(static_cast<DriveMode>(m), key);
+    esp_err_t e = nvs_erase_key(handle, key);
+    if (e != ESP_OK && e != ESP_ERR_NVS_NOT_FOUND) err = e;
+  }
+  {
+    esp_err_t e = nvs_erase_key(handle, NVS_ACTIVE_KEY);
+    if (e != ESP_OK && e != ESP_ERR_NVS_NOT_FOUND) err = e;
+  }
+  {
+    esp_err_t e = nvs_erase_key(handle, NVS_LEGACY_KEY);
+    if (e != ESP_OK && e != ESP_ERR_NVS_NOT_FOUND) err = e;
+  }
+
   if (err == ESP_OK) {
     err = nvs_commit(handle);
     if (err == ESP_OK) {
-      ESP_LOGI(TAG, "Erased stabilization config from NVS");
+      ESP_LOGI(TAG, "Erased all stabilization configs from NVS");
     }
-  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
-    ESP_LOGI(TAG, "No config to erase");
-    err = ESP_OK;
   } else {
-    ESP_LOGW(TAG, "Failed to erase config: %s", esp_err_to_name(err));
+    ESP_LOGW(TAG, "Failed to erase configs: %s", esp_err_to_name(err));
   }
 
   nvs_close(handle);

@@ -200,6 +200,19 @@ class VehicleControlPlatform {
   LoadStabilizationConfig() = 0;
 
   /**
+   * @brief Загрузить сохранённую конфигурацию конкретного режима из NVS
+   * @param mode Режим, чью конфигурацию загрузить
+   * @return Конфигурация режима, если для него сохранена и валидна
+   *
+   * Используется при переключении режима: вместо хардкод-дефолтов
+   * восстанавливается ранее сохранённая пользователем настройка режима
+   * (per-mode persistence). Если для режима ничего не сохранено — вернёт
+   * std::nullopt, и вызывающий применит дефолты режима.
+   */
+  [[nodiscard]] virtual std::optional<StabilizationConfig>
+  LoadStabilizationConfig(DriveMode mode) = 0;
+
+  /**
    * @brief Сохранить конфигурацию стабилизации в энергонезависимую память
    * @param config Конфигурация стабилизации
    * @return Result with Unit on success or PlatformError on failure

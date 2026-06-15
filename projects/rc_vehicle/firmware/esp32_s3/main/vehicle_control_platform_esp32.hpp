@@ -71,6 +71,8 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   // Stabilization Config
   [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig()
       override;
+  [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig(
+      DriveMode mode) override;
   [[nodiscard]] Result<Unit, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig& config) override;
 
