@@ -4,6 +4,7 @@
 
 #include <array>
 
+#include "control_components.hpp"  // TelemetrySnapshot, BuildTelemJson
 #include "vehicle_control_platform.hpp"
 
 namespace rc_vehicle {
@@ -102,7 +103,7 @@ class MockPlatform : public VehicleControlPlatform {
 
   MOCK_METHOD(unsigned, GetWebSocketClientCount, (),
               (const, noexcept, override));
-  MOCK_METHOD(void, SendTelem, (std::string_view json), (override));
+  MOCK_METHOD(void, PublishTelem, (const TelemetrySnapshot& snap), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
   // Wi-Fi команды
@@ -283,13 +284,18 @@ class FakePlatform : public VehicleControlPlatform {
     return ws_client_count_;
   }
 
-  void SendTelem(std::string_view json) override {
-    last_telem_ = std::string(json);
+  // FW-RF8: платформа теперь получает POD-снимок, а не готовый JSON. На host
+  // строим JSON здесь же (через ту же чистую BuildTelemJson, что и задача
+  // телеметрии на ESP32), чтобы тесты по-прежнему проверяли содержимое кадра.
+  void PublishTelem(const TelemetrySnapshot& snap) override {
+    last_snap_ = snap;
+    last_telem_ = BuildTelemJson(snap);
     telem_send_count_++;
   }
 
   void SetWebSocketClientCount(unsigned count) { ws_client_count_ = count; }
   const std::string& GetLastTelem() const { return last_telem_; }
+  const TelemetrySnapshot& GetLastSnap() const { return last_snap_; }
   int GetTelemSendCount() const { return telem_send_count_; }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -349,6 +355,7 @@ class FakePlatform : public VehicleControlPlatform {
   // WebSocket
   unsigned ws_client_count_{0};
   std::string last_telem_;
+  TelemetrySnapshot last_snap_{};
   int telem_send_count_{0};
 
   // Wi-Fi

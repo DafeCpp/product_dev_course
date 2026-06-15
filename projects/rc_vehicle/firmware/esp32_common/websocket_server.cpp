@@ -1,10 +1,13 @@
 #include "websocket_server.hpp"
 
-#include <atomic>
 #include <string.h>
+
+#include <atomic>
+#include <string>
 
 #include "cJSON.h"
 #include "config.hpp"
+#include "control_components.hpp"  // rc_vehicle::TelemetrySnapshot, BuildTelemJson
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -17,21 +20,16 @@ static httpd_handle_t ws_server_handle = NULL;
 /** Макс. число HTTP-соединений httpd (для httpd_get_client_list). */
 static constexpr size_t MAX_HTTPD_CLIENTS = 8;
 
-/** Размер одного буфера телеметрии (JSON). */
-static constexpr size_t TELEM_BUF_SIZE = 2048;
-
 /**
- * Сообщение телеметрии, передаётся через очередь ПО ЗНАЧЕНИЮ.
- * FreeRTOS-очередь копирует элемент целиком, поэтому продьюсер и
- * telem_sender_task никогда не разделяют буфер — гонка двойной буферизации
- * (рваный JSON при медленном клиенте) исключена by-design (FW-R6).
+ * Очередь телеметрии передаёт POD-снимок (rc_vehicle::TelemetrySnapshot) ПО
+ * ЗНАЧЕНИЮ. FreeRTOS копирует элемент целиком (memcpy), поэтому control loop
+ * (продьюсер) и telem_sender_task не разделяют память — гонка двойной
+ * буферизации исключена by-design (FW-R6). FW-RF8: построение JSON из снимка
+ * вынесено в telem_sender_task, в очередь кладётся только снимок.
  */
-struct TelemMsg {
-  uint16_t len;
-  char json[TELEM_BUF_SIZE];
-};
+using TelemMsg = rc_vehicle::TelemetrySnapshot;
 
-/** Очередь длины 1 (xQueueOverwrite): всегда самый свежий кадр. */
+/** Очередь длины 1 (xQueueOverwrite): всегда самый свежий снимок. */
 static QueueHandle_t s_telem_queue = NULL;
 
 /**
@@ -48,13 +46,16 @@ static void telem_sender_task(void* arg) {
   (void)arg;
   uint32_t frames_sent = 0;
   TickType_t last_diag = xTaskGetTickCount();
-  // static: 2 КБ не помещаются в стек задачи (3072); задача одна — гонок нет
-  static TelemMsg msg;
+  // static: снимок крупный для стека задачи (3072); задача одна — гонок нет
+  static TelemMsg snap;
   for (;;) {
-    if (xQueueReceive(s_telem_queue, &msg, portMAX_DELAY) != pdTRUE) {
+    if (xQueueReceive(s_telem_queue, &snap, portMAX_DELAY) != pdTRUE) {
       continue;
     }
-    WebSocketSendTelem(msg.json);
+    // FW-RF8: cJSON heap-аллокации — здесь (Core 0, низкий приоритет), а не в
+    // 500 Гц control loop.
+    std::string json = rc_vehicle::BuildTelemJson(snap);
+    WebSocketSendTelem(json.c_str());
     frames_sent++;
 
     // Диагностический лог каждые 10 секунд
@@ -195,24 +196,14 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
   return ret;
 }
 
-void WebSocketEnqueueTelem(const char* telem_json) {
-  if (telem_json == NULL || s_telem_queue == NULL) {
+void WebSocketEnqueueTelem(const rc_vehicle::TelemetrySnapshot& snap) {
+  if (s_telem_queue == NULL) {
     return;
   }
-  size_t len = strlen(telem_json);
-  if (len >= TELEM_BUF_SIZE) {
-    ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes", len, TELEM_BUF_SIZE);
-    len = TELEM_BUF_SIZE - 1;
-  }
-  // static staging: 2 КБ не помещаются в стек control loop задачи.
-  // Вызывается только из control loop — реентерабельность не нужна.
-  static TelemMsg msg;
-  msg.len = static_cast<uint16_t>(len);
-  memcpy(msg.json, telem_json, len);
-  msg.json[len] = '\0';
-  // Очередь копирует msg целиком; при заполненной очереди старый кадр
-  // перезаписывается свежим (телеметрия — последнее состояние важнее истории).
-  xQueueOverwrite(s_telem_queue, &msg);
+  // Очередь копирует снимок целиком (memcpy); при заполненной очереди старый
+  // снимок перезаписывается свежим (телеметрия — последнее состояние важнее
+  // истории). Вызывается из control loop — детерминированно, без аллокаций.
+  xQueueOverwrite(s_telem_queue, &snap);
 }
 
 esp_err_t WebSocketSendTelem(const char* telem_json) {

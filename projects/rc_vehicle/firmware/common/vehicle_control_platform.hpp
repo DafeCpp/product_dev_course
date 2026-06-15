@@ -13,6 +13,11 @@
 
 namespace rc_vehicle {
 
+// FW-RF8: PublishTelem принимает снимок по const-ссылке — достаточно
+// предобъявления (полное определение в control_components.hpp, который сам
+// включает этот заголовок — иначе был бы цикл).
+struct TelemetrySnapshot;
+
 /**
  * @brief Ошибки инициализации платформы
  */
@@ -276,10 +281,14 @@ class VehicleControlPlatform {
   [[nodiscard]] virtual unsigned GetWebSocketClientCount() const noexcept = 0;
 
   /**
-   * @brief Отправить телеметрию по WebSocket
-   * @param json JSON-строка с телеметрией
+   * @brief Опубликовать снимок телеметрии (FW-RF8)
+   * @param snap POD-снимок состояния
+   *
+   * Вызывается из control loop. Реализация должна только поставить снимок в
+   * очередь (без аллокаций/блокировок) — построение JSON и отправка по WS
+   * выполняются в отдельной задаче телеметрии вне горячего 500 Гц пути.
    */
-  virtual void SendTelem(std::string_view json) = 0;
+  virtual void PublishTelem(const TelemetrySnapshot& snap) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Wi-Fi команды (только для ESP32)

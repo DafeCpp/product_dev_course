@@ -2,7 +2,8 @@
 
 **Источник:** железная сессия 2026-06-13 + обсуждение 2026-06-14 (после FW-R13)
 **Приоритет:** MEDIUM (надёжность реального времени)
-**Статус:** [ ] Не начато
+**Статус:** [x] Исправлено (PR; host-тесты + сборка esp32s3 зелёные;
+DIAG loop Hz — проверить на железе)
 **Файлы:** `common/control_loop_processor.cpp` (`UpdateTelemetry`),
 `common/control_components.cpp` (`TelemetryHandler::SendTelemetry`/`BuildTelemJson`),
 `esp32_common/websocket_server.cpp`, `esp32_s3/main/vehicle_control_platform_esp32.cpp`
@@ -46,17 +47,39 @@
 
 ## Объём работ
 
-- [ ] `UpdateTelemetry` — только `xQueueOverwrite(snapshot)`, без `BuildTelemJson`
-- [ ] Перенести `BuildTelemJson` в задачу телеметрии (потребитель очереди)
-- [ ] Убедиться, что снапшот — POD без динамики; зафиксировать размер
+- [x] `TelemetryHandler::SendTelemetry` — только гейт по частоте +
+      `platform_.PublishTelem(snapshot)`, без `BuildTelemJson`
+- [x] `BuildTelemJson` вынесена в свободную чистую функцию; вызывается в
+      `telem_sender_task` (потребитель очереди, Core 0, низкий приоритет)
+- [x] Снапшот — POD без динамики; `static_assert(is_trivially_copyable)`
+      фиксирует это; очередь FreeRTOS копирует снимок (`xQueueOverwrite`)
 - [ ] Замер `DIAG: loop=… Hz` и джиттера до/после на железе (не хуже)
-- [ ] Host-тесты `test_telemetry_handler.cpp` зелёные (JSON-функция чистая)
+- [x] Host-тесты `test_telemetry_handler.cpp` зелёные (JSON-функция чистая)
+
+## Реализация
+
+Поток до: control loop → `SendTelemetry` → `BuildTelemJson` (cJSON heap **на
+потоке управления**) → `SendTelem(json)` → очередь JSON → `telem_sender_task`.
+
+Поток после: control loop → `SendTelemetry` → `PublishTelem(snapshot)` →
+очередь POD-снимков (`xQueueOverwrite`, memcpy) → `telem_sender_task`
+**строит JSON** (`BuildTelemJson`) и шлёт по WS.
+
+- `TelemetrySnapshot` получил поле `failsafe` (раньше `BuildTelemJson` читал
+  `platform_.FailsafeIsActive()` — теперь снимок самодостаточен, JSON строится
+  без обращения к платформе из чужого потока). Поле заполняет `UpdateTelemetry`.
+- Платформенный интерфейс: `SendTelem(string_view)` → `PublishTelem(const
+  TelemetrySnapshot&)`. Очередь в `websocket_server.cpp` теперь несёт снимок,
+  а не JSON-буфер 2 КБ.
+- `BuildTelemJson` — свободная функция от снимка (host-тестируемая).
 
 ## Критерии приёмки
 
-- [ ] В control loop нет постройки JSON и heap-аллокаций ради телеметрии
+- [x] В control loop нет постройки JSON и heap-аллокаций ради телеметрии
+      (только запись POD-снимка в очередь)
 - [ ] `loop Hz` и джиттер на железе не деградировали (DIAG до/после)
-- [ ] При полностью отключённой/сломанной телеметрии управление не меняется
+- [x] При полностью отключённой/сломанной телеметрии управление не меняется
+      (телеметрия физически за очередью, в другом потоке/ядре)
 
 ## Связанные
 

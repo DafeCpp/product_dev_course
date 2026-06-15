@@ -223,6 +223,9 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
                                        drive_mode, applied_throttle_,
                                        applied_steering_, commanded_throttle_,
                                        commanded_steering_);
+    // FW-RF8: failsafe в снимок — чтобы JSON строился в задаче телеметрии без
+    // обращения к платформе из чужого потока.
+    snap.failsafe = ctx_.platform.FailsafeIsActive();
     ctx_.telem_handler->SendTelemetry(now, snap);
   }
 
