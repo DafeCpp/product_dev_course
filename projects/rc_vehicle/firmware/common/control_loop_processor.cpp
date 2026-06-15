@@ -11,6 +11,24 @@
 #include "udp_telem_sender.hpp"
 #endif
 
+#ifdef RC_PROFILE_LOOP
+#include "log_format.hpp"
+// FW-R16: засечки времени по стадиям итерации. PROF_START() заводит локальный
+// курсор времени, PROF_LAP(acc) добавляет дельту с прошлой засечки в
+// аккумулятор и сдвигает курсор. В обычной сборке — пустышки (нулевой оверхед,
+// без _pt).
+#define PROF_START() uint64_t _pt = ctx_.platform.GetTimeUs()
+#define PROF_LAP(acc)                              \
+  do {                                             \
+    const uint64_t _n = ctx_.platform.GetTimeUs(); \
+    (acc) += _n - _pt;                             \
+    _pt = _n;                                      \
+  } while (0)
+#else
+#define PROF_START() ((void)0)
+#define PROF_LAP(acc) ((void)0)
+#endif
+
 namespace rc_vehicle {
 
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
@@ -20,8 +38,12 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
   stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
 
-  UpdateComponents(now, dt_ms);
-  UpdateSensorsAndEkf(dt_ms);
+  PROF_START();
+
+  UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
+  PROF_LAP(prof_components_us_);
+  UpdateSensorsAndEkf(dt_ms);  // snapshot + ComOffset + EKF
+  PROF_LAP(prof_sensors_us_);
 
   if (ctx_.calib_mgr) {
     ctx_.calib_mgr->ProcessRequest(now);
@@ -30,21 +52,33 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
   UpdateAutoDrive(now, dt_ms);
+  PROF_LAP(prof_control_us_);
 
   UpdateStabilization(dt_ms);
+  PROF_LAP(prof_stab_us_);
   // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
   // перезаписал бы нейтраль ненулевым trim'ом — моторы ползли бы при
   // потере сигнала (FW-R1).
   if (!HandleFailsafe()) {
     UpdatePwm(now, dt_ms);
   }
+  PROF_LAP(prof_pwm_us_);
   UpdateTelemetry(now, dt_ms);
+  PROF_LAP(prof_telem_us_);
 
   {
     const DiagnosticsContext dctx{ctx_.platform, *ctx_.stab_mgr, ctx_.madgwick,
                                   ctx_.ekf, ctx_.imu_handler,
                                   ctx_.last_loop_hz};
+#ifdef RC_PROFILE_LOOP
+    const uint32_t prof_loops = diag_loop_count_;
+#endif
     PrintDiagnostics(dctx, stab_cfg_, now, diag_loop_count_, diag_start_ms_);
+#ifdef RC_PROFILE_LOOP
+    // diag_loop_count_ обнуляется в PrintDiagnostics, когда сработал интервал —
+    // это и есть сигнал напечатать средние и сбросить аккумуляторы.
+    if (diag_loop_count_ == 0) EmitProfile(prof_loops);
+#endif
   }
 }
 
@@ -206,5 +240,25 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
     }
   }
 }
+
+#ifdef RC_PROFILE_LOOP
+void ControlLoopProcessor::EmitProfile(uint32_t loops) {
+  if (loops == 0) return;
+  LogFormat fmt;
+  fmt << "PROF(us/iter): comp=" << (prof_components_us_ / loops)
+      << " sens=" << (prof_sensors_us_ / loops)
+      << " ctrl=" << (prof_control_us_ / loops)
+      << " stab=" << (prof_stab_us_ / loops)
+      << " pwm=" << (prof_pwm_us_ / loops)
+      << " telem=" << (prof_telem_us_ / loops);
+  ctx_.platform.Log(LogLevel::Info, fmt.str());
+  prof_components_us_ = 0;
+  prof_sensors_us_ = 0;
+  prof_control_us_ = 0;
+  prof_stab_us_ = 0;
+  prof_pwm_us_ = 0;
+  prof_telem_us_ = 0;
+}
+#endif
 
 }  // namespace rc_vehicle
