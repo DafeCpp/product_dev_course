@@ -171,8 +171,15 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
     s_telem_queue = xQueueCreate(1, sizeof(TelemMsg));
     if (s_telem_queue != NULL) {
       const UBaseType_t prio = 5;
-      if (xTaskCreate(telem_sender_task, "ws_telem", 3072, NULL, prio, NULL) !=
-          pdPASS) {
+      // FW-RF8 переносит построение JSON-телеметрии в эту задачу
+      // (cJSON_PrintUnformatted → sprintf на каждое float-поле; форматирование
+      // float в xtensa newlib крайне прожорливо по стеку). Со стеком 3072 это
+      // даёт «stack overflow in task ws_telem» (краш в cvt/vfprintf) и
+      // reboot-петлю при первом же кадре. Эта же работа раньше жила в
+      // control-task со стеком 12288; даём ws_telem запас 8192.
+      constexpr uint32_t kTelemTaskStack = 8192;
+      if (xTaskCreate(telem_sender_task, "ws_telem", kTelemTaskStack, NULL,
+                      prio, NULL) != pdPASS) {
         vQueueDelete(s_telem_queue);
         s_telem_queue = NULL;
       }
