@@ -50,10 +50,21 @@ free-run'ит на скорости работы. Основные повтор�
 
 ## План
 
-1. **Профилирование (debug-PR).** Обернуть каждую стадию в `esp_timer_get_time()`
-   и вывести дельты в `DIAG` (напр. `imu=.. madgwick=.. lpf=.. ekf=.. pid=.. us`).
-   Прошить один раз, снять разбивку 2.86 мс. Инструментирование — только debug-лог,
-   поведение не меняет.
+1. **Профилирование (debug-PR).** ✅ Реализовано: `control_loop_processor.cpp`
+   засекает время по стадиям итерации (`platform_.GetTimeUs()` — портируемо,
+   host+device) и раз в диаг-интервал печатает средние us/iter:
+   ```
+   PROF(us/iter): comp=.. sens=.. ctrl=.. stab=.. pwm=.. telem=..
+   ```
+   где `comp` = RC/WiFi/IMU read + Madgwick + LPF (`UpdateComponents`),
+   `sens` = снимок + ComOffset + EKF (`UpdateSensorsAndEkf`), `ctrl` = calib +
+   выбор источника + auto-drive, `stab` = PID-контуры, `pwm` = failsafe/PWM,
+   `telem` = построение снимка + лог. Включается флагом сборки (нулевой оверхед
+   в обычной сборке):
+   ```bash
+   idf.py build -DCMAKE_CXX_FLAGS="-DRC_PROFILE_LOOP=1"
+   ```
+   Прошить один раз, снять разбивку ~2.86 мс. Поведение прошивки не меняется.
 2. **Оптимизация хога** по результатам замера, кандидаты:
    - поднять тактовую шины IMU (I2C/SPI clock);
    - облегчить математику EKF (фикс. размеры, избегать аллокаций/делений,
