@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 namespace rc_vehicle {
 
@@ -417,6 +418,27 @@ struct KidsModeConfig {
    */
   void ApplyPreset(KidsPreset preset) noexcept;
 };
+
+/**
+ * @brief Описатель возрастного пресета Kids Mode — единый источник истины.
+ *
+ * Значения throttle_limit/steering_limit определены здесь в одном месте и
+ * используются как в KidsModeConfig::ApplyPreset(), так и в WS-ответе
+ * kids_presets (HandleGetKidsPresets), чтобы UI и фактическое поведение не
+ * расходились. Для Custom лимиты равны NaN (пользовательские настройки).
+ */
+struct KidsPresetInfo {
+  KidsPreset id;
+  const char* name;
+  const char* description;
+  float throttle_limit;  ///< NaN для Custom
+  float steering_limit;  ///< NaN для Custom
+};
+
+/**
+ * @brief Таблица описателей всех возрастных пресетов Kids Mode.
+ */
+[[nodiscard]] std::span<const KidsPresetInfo> GetKidsPresetTable() noexcept;
 
 /**
  * @brief Конфигурация системы стабилизации

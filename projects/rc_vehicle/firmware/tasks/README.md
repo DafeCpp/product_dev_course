@@ -18,14 +18,13 @@
 | [FW-RF1](FW-RF1-ws-handlers-dedup.md) | Дедупликация WS-хендлеров | MEDIUM | [x] |
 | [FW-RF2](FW-RF2-protocol-validate-frame.md) | Общая валидация кадров протокола | LOW | [x] |
 | [FW-RF3](FW-RF3-imu-handler-split.md) | ImuHandler::Update: разбиение + дедуп проекции | MEDIUM | [x] |
-| [FW-RF4](FW-RF4-kids-presets-single-source.md) | Kids-пресеты: единый источник истины | LOW | [ ] |
+| [FW-RF4](FW-RF4-kids-presets-single-source.md) | Kids-пресеты: единый источник истины | LOW | [x] |
 | [FW-RF5](FW-RF5-config-snapshot-per-tick.md) | Один snapshot конфига на итерацию | MEDIUM | [x] |
 | [FW-RF6](FW-RF6-stab-manager-apply-dedup.md) | StabilizationManager: дедуп Apply | LOW | [x] |
 | [FW-RF7](FW-RF7-slew-rate-namespace.md) | slew_rate.hpp: namespace, комментарий | LOW | [x] |
 | [FW-CI1](FW-CI1-firmware-ci-job.md) | Настроить отдельный CI job для тестов прошивки | MEDIUM | [x] |
 
-> `[x]` = смержено в `develop`. `FW-RF4` — единственная оставшаяся из исходного
-> ревью (последняя в Волне 3, тот же файл `ws_command_handlers.cpp`).
+> `[x]` = смержено в `develop`. Все 16 задач исходного ревью 2026-06-10 закрыты.
 
 ## Реестр — находки железных сессий и CI (2026-06-13/14)
 
