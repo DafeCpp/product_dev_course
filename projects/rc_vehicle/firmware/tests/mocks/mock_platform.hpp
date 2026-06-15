@@ -2,6 +2,8 @@
 
 #include <gmock/gmock.h>
 
+#include <array>
+
 #include "vehicle_control_platform.hpp"
 
 namespace rc_vehicle {
@@ -67,6 +69,8 @@ class MockPlatform : public VehicleControlPlatform {
 
   MOCK_METHOD(std::optional<StabilizationConfig>, LoadStabilizationConfig, (),
               (override));
+  MOCK_METHOD(std::optional<StabilizationConfig>, LoadStabilizationConfig,
+              (DriveMode mode), (override));
   MOCK_METHOD((Result<Unit, PlatformError>), SaveStabilizationConfig,
               (const StabilizationConfig& config), (override));
 
@@ -207,16 +211,26 @@ class FakePlatform : public VehicleControlPlatform {
   // ─────────────────────────────────────────────────────────────────────────
 
   std::optional<StabilizationConfig> LoadStabilizationConfig() override {
-    return stab_config_;
+    if (active_mode_.has_value()) {
+      return stab_configs_[static_cast<size_t>(*active_mode_)];
+    }
+    return std::nullopt;
+  }
+
+  std::optional<StabilizationConfig> LoadStabilizationConfig(
+      DriveMode mode) override {
+    return stab_configs_[static_cast<size_t>(mode)];
   }
 
   Result<Unit, PlatformError> SaveStabilizationConfig(const StabilizationConfig& config) override {
-    stab_config_ = config;
+    stab_configs_[static_cast<size_t>(config.mode)] = config;
+    active_mode_ = config.mode;
     return Unit{};
   }
 
   void SetStabilizationConfig(const StabilizationConfig& config) {
-    stab_config_ = config;
+    stab_configs_[static_cast<size_t>(config.mode)] = config;
+    active_mode_ = config.mode;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -317,8 +331,9 @@ class FakePlatform : public VehicleControlPlatform {
   float com_offset_[2]{0.f, 0.f};
   bool com_offset_set_{false};
 
-  // Stabilization
-  std::optional<StabilizationConfig> stab_config_;
+  // Stabilization (per-mode: один слот на каждый DriveMode 0..4)
+  std::array<std::optional<StabilizationConfig>, 5> stab_configs_{};
+  std::optional<DriveMode> active_mode_;
 
   // RC Input
   std::optional<RcCommand> rc_command_;

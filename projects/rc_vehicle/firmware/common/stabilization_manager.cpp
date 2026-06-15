@@ -58,10 +58,25 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     current_mode = config_.mode;
   }
 
-  // При смене режима автоматически применить предустановки PID для нового
-  // режима
+  // При смене режима восстановить ранее сохранённую настройку нового режима
+  // (per-mode persistence): кастомизация режима не должна теряться при
+  // переключении туда-обратно. Если для режима ничего не сохранено — применить
+  // хардкод-дефолты режима. Поля, пришедшие в запросе вместе со сменой mode,
+  // относятся к СТАРОМУ режиму и игнорируются: профиль режима задаётся его
+  // сохранённой конфигурацией, а не «довеском» к переключению.
   if (validated_config.mode != current_mode) {
-    validated_config.ApplyModeDefaults();
+    const DriveMode target_mode = validated_config.mode;
+    auto saved = platform_.LoadStabilizationConfig(target_mode);
+    bool restored = false;
+    if (saved.has_value()) {
+      validated_config = *saved;
+      validated_config.mode = target_mode;  // на всякий случай
+      validated_config.Clamp();
+      restored = validated_config.IsValid();
+    }
+    if (!restored) {
+      validated_config.ApplyModeDefaults();
+    }
     // Сброс ПИД при смене режима — очищает интегратор предыдущего режима,
     // предотвращая рывок при переходе (особенно при переходе в/из drift mode)
     yaw_ctrl_.Reset();
@@ -69,10 +84,10 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     mode_transition_weight_ = 0.0f;  // Запустить плавный переход
     {
       LogFormat fmt;
-      fmt << "Mode changed: "
-          << DriveModeRegistry::Get(current_mode).GetName() << " -> "
-          << DriveModeRegistry::Get(validated_config.mode).GetName()
-          << ", defaults applied, PID reset";
+      fmt << "Mode changed: " << DriveModeRegistry::Get(current_mode).GetName()
+          << " -> " << DriveModeRegistry::Get(target_mode).GetName() << ", "
+          << (restored ? "saved profile restored" : "defaults applied")
+          << ", PID reset";
       platform_.Log(LogLevel::Info, fmt.str());
     }
   }
