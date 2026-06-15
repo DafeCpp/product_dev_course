@@ -225,21 +225,18 @@ void TelemetryHandler::SendTelemetry(uint32_t now_ms,
   }
   last_send_ms_ = now_ms;
 
-  // FW-R13: НЕ гейтим по GetWebSocketClientCount(). Ранее здесь был ранний
-  // выход при count==0, но счётчик клиентов обновляется в основном из самого
-  // пути отправки (WebSocketSendTelem), а единственный bootstrap при
-  // WS-handshake на ESP-IDF v6.0 срабатывает ненадёжно → возникала циклическая
-  // зависимость: телеметрия не шла, пока count==0, а count не рос, пока не идёт
-  // телеметрия. Итог — пустой Web UI (нет связи/телеметрии/графиков).
-  // Постройка JSON на send_interval_ms_ (20 Гц) ничтожна по стоимости, а сам
-  // путь отправки уже шлёт кадры ТОЛЬКО реальным WS-клиентам (если их нет —
-  // никому). Поэтому решение о доставке принимает транспорт, а не control loop.
-  std::string json = BuildTelemJson(snap);
-  platform_.SendTelem(json);
+  // FW-RF8: control loop публикует только лёгкий POD-снимок в очередь платформы
+  // (детерминированно, без кучи). Построение JSON (cJSON) и отправка по WS
+  // выполняются в задаче телеметрии — стоимость/сбой телеметрии физически не
+  // достигает 500 Гц цикла.
+  //
+  // FW-R13: доставку по-прежнему НЕ гейтим по GetWebSocketClientCount() —
+  // решение принимает транспорт (WebSocketSendTelem шлёт только реальным
+  // WS-fd).
+  platform_.PublishTelem(snap);
 }
 
-std::string TelemetryHandler::BuildTelemJson(
-    const TelemetrySnapshot& snap) const {
+std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   cJSON* root = cJSON_CreateObject();
   if (!root) return "{}";
 
@@ -253,7 +250,7 @@ std::string TelemetryHandler::BuildTelemJson(
   if (link) {
     cJSON_AddBoolToObject(link, "rc_ok", snap.rc_ok);
     cJSON_AddBoolToObject(link, "wifi_ok", snap.wifi_ok);
-    cJSON_AddBoolToObject(link, "failsafe", platform_.FailsafeIsActive());
+    cJSON_AddBoolToObject(link, "failsafe", snap.failsafe);
   }
 
   // IMU data (если включен)
