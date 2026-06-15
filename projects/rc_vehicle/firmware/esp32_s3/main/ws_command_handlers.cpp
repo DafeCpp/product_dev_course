@@ -1,5 +1,6 @@
 #include "ws_command_handlers.hpp"
 
+#include <cmath>
 #include <cstring>
 
 #include "com_offset_calibration.hpp"
@@ -247,46 +248,20 @@ void HandleGetKidsPresets(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     cJSON* presets = cJSON_CreateArray();
     if (!presets) return;
 
-    // Preset 0: Custom
-    cJSON* custom = cJSON_CreateObject();
-    if (custom) {
-      cJSON_AddNumberToObject(custom, "id", 0);
-      cJSON_AddStringToObject(custom, "name", "Custom");
-      cJSON_AddStringToObject(custom, "description", "User-defined settings");
-      cJSON_AddItemToArray(presets, custom);
-    }
-
-    // Preset 1: Toddler (3-5 years)
-    cJSON* toddler = cJSON_CreateObject();
-    if (toddler) {
-      cJSON_AddNumberToObject(toddler, "id", 1);
-      cJSON_AddStringToObject(toddler, "name", "Toddler");
-      cJSON_AddStringToObject(toddler, "description", "3-5 years old");
-      cJSON_AddNumberToObject(toddler, "throttle_limit", 0.2f);
-      cJSON_AddNumberToObject(toddler, "steering_limit", 0.5f);
-      cJSON_AddItemToArray(presets, toddler);
-    }
-
-    // Preset 2: Child (6-9 years)
-    cJSON* child = cJSON_CreateObject();
-    if (child) {
-      cJSON_AddNumberToObject(child, "id", 2);
-      cJSON_AddStringToObject(child, "name", "Child");
-      cJSON_AddStringToObject(child, "description", "6-9 years old");
-      cJSON_AddNumberToObject(child, "throttle_limit", 0.3f);
-      cJSON_AddNumberToObject(child, "steering_limit", 0.7f);
-      cJSON_AddItemToArray(presets, child);
-    }
-
-    // Preset 3: Preteen (10-12 years)
-    cJSON* preteen = cJSON_CreateObject();
-    if (preteen) {
-      cJSON_AddNumberToObject(preteen, "id", 3);
-      cJSON_AddStringToObject(preteen, "name", "Preteen");
-      cJSON_AddStringToObject(preteen, "description", "10-12 years old");
-      cJSON_AddNumberToObject(preteen, "throttle_limit", 0.5f);
-      cJSON_AddNumberToObject(preteen, "steering_limit", 0.85f);
-      cJSON_AddItemToArray(presets, preteen);
+    // Единый источник истины — таблица пресетов в stabilization_config.
+    // Числа определены в одном месте, UI не расходится с ApplyPreset().
+    for (const KidsPresetInfo& info : GetKidsPresetTable()) {
+      cJSON* item = cJSON_CreateObject();
+      if (!item) continue;
+      cJSON_AddNumberToObject(item, "id", static_cast<int>(info.id));
+      cJSON_AddStringToObject(item, "name", info.name);
+      cJSON_AddStringToObject(item, "description", info.description);
+      // Custom не имеет фиксированных лимитов (NaN) — поля опускаем.
+      if (!std::isnan(info.throttle_limit)) {
+        cJSON_AddNumberToObject(item, "throttle_limit", info.throttle_limit);
+        cJSON_AddNumberToObject(item, "steering_limit", info.steering_limit);
+      }
+      cJSON_AddItemToArray(presets, item);
     }
 
     cJSON_AddItemToObject(reply, "presets", presets);

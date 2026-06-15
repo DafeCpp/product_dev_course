@@ -208,6 +208,38 @@ TEST(KidsModeConfigTest, ApplyPresetResultIsValid) {
   EXPECT_TRUE(cfg.IsValid());
 }
 
+// ─── FW-RF4: таблица пресетов — единый источник истины ──────────────────────
+
+// Значения, которые ApplyPreset применяет к throttle_limit/steering_limit,
+// должны совпадать с таблицей, из которой строится WS-ответ kids_presets.
+TEST(KidsModeConfigTest, ApplyPresetMatchesPresetTable) {
+  for (const KidsPresetInfo& info : GetKidsPresetTable()) {
+    if (std::isnan(info.throttle_limit)) {
+      continue;  // Custom — фиксированных лимитов нет
+    }
+    KidsModeConfig cfg;
+    cfg.ApplyPreset(info.id);
+    EXPECT_FLOAT_EQ(cfg.throttle_limit, info.throttle_limit)
+        << "throttle_limit mismatch for preset id "
+        << static_cast<int>(info.id);
+    EXPECT_FLOAT_EQ(cfg.steering_limit, info.steering_limit)
+        << "steering_limit mismatch for preset id "
+        << static_cast<int>(info.id);
+  }
+}
+
+// Таблица содержит все четыре пресета, Custom — с NaN-лимитами.
+TEST(KidsModeConfigTest, PresetTableCoversAllPresets) {
+  auto table = GetKidsPresetTable();
+  ASSERT_EQ(table.size(), 4u);
+  EXPECT_EQ(table[0].id, KidsPreset::Custom);
+  EXPECT_TRUE(std::isnan(table[0].throttle_limit));
+  EXPECT_TRUE(std::isnan(table[0].steering_limit));
+  EXPECT_EQ(table[1].id, KidsPreset::Toddler);
+  EXPECT_EQ(table[2].id, KidsPreset::Child);
+  EXPECT_EQ(table[3].id, KidsPreset::Preteen);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // KidsModeProcessor Tests
 // ═══════════════════════════════════════════════════════════════════════════
