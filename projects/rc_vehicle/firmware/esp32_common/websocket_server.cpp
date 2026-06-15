@@ -46,7 +46,7 @@ static void telem_sender_task(void* arg) {
   (void)arg;
   uint32_t frames_sent = 0;
   TickType_t last_diag = xTaskGetTickCount();
-  // static: снимок крупный для стека задачи (3072); задача одна — гонок нет
+  // static: снимок крупный для стека задачи; задача одна — гонок нет
   static TelemMsg snap;
   for (;;) {
     if (xQueueReceive(s_telem_queue, &snap, portMAX_DELAY) != pdTRUE) {
