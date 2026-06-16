@@ -44,6 +44,11 @@ class YawRateControllerTest : public ::testing::Test {
     cfg_.yaw_rate.steer_to_yaw_rate_dps = 90.0f;
     cfg_.adaptive.enabled = false;
 
+    // FW-R17: рулевая стабилизация активна только в движении. По умолчанию
+    // ставим EKF «в движении», чтобы тесты коррекции работали; гейт по скорости
+    // проверяется отдельными тестами ниже.
+    ekf_.SetState(1.0f, 0.0f, 0.0f);
+
     ctrl_.Init(cfg_, ekf_, &imu_handler_);
   }
 
@@ -205,8 +210,8 @@ TEST_F(YawRateControllerTest, AdaptivePid_ScalesByEkfSpeed) {
   cfg_.adaptive.scale_max = 2.0f;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
 
-  // EKF speed = 0 → scale = clamp(0/1, 0.5, 2.0) = 0.5
-  ekf_.SetState(0.0f, 0.0f, 0.0f);
+  // EKF speed = 0.5 → scale = clamp(0.5/1, 0.5, 2.0) = 0.5 (выше гейта FW-R17)
+  ekf_.SetState(0.5f, 0.0f, 0.0f);
   float steering_slow = 0.5f;
   ctrl_.Process(steering_slow, 1.0f, 1.0f, 2);
   float correction_slow = steering_slow - 0.5f;
@@ -225,11 +230,55 @@ TEST_F(YawRateControllerTest, AdaptivePid_ScalesByEkfSpeed) {
   }
 }
 
+// ── FW-R17: гейт стабилизации по скорости (фикс ложного руля на стоянке)
+// ──────
+
+TEST_F(YawRateControllerTest, NoCorrection_BelowSpeedThreshold) {
+  // Стоим (speed=0) + всплеск гироскопа: руль НЕ должен подмешиваться, иначе
+  // на стоянке контур срывает руль в упор. Команда руля проходит как есть.
+  ekf_.SetState(0.0f, 0.0f, 0.0f);
+  SetGyroZ(90.0f);  // сильное «рысканье» от толчка/шума
+  float steering = 0.0f;
+  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(steering, 0.0f)
+      << "Ниже порога скорости коррекция руля не применяется";
+}
+
+TEST_F(YawRateControllerTest, BaseSteeringPassesThrough_BelowSpeedThreshold) {
+  // Ручной руль ниже порога проходит без изменений (стабилизация не
+  // вмешивается)
+  ekf_.SetState(0.1f, 0.0f, 0.0f);  // < 0.2 м/с
+  SetGyroZ(60.0f);
+  float steering = 0.4f;
+  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(steering, 0.4f);
+}
+
+TEST_F(YawRateControllerTest, ResetsPid_BelowSpeedThreshold) {
+  // Накопили интеграл в движении, затем остановились → PID сбрасывается
+  // (анти-windup), чтобы не было рывка при следующем старте.
+  StabilizationConfig cfg = cfg_;
+  cfg.yaw_rate.pid.ki = 0.05f;  // включаем интегратор
+  ctrl_.SetGains(cfg);
+  SetGyroZ(90.0f);
+  float steering = 0.0f;
+  for (int i = 0; i < 10; ++i) ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  EXPECT_NE(ctrl_.GetPid().GetIntegral(), 0.0f)
+      << "интеграл накопился в движении";
+
+  ekf_.SetState(0.0f, 0.0f, 0.0f);  // остановка
+  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(ctrl_.GetPid().GetIntegral(), 0.0f)
+      << "ниже порога PID сбрасывается (анти-windup)";
+}
+
 TEST_F(YawRateControllerTest, AdaptivePid_Disabled_NoScaling) {
   cfg_.adaptive.enabled = false;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
 
-  ekf_.SetState(0.0f, 0.0f, 0.0f);
+  // Обе скорости выше гейта FW-R17 (0.2 м/с), чтобы проверять именно отсутствие
+  // адаптивного масштабирования, а не гейт по скорости.
+  ekf_.SetState(1.0f, 0.0f, 0.0f);
   float steering1 = 0.5f;
   ctrl_.Process(steering1, 1.0f, 1.0f, 2);
 
