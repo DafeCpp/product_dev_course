@@ -64,7 +64,8 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
                                 const SensorSnapshot& sensors,
                                 float applied_throttle, float applied_steering,
                                 float commanded_throttle,
-                                float commanded_steering) {
+                                float commanded_steering, DriveMode drive_mode,
+                                bool stab_enabled) {
   TelemetryLogFrame frame;
   frame.ts_ms = now;
   frame.ax = sensors.imu_data.ax;
@@ -100,6 +101,8 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
     frame.heading_rel_deg = sensors.heading_rel_deg;
   }
   frame.test_marker = ctx.auto_drive.GetTestMarker();
+  frame.drive_mode = static_cast<uint8_t>(drive_mode);
+  frame.stab_enabled = stab_enabled ? 1 : 0;
   return frame;
 }
 

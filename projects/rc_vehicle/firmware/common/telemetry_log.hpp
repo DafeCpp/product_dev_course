@@ -42,8 +42,11 @@ struct TelemetryLogFrame {
   float heading_deg{0};          // Tilt-compensated magnetic heading [°, 0=N, 90=E]
   float heading_rel_deg{0};      // Относительный курс [°, -180..180]
   uint8_t test_marker{0};       // Маркер теста (0 = нет, >0 = ID теста)
-  uint8_t _pad[3]{};            // Выравнивание до 4 байт
-};  // sizeof == 128 bytes (30 × float + uint32_t + uint8_t + 3 pad)
+  // --- Режим и его состояние (FW-R18: пометки режимов в телеметрии) ---
+  uint8_t drive_mode{0};    // Активный DriveMode (0=Normal..4=DirectLaw)
+  uint8_t stab_enabled{0};  // Стабилизация включена (1) / выключена (0)
+  uint8_t _pad[1]{};        // Выравнивание до 4 байт
+};  // sizeof == 128 bytes (30 × float + uint32_t + 3 × uint8_t + 1 pad)
 
 // Compile-time проверка размера структуры
 static_assert(sizeof(TelemetryLogFrame) == 128,

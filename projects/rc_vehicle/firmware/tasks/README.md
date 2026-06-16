@@ -42,6 +42,8 @@
 | [FW-R15](FW-R15-stab-config-lost-on-mode-switch.md) | Кастом настройка режима теряется при переключении | MEDIUM | [ ] |
 | [FW-RF8](FW-RF8-telemetry-off-control-loop.md) | Развязать телеметрию и control loop | MEDIUM | [ ] |
 | [FW-R16](FW-R16-control-loop-below-500hz.md) | Control loop ~350 Гц вместо 500 при stab=ON | MEDIUM | [ ] |
+| [FW-R18](FW-R18-telemetry-mode-marks.md) | Пометки режима и стабилизации в скачиваемой телеметрии | MEDIUM | [ ] |
+| [FW-R19](FW-R19-telemetry-config-snapshot.md) | Снапшот параметров стабилизации/фильтров в телеметрии (событием) | LOW | [ ] |
 | [FW-R21](FW-R21-kids-mode-limits-dangling-config.md) | Kids Mode: лимиты скорости/газа не применяются (висячий указатель на конфиг) | HIGH (safety) | [ ] |
 | [FW-R22](FW-R22-yaw-stab-reverse-oscillation.md) | Рулевая стабилизация дёргает руль в реверсе (неверный знак ОС) | HIGH | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
@@ -197,3 +199,12 @@ cmake -B build && cmake --build build && ./build/tests
 Железная сессия (Батч 6): `make rc-build rc-flash rc-monitor`, сценарии —
 failsafe с trim, yaw при наклонном монтаже, телеметрия при медленном клиенте,
 `DIAG: loop Hz` не ниже базовой.
+
+## Заметки на будущее
+
+Находки с железных сессий, ещё не оформленные отдельными задачами.
+
+1. **Детский режим — ограничение скорости не работает.** Выставлен лимит
+   `max_speed_ms = 0.3`, но на графиках телеметрии скорость явно выше (~0.9 м/с).
+   Проверить применение `kids_mode` (`speed_limit_enabled` / `max_speed_ms` /
+   `speed_limit_gain`) в пути управления.

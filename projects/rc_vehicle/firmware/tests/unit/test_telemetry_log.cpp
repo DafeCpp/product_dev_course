@@ -23,6 +23,26 @@ TEST(TelemetryLogTest, Init_ZeroCapacity_ReturnsFalse) {
 // Push
 // ═══════════════════════════════════════════════════════════════════════════
 
+// FW-R18: режим и состояние стабилизации сохраняются в кадре (пометки режимов
+// в скачиваемой телеметрии) и не ломают 128-байтный размер кадра.
+TEST(TelemetryLogTest, Frame_CarriesDriveModeAndStabEnabled) {
+  static_assert(sizeof(TelemetryLogFrame) == 128, "frame must stay 128 bytes");
+  TelemetryLog log;
+  ASSERT_TRUE(log.Init(4));
+
+  TelemetryLogFrame frame;
+  frame.ts_ms = 42;
+  frame.drive_mode = 3;  // Kids
+  frame.stab_enabled = 1;
+  log.Push(frame);
+
+  TelemetryLogFrame out;
+  ASSERT_TRUE(log.GetFrame(0, out));
+  EXPECT_EQ(out.drive_mode, 3);
+  EXPECT_EQ(out.stab_enabled, 1);
+  EXPECT_EQ(out.ts_ms, 42u);
+}
+
 TEST(TelemetryLogTest, Push_IncreasesCount) {
   TelemetryLog log;
   ASSERT_TRUE(log.Init(10));

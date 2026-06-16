@@ -233,9 +233,10 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
   if (sensors_.imu_enabled && ctx_.telem_mgr) {
     const uint32_t last_log = ctx_.telem_mgr->GetLastLogTime();
     if (now - last_log >= config::TelemetryLogConfig::kLogIntervalMs) {
-      auto frame = BuildLogFrame(tctx, now, sensors_, applied_throttle_,
-                                 applied_steering_, commanded_throttle_,
-                                 commanded_steering_);
+      auto frame =
+          BuildLogFrame(tctx, now, sensors_, applied_throttle_,
+                        applied_steering_, commanded_throttle_,
+                        commanded_steering_, drive_mode, stab_cfg_.enabled);
       ctx_.telem_mgr->Push(frame);
       ctx_.telem_mgr->SetLastLogTime(now);
 #ifdef ESP_PLATFORM
