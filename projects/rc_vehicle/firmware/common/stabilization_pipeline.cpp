@@ -6,6 +6,15 @@
 
 namespace rc_vehicle {
 
+namespace {
+// FW-R17: рулевая yaw-rate-стабилизация осмысленна только в движении. Ниже этой
+// скорости (EKF) руль не влияет на рысканье, поэтому контур не подмешивается —
+// иначе он гоняется за шумом гироскопа (дрожание руля) и срывается в упор ±1.0
+// на толчок. Порог с запасом над дрейфом оценки скорости; при нужде вынести в
+// конфиг. См. tasks/FW-R17-phantom-steering-after-boot.md.
+constexpr float kMinStabSpeedMs = 0.2f;
+}  // namespace
+
 // ─────────────────────────────────────────────────────────────────────────────
 // YawRateController
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +34,13 @@ void YawRateController::Process(float& steering, float stab_w, float mode_w,
   if (stab_w <= 0.0f) return;
   if (!imu_->IsEnabled()) return;
   if (dt_ms == 0) return;
+
+  // FW-R17: на стоянке/околонулевой скорости не подмешиваем коррекцию (руль
+  // проходит как есть) и держим PID в сбросе — анти-windup при остановках.
+  if (ekf_->GetSpeedMs() < kMinStabSpeedMs) {
+    pid_.Reset();
+    return;
+  }
 
   const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
   const float omega_desired = cfg_->yaw_rate.steer_to_yaw_rate_dps * steering;
