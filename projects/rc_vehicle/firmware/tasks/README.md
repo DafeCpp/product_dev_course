@@ -41,6 +41,7 @@
 | [FW-R14](FW-R14-madgwick-yaw-drift-at-tilt.md) | Слитый yaw Madgwick дрейфит на наклоне | LOW | [ ] |
 | [FW-RF8](FW-RF8-telemetry-off-control-loop.md) | Развязать телеметрию и control loop | MEDIUM | [ ] |
 | [FW-R16](FW-R16-control-loop-below-500hz.md) | Control loop ~350 Гц вместо 500 при stab=ON | MEDIUM | [ ] |
+| [FW-R17](FW-R17-phantom-steering-after-boot.md) | Руль дёргается/уходит в упор сам после ребута | HIGH | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
 | [FW-CI4](FW-CI4-coverage-ci.md) | CI-отчёт покрытия host-тестов прошивки | LOW | [ ] |
 
@@ -175,3 +176,8 @@ cmake -B build && cmake --build build && ./build/tests
 Железная сессия (Батч 6): `make rc-build rc-flash rc-monitor`, сценарии —
 failsafe с trim, yaw при наклонном монтаже, телеметрия при медленном клиенте,
 `DIAG: loop Hz` не ниже базовой.
+
+
+# Заметки на будущее
+
+1. не работает ограничение скорости в детском режиме

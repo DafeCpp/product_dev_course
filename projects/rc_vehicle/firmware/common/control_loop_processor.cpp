@@ -11,6 +11,10 @@
 #include "udp_telem_sender.hpp"
 #endif
 
+#ifdef RC_DEBUG_STEER_SRC
+#include "log_format.hpp"
+#endif
+
 namespace rc_vehicle {
 
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
@@ -28,16 +32,38 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
     ctx_.calib_mgr->ProcessCompletion(now);
   }
 
+#ifdef RC_DEBUG_STEER_SRC
+  const float dbg_rc =
+      (sensors_.rc_active && sensors_.rc_cmd) ? sensors_.rc_cmd->steering : NAN;
+  const float dbg_wifi = (sensors_.wifi_active && sensors_.wifi_cmd)
+                             ? sensors_.wifi_cmd->steering
+                             : NAN;
+#endif
+
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
+#ifdef RC_DEBUG_STEER_SRC
+  const float dbg_base = commanded_steering_;
+#endif
   UpdateAutoDrive(now, dt_ms);
+#ifdef RC_DEBUG_STEER_SRC
+  const float dbg_post_auto = commanded_steering_;
+#endif
 
   UpdateStabilization(dt_ms);
+#ifdef RC_DEBUG_STEER_SRC
+  const float dbg_post_stab = commanded_steering_;
+#endif
   // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
   // перезаписал бы нейтраль ненулевым trim'ом — моторы ползли бы при
   // потере сигнала (FW-R1).
   if (!HandleFailsafe()) {
     UpdatePwm(now, dt_ms);
   }
+#ifdef RC_DEBUG_STEER_SRC
+  RecordSteerSample(dbg_rc, dbg_wifi, dbg_base, dbg_cur_auto_active_,
+                    dbg_cur_auto_out_, dbg_post_auto, dbg_post_stab,
+                    applied_steering_);
+#endif
   UpdateTelemetry(now, dt_ms);
 
   {
@@ -45,6 +71,11 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
                                   ctx_.ekf, ctx_.imu_handler,
                                   ctx_.last_loop_hz};
     PrintDiagnostics(dctx, stab_cfg_, now, diag_loop_count_, diag_start_ms_);
+#ifdef RC_DEBUG_STEER_SRC
+    // diag_loop_count_ обнуляется в PrintDiagnostics при срабатывании
+    // интервала.
+    if (diag_loop_count_ == 0) EmitSteerSrc();
+#endif
   }
 }
 
@@ -85,6 +116,10 @@ void ControlLoopProcessor::UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms) {
     commanded_throttle_ = ad_out.throttle;
     commanded_steering_ = ad_out.steering;
   }
+#ifdef RC_DEBUG_STEER_SRC
+  dbg_cur_auto_active_ = ad_out.active;
+  dbg_cur_auto_out_ = ad_out.steering;
+#endif
   HandleAutoDriveCompletion(ad_out, ctx_.stab_mgr, ctx_.imu_calib,
                             ctx_.platform);
 }
@@ -206,5 +241,36 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
     }
   }
 }
+
+#ifdef RC_DEBUG_STEER_SRC
+void ControlLoopProcessor::RecordSteerSample(float rc, float wifi, float base,
+                                             bool auto_active, float auto_out,
+                                             float post_auto, float post_stab,
+                                             float applied) {
+  const float mag = std::abs(post_stab);
+  if (mag <= dbg_worst_mag_) return;
+  dbg_worst_mag_ = mag;
+  dbg_rc_ = rc;
+  dbg_wifi_ = wifi;
+  dbg_base_ = base;
+  dbg_auto_active_ = auto_active;
+  dbg_auto_out_ = auto_out;
+  dbg_post_auto_ = post_auto;
+  dbg_post_stab_ = post_stab;
+  dbg_applied_ = applied;
+}
+
+void ControlLoopProcessor::EmitSteerSrc() {
+  if (dbg_worst_mag_ < 0.0f) return;  // не было семплов
+  LogFormat fmt;
+  fmt << "STEER-SRC worst|cmd|=" << dbg_post_stab_ << " : rc=" << dbg_rc_
+      << " wifi=" << dbg_wifi_ << " base=" << dbg_base_
+      << " auto(act=" << (dbg_auto_active_ ? 1 : 0) << ",out=" << dbg_auto_out_
+      << ") post_auto=" << dbg_post_auto_ << " post_stab=" << dbg_post_stab_
+      << " applied=" << dbg_applied_;
+  ctx_.platform.Log(LogLevel::Info, fmt.str());
+  dbg_worst_mag_ = -1.0f;  // сброс на новый интервал
+}
+#endif
 
 }  // namespace rc_vehicle

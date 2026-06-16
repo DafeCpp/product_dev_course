@@ -94,6 +94,30 @@ class ControlLoopProcessor {
   // Кэшированный снимок датчиков (обновляется в UpdateSensorsAndEkf)
   SensorSnapshot sensors_;
   StabilizationConfig stab_cfg_;
+
+#ifdef RC_DEBUG_STEER_SRC
+  // FW-R17: отладочная трассировка источника команды руля. Раз в диаг-интервал
+  // печатаем стадию с наибольшим |руля| — видно, кто вбрасывает ±1.0 (RC /
+  // Wi-Fi / auto-drive / стабилизация / залипшая commanded_steering_).
+  // Включается -DRC_DEBUG_STEER_SRC=1; в обычной сборке кода нет.
+  void RecordSteerSample(float rc, float wifi, float base, bool auto_active,
+                         float auto_out, float post_auto, float post_stab,
+                         float applied);
+  void EmitSteerSrc();
+  // Снимок «худшего» (макс |post_stab|) семпла за интервал.
+  float dbg_worst_mag_{-1.0f};
+  float dbg_rc_{0.0f};
+  float dbg_wifi_{0.0f};
+  float dbg_base_{0.0f};
+  bool dbg_auto_active_{false};
+  float dbg_auto_out_{0.0f};
+  float dbg_post_auto_{0.0f};
+  float dbg_post_stab_{0.0f};
+  float dbg_applied_{0.0f};
+  // Заполняется в UpdateAutoDrive, читается в Step.
+  bool dbg_cur_auto_active_{false};
+  float dbg_cur_auto_out_{0.0f};
+#endif
 };
 
 }  // namespace rc_vehicle
