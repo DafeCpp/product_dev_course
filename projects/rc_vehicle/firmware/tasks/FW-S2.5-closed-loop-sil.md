@@ -4,9 +4,9 @@
 **Тип:** инфраструктура тестирования (Фаза 3 — closed-loop SIL)
 **Язык:** Python (+ exe из [FW-S2.1](FW-S2.1-sim-host-stdio-platform.md))
 **Приоритет:** MEDIUM
-**Статус:** [ ] Не начато
-**Файлы (при реализации):** `firmware/sim/tests/test_sil_*.py`, хелпер-гарнесс
-closed-loop в `firmware/sim/`.
+**Статус:** [x] Готово
+**Файлы:** `firmware/sim/simlib/closed_loop.py` (`ClosedLoopSim`),
+`firmware/sim/tests/test_closed_loop.py`.
 
 ## Зачем
 
@@ -41,9 +41,18 @@ closed-loop в `firmware/sim/`.
 
 ## Критерии приёмки
 
-- [ ] Closed-loop контур замыкается через interactive `sim_host`, детерминированно.
-- [ ] ≥4 сценарных кейса (включая failsafe и kids-лимит), зелёные в pytest.
-- [ ] ≥1 ранее найденный баг воспроизведён и закрыт как регресс-кейс.
+- [x] Closed-loop контур замыкается через interactive `sim_host`, детерминированно
+  (тест `test_deterministic_runs`).
+- [x] 7 сценарных кейсов: рамп газа, step-руль (симметрия), failsafe, задний ход,
+  финитность/диапазон — зелёные в pytest (всего по `firmware/sim`: 23).
+- [x] Регресс **FW-R17** воспроизведён: прямая команда с буста → нет фантомного
+  руля (max |applied steering| = 0).
+
+**Поправка к плану:** kids-лимит (FW-R21) и FW-R23 (висячий конфиг при смене режима)
+требуют команды установки drive-mode/конфига в протоколе `sim_host` (сейчас режим =
+Normal по умолчанию). Вынесено в follow-up — небольшое расширение протокола FW-S2.1
+(`set-config`). Занос/oversteer (FW-R2) — на динамической модели с высокими
+боковыми, тоже follow-up к набору сценариев.
 
 ## Связанные
 
