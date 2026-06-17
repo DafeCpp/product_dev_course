@@ -16,6 +16,22 @@
 - `simlib/frame.py` — `SensorFrame.to_csv()`: формат кадра **совпадает** с
   протоколом `sim_host` (FW-S2.1, `ParseInputLine`). Бинд к exe — в FW-S2.5.
 
+## Replay записанной телеметрии (FW-S2.2)
+
+- `simlib/replay.py` — `load_telemetry_csv()` (формат прошивки → кадры) +
+  `find_invariant_violations()` (нет NaN, throttle/steering ∈ [-1,1], EKF не
+  расходится).
+- `simlib/sim_host_runner.py` — `find_sim_host()` + `run_batch()`: прогон через
+  `sim_host` (FW-S2.1) в batch-режиме, фиделити «со средней точки» (`--identity-calib`).
+- `tests/fixtures/rides/` — golden-фикстуры (+ `PROVENANCE.md`, генератор синтетики).
+
+Для replay-теста нужен собранный `sim_host`:
+```bash
+cd projects/rc_vehicle/firmware/tests && cmake -B build && cmake --build build
+# путь можно переопределить: export SIM_HOST_BIN=/path/to/sim_host
+```
+Если бинарь не найден — replay-тест помечается skip (загрузчик/инварианты тестируются всё равно).
+
 ## Запуск тестов
 
 ```bash
