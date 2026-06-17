@@ -4,9 +4,8 @@
 **Тип:** инфраструктура тестирования / CI (cross-cutting)
 **Язык:** CI/docs
 **Приоритет:** LOW
-**Статус:** [ ] Не начато
-**Файлы (при реализации):** `.github/workflows/` (новый job), `tests/fixtures/rides/`
-(политика хранения), возможно `.gitattributes` (git LFS).
+**Статус:** [x] Готово
+**Файлы:** `.github/workflows/firmware-tests.yml` (job `SIL (sim_host + pytest)`).
 
 ## Зачем
 
@@ -33,9 +32,28 @@
 
 ## Критерии приёмки
 
-- [ ] CI-job собирает `sim_host` и гоняет pytest; зелёный на PR.
-- [ ] Документированы решения по хранению/нарезке фикстур.
-- [ ] Follow-up (raw-log, git LFS) явно поставлены или закрыты как «не нужно».
+- [x] CI-job `SIL (sim_host + pytest)` в `firmware-tests.yml`: setup-python 3.12 →
+  сборка `sim_host` (cmake `--target sim_host`) → `pip install -e ".[dev]"` →
+  `pytest` с `SIM_HOST_BIN`. Триггер — изменения в `firmware/**`. «GTest (host)»
+  остаётся отдельным job. Авто-подхватывает тесты S2.5/S2.6 по мере мержа.
+- [x] Документированы решения по хранению/нарезке фикстур (ниже).
+- [x] Follow-up (raw-log, git LFS) явно поставлены.
+
+## Решения (зафиксировано)
+
+- **Хранение фикстур:** маленькие golden-вырезки в `firmware/sim/tests/fixtures/rides/`
+  (текстовый CSV, единицы килобайт) коммитятся в git с `PROVENANCE.md`. **git LFS НЕ
+  нужен** при текущем объёме — вводить только если суммарный размер фикстур вырастет
+  до десятков МБ. **Сырые полные логи (`telemetry_log_*.csv`) в git не коммитятся** —
+  прогон локально/через `SIM_HOST_BIN`/`SIM_VALIDATION_LOG`.
+- **Нарезка эпизодов:** ручной отбор по `test_marker`/`event_type` (**FW-R18**) —
+  авто-нарезка пока не нужна.
+- **Реальные golden-вырезки:** добавляются в [FW-S2.3](FW-S2.3-scenario-asserts.md)
+  (наклон/занос/failsafe/задний ход) — там они и нужны по смыслу; сейчас в CI гоняется
+  синтетический golden (FW-S2.2).
+- **Raw-log fidelity:** follow-up, завязан на формат лога
+  [FW-S1](FW-S1-telemetry-transport-format-research.md) — до него replay реальных логов
+  идёт «со средней точки» (identity-калибровка). После FW-S1 — полный end-to-end тракт.
 
 ## Связанные
 
