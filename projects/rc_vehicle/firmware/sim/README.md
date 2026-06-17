@@ -49,6 +49,21 @@ with ClosedLoopSim(find_sim_host()) as sim:
 failsafe, **регресс FW-R17** (нет фантомного руля с буста), задний ход (FW-R22),
 детерминизм, финитность/диапазон.
 
+## Валидация модели на реальных логах (FW-S2.6)
+
+`simlib/validation.py` — прогон модели записанными командами лога и сравнение с
+записанными сенсорами (yaw rate, скорость, продольное ускорение): метрики
+RMSE/корреляция на канал + подгонка `SimParams` (scipy, Nelder-Mead). Прошивка
+не участвует — чистая модель против записи.
+
+```bash
+python validate_logs.py path/to/telemetry_log.csv            # подгонка + метрики
+python validate_logs.py path/to/telemetry_log.csv --plot out.png --dynamic
+```
+Тесты (`tests/test_validation.py`) — round-trip: «запись» из модели с известными
+параметрами → подгонка восстанавливает их (детерминированно, без реальных логов).
+Реальный лог можно прогнать через `SIM_VALIDATION_LOG=path pytest -k real_log`.
+
 ## Запуск тестов
 
 ```bash

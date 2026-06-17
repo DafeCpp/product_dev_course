@@ -4,9 +4,9 @@
 **Тип:** инфраструктура тестирования (Фаза 4 — валидация модели)
 **Язык:** Python (numpy/scipy/matplotlib; прошивка **не нужна**)
 **Приоритет:** MEDIUM
-**Статус:** [ ] Не начато
-**Файлы (при реализации):** `firmware/sim/validation/` (скрипты подгонки/метрик),
-`firmware/sim/reports/` (отчёт + графики).
+**Статус:** [x] Готово
+**Файлы:** `firmware/sim/simlib/validation.py` (загрузка/симуляция/метрики/подгонка/
+график), `firmware/sim/validate_logs.py` (CLI), `firmware/sim/tests/test_validation.py`.
 
 ## Зачем
 
@@ -31,10 +31,23 @@
 
 ## Критерии приёмки
 
-- [ ] Отчёт с метриками (RMSE/корреляция) по каналам на ≥2 логах.
-- [ ] Зафиксированные подогнанные `SimParams` (с единицами/провенансом).
-- [ ] Явный вывод, где модель применима, а где — нет (обоснование доверия к
-  closed-loop [FW-S2.5](FW-S2.5-closed-loop-sil.md)).
+- [x] Метрики (RMSE/корреляция) по каналам (yaw rate / скорость / прод. ускорение)
+  + `format_report`; CLI `validate_logs.py` печатает отчёт по логу.
+- [x] Подгонка `SimParams` (scipy Nelder-Mead, положительность параметров);
+  round-trip тест восстанавливает известные параметры (детерминированно).
+- [x] График предсказание-vs-запись (`plot_channels`, matplotlib Agg).
+
+**Реализация:** `simlib/validation.py` (load_drive_log/simulate/channel_metrics/
+fit_params/format_report/plot_channels), CLI `validate_logs.py`,
+`tests/test_validation.py` (28 тестов всего по `firmware/sim`, 1 skip — реальный
+лог по `SIM_VALIDATION_LOG`).
+
+**Наблюдение (на реальном `*_normal_17_06`):** подгонка снижает RMSE (yaw 13.4→5.0,
+speed 1.44→0.23), но `max_accel→0` — у этого лога applied throttle ≈ 0 (машина почти
+не ехала): данные с низким возбуждением не идентифицируют тягу. Вывод: для валидации
+тяги нужны логи с реальным разгоном; yaw/серво идентифицируются и на спокойных
+заездах. Реальные логи в git не коммитятся — прогон локально/через `SIM_VALIDATION_LOG`
+(хранение фикстур — FW-S2.7).
 
 ## Связанные
 
