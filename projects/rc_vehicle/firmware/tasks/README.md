@@ -56,6 +56,7 @@
 |----|--------|-----------|--------|
 | [FW-S1](FW-S1-telemetry-transport-format-research.md) | Формат и транспорт телеметрии (binary, прямая отправка в backend, частота 100 Гц+) | LOW | [ ] |
 | [FW-S2](FW-S2-sil-physics-model-epic.md) | **ЭПИК:** SIL-симуляция на физ-модели + валидация на реальных поездках (replay → closed-loop) | MEDIUM | [ ] |
+| [FW-S3](FW-S3-ekf-speed-reliability.md) | Достоверность оценки скорости EKF (vx-дрейф, vx_var до 193); влияет на kids speed limit и детект реверса | LOW | [ ] |
 
 ### Подреестр FW-S2 (декомпозиция эпика)
 
