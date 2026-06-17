@@ -54,6 +54,22 @@
 | [FW-S1](FW-S1-telemetry-transport-format-research.md) | Формат и транспорт телеметрии (binary, прямая отправка в backend, частота 100 Гц+) | LOW | [ ] |
 | [FW-S2](FW-S2-sil-physics-model-epic.md) | **ЭПИК:** SIL-симуляция на физ-модели + валидация на реальных поездках (replay → closed-loop) | MEDIUM | [ ] |
 
+### Подреестр FW-S2 (декомпозиция эпика)
+
+Архитектура: Python-модель ↔ host-exe прошивки (`sim_host`/`StdioPlatform`),
+логическое время, batch (replay) + interactive (closed-loop). Точки старта —
+FW-S2.1 (C++) и FW-S2.4 (Python) независимы.
+
+| ID | Подзадача | Язык | Приоритет | Зависит | Статус |
+|----|-----------|------|-----------|---------|--------|
+| [FW-S2.1](FW-S2.1-sim-host-stdio-platform.md) | `sim_host` exe + `StdioPlatform` + протокол | C++ | MEDIUM | — | [ ] |
+| [FW-S2.2](FW-S2.2-python-replay-harness.md) | Python replay (batch) + инварианты | Python | MEDIUM | S2.1 | [ ] |
+| [FW-S2.3](FW-S2.3-scenario-asserts.md) | Сценарные replay-ассерты на golden | Python | MEDIUM | S2.2 | [ ] |
+| [FW-S2.4](FW-S2.4-python-vehicle-model.md) | Физ-модель машинки на Python | Python | MEDIUM | — | [ ] |
+| [FW-S2.5](FW-S2.5-closed-loop-sil.md) | Closed-loop SIL (interactive) | Python | MEDIUM | S2.1, S2.4 | [ ] |
+| [FW-S2.6](FW-S2.6-model-validation.md) | Валидация модели на реальных поездках | Python | MEDIUM | S2.4 | [ ] |
+| [FW-S2.7](FW-S2.7-ci-fixtures.md) | CI-job, фикстуры, raw-log follow-up | CI/docs | LOW | S2.2 | [ ] |
+
 ## План выполнения (по удобству)
 
 Порядок оптимизирован под удобство выполнения, а не критичность:
