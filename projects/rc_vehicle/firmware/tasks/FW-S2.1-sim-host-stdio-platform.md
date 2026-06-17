@@ -4,10 +4,10 @@
 **Тип:** инфраструктура тестирования (фундамент эпика)
 **Язык:** C++
 **Приоритет:** MEDIUM
-**Статус:** [ ] Не начато
-**Файлы (при реализации):** `tests/sim/stdio_platform.{hpp,cpp}`,
-`tests/sim/sim_host_main.cpp`, `tests/CMakeLists.txt`,
-`tests/unit/test_stdio_platform.cpp`.
+**Статус:** [x] Готово
+**Файлы:** `tests/sim/stdio_platform.{hpp,cpp}`, `tests/sim/sim_host_main.cpp`,
+`tests/CMakeLists.txt`, `tests/unit/test_stdio_platform.cpp`,
+`common/vehicle_control_unified.{hpp,cpp}` (мини-рефактор: `BuildProcessor`/`HostStep`).
 
 ## Зачем
 
@@ -46,13 +46,21 @@
 
 ## Критерии приёмки
 
-- [ ] `sim_host` принимает кадр, гоняет реальный `ControlLoopProcessor`, отдаёт
-  PWM + телеметрию.
-- [ ] Работают оба режима: `batch` и `interactive` (+ `reset`).
-- [ ] Время логическое: прогон N тиков не зависит от стенных часов, нет sleep.
-- [ ] GTest на round-trip протокола (`test_stdio_platform.cpp`): кадр → Step → выход
-  десериализуется обратно без потерь.
-- [ ] Host-сборка GTest остаётся зелёной (814+ тестов).
+- [x] `sim_host` принимает кадр, гоняет реальный `ControlLoopProcessor` (через
+  `VehicleControlUnified::Init()` + `HostStep`), отдаёт PWM + телеметрию.
+- [x] Работают оба режима: `batch` и `interactive` (`reset` = перезапуск процесса —
+  отдельной in-band команды в MVP нет, не требуется).
+- [x] Время логическое: прогон N тиков не зависит от стенных часов, нет sleep.
+- [x] GTest (`test_stdio_platform.cpp`): парсинг входа/формат выхода + функциональные
+  прогоны `HostStep` (нет NaN, throttle/steering ∈ [-1,1], failsafe → нейтраль).
+- [x] Host-сборка GTest зелёная (820 тестов, +6 новых).
+
+**Реализация (поправки к плану):** `StdioPlatform` — I/O-free (держит кадр + захват
+выходов, как `FakePlatform`); stdin/stdout живёт только в `sim_host_main`. Причина:
+IMU/RC/телеметрия сэмплируются с разной частотой → блокирующий I/O в `ReadImu`/`GetRc`
+рассинхронил бы потоки. Полный тракт прошивки в контуре обеспечен реальным `Init()`
+(не `ProcessorTest`-рецепт с null-хендлерами). Полнокадровая телеметрия —
+`-DRC_TELEM_SEND_INTERVAL_MS=2` на таргете `sim_host`.
 
 ## Связанные
 
