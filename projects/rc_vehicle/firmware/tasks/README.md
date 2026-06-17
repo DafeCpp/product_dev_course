@@ -52,7 +52,7 @@
 | ID | Задача | Приоритет | Статус |
 |----|--------|-----------|--------|
 | [FW-S1](FW-S1-telemetry-transport-format-research.md) | Формат и транспорт телеметрии (binary, прямая отправка в backend, частота 100 Гц+) | LOW | [ ] |
-| [FW-S2](FW-S2-replay-regression-on-real-rides.md) | Регрессия на реальных поездках (replay записанной телеметрии) | LOW | [ ] |
+| [FW-S2](FW-S2-sil-physics-model-epic.md) | **ЭПИК:** SIL-симуляция на физ-модели + валидация на реальных поездках (replay → closed-loop) | MEDIUM | [ ] |
 
 ## План выполнения (по удобству)
 
