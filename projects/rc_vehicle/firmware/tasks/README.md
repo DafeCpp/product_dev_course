@@ -63,7 +63,7 @@ FW-S2.1 (C++) и FW-S2.4 (Python) независимы.
 | ID | Подзадача | Язык | Приоритет | Зависит | Статус |
 |----|-----------|------|-----------|---------|--------|
 | [FW-S2.1](FW-S2.1-sim-host-stdio-platform.md) | `sim_host` exe + `StdioPlatform` + протокол | C++ | MEDIUM | — | [x] |
-| [FW-S2.2](FW-S2.2-python-replay-harness.md) | Python replay (batch) + инварианты | Python | MEDIUM | S2.1 | [ ] |
+| [FW-S2.2](FW-S2.2-python-replay-harness.md) | Python replay (batch) + инварианты | Python | MEDIUM | S2.1 | [x] |
 | [FW-S2.3](FW-S2.3-scenario-asserts.md) | Сценарные replay-ассерты на golden | Python | MEDIUM | S2.2 | [ ] |
 | [FW-S2.4](FW-S2.4-python-vehicle-model.md) | Физ-модель машинки на Python | Python | MEDIUM | — | [x] |
 | [FW-S2.5](FW-S2.5-closed-loop-sil.md) | Closed-loop SIL (interactive) | Python | MEDIUM | S2.1, S2.4 | [ ] |

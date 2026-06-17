@@ -6,7 +6,9 @@
 """
 
 from .frame import SensorFrame
+from .replay import find_invariant_violations, load_telemetry_csv
 from .sensors import synth_accel, synth_gyro, synth_mag, make_frame
+from .sim_host_runner import find_sim_host, run_batch
 from .sim_params import SimParams
 from .vehicle_model import StepOutput, VehicleModel, VehicleState
 
@@ -16,7 +18,11 @@ __all__ = [
     "StepOutput",
     "VehicleModel",
     "VehicleState",
+    "find_invariant_violations",
+    "find_sim_host",
+    "load_telemetry_csv",
     "make_frame",
+    "run_batch",
     "synth_accel",
     "synth_gyro",
     "synth_mag",

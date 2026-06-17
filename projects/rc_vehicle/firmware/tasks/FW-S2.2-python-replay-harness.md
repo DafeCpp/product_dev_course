@@ -4,9 +4,10 @@
 **Тип:** инфраструктура тестирования (Фаза 1 — replay)
 **Язык:** Python (драйвит `sim_host` из [FW-S2.1](FW-S2.1-sim-host-stdio-platform.md))
 **Приоритет:** MEDIUM
-**Статус:** [ ] Не начато
-**Файлы (при реализации):** `firmware/sim/` (Python-пакет: загрузчик, драйвер,
-pytest), `tests/fixtures/rides/` (golden-логи + провенанс).
+**Статус:** [x] Готово
+**Файлы:** `firmware/sim/simlib/{replay,sim_host_runner}.py`,
+`firmware/sim/tests/test_replay.py`,
+`firmware/sim/tests/fixtures/rides/` (golden + `PROVENANCE.md` + генератор).
 
 ## Зачем
 
@@ -37,9 +38,18 @@ Madgwick/EKF/control как есть. Полный raw end-to-end записан
 
 ## Критерии приёмки
 
-- [ ] Один golden-лог гоняется через `sim_host` в batch-режиме.
-- [ ] Инвариант-ассерты (NaN/диапазон/дисперсии/длина) зелёные в pytest.
-- [ ] Документирована структура `firmware/sim/` и запуск (`venv` + `pytest`).
+- [x] Golden-лог гоняется через `sim_host` в batch-режиме (`run_batch`,
+  `--identity-calib`).
+- [x] Инвариант-ассерты (NaN/диапазон/дисперсии EKF/длина) зелёные в pytest
+  (16 тестов: 13 модель + 3 replay).
+- [x] Документирована структура `firmware/sim/` и запуск (`venv` + `pytest`,
+  сборка `sim_host`).
+
+**Реализация:** загрузчик по именам колонок (формат прошивки, тот же что
+`telemetry_log_*.csv`); golden — синтетика из физ-модели (FW-S2.4) в реальной схеме,
+чтобы не коммитить сырые логи (реальные вырезки — в FW-S2.3/FW-S2.7). Бинарь
+`sim_host` ищется через `SIM_HOST_BIN` или `tests/build/sim_host`; нет бинаря →
+replay-тест skip.
 
 ## Связанные
 
