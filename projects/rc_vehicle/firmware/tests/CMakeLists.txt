@@ -77,6 +77,7 @@ include_directories(
     ${COMMON_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/mocks
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim
     ${cjson_SOURCE_DIR}
 )
 
@@ -126,6 +127,8 @@ add_executable(unit_tests
     unit/test_control_loop_processor.cpp
     unit/test_mmc5983.cpp
     unit/test_mag_calibration.cpp
+    unit/test_stdio_platform.cpp
+    sim/stdio_platform.cpp
     integration/test_control_loop.cpp
     integration/test_uart_bridge.cpp
 )
@@ -139,6 +142,19 @@ target_link_libraries(unit_tests
 
 # Discover tests
 gtest_discover_tests(unit_tests)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# sim_host — host-исполняемый файл прошивки для SIL-симуляции (FW-S2.1).
+# Гоняет настоящий ControlLoopProcessor; сенсоры/выход через stdin/stdout.
+# RC_TELEM_SEND_INTERVAL_MS=2 → телеметрия публикуется каждый тик (покадровый снапшот).
+# ─────────────────────────────────────────────────────────────────────────────
+add_executable(sim_host
+    ${COMMON_SOURCES}
+    sim/stdio_platform.cpp
+    sim/sim_host_main.cpp
+)
+target_link_libraries(sim_host cjson)
+target_compile_definitions(sim_host PRIVATE RC_TELEM_SEND_INTERVAL_MS=2)
 
 # Coverage support (optional)
 option(ENABLE_COVERAGE "Enable coverage reporting" OFF)
