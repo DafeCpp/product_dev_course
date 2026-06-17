@@ -32,6 +32,23 @@ cd projects/rc_vehicle/firmware/tests && cmake -B build && cmake --build build
 ```
 Если бинарь не найден — replay-тест помечается skip (загрузчик/инварианты тестируются всё равно).
 
+## Closed-loop SIL (FW-S2.5)
+
+`simlib/closed_loop.py` — `ClosedLoopSim`: замыкает Python-модель ↔ `sim_host`
+(interactive). На тик: сценарий задаёт RC-команду → прошивка считает applied PWM
+→ модель интегрирует шаг → синтезирует сырые сенсоры → обратно. Детерминированно,
+полный тракт прошивки в контуре.
+
+```python
+from simlib import ClosedLoopSim, find_sim_host
+with ClosedLoopSim(find_sim_host()) as sim:
+    rows = sim.run(600, rc_throttle=0.4, rc_steering=0.5)  # step-руль
+    print(sim.model.state.psi)  # машина повернула
+```
+Сценарии в `tests/test_closed_loop.py`: рамп газа, step-руль (симметрия),
+failsafe, **регресс FW-R17** (нет фантомного руля с буста), задний ход (FW-R22),
+детерминизм, финитность/диапазон.
+
 ## Запуск тестов
 
 ```bash
