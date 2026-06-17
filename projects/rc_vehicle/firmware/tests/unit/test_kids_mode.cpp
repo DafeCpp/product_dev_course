@@ -257,7 +257,7 @@ class KidsModeProcessorTest : public ::testing::Test {
     cfg_.kids_mode.anti_spin_threshold_deg = 10.0f;
     cfg_.kids_mode.anti_spin_reduction = 0.7f;
 
-    processor_.Init(cfg_, ekf_, nullptr);
+    processor_.Init(ekf_, nullptr);
   }
 
   StabilizationConfig cfg_;
@@ -266,20 +266,20 @@ class KidsModeProcessorTest : public ::testing::Test {
 };
 
 TEST_F(KidsModeProcessorTest, IsActiveReturnsTrueWhenModeIsKids) {
-  EXPECT_TRUE(processor_.IsActive());
+  EXPECT_TRUE(processor_.IsActive(cfg_));
 }
 
 TEST_F(KidsModeProcessorTest, IsActiveReturnsFalseWhenModeIsNormal) {
   cfg_.mode = DriveMode::Normal;
-  processor_.Init(cfg_, ekf_, nullptr);
-  EXPECT_FALSE(processor_.IsActive());
+  processor_.Init(ekf_, nullptr);
+  EXPECT_FALSE(processor_.IsActive(cfg_));
 }
 
 TEST_F(KidsModeProcessorTest, ThrottleLimitAppliedToForwardThrottle) {
   float throttle = 1.0f;
   float steering = 0.0f;
 
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   EXPECT_LE(throttle, 0.3f);
 }
@@ -288,7 +288,7 @@ TEST_F(KidsModeProcessorTest, ReverseLimitAppliedToReverseThrottle) {
   float throttle = -1.0f;
   float steering = 0.0f;
 
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   EXPECT_GE(throttle, -0.2f);
 }
@@ -297,7 +297,7 @@ TEST_F(KidsModeProcessorTest, SteeringLimitAppliedToPositiveSteering) {
   float throttle = 0.0f;
   float steering = 1.0f;
 
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   EXPECT_LE(steering, 0.7f);
 }
@@ -306,7 +306,7 @@ TEST_F(KidsModeProcessorTest, SteeringLimitAppliedToNegativeSteering) {
   float throttle = 0.0f;
   float steering = -1.0f;
 
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   EXPECT_GE(steering, -0.7f);
 }
@@ -315,7 +315,7 @@ TEST_F(KidsModeProcessorTest, ZeroThrottleRemainsZero) {
   float throttle = 0.0f;
   float steering = 0.0f;
 
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   EXPECT_FLOAT_EQ(throttle, 0.0f);
 }
@@ -324,7 +324,7 @@ TEST_F(KidsModeProcessorTest, ZeroSteeringRemainsZero) {
   float throttle = 0.0f;
   float steering = 0.0f;
 
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   EXPECT_FLOAT_EQ(steering, 0.0f);
 }
@@ -338,14 +338,14 @@ TEST_F(KidsModeProcessorTest, AccelLimitReducesThrottleAboveThreshold) {
   cfg_.kids_mode.accel_threshold_g = 0.15f;
   cfg_.kids_mode.accel_limit_gain = 3.0f;
   cfg_.kids_mode.accel_max_reduction = 0.5f;
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.3f;
   float steering = 0.0f;
 
   // forward_accel = 0.25g → excess = 0.10 → reduction = 0.30
   // throttle *= (1 - 0.30) = 0.3 * 0.7 = 0.21
-  processor_.Process(throttle, steering, 10, 0.25f);
+  processor_.Process(cfg_, throttle, steering, 10, 0.25f);
 
   EXPECT_LT(throttle, 0.3f);
   EXPECT_TRUE(processor_.IsAccelLimitActive());
@@ -355,12 +355,12 @@ TEST_F(KidsModeProcessorTest, AccelLimitNoEffectBelowThreshold) {
   cfg_.kids_mode.accel_limit_enabled = true;
   cfg_.kids_mode.accel_threshold_g = 0.15f;
   cfg_.kids_mode.slew_throttle = 100.0f;  // effectively disabled
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.3f;
   float steering = 0.0f;
 
-  processor_.Process(throttle, steering, 10, 0.10f);
+  processor_.Process(cfg_, throttle, steering, 10, 0.10f);
 
   EXPECT_NEAR(throttle, 0.3f, 0.01f);
   EXPECT_FALSE(processor_.IsAccelLimitActive());
@@ -370,12 +370,12 @@ TEST_F(KidsModeProcessorTest, AccelLimitNoEffectForReverseThrottle) {
   cfg_.kids_mode.accel_limit_enabled = true;
   cfg_.kids_mode.accel_threshold_g = 0.15f;
   cfg_.kids_mode.slew_throttle = 100.0f;
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = -0.2f;
   float steering = 0.0f;
 
-  processor_.Process(throttle, steering, 10, 0.30f);
+  processor_.Process(cfg_, throttle, steering, 10, 0.30f);
 
   EXPECT_GE(throttle, -0.2f);
   EXPECT_FALSE(processor_.IsAccelLimitActive());
@@ -384,12 +384,12 @@ TEST_F(KidsModeProcessorTest, AccelLimitNoEffectForReverseThrottle) {
 TEST_F(KidsModeProcessorTest, AccelLimitNoEffectWhenDisabled) {
   cfg_.kids_mode.accel_limit_enabled = false;
   cfg_.kids_mode.slew_throttle = 100.0f;
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.3f;
   float steering = 0.0f;
 
-  processor_.Process(throttle, steering, 10, 0.30f);
+  processor_.Process(cfg_, throttle, steering, 10, 0.30f);
 
   EXPECT_NEAR(throttle, 0.3f, 0.01f);
   EXPECT_FALSE(processor_.IsAccelLimitActive());
@@ -401,13 +401,13 @@ TEST_F(KidsModeProcessorTest, AccelLimitCapsAtMaxReduction) {
   cfg_.kids_mode.accel_limit_gain = 10.0f;
   cfg_.kids_mode.accel_max_reduction = 0.5f;
   cfg_.kids_mode.slew_throttle = 100.0f;
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.3f;
   float steering = 0.0f;
 
   // forward_accel = 0.50g → excess = 0.40 → gain*excess = 4.0 → capped at 0.5
-  processor_.Process(throttle, steering, 10, 0.50f);
+  processor_.Process(cfg_, throttle, steering, 10, 0.50f);
 
   // throttle *= (1 - 0.5) = 0.3 * 0.5 = 0.15
   EXPECT_NEAR(throttle, 0.15f, 0.01f);
@@ -418,13 +418,13 @@ TEST_F(KidsModeProcessorTest, AccelLimitDefaultForwardAccelIsZero) {
   cfg_.kids_mode.accel_limit_enabled = true;
   cfg_.kids_mode.accel_threshold_g = 0.15f;
   cfg_.kids_mode.slew_throttle = 100.0f;
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.3f;
   float steering = 0.0f;
 
   // No forward_accel argument → default 0.0f → no reduction
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   EXPECT_NEAR(throttle, 0.3f, 0.01f);
   EXPECT_FALSE(processor_.IsAccelLimitActive());
@@ -433,11 +433,11 @@ TEST_F(KidsModeProcessorTest, AccelLimitDefaultForwardAccelIsZero) {
 TEST_F(KidsModeProcessorTest, ResetClearsAccelLimitState) {
   cfg_.kids_mode.accel_limit_enabled = true;
   cfg_.kids_mode.accel_threshold_g = 0.15f;
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.3f;
   float steering = 0.0f;
-  processor_.Process(throttle, steering, 10, 0.30f);
+  processor_.Process(cfg_, throttle, steering, 10, 0.30f);
   EXPECT_TRUE(processor_.IsAccelLimitActive());
 
   processor_.Reset();
@@ -456,12 +456,12 @@ TEST_F(KidsModeProcessorTest, ResetClearsAntiSpinState) {
 
 TEST_F(KidsModeProcessorTest, ProcessDoesNothingWhenModeIsNotKids) {
   cfg_.mode = DriveMode::Normal;
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.8f;
   float steering = 0.9f;
 
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
 
   // Values should remain unchanged
   EXPECT_FLOAT_EQ(throttle, 0.8f);
@@ -474,14 +474,14 @@ TEST_F(KidsModeProcessorTest, ProcessDoesNothingWhenModeIsNotKids) {
 
 TEST_F(KidsModeProcessorTest, SlewRateLimitsRapidThrottleIncrease) {
   cfg_.kids_mode.slew_throttle = 0.5f;  // 0.5 per second
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.0f;
   float steering = 0.0f;
 
   // First call: throttle jumps to 1.0
   throttle = 1.0f;
-  processor_.Process(throttle, steering, 100);  // 100ms = 0.1s
+  processor_.Process(cfg_, throttle, steering, 100);  // 100ms = 0.1s
 
   // Should be limited to 0.5 * 0.1 = 0.05
   EXPECT_LE(throttle, 0.06f);  // Small tolerance
@@ -489,14 +489,14 @@ TEST_F(KidsModeProcessorTest, SlewRateLimitsRapidThrottleIncrease) {
 
 TEST_F(KidsModeProcessorTest, SlewRateLimitsRapidSteeringChange) {
   cfg_.kids_mode.slew_steering = 0.5f;  // 0.5 per second
-  processor_.Init(cfg_, ekf_, nullptr);
+  processor_.Init(ekf_, nullptr);
 
   float throttle = 0.0f;
   float steering = 0.0f;
 
   // First call: steering jumps to 0.7
   steering = 0.7f;
-  processor_.Process(throttle, steering, 100);  // 100ms = 0.1s
+  processor_.Process(cfg_, throttle, steering, 100);  // 100ms = 0.1s
 
   // Should be limited to 0.5 * 0.1 = 0.05
   EXPECT_LE(steering, 0.06f);  // Small tolerance
@@ -523,7 +523,9 @@ TEST(StabilizationConfigTest, IsValidAcceptsKidsMode) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// KidsModeProcessor::IsActive читает cfg_->mode напрямую — нет current_mode_
+// FW-R21: IsActive(cfg) и лимиты читают конфиг из аргумента (живой per-tick
+// снимок), процессор НЕ хранит указатель на конфиг. Так смена режима/пресета
+// в рантайме сразу отражается, и нет висячего указателя на локальный конфиг.
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST(KidsModeProcessorInitTest, IsActive_TrueWhenCfgModeIsKids) {
@@ -531,8 +533,8 @@ TEST(KidsModeProcessorInitTest, IsActive_TrueWhenCfgModeIsKids) {
   cfg.mode = DriveMode::Kids;
   VehicleEkf ekf;
   KidsModeProcessor proc;
-  proc.Init(cfg, ekf, nullptr);
-  EXPECT_TRUE(proc.IsActive());
+  proc.Init(ekf, nullptr);
+  EXPECT_TRUE(proc.IsActive(cfg));
 }
 
 TEST(KidsModeProcessorInitTest, IsActive_FalseWhenCfgModeIsNormal) {
@@ -540,21 +542,45 @@ TEST(KidsModeProcessorInitTest, IsActive_FalseWhenCfgModeIsNormal) {
   cfg.mode = DriveMode::Normal;
   VehicleEkf ekf;
   KidsModeProcessor proc;
-  proc.Init(cfg, ekf, nullptr);
-  EXPECT_FALSE(proc.IsActive());
+  proc.Init(ekf, nullptr);
+  EXPECT_FALSE(proc.IsActive(cfg));
 }
 
-TEST(KidsModeProcessorInitTest, IsActive_UpdatesLiveWhenCfgModeChanges) {
-  // cfg — живая ссылка: смена mode снаружи отражается в IsActive() немедленно
-  StabilizationConfig cfg;
-  cfg.mode = DriveMode::Normal;
+TEST(KidsModeProcessorInitTest, IsActive_ReflectsCfgPassedAtCall) {
+  // Один и тот же процессор отдаёт результат по переданному конфигу —
+  // переключение режима снаружи отражается немедленно.
   VehicleEkf ekf;
   KidsModeProcessor proc;
-  proc.Init(cfg, ekf, nullptr);
-  EXPECT_FALSE(proc.IsActive());
+  proc.Init(ekf, nullptr);
 
-  cfg.mode = DriveMode::Kids;
-  EXPECT_TRUE(proc.IsActive());
+  StabilizationConfig normal;
+  normal.mode = DriveMode::Normal;
+  EXPECT_FALSE(proc.IsActive(normal));
+
+  StabilizationConfig kids;
+  kids.mode = DriveMode::Kids;
+  EXPECT_TRUE(proc.IsActive(kids));
+}
+
+// FW-R21 регрессия: на старте режим был НЕ Kids (как в проде — NVS-снимок при
+// загрузке), затем переключение в Kids в рантайме. До фикса процессор хранил
+// указатель на снимок времени Init и IsActive() оставался false → лимиты не
+// применялись. Теперь конфиг приходит в Process() аргументом → лимит работает.
+TEST(KidsModeProcessorRuntimeSwitchTest, LimitsApplyAfterRuntimeSwitchToKids) {
+  VehicleEkf ekf;
+  KidsModeProcessor proc;
+  proc.Init(ekf, nullptr);  // на старте режим неизвестен/не Kids
+
+  StabilizationConfig cfg;     // дефолт: mode == Normal
+  cfg.mode = DriveMode::Kids;  // рантайм-переключение в Kids
+  cfg.kids_mode.throttle_limit = 0.3f;
+  cfg.kids_mode.slew_throttle = 100.0f;  // отключаем slew для прямой проверки
+
+  float throttle = 1.0f, steering = 0.0f;
+  proc.Process(cfg, throttle, steering, 10);
+
+  EXPECT_LE(throttle, 0.3f) << "throttle_limit должен примениться после "
+                               "рантайм-переключения в Kids";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -579,7 +605,7 @@ class KidsModeSpeedLimitTest : public ::testing::Test {
     imu_handler_ = std::make_unique<ImuHandler>(platform_, imu_calib_, madgwick_, 2);
     imu_handler_->SetEnabled(true);
 
-    processor_.Init(cfg_, ekf_, imu_handler_.get());
+    processor_.Init(ekf_, imu_handler_.get());
   }
 
   FakePlatform platform_;
@@ -594,7 +620,7 @@ class KidsModeSpeedLimitTest : public ::testing::Test {
 TEST_F(KidsModeSpeedLimitTest, BelowLimit_NoReduction) {
   ekf_.SetState(0.5f, 0.0f, 0.0f);  // 0.5 m/s < 1.0 m/s
   float throttle = 0.4f, steering = 0.0f;
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_NEAR(throttle, 0.4f, 0.01f);
   EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
@@ -602,7 +628,7 @@ TEST_F(KidsModeSpeedLimitTest, BelowLimit_NoReduction) {
 TEST_F(KidsModeSpeedLimitTest, AboveLimit_ReducesThrottle) {
   ekf_.SetState(1.5f, 0.0f, 0.0f);  // 1.5 m/s > 1.0 m/s
   float throttle = 0.4f, steering = 0.0f;
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_LT(throttle, 0.4f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
@@ -611,7 +637,7 @@ TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_CutsThrottleToZero) {
   // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.0, reduction=min(10,1)=1.0
   ekf_.SetState(3.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_FLOAT_EQ(throttle, 0.0f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
@@ -619,28 +645,28 @@ TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_CutsThrottleToZero) {
 TEST_F(KidsModeSpeedLimitTest, ReverseThrottle_NotAffected) {
   ekf_.SetState(1.5f, 0.0f, 0.0f);  // над лимитом
   float throttle = -0.3f, steering = 0.0f;
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_LT(throttle, 0.0f);  // отрицательный газ не обнуляется
   EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
 
 TEST_F(KidsModeSpeedLimitTest, Disabled_NoReductionEvenAboveLimit) {
   cfg_.kids_mode.speed_limit_enabled = false;
-  processor_.Init(cfg_, ekf_, imu_handler_.get());
+  processor_.Init(ekf_, imu_handler_.get());
 
   ekf_.SetState(2.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_NEAR(throttle, 0.4f, 0.01f);
   EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
 
 TEST_F(KidsModeSpeedLimitTest, NullImu_NoReduction) {
-  processor_.Init(cfg_, ekf_, nullptr);  // нет IMU → speed limit не срабатывает
+  processor_.Init(ekf_, nullptr);  // нет IMU → speed limit не срабатывает
 
   ekf_.SetState(2.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_NEAR(throttle, 0.4f, 0.01f);
   EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
@@ -648,7 +674,7 @@ TEST_F(KidsModeSpeedLimitTest, NullImu_NoReduction) {
 TEST_F(KidsModeSpeedLimitTest, Reset_ClearsSpeedLimitActive) {
   ekf_.SetState(2.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
-  processor_.Process(throttle, steering, 10);
+  processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 
   processor_.Reset();

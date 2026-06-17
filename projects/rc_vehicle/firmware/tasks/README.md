@@ -42,6 +42,7 @@
 | [FW-R15](FW-R15-stab-config-lost-on-mode-switch.md) | Кастом настройка режима теряется при переключении | MEDIUM | [ ] |
 | [FW-RF8](FW-RF8-telemetry-off-control-loop.md) | Развязать телеметрию и control loop | MEDIUM | [ ] |
 | [FW-R16](FW-R16-control-loop-below-500hz.md) | Control loop ~350 Гц вместо 500 при stab=ON | MEDIUM | [ ] |
+| [FW-R21](FW-R21-kids-mode-limits-dangling-config.md) | Kids Mode: лимиты скорости/газа не применяются (висячий указатель на конфиг) | HIGH (safety) | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
 | [FW-CI4](FW-CI4-coverage-ci.md) | CI-отчёт покрытия host-тестов прошивки | LOW | [ ] |
 
