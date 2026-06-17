@@ -144,14 +144,14 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
   const float mw = ctx_.stab_mgr->GetModeTransitionWeight();
 
   if (traits.yaw_rate_active)
-    ctx_.yaw_ctrl.Process(commanded_steering_, sw, mw, dt_ms,
+    ctx_.yaw_ctrl.Process(stab_cfg_, commanded_steering_, sw, mw, dt_ms,
                           commanded_throttle_ < 0.0f);
   if (traits.pitch_comp_active)
-    ctx_.pitch_ctrl.Process(commanded_throttle_, sw);
+    ctx_.pitch_ctrl.Process(stab_cfg_, commanded_throttle_, sw);
   if (traits.slip_angle_active)
-    ctx_.slip_ctrl.Process(commanded_throttle_, sw, mw, dt_ms);
+    ctx_.slip_ctrl.Process(stab_cfg_, commanded_throttle_, sw, mw, dt_ms);
   if (traits.oversteer_guard_active)
-    ctx_.oversteer_guard.Process(commanded_throttle_, dt_ms,
+    ctx_.oversteer_guard.Process(stab_cfg_, commanded_throttle_, dt_ms,
                                  traits.oversteer_reduces_throttle);
 }
 
