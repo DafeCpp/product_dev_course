@@ -136,8 +136,8 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
     if (sensors_.imu_enabled) {
       kids_fwd_accel = ctx_.imu_calib.GetForwardAccel(sensors_.imu_data);
     }
-    ctx_.kids_processor.Process(commanded_throttle_, commanded_steering_,
-                                dt_ms, kids_fwd_accel);
+    ctx_.kids_processor.Process(stab_cfg_, commanded_throttle_,
+                                commanded_steering_, dt_ms, kids_fwd_accel);
   }
 
   const float sw = ctx_.stab_mgr->GetStabilizationWeight();
