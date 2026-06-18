@@ -44,6 +44,7 @@
 | [FW-R16](FW-R16-control-loop-below-500hz.md) | Control loop ~350 Гц вместо 500 при stab=ON | MEDIUM | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
 | [FW-CI4](FW-CI4-coverage-ci.md) | CI-отчёт покрытия host-тестов прошивки | LOW | [ ] |
+| [FW-RF9](FW-RF9-nodiscard-result-functions.md) | Добавить [[nodiscard]] к bool/Result функциям | LOW | [x] |
 
 ## Реестр — исследования (spike)
 
