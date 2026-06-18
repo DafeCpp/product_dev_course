@@ -9,7 +9,6 @@
 #include "imu_calibration.hpp"     // ImuCalibData
 #include "imu_sensor.hpp"          // ImuData
 #include "mag_sensor.hpp"          // MagData
-#include "result.hpp"
 #include "stabilization_config.hpp"
 #include "vehicle_control_platform.hpp"
 
@@ -71,10 +70,18 @@ class StdioPlatform : public VehicleControlPlatform {
   void DelayUntilNextTick(uint32_t) override {}
 
   // ── Инициализация: всё успешно, чтобы Init() поднял полный тракт ──────────
-  Result<Unit, PlatformError> InitPwm() override { return Unit{}; }
-  Result<Unit, PlatformError> InitRc() override { return Unit{}; }
-  Result<Unit, PlatformError> InitImu() override { return Unit{}; }
-  Result<Unit, PlatformError> InitFailsafe() override { return Unit{}; }
+  std::expected<void, PlatformError> InitPwm() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitRc() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitImu() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitFailsafe() override {
+    return std::expected<void, PlatformError>{};
+  }
 
   // ── IMU / магнитометр ────────────────────────────────────────────────────
   std::optional<ImuData> ReadImu() override { return imu_data_; }
@@ -90,11 +97,11 @@ class StdioPlatform : public VehicleControlPlatform {
     id.valid = true;
     return id;
   }
-  Result<Unit, PlatformError> SaveCalib(const ImuCalibData&) override {
-    return Unit{};
+  std::expected<void, PlatformError> SaveCalib(const ImuCalibData&) override {
+    return std::expected<void, PlatformError>{};
   }
-  Result<Unit, PlatformError> SaveComOffset(const float[2]) override {
-    return Unit{};
+  std::expected<void, PlatformError> SaveComOffset(const float[2]) override {
+    return std::expected<void, PlatformError>{};
   }
   bool LoadComOffset(float[2]) override { return false; }
 
@@ -109,9 +116,9 @@ class StdioPlatform : public VehicleControlPlatform {
       DriveMode mode) override {
     return MakeConfig(mode);
   }
-  Result<Unit, PlatformError> SaveStabilizationConfig(
+  std::expected<void, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig&) override {
-    return Unit{};
+    return std::expected<void, PlatformError>{};
   }
 
   // ── RC / Wi-Fi ───────────────────────────────────────────────────────────
@@ -149,8 +156,9 @@ class StdioPlatform : public VehicleControlPlatform {
   }
 
   // ── Задачи (поток не плодим) ─────────────────────────────────────────────
-  Result<Unit, PlatformError> CreateTask(void (*)(void*), void*) override {
-    return Unit{};
+  std::expected<void, PlatformError> CreateTask(void (*)(void*),
+                                                void*) override {
+    return std::expected<void, PlatformError>{};
   }
 
   void Log(LogLevel, std::string_view) const override {}

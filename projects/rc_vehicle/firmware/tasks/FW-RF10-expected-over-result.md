@@ -2,6 +2,7 @@
 
 **Приоритет:** LOW
 **Статус:** [x] Частично смержено (этапы 1–5)
+**PR:** [#185](https://github.com/DafeCpp/product_dev_course/pull/185)
 **Зона:** `common/result.hpp`, `common/protocol.hpp`, `common/vehicle_control_platform.hpp`, `common/uart_bridge_base.hpp`
 
 ## Описание

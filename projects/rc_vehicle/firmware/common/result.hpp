@@ -54,8 +54,7 @@ template <typename T, typename E>
 }
 
 template <typename T, typename E>
-[[nodiscard]] inline T ValueOr(const Result<T, E>& r,
-                               T default_value) noexcept(
+[[nodiscard]] inline T ValueOr(const Result<T, E>& r, T default_value) noexcept(
     std::is_nothrow_copy_constructible<T>::value) {
   return r.value_or(std::move(default_value));
 }

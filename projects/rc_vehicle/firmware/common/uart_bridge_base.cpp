@@ -92,9 +92,8 @@ std::optional<T> UartBridgeBase::ReceiveFrame(
     // Успешно распарсили — потребляем кадр
     auto payload_len_result = protocol::FrameParser::GetPayloadLength(data);
     if (payload_len_result.has_value()) {
-      size_t frame_size = protocol::HEADER_SIZE +
-                          *payload_len_result +
-                          protocol::CRC_SIZE;
+      size_t frame_size =
+          protocol::HEADER_SIZE + *payload_len_result + protocol::CRC_SIZE;
       rx_buffer_.Consume(frame_size);
     }
     return *parse_result;
