@@ -19,7 +19,7 @@ class SimPlatform : public FakePlatform {
   explicit SimPlatform(uint32_t max_iterations)
       : max_iterations_(max_iterations) {}
 
-  Result<Unit, PlatformError> CreateTask(void (*entry)(void*),
+  std::expected<void, PlatformError> CreateTask(void (*entry)(void*),
                                          void* arg) override {
     // Запускаем control loop синхронно (вместо отдельного потока)
     try {
@@ -27,7 +27,7 @@ class SimPlatform : public FakePlatform {
     } catch (const StopLoopException&) {
       // Нормальное завершение по лимиту итераций
     }
-    return Unit{};
+    return std::expected<void, PlatformError>{};
   }
 
   void DelayUntilNextTick(uint32_t period_ms) override {

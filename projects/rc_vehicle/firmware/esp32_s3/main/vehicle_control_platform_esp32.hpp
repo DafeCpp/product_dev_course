@@ -32,10 +32,10 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   ~VehicleControlPlatformEsp32() override;
 
   // Инициализация
-  [[nodiscard]] Result<Unit, PlatformError> InitPwm() override;
-  [[nodiscard]] Result<Unit, PlatformError> InitRc() override;
-  [[nodiscard]] Result<Unit, PlatformError> InitImu() override;
-  [[nodiscard]] Result<Unit, PlatformError> InitFailsafe() override;
+  [[nodiscard]] std::expected<void, PlatformError> InitPwm() override;
+  [[nodiscard]] std::expected<void, PlatformError> InitRc() override;
+  [[nodiscard]] std::expected<void, PlatformError> InitImu() override;
+  [[nodiscard]] std::expected<void, PlatformError> InitFailsafe() override;
 
   // Время
   [[nodiscard]] uint32_t GetTimeMs() const noexcept override;
@@ -60,11 +60,11 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
 
   // Калибровка
   [[nodiscard]] std::optional<ImuCalibData> LoadCalib() override;
-  [[nodiscard]] Result<Unit, PlatformError> SaveCalib(
+  [[nodiscard]] std::expected<void, PlatformError> SaveCalib(
       const ImuCalibData& data) override;
 
   // CoM offset
-  [[nodiscard]] Result<Unit, PlatformError> SaveComOffset(
+  [[nodiscard]] std::expected<void, PlatformError> SaveComOffset(
       const float offset[2]) override;
   [[nodiscard]] bool LoadComOffset(float offset[2]) override;
 
@@ -73,7 +73,7 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
       override;
   [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig(
       DriveMode mode) override;
-  [[nodiscard]] Result<Unit, PlatformError> SaveStabilizationConfig(
+  [[nodiscard]] std::expected<void, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig& config) override;
 
   // RC Input
@@ -96,7 +96,7 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   void SendWifiCommand(float throttle, float steering) override;
 
   // Задачи
-  [[nodiscard]] Result<Unit, PlatformError> CreateTask(void (*entry)(void*),
+  [[nodiscard]] std::expected<void, PlatformError> CreateTask(void (*entry)(void*),
                                                        void* arg) override;
   void DelayUntilNextTick(uint32_t period_ms) override;
 

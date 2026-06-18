@@ -39,7 +39,7 @@ Result<size_t> FrameBuilder::Build(
   const size_t frame_size = HEADER_SIZE + payload.size() + CRC_SIZE;
 
   if (buffer.size() < frame_size) {
-    return ParseError::BufferTooSmall;
+    return std::unexpected(ParseError::BufferTooSmall);
   }
 
   WriteHeader(buffer, static_cast<uint16_t>(payload.size()));
@@ -61,15 +61,15 @@ Result<size_t> FrameBuilder::Build(
 Result<MessageType> FrameParser::ValidateHeader(
     std::span<const uint8_t> buffer) noexcept {
   if (buffer.size() < 4) {
-    return ParseError::InsufficientData;
+    return std::unexpected(ParseError::InsufficientData);
   }
 
   if (buffer[0] != FRAME_PREFIX_0 || buffer[1] != FRAME_PREFIX_1) {
-    return ParseError::InvalidPrefix;
+    return std::unexpected(ParseError::InvalidPrefix);
   }
 
   if (buffer[2] != PROTOCOL_VERSION) {
-    return ParseError::InvalidVersion;
+    return std::unexpected(ParseError::InvalidVersion);
   }
 
   return static_cast<MessageType>(buffer[3]);
@@ -78,7 +78,7 @@ Result<MessageType> FrameParser::ValidateHeader(
 Result<uint16_t> FrameParser::GetPayloadLength(
     std::span<const uint8_t> buffer) noexcept {
   if (buffer.size() < HEADER_SIZE) {
-    return ParseError::InsufficientData;
+    return std::unexpected(ParseError::InsufficientData);
   }
 
   return static_cast<uint16_t>(buffer[4] | (buffer[5] << 8));
@@ -90,11 +90,11 @@ bool FrameParser::ValidateCrc(std::span<const uint8_t> buffer) noexcept {
   }
 
   auto payload_len_result = GetPayloadLength(buffer);
-  if (IsError(payload_len_result)) {
+  if (!payload_len_result.has_value()) {
     return false;
   }
 
-  uint16_t payload_len = GetValue(payload_len_result);
+  uint16_t payload_len = *payload_len_result;
   size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
 
   if (buffer.size() < frame_size) {
@@ -239,32 +239,32 @@ Result<uint16_t> ValidateFrame(std::span<const uint8_t> buffer,
                                std::optional<uint16_t> expected_len,
                                uint16_t max_len = UINT16_MAX) noexcept {
   auto type_result = FrameParser::ValidateHeader(buffer);
-  if (IsError(type_result)) {
-    return GetError(type_result);
+  if (!type_result.has_value()) {
+    return std::unexpected(type_result.error());
   }
-  if (GetValue(type_result) != expected_type) {
-    return ParseError::InvalidType;
+  if (*type_result != expected_type) {
+    return std::unexpected(ParseError::InvalidType);
   }
 
   auto payload_len_result = FrameParser::GetPayloadLength(buffer);
-  if (IsError(payload_len_result)) {
-    return GetError(payload_len_result);
+  if (!payload_len_result.has_value()) {
+    return std::unexpected(payload_len_result.error());
   }
-  const uint16_t payload_len = GetValue(payload_len_result);
+  const uint16_t payload_len = *payload_len_result;
   if (expected_len && payload_len != *expected_len) {
-    return ParseError::InvalidPayloadLength;
+    return std::unexpected(ParseError::InvalidPayloadLength);
   }
   if (payload_len > max_len) {
-    return ParseError::InvalidPayloadLength;
+    return std::unexpected(ParseError::InvalidPayloadLength);
   }
 
   const size_t frame_size = HEADER_SIZE + payload_len + CRC_SIZE;
   if (buffer.size() < frame_size) {
-    return ParseError::InsufficientData;
+    return std::unexpected(ParseError::InsufficientData);
   }
 
   if (!FrameParser::ValidateCrc(buffer)) {
-    return ParseError::CrcMismatch;
+    return std::unexpected(ParseError::CrcMismatch);
   }
 
   return payload_len;
@@ -276,8 +276,8 @@ Result<TelemetryData> Protocol::ParseTelemetry(
     std::span<const uint8_t> buffer) noexcept {
   auto validated = ValidateFrame(buffer, MessageType::Telemetry,
                                  TelemetryData::PAYLOAD_SIZE);
-  if (IsError(validated)) {
-    return GetError(validated);
+  if (!validated.has_value()) {
+    return std::unexpected(validated.error());
   }
 
   // Десериализация
@@ -298,8 +298,8 @@ Result<CommandData> Protocol::ParseCommand(
     std::span<const uint8_t> buffer) noexcept {
   auto validated = ValidateFrame(buffer, MessageType::Command,
                                  CommandData::PAYLOAD_SIZE);
-  if (IsError(validated)) {
-    return GetError(validated);
+  if (!validated.has_value()) {
+    return std::unexpected(validated.error());
   }
 
   // Десериализация
@@ -321,28 +321,28 @@ Result<std::string_view> Protocol::ParseLog(
   // Переменная длина payload, не больше LOG_MAX_PAYLOAD
   auto validated = ValidateFrame(buffer, MessageType::Log, std::nullopt,
                                  LOG_MAX_PAYLOAD);
-  if (IsError(validated)) {
-    return GetError(validated);
+  if (!validated.has_value()) {
+    return std::unexpected(validated.error());
   }
 
   // Возвращаем view на payload
   const char* msg_ptr =
       reinterpret_cast<const char*>(buffer.data() + HEADER_SIZE);
-  return std::string_view(msg_ptr, GetValue(validated));
+  return std::string_view(msg_ptr, *validated);
 }
 
 Result<bool> Protocol::ParsePing(std::span<const uint8_t> buffer) noexcept {
   auto validated = ValidateFrame(buffer, MessageType::Ping, uint16_t{0});
-  if (IsError(validated)) {
-    return GetError(validated);
+  if (!validated.has_value()) {
+    return std::unexpected(validated.error());
   }
   return true;
 }
 
 Result<bool> Protocol::ParsePong(std::span<const uint8_t> buffer) noexcept {
   auto validated = ValidateFrame(buffer, MessageType::Pong, uint16_t{0});
-  if (IsError(validated)) {
-    return GetError(validated);
+  if (!validated.has_value()) {
+    return std::unexpected(validated.error());
   }
   return true;
 }
