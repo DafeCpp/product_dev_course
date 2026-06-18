@@ -101,7 +101,7 @@ class TelemetryEventLog {
    * Получить событие по индексу (0 = oldest, Count()-1 = newest).
    * @return true если idx < Count()
    */
-  bool GetEvent(size_t idx, TelemetryEvent& out) const;
+  [[nodiscard]] bool GetEvent(size_t idx, TelemetryEvent& out) const;
 
   /** Очистить буфер. */
   void Clear();
