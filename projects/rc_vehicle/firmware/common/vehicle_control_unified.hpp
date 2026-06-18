@@ -298,7 +298,8 @@ class VehicleControlUnified : public IVehicleControl {
    * @param out Выходной кадр
    * @return true если idx < Count()
    */
-  [[nodiscard]] bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const override {
+  [[nodiscard]] bool GetLogFrame(size_t idx,
+                                 TelemetryLogFrame& out) const override {
     return telem_mgr_ && telem_mgr_->GetLogFrame(idx, out);
   }
 
