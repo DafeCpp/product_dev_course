@@ -159,6 +159,7 @@ class StdioPlatform : public VehicleControlPlatform {
     }
     StabilizationConfig cfg{};
     cfg.mode = mode;
+    cfg.ApplyModeDefaults();  // тюнинг выбранного режима (gains/slew/лимиты)
     if (speed_limit_ms_ > 0.0f) {
       cfg.kids_mode.speed_limit_enabled = true;
       cfg.kids_mode.max_speed_ms = speed_limit_ms_;
