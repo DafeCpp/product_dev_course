@@ -18,7 +18,8 @@ class ClosedLoopSim:
     def __init__(self, sim_host_bin: str, params: SimParams | None = None,
                  dynamic: bool = False, identity_calib: bool = False,
                  drive_mode: str | None = None,
-                 speed_limit: float | None = None):
+                 speed_limit: float | None = None,
+                 stabilize: bool = False):
         self.p = params or SimParams()
         self.model = VehicleModel(self.p, dynamic=dynamic)
         # StepOutput предыдущего тика → сенсоры текущего кадра (на старте — покой).
@@ -31,6 +32,8 @@ class ClosedLoopSim:
             args += ["--drive-mode", drive_mode]
         if speed_limit is not None:
             args += ["--speed-limit", repr(float(speed_limit))]
+        if stabilize:
+            args.append("--stabilize")
         self.proc = subprocess.Popen(
             args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             text=True, bufsize=1)

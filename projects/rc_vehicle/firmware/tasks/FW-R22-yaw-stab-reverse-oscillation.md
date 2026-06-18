@@ -88,6 +88,14 @@ if (ekf_->GetSpeedMs() < kMinStabSpeedMs || IsReversing()) {
 Источник в control loop — `commanded_throttle_ < 0.0f`
 (`control_loop_processor.cpp`), т.к. EKF `vx` ненадёжен.
 
+## SIL-регресс (closed-loop)
+
+Воспроизведено и закрыто регрессом в SIL ([FW-S2.5](FW-S2.5-closed-loop-sil.md)):
+`sim/tests/test_r22_reverse_steer.py`. С новым флагом `sim_host --stabilize`
+(включает `cfg.enabled`, иначе `stab_weight=0` и контроллеры не работают) в
+реверсе с командой руля до фикса applied steering уходил в насыщение (~0.5),
+после фикса — отслеживает команду (~0.2, стабилизация в реверсе отключена).
+
 ## Связанные задачи
 
 - **FW-R17** — гейт стабилизации по скорости (модуль): здесь добавляем гейт по
