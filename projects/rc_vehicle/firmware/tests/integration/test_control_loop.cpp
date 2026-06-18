@@ -20,7 +20,7 @@ class SimPlatform : public FakePlatform {
       : max_iterations_(max_iterations) {}
 
   std::expected<void, PlatformError> CreateTask(void (*entry)(void*),
-                                         void* arg) override {
+                                                void* arg) override {
     // Запускаем control loop синхронно (вместо отдельного потока)
     try {
       entry(arg);

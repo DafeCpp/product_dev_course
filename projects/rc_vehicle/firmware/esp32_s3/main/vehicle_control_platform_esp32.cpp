@@ -54,15 +54,13 @@ std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitPwm() {
 }
 
 std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitRc() {
-  return (RcInputInit() == 0)
-             ? std::expected<void, PlatformError>{}
-             : std::unexpected(PlatformError::RcInitFailed);
+  return (RcInputInit() == 0) ? std::expected<void, PlatformError>{}
+                              : std::unexpected(PlatformError::RcInitFailed);
 }
 
 std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitImu() {
-  return (ImuInit() == 0)
-             ? std::expected<void, PlatformError>{}
-             : std::unexpected(PlatformError::ImuInitFailed);
+  return (ImuInit() == 0) ? std::expected<void, PlatformError>{}
+                          : std::unexpected(PlatformError::ImuInitFailed);
 }
 
 std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitFailsafe() {
@@ -306,9 +304,8 @@ std::expected<void, PlatformError> VehicleControlPlatformEsp32::CreateTask(
   BaseType_t result =
       xTaskCreatePinnedToCore(entry, "vehicle_ctrl", CONTROL_TASK_STACK, arg,
                               CONTROL_TASK_PRIORITY, nullptr, 1);
-  return (result == pdPASS)
-             ? std::expected<void, PlatformError>{}
-             : std::unexpected(PlatformError::TaskCreateFailed);
+  return (result == pdPASS) ? std::expected<void, PlatformError>{}
+                            : std::unexpected(PlatformError::TaskCreateFailed);
 }
 
 void VehicleControlPlatformEsp32::DelayUntilNextTick(uint32_t period_ms) {

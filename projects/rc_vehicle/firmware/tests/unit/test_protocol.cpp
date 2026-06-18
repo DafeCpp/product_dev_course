@@ -301,8 +301,7 @@ TEST(ProtocolTest, FrameBuilderWithEmptyPayload) {
   auto result = builder.Build(buffer, std::span<const uint8_t>());
 
   ASSERT_TRUE(result.has_value()) << "Should build frame with empty payload";
-  EXPECT_EQ((*result), MIN_FRAME_SIZE)
-      << "Frame size should be header + CRC";
+  EXPECT_EQ((*result), MIN_FRAME_SIZE) << "Frame size should be header + CRC";
 }
 
 TEST(ProtocolTest, FrameBuilderWithMaxPayload) {
@@ -647,8 +646,7 @@ TEST(ProtocolTest, PingFrameSize) {
   auto result = Protocol::BuildPing(buffer);
 
   ASSERT_TRUE(result.has_value());
-  EXPECT_EQ((*result), MIN_FRAME_SIZE)
-      << "Ping frame should be minimum size";
+  EXPECT_EQ((*result), MIN_FRAME_SIZE) << "Ping frame should be minimum size";
 }
 
 TEST(ProtocolTest, PongFrameSize) {
@@ -656,8 +654,7 @@ TEST(ProtocolTest, PongFrameSize) {
   auto result = Protocol::BuildPong(buffer);
 
   ASSERT_TRUE(result.has_value());
-  EXPECT_EQ((*result), MIN_FRAME_SIZE)
-      << "Pong frame should be minimum size";
+  EXPECT_EQ((*result), MIN_FRAME_SIZE) << "Pong frame should be minimum size";
 }
 
 TEST(ProtocolTest, PingWithNonZeroPayload) {

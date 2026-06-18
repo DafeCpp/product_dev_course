@@ -96,8 +96,8 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   void SendWifiCommand(float throttle, float steering) override;
 
   // Задачи
-  [[nodiscard]] std::expected<void, PlatformError> CreateTask(void (*entry)(void*),
-                                                       void* arg) override;
+  [[nodiscard]] std::expected<void, PlatformError> CreateTask(
+      void (*entry)(void*), void* arg) override;
   void DelayUntilNextTick(uint32_t period_ms) override;
 
   // Watchdog
