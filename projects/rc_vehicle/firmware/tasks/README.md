@@ -45,6 +45,7 @@
 | [FW-R21](FW-R21-kids-mode-limits-dangling-config.md) | Kids Mode: лимиты скорости/газа не применяются (висячий указатель на конфиг) | HIGH (safety) | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
 | [FW-CI4](FW-CI4-coverage-ci.md) | CI-отчёт покрытия host-тестов прошивки | LOW | [ ] |
+| [FW-RF9](FW-RF9-nodiscard-result-functions.md) | Добавить [[nodiscard]] к bool/Result функциям | LOW | [x] |
 
 ## Реестр — исследования (spike)
 

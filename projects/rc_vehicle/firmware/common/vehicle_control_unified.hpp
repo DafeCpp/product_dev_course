@@ -300,7 +300,8 @@ class VehicleControlUnified : public IVehicleControl {
    * @param out Выходной кадр
    * @return true если idx < Count()
    */
-  bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const override {
+  [[nodiscard]] bool GetLogFrame(size_t idx,
+                                 TelemetryLogFrame& out) const override {
     return telem_mgr_ && telem_mgr_->GetLogFrame(idx, out);
   }
 
@@ -316,7 +317,7 @@ class VehicleControlUnified : public IVehicleControl {
   [[nodiscard]] size_t GetEventCount() const override {
     return telem_mgr_ ? telem_mgr_->GetEventCount() : 0;
   }
-  bool GetEvent(size_t idx, TelemetryEvent& out) const override {
+  [[nodiscard]] bool GetEvent(size_t idx, TelemetryEvent& out) const override {
     return telem_mgr_ && telem_mgr_->GetEvent(idx, out);
   }
   void ClearEventLog() override {

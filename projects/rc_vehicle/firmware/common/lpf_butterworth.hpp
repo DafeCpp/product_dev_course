@@ -44,7 +44,7 @@ class LpfButterworth2 {
   float GetSampleRateHz() const noexcept { return sample_rate_hz_; }
 
   /** Признак валидной настройки (SetParams вызван с положительными частотами). */
-  bool IsConfigured() const noexcept { return configured_; }
+  [[nodiscard]] bool IsConfigured() const noexcept { return configured_; }
 
  private:
   float cutoff_hz_{0.f};
