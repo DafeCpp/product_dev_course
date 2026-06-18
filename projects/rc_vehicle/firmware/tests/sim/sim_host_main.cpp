@@ -67,6 +67,7 @@ int main(int argc, char** argv) {
   bool identity_calib = false;
   rc_vehicle::DriveMode drive_mode = rc_vehicle::DriveMode::Normal;
   float speed_limit = 0.0f;
+  bool stabilize = false;
   for (int i = 1; i < argc; ++i) {
     const std::string_view a = argv[i];
     if (a == "--batch")
@@ -79,6 +80,8 @@ int main(int argc, char** argv) {
       drive_mode = ParseDriveMode(argv[++i]);
     else if (a == "--speed-limit" && i + 1 < argc)
       speed_limit = std::strtof(argv[++i], nullptr);
+    else if (a == "--stabilize")
+      stabilize = true;
   }
 
   auto platform = std::make_unique<StdioPlatform>();
@@ -86,6 +89,7 @@ int main(int argc, char** argv) {
   p->SetIdentityCalib(identity_calib);
   p->SetDriveMode(drive_mode);
   p->SetSpeedLimit(speed_limit);
+  p->SetStabilize(stabilize);
 
   VehicleControlUnified unified;
   unified.SetPlatform(std::move(platform));

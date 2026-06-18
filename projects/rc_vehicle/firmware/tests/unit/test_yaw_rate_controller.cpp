@@ -272,6 +272,43 @@ TEST_F(YawRateControllerTest, ResetsPid_BelowSpeedThreshold) {
       << "ниже порога PID сбрасывается (анти-windup)";
 }
 
+// ── FW-R22: реверс отключает yaw-rate стабилизацию (фикс дёрганья руля назад)
+// В реверсе связь руль→рыскание инвертируется → ОС становится положительной
+// (автоколебания). При reversing=true коррекция не подмешивается, PID в reset.
+
+TEST_F(YawRateControllerTest, Reversing_NoCorrection_EvenWithError) {
+  // steering=0.5 → desired omega=45 dps, actual≈0 → ошибка есть, но
+  // reversing=true
+  float steering = 0.5f;
+  ctrl_.Process(steering, 1.0f, 1.0f, 2, /*reversing=*/true);
+  EXPECT_FLOAT_EQ(steering, 0.5f)
+      << "в реверсе yaw-rate коррекция не подмешивается";
+}
+
+TEST_F(YawRateControllerTest, Forward_StillCorrects_WhenNotReversing) {
+  // Контроль: reversing=false — поведение прежнее (коррекция есть).
+  float steering = 0.5f;
+  ctrl_.Process(steering, 1.0f, 1.0f, 2, /*reversing=*/false);
+  EXPECT_GT(steering, 0.5f) << "вперёд стабилизация работает как раньше";
+}
+
+TEST_F(YawRateControllerTest, Reversing_ResetsPid) {
+  // Накопили интеграл вперёд, затем шаг в реверсе → PID сбрасывается.
+  StabilizationConfig cfg = cfg_;
+  cfg.yaw_rate.pid.ki = 0.05f;
+  ctrl_.SetGains(cfg);
+  SetGyroZ(90.0f);
+  float steering = 0.0f;
+  for (int i = 0; i < 10; ++i) ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  EXPECT_NE(ctrl_.GetPid().GetIntegral(), 0.0f) << "интеграл накопился вперёд";
+
+  float steering_rev = 0.0f;
+  ctrl_.Process(steering_rev, 1.0f, 1.0f, 2, /*reversing=*/true);
+  EXPECT_FLOAT_EQ(ctrl_.GetPid().GetIntegral(), 0.0f)
+      << "в реверсе PID сбрасывается";
+  EXPECT_FLOAT_EQ(steering_rev, 0.0f) << "руль проходит как есть";
+}
+
 TEST_F(YawRateControllerTest, AdaptivePid_Disabled_NoScaling) {
   cfg_.adaptive.enabled = false;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);

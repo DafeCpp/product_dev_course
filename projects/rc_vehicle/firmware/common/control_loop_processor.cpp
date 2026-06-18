@@ -144,7 +144,8 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
   const float mw = ctx_.stab_mgr->GetModeTransitionWeight();
 
   if (traits.yaw_rate_active)
-    ctx_.yaw_ctrl.Process(commanded_steering_, sw, mw, dt_ms);
+    ctx_.yaw_ctrl.Process(commanded_steering_, sw, mw, dt_ms,
+                          commanded_throttle_ < 0.0f);
   if (traits.pitch_comp_active)
     ctx_.pitch_ctrl.Process(commanded_throttle_, sw);
   if (traits.slip_angle_active)

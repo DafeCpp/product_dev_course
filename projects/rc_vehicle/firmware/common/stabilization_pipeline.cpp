@@ -29,7 +29,7 @@ void YawRateController::Init(const StabilizationConfig& cfg,
 }
 
 void YawRateController::Process(float& steering, float stab_w, float mode_w,
-                                uint32_t dt_ms) noexcept {
+                                uint32_t dt_ms, bool reversing) noexcept {
   if (!cfg_ || !ekf_ || !imu_) return;
   if (stab_w <= 0.0f) return;
   if (!imu_->IsEnabled()) return;
@@ -38,6 +38,16 @@ void YawRateController::Process(float& steering, float stab_w, float mode_w,
   // FW-R17: на стоянке/околонулевой скорости не подмешиваем коррекцию (руль
   // проходит как есть) и держим PID в сбросе — анти-windup при остановках.
   if (ekf_->GetSpeedMs() < kMinStabSpeedMs) {
+    pid_.Reset();
+    return;
+  }
+
+  // FW-R22: в реверсе связь руль→рыскание инвертируется, и yaw-rate обратная
+  // связь становится положительной → автоколебания руля (hunting) при том, что
+  // руль водителем не трогается. Стабилизацию в реверсе отключаем: руль
+  // проходит как есть, PID в сбросе. Направление берём по знаку команды газа,
+  // т.к. EKF vx ненадёжен (IMU-only, дрейф: vx_var в логах доходит до 193).
+  if (reversing) {
     pid_.Reset();
     return;
   }
