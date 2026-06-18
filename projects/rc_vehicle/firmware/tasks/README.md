@@ -70,6 +70,7 @@ FW-S2.1 (C++) и FW-S2.4 (Python) независимы.
 | [FW-S2.5](FW-S2.5-closed-loop-sil.md) | Closed-loop SIL (interactive) | Python | MEDIUM | S2.1, S2.4 | [x] |
 | [FW-S2.6](FW-S2.6-model-validation.md) | Валидация модели на реальных поездках | Python | MEDIUM | S2.4 | [ ] |
 | [FW-S2.7](FW-S2.7-ci-fixtures.md) | CI-job, фикстуры, raw-log follow-up | CI/docs | LOW | S2.2 | [x] |
+| [FW-S2.9](FW-S2.9-vehicle-profiles.md) | Профили физ-модели (разные параметры машины) | Python | MEDIUM | S2.4 | [ ] |
 
 ## План выполнения (по удобству)
 
