@@ -42,6 +42,11 @@ class StdioPlatform : public VehicleControlPlatform {
   /** Замена реальной калибровки на identity (replay «со средней точки»). */
   void SetIdentityCalib(bool on) { identity_calib_ = on; }
 
+  /** Режим вождения (по умолчанию Normal). */
+  void SetDriveMode(DriveMode m) { drive_mode_ = m; }
+  /** Лимит скорости детского режима [м/с]; >0 включает speed_limit_enabled. */
+  void SetSpeedLimit(float ms) { speed_limit_ms_ = ms; }
+
   // ── Выход: читается циклом после HostStep ────────────────────────────────
   [[nodiscard]] float GetLastThrottle() const { return last_throttle_; }
   [[nodiscard]] float GetLastSteering() const { return last_steering_; }
@@ -90,13 +95,15 @@ class StdioPlatform : public VehicleControlPlatform {
   }
   bool LoadComOffset(float[2]) override { return false; }
 
-  // ── Stabilization config (дефолты) ───────────────────────────────────────
+  // ── Stabilization config ─────────────────────────────────────────────────
+  // Normal без лимита → nullopt (дефолты прошивки). Иначе строим конфиг с
+  // заданным режимом + (для Kids) включённым лимитом скорости.
   std::optional<StabilizationConfig> LoadStabilizationConfig() override {
-    return std::nullopt;
+    return MakeConfig(drive_mode_);
   }
   std::optional<StabilizationConfig> LoadStabilizationConfig(
-      DriveMode) override {
-    return std::nullopt;
+      DriveMode mode) override {
+    return MakeConfig(mode);
   }
   Result<Unit, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig&) override {
@@ -145,6 +152,20 @@ class StdioPlatform : public VehicleControlPlatform {
   void Log(LogLevel, std::string_view) const override {}
 
  private:
+  // Конфиг стабилизации для режима mode. Normal без лимита → nullopt (дефолты).
+  std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
+    if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f) {
+      return std::nullopt;
+    }
+    StabilizationConfig cfg{};
+    cfg.mode = mode;
+    if (speed_limit_ms_ > 0.0f) {
+      cfg.kids_mode.speed_limit_enabled = true;
+      cfg.kids_mode.max_speed_ms = speed_limit_ms_;
+    }
+    return cfg;
+  }
+
   uint32_t time_ms_{0};
   std::optional<ImuData> imu_data_;
   std::optional<MagData> mag_data_;
@@ -152,6 +173,8 @@ class StdioPlatform : public VehicleControlPlatform {
   std::optional<RcCommand> wifi_command_;
   bool identity_calib_{false};
   bool failsafe_active_{false};
+  DriveMode drive_mode_{DriveMode::Normal};
+  float speed_limit_ms_{0.0f};
 
   float last_throttle_{0.0f};
   float last_steering_{0.0f};
