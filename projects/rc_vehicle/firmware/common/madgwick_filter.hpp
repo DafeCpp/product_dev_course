@@ -65,7 +65,9 @@ class MadgwickFilter : public IOrientationFilter {
     adaptive_enabled_ = enabled;
     adaptive_threshold_g_ = threshold_g;
   }
-  bool GetAdaptiveBetaEnabled() const { return adaptive_enabled_; }
+  [[nodiscard]] bool GetAdaptiveBetaEnabled() const {
+    return adaptive_enabled_;
+  }
   float GetAdaptiveThresholdG() const { return adaptive_threshold_g_; }
 
  private:

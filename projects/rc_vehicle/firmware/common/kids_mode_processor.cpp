@@ -7,22 +7,20 @@
 
 namespace rc_vehicle {
 
-void KidsModeProcessor::Init(const StabilizationConfig& cfg,
-                             const VehicleEkf& ekf, const ImuHandler* imu) {
-  cfg_ = &cfg;
+void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
   ekf_ = &ekf;
   imu_ = imu;
   Reset();
 }
 
-void KidsModeProcessor::Process(float& throttle, float& steering,
-                                uint32_t dt_ms,
+void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
+                                float& steering, uint32_t dt_ms,
                                 float forward_accel) noexcept {
-  if (!cfg_ || !IsActive()) {
+  if (!IsActive(cfg)) {
     return;  // Kids Mode не активен
   }
 
-  const auto& km = cfg_->kids_mode;
+  const auto& km = cfg.kids_mode;
 
   // ─────────────────────────────────────────────────────────────────────────
   // 1. Применить ограничения throttle/steering

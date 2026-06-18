@@ -38,13 +38,17 @@ class YawRateController {
 
   /**
    * @brief Один шаг yaw rate PID.
-   * @param steering         Команда руля [in/out], корректируется в normal/sport
+   * @param steering         Команда руля [in/out], корректируется в
+   * normal/sport
    * @param stab_w           Вес стабилизации [0..1]
    * @param mode_w           Вес перехода между режимами [0..1]
    * @param dt_ms            Шаг времени в миллисекундах
+   * @param reversing        true — машина едет назад (команда газа < 0):
+   *                         yaw-rate стабилизация отключается (FW-R22, иначе
+   *                         автоколебания руля)
    */
-  void Process(float& steering, float stab_w, float mode_w,
-               uint32_t dt_ms) noexcept;
+  void Process(float& steering, float stab_w, float mode_w, uint32_t dt_ms,
+               bool reversing = false) noexcept;
 
   /**
    * @brief Обновить PID-коэффициенты из конфигурации.

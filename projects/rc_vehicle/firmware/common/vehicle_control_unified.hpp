@@ -2,17 +2,19 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 
 #include "auto_drive_coordinator.hpp"
 #include "calibration_manager.hpp"
 #include "control_components.hpp"
+#include "control_loop_processor.hpp"
 #include "drive_mode_registry.hpp"
 #include "i_vehicle_control.hpp"
 #include "imu_calibration.hpp"
-#include "mag_calibration.hpp"
-#include "self_test.hpp"
 #include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
+#include "mag_calibration.hpp"
+#include "self_test.hpp"
 #include "stabilization_config.hpp"
 #include "stabilization_manager.hpp"
 #include "stabilization_pipeline.hpp"
@@ -298,7 +300,8 @@ class VehicleControlUnified : public IVehicleControl {
    * @param out Выходной кадр
    * @return true если idx < Count()
    */
-  bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const override {
+  [[nodiscard]] bool GetLogFrame(size_t idx,
+                                 TelemetryLogFrame& out) const override {
     return telem_mgr_ && telem_mgr_->GetLogFrame(idx, out);
   }
 
@@ -314,7 +317,7 @@ class VehicleControlUnified : public IVehicleControl {
   [[nodiscard]] size_t GetEventCount() const override {
     return telem_mgr_ ? telem_mgr_->GetEventCount() : 0;
   }
-  bool GetEvent(size_t idx, TelemetryEvent& out) const override {
+  [[nodiscard]] bool GetEvent(size_t idx, TelemetryEvent& out) const override {
     return telem_mgr_ && telem_mgr_->GetEvent(idx, out);
   }
   void ClearEventLog() override {
@@ -341,6 +344,19 @@ class VehicleControlUnified : public IVehicleControl {
     return control_task_ready_.load(std::memory_order_acquire);
   }
 
+  /**
+   * @brief Выполнить одну итерацию control loop из хоста (SIL/тесты).
+   *
+   * Не для прода — драйвер для host-симуляции (`sim_host`, FW-S2.1) и
+   * юнит-тестов. Лениво собирает processor на первом вызове (через тот же путь,
+   * что и реальный ControlTaskLoop), затем делает один Step() с текущим
+   * временем платформы и заданным dt. Вызывающий сам продвигает логическое
+   * время платформы.
+   *
+   * @param dt_ms Шаг времени с прошлой итерации [мс]
+   */
+  void HostStep(uint32_t dt_ms);
+
   VehicleControlUnified(const VehicleControlUnified&) = delete;
   VehicleControlUnified& operator=(const VehicleControlUnified&) = delete;
 
@@ -356,6 +372,15 @@ class VehicleControlUnified : public IVehicleControl {
    * @brief Основной цикл управления
    */
   void ControlTaskLoop();
+
+  /**
+   * @brief Собрать ControlLoopContext + ControlLoopProcessor (идемпотентно).
+   *
+   * Единый источник истины для реального цикла (ControlTaskLoop) и
+   * host-драйвера (HostStep). Должен вызываться после Init() (все
+   * компоненты/хендлеры готовы).
+   */
+  void BuildProcessor();
 
   /** Инициализация IMU подсистемы (менеджеры, NVS, авто-калибровка). */
   void InitImuSubsystem();
@@ -416,6 +441,11 @@ class VehicleControlUnified : public IVehicleControl {
   std::unique_ptr<CalibrationManager> calib_mgr_;
   std::unique_ptr<StabilizationManager> stab_mgr_;
   std::unique_ptr<TelemetryManager> telem_mgr_;
+
+  // Контекст и процессор control loop. Объявлены последними: processor_ держит
+  // ссылку на loop_ctx_, поэтому должен разрушаться раньше (обратный порядок).
+  std::optional<ControlLoopContext> loop_ctx_;
+  std::unique_ptr<ControlLoopProcessor> processor_;
 };
 
 }  // namespace rc_vehicle

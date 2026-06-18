@@ -42,8 +42,11 @@
 | [FW-R15](FW-R15-stab-config-lost-on-mode-switch.md) | Кастом настройка режима теряется при переключении | MEDIUM | [ ] |
 | [FW-RF8](FW-RF8-telemetry-off-control-loop.md) | Развязать телеметрию и control loop | MEDIUM | [ ] |
 | [FW-R16](FW-R16-control-loop-below-500hz.md) | Control loop ~350 Гц вместо 500 при stab=ON | MEDIUM | [ ] |
+| [FW-R21](FW-R21-kids-mode-limits-dangling-config.md) | Kids Mode: лимиты скорости/газа не применяются (висячий указатель на конфиг) | HIGH (safety) | [ ] |
+| [FW-R22](FW-R22-yaw-stab-reverse-oscillation.md) | Рулевая стабилизация дёргает руль в реверсе (неверный знак ОС) | HIGH | [ ] |
 | [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
 | [FW-CI4](FW-CI4-coverage-ci.md) | CI-отчёт покрытия host-тестов прошивки | LOW | [ ] |
+| [FW-RF9](FW-RF9-nodiscard-result-functions.md) | Добавить [[nodiscard]] к bool/Result функциям | LOW | [x] |
 
 ## Реестр — исследования (spike)
 
@@ -52,7 +55,25 @@
 | ID | Задача | Приоритет | Статус |
 |----|--------|-----------|--------|
 | [FW-S1](FW-S1-telemetry-transport-format-research.md) | Формат и транспорт телеметрии (binary, прямая отправка в backend, частота 100 Гц+) | LOW | [ ] |
-| [FW-S2](FW-S2-replay-regression-on-real-rides.md) | Регрессия на реальных поездках (replay записанной телеметрии) | LOW | [ ] |
+| [FW-S2](FW-S2-sil-physics-model-epic.md) | **ЭПИК:** SIL-симуляция на физ-модели + валидация на реальных поездках (replay → closed-loop) | MEDIUM | [ ] |
+
+### Подреестр FW-S2 (декомпозиция эпика)
+
+Архитектура: Python-модель ↔ host-exe прошивки (`sim_host`/`StdioPlatform`),
+логическое время, batch (replay) + interactive (closed-loop). Точки старта —
+FW-S2.1 (C++) и FW-S2.4 (Python) независимы.
+
+| ID | Подзадача | Язык | Приоритет | Зависит | Статус |
+|----|-----------|------|-----------|---------|--------|
+| [FW-S2.1](FW-S2.1-sim-host-stdio-platform.md) | `sim_host` exe + `StdioPlatform` + протокол | C++ | MEDIUM | — | [x] |
+| [FW-S2.2](FW-S2.2-python-replay-harness.md) | Python replay (batch) + инварианты | Python | MEDIUM | S2.1 | [x] |
+| [FW-S2.3](FW-S2.3-scenario-asserts.md) | Сценарные replay-ассерты на golden | Python | MEDIUM | S2.2 | [ ] |
+| [FW-S2.4](FW-S2.4-python-vehicle-model.md) | Физ-модель машинки на Python | Python | MEDIUM | — | [x] |
+| [FW-S2.5](FW-S2.5-closed-loop-sil.md) | Closed-loop SIL (interactive) | Python | MEDIUM | S2.1, S2.4 | [x] |
+| [FW-S2.6](FW-S2.6-model-validation.md) | Валидация модели на реальных поездках | Python | MEDIUM | S2.4 | [ ] |
+| [FW-S2.7](FW-S2.7-ci-fixtures.md) | CI-job, фикстуры, raw-log follow-up | CI/docs | LOW | S2.2 | [x] |
+| [FW-S2.8](FW-S2.8-sil-plausibility-kids.md) | Plausibility + детский лимит (sim_host --drive-mode) | C++/Python | MEDIUM | S2.5 | [x] |
+| [FW-S2.9](FW-S2.9-vehicle-profiles.md) | Профили физ-модели (разные параметры машины) | Python | MEDIUM | S2.4 | [ ] |
 
 ## План выполнения (по удобству)
 

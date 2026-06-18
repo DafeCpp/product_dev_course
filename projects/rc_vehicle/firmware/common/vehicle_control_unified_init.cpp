@@ -152,13 +152,18 @@ bool VehicleControlUnified::InitializeComponents() {
 
   // Без IMU stab_mgr_ не создаётся (InitImuSubsystem выходит раньше) —
   // контроллеры инициализируются дефолтным конфигом, стабилизация неактивна.
+  //
+  // FW-R21: kids_processor_ конфиг НЕ хранит — получает живой снимок в
+  // Process() каждый тик. Прочие контроллеры пока хранят указатель на локальный
+  // `cfg` (тот же висячий указатель / устаревший снимок — латентный баг,
+  // отдельный PR).
   const StabilizationConfig cfg =
       stab_mgr_ ? stab_mgr_->GetConfig() : StabilizationConfig{};
   yaw_ctrl_.Init(cfg, ekf_, imu_handler_.get());
   pitch_ctrl_.Init(cfg, madgwick_, imu_handler_.get());
   slip_ctrl_.Init(cfg, ekf_, imu_handler_.get());
   oversteer_guard_.Init(cfg, ekf_, imu_handler_.get());
-  kids_processor_.Init(cfg, ekf_, imu_handler_.get());
+  kids_processor_.Init(ekf_, imu_handler_.get());
 
   telem_handler_.reset(new TelemetryHandler(
       *platform_, config::TelemetryConfig::kSendIntervalMs));
