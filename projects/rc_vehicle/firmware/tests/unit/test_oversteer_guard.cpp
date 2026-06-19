@@ -25,7 +25,7 @@ class OversteerGuardTest : public ::testing::Test {
     cfg_.oversteer.rate_thresh_deg_s = 50.0f;
     cfg_.oversteer.throttle_reduction = 0.5f;
 
-    guard_.Init(cfg_, ekf_, &imu_handler_);
+    guard_.Init(ekf_, &imu_handler_);
     guard_.Reset();
   }
 
@@ -36,7 +36,7 @@ class OversteerGuardTest : public ::testing::Test {
     ekf_.SetState(vx, vy, yaw_rate_rad);
     float throttle = 1.0f;
     for (int i = 0; i < iterations; ++i) {
-      guard_.Process(throttle, 2);  // dt = 2 ms (500 Hz)
+      guard_.Process(cfg_, throttle, 2);  // dt = 2 ms (500 Hz)
     }
     return guard_.IsActive();
   }
@@ -83,7 +83,7 @@ TEST_F(OversteerGuardTest, Triggers_WhenHighYawRate_AndHighSlip) {
   // Первая итерация: устанавливаем базовое состояние (нет jump в slip_rate)
   ekf_.SetState(5.0f, 0.0f, 1.0f);
   float throttle = 1.0f;
-  guard_.Process(throttle, 2);
+  guard_.Process(cfg_, throttle, 2);
 
   // Резкое боковое скольжение: vx=5, vy=2.5 → slip ≈ 26.5°
   // yaw_rate = 1.0 рад/с > kMinYawRateRad
@@ -92,7 +92,7 @@ TEST_F(OversteerGuardTest, Triggers_WhenHighYawRate_AndHighSlip) {
   // Прогоняем несколько итераций — slip_rate должен превысить 50°/с
   bool triggered = false;
   for (int i = 0; i < 20; ++i) {
-    guard_.Process(throttle, 2);
+    guard_.Process(cfg_, throttle, 2);
     if (guard_.IsActive()) {
       triggered = true;
       break;
@@ -118,7 +118,7 @@ TEST_F(OversteerGuardTest, NoTrigger_OnReactivation_WhenSlipRateLow) {
   // slip_rate = 21.8/0.002 ≈ 10900°/с → ложное срабатывание.
   ekf_.SetState(2.0f, 0.8f, 1.0f);
   float throttle = 1.0f;
-  guard_.Process(throttle, 2);
+  guard_.Process(cfg_, throttle, 2);
   EXPECT_FALSE(guard_.IsActive())
       << "Реактивация без реального роста slip не должна давать занос";
 }
@@ -133,7 +133,7 @@ TEST_F(OversteerGuardTest, Triggers_OnRealSlipJumpAfterReactivation) {
   float throttle = 1.0f;
   bool triggered = false;
   for (int i = 0; i < 20; ++i) {
-    guard_.Process(throttle, 2);
+    guard_.Process(cfg_, throttle, 2);
     if (guard_.IsActive()) {
       triggered = true;
       break;
@@ -149,7 +149,7 @@ TEST_F(OversteerGuardTest, Triggers_OnRealSlipJumpAfterReactivation) {
 
 TEST_F(OversteerGuardTest, NoTrigger_WhenWarnDisabled) {
   cfg_.oversteer.warn_enabled = false;
-  guard_.Init(cfg_, ekf_, &imu_handler_);
+  guard_.Init(ekf_, &imu_handler_);
   EXPECT_FALSE(RunWithEkfState(5.0f, 5.0f, 2.0f))
       << "При warn_enabled=false занос не должен срабатывать никогда";
 }
@@ -162,10 +162,10 @@ TEST_F(OversteerGuardTest, Reset_ClearsActiveFlag) {
   // Вызвать занос
   ekf_.SetState(5.0f, 0.0f, 1.0f);
   float throttle = 1.0f;
-  guard_.Process(throttle, 2);
+  guard_.Process(cfg_, throttle, 2);
   ekf_.SetState(5.0f, 2.5f, 1.0f);
   for (int i = 0; i < 20; ++i) {
-    guard_.Process(throttle, 2);
+    guard_.Process(cfg_, throttle, 2);
   }
 
   guard_.Reset();
