@@ -70,10 +70,11 @@ class ArtifactRepository(BaseRepository):
         assert record is not None
         return self._to_model(record)
 
-    async def get(self, artifact_id: UUID) -> Artifact | None:
+    async def get(self, project_id: UUID, artifact_id: UUID) -> Artifact | None:
         record = await self._fetchrow(
-            "SELECT * FROM artifacts WHERE id = $1",
+            "SELECT * FROM artifacts WHERE id = $1 AND project_id = $2",
             artifact_id,
+            project_id,
         )
         if record is None:
             return None
@@ -125,26 +126,30 @@ class ArtifactRepository(BaseRepository):
             total = int(record["total"]) if record else 0
         return items, total
 
-    async def delete(self, artifact_id: UUID) -> bool:
+    async def delete(self, project_id: UUID, artifact_id: UUID) -> bool:
         record = await self._fetchrow(
-            "DELETE FROM artifacts WHERE id = $1 RETURNING id",
+            "DELETE FROM artifacts WHERE id = $1 AND project_id = $2 RETURNING id",
             artifact_id,
+            project_id,
         )
         return record is not None
 
-    async def approve(self, artifact_id: UUID, user_id: UUID, note: str | None = None) -> Artifact | None:
+    async def approve(
+        self, project_id: UUID, artifact_id: UUID, user_id: UUID, note: str | None = None
+    ) -> Artifact | None:
         record = await self._fetchrow(
             """
             UPDATE artifacts
             SET approved_by = $2,
                 approval_note = $3,
                 updated_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND project_id = $4
             RETURNING *
             """,
             artifact_id,
             user_id,
             note,
+            project_id,
         )
         if record is None:
             return None

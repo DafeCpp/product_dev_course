@@ -27,6 +27,7 @@ from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
 from experiment_service.services.dependencies import (
     ensure_permission,
+    ensure_project_context,
     get_idempotency_service,
     get_sensor_service,
     require_current_user,
@@ -318,13 +319,22 @@ async def get_sensor_heartbeat_history(request: web.Request):
 
 @routes.get("/api/v1/sensors/{sensor_id}/projects")
 async def get_sensor_projects(request: web.Request):
-    """Get all projects associated with a sensor."""
+    """Get all projects associated with a sensor.
+
+    Scoped: the caller must have access to a project the sensor belongs to.
+    We verify the sensor is attached to the resolved ``project_id`` before
+    disclosing the full list, otherwise a user could enumerate the project
+    membership of arbitrary sensors.
+    """
     user = await require_current_user(request)
+    project_id = ensure_project_context(user)
+    ensure_permission(user, "experiments.view")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
 
-    ensure_permission(user, "experiments.view")
     service = await get_sensor_service(request)
     try:
+        # 404 if the sensor is not attached to the caller's project.
+        await service.get_sensor(project_id, sensor_id)
         project_ids = await service.get_sensor_projects(sensor_id)
         if not project_ids:
             raise web.HTTPNotFound(text="Sensor not found")

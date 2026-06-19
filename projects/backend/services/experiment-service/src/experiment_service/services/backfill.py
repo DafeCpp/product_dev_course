@@ -43,19 +43,20 @@ class BackfillService:
         )
         return task
 
-    async def get_task(self, task_id: UUID) -> dict[str, Any]:
-        task = await self._backfill_repo.get(task_id)
+    async def get_task(self, project_id: UUID, task_id: UUID) -> dict[str, Any]:
+        task = await self._backfill_repo.get(project_id, task_id)
         if task is None:
             raise NotFoundError("Backfill task not found")
         return task
 
     async def list_tasks(
         self,
+        project_id: UUID,
         sensor_id: UUID,
         *,
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         return await self._backfill_repo.list_by_sensor(
-            sensor_id, limit=limit, offset=offset
+            project_id, sensor_id, limit=limit, offset=offset
         )
