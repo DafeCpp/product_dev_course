@@ -7,7 +7,8 @@
 
 namespace rc_vehicle {
 
-void PrintDiagnostics(const DiagnosticsContext& ctx, uint32_t now_ms,
+void PrintDiagnostics(const DiagnosticsContext& ctx,
+                      const StabilizationConfig& cfg, uint32_t now_ms,
                       uint32_t& diag_loop_count, uint32_t& diag_start_ms) {
   const uint32_t elapsed = now_ms - diag_start_ms;
   if (elapsed < config::DiagnosticsConfig::kIntervalMs) return;
@@ -16,7 +17,6 @@ void PrintDiagnostics(const DiagnosticsContext& ctx, uint32_t now_ms,
       (elapsed > 0) ? (diag_loop_count * 1000u / elapsed) : 0u;
   ctx.last_loop_hz.store(loop_hz, std::memory_order_relaxed);
 
-  const auto& cfg = ctx.stab_mgr.GetConfig();
   const float stab_weight = ctx.stab_mgr.GetStabilizationWeight();
 
   {

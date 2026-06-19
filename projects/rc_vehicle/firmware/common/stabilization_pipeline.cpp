@@ -148,7 +148,9 @@ void OversteerGuard::Process(float& throttle, uint32_t dt_ms,
   if (std::abs(ekf_->GetYawRate()) < kMinYawRateRad ||
       ekf_->GetSpeedMs() < kMinSpeedMs) {
     oversteer_active_ = false;
-    prev_slip_deg_ = 0.0f;
+    // prev_slip_deg_ НЕ обнуляем: выше он уже обновлён текущим slip.
+    // Обнуление давало ложный всплеск slip_rate = slip/dt на первом тике
+    // после реактивации — детекция вырождалась в один порог slip (FW-R2).
     return;
   }
 

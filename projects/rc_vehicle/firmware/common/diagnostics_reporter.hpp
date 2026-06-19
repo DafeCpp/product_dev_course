@@ -26,8 +26,11 @@ struct DiagnosticsContext {
  *
  * Вызывается каждую итерацию loop. Выводит информацию с заданным
  * интервалом (config::DiagnosticsConfig::kIntervalMs).
+ *
+ * @param cfg Snapshot конфигурации стабилизации текущей итерации (FW-RF5)
  */
-void PrintDiagnostics(const DiagnosticsContext& ctx, uint32_t now_ms,
+void PrintDiagnostics(const DiagnosticsContext& ctx,
+                      const StabilizationConfig& cfg, uint32_t now_ms,
                       uint32_t& diag_loop_count, uint32_t& diag_start_ms);
 
 }  // namespace rc_vehicle

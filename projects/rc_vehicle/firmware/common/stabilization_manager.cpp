@@ -36,7 +36,8 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
   if (!validated_config.IsValid()) {
     platform_.Log(LogLevel::Error, "Invalid stabilization config");
     // Detailed validation logging
-    ESP_LOGE("stab_mgr", "magic=0x%08X (expected 0x%08X)", validated_config.magic, 0x53544232);
+    ESP_LOGE("stab_mgr", "magic=0x%08X (expected 0x%08X)",
+             validated_config.magic, kStabilizationConfigMagic);
     ESP_LOGE("stab_mgr", "filter.valid=%d yaw.valid=%d slip.valid=%d", 
              validated_config.filter.IsValid(), 
              validated_config.yaw_rate.IsValid(),
@@ -76,16 +77,7 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     }
   }
 
-  // Применить к фильтрам
-  madgwick_.SetBeta(validated_config.filter.madgwick_beta);
-  madgwick_.SetAdaptiveBeta(validated_config.filter.adaptive_beta_enabled,
-                            validated_config.filter.adaptive_accel_threshold_g);
-
-  // Применить к LPF и Madgwick enable (если IMU включен)
-  if (imu_handler_) {
-    imu_handler_->SetLpfCutoff(validated_config.filter.lpf_cutoff_hz);
-    imu_handler_->SetMadgwickEnabled(validated_config.filter.madgwick_enabled);
-  }
+  ApplyToFilters(validated_config);
 
   // Обновить коэффициенты ПИД yaw rate и slip angle
   yaw_ctrl_.SetGains(validated_config);
@@ -144,28 +136,25 @@ void StabilizationManager::ApplyConfig() {
     std::lock_guard<std::mutex> lock(config_mutex_);
     cfg = config_;
   }
+  ApplyToFilters(cfg);
+}
 
-  // Применить конфигурацию к фильтрам
+void StabilizationManager::ApplyToFilters(const StabilizationConfig& cfg) {
   madgwick_.SetBeta(cfg.filter.madgwick_beta);
   madgwick_.SetAdaptiveBeta(cfg.filter.adaptive_beta_enabled,
                             cfg.filter.adaptive_accel_threshold_g);
 
-  // Применить к LPF и Madgwick enable (если IMU включен)
+  // LPF и Madgwick enable — только если IMU есть
   if (imu_handler_) {
     imu_handler_->SetLpfCutoff(cfg.filter.lpf_cutoff_hz);
     imu_handler_->SetMadgwickEnabled(cfg.filter.madgwick_enabled);
   }
 }
 
-void StabilizationManager::UpdateWeights(uint32_t dt_ms) {
+void StabilizationManager::UpdateWeights(const StabilizationConfig& cfg,
+                                         uint32_t dt_ms) {
   if (dt_ms == 0) {
     return;
-  }
-
-  StabilizationConfig cfg;
-  {
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    cfg = config_;
   }
 
   // ─────────────────────────────────────────────────────────────────────
