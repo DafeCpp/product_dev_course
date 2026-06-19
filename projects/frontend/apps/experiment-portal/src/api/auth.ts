@@ -81,8 +81,14 @@ export const authApi = {
     adminResetUserPassword: async (
         userId: string,
         newPassword?: string
-    ): Promise<{ user: AdminUser; new_password: string }> => {
-        const response = await authClient.post<{ user: AdminUser; new_password: string }>(
+    ): Promise<{ user: AdminUser; password_change_required: boolean }> => {
+        // The server no longer echoes the plaintext password (it would leak
+        // into access logs / history). Callers that need to communicate a
+        // password to the user must supply a known one.
+        const response = await authClient.post<{
+            user: AdminUser
+            password_change_required: boolean
+        }>(
             `/auth/admin/users/${userId}/reset`,
             newPassword ? { new_password: newPassword } : {}
         )

@@ -308,12 +308,15 @@ async def admin_reset_user(request: web.Request) -> web.Response:
     try:
         auth_service = await get_auth_service(request)
         requester_id = await _get_requester_id(request, auth_service)
-        updated_user, new_password = await auth_service.admin_reset_user(
+        # The plaintext password is not echoed back: the admin chose it and
+        # already knows it. The account is flagged password_change_required so
+        # the user must change it on next login.
+        updated_user, _new_password = await auth_service.admin_reset_user(
             requester_id, target_user_id, req.new_password,
         )
         user_resp = await auth_service.get_user_response(updated_user)
         return web.json_response(
-            {"user": user_resp.model_dump(), "new_password": new_password},
+            {"user": user_resp.model_dump(), "password_change_required": True},
             status=200,
         )
     except AuthError as e:
