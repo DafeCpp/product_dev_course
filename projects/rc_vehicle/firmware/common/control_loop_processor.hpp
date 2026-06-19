@@ -91,6 +91,19 @@ class ControlLoopProcessor {
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;
 
+#ifdef RC_PROFILE_LOOP
+  // FW-R16: профилирование стадий итерации (debug-сборка). Накапливаем мкс по
+  // стадиям и раз в диаг-интервал печатаем средние us/iter. Включается флагом
+  // -DRC_PROFILE_LOOP=1; в обычной сборке кода нет (нулевой оверхед).
+  void EmitProfile(uint32_t loops);
+  uint64_t prof_components_us_{0};
+  uint64_t prof_sensors_us_{0};
+  uint64_t prof_control_us_{0};
+  uint64_t prof_stab_us_{0};
+  uint64_t prof_pwm_us_{0};
+  uint64_t prof_telem_us_{0};
+#endif
+
   // Кэшированный снимок датчиков (обновляется в UpdateSensorsAndEkf)
   SensorSnapshot sensors_;
   StabilizationConfig stab_cfg_;

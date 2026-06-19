@@ -38,13 +38,18 @@ class YawRateController {
 
   /**
    * @brief Один шаг yaw rate PID.
-   * @param steering         Команда руля [in/out], корректируется в normal/sport
+   * @param cfg              Живой снимок конфига текущей итерации (FW-R23)
+   * @param steering         Команда руля [in/out], корректируется в
+   * normal/sport
    * @param stab_w           Вес стабилизации [0..1]
    * @param mode_w           Вес перехода между режимами [0..1]
    * @param dt_ms            Шаг времени в миллисекундах
+   * @param reversing        true — машина едет назад (команда газа < 0):
+   *                         yaw-rate стабилизация отключается (FW-R22, иначе
+   *                         автоколебания руля)
    */
-  void Process(float& steering, float stab_w, float mode_w,
-               uint32_t dt_ms) noexcept;
+  void Process(const StabilizationConfig& cfg, float& steering, float stab_w,
+               float mode_w, uint32_t dt_ms, bool reversing = false) noexcept;
 
   /**
    * @brief Обновить PID-коэффициенты из конфигурации.
@@ -59,7 +64,6 @@ class YawRateController {
   [[nodiscard]] const PidController& GetPid() const noexcept { return pid_; }
 
  private:
-  const StabilizationConfig* cfg_{nullptr};
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
   PidController pid_;
@@ -86,22 +90,21 @@ class PitchCompensator {
 
   /**
    * @brief Инициализация: привязать зависимости.
-   * @param cfg      Конфигурация стабилизации
    * @param madgwick Фильтр ориентации для получения pitch
    * @param imu      IMU handler (nullptr — компенсация не работает)
    */
-  void Init(const StabilizationConfig& cfg, const MadgwickFilter& madgwick,
-            const ImuHandler* imu);
+  void Init(const MadgwickFilter& madgwick, const ImuHandler* imu);
 
   /**
    * @brief Применить pitch-компенсацию к газу.
+   * @param cfg       Живой снимок конфига текущей итерации (FW-R23)
    * @param throttle  Команда газа [in/out]
    * @param stab_w    Вес стабилизации [0..1]
    */
-  void Process(float& throttle, float stab_w) noexcept;
+  void Process(const StabilizationConfig& cfg, float& throttle,
+               float stab_w) noexcept;
 
  private:
-  const StabilizationConfig* cfg_{nullptr};
   const MadgwickFilter* madgwick_{nullptr};
   const ImuHandler* imu_{nullptr};
 };
@@ -134,13 +137,14 @@ class SlipAngleController {
 
   /**
    * @brief Один шаг slip angle PID (только в drift mode).
+   * @param cfg       Живой снимок конфига текущей итерации (FW-R23)
    * @param throttle  Команда газа [in/out], корректируется в режиме drift
    * @param stab_w    Вес стабилизации [0..1]
    * @param mode_w    Вес перехода между режимами [0..1]
    * @param dt_ms     Шаг времени в миллисекундах
    */
-  void Process(float& throttle, float stab_w, float mode_w,
-               uint32_t dt_ms) noexcept;
+  void Process(const StabilizationConfig& cfg, float& throttle, float stab_w,
+               float mode_w, uint32_t dt_ms) noexcept;
 
   /**
    * @brief Обновить PID-коэффициенты из конфигурации.
@@ -155,7 +159,6 @@ class SlipAngleController {
   [[nodiscard]] const PidController& GetPid() const noexcept { return pid_; }
 
  private:
-  const StabilizationConfig* cfg_{nullptr};
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
   PidController pid_;
@@ -181,21 +184,21 @@ class OversteerGuard {
 
   /**
    * @brief Инициализация: привязать зависимости.
-   * @param cfg  Конфигурация стабилизации
    * @param ekf  EKF для получения угла заноса и его производной
    * @param imu  IMU handler (nullptr — guard не работает)
    */
-  void Init(const StabilizationConfig& cfg, const VehicleEkf& ekf,
-            const ImuHandler* imu);
+  void Init(const VehicleEkf& ekf, const ImuHandler* imu);
 
   /**
    * @brief Один шаг oversteer detection.
+   * @param cfg              Живой снимок конфига текущей итерации (FW-R23)
    * @param throttle         Команда газа [in/out], может быть снижена при
    *                         oversteer
    * @param dt_ms            Шаг времени в миллисекундах
-   * @param reduce_throttle  Разрешено ли снижение газа (определяется ModeTraits)
+   * @param reduce_throttle  Разрешено ли снижение газа (определяется
+   * ModeTraits)
    */
-  void Process(float& throttle, uint32_t dt_ms,
+  void Process(const StabilizationConfig& cfg, float& throttle, uint32_t dt_ms,
                bool reduce_throttle = true) noexcept;
 
   /** @brief Сбросить состояние (вызывается при failsafe). */
@@ -213,7 +216,6 @@ class OversteerGuard {
   }
 
  private:
-  const StabilizationConfig* cfg_{nullptr};
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
 

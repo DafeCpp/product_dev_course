@@ -44,11 +44,25 @@ struct ImuConfig {
 };
 
 /**
+ * @brief Интервал отправки телеметрии по умолчанию, мс (50 мс = 20 Гц).
+ *
+ * Переопределяется на этапе сборки для отладочных сессий, напр. чтобы
+ * нагрузить ingest/experiment-service потоком 100 Гц:
+ *   idf.py build -DRC_TELEM_SEND_INTERVAL_MS=10
+ * Флаг прокидывается в COMPILE_DEFINITIONS из esp32_s3/CMakeLists.txt
+ * (через -DCMAKE_CXX_FLAGS ESP-IDF его теряет). Дефолт (без флага) —
+ * штатные 20 Гц, поведение прошивки не меняется.
+ */
+#ifndef RC_TELEM_SEND_INTERVAL_MS
+#define RC_TELEM_SEND_INTERVAL_MS 50
+#endif
+
+/**
  * @brief Конфигурация телеметрии
  */
 struct TelemetryConfig {
   static constexpr uint32_t kSendIntervalMs =
-      50;  ///< Интервал отправки (20 Hz)
+      RC_TELEM_SEND_INTERVAL_MS;  ///< Интервал отправки (дефолт 50 мс = 20 Гц)
   static constexpr size_t kJsonBufferSize = 1024;  ///< Размер буфера для JSON
 };
 

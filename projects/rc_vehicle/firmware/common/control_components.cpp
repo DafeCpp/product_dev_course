@@ -87,6 +87,18 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // LPF инициализирован в конструкторе — горячий путь без проверок
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
+  UpdateVehicleFrame();
+
+  const float dt_sec =
+      first_read_ ? (read_interval_ms_ / 1000.0f)
+                  : (static_cast<float>(now_ms - prev_read_ms) / 1000.0f);
+  first_read_ = false;
+
+  UpdateMagAndHeading(now_ms);
+  FeedMadgwick(raw_ax, raw_ay, raw_az, dt_sec);
+}
+
+void ImuHandler::UpdateVehicleFrame() {
   // Настроить опорную СК фильтра — только при смене состояния калибровки,
   // чтобы не сбрасывать кватернион Мэджвика каждые 2 мс.
   const bool calib_valid = calib_.IsValid();
@@ -99,95 +111,89 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
     filter_.SetVehicleFrame(nullptr, nullptr, false);
     veh_frame_set_ = false;
   }
+}
 
-  // Обновить фильтр Madgwick: сырой акселерометр + калиброванный гироскоп.
-  // Gyro bias уже вычтен в Apply(), но accel нужен сырой (см. выше).
-  const float dt_sec = first_read_
-                           ? (read_interval_ms_ / 1000.0f)
-                           : (static_cast<float>(now_ms - prev_read_ms) / 1000.0f);
-  first_read_ = false;
-
+void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
   // Читаем магнетометр на 100 Hz (MMC5983 CMM rate).
   // I2C/SPI транзакция ~350 мкс — не читаем каждые 2 мс.
-  bool new_mag_sample = false;
-  if ((now_ms - last_mag_read_ms_) >= kMagReadIntervalMs) {
-    last_mag_read_ms_ = now_ms;
-    const auto mag_opt = platform_.ReadMag();
-    if (mag_opt) {
-      mag_data_ = *mag_opt;
-      mag_enabled_ = true;
-      new_mag_sample = true;
-    }
+  if ((now_ms - last_mag_read_ms_) < kMagReadIntervalMs) {
+    return;
+  }
+  last_mag_read_ms_ = now_ms;
+
+  const auto mag_opt = platform_.ReadMag();
+  if (!mag_opt) {
+    return;
+  }
+  mag_data_ = *mag_opt;
+  mag_enabled_ = true;
+
+  // Подача нового семпла в калибровку (если идёт сбор)
+  if (mag_calib_ && mag_calib_->IsCollecting()) {
+    mag_calib_->FeedSample(mag_data_);
+  }
+
+  // Калиброванное значение кэшируется: FeedMadgwick использует его на
+  // каждом тике 500 Гц до следующего mag-семпла (Apply детерминирован —
+  // результат тот же, что пересчёт каждые 2 мс).
+  mag_calibrated_ = mag_data_;
+  const bool have_calib = mag_calib_ && mag_calib_->IsValid();
+  if (have_calib) {
+    mag_calib_->Apply(mag_calibrated_);
+  }
+
+  if (have_calib) {
+    heading_deg_ = ComputePcaHeadingDeg(mag_calibrated_);
+  } else {
+    // Нет калибровки — fallback: простой atan2 без проекции
+    const float h = std::atan2(mag_calibrated_.my, mag_calibrated_.mx) *
+                    (180.f / 3.14159265f);
+    heading_deg_ = (h < 0.f) ? h + 360.f : h;
+  }
+
+  // Установить опорный курс при первом валидном чтении (или после сброса)
+  if (!heading_ref_set_) {
+    heading_ref_ = heading_deg_;
+    heading_ref_set_ = true;
+  }
+}
+
+float ImuHandler::ComputePcaHeadingDeg(const MagData& mag_cal) const {
+  // ── PCA heading: проекция на калибровочную плоскость ──────────────────
+  const auto& cd = mag_calib_->GetData();
+
+  // Проекция mag на горизонтальную плоскость (перпендикулярную normal)
+  const float dot_n = mag_cal.mx * cd.normal[0] + mag_cal.my * cd.normal[1] +
+                      mag_cal.mz * cd.normal[2];
+  const float px = mag_cal.mx - dot_n * cd.normal[0];
+  const float py = mag_cal.my - dot_n * cd.normal[1];
+  const float pz = mag_cal.mz - dot_n * cd.normal[2];
+
+  const float comp1 = px * cd.basis1[0] + py * cd.basis1[1] + pz * cd.basis1[2];
+  const float comp2 = px * cd.basis2[0] + py * cd.basis2[1] + pz * cd.basis2[2];
+
+  const float h = std::atan2(comp2, comp1) * (180.f / 3.14159265f);
+  return (h < 0.f) ? h + 360.f : h;
+}
+
+void ImuHandler::FeedMadgwick(float raw_ax, float raw_ay, float raw_az,
+                              float dt_sec) {
+  if (!madgwick_enabled_) {
+    return;
   }
 
   if (mag_enabled_) {
-    MagData mag_cal = mag_data_;
-    const bool have_calib = mag_calib_ && mag_calib_->IsValid();
-    if (have_calib) {
-      mag_calib_->Apply(mag_cal);
-    }
-
-    if (new_mag_sample) {
-      // Подача нового семпла в калибровку (если идёт сбор)
-      if (mag_calib_ && mag_calib_->IsCollecting()) {
-        mag_calib_->FeedSample(mag_data_);
-      }
-
-      if (have_calib) {
-        // ── PCA heading: проекция на калибровочную плоскость ────────────
-        const auto& cd = mag_calib_->GetData();
-
-        // Проекция mag на горизонтальную плоскость (перпендикулярную normal)
-        const float dot_n = mag_cal.mx * cd.normal[0] +
-                            mag_cal.my * cd.normal[1] +
-                            mag_cal.mz * cd.normal[2];
-        const float px = mag_cal.mx - dot_n * cd.normal[0];
-        const float py = mag_cal.my - dot_n * cd.normal[1];
-        const float pz = mag_cal.mz - dot_n * cd.normal[2];
-
-        const float comp1 = px * cd.basis1[0] + py * cd.basis1[1] + pz * cd.basis1[2];
-        const float comp2 = px * cd.basis2[0] + py * cd.basis2[1] + pz * cd.basis2[2];
-
-        const float h = std::atan2(comp2, comp1) * (180.f / 3.14159265f);
-        heading_deg_ = (h < 0.f) ? h + 360.f : h;
-      } else {
-        // Нет калибровки — fallback: простой atan2 без проекции
-        const float h = std::atan2(mag_cal.my, mag_cal.mx) * (180.f / 3.14159265f);
-        heading_deg_ = (h < 0.f) ? h + 360.f : h;
-      }
-
-      // Установить опорный курс при первом валидном чтении (или после сброса)
-      if (!heading_ref_set_) {
-        heading_ref_ = heading_deg_;
-        heading_ref_set_ = true;
-      }
-    }
-
-    // Всегда подаём mag в Madgwick 9DOF (даже без нового семпла).
-    // Это предотвращает дрейф yaw между обновлениями магнитометра.
-    // При отсутствии нового семпла используются последние mag данные.
-    if (madgwick_enabled_) {
-      if (have_calib) {
-        const auto& cd = mag_calib_->GetData();
-        const float dot_n = mag_cal.mx * cd.normal[0] +
-                            mag_cal.my * cd.normal[1] +
-                            mag_cal.mz * cd.normal[2];
-        const float px = mag_cal.mx - dot_n * cd.normal[0];
-        const float py = mag_cal.my - dot_n * cd.normal[1];
-        const float pz = mag_cal.mz - dot_n * cd.normal[2];
-        filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
-                              data_.gz, px, py, dot_n, dt_sec);
-      } else {
-        filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy,
-                              data_.gz, mag_cal.mx, mag_cal.my, mag_cal.mz,
-                              dt_sec);
-      }
-    }
+    // 9DOF: полный калиброванный mag-вектор в СК датчика (FW-R3).
+    // Подаётся каждый тик (включая тики без нового семпла) — предотвращает
+    // дрейф yaw между обновлениями магнитометра. Madgwick сам устраняет
+    // склонение (bx = sqrt(hx²+hy²)), предварительная проекция не нужна.
+    filter_.UpdateWithMag(raw_ax, raw_ay, raw_az, data_.gx, data_.gy, data_.gz,
+                          mag_calibrated_.mx, mag_calibrated_.my,
+                          mag_calibrated_.mz, dt_sec);
   } else {
-    if (madgwick_enabled_) {
-      filter_.Update(raw_ax, raw_ay, raw_az, data_.gx, data_.gy, data_.gz,
-                     dt_sec);
-    }
+    // 6DOF: сырой акселерометр + калиброванный гироскоп
+    filter_.Update(raw_ax, raw_ay, raw_az, data_.gx, data_.gy, data_.gz,
+                   dt_sec);
   }
 }
 
@@ -219,21 +225,18 @@ void TelemetryHandler::SendTelemetry(uint32_t now_ms,
   }
   last_send_ms_ = now_ms;
 
-  // FW-R13: НЕ гейтим по GetWebSocketClientCount(). Ранее здесь был ранний
-  // выход при count==0, но счётчик клиентов обновляется в основном из самого
-  // пути отправки (WebSocketSendTelem), а единственный bootstrap при
-  // WS-handshake на ESP-IDF v6.0 срабатывает ненадёжно → возникала циклическая
-  // зависимость: телеметрия не шла, пока count==0, а count не рос, пока не идёт
-  // телеметрия. Итог — пустой Web UI (нет связи/телеметрии/графиков).
-  // Постройка JSON на send_interval_ms_ (20 Гц) ничтожна по стоимости, а сам
-  // путь отправки уже шлёт кадры ТОЛЬКО реальным WS-клиентам (если их нет —
-  // никому). Поэтому решение о доставке принимает транспорт, а не control loop.
-  std::string json = BuildTelemJson(snap);
-  platform_.SendTelem(json);
+  // FW-RF8: control loop публикует только лёгкий POD-снимок в очередь платформы
+  // (детерминированно, без кучи). Построение JSON (cJSON) и отправка по WS
+  // выполняются в задаче телеметрии — стоимость/сбой телеметрии физически не
+  // достигает 500 Гц цикла.
+  //
+  // FW-R13: доставку по-прежнему НЕ гейтим по GetWebSocketClientCount() —
+  // решение принимает транспорт (WebSocketSendTelem шлёт только реальным
+  // WS-fd).
+  platform_.PublishTelem(snap);
 }
 
-std::string TelemetryHandler::BuildTelemJson(
-    const TelemetrySnapshot& snap) const {
+std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   cJSON* root = cJSON_CreateObject();
   if (!root) return "{}";
 
@@ -247,7 +250,7 @@ std::string TelemetryHandler::BuildTelemJson(
   if (link) {
     cJSON_AddBoolToObject(link, "rc_ok", snap.rc_ok);
     cJSON_AddBoolToObject(link, "wifi_ok", snap.wifi_ok);
-    cJSON_AddBoolToObject(link, "failsafe", platform_.FailsafeIsActive());
+    cJSON_AddBoolToObject(link, "failsafe", snap.failsafe);
   }
 
   // IMU data (если включен)

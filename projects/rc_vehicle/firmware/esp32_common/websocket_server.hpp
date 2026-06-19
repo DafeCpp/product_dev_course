@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "cJSON.h"
+#include "control_components.hpp"  // rc_vehicle::TelemetrySnapshot
 #include "esp_err.h"
 #include "esp_http_server.h"
 
@@ -31,11 +32,12 @@ void WebSocketSetJsonHandler(WebSocketJsonHandler handler);
 esp_err_t WebSocketRegisterUri(httpd_handle_t server);
 
 /**
- * Поставить телеметрию в очередь на отправку (не блокирует вызывающий поток).
- * Реальная отправка выполняется в отдельной задаче, чтобы цикл управления
- * не блокировался на TCP/WebSocket при отключении клиента.
+ * Поставить снимок телеметрии в очередь (не блокирует вызывающий поток).
+ * FW-RF8: в очередь кладётся лёгкий POD-снимок; построение JSON (cJSON) и
+ * отправка по WS выполняются в telem_sender_task — control loop не платит за
+ * heap-аллокации/TCP. Копирование снимка в очередь — детерминированный memcpy.
  */
-void WebSocketEnqueueTelem(const char* telem_json);
+void WebSocketEnqueueTelem(const rc_vehicle::TelemetrySnapshot& snap);
 
 /**
  * Отправить телеметрию всем подключенным WebSocket-клиентам.

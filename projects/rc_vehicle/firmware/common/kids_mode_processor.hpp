@@ -12,10 +12,12 @@ namespace rc_vehicle {
  * Применяет ограничения газа, руля и slew rate,
  * а также усиленную защиту от заноса (anti-spin).
  *
- * Активность определяется через cfg_->mode == DriveMode::Kids —
- * отдельного трекинга current_mode_ нет. Control loop вызывает
- * Process() только когда ModeTraits.apply_input_limits == true,
- * но внутренняя проверка IsActive() остаётся как safety guard.
+ * Конфиг передаётся в Process()/IsActive() аргументом — живой per-tick снимок
+ * из control loop (FW-R21). Процессор НЕ хранит указатель на конфиг: при старте
+ * режим обычно ещё не Kids, а переключение режима/пресета происходит в
+ * рантайме, поэтому единственный корректный источник — снимок текущей итерации.
+ * Control loop вызывает Process() только когда ModeTraits.apply_input_limits ==
+ * true, но внутренняя проверка IsActive(cfg) остаётся как safety guard.
  */
 class KidsModeProcessor {
  public:
@@ -23,29 +25,28 @@ class KidsModeProcessor {
 
   /**
    * @brief Инициализация процессора
-   * @param cfg Конфигурация стабилизации (содержит kids_mode и mode)
-   * @param ekf EKF для получения угла заноса (anti-spin)
+   * @param ekf EKF для получения угла заноса (anti-spin) и скорости
    * @param imu IMU handler (может быть nullptr если IMU не включён)
    */
-  void Init(const StabilizationConfig& cfg, const VehicleEkf& ekf,
-            const ImuHandler* imu);
+  void Init(const VehicleEkf& ekf, const ImuHandler* imu);
 
   /**
    * @brief Применить ограничения Kids Mode
+   * @param cfg Живой снимок конфига стабилизации текущей итерации
    * @param throttle Команда газа [in/out]
    * @param steering Команда руля [in/out]
    * @param dt_ms Шаг времени в миллисекундах
    * @param forward_accel Продольное ускорение IMU [g] для accel limiter
    */
-  void Process(float& throttle, float& steering, uint32_t dt_ms,
-               float forward_accel = 0.0f) noexcept;
+  void Process(const StabilizationConfig& cfg, float& throttle, float& steering,
+               uint32_t dt_ms, float forward_accel = 0.0f) noexcept;
 
   /**
-   * @brief Проверить, активен ли Kids Mode
-   * @return true если cfg_.mode == DriveMode::Kids
+   * @brief Проверить, активен ли Kids Mode для переданного конфига
+   * @return true если cfg.mode == DriveMode::Kids
    */
-  [[nodiscard]] bool IsActive() const noexcept {
-    return cfg_ && cfg_->mode == DriveMode::Kids;
+  [[nodiscard]] bool IsActive(const StabilizationConfig& cfg) const noexcept {
+    return cfg.mode == DriveMode::Kids;
   }
 
   /**
@@ -78,7 +79,6 @@ class KidsModeProcessor {
   void Reset() noexcept;
 
  private:
-  const StabilizationConfig* cfg_{nullptr};
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
 

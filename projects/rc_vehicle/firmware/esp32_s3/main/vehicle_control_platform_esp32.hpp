@@ -71,6 +71,8 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   // Stabilization Config
   [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig()
       override;
+  [[nodiscard]] std::optional<StabilizationConfig> LoadStabilizationConfig(
+      DriveMode mode) override;
   [[nodiscard]] Result<Unit, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig& config) override;
 
@@ -87,7 +89,7 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
 
   // WebSocket
   [[nodiscard]] unsigned GetWebSocketClientCount() const noexcept override;
-  void SendTelem(std::string_view json) override;
+  void PublishTelem(const TelemetrySnapshot& snap) override;
 
   // Wi-Fi команды
   [[nodiscard]] std::optional<RcCommand> TryReceiveWifiCommand() override;

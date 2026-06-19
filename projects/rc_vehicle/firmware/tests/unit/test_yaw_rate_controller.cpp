@@ -44,6 +44,11 @@ class YawRateControllerTest : public ::testing::Test {
     cfg_.yaw_rate.steer_to_yaw_rate_dps = 90.0f;
     cfg_.adaptive.enabled = false;
 
+    // FW-R17: рулевая стабилизация активна только в движении. По умолчанию
+    // ставим EKF «в движении», чтобы тесты коррекции работали; гейт по скорости
+    // проверяется отдельными тестами ниже.
+    ekf_.SetState(1.0f, 0.0f, 0.0f);
+
     ctrl_.Init(cfg_, ekf_, &imu_handler_);
   }
 
@@ -81,7 +86,7 @@ class YawRateControllerTest : public ::testing::Test {
 TEST_F(YawRateControllerTest, NoCorrection_WhenSteeringZero_AndGyroZero) {
   // steering=0 → desired omega=0, actual omega=0 → error=0 → no correction
   float steering = 0.0f;
-  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   EXPECT_NEAR(steering, 0.0f, 0.01f);
 }
 
@@ -91,7 +96,7 @@ TEST_F(YawRateControllerTest, PositiveCorrection_WhenDesiredOmegaExceedsActual) 
   // error = 45 → PID output = kp * 45 = 4.5, clamped to max_correction=0.3
   // steering += 0.3 * stab_w * mode_w = 0.3
   float steering = 0.5f;
-  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   EXPECT_GT(steering, 0.5f) << "Steering should increase when desired > actual yaw rate";
   EXPECT_LE(steering, 1.0f) << "Steering clamped to [-1, 1]";
 }
@@ -100,20 +105,20 @@ TEST_F(YawRateControllerTest, NegativeCorrection_WhenActualExceedsDesired) {
   // Set gyro Z to 90 dps, but steering=0 → desired=0, actual=90 → error=-90
   SetGyroZ(90.0f);
   float steering = 0.0f;
-  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   EXPECT_LT(steering, 0.0f) << "Steering should decrease when actual > desired yaw rate";
 }
 
 TEST_F(YawRateControllerTest, NoEffect_WhenStabWeightZero) {
   float steering = 0.5f;
-  ctrl_.Process(steering, 0.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering, 0.0f, 1.0f, 2);
   EXPECT_FLOAT_EQ(steering, 0.5f) << "stab_w=0 → no correction";
 }
 
 TEST_F(YawRateControllerTest, NoEffect_WhenModeWeightZero) {
   // mode_w=0 → pid_out * 0 = 0
   float steering = 0.5f;
-  ctrl_.Process(steering, 1.0f, 0.0f, 2);
+  ctrl_.Process(cfg_, steering, 1.0f, 0.0f, 2);
   // PID output is non-zero but multiplied by mode_w=0
   // steering = clamp(0.5 + correction * 1.0 * 0.0, -1, 1) = 0.5
   EXPECT_NEAR(steering, 0.5f, 0.01f);
@@ -125,7 +130,7 @@ TEST_F(YawRateControllerTest, WorksRegardlessOfMode_ModeFilteringIsDoneByTraits)
   cfg_.mode = DriveMode::Drift;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
   float steering = 0.5f;
-  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   EXPECT_NE(steering, 0.5f)
       << "Controller processes regardless of mode; filtering is in control loop";
 }
@@ -133,13 +138,13 @@ TEST_F(YawRateControllerTest, WorksRegardlessOfMode_ModeFilteringIsDoneByTraits)
 TEST_F(YawRateControllerTest, NoEffect_WhenImuDisabled) {
   imu_handler_.SetEnabled(false);
   float steering = 0.5f;
-  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   EXPECT_FLOAT_EQ(steering, 0.5f) << "No correction when IMU disabled";
 }
 
 TEST_F(YawRateControllerTest, NoEffect_WhenDtZero) {
   float steering = 0.5f;
-  ctrl_.Process(steering, 1.0f, 1.0f, 0);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 0);
   EXPECT_FLOAT_EQ(steering, 0.5f) << "dt=0 → early return";
 }
 
@@ -147,20 +152,20 @@ TEST_F(YawRateControllerTest, WorksInSportMode) {
   cfg_.mode = DriveMode::Sport;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
   float steering = 0.5f;
-  ctrl_.Process(steering, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   EXPECT_NE(steering, 0.5f) << "Yaw PID should work in Sport mode";
 }
 
 TEST_F(YawRateControllerTest, CorrectionScaledByStabWeight) {
   // Process with stab_w=1.0
   float steering1 = 0.5f;
-  ctrl_.Process(steering1, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering1, 1.0f, 1.0f, 2);
   float correction_full = steering1 - 0.5f;
 
   // Reset PID and process with stab_w=0.5
   ctrl_.Reset();
   float steering2 = 0.5f;
-  ctrl_.Process(steering2, 0.5f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering2, 0.5f, 1.0f, 2);
   float correction_half = steering2 - 0.5f;
 
   EXPECT_NEAR(correction_half, correction_full * 0.5f, 0.02f)
@@ -172,7 +177,7 @@ TEST_F(YawRateControllerTest, SteeringClampedToMinusOnePlusOne) {
   SetGyroZ(-200.0f);  // Large negative → correction pushes steering up
   float steering = 0.9f;
   for (int i = 0; i < 10; ++i) {
-    ctrl_.Process(steering, 1.0f, 1.0f, 2);
+    ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   }
   EXPECT_LE(steering, 1.0f);
   EXPECT_GE(steering, -1.0f);
@@ -192,7 +197,7 @@ TEST_F(YawRateControllerTest, Reset_ClearsPidState) {
   // Accumulate some integral
   float steering = 0.5f;
   for (int i = 0; i < 10; ++i) {
-    ctrl_.Process(steering, 1.0f, 1.0f, 2);
+    ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   }
   ctrl_.Reset();
   EXPECT_FLOAT_EQ(ctrl_.GetPid().GetIntegral(), 0.0f);
@@ -205,17 +210,17 @@ TEST_F(YawRateControllerTest, AdaptivePid_ScalesByEkfSpeed) {
   cfg_.adaptive.scale_max = 2.0f;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
 
-  // EKF speed = 0 → scale = clamp(0/1, 0.5, 2.0) = 0.5
-  ekf_.SetState(0.0f, 0.0f, 0.0f);
+  // EKF speed = 0.5 → scale = clamp(0.5/1, 0.5, 2.0) = 0.5 (выше гейта FW-R17)
+  ekf_.SetState(0.5f, 0.0f, 0.0f);
   float steering_slow = 0.5f;
-  ctrl_.Process(steering_slow, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering_slow, 1.0f, 1.0f, 2);
   float correction_slow = steering_slow - 0.5f;
 
   // EKF speed = 2.0 → scale = clamp(2/1, 0.5, 2.0) = 2.0
   ctrl_.Reset();
   ekf_.SetState(2.0f, 0.0f, 0.0f);
   float steering_fast = 0.5f;
-  ctrl_.Process(steering_fast, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering_fast, 1.0f, 1.0f, 2);
   float correction_fast = steering_fast - 0.5f;
 
   // correction_fast should be ~4x correction_slow (scale 2.0 vs 0.5)
@@ -225,18 +230,99 @@ TEST_F(YawRateControllerTest, AdaptivePid_ScalesByEkfSpeed) {
   }
 }
 
+// ── FW-R17: гейт стабилизации по скорости (фикс ложного руля на стоянке)
+// ──────
+
+TEST_F(YawRateControllerTest, NoCorrection_BelowSpeedThreshold) {
+  // Стоим (speed=0) + всплеск гироскопа: руль НЕ должен подмешиваться, иначе
+  // на стоянке контур срывает руль в упор. Команда руля проходит как есть.
+  ekf_.SetState(0.0f, 0.0f, 0.0f);
+  SetGyroZ(90.0f);  // сильное «рысканье» от толчка/шума
+  float steering = 0.0f;
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(steering, 0.0f)
+      << "Ниже порога скорости коррекция руля не применяется";
+}
+
+TEST_F(YawRateControllerTest, BaseSteeringPassesThrough_BelowSpeedThreshold) {
+  // Ручной руль ниже порога проходит без изменений (стабилизация не
+  // вмешивается)
+  ekf_.SetState(0.1f, 0.0f, 0.0f);  // < 0.2 м/с
+  SetGyroZ(60.0f);
+  float steering = 0.4f;
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(steering, 0.4f);
+}
+
+TEST_F(YawRateControllerTest, ResetsPid_BelowSpeedThreshold) {
+  // Накопили интеграл в движении, затем остановились → PID сбрасывается
+  // (анти-windup), чтобы не было рывка при следующем старте.
+  StabilizationConfig cfg = cfg_;
+  cfg.yaw_rate.pid.ki = 0.05f;  // включаем интегратор
+  ctrl_.SetGains(cfg);
+  SetGyroZ(90.0f);
+  float steering = 0.0f;
+  for (int i = 0; i < 10; ++i) ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_NE(ctrl_.GetPid().GetIntegral(), 0.0f)
+      << "интеграл накопился в движении";
+
+  ekf_.SetState(0.0f, 0.0f, 0.0f);  // остановка
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(ctrl_.GetPid().GetIntegral(), 0.0f)
+      << "ниже порога PID сбрасывается (анти-windup)";
+}
+
+// ── FW-R22: реверс отключает yaw-rate стабилизацию (фикс дёрганья руля назад)
+// В реверсе связь руль→рыскание инвертируется → ОС становится положительной
+// (автоколебания). При reversing=true коррекция не подмешивается, PID в reset.
+
+TEST_F(YawRateControllerTest, Reversing_NoCorrection_EvenWithError) {
+  // steering=0.5 → desired omega=45 dps, actual≈0 → ошибка есть, но
+  // reversing=true
+  float steering = 0.5f;
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2, /*reversing=*/true);
+  EXPECT_FLOAT_EQ(steering, 0.5f)
+      << "в реверсе yaw-rate коррекция не подмешивается";
+}
+
+TEST_F(YawRateControllerTest, Forward_StillCorrects_WhenNotReversing) {
+  // Контроль: reversing=false — поведение прежнее (коррекция есть).
+  float steering = 0.5f;
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2, /*reversing=*/false);
+  EXPECT_GT(steering, 0.5f) << "вперёд стабилизация работает как раньше";
+}
+
+TEST_F(YawRateControllerTest, Reversing_ResetsPid) {
+  // Накопили интеграл вперёд, затем шаг в реверсе → PID сбрасывается.
+  StabilizationConfig cfg = cfg_;
+  cfg.yaw_rate.pid.ki = 0.05f;
+  ctrl_.SetGains(cfg);
+  SetGyroZ(90.0f);
+  float steering = 0.0f;
+  for (int i = 0; i < 10; ++i) ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_NE(ctrl_.GetPid().GetIntegral(), 0.0f) << "интеграл накопился вперёд";
+
+  float steering_rev = 0.0f;
+  ctrl_.Process(cfg_, steering_rev, 1.0f, 1.0f, 2, /*reversing=*/true);
+  EXPECT_FLOAT_EQ(ctrl_.GetPid().GetIntegral(), 0.0f)
+      << "в реверсе PID сбрасывается";
+  EXPECT_FLOAT_EQ(steering_rev, 0.0f) << "руль проходит как есть";
+}
+
 TEST_F(YawRateControllerTest, AdaptivePid_Disabled_NoScaling) {
   cfg_.adaptive.enabled = false;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
 
-  ekf_.SetState(0.0f, 0.0f, 0.0f);
+  // Обе скорости выше гейта FW-R17 (0.2 м/с), чтобы проверять именно отсутствие
+  // адаптивного масштабирования, а не гейт по скорости.
+  ekf_.SetState(1.0f, 0.0f, 0.0f);
   float steering1 = 0.5f;
-  ctrl_.Process(steering1, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering1, 1.0f, 1.0f, 2);
 
   ctrl_.Reset();
   ekf_.SetState(5.0f, 0.0f, 0.0f);
   float steering2 = 0.5f;
-  ctrl_.Process(steering2, 1.0f, 1.0f, 2);
+  ctrl_.Process(cfg_, steering2, 1.0f, 1.0f, 2);
 
   EXPECT_FLOAT_EQ(steering1, steering2)
       << "Without adaptive PID, speed should not affect correction";

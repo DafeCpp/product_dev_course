@@ -22,31 +22,43 @@ void VehicleControlUnified::ControlTaskEntry(void* arg) {
   }
 }
 
+void VehicleControlUnified::BuildProcessor() {
+  if (processor_) return;
+
+  loop_ctx_.emplace(ControlLoopContext{
+      *platform_, imu_calib_, madgwick_, ekf_, yaw_ctrl_, pitch_ctrl_,
+      slip_ctrl_, oversteer_guard_, kids_processor_, auto_drive_,
+      calib_mgr_.get(), stab_mgr_.get(), telem_mgr_.get(), rc_handler_.get(),
+      wifi_handler_.get(), imu_handler_.get(), telem_handler_.get(),
+      last_loop_hz_});
+
+  processor_ = std::make_unique<ControlLoopProcessor>(*loop_ctx_,
+                                                      platform_->GetTimeMs());
+}
+
 void VehicleControlUnified::ControlTaskLoop() {
   if (!platform_) return;
   platform_->RegisterTaskWdt();
 
-  const ControlLoopContext ctx{
-      *platform_,       imu_calib_,        madgwick_,    ekf_,
-      yaw_ctrl_,        pitch_ctrl_,        slip_ctrl_,   oversteer_guard_,
-      kids_processor_,  auto_drive_,
-      calib_mgr_.get(), stab_mgr_.get(),    telem_mgr_.get(),
-      rc_handler_.get(), wifi_handler_.get(), imu_handler_.get(),
-      telem_handler_.get(), last_loop_hz_};
-
-  const uint32_t start = platform_->GetTimeMs();
-  ControlLoopProcessor processor(ctx, start);
+  BuildProcessor();
 
   control_task_ready_.store(true, std::memory_order_release);
 
-  uint32_t last_loop = start;
+  uint32_t last_loop = platform_->GetTimeMs();
   while (true) {
     platform_->DelayUntilNextTick(config::ControlLoopConfig::kPeriodMs);
     const uint32_t now = platform_->GetTimeMs();
-    processor.Step(now, now - last_loop);
+    processor_->Step(now, now - last_loop);
     last_loop = now;
     platform_->FeedTaskWdt();
   }
+}
+
+void VehicleControlUnified::HostStep(uint32_t dt_ms) {
+  if (!platform_) return;
+  BuildProcessor();
+  control_task_ready_.store(true, std::memory_order_release);
+  processor_->Step(platform_->GetTimeMs(), dt_ms);
 }
 
 bool VehicleControlUnified::StartComOffsetCalibration(

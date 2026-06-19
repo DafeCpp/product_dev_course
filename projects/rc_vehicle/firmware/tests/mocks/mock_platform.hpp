@@ -2,6 +2,9 @@
 
 #include <gmock/gmock.h>
 
+#include <array>
+
+#include "control_components.hpp"  // TelemetrySnapshot, BuildTelemJson
 #include "vehicle_control_platform.hpp"
 
 namespace rc_vehicle {
@@ -67,6 +70,8 @@ class MockPlatform : public VehicleControlPlatform {
 
   MOCK_METHOD(std::optional<StabilizationConfig>, LoadStabilizationConfig, (),
               (override));
+  MOCK_METHOD(std::optional<StabilizationConfig>, LoadStabilizationConfig,
+              (DriveMode mode), (override));
   MOCK_METHOD((Result<Unit, PlatformError>), SaveStabilizationConfig,
               (const StabilizationConfig& config), (override));
 
@@ -98,7 +103,7 @@ class MockPlatform : public VehicleControlPlatform {
 
   MOCK_METHOD(unsigned, GetWebSocketClientCount, (),
               (const, noexcept, override));
-  MOCK_METHOD(void, SendTelem, (std::string_view json), (override));
+  MOCK_METHOD(void, PublishTelem, (const TelemetrySnapshot& snap), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
   // Wi-Fi команды
@@ -207,16 +212,26 @@ class FakePlatform : public VehicleControlPlatform {
   // ─────────────────────────────────────────────────────────────────────────
 
   std::optional<StabilizationConfig> LoadStabilizationConfig() override {
-    return stab_config_;
+    if (active_mode_.has_value()) {
+      return stab_configs_[static_cast<size_t>(*active_mode_)];
+    }
+    return std::nullopt;
+  }
+
+  std::optional<StabilizationConfig> LoadStabilizationConfig(
+      DriveMode mode) override {
+    return stab_configs_[static_cast<size_t>(mode)];
   }
 
   Result<Unit, PlatformError> SaveStabilizationConfig(const StabilizationConfig& config) override {
-    stab_config_ = config;
+    stab_configs_[static_cast<size_t>(config.mode)] = config;
+    active_mode_ = config.mode;
     return Unit{};
   }
 
   void SetStabilizationConfig(const StabilizationConfig& config) {
-    stab_config_ = config;
+    stab_configs_[static_cast<size_t>(config.mode)] = config;
+    active_mode_ = config.mode;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -269,13 +284,18 @@ class FakePlatform : public VehicleControlPlatform {
     return ws_client_count_;
   }
 
-  void SendTelem(std::string_view json) override {
-    last_telem_ = std::string(json);
+  // FW-RF8: платформа теперь получает POD-снимок, а не готовый JSON. На host
+  // строим JSON здесь же (через ту же чистую BuildTelemJson, что и задача
+  // телеметрии на ESP32), чтобы тесты по-прежнему проверяли содержимое кадра.
+  void PublishTelem(const TelemetrySnapshot& snap) override {
+    last_snap_ = snap;
+    last_telem_ = BuildTelemJson(snap);
     telem_send_count_++;
   }
 
   void SetWebSocketClientCount(unsigned count) { ws_client_count_ = count; }
   const std::string& GetLastTelem() const { return last_telem_; }
+  const TelemetrySnapshot& GetLastSnap() const { return last_snap_; }
   int GetTelemSendCount() const { return telem_send_count_; }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -317,8 +337,9 @@ class FakePlatform : public VehicleControlPlatform {
   float com_offset_[2]{0.f, 0.f};
   bool com_offset_set_{false};
 
-  // Stabilization
-  std::optional<StabilizationConfig> stab_config_;
+  // Stabilization (per-mode: один слот на каждый DriveMode 0..4)
+  std::array<std::optional<StabilizationConfig>, 5> stab_configs_{};
+  std::optional<DriveMode> active_mode_;
 
   // RC Input
   std::optional<RcCommand> rc_command_;
@@ -334,6 +355,7 @@ class FakePlatform : public VehicleControlPlatform {
   // WebSocket
   unsigned ws_client_count_{0};
   std::string last_telem_;
+  TelemetrySnapshot last_snap_{};
   int telem_send_count_{0};
 
   // Wi-Fi

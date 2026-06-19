@@ -202,6 +202,15 @@ VehicleControlPlatformEsp32::LoadStabilizationConfig() {
   return std::nullopt;
 }
 
+std::optional<StabilizationConfig>
+VehicleControlPlatformEsp32::LoadStabilizationConfig(DriveMode mode) {
+  StabilizationConfig config{};
+  if (stab_config_nvs::Load(mode, config) == ESP_OK && config.IsValid()) {
+    return config;
+  }
+  return std::nullopt;
+}
+
 Result<Unit, PlatformError>
 VehicleControlPlatformEsp32::SaveStabilizationConfig(
     const StabilizationConfig& config) {
@@ -261,17 +270,10 @@ unsigned VehicleControlPlatformEsp32::GetWebSocketClientCount() const noexcept {
   return WebSocketGetClientCount();
 }
 
-void VehicleControlPlatformEsp32::SendTelem(std::string_view json) {
-  // Не блокировать цикл управления на TCP: ставим в очередь, отправляет ws_telem
-  char buffer[2048];
-  if (json.size() >= sizeof(buffer)) {
-    ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes — увеличьте буфер",
-             json.size(), sizeof(buffer) - 1);
-  }
-  size_t len = std::min(json.size(), sizeof(buffer) - 1);
-  std::memcpy(buffer, json.data(), len);
-  buffer[len] = '\0';
-  WebSocketEnqueueTelem(buffer);
+void VehicleControlPlatformEsp32::PublishTelem(const TelemetrySnapshot& snap) {
+  // FW-RF8: из control loop — только публикация POD-снимка в очередь (memcpy,
+  // без аллокаций). Построение JSON и отправку по WS делает telem_sender_task.
+  WebSocketEnqueueTelem(snap);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -7,22 +7,75 @@
 
 | ID | Задача | Приоритет | Статус |
 |----|--------|-----------|--------|
-| [FW-R1](FW-R1-failsafe-trim-override.md) | Failsafe: нейтраль перезаписывается trim'ом | HIGH (safety) | [ ] |
+| [FW-R1](FW-R1-failsafe-trim-override.md) | Failsafe: нейтраль перезаписывается trim'ом | HIGH (safety) | [x] |
 | [FW-R2](FW-R2-oversteer-slip-rate-spike.md) | OversteerGuard: ложный всплеск slip_rate | HIGH | [x] |
-| [FW-R3](FW-R3-mag-frame-mix.md) | Смесь СК при передаче mag в Madgwick | MEDIUM | [ ] |
+| [FW-R3](FW-R3-mag-frame-mix.md) | Смесь СК при передаче mag в Madgwick | MEDIUM | [x] |
 | [FW-R4](FW-R4-failsafe-wraparound-check.md) | Failsafe: wrap-around-проверка вредна (нужно решение) | LOW | [x] wontfix |
 | [FW-R5](FW-R5-motion-driver-min-throttle.md) | MotionDriver: min_throttle vs комментарий | LOW | [x] |
-| [FW-R6](FW-R6-ws-telem-double-buffer-race.md) | Гонка двойной буферизации WS-телеметрии | MEDIUM | [ ] |
-| [FW-R7](FW-R7-ws-udp-param-truncation.md) | Усечение hz/port до валидации | LOW | [ ] |
+| [FW-R6](FW-R6-ws-telem-double-buffer-race.md) | Гонка двойной буферизации WS-телеметрии | MEDIUM | [x] |
+| [FW-R7](FW-R7-ws-udp-param-truncation.md) | Усечение hz/port до валидации | LOW | [x] |
 | [FW-R8](FW-R8-protocol-static-seq.md) | Protocol: static неатомарный seq | LOW | [x] |
-| [FW-RF1](FW-RF1-ws-handlers-dedup.md) | Дедупликация WS-хендлеров | MEDIUM | [ ] |
-| [FW-RF2](FW-RF2-protocol-validate-frame.md) | Общая валидация кадров протокола | LOW | [ ] |
-| [FW-RF3](FW-RF3-imu-handler-split.md) | ImuHandler::Update: разбиение + дедуп проекции | MEDIUM | [ ] |
-| [FW-RF4](FW-RF4-kids-presets-single-source.md) | Kids-пресеты: единый источник истины | LOW | [ ] |
-| [FW-RF5](FW-RF5-config-snapshot-per-tick.md) | Один snapshot конфига на итерацию | MEDIUM | [ ] |
-| [FW-RF6](FW-RF6-stab-manager-apply-dedup.md) | StabilizationManager: дедуп Apply | LOW | [ ] |
+| [FW-RF1](FW-RF1-ws-handlers-dedup.md) | Дедупликация WS-хендлеров | MEDIUM | [x] |
+| [FW-RF2](FW-RF2-protocol-validate-frame.md) | Общая валидация кадров протокола | LOW | [x] |
+| [FW-RF3](FW-RF3-imu-handler-split.md) | ImuHandler::Update: разбиение + дедуп проекции | MEDIUM | [x] |
+| [FW-RF4](FW-RF4-kids-presets-single-source.md) | Kids-пресеты: единый источник истины | LOW | [x] |
+| [FW-RF5](FW-RF5-config-snapshot-per-tick.md) | Один snapshot конфига на итерацию | MEDIUM | [x] |
+| [FW-RF6](FW-RF6-stab-manager-apply-dedup.md) | StabilizationManager: дедуп Apply | LOW | [x] |
 | [FW-RF7](FW-RF7-slew-rate-namespace.md) | slew_rate.hpp: namespace, комментарий | LOW | [x] |
-| [FW-CI1](FW-CI1-firmware-ci-job.md) | Настроить отдельный CI job для тестов прошивки | MEDIUM | [ ] |
+| [FW-CI1](FW-CI1-firmware-ci-job.md) | Настроить отдельный CI job для тестов прошивки | MEDIUM | [x] |
+
+> `[x]` = смержено в `develop`. Все 16 задач исходного ревью 2026-06-10 закрыты.
+
+## Реестр — находки железных сессий и CI (2026-06-13/14)
+
+Задачи вне исходного ревью 2026-06-10: выявлены на железных сессиях и при
+анализе записанной телеметрии, плюс отдельный CI-job на clang-format.
+
+| ID | Задача | Приоритет | Статус |
+|----|--------|-----------|--------|
+| [FW-R9](FW-R9-no-imu-null-deref.md) | Null-разыменование при отсутствии IMU | HIGH | [x] |
+| [FW-R10](FW-R10-lsm6ds3-whoami-0x69.md) | LSM6DS3 WHO_AM_I 0x69 не принимается | MEDIUM | [x] |
+| [FW-R11](FW-R11-wifi-sta-reconfig-mid-connect.md) | Новый STA-пароль не применяется на лету | MEDIUM | [x] |
+| [FW-R12](FW-R12-steering-throttle-limited-range.md) | Урезанный ход руля/газа | MEDIUM | [x] не-баг ПО |
+| [FW-R13](FW-R13-webui-no-telemetry-no-link.md) | Web UI: нет телеметрии/связи (гейт client-count) | HIGH | [x] |
+| [FW-R14](FW-R14-madgwick-yaw-drift-at-tilt.md) | Слитый yaw Madgwick дрейфит на наклоне | LOW | [ ] |
+| [FW-R15](FW-R15-stab-config-lost-on-mode-switch.md) | Кастом настройка режима теряется при переключении | MEDIUM | [ ] |
+| [FW-RF8](FW-RF8-telemetry-off-control-loop.md) | Развязать телеметрию и control loop | MEDIUM | [ ] |
+| [FW-R16](FW-R16-control-loop-below-500hz.md) | Control loop ~350 Гц вместо 500 при stab=ON | MEDIUM | [ ] |
+| [FW-R21](FW-R21-kids-mode-limits-dangling-config.md) | Kids Mode: лимиты скорости/газа не применяются (висячий указатель на конфиг) | HIGH (safety) | [ ] |
+| [FW-R22](FW-R22-yaw-stab-reverse-oscillation.md) | Рулевая стабилизация дёргает руль в реверсе (неверный знак ОС) | HIGH | [ ] |
+| [FW-R23](FW-R23-stab-controllers-dangling-config.md) | Висячий указатель на конфиг у yaw/pitch/slip/oversteer (UB + конфиг не доезжает) | HIGH | [ ] |
+| [FW-CI3](FW-CI3-clang-format-ci.md) | CI-проверка clang-format прошивки | LOW | [x] |
+| [FW-CI4](FW-CI4-coverage-ci.md) | CI-отчёт покрытия host-тестов прошивки | LOW | [ ] |
+| [FW-RF9](FW-RF9-nodiscard-result-functions.md) | Добавить [[nodiscard]] к bool/Result функциям | LOW | [x] |
+
+## Реестр — исследования (spike)
+
+Задачи-исследования: артефакт — замеры + рекомендация/ADR, а не код в проде.
+
+| ID | Задача | Приоритет | Статус |
+|----|--------|-----------|--------|
+| [FW-S1](FW-S1-telemetry-transport-format-research.md) | Формат и транспорт телеметрии (binary, прямая отправка в backend, частота 100 Гц+) | LOW | [ ] |
+| [FW-S2](FW-S2-sil-physics-model-epic.md) | **ЭПИК:** SIL-симуляция на физ-модели + валидация на реальных поездках (replay → closed-loop) | MEDIUM | [ ] |
+| [FW-S3](FW-S3-ekf-speed-reliability.md) | Достоверность оценки скорости EKF (vx-дрейф, vx_var до 193); влияет на kids speed limit и детект реверса | LOW | [ ] |
+
+### Подреестр FW-S2 (декомпозиция эпика)
+
+Архитектура: Python-модель ↔ host-exe прошивки (`sim_host`/`StdioPlatform`),
+логическое время, batch (replay) + interactive (closed-loop). Точки старта —
+FW-S2.1 (C++) и FW-S2.4 (Python) независимы.
+
+| ID | Подзадача | Язык | Приоритет | Зависит | Статус |
+|----|-----------|------|-----------|---------|--------|
+| [FW-S2.1](FW-S2.1-sim-host-stdio-platform.md) | `sim_host` exe + `StdioPlatform` + протокол | C++ | MEDIUM | — | [x] |
+| [FW-S2.2](FW-S2.2-python-replay-harness.md) | Python replay (batch) + инварианты | Python | MEDIUM | S2.1 | [x] |
+| [FW-S2.3](FW-S2.3-scenario-asserts.md) | Сценарные replay-ассерты на golden | Python | MEDIUM | S2.2 | [ ] |
+| [FW-S2.4](FW-S2.4-python-vehicle-model.md) | Физ-модель машинки на Python | Python | MEDIUM | — | [x] |
+| [FW-S2.5](FW-S2.5-closed-loop-sil.md) | Closed-loop SIL (interactive) | Python | MEDIUM | S2.1, S2.4 | [x] |
+| [FW-S2.6](FW-S2.6-model-validation.md) | Валидация модели на реальных поездках | Python | MEDIUM | S2.4 | [ ] |
+| [FW-S2.7](FW-S2.7-ci-fixtures.md) | CI-job, фикстуры, raw-log follow-up | CI/docs | LOW | S2.2 | [x] |
+| [FW-S2.8](FW-S2.8-sil-plausibility-kids.md) | Plausibility + детский лимит (sim_host --drive-mode) | C++/Python | MEDIUM | S2.5 | [x] |
+| [FW-S2.9](FW-S2.9-vehicle-profiles.md) | Профили физ-модели (разные параметры машины) | Python | MEDIUM | S2.4 | [ ] |
 
 ## План выполнения (по удобству)
 

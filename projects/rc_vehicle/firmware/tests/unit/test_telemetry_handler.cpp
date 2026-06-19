@@ -55,6 +55,28 @@ TEST_F(TelemetryHandlerTest, Sends_AtExactMultiples) {
   EXPECT_EQ(platform_.GetTelemSendCount(), 2);
 }
 
+// Debug-режим 100 Гц: интервал отправки конфигурируем
+// (RC_TELEM_SEND_INTERVAL_MS), а не захардкожен. Проверяем, что
+// TelemetryHandler с интервалом 10 мс шлёт на каждом 10-мс тике (100 Гц) и не
+// чаще.
+TEST_F(TelemetryHandlerTest, Sends_At100Hz_WhenInterval10ms) {
+  TelemetryHandler fast_handler(platform_, 10);  // 10 ms = 100 Hz
+
+  fast_handler.SendTelemetry(10, MakeSnap());
+  EXPECT_EQ(platform_.GetTelemSendCount(), 1);
+
+  // 5 мс позже — ещё рано для следующего кадра
+  fast_handler.SendTelemetry(15, MakeSnap());
+  EXPECT_EQ(platform_.GetTelemSendCount(), 1);
+
+  // На следующем 10-мс интервале
+  fast_handler.SendTelemetry(20, MakeSnap());
+  EXPECT_EQ(platform_.GetTelemSendCount(), 2);
+
+  fast_handler.SendTelemetry(30, MakeSnap());
+  EXPECT_EQ(platform_.GetTelemSendCount(), 3);
+}
+
 // FW-R13: control loop больше НЕ гейтит телеметрию по числу клиентов —
 // решение о доставке принимает транспорт (WebSocketSendTelem шлёт только
 // реальным WS-fd). Поэтому SendTelemetry ставит кадр в очередь независимо
@@ -180,6 +202,59 @@ TEST_F(TelemetryHandlerTest, JsonContainsKidsMode) {
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "active")));
   EXPECT_NEAR(cJSON_GetObjectItem(kids, "throttle_limit")->valuedouble, 0.15,
               0.01);
+
+  cJSON_Delete(root);
+}
+
+// ─── FW-RF8: телеметрия развязана с control loop ────────────────────────────
+
+// SendTelemetry публикует POD-снимок в платформу (PublishTelem), а не строит
+// JSON. Снимок доходит до платформы как есть.
+TEST_F(TelemetryHandlerTest, PublishesSnapshotToPlatform) {
+  auto snap = MakeSnap();
+  snap.throttle = 0.42f;
+
+  handler_->SendTelemetry(50, snap);
+
+  EXPECT_EQ(platform_.GetTelemSendCount(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastSnap().throttle, 0.42f);
+}
+
+// failsafe берётся из снимка (а не из платформы во время постройки JSON) —
+// это и позволяет строить JSON вне control loop.
+TEST_F(TelemetryHandlerTest, FailsafeComesFromSnapshotNotPlatform) {
+  // Платформа НЕ в failsafe, но снимок говорит обратное → в JSON true.
+  platform_.SetFailsafeActive(false);
+  auto snap = MakeSnap();
+  snap.failsafe = true;
+
+  handler_->SendTelemetry(50, snap);
+  cJSON* root = cJSON_Parse(platform_.GetLastTelem().c_str());
+  ASSERT_NE(root, nullptr);
+
+  cJSON* link = cJSON_GetObjectItem(root, "link");
+  ASSERT_NE(link, nullptr);
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(link, "failsafe")));
+
+  cJSON_Delete(root);
+}
+
+// BuildTelemJson — чистая функция от снимка (вызывается в задаче телеметрии).
+TEST(BuildTelemJsonTest, PureFunctionReflectsSnapshot) {
+  TelemetrySnapshot snap{};
+  snap.rc_ok = true;
+  snap.failsafe = false;
+  snap.uptime_ms = 12345;
+
+  std::string json = BuildTelemJson(snap);
+  cJSON* root = cJSON_Parse(json.c_str());
+  ASSERT_NE(root, nullptr);
+
+  EXPECT_STREQ(cJSON_GetObjectItem(root, "type")->valuestring, "telem");
+  EXPECT_NEAR(cJSON_GetObjectItem(root, "uptime_ms")->valuedouble, 12345, 0.5);
+  cJSON* link = cJSON_GetObjectItem(root, "link");
+  ASSERT_NE(link, nullptr);
+  EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(link, "failsafe")));
 
   cJSON_Delete(root);
 }
