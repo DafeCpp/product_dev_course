@@ -27,6 +27,7 @@ from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
 from experiment_service.services.dependencies import (
     ensure_permission,
+    ensure_project_context,
     get_idempotency_service,
     get_sensor_service,
     require_current_user,
@@ -326,7 +327,7 @@ async def get_sensor_projects(request: web.Request):
     membership of arbitrary sensors.
     """
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "experiments.view")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
 

@@ -7,9 +7,9 @@ from experiment_service.api.utils import paginated_response, pagination_params, 
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.services.dependencies import (
     ensure_permission,
+    ensure_project_context,
     get_backfill_service,
     require_current_user,
-    resolve_project_id,
 )
 
 routes = web.RouteTableDef()
@@ -32,7 +32,7 @@ def _serialize_task(task: dict) -> dict:
 @routes.post("/api/v1/sensors/{sensor_id}/backfill")
 async def start_backfill(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "runs.create")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     service = await get_backfill_service(request)
@@ -48,7 +48,7 @@ async def start_backfill(request: web.Request):
 @routes.get("/api/v1/sensors/{sensor_id}/backfill")
 async def list_backfill_tasks(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "experiments.view")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     service = await get_backfill_service(request)
@@ -67,7 +67,7 @@ async def list_backfill_tasks(request: web.Request):
 @routes.get("/api/v1/sensors/{sensor_id}/backfill/{task_id}")
 async def get_backfill_task(request: web.Request):
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "experiments.view")
     task_id = parse_uuid(request.match_info["task_id"], "task_id")
     service = await get_backfill_service(request)
