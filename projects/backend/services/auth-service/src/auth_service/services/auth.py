@@ -156,24 +156,19 @@ class AuthService:
 
         hashed_pw = hash_password(password)
 
-        # Atomically claim the invite BEFORE creating the user so two
-        # concurrent registrations cannot consume the same token (TOCTOU).
+        # Create the user first; claim the invite atomically afterwards so no
+        # intermediate state (claimed but no user) is ever visible.
+        user = await self._user_repo.create(username, email, hashed_pw, password_change_required=False)
+
         if validated_invite is not None and self._invite_repo is not None and invite_token is not None:
-            claimed = await self._invite_repo.claim(invite_token)
+            try:
+                claimed = await self._invite_repo.claim_and_assign(invite_token, user.id)
+            except Exception:
+                await self._user_repo.delete(user.id)
+                raise
             if claimed is None:
+                await self._user_repo.delete(user.id)
                 raise InvalidTokenError("Invalid or expired invite token")
-
-        try:
-            user = await self._user_repo.create(username, email, hashed_pw, password_change_required=False)
-        except Exception:
-            # Roll back the invite claim so the token remains usable on retry.
-            if validated_invite is not None and self._invite_repo is not None and invite_token is not None:
-                await self._invite_repo.unclaim(invite_token)
-            raise
-
-        if validated_invite is not None and self._invite_repo is not None and invite_token is not None:
-            # Record the consumer now that the user row exists (used_by FK).
-            await self._invite_repo.mark_used(invite_token, user.id)
 
         tokens = await self._create_tokens(str(user.id))
         await self._audit(

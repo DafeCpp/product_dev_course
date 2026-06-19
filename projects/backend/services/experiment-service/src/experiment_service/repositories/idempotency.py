@@ -17,8 +17,9 @@ class IdempotencyRecord:
     user_id: UUID
     request_path: str
     request_body_hash: bytes
-    response_status: int
-    response_body: dict
+    response_status: int | None
+    response_body: dict | None
+    completed: bool
 
 
 class IdempotencyRepository(BaseRepository):
@@ -32,7 +33,8 @@ class IdempotencyRepository(BaseRepository):
                    request_path,
                    request_body_hash,
                    response_status,
-                   response_body
+                   response_body,
+                   completed
             FROM request_idempotency
             WHERE idempotency_key = $1
             """,
@@ -42,21 +44,19 @@ class IdempotencyRepository(BaseRepository):
             return None
         return self._to_record(record)
 
-    async def save(
+    async def reserve(
         self,
         key: str,
         user_id: UUID,
         request_path: str,
         request_body_hash: bytes,
-        response_status: int,
-        response_body: dict,
     ) -> bool:
-        """Persist the response for an idempotency key.
+        """Insert a pending placeholder to claim this idempotency key.
 
-        Returns ``True`` if this call inserted the row, ``False`` if a record
-        for the key already existed (a concurrent request won the race). The
-        caller uses this to return the already-stored response instead of
-        silently diverging.
+        Returns ``True`` if the placeholder was inserted (this request owns
+        the key and may proceed with the mutation). Returns ``False`` if the
+        key already exists (another request is in progress or already
+        completed — caller should inspect the existing record).
         """
         record = await self._fetchrow(
             """
@@ -65,10 +65,9 @@ class IdempotencyRepository(BaseRepository):
                 user_id,
                 request_path,
                 request_body_hash,
-                response_status,
-                response_body
+                completed
             )
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+            VALUES ($1, $2, $3, $4, false)
             ON CONFLICT (idempotency_key) DO NOTHING
             RETURNING idempotency_key
             """,
@@ -76,10 +75,28 @@ class IdempotencyRepository(BaseRepository):
             user_id,
             request_path,
             request_body_hash,
+        )
+        return record is not None
+
+    async def complete(
+        self,
+        key: str,
+        response_status: int,
+        response_body: dict,
+    ) -> None:
+        """Mark a reserved key as complete with the actual response."""
+        await self._execute(
+            """
+            UPDATE request_idempotency
+            SET completed = true,
+                response_status = $2,
+                response_body = $3::jsonb
+            WHERE idempotency_key = $1
+            """,
+            key,
             response_status,
             json.dumps(response_body, sort_keys=True, separators=(",", ":"), default=str),
         )
-        return record is not None
 
     async def delete_expired(self, created_before: datetime) -> int:
         """Delete idempotency records older than *created_before*. Returns count."""
@@ -94,6 +111,8 @@ class IdempotencyRepository(BaseRepository):
         body = record["response_body"]
         if isinstance(body, str):
             body = json.loads(body)
+        elif body is None:
+            body = None
         return IdempotencyRecord(
             key=record["idempotency_key"],
             user_id=record["user_id"],
@@ -101,7 +120,5 @@ class IdempotencyRepository(BaseRepository):
             request_body_hash=record["request_body_hash"],
             response_status=record["response_status"],
             response_body=body,
+            completed=record["completed"],
         )
-
-
-

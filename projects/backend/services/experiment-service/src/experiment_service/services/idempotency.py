@@ -33,53 +33,51 @@ class IdempotencyService:
         digest = hashlib.sha256(serialized.encode("utf-8")).digest()
         return serialized, digest
 
-    async def get_cached_response(
+    async def reserve_or_get_cached(
         self,
         key: str,
         user_id: UUID,
         request_path: str,
         body_hash: bytes,
     ) -> IdempotencyPayload | None:
-        record = await self._repository.get(key)
-        if record is None:
-            return None
-        self._assert_record(record, user_id, request_path, body_hash)
-        return IdempotencyPayload(status=record.response_status, body=record.response_body)
+        """Reserve this key before executing a mutation, or return a cached result.
 
-    async def store_response(
-        self,
-        key: str,
-        user_id: UUID,
-        request_path: str,
-        body_hash: bytes,
-        response_status: int,
-        response_body: dict[str, Any],
-    ) -> IdempotencyPayload | None:
-        """Persist the response, resolving concurrent same-key races.
+        Inserts a pending placeholder row before the mutation executes so that
+        concurrent requests with the same key cannot both run the mutation.
 
-        Returns ``None`` when this request owns the key (the caller returns its
-        freshly-computed response). If a concurrent request already stored a
-        response under this key, returns that stored payload so both callers
-        emit an identical result; raises ``IdempotencyConflictError`` (→ 409)
-        if the stored request used a different body/path/user.
+        Returns ``None`` when this request has reserved the key and may proceed
+        with the mutation. Returns an ``IdempotencyPayload`` when the key was
+        already completed by a previous (or concurrent) request — the caller
+        should return this payload directly.
+
+        Raises ``IdempotencyConflictError`` (→ 409) if the key was used by a
+        different user / path / body. Raises ``HTTPServiceUnavailable`` (→ 503)
+        if another request currently holds the key (in progress).
         """
-        inserted = await self._repository.save(
-            key,
-            user_id,
-            request_path,
-            body_hash,
-            response_status,
-            response_body,
-        )
-        if inserted:
-            return None
+        reserved = await self._repository.reserve(key, user_id, request_path, body_hash)
+        if reserved:
+            return None  # we own the key — proceed with mutation
+
         existing = await self._repository.get(key)
         if existing is None:
-            # The winning row was removed (e.g. TTL cleanup) between INSERT and
-            # SELECT — nothing left to reconcile against.
+            # Row was removed between reserve and get (TTL cleanup); treat as a miss.
             return None
         self._assert_record(existing, user_id, request_path, body_hash)
+        if not existing.completed:
+            raise web.HTTPServiceUnavailable(
+                text="Duplicate request in progress — retry with the same Idempotency-Key after the original completes"
+            )
+        assert existing.response_status is not None and existing.response_body is not None
         return IdempotencyPayload(status=existing.response_status, body=existing.response_body)
+
+    async def complete_response(
+        self,
+        key: str,
+        response_status: int,
+        response_body: dict[str, Any],
+    ) -> None:
+        """Mark the reserved key as complete with the actual response."""
+        await self._repository.complete(key, response_status, response_body)
 
     @staticmethod
     def build_response(payload: IdempotencyPayload) -> web.Response:
@@ -96,6 +94,3 @@ class IdempotencyService:
             raise IdempotencyConflictError("Idempotency key belongs to another request")
         if record.request_body_hash != body_hash:
             raise IdempotencyConflictError("Idempotency key reused with different payload")
-
-
-
