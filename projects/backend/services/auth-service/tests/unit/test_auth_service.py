@@ -298,7 +298,7 @@ class TestRegister:
             updated_at=datetime.now(timezone.utc),
         ))
         invite_repo.get_by_token = AsyncMock(return_value=sample_invite)
-        invite_repo.mark_used = AsyncMock()
+        invite_repo.claim_and_assign = AsyncMock(return_value=sample_invite)
 
         user, tokens = await auth_service_invite.register(
             username="newuser",
@@ -308,7 +308,7 @@ class TestRegister:
         )
 
         assert user is not None
-        invite_repo.mark_used.assert_called_once()
+        invite_repo.claim_and_assign.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_register_invite_mode_missing_token(self, auth_service_invite):
