@@ -59,6 +59,11 @@ class Settings(BaseServiceSettings):
     rest_rate_limit_readings_per_window: int = 60_000 # max readings per window
     rest_rate_limit_window_seconds: float = 60.0    # window duration in seconds
 
+    # Config-service poller — dynamic rate-limit updates without restart
+    config_client_enabled: bool = True
+    config_client_url: str = "http://config-service:8005"
+    config_client_poll_interval_seconds: float = 5.0
+
     # Disk spool — write-ahead buffer when DB writes are unavailable
     spool_enabled: bool = True
     spool_dir: str = "/tmp/telemetry-spool"
