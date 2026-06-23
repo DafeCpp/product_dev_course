@@ -26,13 +26,8 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0', // Доступ извне контейнера
       port: 3000,
       proxy: {
-        // Experiment-service API and Telemetry ingest (through auth-proxy)
+        // All API traffic (experiment-service, auth-service, telemetry) through auth-proxy
         '/api': {
-          target: authProxyUrl,
-          changeOrigin: true,
-        },
-        // Auth-service projects API (through auth-proxy)
-        '/projects': {
           target: authProxyUrl,
           changeOrigin: true,
         },
