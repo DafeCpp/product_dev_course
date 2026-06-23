@@ -13,6 +13,7 @@ type Config = {
     port: number
     targetExperimentUrl: string
     targetTelemetryUrl: string
+    targetConfigServiceUrl: string
     targetScriptUrl: string
     authUrl: string
     corsOrigins: string[]
@@ -48,6 +49,8 @@ export function parseConfig(): Config {
             // In Docker, `localhost` would mean "inside auth-proxy container".
             // Default to the docker-compose service name so telemetry proxy works out of the box.
             process.env.TARGET_TELEMETRY_URL || 'http://telemetry-ingest-service:8003',
+        targetConfigServiceUrl:
+            process.env.TARGET_CONFIG_SERVICE_URL || 'http://config-service:8005',
         targetScriptUrl:
             process.env.TARGET_SCRIPT_URL || 'http://script-service:8004',
         authUrl: process.env.AUTH_URL || 'http://localhost:8001',
@@ -1367,6 +1370,79 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
             return reply.send(Buffer.from(body))
         }
     )
+
+    // Config-service proxy (ADR-009 Variant B: explicit service prefix).
+    // Must be registered BEFORE the generic /api catch-all so it wins route matching.
+    //
+    // Security model:
+    //  - Strip all incoming X-User-* headers to prevent client spoofing.
+    //  - Re-inject from preHandler-attached permissions (permissionsIsSuperadmin etc.).
+    //  - Only expose admin CRUD + schema endpoints; bulk polling is internal-only.
+
+    // Block the internal bulk-polling endpoint: consumers call config-service directly,
+    // not through the public proxy.
+    app.all('/api/config-service/v1/configs/bulk', async (_req, reply) => {
+        reply.status(404).send({ error: 'Not Found' })
+    })
+
+    await app.register(httpProxy, {
+        prefix: '/api/config-service',
+        upstream: config.targetConfigServiceUrl,
+        rewritePrefix: '/api',
+        http2: false,
+        replyOptions: {
+            rewriteRequestHeaders: (req, headers) => {
+                const cookies = parseCookies(req.headers.cookie as string | undefined)
+                const access = cookies[config.accessCookieName]
+                const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+                app.log.info({
+                    method: req.method,
+                    url: req.url,
+                    upstream: config.targetConfigServiceUrl,
+                    has_auth_token: !!access,
+                    trace_id: outgoingHeaders['X-Trace-Id'],
+                    request_id: outgoingHeaders['X-Request-Id'],
+                }, 'Proxying request to Config Service')
+
+                const newHeaders: Record<string, string> = {}
+
+                for (const [key, value] of Object.entries(headers)) {
+                    // Strip all incoming X-User-* to prevent client spoofing.
+                    if (key.toLowerCase().startsWith('x-user-')) continue
+                    if (typeof value === 'string') {
+                        newHeaders[key] = value
+                    } else if (Array.isArray(value) && value.length > 0) {
+                        newHeaders[key] = String(value[0])
+                    }
+                }
+
+                newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+
+                if (access) {
+                    newHeaders['authorization'] = `Bearer ${access}`
+                    const decoded = decodeJWT(access)
+                    if (decoded?.user_id) {
+                        newHeaders['X-User-Id'] = decoded.user_id
+                    }
+                }
+
+                // Re-inject RBAC headers from preHandler (attached for all /api/* requests).
+                const permIsSuperadmin = (req as any).permissionsIsSuperadmin
+                if (permIsSuperadmin !== undefined) {
+                    newHeaders['X-User-Is-Superadmin'] = permIsSuperadmin ? 'true' : 'false'
+                    newHeaders['X-User-System-Permissions'] = (req as any).permissionsSystemPerms ?? ''
+                    newHeaders['X-User-Permissions'] = (req as any).permissionsProjectPerms ?? ''
+                }
+
+                delete newHeaders['cookie']
+
+                return newHeaders
+            },
+        },
+    })
 
     // Experiment service proxy (+future gateway), with WS/SSE
     await app.register(httpProxy, {
