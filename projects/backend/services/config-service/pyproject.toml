@@ -23,7 +23,7 @@ opentelemetry-instrumentation-aiohttp-server = "^0.60b0"
 backend-common = { path = "../../common", develop = true }
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.2.2"
+pytest = ">=8.2.2,<10.0.0"
 pytest-asyncio = "^0.21.1"
 ruff = "^0.5.0"
 mypy = "^1.10.0"
