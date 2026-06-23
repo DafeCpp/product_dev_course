@@ -1317,6 +1317,15 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         })
     }
 
+    // Projects API (CRUD, members, roles) lives in auth-service.
+    // Must be registered BEFORE the generic `/api` proxy so it wins route matching.
+    await registerAuthProxy(app, {
+        prefix: '/api/v1/projects',
+        upstream: config.authUrl,
+        accessCookieName: config.accessCookieName,
+        ensureJsonContentType: false,
+    })
+
     // Sensor error log lives on telemetry-ingest-service, not experiment-service.
     // Must be registered BEFORE the generic `/api` proxy so it wins route matching.
     app.get<{ Params: { sensorId: string } }>(
