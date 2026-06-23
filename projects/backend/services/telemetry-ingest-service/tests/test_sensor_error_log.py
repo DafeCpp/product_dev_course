@@ -67,13 +67,19 @@ async def _fetch_errors(db_uri: str, sensor_id: UUID) -> list[dict]:
 
 async def test_rate_limited_request_logs_error(service_client, pgsql, monkeypatch):
     """A 429 response must produce one sensor_error_log row with error_code='rate_limited'."""
+    from telemetry_ingest_service.middleware.rate_limit_config import RateLimitConfig
     from telemetry_ingest_service.middleware.rest_rate_limit import IngestRateLimiter
 
     # Limiter that blocks after 1 request.
     tight = IngestRateLimiter(
-        max_requests_per_window=1,
-        max_readings_per_window=100_000,
-        window_seconds=60.0,
+        RateLimitConfig(
+            rest_max_requests=1,
+            rest_max_readings=100_000,
+            rest_window_seconds=60.0,
+            ws_max_messages=0,
+            ws_max_readings=0,
+            ws_window_seconds=1.0,
+        )
     )
     monkeypatch.setattr(
         "telemetry_ingest_service.api.routes.telemetry._rest_limiter", tight

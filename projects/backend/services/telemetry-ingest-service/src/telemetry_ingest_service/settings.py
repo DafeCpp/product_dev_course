@@ -43,13 +43,19 @@ class Settings(BaseServiceSettings):
     # WebSocket ingest limits
     ws_max_message_bytes: int = 1 * 1024 * 1024  # 1 MB per message
 
-    # WebSocket per-sensor rate limiting (fixed window)
+    # Per-sensor rate limiting (fixed window).  A limit of 0 means "unlimited"
+    # for that counter.  Values are loaded at startup; a future config-service
+    # poller may override them at runtime via the shared RateLimitConfig holder.
+
+    # WebSocket per-sensor rate limiting
     ws_rate_limit_messages_per_window: int = 600    # max frames per window
     ws_rate_limit_readings_per_window: int = 60_000 # max readings per window
     ws_rate_limit_window_seconds: float = 1.0       # window duration in seconds
 
-    # REST ingest per-sensor rate limiting (fixed window)
-    rest_rate_limit_requests_per_window: int = 60   # max requests per window
+    # REST ingest per-sensor rate limiting.  600 req / 60s window = 10 req/s
+    # sustained per sensor, matching the sensor-simulator's nominal 10 Hz cadence
+    # (the old default of 60/60s = 1 req/s caused spurious 429s during testing).
+    rest_rate_limit_requests_per_window: int = 600  # max requests per window
     rest_rate_limit_readings_per_window: int = 60_000 # max readings per window
     rest_rate_limit_window_seconds: float = 60.0    # window duration in seconds
 
