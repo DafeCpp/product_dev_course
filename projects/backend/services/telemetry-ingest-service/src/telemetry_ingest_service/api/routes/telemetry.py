@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from telemetry_ingest_service.api.utils import read_json
 from telemetry_ingest_service.core.exceptions import NotFoundError, ScopeMismatchError, UnauthorizedError
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO
+from telemetry_ingest_service.middleware.rate_limit_config import RATE_LIMIT_CONFIG
 from telemetry_ingest_service.middleware.rest_rate_limit import IngestRateLimiter
 from telemetry_ingest_service.prometheus_metrics import (
     INGEST_RATE_LIMITED,
@@ -67,11 +68,7 @@ def _fire_and_forget_error_log(
     asyncio.create_task(_log())
 
 
-_rest_limiter = IngestRateLimiter(
-    max_requests_per_window=settings.rest_rate_limit_requests_per_window,
-    max_readings_per_window=settings.rest_rate_limit_readings_per_window,
-    window_seconds=settings.rest_rate_limit_window_seconds,
-)
+_rest_limiter = IngestRateLimiter(RATE_LIMIT_CONFIG)
 
 
 def _normalize_bearer(value: str | None) -> str | None:
@@ -131,7 +128,7 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
             text=f"Rate limit exceeded. Retry in {retry_after}s.",
             headers={
                 "Retry-After": str(retry_after),
-                "X-RateLimit-Limit": str(_rest_limiter._max_requests),
+                "X-RateLimit-Limit": str(_rest_limiter.max_requests),
             },
         )
 

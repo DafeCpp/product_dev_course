@@ -12,6 +12,10 @@ When either counter is exceeded ``check()`` returns a ``RateLimitExceeded``
 dataclass instead of raising — the caller decides how to surface the error
 (send a JSON error frame and keep the connection alive).
 
+Limits are read from a shared :class:`RateLimitConfig` on every ``check()``,
+so runtime updates take effect immediately.  A limit of ``0`` means *unlimited*
+for that counter.
+
 Thread safety: asyncio is single-threaded; no locking needed.
 """
 from __future__ import annotations
@@ -20,6 +24,8 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
+
+from telemetry_ingest_service.middleware.rate_limit_config import RateLimitConfig
 
 
 @dataclass(frozen=True)
@@ -42,22 +48,14 @@ class WsRateLimiter:
     """Fixed-window rate limiter keyed by sensor_id.
 
     Args:
-        max_messages: maximum WS frames per window.
-        max_readings: maximum telemetry readings per window.
-        window_seconds: window duration in seconds.
+        config: shared, mutable rate-limit configuration.  Limits are read
+            live on every ``check()`` so runtime changes apply at once.
     """
 
-    def __init__(
-        self,
-        max_messages: int,
-        max_readings: int,
-        window_seconds: float,
-    ) -> None:
-        self._max_messages = max_messages
-        self._max_readings = max_readings
-        self._window = window_seconds
+    def __init__(self, config: RateLimitConfig) -> None:
+        self._config = config
         self._buckets: dict[UUID, _Window] = defaultdict(
-            lambda: _Window(reset_at=time.monotonic() + window_seconds)
+            lambda: _Window(reset_at=time.monotonic() + self._config.ws_window_seconds)
         )
 
     def check(self, sensor_id: UUID, reading_count: int) -> RateLimitExceeded | None:
@@ -67,27 +65,31 @@ class WsRateLimiter:
         Returns ``RateLimitExceeded`` without modifying counters when a limit
         would be exceeded (the frame is rejected before any state change).
         """
+        max_messages = self._config.ws_max_messages
+        max_readings = self._config.ws_max_readings
+
         now = time.monotonic()
         bucket = self._buckets[sensor_id]
 
         if now >= bucket.reset_at:
-            bucket.reset_at = now + self._window
+            bucket.reset_at = now + self._config.ws_window_seconds
             bucket.messages = 0
             bucket.readings = 0
 
         retry_after = max(0, int(bucket.reset_at - now))
 
-        if bucket.messages >= self._max_messages:
+        # A limit of 0 means "unlimited" for that counter.
+        if max_messages and bucket.messages >= max_messages:
             return RateLimitExceeded(
                 reason="messages",
-                limit=self._max_messages,
+                limit=max_messages,
                 retry_after=retry_after,
             )
 
-        if bucket.readings + reading_count > self._max_readings:
+        if max_readings and bucket.readings + reading_count > max_readings:
             return RateLimitExceeded(
                 reason="readings",
-                limit=self._max_readings,
+                limit=max_readings,
                 retry_after=retry_after,
             )
 

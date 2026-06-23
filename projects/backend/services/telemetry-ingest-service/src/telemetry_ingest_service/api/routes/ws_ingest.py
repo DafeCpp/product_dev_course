@@ -18,6 +18,7 @@ from telemetry_ingest_service.core.exceptions import (
     UnauthorizedError,
 )
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO, WsIngestMessageDTO
+from telemetry_ingest_service.middleware.rate_limit_config import RATE_LIMIT_CONFIG
 from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
 from telemetry_ingest_service.prometheus_metrics import (
     INGEST_RATE_LIMITED,
@@ -31,11 +32,7 @@ logger = structlog.get_logger(__name__)
 
 ws_routes = web.RouteTableDef()
 
-_ws_limiter = WsRateLimiter(
-    max_messages=settings.ws_rate_limit_messages_per_window,
-    max_readings=settings.ws_rate_limit_readings_per_window,
-    window_seconds=settings.ws_rate_limit_window_seconds,
-)
+_ws_limiter = WsRateLimiter(RATE_LIMIT_CONFIG)
 
 
 def _extract_ws_token(request: web.Request) -> str | None:
