@@ -64,10 +64,19 @@ logs/
 # Testing
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 .tox/
 .hypothesis/
 test-results/
+# Frontend coverage
+coverage/
+# Firmware coverage
+*.gcda
+*.gcno
+lcov.info
+lcov-report/
 
 # Jupyter
 .ipynb_checkpoints/

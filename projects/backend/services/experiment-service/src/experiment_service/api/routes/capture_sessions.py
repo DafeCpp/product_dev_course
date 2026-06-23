@@ -45,7 +45,7 @@ async def _ensure_run(request: web.Request, project_id, run_id):
     try:
         await run_service.get_run(project_id, run_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
 
 @routes.get("/api/v1/runs/{run_id}/capture-sessions")
@@ -100,13 +100,13 @@ async def create_capture_session(request: web.Request):
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text=str(exc)) from exc
+            raise web.HTTPConflict(text="Conflict") from exc
         if cached:
             return IdempotencyService.build_response(cached)
     try:
         session = await service.create_session(dto)
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
         capture_session_id=session.id,
@@ -144,7 +144,7 @@ async def create_capture_session(request: web.Request):
                 response_payload,
             )
         except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text=str(exc)) from exc
+            raise web.HTTPConflict(text="Conflict") from exc
     return web.json_response(response_payload, status=201)
 
 
@@ -173,7 +173,7 @@ async def stop_capture_session(request: web.Request):
     try:
         session = await service.update_session(project_id, session_id, dto)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
         capture_session_id=session.id,
@@ -216,7 +216,7 @@ async def list_capture_session_events(request: web.Request):
     try:
         session = await capture_service.get_session(project_id, session_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     if session.run_id != run_id:
         raise web.HTTPNotFound(text="Capture session not found")
     audit = await get_capture_session_event_service(request)
@@ -249,9 +249,9 @@ async def start_backfill(request: web.Request):
     try:
         session = await service.start_backfill(project_id, session_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
 
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
@@ -294,9 +294,9 @@ async def complete_backfill(request: web.Request):
     try:
         session, attached = await service.complete_backfill(project_id, session_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
 
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
@@ -338,7 +338,7 @@ async def delete_capture_session(request: web.Request):
     try:
         await service.delete_session(project_id, session_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     return web.Response(status=204)

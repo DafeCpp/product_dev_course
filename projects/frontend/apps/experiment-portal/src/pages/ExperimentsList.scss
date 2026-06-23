@@ -109,6 +109,17 @@
   color: var(--primary-hover);
 }
 
+.experiments-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.experiments-filter-row .experiments-filter-actions {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 720px) {
   .filter-panel__header,
   .experiments-filter-actions,
@@ -116,5 +127,18 @@
   .experiment-card__footer {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .experiments-filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .experiments-filter-row .filter-capsule {
+    flex-wrap: wrap;
+    border-radius: 18px;
+    padding: 8px;
+  }
+  .experiments-filter-row .filter-capsule > * {
+    flex: 1 1 45%;
   }
 }

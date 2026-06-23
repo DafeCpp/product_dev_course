@@ -41,29 +41,29 @@
 
 .status-chip--online {
   background: rgba(22, 163, 74, 0.1);
-  color: #15803d;
+  color: var(--success);
 }
 
 .status-chip--online .status-chip__dot {
-  background: #16a34a;
+  background: var(--success);
 }
 
 .status-chip--delayed {
   background: rgba(217, 119, 6, 0.1);
-  color: #b45309;
+  color: var(--warning);
 }
 
 .status-chip--delayed .status-chip__dot {
-  background: #d97706;
+  background: var(--warning);
 }
 
 .status-chip--offline {
   background: rgba(107, 114, 128, 0.1);
-  color: #4b5563;
+  color: var(--text-secondary);
 }
 
 .status-chip--offline .status-chip__dot {
-  background: #6b7280;
+  background: var(--text-secondary);
 }
 
 .status-chip--total {

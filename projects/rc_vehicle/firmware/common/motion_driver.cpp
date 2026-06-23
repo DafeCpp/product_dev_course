@@ -99,12 +99,14 @@ float MotionDriver::UpdateAccelerate(float current_accel_g, float dt_sec) {
     // LinearRamp: 0 → target_value за accel_duration_sec
     float t = std::min(phase_elapsed_sec_ / config_.accel_duration_sec, 1.0f);
     throttle = config_.target_value * t;
-  }
 
-  // Минимальный рабочий газ (только для LinearRamp)
-  if (config_.min_effective_throttle > 0.0f && throttle > 0.0f &&
-      throttle < config_.min_effective_throttle) {
-    throttle = config_.min_effective_throttle;
+    // Минимальный рабочий газ: мёртвая зона ESC, ниже порога мотор не крутит.
+    // Только для LinearRamp: в PID-режиме мёртвую зону проходит open-loop
+    // рампа фазы A, а пол поверх PI-выхода мешал бы сходимости (FW-R5).
+    if (config_.min_effective_throttle > 0.0f && throttle > 0.0f &&
+        throttle < config_.min_effective_throttle) {
+      throttle = config_.min_effective_throttle;
+    }
   }
 
   // Переход в круиз по истечении времени разгона

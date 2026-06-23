@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
 import type { ProjectCreate, ProjectUpdate } from '../types'
 import Modal from './Modal'
 import { Error, InfoRow, Loading } from './common'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifyError } from '../utils/notify'
 import './CreateRunModal.scss'
 
 type ProjectModalMode = 'create' | 'view' | 'edit'
@@ -20,7 +21,6 @@ interface ProjectModalProps {
 }
 
 function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
-    const queryClient = useQueryClient()
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [error, setError] = useState<string | null>(null)
@@ -126,41 +126,30 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         return 'Проект: просмотр'
     }, [canEditByRole, isCreate, uiMode])
 
-    const createMutation = useMutation({
-        mutationFn: async (data: ProjectCreate) => projectsApi.create(data),
-        onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ['projects'] })
-            notifySuccess('Проект создан')
-            onClose()
-        },
-        onError: (err: any) => {
-            const msg =
-                err?.response?.data?.error ||
-                err?.response?.data?.message ||
-                err?.message ||
-                'Ошибка создания проекта'
-            setError(msg)
-            notifyError(msg)
-        },
+    const createMutation = useApiMutation<unknown, ProjectCreate>({
+        mutationFn: (data) => projectsApi.create(data),
+        invalidateKeys: [['projects']],
+        successMessage: 'Проект создан',
+        onSuccess: () => onClose(),
+        onError: (err: any) => setError(
+            err?.response?.data?.error ||
+            err?.response?.data?.message ||
+            err?.message ||
+            'Ошибка создания проекта'
+        ),
     })
 
-    const updateMutation = useMutation({
-        mutationFn: async (data: ProjectUpdate) => projectsApi.update(projectId!, data),
-        onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ['projects'] })
-            if (projectId) await queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
-            notifySuccess('Проект обновлён')
-            onClose()
-        },
-        onError: (err: any) => {
-            const msg =
-                err?.response?.data?.error ||
-                err?.response?.data?.message ||
-                err?.message ||
-                'Ошибка обновления проекта'
-            setError(msg)
-            notifyError(msg)
-        },
+    const updateMutation = useApiMutation<unknown, ProjectUpdate>({
+        mutationFn: (data) => projectsApi.update(projectId!, data),
+        invalidateKeys: [['projects']],
+        successMessage: 'Проект обновлён',
+        onSuccess: () => onClose(),
+        onError: (err: any) => setError(
+            err?.response?.data?.error ||
+            err?.response?.data?.message ||
+            err?.message ||
+            'Ошибка обновления проекта'
+        ),
     })
 
     const isBusy = createMutation.isPending || updateMutation.isPending

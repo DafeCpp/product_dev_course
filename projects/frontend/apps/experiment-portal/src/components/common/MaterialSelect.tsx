@@ -27,6 +27,8 @@ type MaterialSelectProps = {
     multiple?: boolean
     size?: number
     placeholder?: string
+    icon?: ReactNode
+    variant?: 'default' | 'pill'
 }
 
 function MaterialSelect({
@@ -43,6 +45,8 @@ function MaterialSelect({
     multiple = false,
     size,
     placeholder = '',
+    icon,
+    variant = 'default',
 }: MaterialSelectProps) {
     const [isOpen, setIsOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement | null>(null)
@@ -202,9 +206,19 @@ function MaterialSelect({
             setIsOpen(false)
         }
     }
+    const isPill = variant === 'pill'
+    const rootClass = [
+        'md-select',
+        isPill ? 'md-select--pill' : '',
+        isPill && icon ? 'md-select--has-icon' : '',
+        className,
+    ]
+        .filter(Boolean)
+        .join(' ')
+
     return (
-        <div className={`md-select ${className}`.trim()}>
-            {label && (
+        <div className={rootClass}>
+            {label && !isPill && (
                 <label className="md-select__label" htmlFor={id}>
                     {label}
                 </label>
@@ -233,17 +247,30 @@ function MaterialSelect({
                             id={id}
                             ref={triggerRef}
                             type="button"
-                            className="md-select__trigger"
+                            className={`md-select__trigger${isPill ? ' md-select__trigger--pill' : ''}`}
                             onClick={toggleMenu}
                             onKeyDown={handleTriggerKeyDown}
                             disabled={isDisabled}
                             aria-haspopup="listbox"
                             aria-expanded={isOpen}
                             aria-controls={listboxId}
+                            aria-label={isPill && label ? label : undefined}
                         >
+                            {isPill && icon && (
+                                <span className="md-select__pill-icon">{icon}</span>
+                            )}
                             <span className={`md-select__value${selectedValue ? '' : ' is-placeholder'}`}>
-                                {selectedLabel || placeholder}
+                                {isPill ? (selectedValue ? selectedLabel : '') : (selectedLabel || placeholder)}
                             </span>
+                            {isPill && label && (
+                                <span
+                                    className={`md-select__float-label${
+                                        selectedValue || isOpen ? ' is-floating' : ''
+                                    }`}
+                                >
+                                    {label}
+                                </span>
+                            )}
                             <svg
                                 className="md-select__icon"
                                 viewBox="0 0 24 24"

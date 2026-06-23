@@ -69,7 +69,7 @@ async def register_sensor(request: web.Request):
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text=str(exc)) from exc
+            raise web.HTTPConflict(text="Conflict") from exc
         if cached:
             return IdempotencyService.build_response(cached)
     service = await get_sensor_service(request)
@@ -78,7 +78,7 @@ async def register_sensor(request: web.Request):
             dto, created_by=user.user_id, initial_profile=profile_dto
         )
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     payload = {"sensor": _sensor_response(sensor), "token": token}
     if idempotency_key:
         await idempotency_service.store_response(
@@ -170,7 +170,7 @@ async def get_sensor(request: web.Request):
     try:
         sensor = await service.get_sensor(project_id, sensor_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_sensor_response(sensor))
 
 
@@ -189,7 +189,7 @@ async def update_sensor(request: web.Request):
     try:
         sensor = await service.update_sensor(project_id, sensor_id, dto)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_sensor_response(sensor))
 
 
@@ -203,9 +203,9 @@ async def delete_sensor(request: web.Request):
     try:
         await service.delete_sensor(project_id, sensor_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     return web.Response(status=204)
 
 
@@ -219,7 +219,7 @@ async def rotate_sensor_token(request: web.Request):
     try:
         sensor, token = await service.rotate_token(project_id, sensor_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response({"sensor": _sensor_response(sensor), "token": token})
 
 
@@ -250,12 +250,12 @@ async def add_sensor_project(request: web.Request):
         repo = SensorRepository(pool)
         await repo.get_by_id(sensor_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     try:
         await service.add_sensor_project(sensor_id, project_id)
     except Exception as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
 
     return web.Response(status=204)
 
@@ -273,7 +273,7 @@ async def remove_sensor_project(request: web.Request):
     try:
         await service.remove_sensor_project(sensor_id, project_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     return web.Response(status=204)
 
@@ -305,7 +305,7 @@ async def get_sensor_heartbeat_history(request: web.Request):
     try:
         await service.get_sensor(project_id, sensor_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     timestamps = await service.get_heartbeat_history(sensor_id, minutes)
     return web.json_response(
         {
@@ -330,4 +330,4 @@ async def get_sensor_projects(request: web.Request):
             raise web.HTTPNotFound(text="Sensor not found")
         return web.json_response({"project_ids": [str(pid) for pid in project_ids]})
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc

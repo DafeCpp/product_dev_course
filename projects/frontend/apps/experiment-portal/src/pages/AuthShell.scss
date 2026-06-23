@@ -5,7 +5,7 @@
   justify-content: center;
   padding: 24px;
   position: relative;
-  background: #f8fafc;
+  background: var(--background);
 }
 
 .auth-shell {
@@ -163,9 +163,9 @@
   padding: 12px 14px;
   margin-bottom: 16px;
   border-radius: var(--radius-sm);
-  background: var(--success-container, #dcfce7);
+  background: var(--success-container);
   border: 1px solid rgba(22, 163, 74, 0.2);
-  color: var(--success, #166534);
+  color: var(--success);
   font-size: 0.9rem;
   line-height: 1.5;
 }

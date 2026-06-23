@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import Modal from './Modal'
 import { MaterialSelect } from './common'
 import { runsApi } from '../api/client'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifyError } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 
 type BulkMode = 'add' | 'remove' | 'set'
 
@@ -24,14 +24,13 @@ function _parseTags(input: string): string[] {
 }
 
 export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds }: BulkRunTagsModalProps) {
-    const queryClient = useQueryClient()
     const [mode, setMode] = useState<BulkMode>('add')
     const [tagsText, setTagsText] = useState('')
     const [error, setError] = useState<string | null>(null)
 
     const tags = useMemo(() => _parseTags(tagsText), [tagsText])
 
-    const mutation = useMutation({
+    const mutation = useApiMutation({
         mutationFn: async () => {
             const payload: { run_ids: string[]; set_tags?: string[]; add_tags?: string[]; remove_tags?: string[] } = {
                 run_ids: runIds,
@@ -41,19 +40,11 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
             if (mode === 'remove') payload.remove_tags = tags
             return await runsApi.bulkTags(payload)
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['runs', experimentId] })
-            onClose()
-            setTagsText('')
-            setMode('add')
-            setError(null)
-            notifySuccess('Теги обновлены')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка bulk tagging'
-            setError(msg)
-            notifyError(msg)
-        },
+        invalidateKeys: [['runs', experimentId]],
+        successMessage: 'Теги обновлены',
+        errorFallback: 'Ошибка bulk tagging',
+        onSuccess: () => { onClose(); setTagsText(''); setMode('add'); setError(null) },
+        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка bulk tagging'),
     })
 
     const disabled = mutation.isPending || runIds.length === 0

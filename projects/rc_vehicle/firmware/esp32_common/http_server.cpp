@@ -842,7 +842,7 @@ esp_err_t HttpServerInit(void) {
   config.max_uri_handlers = 18;
   config.stack_size = 8192;
   config.max_open_sockets =
-      7;  // LWIP_MAX_SOCKETS лимит (3 занято httpd внутри)
+      5;  // Достаточно для 1 WS + 4 HTTP; httpd использует ещё 2 внутренних
   config.recv_wait_timeout = 5;   // Секунды — мобильный клиент может быть медленнее
   config.send_wait_timeout = 2;   // Короткий тайм-аут: зависший send не должен
                                   // блокировать httpd task и telem_sender_task

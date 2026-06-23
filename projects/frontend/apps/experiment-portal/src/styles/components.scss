@@ -131,3 +131,125 @@
     text-align: left;
   }
 }
+
+// ── Filter Capsule (B1 pill toolbar) ──
+.filter-capsule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--elevation-1);
+  width: 100%;
+}
+
+.filter-capsule > .md-select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.filter-capsule > .liveswitch {
+  flex: 0 0 auto;
+}
+
+.filter-capsule__search {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid $input-border;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+
+  &:hover { border-color: $outline-muted; background: var(--surface-variant); }
+  &:focus-within { border-color: $primary; box-shadow: var(--focus-ring); background: var(--surface); }
+
+  svg { color: $text-secondary; flex: none; }
+
+  input {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 0.87rem;
+    color: $text;
+    flex: 1;
+    min-width: 0;
+    font-family: inherit;
+
+    &::placeholder { color: $text-hint; }
+  }
+}
+
+.filter-capsule__search--constrained {
+  max-width: 340px;
+}
+
+.filter-capsule .filter-capsule__btn {
+  flex: 0 0 auto;
+}
+
+// Status chips (Sensors health quick filter)
+.filter-capsule__chips {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  flex: 0 0 auto;
+}
+
+.filter-capsule__chip {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: $text-secondary;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover { background: $surface-variant; color: $text; }
+  &.is-active { background: $primary; color: #fff; }
+}
+
+// Login pill input (taller, with icon)
+.login-input-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 16px;
+  border: 1px solid $input-border;
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover { border-color: $outline-muted; }
+  &:focus-within { border-color: $primary; box-shadow: var(--focus-ring); }
+
+  svg { color: $text-secondary; flex: none; }
+
+  input {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 0.95rem;
+    color: $text;
+    flex: 1;
+    min-width: 0;
+    font-family: inherit;
+    height: 100%;
+
+    &::placeholder { color: $text-hint; }
+  }
+}

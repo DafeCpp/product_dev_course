@@ -6,23 +6,59 @@ on:
       - main
       - develop
     paths:
-      - 'projects/frontend/apps/experiment-portal/**'
+      - 'projects/frontend/**'
       - '.github/workflows/frontend-tests.yml'
-      - 'package-lock.json'
-      - 'package.json'
   pull_request:
     branches:
       - main
       - develop
     paths:
-      - 'projects/frontend/apps/experiment-portal/**'
+      - 'projects/frontend/**'
       - '.github/workflows/frontend-tests.yml'
-      - 'package-lock.json'
-      - 'package.json'
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    name: Run frontend unit tests
+  detect-changes:
+    name: Detect changed frontend apps
+    runs-on: ubuntu-latest
+    outputs:
+      experiment-portal: ${{ steps.detect.outputs.experiment-portal }}
+      sensor-simulator: ${{ steps.detect.outputs.sensor-simulator }}
+      auth-proxy: ${{ steps.detect.outputs.auth-proxy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed apps
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.event.after }})
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo ""
+
+          for app in experiment-portal sensor-simulator auth-proxy; do
+            if echo "$CHANGED_FILES" | grep -E "^projects/frontend/(apps/$app|common)/|\.github/workflows/frontend-tests\.yml" > /dev/null; then
+              echo "$app=true" >> $GITHUB_OUTPUT
+              echo "✓ $app changed"
+            else
+              echo "$app=false" >> $GITHUB_OUTPUT
+              echo "✗ $app not changed"
+            fi
+          done
+
+  experiment-portal:
+    name: experiment-portal tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.experiment-portal == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -42,6 +78,85 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-experiment-portal
+          path: projects/frontend/apps/experiment-portal/coverage
+          if-no-files-found: ignore
+          retention-days: 14
+
+  sensor-simulator:
+    name: sensor-simulator tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.sensor-simulator == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/frontend/apps/sensor-simulator
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: projects/frontend/apps/sensor-simulator/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-sensor-simulator
+          path: projects/frontend/apps/sensor-simulator/coverage
+          if-no-files-found: ignore
+          retention-days: 14
+
+  auth-proxy:
+    name: auth-proxy tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.auth-proxy == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/frontend/apps/auth-proxy
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: projects/frontend/apps/auth-proxy/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Run tests
-        run: npm run test
+        run: npm test
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-auth-proxy
+          path: projects/frontend/apps/auth-proxy/coverage
+          if-no-files-found: ignore
+          retention-days: 14
 

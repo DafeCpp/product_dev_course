@@ -7,6 +7,18 @@ let ws = null;
 let wsReconnectTimer = null;
 const WS_URL = `ws://${window.location.hostname}/ws`;
 
+// ── HTML-escape helper for innerHTML interpolation ──
+// Server-side data and JS exception messages must be escaped before being
+// written via innerHTML to avoid reflected XSS in the local UI.
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ── Wake Lock (предотвращает засыпание экрана) ──
 let wakeLock = null;
 
@@ -217,7 +229,7 @@ function connectWebSocket() {
             } catch (e) {
                 console.error('Parse error:', e, event.data?.slice(0, 200));
                 if (telemDataEl) {
-                    telemDataEl.innerHTML = `<p style="color:var(--danger)">JS error: ${e.message}</p>`;
+                    telemDataEl.innerHTML = `<p style="color:var(--danger)">JS error: ${escapeHtml(e.message)}</p>`;
                 }
             }
         };
@@ -1285,7 +1297,7 @@ function showSelfTestResult(data) {
     if (data.tests) {
         for (const t of data.tests) {
             const row = document.createElement('tr');
-            row.innerHTML = `<td>${t.name}</td><td class="${t.passed ? 'st-pass' : 'st-fail'}">${t.passed ? 'PASS' : 'FAIL'}</td><td>${t.value || ''}</td>`;
+            row.innerHTML = `<td>${escapeHtml(t.name)}</td><td class="${t.passed ? 'st-pass' : 'st-fail'}">${t.passed ? 'PASS' : 'FAIL'}</td><td>${escapeHtml(t.value || '')}</td>`;
             selfTestTableBody.appendChild(row);
         }
     }

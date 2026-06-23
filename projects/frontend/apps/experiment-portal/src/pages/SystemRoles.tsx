@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { permissionsApi } from '../api/permissions'
 import type { Role } from '../types/permissions'
 import { Loading, Error as ErrorComponent, EmptyState } from '../components/common'
 import PermissionGate from '../components/PermissionGate'
 import PermissionPicker from '../components/PermissionPicker'
 import { usePermissions } from '../hooks/usePermissions'
-import { notifySuccess, notifyError } from '../utils/notify'
+import { notifyError } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './SystemRoles.scss'
 
 interface RoleFormState {
@@ -22,7 +23,6 @@ const EMPTY_FORM: RoleFormState = {
 }
 
 function SystemRoles() {
-  const queryClient = useQueryClient()
   const { hasSystemPermission } = usePermissions()
 
   const [search, setSearch] = useState('')
@@ -49,21 +49,16 @@ function SystemRoles() {
     )
   }, [roles, search])
 
-  const createMutation = useMutation({
+  const createMutation = useApiMutation({
     mutationFn: (data: { name: string; description?: string; permissions: string[] }) =>
       permissionsApi.createSystemRole(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system-roles'] })
-      notifySuccess('Роль создана')
-      closeModal()
-    },
-    onError: (err: unknown) => {
-      const msg = extractErrorMessage(err, 'Не удалось создать роль')
-      notifyError(msg)
-    },
+    invalidateKeys: [['system-roles']],
+    successMessage: 'Роль создана',
+    errorFallback: 'Не удалось создать роль',
+    onSuccess: () => closeModal(),
   })
 
-  const updateMutation = useMutation({
+  const updateMutation = useApiMutation({
     mutationFn: ({
       id,
       data,
@@ -71,27 +66,17 @@ function SystemRoles() {
       id: string
       data: { name?: string; description?: string; permissions?: string[] }
     }) => permissionsApi.updateSystemRole(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system-roles'] })
-      notifySuccess('Роль обновлена')
-      closeModal()
-    },
-    onError: (err: unknown) => {
-      const msg = extractErrorMessage(err, 'Не удалось обновить роль')
-      notifyError(msg)
-    },
+    invalidateKeys: [['system-roles']],
+    successMessage: 'Роль обновлена',
+    errorFallback: 'Не удалось обновить роль',
+    onSuccess: () => closeModal(),
   })
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useApiMutation({
     mutationFn: (id: string) => permissionsApi.deleteSystemRole(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system-roles'] })
-      notifySuccess('Роль удалена')
-    },
-    onError: (err: unknown) => {
-      const msg = extractErrorMessage(err, 'Не удалось удалить роль')
-      notifyError(msg)
-    },
+    invalidateKeys: [['system-roles']],
+    successMessage: 'Роль удалена',
+    errorFallback: 'Не удалось удалить роль',
   })
 
   function openCreateModal() {
@@ -326,21 +311,6 @@ function SystemRoles() {
   )
 }
 
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object') {
-    const e = err as Record<string, unknown>
-    const resp = e['response']
-    if (resp && typeof resp === 'object') {
-      const data = (resp as Record<string, unknown>)['data']
-      if (data && typeof data === 'object') {
-        const d = data as Record<string, unknown>
-        if (typeof d['message'] === 'string') return d['message']
-        if (typeof d['error'] === 'string') return d['error']
-      }
-    }
-    if (typeof e['message'] === 'string') return e['message']
-  }
-  return fallback
-}
+
 
 export default SystemRoles

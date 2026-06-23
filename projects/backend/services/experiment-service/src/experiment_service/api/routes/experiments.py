@@ -132,13 +132,13 @@ async def create_experiment(request: web.Request):
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text=str(exc)) from exc
+            raise web.HTTPConflict(text="Conflict") from exc
         if cached:
             return IdempotencyService.build_response(cached)
     try:
         experiment = await service.create_experiment(dto)
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     response_payload = _experiment_response(experiment)
     if idempotency_key:
         try:
@@ -151,7 +151,7 @@ async def create_experiment(request: web.Request):
                 response_payload,
             )
         except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text=str(exc)) from exc
+            raise web.HTTPConflict(text="Conflict") from exc
     return web.json_response(response_payload, status=201)
 
 
@@ -165,7 +165,7 @@ async def get_experiment(request: web.Request):
     try:
         experiment = await service.get_experiment(project_id, experiment_id)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_experiment_response(experiment))
 
 
@@ -184,9 +184,9 @@ async def update_experiment(request: web.Request):
     try:
         experiment = await service.update_experiment(project_id, experiment_id, dto)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     return web.json_response(_experiment_response(experiment))
 
 
@@ -204,7 +204,7 @@ async def archive_experiment(request: web.Request):
     try:
         experiment = await service.update_experiment(project_id, experiment_id, dto)
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_experiment_response(experiment))
 
 
@@ -218,7 +218,7 @@ async def delete_experiment(request: web.Request):
     try:
         await service.delete_experiment(project_id, experiment_id)
     except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)

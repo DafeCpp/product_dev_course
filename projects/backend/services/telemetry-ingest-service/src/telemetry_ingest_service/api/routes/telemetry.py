@@ -146,7 +146,7 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
             endpoint="rest",
             readings_count=readings_count,
         )
-        raise web.HTTPUnauthorized(text=str(exc)) from exc
+        raise web.HTTPUnauthorized(text="Unauthorized") from exc
     except ScopeMismatchError as exc:
         _fire_and_forget_error_log(
             sensor_id_str,
@@ -155,7 +155,7 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
             endpoint="rest",
             readings_count=readings_count,
         )
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Scope mismatch") from exc
     except NotFoundError as exc:
         _fire_and_forget_error_log(
             sensor_id_str,
@@ -164,7 +164,7 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
             endpoint="rest",
             readings_count=readings_count,
         )
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     TELEMETRY_READINGS_INGESTED.labels(transport="rest").inc(accepted)
     return web.json_response({"status": "accepted", "accepted": accepted}, status=202)
@@ -270,26 +270,32 @@ async def _authorize_user_token(*, token: str, project_id: UUID) -> None:
         base = base[: -len("/api/v1")]
     headers = {"Authorization": f"Bearer {token}"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{base}/auth/me", headers=headers) as resp:
-            if resp.status != 200:
-                raise web.HTTPUnauthorized(text="Unauthorized")
-            me = await resp.json()
-            user_id = me.get("id")
-            if not user_id:
-                raise web.HTTPUnauthorized(text="Unauthorized")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{base}/auth/me", headers=headers) as resp:
+                if resp.status != 200:
+                    raise web.HTTPUnauthorized(text="Unauthorized")
+                me = await resp.json()
+                user_id = me.get("id")
+                if not user_id:
+                    raise web.HTTPUnauthorized(text="Unauthorized")
 
-        async with session.get(f"{base}/projects/{project_id}/members", headers=headers) as resp:
-            if resp.status == 403:
-                raise web.HTTPForbidden(text="Forbidden")
-            if resp.status == 404:
-                raise web.HTTPNotFound(text="Project not found")
-            if resp.status != 200:
-                raise web.HTTPBadGateway(text="Auth service error")
-            data = await resp.json()
-            members = data.get("members") or []
-            if not any(str(m.get("user_id")) == str(user_id) for m in members):
-                raise web.HTTPForbidden(text="Forbidden")
+            async with session.get(f"{base}/projects/{project_id}/members", headers=headers) as resp:
+                if resp.status == 403:
+                    raise web.HTTPForbidden(text="Forbidden")
+                if resp.status == 404:
+                    raise web.HTTPNotFound(text="Project not found")
+                if resp.status != 200:
+                    raise web.HTTPBadGateway(text="Auth service error")
+                data = await resp.json()
+                members = data.get("members") or []
+                if not any(str(m.get("user_id")) == str(user_id) for m in members):
+                    raise web.HTTPForbidden(text="Forbidden")
+    except web.HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("auth_service_error", error=str(exc))
+        raise web.HTTPBadGateway(text="Auth service error") from exc
 
 
 @routes.get("/api/v1/telemetry/stream")
@@ -409,10 +415,11 @@ async def telemetry_stream(request: web.Request) -> web.StreamResponse:
             await asyncio.sleep(settings.telemetry_stream_poll_interval_seconds)
     except asyncio.CancelledError:
         raise
-    except Exception as exc:
+    except Exception:
         # avoid raising after headers are sent; close stream
+        logger.exception("SSE telemetry stream failed")
         await resp.write(b"event: error\n")
-        await resp.write(b"data: " + str(exc).encode("utf-8") + b"\n\n")
+        await resp.write(b"data: stream error\n\n")
         return resp
     finally:
         SSE_CONNECTIONS_ACTIVE.dec()

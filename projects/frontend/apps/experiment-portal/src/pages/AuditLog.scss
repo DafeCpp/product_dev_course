@@ -12,58 +12,45 @@
   &__no-access {
     padding: 48px;
     text-align: center;
-    color: var(--color-text-secondary, #888);
+    color: var(--text-secondary);
     font-size: 1rem;
   }
 }
 
-.audit-log-filters {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+.audit-filter-capsule {
+  flex-wrap: wrap;
 
-  &__fields {
+  &__date-range {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--outline);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    flex: 0 0 auto;
 
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-width: 160px;
-      flex: 1 1 160px;
+    input[type='date'] {
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 0.82rem;
+      color: var(--text);
+      width: 120px;
+      cursor: pointer;
 
-      label {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: var(--color-text-secondary, #888);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-      }
-
-      input {
-        padding: 6px 10px;
-        border: 1px solid var(--outline);
-        border-radius: var(--radius-sm);
-        background: #fff;
-        color: var(--text);
-        font-size: 0.875rem;
-
-        &:focus {
-          outline: none;
-          border-color: var(--primary);
-          box-shadow: var(--focus-ring);
-        }
+      &::-webkit-calendar-picker-indicator {
+        opacity: 0.5;
+        cursor: pointer;
       }
     }
   }
 
-  &__actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
+  &__date-sep {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    flex: none;
   }
 }
 
@@ -84,16 +71,16 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--color-text-secondary, #888);
-    border-bottom: 1px solid var(--color-border, #333);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--outline);
     white-space: nowrap;
   }
 
   td {
     padding: 10px 14px;
-    border-bottom: 1px solid var(--color-border, #222);
+    border-bottom: 1px solid var(--outline);
     vertical-align: middle;
-    color: var(--color-text, #e0e0e0);
+    color: var(--text);
   }
 
   &__row {
@@ -101,7 +88,7 @@
     transition: background 0.12s;
 
     &:hover {
-      background: var(--color-bg-row-hover, rgba(255, 255, 255, 0.04));
+      background: var(--surface-variant);
     }
 
     &:last-child td {
@@ -109,7 +96,7 @@
     }
 
     &:focus {
-      outline: 2px solid var(--color-primary, #4f8ef7);
+      outline: 2px solid var(--primary);
       outline-offset: -2px;
     }
   }
@@ -117,7 +104,7 @@
   &__time {
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-    color: var(--color-text-secondary, #aaa);
+    color: var(--text-secondary);
   }
 
   &__action {
@@ -125,8 +112,8 @@
     font-size: 0.8rem;
     padding: 2px 6px;
     border-radius: 3px;
-    background: var(--color-bg-code, rgba(79, 142, 247, 0.1));
-    color: var(--color-primary, #4f8ef7);
+    background: rgba(79, 70, 229, 0.08);
+    color: var(--primary);
   }
 }
 
@@ -147,20 +134,20 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--color-text-secondary, #888);
+    color: var(--text-secondary);
     min-width: 100px;
     flex-shrink: 0;
   }
 
   &__value {
     font-size: 0.875rem;
-    color: var(--color-text, #e0e0e0);
+    color: var(--text);
     word-break: break-all;
   }
 
   &__sub {
     font-size: 0.75rem;
-    color: var(--color-text-secondary, #888);
+    color: var(--text-secondary);
   }
 
   &__details {
@@ -174,11 +161,11 @@
     margin: 0;
     padding: 12px;
     border-radius: 4px;
-    background: var(--color-bg-code, #111);
-    border: 1px solid var(--color-border, #333);
+    background: #0f172a;
+    border: 1px solid var(--outline);
     font-family: monospace;
     font-size: 0.8rem;
-    color: var(--color-text, #e0e0e0);
+    color: var(--text);
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-all;

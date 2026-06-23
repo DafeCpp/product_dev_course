@@ -12,16 +12,17 @@
     "start": "node dist/index.js",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "lint": "echo \"no lint configured\"",
     "fmt": "prettier -w \"src/**/*.ts\""
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
-    "@fastify/http-proxy": "^11.4.1",
+    "@fastify/http-proxy": "^11.4.4",
     "@fastify/rate-limit": "^10.3.0",
     "dotenv": "^17.2.3",
-    "fastify": "^5.7.2",
+    "fastify": "^5.8.5",
     "ioredis": "^5.10.0"
   },
   "devDependencies": {
@@ -31,5 +32,9 @@
     "ts-jest": "^29.4.4",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.2",
+    "ws": ">=8.20.1"
   }
 }

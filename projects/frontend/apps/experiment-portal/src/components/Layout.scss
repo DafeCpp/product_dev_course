@@ -304,7 +304,7 @@
   padding: 8px 12px;
   border: 1px solid var(--outline);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: var(--surface);
   color: var(--text);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   cursor: pointer;

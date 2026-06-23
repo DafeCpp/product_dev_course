@@ -10,6 +10,8 @@ import {
   Error,
   EmptyState,
   MaterialSelect,
+  FolderIcon,
+  SensorIcon,
 } from '../components/common'
 import SensorStatusSummaryBar from '../components/SensorStatusSummaryBar'
 import './SensorMonitor.scss'
@@ -82,44 +84,33 @@ function SensorMonitor() {
         <>
           {statusSummary && <SensorStatusSummaryBar summary={statusSummary} />}
 
-          <div className="card filter-panel">
-            <div className="filter-panel__header">
-              <div>
-                <div className="filter-panel__title">Фильтры монитора</div>
-                <p className="filter-panel__subtitle">
-                  Выберите проект и отфильтруйте датчики по статусу подключения.
-                </p>
-              </div>
-            </div>
-            <div className="filters-grid sensor-monitor__filters-grid">
-              <MaterialSelect
-                id="monitor_project_id"
-                label="Проект"
-                value={projectId}
-                onChange={(id) => setProjectId(id)}
-                disabled={projectsLoading}
-              >
-                <option value="">Все проекты</option>
-                {projectsData?.projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </MaterialSelect>
-
-              <MaterialSelect
-                id="monitor_connection_status"
-                label="Подключение"
-                value={connectionFilter}
-                onChange={setConnectionFilter}
-              >
-                {CONNECTION_STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </MaterialSelect>
-            </div>
+          <div className="filter-capsule">
+            <MaterialSelect
+              id="monitor_project_id"
+              label="Проект"
+              value={projectId}
+              onChange={(id) => setProjectId(id)}
+              disabled={projectsLoading}
+              variant="pill"
+              icon={<FolderIcon />}
+            >
+              <option value="">Все проекты</option>
+              {projectsData?.projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </MaterialSelect>
+            <MaterialSelect
+              id="monitor_connection_status"
+              label="Подключение"
+              value={connectionFilter}
+              onChange={setConnectionFilter}
+              variant="pill"
+              icon={<SensorIcon />}
+            >
+              {CONNECTION_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </MaterialSelect>
           </div>
 
           {filteredSensors.length === 0 && (

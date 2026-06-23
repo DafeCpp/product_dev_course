@@ -14,15 +14,25 @@
 static const char* TAG = "websocket";
 static httpd_handle_t ws_server_handle = NULL;
 
+/** Макс. число HTTP-соединений httpd (для httpd_get_client_list). */
+static constexpr size_t MAX_HTTPD_CLIENTS = 8;
+
 /** Размер одного буфера телеметрии (JSON). */
 static constexpr size_t TELEM_BUF_SIZE = 2048;
-/** Очередь длины 1: индекс буфера (0 или 1), готового к отправке. */
+
+/**
+ * Сообщение телеметрии, передаётся через очередь ПО ЗНАЧЕНИЮ.
+ * FreeRTOS-очередь копирует элемент целиком, поэтому продьюсер и
+ * telem_sender_task никогда не разделяют буфер — гонка двойной буферизации
+ * (рваный JSON при медленном клиенте) исключена by-design (FW-R6).
+ */
+struct TelemMsg {
+  uint16_t len;
+  char json[TELEM_BUF_SIZE];
+};
+
+/** Очередь длины 1 (xQueueOverwrite): всегда самый свежий кадр. */
 static QueueHandle_t s_telem_queue = NULL;
-static char s_telem_buf[2][TELEM_BUF_SIZE];
-// Index of the buffer that the *next* WebSocketEnqueueTelem() call will write
-// into. Atomic to ensure the store to the buffer is visible to
-// telem_sender_task on the other core before the index swap.
-static std::atomic<uint8_t> s_telem_write_idx{0};
 
 /**
  * Кешированное количество WS-клиентов.
@@ -38,12 +48,13 @@ static void telem_sender_task(void* arg) {
   (void)arg;
   uint32_t frames_sent = 0;
   TickType_t last_diag = xTaskGetTickCount();
+  // static: 2 КБ не помещаются в стек задачи (3072); задача одна — гонок нет
+  static TelemMsg msg;
   for (;;) {
-    uint8_t idx;
-    if (xQueueReceive(s_telem_queue, &idx, portMAX_DELAY) != pdTRUE) {
+    if (xQueueReceive(s_telem_queue, &msg, portMAX_DELAY) != pdTRUE) {
       continue;
     }
-    WebSocketSendTelem(s_telem_buf[idx]);
+    WebSocketSendTelem(msg.json);
     frames_sent++;
 
     // Диагностический лог каждые 10 секунд
@@ -74,11 +85,17 @@ void WebSocketSetJsonHandler(WebSocketJsonHandler handler) {
 static esp_err_t ws_handler(httpd_req_t* req) {
   if (req->method == HTTP_GET) {
     ESP_LOGI(TAG, "WebSocket connection request");
-    // Обновить кеш при новом подключении
-    int fds[WEBSOCKET_MAX_CLIENTS];
-    size_t cnt = WEBSOCKET_MAX_CLIENTS;
+    // При WebSocket handshake клиент уже в списке httpd, но может ещё
+    // не быть помечен как WS. Гарантируем count >= 1.
+    int fds[MAX_HTTPD_CLIENTS];
+    size_t cnt = MAX_HTTPD_CLIENTS;
     if (httpd_get_client_list(ws_server_handle, &cnt, fds) == ESP_OK) {
-      s_cached_client_count.store(static_cast<uint8_t>(cnt), std::memory_order_relaxed);
+      ESP_LOGI(TAG, "httpd_get_client_list: %zu clients", cnt);
+      uint8_t count = (cnt > 0) ? static_cast<uint8_t>(cnt) : 1;
+      s_cached_client_count.store(count, std::memory_order_relaxed);
+    } else {
+      // Если список не получен, всё равно знаем что есть хотя бы 1 клиент
+      s_cached_client_count.store(1, std::memory_order_relaxed);
     }
     return ESP_OK;
   }
@@ -151,7 +168,7 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
   ws_server_handle = server;
 
   if (s_telem_queue == NULL) {
-    s_telem_queue = xQueueCreate(1, sizeof(uint8_t));
+    s_telem_queue = xQueueCreate(1, sizeof(TelemMsg));
     if (s_telem_queue != NULL) {
       const UBaseType_t prio = 5;
       if (xTaskCreate(telem_sender_task, "ws_telem", 3072, NULL, prio, NULL) !=
@@ -180,14 +197,15 @@ void WebSocketEnqueueTelem(const char* telem_json) {
     ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes", len, TELEM_BUF_SIZE);
     len = TELEM_BUF_SIZE - 1;
   }
-  // Read current write index (relaxed — only this task writes it).
-  const uint8_t idx = s_telem_write_idx.load(std::memory_order_relaxed);
-  memcpy(s_telem_buf[idx], telem_json, len);
-  s_telem_buf[idx][len] = '\0';
-  // Swap write index with release: guarantees the memcpy above is visible to
-  // telem_sender_task (on potentially different core) before it reads the buffer.
-  s_telem_write_idx.store(1 - idx, std::memory_order_release);
-  xQueueOverwrite(s_telem_queue, &idx);
+  // static staging: 2 КБ не помещаются в стек control loop задачи.
+  // Вызывается только из control loop — реентерабельность не нужна.
+  static TelemMsg msg;
+  msg.len = static_cast<uint16_t>(len);
+  memcpy(msg.json, telem_json, len);
+  msg.json[len] = '\0';
+  // Очередь копирует msg целиком; при заполненной очереди старый кадр
+  // перезаписывается свежим (телеметрия — последнее состояние важнее истории).
+  xQueueOverwrite(s_telem_queue, &msg);
 }
 
 esp_err_t WebSocketSendTelem(const char* telem_json) {
@@ -197,8 +215,8 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
 
   // Получить список клиентов (вызывается из telem_sender_task, не из control
   // loop). Заодно обновляем кеш для GetWebSocketClientCount().
-  int client_fds[WEBSOCKET_MAX_CLIENTS];
-  size_t client_count = WEBSOCKET_MAX_CLIENTS;
+  int client_fds[MAX_HTTPD_CLIENTS];
+  size_t client_count = MAX_HTTPD_CLIENTS;
   esp_err_t list_err =
       httpd_get_client_list(ws_server_handle, &client_count, client_fds);
   if (list_err != ESP_OK) {

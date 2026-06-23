@@ -19,28 +19,28 @@
 }
 
 .conn-indicator--online .conn-indicator__dot {
-  background: #16a34a;
+  background: var(--success);
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
 }
 
 .conn-indicator--online .conn-indicator__label {
-  color: #16a34a;
+  color: var(--success);
 }
 
 .conn-indicator--delayed .conn-indicator__dot {
-  background: #d97706;
+  background: var(--warning);
   box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.2);
 }
 
 .conn-indicator--delayed .conn-indicator__label {
-  color: #d97706;
+  color: var(--warning);
 }
 
 .conn-indicator--offline .conn-indicator__dot {
-  background: #6b7280;
+  background: var(--text-secondary);
   box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.15);
 }
 
 .conn-indicator--offline .conn-indicator__label {
-  color: #6b7280;
+  color: var(--text-secondary);
 }

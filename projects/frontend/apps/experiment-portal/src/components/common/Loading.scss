@@ -5,7 +5,7 @@
     justify-content: center;
     gap: 1rem;
     padding: 2.5rem 1.5rem;
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
     text-align: center;
     min-height: 120px;
 }
@@ -13,8 +13,8 @@
 .loading__spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid var(--outline, #e2e8f0);
-    border-top-color: var(--primary, #2563eb);
+    border: 3px solid var(--outline);
+    border-top-color: var(--primary);
     border-radius: 50%;
     animation: loading-spin 0.7s linear infinite;
 }

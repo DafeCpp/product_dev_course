@@ -14,6 +14,9 @@ import {
   MaterialSelect,
   Tags,
   experimentStatusMap,
+  SearchIcon,
+  FolderIcon,
+  TagIcon,
 } from '../components/common'
 import CreateExperimentModal from '../components/CreateExperimentModal'
 import { setActiveProjectId } from '../utils/activeProject'
@@ -114,80 +117,39 @@ function ExperimentsList() {
 
       {!isBusy && !error && (
         <>
-          <div className="filters card filter-panel">
-            <div className="filter-panel__header">
-              <div>
-                <div className="filter-panel__title">Command Filters</div>
-                <p className="filter-panel__subtitle">
-                  Отберите нужный проект, статус или найдите эксперимент по названию и описанию.
-                </p>
-              </div>
-              <div className="experiments-filter-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={exporting || !projectId}
-                  onClick={() => handleExport('csv')}
-                >
-                  {exporting ? 'Экспорт...' : 'CSV'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={exporting || !projectId}
-                  onClick={() => handleExport('json')}
-                >
-                  JSON
-                </button>
-              </div>
-            </div>
-
-            <div className="filters-grid">
-              <div className="form-group search-field">
-                <label htmlFor="experiment_search">Поиск</label>
-                <span className="search-field__icon" aria-hidden="true">
-                  / /
-                </span>
+          <div className="experiments-filter-row">
+            <div className="filter-capsule">
+              <div className="filter-capsule__search filter-capsule__search--constrained">
+                <SearchIcon />
                 <input
-                  id="experiment_search"
                   type="text"
                   placeholder="Название, описание..."
                   value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value)
-                    setPage(1)
-                  }}
+                  onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
                   disabled={isBusy}
                 />
               </div>
-
               <MaterialSelect
                 id="experiment_project_id"
                 label="Проект"
                 value={projectId}
-                onChange={(id) => {
-                  setProjectId(id)
-                  setActiveProjectId(id)
-                  setPage(1)
-                }}
+                onChange={(id) => { setProjectId(id); setActiveProjectId(id); setPage(1) }}
                 disabled={isBusy}
+                variant="pill"
+                icon={<FolderIcon />}
               >
                 {projectsData?.projects?.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
+                  <option key={project.id} value={project.id}>{project.name}</option>
                 ))}
               </MaterialSelect>
-
               <MaterialSelect
                 id="experiment_status"
                 label="Статус"
                 value={status}
-                onChange={(value) => {
-                  setStatus(value)
-                  setPage(1)
-                }}
+                onChange={(value) => { setStatus(value); setPage(1) }}
                 disabled={isBusy}
+                variant="pill"
+                icon={<TagIcon />}
               >
                 <option value="">Все</option>
                 <option value="created">Создан</option>
@@ -196,6 +158,14 @@ function ExperimentsList() {
                 <option value="failed">Ошибка</option>
                 <option value="archived">Архивирован</option>
               </MaterialSelect>
+            </div>
+            <div className="experiments-filter-actions">
+              <button type="button" className="btn btn-secondary btn-sm" disabled={exporting || !projectId} onClick={() => handleExport('csv')}>
+                {exporting ? 'Экспорт...' : 'CSV'}
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={exporting || !projectId} onClick={() => handleExport('json')}>
+                JSON
+              </button>
             </div>
           </div>
 

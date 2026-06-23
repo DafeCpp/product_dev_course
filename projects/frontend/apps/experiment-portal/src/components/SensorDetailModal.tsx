@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { sensorsApi, projectsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { SensorTokenResponse } from '../types'
@@ -26,7 +27,6 @@ interface SensorDetailModalProps {
 
 function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps) {
     const navigate = useNavigate()
-    const queryClient = useQueryClient()
     const [showToken, setShowToken] = useState(false)
     const [newToken, setNewToken] = useState<string | null>(null)
     const [sensorIdCopied, setSensorIdCopied] = useState(false)
@@ -58,58 +58,41 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
         enabled: isOpen,
     })
 
-    const deleteMutation = useMutation({
+    const deleteMutation = useApiMutation<unknown, void>({
         mutationFn: () => sensorsApi.delete(sensorId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensors'] })
-            notifySuccess('Датчик удалён')
-            onClose()
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления датчика'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensors']],
+        successMessage: 'Датчик удалён',
+        onSuccess: () => onClose(),
+        errorFallback: 'Ошибка удаления датчика',
     })
 
-    const rotateTokenMutation = useMutation({
+    const rotateTokenMutation = useApiMutation<SensorTokenResponse, void>({
         mutationFn: () => sensorsApi.rotateToken(sensorId),
-        onSuccess: (response: SensorTokenResponse) => {
+        invalidateKeys: [['sensor', sensorId]],
+        successMessage: 'Токен обновлён',
+        onSuccess: (response) => {
             setNewToken(response.token)
             setShowToken(true)
-            queryClient.invalidateQueries({ queryKey: ['sensor', sensorId] })
-            notifySuccess('Токен обновлён')
         },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка ротации токена'
-            notifyError(msg)
-        },
+        errorFallback: 'Ошибка ротации токена',
     })
 
-    // Мутации для управления проектами
-    const addProjectMutation = useMutation({
-        mutationFn: (projectId: string) => sensorsApi.addProject(sensorId, projectId),
+    const addProjectMutation = useApiMutation<unknown, string>({
+        mutationFn: (projectId) => sensorsApi.addProject(sensorId, projectId),
+        invalidateKeys: [['sensor', sensorId, 'projects']],
+        successMessage: 'Проект добавлен',
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', sensorId, 'projects'] })
             setShowAddProjectModal(false)
             setSelectedProjectId('')
-            notifySuccess('Проект добавлен')
         },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка добавления проекта'
-            notifyError(msg)
-        },
+        errorFallback: 'Ошибка добавления проекта',
     })
 
-    const removeProjectMutation = useMutation({
-        mutationFn: (projectId: string) => sensorsApi.removeProject(sensorId, projectId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', sensorId, 'projects'] })
-            notifySuccess('Проект удалён')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления проекта'
-            notifyError(msg)
-        },
+    const removeProjectMutation = useApiMutation<unknown, string>({
+        mutationFn: (projectId) => sensorsApi.removeProject(sensorId, projectId),
+        invalidateKeys: [['sensor', sensorId, 'projects']],
+        successMessage: 'Проект удалён',
+        errorFallback: 'Ошибка удаления проекта',
     })
 
     const formatLastHeartbeat = (heartbeat?: string | null) => {

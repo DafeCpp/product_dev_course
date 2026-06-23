@@ -49,6 +49,30 @@ export default defineConfig(({ mode }) => {
       testTimeout: 10000,
       hookTimeout: 10000,
       reporters: process.env.CI ? ['verbose'] : ['default'],
+      coverage: {
+        provider: 'v8',
+        reporter: ['text', 'html', 'lcov'],
+        reportsDirectory: './coverage',
+        include: ['src/**/*.{ts,tsx}'],
+        exclude: [
+          'src/**/*.test.{ts,tsx}',
+          'src/**/*.spec.{ts,tsx}',
+          'src/setupTests.ts',
+          'src/main.tsx',
+          'src/vite-env.d.ts',
+          'src/**/__mocks__/**',
+        ],
+        // Ratchet floor — start conservative, raise as more tests land.
+        // Plan target: 65% lines (see docs/coverage plan).
+        // Measured baseline (CI run 25581222556): 54.57% lines, 52.05%
+        // statements, 45.95% funcs, 45.39% branches.
+        thresholds: {
+          lines: 50,
+          statements: 50,
+          functions: 43,
+          branches: 43,
+        },
+      },
     },
   }
 })

@@ -103,7 +103,7 @@ TEST_F(StabilizationManagerTest, InitialWeights_StabZero_ModeOne) {
 }
 
 TEST_F(StabilizationManagerTest, UpdateWeights_ZeroDt_NoChange) {
-  mgr_->UpdateWeights(0);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 0);
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 0.0f);
 }
 
@@ -114,7 +114,7 @@ TEST_F(StabilizationManagerTest, UpdateWeights_EnabledWithZeroFade_ImmediateWeig
   cfg.fade_ms = 0;
   mgr_->SetConfig(cfg, false);
 
-  mgr_->UpdateWeights(2);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 2);
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 1.0f);
 }
 
@@ -126,7 +126,7 @@ TEST_F(StabilizationManagerTest, UpdateWeights_EnabledWithFade_GradualIncrease) 
   mgr_->SetConfig(cfg, false);
 
   // After 100ms, weight should be ~0.1
-  mgr_->UpdateWeights(100);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 100);
   float w = mgr_->GetStabilizationWeight();
   EXPECT_GT(w, 0.0f);
   EXPECT_LT(w, 0.5f);
@@ -138,7 +138,7 @@ TEST_F(StabilizationManagerTest, ResetWeights_SetsStabToZeroModeToOne) {
   cfg.enabled = true;
   cfg.fade_ms = 0;
   mgr_->SetConfig(cfg, false);
-  mgr_->UpdateWeights(2);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 2);
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 1.0f);
 
   mgr_->ResetWeights();

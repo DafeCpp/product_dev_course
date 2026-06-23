@@ -90,9 +90,9 @@ async def compare_post(request: web.Request) -> web.Response:
             max_points_per_series=max_points,
         )
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(payload)
 
 
@@ -135,9 +135,9 @@ async def compare_get(request: web.Request) -> web.Response:
             max_points_per_series=max_points,
         )
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(payload)
 
 
@@ -190,9 +190,9 @@ async def export_comparison(request: web.Request) -> web.Response:
             max_points_per_series=max_points,
         )
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
+        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
-        raise web.HTTPNotFound(text=str(exc)) from exc
+        raise web.HTTPNotFound(text="Resource not found") from exc
 
     filename_base = f"comparison_{experiment_id}"
 

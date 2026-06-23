@@ -15,10 +15,11 @@ import {
     Divider,
     Alert,
 } from '@mui/material'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { permissionsApi } from '../api/permissions'
 import { usePermissions } from '../hooks/usePermissions'
-import { notifySuccess, notifyError } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
+import { notifySuccess } from '../utils/notify'
 import type { Role } from '../types/permissions'
 
 interface Props {
@@ -29,7 +30,6 @@ interface Props {
 }
 
 function UserRolesModal({ userId, username, isOpen, onClose }: Props) {
-    const queryClient = useQueryClient()
     const { hasSystemPermission } = usePermissions()
     const canAssign = hasSystemPermission('roles.assign')
 
@@ -45,30 +45,20 @@ function UserRolesModal({ userId, username, isOpen, onClose }: Props) {
         enabled: isOpen,
     })
 
-    const grantMutation = useMutation({
+    const grantMutation = useApiMutation({
         mutationFn: (role: Role) =>
             permissionsApi.grantSystemRole(userId, { role_id: role.id }),
-        onSuccess: (_data, role) => {
-            queryClient.invalidateQueries({ queryKey: ['permissions', 'effective', userId] })
-            notifySuccess(`Роль «${role.name}» назначена`)
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка назначения роли'
-            notifyError(msg)
-        },
+        invalidateKeys: [['permissions', 'effective', userId]],
+        errorFallback: 'Ошибка назначения роли',
+        onSuccess: (_data, role) => notifySuccess(`Роль «${role.name}» назначена`),
     })
 
-    const revokeMutation = useMutation({
+    const revokeMutation = useApiMutation({
         mutationFn: (role: Role) =>
             permissionsApi.revokeSystemRole(userId, role.id),
-        onSuccess: (_data, role) => {
-            queryClient.invalidateQueries({ queryKey: ['permissions', 'effective', userId] })
-            notifySuccess(`Роль «${role.name}» отозвана`)
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка отзыва роли'
-            notifyError(msg)
-        },
+        invalidateKeys: [['permissions', 'effective', userId]],
+        errorFallback: 'Ошибка отзыва роли',
+        onSuccess: (_data, role) => notifySuccess(`Роль «${role.name}» отозвана`),
     })
 
     const userSystemRoles: string[] = effectivePermsQuery.data?.system_permissions ?? []

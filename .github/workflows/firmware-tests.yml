@@ -1,0 +1,47 @@
+name: Firmware Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/rc_vehicle/firmware/**
+      - .github/workflows/firmware-tests.yml
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/rc_vehicle/firmware/**
+      - .github/workflows/firmware-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  firmware-tests:
+    name: GTest (host)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/rc_vehicle/firmware/tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run unit tests
+        run: ./build/unit_tests --gtest_output=xml:test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-test-results
+          path: projects/rc_vehicle/firmware/tests/test-results.xml
+          if-no-files-found: ignore

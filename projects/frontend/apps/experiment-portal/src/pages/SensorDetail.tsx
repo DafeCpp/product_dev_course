@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { sensorsApi, projectsApi, conversionProfilesApi, backfillApi } from '../api/client'
 import { format } from 'date-fns'
-import type { SensorTokenResponse, ConversionProfileStatus, BackfillTaskStatus, SensorErrorEntry } from '../types'
+import type { SensorTokenResponse } from '../types'
 import TestTelemetryModal from '../components/TestTelemetryModal'
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
 import ConversionProfileCreateModal from '../components/ConversionProfileCreateModal'
@@ -14,16 +15,18 @@ import {
     EmptyState,
     InfoRow,
     sensorStatusMap,
-    MaterialSelect,
 } from '../components/common'
+import SensorProjectsSection from './sensor-detail/SensorProjectsSection'
+import SensorConversionProfiles from './sensor-detail/SensorConversionProfiles'
+import SensorErrorLog from './sensor-detail/SensorErrorLog'
+import SensorBackfillSection from './sensor-detail/SensorBackfillSection'
 import './SensorDetail.scss'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
+import { notifyError, notifySuccessSticky } from '../utils/notify'
 
 function SensorDetail() {
     const { id } = useParams<{ id: string }>()
     const navigate = useNavigate()
-    const queryClient = useQueryClient()
     const [showToken, setShowToken] = useState(false)
     const [newToken, setNewToken] = useState<string | null>(null)
     const [showTestTelemetryModal, setShowTestTelemetryModal] = useState(false)
@@ -54,58 +57,36 @@ function SensorDetail() {
         queryFn: () => projectsApi.list(),
     })
 
-    const deleteMutation = useMutation({
+    const deleteMutation = useApiMutation({
         mutationFn: () => sensorsApi.delete(id!),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensors'] })
-            notifySuccess('Датчик удалён')
-            navigate('/sensors')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления датчика'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensors']],
+        successMessage: 'Датчик удалён',
+        errorFallback: 'Ошибка удаления датчика',
+        onSuccess: () => navigate('/sensors'),
     })
 
-    const rotateTokenMutation = useMutation({
+    const rotateTokenMutation = useApiMutation<SensorTokenResponse>({
         mutationFn: () => sensorsApi.rotateToken(id!),
-        onSuccess: (response: SensorTokenResponse) => {
-            setNewToken(response.token)
-            setShowToken(true)
-            queryClient.invalidateQueries({ queryKey: ['sensor', id] })
-            notifySuccess('Токен обновлён')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка ротации токена'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id]],
+        successMessage: 'Токен обновлён',
+        errorFallback: 'Ошибка ротации токена',
+        onSuccess: (response) => { setNewToken(response.token); setShowToken(true) },
     })
 
     // Мутации для управления проектами
-    const addProjectMutation = useMutation({
+    const addProjectMutation = useApiMutation<unknown, string>({
         mutationFn: (projectId: string) => sensorsApi.addProject(id!, projectId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
-            setShowAddProjectModal(false)
-            setSelectedProjectId('')
-            notifySuccess('Проект добавлен')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка добавления проекта'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'projects']],
+        successMessage: 'Проект добавлен',
+        errorFallback: 'Ошибка добавления проекта',
+        onSuccess: () => { setShowAddProjectModal(false); setSelectedProjectId('') },
     })
 
-    const removeProjectMutation = useMutation({
+    const removeProjectMutation = useApiMutation<unknown, string>({
         mutationFn: (projectId: string) => sensorsApi.removeProject(id!, projectId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'projects'] })
-            notifySuccess('Проект удалён')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка удаления проекта'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'projects']],
+        successMessage: 'Проект удалён',
+        errorFallback: 'Ошибка удаления проекта',
     })
 
     // Conversion profiles
@@ -118,41 +99,12 @@ function SensorDetail() {
         enabled: !!id,
     })
 
-    const publishProfileMutation = useMutation({
+    const publishProfileMutation = useApiMutation<unknown, string>({
         mutationFn: (profileId: string) => conversionProfilesApi.publish(id!, profileId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'profiles'] })
-            queryClient.invalidateQueries({ queryKey: ['sensor', id] })
-            notifySuccess('Профиль опубликован')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка публикации профиля'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'profiles'], ['sensor', id]],
+        successMessage: 'Профиль опубликован',
+        errorFallback: 'Ошибка публикации профиля',
     })
-
-    const profileStatusLabels: Record<ConversionProfileStatus, string> = {
-        draft: 'Черновик',
-        scheduled: 'Запланирован',
-        active: 'Активен',
-        deprecated: 'Устаревший',
-    }
-
-    const profileStatusColors: Record<ConversionProfileStatus, string> = {
-        draft: 'badge-secondary',
-        scheduled: 'badge-info',
-        active: 'badge-success',
-        deprecated: 'badge-muted',
-    }
-
-    const formatProfileKind = (kind: string) => {
-        const labels: Record<string, string> = {
-            linear: 'Линейное',
-            polynomial: 'Полиномиальное',
-            lookup_table: 'Таблица',
-        }
-        return labels[kind] || kind
-    }
 
     // Backfill
     const {
@@ -186,31 +138,12 @@ function SensorDetail() {
         staleTime: 15_000,
     })
 
-    const startBackfillMutation = useMutation({
+    const startBackfillMutation = useApiMutation({
         mutationFn: () => backfillApi.start(id!),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', id, 'backfill'] })
-            notifySuccess('Задача пересчёта создана')
-        },
-        onError: (err: any) => {
-            const msg = err?.response?.data?.error || err?.message || 'Ошибка запуска пересчёта'
-            notifyError(msg)
-        },
+        invalidateKeys: [['sensor', id, 'backfill']],
+        successMessage: 'Задача пересчёта создана',
+        errorFallback: 'Ошибка запуска пересчёта',
     })
-
-    const backfillStatusLabels: Record<BackfillTaskStatus, string> = {
-        pending: 'Ожидает',
-        running: 'Выполняется',
-        completed: 'Завершён',
-        failed: 'Ошибка',
-    }
-
-    const backfillStatusColors: Record<BackfillTaskStatus, string> = {
-        pending: 'badge-secondary',
-        running: 'badge-info',
-        completed: 'badge-success',
-        failed: 'badge-danger',
-    }
 
     const formatLastHeartbeat = (heartbeat?: string | null) => {
         if (!heartbeat) return 'Никогда'
@@ -374,427 +307,40 @@ function SensorDetail() {
                     </div>
                 )}
 
-                {/* Секция управления проектами */}
-                <div className="sensor-projects-section">
-                    <div className="section-header">
-                        <h3>Проекты датчика</h3>
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => setShowAddProjectModal(true)}
-                            disabled={addProjectMutation.isPending || removeProjectMutation.isPending}
-                        >
-                            Добавить проект
-                        </button>
-                    </div>
+                <SensorProjectsSection
+                    sensor={sensor}
+                    sensorProjectsData={sensorProjectsData}
+                    isLoadingProjects={isLoadingProjects}
+                    allProjectsData={allProjectsData}
+                    showAddProjectModal={showAddProjectModal}
+                    selectedProjectId={selectedProjectId}
+                    addProjectMutation={addProjectMutation}
+                    removeProjectMutation={removeProjectMutation}
+                    setShowAddProjectModal={setShowAddProjectModal}
+                    setSelectedProjectId={setSelectedProjectId}
+                />
 
-                    {isLoadingProjects && <Loading />}
+                <SensorConversionProfiles
+                    profilesData={profilesData}
+                    isLoadingProfiles={isLoadingProfiles}
+                    publishProfileMutation={publishProfileMutation}
+                    onCreateProfile={() => setShowCreateProfileModal(true)}
+                />
 
-                    {!isLoadingProjects && sensorProjectsData && (
-                        <>
-                            {sensorProjectsData.project_ids.length === 0 ? (
-                                <p className="text-muted">Датчик не привязан ни к одному проекту</p>
-                            ) : (
-                                <div className="projects-list">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>ID проекта</th>
-                                                <th>Название</th>
-                                                <th>Действия</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {sensorProjectsData.project_ids.map((projectId) => {
-                                                const project = allProjectsData?.projects.find(
-                                                    (p) => p.id === projectId
-                                                )
-                                                const isPrimary = projectId === sensor.project_id
+                <SensorErrorLog
+                    errorLogData={errorLogData}
+                    isLoadingErrorLog={isLoadingErrorLog}
+                    errorLogPage={errorLogPage}
+                    setErrorLogPage={setErrorLogPage}
+                    errorLogLimit={ERROR_LOG_LIMIT}
+                />
 
-                                                return (
-                                                    <tr key={projectId}>
-                                                        <td>
-                                                            <span className="mono">{projectId}</span>
-                                                            {isPrimary && (
-                                                                <span className="badge badge-primary" style={{ marginLeft: '8px' }}>
-                                                                    Основной
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                        <td>{project?.name || 'Неизвестный проект'}</td>
-                                                        <td>
-                                                            {!isPrimary && (
-                                                                <button
-                                                                    className="btn btn-danger btn-sm"
-                                                                    onClick={() => {
-                                                                        if (
-                                                                            confirm(
-                                                                                `Удалить датчик из проекта ${project?.name || projectId}?`
-                                                                            )
-                                                                        ) {
-                                                                            removeProjectMutation.mutate(projectId)
-                                                                        }
-                                                                    }}
-                                                                    disabled={removeProjectMutation.isPending}
-                                                                >
-                                                                    Удалить
-                                                                </button>
-                                                            )}
-                                                            {isPrimary && (
-                                                                <span className="text-muted">Нельзя удалить основной проект</span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </>
-                    )}
-
-                    {/* Модальное окно для добавления проекта */}
-                    {showAddProjectModal && (
-                        <div className="modal-overlay" onClick={() => setShowAddProjectModal(false)}>
-                            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                                <div className="modal-header">
-                                    <h2>Добавить проект</h2>
-                                    <button
-                                        type="button"
-                                        className="modal-close"
-                                        onClick={() => {
-                                            setShowAddProjectModal(false)
-                                            setSelectedProjectId('')
-                                        }}
-                                        disabled={addProjectMutation.isPending}
-                                    >
-                                        ×
-                                    </button>
-                                </div>
-                                <div className="modal-form">
-                                    <div className="form-group">
-                                        <label htmlFor="add-project-select">
-                                            Проект <span className="required">*</span>
-                                        </label>
-                                        <MaterialSelect
-                                            id="add-project-select"
-                                            value={selectedProjectId}
-                                            onChange={(value) => setSelectedProjectId(value)}
-                                            disabled={addProjectMutation.isPending}
-                                        >
-                                            <option value="">Выберите проект</option>
-                                            {allProjectsData?.projects
-                                                .filter(
-                                                    (p) =>
-                                                        !sensorProjectsData?.project_ids.includes(p.id)
-                                                )
-                                                .map((project) => (
-                                                    <option key={project.id} value={project.id}>
-                                                        {project.name}
-                                                    </option>
-                                                ))}
-                                        </MaterialSelect>
-                                    </div>
-                                    {allProjectsData?.projects.filter(
-                                        (p) => !sensorProjectsData?.project_ids.includes(p.id)
-                                    ).length === 0 && (
-                                            <p className="text-muted">
-                                                Все доступные проекты уже добавлены к датчику
-                                            </p>
-                                        )}
-                                    {addProjectMutation.isError && (
-                                        <div className="error">
-                                            {addProjectMutation.error &&
-                                                typeof addProjectMutation.error === 'object' &&
-                                                'message' in addProjectMutation.error
-                                                ? String(addProjectMutation.error.message)
-                                                : 'Ошибка при добавлении проекта'}
-                                        </div>
-                                    )}
-                                    <div className="modal-actions">
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            onClick={() => {
-                                                setShowAddProjectModal(false)
-                                                setSelectedProjectId('')
-                                            }}
-                                            disabled={addProjectMutation.isPending}
-                                        >
-                                            Отмена
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn-primary"
-                                            onClick={() => {
-                                                if (selectedProjectId) {
-                                                    addProjectMutation.mutate(selectedProjectId)
-                                                }
-                                            }}
-                                            disabled={!selectedProjectId || addProjectMutation.isPending}
-                                        >
-                                            {addProjectMutation.isPending ? 'Добавление...' : 'Добавить'}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Секция профилей преобразования */}
-                <div className="sensor-profiles-section">
-                    <div className="section-header">
-                        <h3>Профили преобразования</h3>
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => setShowCreateProfileModal(true)}
-                        >
-                            Создать профиль
-                        </button>
-                    </div>
-
-                    {isLoadingProfiles && <Loading />}
-
-                    {!isLoadingProfiles && profilesData && (
-                        <>
-                            {profilesData.conversion_profiles.length === 0 ? (
-                                <p className="text-muted">Нет профилей преобразования</p>
-                            ) : (
-                                <div className="profiles-list">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>Версия</th>
-                                                <th>Тип</th>
-                                                <th>Статус</th>
-                                                <th>Создан</th>
-                                                <th>Действия</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {profilesData.conversion_profiles.map((profile) => (
-                                                <tr key={profile.id} className={profile.status === 'active' ? 'row-active' : ''}>
-                                                    <td>
-                                                        <strong>{profile.version}</strong>
-                                                    </td>
-                                                    <td>{formatProfileKind(profile.kind)}</td>
-                                                    <td>
-                                                        <span className={`badge ${profileStatusColors[profile.status]}`}>
-                                                            {profileStatusLabels[profile.status]}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        {format(new Date(profile.created_at), 'dd MMM yyyy HH:mm')}
-                                                    </td>
-                                                    <td>
-                                                        {(profile.status === 'draft' || profile.status === 'scheduled') && (
-                                                            <button
-                                                                className="btn btn-primary btn-sm"
-                                                                onClick={() => {
-                                                                    if (confirm('Опубликовать профиль? Текущий активный профиль будет деактивирован.')) {
-                                                                        publishProfileMutation.mutate(profile.id)
-                                                                    }
-                                                                }}
-                                                                disabled={publishProfileMutation.isPending}
-                                                            >
-                                                                {publishProfileMutation.isPending ? 'Публикация...' : 'Опубликовать'}
-                                                            </button>
-                                                        )}
-                                                        {profile.status === 'active' && (
-                                                            <span className="text-muted">Активный профиль</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
-
-                {/* Журнал ошибок ingest */}
-                <div className="sensor-error-log-section">
-                    <div className="section-header">
-                        <h3>
-                            Журнал ошибок
-                            {errorLogData && errorLogData.total > 0 && (
-                                <span className="badge badge-danger" style={{ marginLeft: 8 }}>
-                                    {errorLogData.total}
-                                </span>
-                            )}
-                        </h3>
-                    </div>
-
-                    {isLoadingErrorLog && <Loading />}
-
-                    {!isLoadingErrorLog && errorLogData && errorLogData.entries.length > 0 && (
-                        <>
-                            <div className="table-responsive">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Время</th>
-                                            <th>Код ошибки</th>
-                                            <th>Канал</th>
-                                            <th>Чтений</th>
-                                            <th>Сообщение</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {errorLogData.entries.map((entry: SensorErrorEntry) => (
-                                            <tr key={entry.id}>
-                                                <td style={{ whiteSpace: 'nowrap' }}>
-                                                    {format(new Date(entry.occurred_at), 'dd MMM HH:mm:ss')}
-                                                </td>
-                                                <td>
-                                                    <span className={`badge ${
-                                                        entry.error_code === 'rate_limited' ? 'badge-warning' :
-                                                        entry.error_code === 'unauthorized' ? 'badge-danger' :
-                                                        entry.error_code === 'validation_error' ? 'badge-info' :
-                                                        'badge-secondary'
-                                                    }`}>
-                                                        {entry.error_code}
-                                                    </span>
-                                                </td>
-                                                <td>{entry.endpoint}</td>
-                                                <td>{entry.readings_count ?? '—'}</td>
-                                                <td className="text-muted" style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {entry.error_message ?? '—'}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            {errorLogData.total > ERROR_LOG_LIMIT && (
-                                <div className="pagination-row" style={{ marginTop: 8 }}>
-                                    <button
-                                        className="btn btn-sm btn-secondary"
-                                        disabled={errorLogPage === 0}
-                                        onClick={() => setErrorLogPage(p => p - 1)}
-                                    >
-                                        ← Назад
-                                    </button>
-                                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                        {errorLogPage * ERROR_LOG_LIMIT + 1}–{Math.min((errorLogPage + 1) * ERROR_LOG_LIMIT, errorLogData.total)} из {errorLogData.total}
-                                    </span>
-                                    <button
-                                        className="btn btn-sm btn-secondary"
-                                        disabled={(errorLogPage + 1) * ERROR_LOG_LIMIT >= errorLogData.total}
-                                        onClick={() => setErrorLogPage(p => p + 1)}
-                                    >
-                                        Вперёд →
-                                    </button>
-                                </div>
-                            )}
-                        </>
-                    )}
-
-                    {!isLoadingErrorLog && errorLogData && errorLogData.entries.length === 0 && (
-                        <p className="text-muted">Ошибок нет</p>
-                    )}
-                </div>
-
-                {/* Секция backfill (пересчёт данных) */}
-                <div className="sensor-backfill-section">
-                    <div className="section-header">
-                        <h3>Пересчёт данных</h3>
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => {
-                                if (confirm('Запустить пересчёт physical_value для всех записей по активному профилю?')) {
-                                    startBackfillMutation.mutate()
-                                }
-                            }}
-                            disabled={startBackfillMutation.isPending || !sensor.active_profile_id}
-                            title={!sensor.active_profile_id ? 'Нет активного профиля' : ''}
-                        >
-                            {startBackfillMutation.isPending ? 'Запуск...' : 'Запустить пересчёт'}
-                        </button>
-                    </div>
-
-                    {isLoadingBackfill && <Loading />}
-
-                    {!isLoadingBackfill && backfillData && backfillData.backfill_tasks.length > 0 && (
-                        <div className="backfill-list">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Статус</th>
-                                        <th>Прогресс</th>
-                                        <th>Создан</th>
-                                        <th>Ошибка</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {backfillData.backfill_tasks.map((task) => {
-                                        const progress = task.total_records
-                                            ? Math.round((task.processed_records / task.total_records) * 100)
-                                            : 0
-                                        return (
-                                            <tr key={task.id}>
-                                                <td>
-                                                    <span className={`badge ${backfillStatusColors[task.status]}`}>
-                                                        {backfillStatusLabels[task.status]}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    {task.total_records !== null ? (
-                                                        <>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                <div style={{
-                                                                    flex: 1,
-                                                                    height: '8px',
-                                                                    background: 'var(--border-color, #e0e0e0)',
-                                                                    borderRadius: '4px',
-                                                                    overflow: 'hidden',
-                                                                }}>
-                                                                    <div style={{
-                                                                        width: `${progress}%`,
-                                                                        height: '100%',
-                                                                        background: task.status === 'failed'
-                                                                            ? 'var(--color-danger, #dc3545)'
-                                                                            : 'var(--color-primary, #1976d2)',
-                                                                        borderRadius: '4px',
-                                                                        transition: 'width 0.3s',
-                                                                    }} />
-                                                                </div>
-                                                                <span style={{ fontSize: '0.85em', minWidth: '80px' }}>
-                                                                    {task.processed_records} / {task.total_records}
-                                                                </span>
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <span className="text-muted">—</span>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    {format(new Date(task.created_at), 'dd MMM HH:mm')}
-                                                </td>
-                                                <td>
-                                                    {task.error_message && (
-                                                        <span className="text-danger" title={task.error_message}>
-                                                            {task.error_message.length > 50
-                                                                ? task.error_message.slice(0, 50) + '...'
-                                                                : task.error_message}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        )
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-
-                    {!isLoadingBackfill && backfillData && backfillData.backfill_tasks.length === 0 && (
-                        <p className="text-muted">Нет задач пересчёта</p>
-                    )}
-                </div>
+                <SensorBackfillSection
+                    backfillData={backfillData}
+                    isLoadingBackfill={isLoadingBackfill}
+                    startBackfillMutation={startBackfillMutation}
+                    hasActiveProfile={!!sensor.active_profile_id}
+                />
             </div>
 
             {id && (
@@ -822,4 +368,3 @@ function SensorDetail() {
 }
 
 export default SensorDetail
-

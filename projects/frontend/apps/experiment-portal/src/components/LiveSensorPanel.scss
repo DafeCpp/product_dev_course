@@ -48,15 +48,15 @@
 }
 
 .lsp__summary-chip--online {
-  background: #16a34a;
+  background: $success;
 }
 
 .lsp__summary-chip--delayed {
-  background: #d97706;
+  background: $warning;
 }
 
 .lsp__summary-chip--offline {
-  background: #6b7280;
+  background: $text-secondary;
 }
 
 .lsp__list {
@@ -214,18 +214,18 @@
 }
 
 .lsp__latency--green {
-  background: rgba(22, 163, 74, 0.12);
-  color: #16a34a;
+  background: rgba($success, 0.12);
+  color: $success;
 }
 
 .lsp__latency--amber {
-  background: rgba(217, 119, 6, 0.12);
-  color: #d97706;
+  background: rgba($warning, 0.12);
+  color: $warning;
 }
 
 .lsp__latency--gray {
   background: $overlay-ink-08;
-  color: #6b7280;
+  color: $text-secondary;
 }
 
 .lsp__status {
@@ -236,20 +236,20 @@
 }
 
 .lsp__status--online {
-  color: #16a34a;
+  color: $success;
 }
 
 .lsp__status--delayed {
-  color: #d97706;
+  color: $warning;
 }
 
 .lsp__status--offline {
-  color: #6b7280;
+  color: $text-secondary;
 }
 
 .lsp__error-badge {
   margin-left: auto;
-  background: #dc2626;
+  background: $error;
   color: #fff;
   font-size: 10px;
   font-weight: 700;

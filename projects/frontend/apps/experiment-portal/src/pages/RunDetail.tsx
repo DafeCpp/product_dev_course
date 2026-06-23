@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { runsApi, experimentsApi, captureSessionsApi, sensorsApi, runSensorsApi } from '../api/client'
+import { useQuery } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
+import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
 import {
@@ -9,128 +10,24 @@ import {
   Loading,
   Error as ErrorComponent,
   EmptyState,
-  InfoRow,
-  runStatusMap,
-  captureSessionStatusMap,
   MaterialSelect,
+  runStatusMap,
 } from '../components/common'
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
 import TelemetryExportModal from '../components/TelemetryExportModal'
 import AuditLog from '../components/AuditLog'
 import RunMetrics from '../components/RunMetrics'
 import ArtifactsPanel from '../components/ArtifactsPanel'
+import RunSensorsPanel from './run-detail/RunSensorsPanel'
+import RunOverviewGrid from './run-detail/RunOverviewGrid'
+import RunCaptureSessions from './run-detail/RunCaptureSessions'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
 import { useCountdown } from '../hooks/useCountdown'
-
-// ---------------------------------------------------------------------------
-// Run Sensors panel
-// ---------------------------------------------------------------------------
-
-function RunSensorsPanel({ runId, projectId }: { runId: string; projectId: string }) {
-  const queryClient = useQueryClient()
-  const [showAdd, setShowAdd] = useState(false)
-
-  const { data: attachedData, isLoading } = useQuery({
-    queryKey: ['run-sensors', runId],
-    queryFn: () => runSensorsApi.list(runId, { project_id: projectId }),
-    enabled: !!runId,
-  })
-
-  const { data: allSensorsData } = useQuery({
-    queryKey: ['sensors', projectId],
-    queryFn: () => sensorsApi.list({ project_id: projectId }),
-    enabled: !!projectId,
-  })
-
-  const attachMutation = useMutation({
-    mutationFn: (sensorId: string) =>
-      runSensorsApi.attach(runId, sensorId, { project_id: projectId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run-sensors', runId] })
-      setShowAdd(false)
-      notifySuccess('Датчик привязан')
-    },
-    onError: () => notifyError('Не удалось привязать датчик'),
-  })
-
-  const detachMutation = useMutation({
-    mutationFn: (sensorId: string) =>
-      runSensorsApi.detach(runId, sensorId, { project_id: projectId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run-sensors', runId] })
-      notifySuccess('Датчик откреплён')
-    },
-    onError: () => notifyError('Не удалось открепить датчик'),
-  })
-
-  const attached = attachedData?.sensors ?? []
-  const attachedIds = new Set(attached.map((s) => s.sensor_id))
-  const allSensors = allSensorsData?.sensors ?? []
-  const available = allSensors.filter((s) => !attachedIds.has(s.id))
-
-  if (isLoading) return <Loading />
-
-  return (
-    <div className="run-sensors">
-      {attached.length === 0 ? (
-        <p className="run-sensors__empty">Датчики не привязаны</p>
-      ) : (
-        <div className="run-sensors__list">
-          {attached.map((rs) => {
-            const sensor = allSensors.find((s) => s.id === rs.sensor_id)
-            return (
-              <div key={rs.sensor_id} className="run-sensors__item">
-                <span className="run-sensors__name">{sensor?.name ?? rs.sensor_id}</span>
-                <span className="run-sensors__type">{sensor?.type ?? '—'}</span>
-                <span className="run-sensors__mode badge">{rs.mode}</span>
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={() => detachMutation.mutate(rs.sensor_id)}
-                  disabled={detachMutation.isPending}
-                >
-                  Открепить
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-      {!showAdd ? (
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => setShowAdd(true)}
-          disabled={available.length === 0}
-          style={{ marginTop: '0.5rem' }}
-        >
-          + Привязать датчик
-        </button>
-      ) : (
-        <div className="run-sensors__add" style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
-          <select
-            defaultValue=""
-            onChange={(e) => { if (e.target.value) attachMutation.mutate(e.target.value) }}
-            disabled={attachMutation.isPending}
-          >
-            <option value="">Выберите датчик...</option>
-            {available.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.type})</option>
-            ))}
-          </select>
-          <button className="btn btn-secondary btn-sm" onClick={() => setShowAdd(false)}>
-            Отмена
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function RunDetail() {
   const { id } = useParams<{ id: string }>()
-  const queryClient = useQueryClient()
   const [actionError, setActionError] = useState<string | null>(null)
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<string | null>(null)
   const [selectedSensorId, setSelectedSensorId] = useState<string>('')
@@ -188,66 +85,36 @@ function RunDetail() {
     }
   }, [sensors, selectedSensorId])
 
-  const completeMutation = useMutation({
+  const completeMutation = useApiMutation({
     mutationFn: () => runsApi.complete(id!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run', id] })
-      queryClient.invalidateQueries({ queryKey: ['runs'] })
-      notifySuccess('Run завершён')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось завершить run'
-      setActionError(msg)
-      notifyError(msg)
-    },
+    invalidateKeys: [['run', id], ['runs']],
+    successMessage: 'Run завершён',
+    errorFallback: 'Не удалось завершить run',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось завершить run'),
   })
 
-  const startRunMutation = useMutation({
+  const startRunMutation = useApiMutation({
     mutationFn: () => {
       setActionError(null)
       return runsApi.update(id!, { status: 'running' })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run', id] })
-      queryClient.invalidateQueries({ queryKey: ['runs'] })
-      notifySuccess('Run запущен')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось запустить run'
-      setActionError(msg)
-      notifyError(msg)
-    },
+    invalidateKeys: [['run', id], ['runs']],
+    successMessage: 'Run запущен',
+    errorFallback: 'Не удалось запустить run',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить run'),
   })
 
-  const failMutation = useMutation({
-    mutationFn: (reason?: string) => runsApi.fail(id!, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['run', id] })
-      queryClient.invalidateQueries({ queryKey: ['runs'] })
-      notifySuccess('Run помечен как failed')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось пометить run как failed'
-      setActionError(msg)
-      notifyError(msg)
-    },
+  const failMutation = useApiMutation<unknown, string | undefined>({
+    mutationFn: (reason) => runsApi.fail(id!, reason),
+    invalidateKeys: [['run', id], ['runs']],
+    successMessage: 'Run помечен как failed',
+    errorFallback: 'Не удалось пометить run как failed',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось пометить run как failed'),
   })
 
   // Создание capture session
-  const createSessionMutation = useMutation({
-    mutationFn: (notes?: string) => {
+  const createSessionMutation = useApiMutation<unknown, string | undefined>({
+    mutationFn: (notes) => {
       if (!experiment) throw new Error('Experiment not loaded')
       const nextOrdinal = sessions.length > 0
         ? Math.max(...sessions.map((s: CaptureSession) => s.ordinal_number)) + 1
@@ -259,56 +126,29 @@ function RunDetail() {
         notes: notes || undefined,
       }, { project_id: experiment.project_id })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
-      notifySuccess('Отсчёт запущен')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось запустить отсчёт'
-      setActionError(msg)
-      notifyError(msg)
-    },
+    invalidateKeys: [['capture-sessions', id]],
+    successMessage: 'Отсчёт запущен',
+    errorFallback: 'Не удалось запустить отсчёт',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить отсчёт'),
   })
 
   // Остановка capture session
-  const stopSessionMutation = useMutation({
-    mutationFn: (sessionId: string) => captureSessionsApi.stop(id!, sessionId),
-    onSuccess: () => {
-      setOptimisticActiveSessionId(null)
-      queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
-      notifySuccess('Отсчёт остановлен')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось остановить отсчёт'
-      setActionError(msg)
-      notifyError(msg)
-    },
+  const stopSessionMutation = useApiMutation<unknown, string>({
+    mutationFn: (sessionId) => captureSessionsApi.stop(id!, sessionId),
+    invalidateKeys: [['capture-sessions', id]],
+    successMessage: 'Отсчёт остановлен',
+    errorFallback: 'Не удалось остановить отсчёт',
+    onSuccess: () => setOptimisticActiveSessionId(null),
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось остановить отсчёт'),
   })
 
   // Удаление capture session
-  const deleteSessionMutation = useMutation({
-    mutationFn: (sessionId: string) => captureSessionsApi.delete(id!, sessionId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['capture-sessions', id] })
-      notifySuccess('Сессия удалена')
-    },
-    onError: (err: any) => {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Не удалось удалить сессию'
-      setActionError(msg)
-      notifyError(msg)
-    },
+  const deleteSessionMutation = useApiMutation<unknown, string>({
+    mutationFn: (sessionId) => captureSessionsApi.delete(id!, sessionId),
+    invalidateKeys: [['capture-sessions', id]],
+    successMessage: 'Сессия удалена',
+    errorFallback: 'Не удалось удалить сессию',
+    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось удалить сессию'),
   })
 
   const countdownDeadline = useMemo(() => {
@@ -346,7 +186,6 @@ function RunDetail() {
     }
     return `${secs}с`
   }
-
 
   const formatSessionDuration = (startedAt?: string | null, stoppedAt?: string | null) => {
     if (!startedAt) return '-'
@@ -487,74 +326,16 @@ function RunDetail() {
         )}
       </section>
 
-      <div className="detail-grid run-detail__overview-grid">
-        <div className="run-header card detail-card">
-          <div className="detail-section-header">
-            <div className="detail-section-header__copy">
-              <span className="detail-card__eyebrow">Run Record</span>
-              <h3 className="detail-card__title">Контекст запуска</h3>
-              <p>Основные идентификаторы, временные метки и статусные поля для диагностики и аудита.</p>
-            </div>
-          </div>
-
-          {IS_TEST && actionError && <div className="error run-detail__action-error">{actionError}</div>}
-
-          <div className="run-info">
-            <InfoRow label="ID" value={<span className="mono">{run.id}</span>} />
-            <InfoRow label="Experiment ID" value={<span className="mono">{run.experiment_id}</span>} />
-            <InfoRow label="Статус" value={<StatusBadge status={run.status} statusMap={runStatusMap} />} />
-            {run.started_at && <InfoRow label="Начало" value={formattedStartedAt} />}
-            {run.finished_at && <InfoRow label="Завершение" value={formattedFinishedAt} />}
-            {run.duration_seconds && <InfoRow label="Длительность" value={formattedDuration} />}
-            <InfoRow label="Создан" value={formattedCreatedAt} />
-          </div>
-
-          <div className="detail-meta-grid">
-            <div className="detail-meta-card">
-              <span>Активная сессия</span>
-              <strong>{activeSession ? `#${activeSession.ordinal_number}` : 'Нет'}</strong>
-            </div>
-            <div className="detail-meta-card">
-              <span>Сенсоров</span>
-              <strong>{sensors.length}</strong>
-            </div>
-            <div className="detail-meta-card">
-              <span>Старт</span>
-              <strong>{formattedStartedAt}</strong>
-            </div>
-            <div className="detail-meta-card">
-              <span>Финиш</span>
-              <strong>{formattedFinishedAt}</strong>
-            </div>
-          </div>
-        </div>
-
-        <div className="detail-stack">
-          {run.notes && (
-            <div className="notes-section card detail-card">
-              <span className="detail-card__eyebrow">Notes</span>
-              <h3 className="detail-card__title">Заметки</h3>
-              <p className="detail-card__text">{run.notes}</p>
-            </div>
-          )}
-
-          <div className="parameters-section card detail-card">
-            <span className="detail-card__eyebrow">Params</span>
-            <h3 className="detail-card__title">Параметры запуска</h3>
-            <pre className="detail-code-block parameters-json">{JSON.stringify(run.params, null, 2)}</pre>
-          </div>
-
-          {run.metadata && Object.keys(run.metadata).length > 0 && (
-            <div className="metadata-section card detail-card">
-              <span className="detail-card__eyebrow">Metadata</span>
-              <h3 className="detail-card__title">Метаданные</h3>
-              <pre className="detail-code-block metadata-json">
-                {JSON.stringify(run.metadata, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-      </div>
+      <RunOverviewGrid
+        run={run}
+        sensors={sensors}
+        activeSession={activeSession}
+        actionError={actionError}
+        formattedStartedAt={formattedStartedAt}
+        formattedFinishedAt={formattedFinishedAt}
+        formattedCreatedAt={formattedCreatedAt}
+        formattedDuration={formattedDuration}
+      />
 
       <section className="metrics-section card detail-card">
         <div className="detail-section-header">
@@ -624,141 +405,19 @@ function RunDetail() {
         />
       )}
 
-      <section className="capture-sessions-section card detail-card">
-        <div className="detail-section-header">
-          <div className="detail-section-header__copy">
-            <span className="detail-card__eyebrow">Capture Sessions</span>
-            <h3 className="detail-card__title">Сессии отсчёта</h3>
-            <p>История активных и завершенных интервалов сбора с аудитом на уровне каждой сессии.</p>
-          </div>
-          {sessions.length > 0 && (
-            <button className="btn btn-secondary btn-sm" onClick={() => setExportTarget({ mode: 'run' })}>
-              Экспорт телеметрии…
-            </button>
-          )}
-        </div>
-
-        {sessionsLoading ? (
-          <Loading message="Загрузка сессий..." />
-        ) : sessions.length === 0 ? (
-          <EmptyState message="Сессии отсчёта отсутствуют">
-            {canManageSessions && !activeSession && experiment && (
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  const notes = prompt('Заметки (опционально):')
-                  createSessionMutation.mutate(notes || undefined)
-                }}
-                disabled={createSessionMutation.isPending}
-              >
-                Создать сессию
-              </button>
-            )}
-          </EmptyState>
-        ) : (
-          <div className="sessions-list">
-            {activeSession && (
-              <div className="session-card active">
-                <div className="session-header">
-                  <div>
-                    <h4>Активная сессия #{activeSession.ordinal_number}</h4>
-                    <StatusBadge status={activeSession.status} statusMap={captureSessionStatusMap} />
-                  </div>
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => {
-                      if (confirm('Остановить отсчёт?')) {
-                        stopSessionMutation.mutate(activeSession.id)
-                      }
-                    }}
-                    disabled={stopSessionMutation.isPending}
-                  >
-                    Стоп
-                  </button>
-                </div>
-                {activeSession.started_at && (
-                  <div className="session-info">
-                    <InfoRow label="Начало" value={format(new Date(activeSession.started_at), 'dd MMM yyyy HH:mm:ss')} />
-                    <InfoRow
-                      label="Длительность"
-                      value={formatSessionDuration(activeSession.started_at, activeSession.stopped_at)}
-                    />
-                    {activeSession.notes && <InfoRow label="Заметки" value={activeSession.notes} />}
-                  </div>
-                )}
-                <AuditLog
-                  runId={id!}
-                  captureSessionId={activeSession.id}
-                  title={`События сессии #${activeSession.ordinal_number}`}
-                />
-              </div>
-            )}
-
-            {sessions
-              .filter(
-                (s: CaptureSession) => s.status !== 'running' && s.status !== 'backfilling'
-              )
-              .sort((a: CaptureSession, b: CaptureSession) => b.ordinal_number - a.ordinal_number)
-              .map((session: CaptureSession) => (
-                <div key={session.id} className="session-card">
-                  <div className="session-header">
-                    <div>
-                      <h4>Сессия #{session.ordinal_number}</h4>
-                      <StatusBadge status={session.status} statusMap={captureSessionStatusMap} />
-                    </div>
-                    <div className="session-actions">
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() =>
-                          setExportTarget({
-                            mode: 'session',
-                            sessionId: session.id,
-                            sessionOrdinal: session.ordinal_number,
-                          })
-                        }
-                      >
-                        Экспорт телеметрии…
-                      </button>
-                      {session.status !== 'archived' && (
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            if (confirm('Удалить сессию?')) {
-                              deleteSessionMutation.mutate(session.id)
-                            }
-                          }}
-                          disabled={deleteSessionMutation.isPending}
-                        >
-                          Удалить
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="session-info">
-                    {session.started_at && (
-                      <InfoRow label="Начало" value={format(new Date(session.started_at), 'dd MMM yyyy HH:mm:ss')} />
-                    )}
-                    {session.stopped_at && (
-                      <InfoRow label="Остановка" value={format(new Date(session.stopped_at), 'dd MMM yyyy HH:mm:ss')} />
-                    )}
-                    {session.started_at && (
-                      <InfoRow
-                        label="Длительность"
-                        value={formatSessionDuration(session.started_at, session.stopped_at)}
-                      />
-                    )}
-                    {session.notes && <InfoRow label="Заметки" value={session.notes} />}
-                  </div>
-                  <AuditLog
-                    runId={id!}
-                    captureSessionId={session.id}
-                    title={`События сессии #${session.ordinal_number}`}
-                  />
-                </div>
-              ))}
-          </div>
-        )}
-      </section>
+      <RunCaptureSessions
+        runId={id!}
+        sessions={sessions}
+        activeSession={activeSession}
+        sessionsLoading={sessionsLoading}
+        canManageSessions={canManageSessions}
+        experiment={experiment}
+        createSessionMutation={createSessionMutation}
+        stopSessionMutation={stopSessionMutation}
+        deleteSessionMutation={deleteSessionMutation}
+        setExportTarget={setExportTarget}
+        formatSessionDuration={formatSessionDuration}
+      />
 
       <section className="card detail-card">
         <div className="detail-section-header">

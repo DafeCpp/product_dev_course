@@ -20,6 +20,8 @@ RUN poetry install --no-root
 # Copy source code
 COPY services/telemetry-ingest-service/src ./src
 COPY services/telemetry-ingest-service/openapi ./openapi
+COPY services/telemetry-ingest-service/bin ./bin
+COPY services/telemetry-ingest-service/migrations ./migrations
 
 # Set PYTHONPATH to include src directory and backend-common
 ENV PYTHONPATH=/app/services/telemetry-ingest-service/src:/app/common/src

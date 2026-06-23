@@ -165,3 +165,110 @@
   padding-bottom: 9px;
   font-size: 0.88rem;
 }
+
+// ── Pill variant (B1 capsule style) ──
+.md-select--pill .md-select__label {
+  display: none;
+}
+
+.md-select--pill .md-select__control {
+  min-height: 40px;
+  border-radius: var(--radius-pill);
+  border-color: $input-border;
+  background: var(--surface);
+}
+
+.md-select--pill .md-select__control:hover {
+  border-color: $outline-muted;
+  background: var(--surface-variant);
+}
+
+.md-select--pill .md-select__control--open {
+  border-color: $primary;
+  box-shadow: var(--focus-ring);
+  background: var(--surface);
+}
+
+.md-select--pill .md-select__control--disabled {
+  opacity: 0.62;
+  background: $surface-variant;
+}
+
+.md-select--pill .md-select__trigger {
+  position: relative;
+  min-height: 40px;
+  padding: 0 28px 0 12px;
+  font-size: 0.85rem;
+  border-radius: var(--radius-pill);
+  gap: 6px;
+}
+
+.md-select--pill.md-select--has-icon .md-select__trigger {
+  padding-left: 10px;
+}
+
+.md-select__pill-icon {
+  color: $text-secondary;
+  flex: none;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.md-select--pill .md-select__control--open .md-select__pill-icon {
+  color: $primary;
+}
+
+.md-select--pill .md-select__icon {
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  color: $text-secondary;
+  transition: transform 0.2s ease, color 0.15s ease;
+}
+
+.md-select--pill .md-select__control--open .md-select__icon {
+  color: $primary;
+}
+
+.md-select__float-label {
+  position: absolute;
+  left: 36px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.85rem;
+  color: $text-secondary;
+  pointer-events: none;
+  background: var(--surface);
+  padding: 0 3px;
+  transition: top 0.15s ease, font-size 0.15s ease, color 0.15s ease, left 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+}
+
+.md-select--pill:not(.md-select--has-icon) .md-select__float-label {
+  left: 12px;
+}
+
+.md-select__float-label.is-floating {
+  top: 0;
+  transform: translateY(-50%);
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: $primary;
+  left: 10px;
+}
+
+.md-select--pill .md-select__control--open .md-select__float-label {
+  top: 0;
+  transform: translateY(-50%);
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: $primary;
+  left: 10px;
+}
+
+.md-select--pill .md-select__value {
+  font-size: 0.85rem;
+}

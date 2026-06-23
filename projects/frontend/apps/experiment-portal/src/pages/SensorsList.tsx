@@ -15,6 +15,9 @@ import {
   FloatingActionButton,
   MaterialSelect,
   sensorStatusMap,
+  SearchIcon,
+  FolderIcon,
+  SensorIcon,
 } from '../components/common'
 import SensorDetailModal from '../components/SensorDetailModal'
 import SensorStatusSummaryBar from '../components/SensorStatusSummaryBar'
@@ -25,6 +28,7 @@ function SensorsList() {
   const navigate = useNavigate()
   const [projectId, setProjectId] = useState<string>('')
   const [status, setStatus] = useState<string>('')
+  const [searchQuery, setSearchQuery] = useState<string>('')
   const [page, setPage] = useState(1)
   const [selectedSensorId, setSelectedSensorId] = useState<string | null>(null)
   const pageSize = 20
@@ -52,6 +56,10 @@ function SensorsList() {
     enabled: !!projectId,
     refetchInterval: 30_000,
   })
+
+  const filteredSensors = data?.sensors?.filter(s =>
+    !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase())
+  ) ?? []
 
   const formatLastHeartbeat = (heartbeat?: string | null) => {
     if (!heartbeat) return 'Никогда'
@@ -93,58 +101,51 @@ function SensorsList() {
         <>
           {statusSummary && <SensorStatusSummaryBar summary={statusSummary} />}
 
-          <div className="filters card filter-panel">
-            <div className="filter-panel__header">
-              <div>
-                <div className="filter-panel__title">Fleet Filters</div>
-                <p className="filter-panel__subtitle">
-                  Переключайтесь между проектами и быстро отсекайте устройства по рабочему статусу.
-                </p>
-              </div>
+          <div className="filter-capsule sensors-filter-capsule">
+            <div className="filter-capsule__search filter-capsule__search--constrained">
+              <SearchIcon />
+              <input
+                type="text"
+                placeholder="ID или имя сенсора"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-
-            <div className="filters-grid sensors-filters-grid">
-              <MaterialSelect
-                id="sensor_project_id"
-                label="Проект"
-                value={projectId}
-                onChange={(id) => {
-                  setProjectId(id)
-                  setActiveProjectId(id)
-                  setPage(1)
-                }}
-                disabled={projectsLoading || isLoading}
-              >
-                <option value="">Все проекты</option>
-                {projectsData?.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </MaterialSelect>
-              <MaterialSelect
-                id="sensor_status"
-                label="Статус"
-                value={status}
-                onChange={(value) => {
-                  setStatus(value)
-                  setPage(1)
-                }}
-                disabled={isLoading}
-              >
-                <option value="">Все</option>
-                <option value="registering">Регистрация</option>
-                <option value="active">Активен</option>
-                <option value="inactive">Неактивен</option>
-                <option value="archived">Архивирован</option>
-              </MaterialSelect>
-            </div>
+            <MaterialSelect
+              id="sensor_project_id"
+              label="Проект"
+              value={projectId}
+              onChange={(id) => { setProjectId(id); setActiveProjectId(id); setPage(1) }}
+              disabled={projectsLoading || isLoading}
+              variant="pill"
+              icon={<FolderIcon />}
+            >
+              <option value="">Все проекты</option>
+              {projectsData?.projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </MaterialSelect>
+            <MaterialSelect
+              id="sensor_status"
+              label="Статус"
+              value={status}
+              onChange={(value) => { setStatus(value); setPage(1) }}
+              disabled={isLoading}
+              variant="pill"
+              icon={<SensorIcon />}
+            >
+              <option value="">Все</option>
+              <option value="registering">Регистрация</option>
+              <option value="active">Активен</option>
+              <option value="inactive">Неактивен</option>
+              <option value="archived">Архивирован</option>
+            </MaterialSelect>
           </div>
 
           {data && (
             <>
               <div className="sensors-grid">
-                {data.sensors.map((sensor: Sensor) => (
+                {filteredSensors.map((sensor: Sensor) => (
                   <div
                     key={sensor.id}
                     className="sensor-card card"
@@ -215,7 +216,7 @@ function SensorsList() {
                 ))}
               </div>
 
-              {data.sensors.length === 0 && <EmptyState message="Датчики не найдены" />}
+              {filteredSensors.length === 0 && <EmptyState message="Датчики не найдены" />}
 
               <Pagination
                 currentPage={page}

@@ -5,6 +5,7 @@ import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess } from '../utils/notify'
+import { UserIcon, LockIcon } from '../components/common'
 import './Login.scss'
 
 function Login() {
@@ -102,30 +103,36 @@ function Login() {
           <form onSubmit={handleSubmit} className="login-form auth-form">
             <div className="form-group">
               <label htmlFor="username">Имя пользователя</label>
-              <input
-                id="username"
-                type="text"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                required
-                autoComplete="username"
-                placeholder="Введите имя пользователя"
-                disabled={loginMutation.isPending}
-              />
+              <div className="login-input-field">
+                <UserIcon width={16} height={16} />
+                <input
+                  id="username"
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  required
+                  autoComplete="username"
+                  placeholder="Введите имя пользователя"
+                  disabled={loginMutation.isPending}
+                />
+              </div>
             </div>
 
             <div className="form-group">
               <label htmlFor="password">Пароль</label>
-              <input
-                id="password"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
-                autoComplete="current-password"
-                placeholder="Введите пароль"
-                disabled={loginMutation.isPending}
-              />
+              <div className="login-input-field">
+                <LockIcon width={16} height={16} />
+                <input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required
+                  autoComplete="current-password"
+                  placeholder="Введите пароль"
+                  disabled={loginMutation.isPending}
+                />
+              </div>
             </div>
 
             <button

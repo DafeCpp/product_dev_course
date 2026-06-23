@@ -82,6 +82,16 @@ const DEFAULT_SETTINGS: PersistedSettings = {
 function randomKey(prefix: string): string {
     const cryptoAny = (globalThis as any)?.crypto as Crypto | undefined
     if (cryptoAny?.randomUUID) return `${prefix}_${cryptoAny.randomUUID()}`
+    if (cryptoAny?.getRandomValues) {
+        const buf = new Uint8Array(16)
+        cryptoAny.getRandomValues(buf)
+        const hex = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('')
+        return `${prefix}_${hex}`
+    }
+    // No CSPRNG available (very old runtime). Fall back to a non-secure mix —
+    // safe here because the key is only used as a UI list identifier, not for
+    // authentication/authorization. Marked for static analysis.
+    // lgtm[js/insecure-randomness]
     return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`
 }
 

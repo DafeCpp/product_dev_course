@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
-import { Loading, Error, EmptyState, FloatingActionButton } from '../components/common'
+import { Loading, Error, EmptyState, FloatingActionButton, MaterialSelect, SearchIcon, UserIcon, EyeIcon, TeamIcon } from '../components/common'
 import ProjectModal from '../components/ProjectModal'
 import ProjectMembersModal from '../components/ProjectMembersModal'
 import './ProjectsList.scss'
@@ -85,26 +85,29 @@ function ProjectsList() {
 
   return (
     <div className="projects-list">
-      <div className="projects-filters" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <input
-          type="text"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Поиск проектов..."
-          style={{ flex: '1 1 200px', minWidth: 160 }}
-          aria-label="Поиск проектов"
-        />
-        <select
+      <div className="filter-capsule projects-filter-capsule">
+        <div className="filter-capsule__search">
+          <SearchIcon />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Поиск проектов..."
+            aria-label="Поиск проектов"
+          />
+        </div>
+        <MaterialSelect
+          id="projects_role_filter"
+          label="Роль"
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          aria-label="Фильтр по роли"
+          onChange={(v) => setRoleFilter(v)}
+          variant="pill"
+          icon={<UserIcon />}
         >
           {ROLE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
-        </select>
+        </MaterialSelect>
       </div>
 
       {isLoading && <Loading message="Загрузка проектов..." />}
@@ -137,33 +140,32 @@ function ProjectsList() {
                     </div>
 
                     <div className="project-card-header">
-                      <div>
-                        <h3>{project.name}</h3>
-                        <p className="project-card__supporting-text">
-                          {owner
-                            ? 'Полный доступ к конфигурации проекта и составу команды.'
-                            : 'Доступ к просмотру и совместной работе в рамках проекта.'}
-                        </p>
-                      </div>
-
-                      <div className="project-card-actions">
+                      <h3>{project.name}</h3>
+                      <p className="project-card__supporting-text">
+                        {owner
+                          ? 'Полный доступ к конфигурации проекта и составу команды.'
+                          : 'Доступ к просмотру и совместной работе в рамках проекта.'}
+                      </p>
+                      <div className="pill-actions">
                         <button
-                          className="btn btn-secondary btn-sm"
+                          className="pill-btn"
                           onClick={() => openProject(project.id, project.owner_id)}
                           title={owner ? 'Просмотр и редактирование' : 'Просмотр'}
                           aria-label="Открыть проект"
                           disabled={actionsDisabled}
                         >
-                          {owner ? 'Открыть' : 'Просмотр'}
+                          <EyeIcon />
+                          Подробнее
                         </button>
                         {owner && (
                           <button
-                            className="btn btn-secondary btn-sm"
+                            className="pill-btn"
                             onClick={() => handleManageMembers(project.id, project.owner_id)}
                             title="Управление участниками"
                             aria-label="Управление участниками"
                             disabled={actionsDisabled}
                           >
+                            <TeamIcon />
                             Команда
                           </button>
                         )}

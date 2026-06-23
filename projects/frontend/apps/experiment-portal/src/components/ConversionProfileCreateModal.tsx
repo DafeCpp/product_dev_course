@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { conversionProfilesApi } from '../api/client'
 import type { ConversionProfileInput } from '../types'
 import Modal from './Modal'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifyError } from '../utils/notify'
 
 interface ConversionProfileCreateModalProps {
     sensorId: string
@@ -53,7 +53,6 @@ function previewConversion(kind: ProfileKind, payload: Record<string, any>, rawV
 }
 
 function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionProfileCreateModalProps) {
-    const queryClient = useQueryClient()
     const [version, setVersion] = useState('')
     const [kind, setKind] = useState<ProfileKind>('linear')
     const [error, setError] = useState<string | null>(null)
@@ -105,18 +104,12 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         return previewConversion(kind, payload, raw)
     }, [kind, linearA, linearB, coefficients, tablePoints, previewRaw])
 
-    const createMutation = useMutation({
-        mutationFn: (data: ConversionProfileInput) => conversionProfilesApi.create(sensorId, data),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sensor', sensorId, 'profiles'] })
-            notifySuccess('Профиль преобразования создан')
-            handleClose()
-        },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || 'Ошибка создания профиля'
-            setError(msg)
-            notifyError(msg)
-        },
+    const createMutation = useApiMutation<unknown, ConversionProfileInput>({
+        mutationFn: (data) => conversionProfilesApi.create(sensorId, data),
+        invalidateKeys: [['sensor', sensorId, 'profiles']],
+        successMessage: 'Профиль преобразования создан',
+        onSuccess: () => handleClose(),
+        onError: (err: any) => setError(err?.response?.data?.error || 'Ошибка создания профиля'),
     })
 
     const handleSubmit = (e: React.FormEvent) => {

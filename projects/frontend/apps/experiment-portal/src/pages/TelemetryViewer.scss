@@ -6,85 +6,15 @@
   gap: 18px;
 }
 
-.telemetry-view__hero {
-  margin-bottom: 0;
-  padding: 16px 18px;
-  gap: 12px;
-}
-
 .telemetry-view__workspace {
   display: grid;
   gap: 18px;
 }
 
-.telemetry-view__hero-pills .meta-chip {
-  background: rgba(255, 255, 255, 0.76);
-  border-color: rgba(16, 34, 58, 0.08);
-  color: var(--text);
-  padding: 4px 8px;
-  font-size: 0.68rem;
-}
-
 .telemetry-view__filters {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
-.telemetry-view__filters--collapsed {
-  gap: 0;
-}
-
-.telemetry-view__filters-topbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 12px;
-  align-items: start;
-}
-
-.telemetry-view__filters-copy {
-  display: grid;
-  gap: 6px;
-}
-
-.telemetry-view__filters-body {
-  overflow: hidden;
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-6px);
-  transition: max-height 0.45s ease, opacity 0.24s ease, transform 0.24s ease;
-  pointer-events: none;
-}
-
-.telemetry-view__filters-body--open {
-  max-height: 2800px;
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.telemetry-view__status-stack {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.telemetry-view__grid {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.telemetry-view__grid > * {
-  grid-column: span 3;
-}
-
-.telemetry-view__grid > .telemetry-view__mode,
-.telemetry-view__grid > .telemetry-view__capture-actions,
-.telemetry-view__grid > .telemetry-view__backfill-actions {
-  grid-column: span 3;
-}
 
 .telemetry-view__menu {
   display: flex;
@@ -150,7 +80,6 @@
 }
 
 .telemetry-view__mode-toggle label,
-.telemetry-view__history-options label,
 .telemetry-view__checkbox {
   display: inline-flex;
   align-items: center;
@@ -164,8 +93,6 @@
 }
 
 .telemetry-view__mode-toggle input,
-.telemetry-view__history-options input[type='checkbox'],
-.telemetry-view__history-options input[type='radio'],
 .telemetry-view__checkbox input {
   accent-color: var(--primary);
 }
@@ -225,7 +152,7 @@
 
 .telemetry-view__history-controls {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: 1fr;
   gap: 14px;
 }
 
@@ -281,23 +208,6 @@
 .telemetry-view__hint {
   color: var(--text-secondary);
   font-size: 0.82rem;
-}
-
-.telemetry-view__history-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  align-content: start;
-}
-
-.telemetry-view__history-options input[type='number'] {
-  width: 108px;
-  min-height: 30px;
-  padding: 5px 8px;
-  border: 1px solid rgba(16, 34, 58, 0.1);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.84);
 }
 
 .telemetry-view__history-chart {
@@ -461,13 +371,8 @@
   }
 
   .telemetry-view__history-controls {
-    grid-template-columns: minmax(360px, 0.72fr) minmax(0, 1.28fr);
     gap: 12px;
     align-items: start;
-  }
-
-  .telemetry-view__history-options {
-    gap: 6px;
   }
 
   .telemetry-view__history-chart {
@@ -548,11 +453,6 @@
     gap: 10px;
   }
 
-  .telemetry-view__live-stage .detail-section-header__copy p,
-  .telemetry-view__history .detail-section-header__copy p {
-    font-size: 0.88rem;
-  }
-
   .telemetry-view__panels {
     grid-template-columns: repeat(4, minmax(300px, 1fr));
     gap: 10px;
@@ -563,19 +463,11 @@
   }
 
   .telemetry-view__history-controls {
-    grid-template-columns: minmax(420px, 0.62fr) minmax(0, 1.38fr);
     gap: 10px;
   }
 
   .telemetry-view__history-sensors {
     gap: 8px;
-  }
-
-  .telemetry-view__history-options {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, max-content));
-    justify-content: start;
-    gap: 6px;
   }
 
   .telemetry-view__history-chart {
@@ -612,9 +504,6 @@
     grid-column: span 6;
   }
 
-  .telemetry-view__history-controls {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 1100px) {
@@ -635,7 +524,6 @@
   .telemetry-view__capture-actions-btns,
   .telemetry-view__backfill-btns,
   .telemetry-view__sensor-actions,
-  .telemetry-view__history-options,
   .telemetry-view__mode-toggle {
     flex-direction: column;
     align-items: stretch;
@@ -644,5 +532,256 @@
   .telemetry-view__menu-item,
   .telemetry-view__collapse {
     width: 100%;
+  }
+}
+
+.signal-route-capsule {
+  margin-bottom: 4px;
+}
+
+.signal-route-capsule .md-select {
+  min-width: 140px;
+}
+
+// ── History panel C+ header ──
+.history-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  // bleed to card edges (card has padding: 20px)
+  margin: -20px -20px 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--outline);
+  position: relative;
+  z-index: 10;
+}
+
+.history-panel-header__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-panel-header__sub {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  margin-top: 2px;
+}
+
+.history-panel-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+// ── Pill button (for history header — mirrors ProjectsList.scss, global utility) ──
+.history-panel-header__actions .pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+  svg {
+    flex-shrink: 0;
+    stroke: currentColor;
+  }
+
+  &:hover {
+    background: var(--surface-variant);
+    border-color: $input-border;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.history-panel-header__actions .pill-btn--primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+  }
+}
+
+// ── Settings popover ──
+.history-settings-wrap {
+  position: relative;
+}
+
+.history-settings-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 100;
+  width: 360px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.10);
+  display: grid;
+  gap: 12px;
+}
+
+.hsp-arrow {
+  position: absolute;
+  top: -6px;
+  right: 20px;
+  width: 12px;
+  height: 12px;
+  background: var(--surface);
+  border-left: 1px solid var(--outline);
+  border-top: 1px solid var(--outline);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.hsp-section-title {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: -4px;
+}
+
+.hsp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hsp-name {
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+
+.hsp-hint {
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+}
+
+.hsp-number-input {
+  width: 90px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  background: var(--surface-variant);
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text);
+  text-align: right;
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: var(--focus-ring);
+  }
+}
+
+// ── Toggle switch (for settings popover) ──
+.history-toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 32px;
+    height: 18px;
+    background: $input-border;
+    border-radius: 999px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.15s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+
+    &:checked {
+      background: var(--primary);
+    }
+
+    &:checked::after {
+      transform: translateX(14px);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  }
+}
+
+// ── Capsule segment selector (for settings popover) ──
+.history-seg {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--surface-variant);
+  border-radius: 999px;
+  border: 1px solid var(--outline);
+  flex-shrink: 0;
+
+  label {
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+
+    &.on {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+
+    input {
+      display: none;
+    }
   }
 }
