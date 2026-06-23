@@ -68,6 +68,7 @@ class ConfigHistory:
     value: dict[str, Any]
     metadata: dict[str, Any]
     is_active: bool
+    is_sensitive: bool
     changed_by: str
     change_reason: str | None
     source_ip: str | None
@@ -87,6 +88,7 @@ class ConfigHistory:
             value=_decode_jsonb(row["value"]),
             metadata=_decode_jsonb(row["metadata"]) or {},
             is_active=row["is_active"],
+            is_sensitive=row["is_sensitive"],
             changed_by=row["changed_by"],
             change_reason=row.get("change_reason"),
             source_ip=row.get("source_ip"),

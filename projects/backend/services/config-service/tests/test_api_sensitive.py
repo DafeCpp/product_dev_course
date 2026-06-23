@@ -94,3 +94,82 @@ async def test_non_sensitive_not_redacted_for_viewer(service_client):
     )
     data = await resp.json()
     assert data["value"] == {"enabled": True}
+
+
+# --- history endpoint redaction -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_history_sensitive_redacted_for_viewer(service_client):
+    create_resp = await service_client.post(
+        "/api/v1/config",
+        json={**_SENSITIVE_PAYLOAD, "key": "hist_secret_viewer"},
+        headers=ADMIN_HEADERS,
+    )
+    config_id = (await create_resp.json())["id"]
+
+    resp = await service_client.get(
+        f"/api/v1/config/{config_id}/history", headers=VIEWER_HEADERS
+    )
+    assert resp.status == 200
+    items = (await resp.json())["items"]
+    assert len(items) >= 1
+    for item in items:
+        assert item["value"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_history_sensitive_visible_to_superadmin(service_client):
+    create_resp = await service_client.post(
+        "/api/v1/config",
+        json={**_SENSITIVE_PAYLOAD, "key": "hist_secret_admin"},
+        headers=ADMIN_HEADERS,
+    )
+    config_id = (await create_resp.json())["id"]
+
+    resp = await service_client.get(
+        f"/api/v1/config/{config_id}/history", headers=ADMIN_HEADERS
+    )
+    assert resp.status == 200
+    items = (await resp.json())["items"]
+    assert len(items) >= 1
+    for item in items:
+        assert item["value"] == {"enabled": True}
+
+
+@pytest.mark.asyncio
+async def test_history_sensitive_visible_with_permission(service_client):
+    create_resp = await service_client.post(
+        "/api/v1/config",
+        json={**_SENSITIVE_PAYLOAD, "key": "hist_secret_perm"},
+        headers=ADMIN_HEADERS,
+    )
+    config_id = (await create_resp.json())["id"]
+
+    resp = await service_client.get(
+        f"/api/v1/config/{config_id}/history", headers=_SENSITIVE_READ_HEADERS
+    )
+    assert resp.status == 200
+    items = (await resp.json())["items"]
+    assert len(items) >= 1
+    for item in items:
+        assert item["value"] == {"enabled": True}
+
+
+@pytest.mark.asyncio
+async def test_history_non_sensitive_not_redacted(service_client):
+    create_resp = await service_client.post(
+        "/api/v1/config",
+        json={**_SENSITIVE_PAYLOAD, "key": "hist_public_flag", "is_sensitive": False},
+        headers=ADMIN_HEADERS,
+    )
+    config_id = (await create_resp.json())["id"]
+
+    resp = await service_client.get(
+        f"/api/v1/config/{config_id}/history", headers=VIEWER_HEADERS
+    )
+    assert resp.status == 200
+    items = (await resp.json())["items"]
+    assert len(items) >= 1
+    for item in items:
+        assert item["value"] == {"enabled": True}

@@ -573,6 +573,7 @@ async def get_history(request: web.Request) -> web.Response:
     except ConfigNotFoundError:
         raise web.HTTPNotFound()
 
+    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
     items = []
     for h in history:
         items.append({
@@ -582,7 +583,7 @@ async def get_history(request: web.Request) -> web.Response:
             "service_name": h.service_name,
             "key": h.key,
             "config_type": h.config_type.value,
-            "value": h.value,
+            "value": "***" if h.is_sensitive and not can_read_sensitive else h.value,
             "metadata": h.metadata,
             "is_active": h.is_active,
             "changed_by": h.changed_by,
