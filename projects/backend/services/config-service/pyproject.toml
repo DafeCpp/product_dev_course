@@ -1,0 +1,53 @@
+[tool.poetry]
+name = "config-service"
+version = "0.1.0"
+description = "Runtime configuration service: feature flags, QoS parameters, kill-switches"
+authors = ["Platform Team"]
+readme = "README.md"
+packages = [{ include = "config_service", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+aiohttp = "^3.13.3"
+aiohttp-cors = "^0.7.0"
+asyncpg = "^0.31.0"
+pydantic = "^2.4.0"
+pydantic-settings = "^2.4.0"
+structlog = "^24.2.0"
+prometheus-client = "^0.24.1"
+jsonschema = "^4.21.0"
+opentelemetry-api = "^1.39.1"
+opentelemetry-sdk = "^1.39.1"
+opentelemetry-exporter-otlp-proto-http = "^1.39.1"
+opentelemetry-instrumentation-aiohttp-server = "^0.60b0"
+backend-common = { path = "../../common", develop = true }
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+pytest-asyncio = "^0.21.1"
+ruff = "^0.5.0"
+mypy = "^1.10.0"
+yandex-taxi-testsuite = { extras = ["postgresql-binary"], version = "^0.3.9" }
+types-jsonschema = "^4.21.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src", "."]
