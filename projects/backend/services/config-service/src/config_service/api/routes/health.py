@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from aiohttp import web
-
 from backend_common.db.pool import get_pool
 
 health_routes = web.RouteTableDef()

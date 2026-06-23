@@ -4,9 +4,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import asyncpg
-
 from backend_common.repositories.base import BaseRepository
+
 from config_service.domain.enums import ConfigType
 from config_service.domain.models import ConfigSchema
 

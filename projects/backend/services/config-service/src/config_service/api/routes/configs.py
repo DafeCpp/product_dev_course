@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from aiohttp import web
@@ -23,12 +23,12 @@ from config_service.domain.dto import (
 from config_service.domain.enums import ConfigType
 from config_service.prometheus_metrics import config_optimistic_lock_conflicts_total
 from config_service.services.dependencies import (
+    ensure_permission,
     get_audit_service,
     get_config_service,
     get_idempotency_service,
     get_validation_service,
     require_current_user,
-    ensure_permission,
 )
 
 routes = web.RouteTableDef()
@@ -122,7 +122,7 @@ async def create_config(request: web.Request) -> web.Response:
                 text=json.dumps({"error": "Validation failed", "details": exc.errors}),
                 content_type="application/json",
             )
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
         redact = dto.is_sensitive and "configs.sensitive.read" not in user.system_permissions
         preview: dict[str, object] = {
             "id": str(uuid4()),
@@ -319,7 +319,7 @@ async def patch_config(request: web.Request) -> web.Response:
             "created_by": current.created_by,
             "updated_by": user.user_id,
             "created_at": current.created_at.isoformat(),
-            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+            "updated_at": datetime.now(tz=UTC).isoformat(),
             "deleted_at": None,
         }
         return web.json_response({"preview": preview, "dry_run": True})

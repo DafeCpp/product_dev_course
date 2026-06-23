@@ -5,8 +5,8 @@ import asyncio
 
 import structlog
 from aiohttp import web
-
 from backend_common.db.pool import get_pool
+
 from config_service.repositories.idempotency_repo import IdempotencyRepository
 from config_service.settings import settings
 

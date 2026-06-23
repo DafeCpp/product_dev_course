@@ -4,11 +4,10 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from asyncpg import Record
-
 from backend_common.repositories.base import BaseRepository
+
 from config_service.domain.models import IdempotencyRecord
 
 

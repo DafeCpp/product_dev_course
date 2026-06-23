@@ -4,6 +4,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend_common.repositories.base import BaseRepository
+
 from config_service.domain.models import ConfigHistory
 
 

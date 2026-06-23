@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from aiohttp import web
@@ -57,7 +57,7 @@ class IdempotencyService:
         response_status: int,
         response_body: dict[str, Any],
     ) -> None:
-        expires_at = datetime.now(tz=timezone.utc) + timedelta(
+        expires_at = datetime.now(tz=UTC) + timedelta(
             minutes=settings.idempotency_ttl_minutes
         )
         await self._repository.save(

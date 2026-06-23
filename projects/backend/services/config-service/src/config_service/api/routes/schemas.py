@@ -11,10 +11,10 @@ from config_service.domain.dto import SchemaUpdateRequest
 from config_service.domain.enums import ConfigType
 from config_service.domain.models import ConfigSchema
 from config_service.services.dependencies import (
+    ensure_permission,
     get_schema_service,
     get_validation_service,
     require_current_user,
-    ensure_permission,
 )
 
 routes = web.RouteTableDef()

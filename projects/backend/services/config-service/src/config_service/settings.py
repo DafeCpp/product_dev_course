@@ -4,9 +4,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import cast
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn
-
 from backend_common.settings.base import BaseServiceSettings
+from pydantic import AnyHttpUrl, Field, PostgresDsn
 
 
 class Settings(BaseServiceSettings):

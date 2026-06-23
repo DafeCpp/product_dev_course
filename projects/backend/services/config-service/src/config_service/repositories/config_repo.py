@@ -6,8 +6,8 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg
-
 from backend_common.repositories.base import BaseRepository
+
 from config_service.domain.enums import ConfigType
 from config_service.domain.models import Config
 

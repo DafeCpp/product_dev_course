@@ -1,12 +1,13 @@
 """Dependency injection and RBAC helpers."""
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable, TypeVar
+from typing import TypeVar
 
 from aiohttp import web
-
 from backend_common.db.pool import get_pool
+
 from config_service.repositories.config_repo import ConfigRepository
 from config_service.repositories.history_repo import HistoryRepository
 from config_service.repositories.idempotency_repo import IdempotencyRepository

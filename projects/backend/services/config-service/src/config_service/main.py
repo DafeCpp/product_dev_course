@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from aiohttp import web
-
 from backend_common.aiohttp_app import add_cors_to_routes, add_openapi_spec, create_base_app
-from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
+from backend_common.db.pool import close_pool_service as close_pool
+from backend_common.db.pool import init_pool_service
 from backend_common.logging_config import configure_logging
 from backend_common.metrics import metrics_handler, metrics_middleware
 from backend_common.middleware.error_handler import error_handling_middleware
