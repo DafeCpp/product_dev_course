@@ -288,6 +288,9 @@ services:
       - DB_POOL_SIZE=${TELEMETRY_INGEST_DB_POOL_SIZE:-20}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001}
+      - CONFIG_CLIENT_ENABLED=${CONFIG_CLIENT_ENABLED:-true}
+      - CONFIG_CLIENT_URL=${CONFIG_CLIENT_URL:-http://config-service:8005}
+      - CONFIG_CLIENT_POLL_INTERVAL_SECONDS=${CONFIG_CLIENT_POLL_INTERVAL_SECONDS:-5.0}
     command: ["python", "-m", "telemetry_ingest_service.main"]
     ports:
       - "${TELEMETRY_INGEST_PORT:-8003}:8003"
@@ -384,6 +387,7 @@ services:
       - TARGET_EXPERIMENT_URL=${TARGET_EXPERIMENT_URL:-http://experiment-service:8002}
       - TARGET_TELEMETRY_URL=${TARGET_TELEMETRY_URL:-http://telemetry-ingest-service:8003}
       - TARGET_SCRIPT_URL=${TARGET_SCRIPT_URL:-http://script-service:8004}
+      - TARGET_CONFIG_SERVICE_URL=${TARGET_CONFIG_SERVICE_URL:-http://config-service:8005}
       - AUTH_URL=${AUTH_URL:-http://auth-service:8001}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
@@ -408,6 +412,8 @@ services:
       redis:
         condition: service_healthy
       script-service:
+        condition: service_healthy
+      config-service:
         condition: service_healthy
     networks:
       - experiment-tracking-network
