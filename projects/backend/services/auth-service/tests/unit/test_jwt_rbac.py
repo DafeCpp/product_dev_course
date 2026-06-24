@@ -157,7 +157,7 @@ class TestTokenRBACIntegration:
     def test_multiple_users_different_permissions(self):
         """Different users get different permission sets."""
         user1_perms = ["users.list"]
-        user2_perms = ["scripts.execute", "configs.read"]
+        user2_perms = ["scripts.execute", "configs.view"]
         
         token1 = create_access_token("user-1", system_permissions=user1_perms)
         token2 = create_access_token("user-2", system_permissions=user2_perms)

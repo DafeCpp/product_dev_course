@@ -34,7 +34,8 @@ def _schema_to_dict(s: ConfigSchema) -> dict[str, object]:
 
 @routes.get("/api/v1/schemas")
 async def list_schemas(request: web.Request) -> web.Response:
-    require_current_user(request)
+    user = require_current_user(request)
+    ensure_permission(user, "configs.view")
     svc = await get_schema_service(request)
     schemas = await svc.list_active()
     return web.json_response({"items": [_schema_to_dict(s) for s in schemas]})
@@ -42,7 +43,8 @@ async def list_schemas(request: web.Request) -> web.Response:
 
 @routes.get("/api/v1/schemas/{config_type}")
 async def get_schema(request: web.Request) -> web.Response:
-    require_current_user(request)
+    user = require_current_user(request)
+    ensure_permission(user, "configs.view")
     try:
         config_type = ConfigType(request.match_info["config_type"])
     except ValueError:
@@ -58,7 +60,8 @@ async def get_schema(request: web.Request) -> web.Response:
 
 @routes.get("/api/v1/schemas/{config_type}/history")
 async def get_schema_history(request: web.Request) -> web.Response:
-    require_current_user(request)
+    user = require_current_user(request)
+    ensure_permission(user, "configs.view")
     try:
         config_type = ConfigType(request.match_info["config_type"])
     except ValueError:
