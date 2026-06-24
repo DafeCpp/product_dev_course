@@ -165,6 +165,12 @@ variable "pg_experiment_db_password" {
   sensitive   = true
 }
 
+variable "pg_config_db_password" {
+  description = "Password for config_user (config_db)"
+  type        = string
+  sensitive   = true
+}
+
 # --- Container Registry ---
 
 variable "cr_name" {
