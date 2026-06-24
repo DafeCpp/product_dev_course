@@ -1,0 +1,163 @@
+.configs-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  &__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  &__no-access {
+    padding: 48px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 1rem;
+  }
+}
+
+.configs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+
+  th,
+  td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--outline);
+    vertical-align: middle;
+  }
+
+  th {
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  &__actions-col {
+    text-align: right;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  &__danger {
+    color: var(--error, #d33);
+  }
+}
+
+.configs-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.6;
+
+  &--active {
+    background: rgba(46, 160, 67, 0.15);
+    color: #2ea043;
+  }
+  &--inactive {
+    background: var(--surface-2, rgba(0, 0, 0, 0.06));
+    color: var(--text-secondary);
+  }
+  &--critical {
+    background: rgba(211, 51, 51, 0.15);
+    color: #d33;
+  }
+  &--sensitive {
+    background: rgba(180, 130, 0, 0.15);
+    color: #b48200;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Form modal
+// ---------------------------------------------------------------------------
+
+.configs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  &__code {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85rem;
+    width: 100%;
+  }
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+  }
+
+  &__preview {
+    border: 1px solid var(--outline);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--surface-2, rgba(0, 0, 0, 0.03));
+
+    pre {
+      margin: 6px 0 0;
+      max-height: 220px;
+      overflow: auto;
+      font-size: 0.8rem;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// History modal
+// ---------------------------------------------------------------------------
+
+.configs-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  &__item {
+    border: 1px solid var(--outline);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  &__version {
+    font-weight: 600;
+  }
+
+  &__meta {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  &__reason {
+    font-size: 0.85rem;
+    margin-top: 4px;
+  }
+
+  &__value {
+    margin: 8px 0 0;
+    max-height: 180px;
+    overflow: auto;
+    font-size: 0.8rem;
+  }
+}
