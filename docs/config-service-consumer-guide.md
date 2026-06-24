@@ -169,6 +169,44 @@ def _apply_config(configs: dict) -> None:
 
 ---
 
+## Roles & Permissions (RBAC)
+
+Доступ к API config-service контролируется через fine-grained system-permissions,
+которые auth-proxy инжектит в заголовок `X-User-System-Permissions` из эффективных
+прав пользователя. Права собраны в 4 встроенные роли (auth-service миграция
+`003_config_rbac.sql`).
+
+### Роли
+
+| Роль | Права |
+|------|-------|
+| `config_viewer` | `configs.view` |
+| `config_editor` | `configs.view`, `configs.create`, `configs.update`, `configs.delete` |
+| `config_operator` | `configs.view`, `configs.activate`, `configs.rollback` |
+| `config_admin` | всё editor + operator + `configs.schemas.manage` + `configs.sensitive.read` |
+
+**Принцип «4 глаз»:** editor создаёт/редактирует/удаляет черновики, но **не активирует**;
+operator активирует/деактивирует/откатывает, но **не редактирует**. Это разделяет
+авторство и публикацию (вторая пара глаз для прода). `superadmin` обходит все проверки.
+
+### Матрица право → эндпоинт
+
+| Право | Эндпоинты |
+|-------|-----------|
+| `configs.view` | `GET /config`, `GET /config/{id}`, `GET /config/{id}/history`, `GET /schemas`, `GET /schemas/{type}`, `GET /schemas/{type}/history` |
+| `configs.create` | `POST /config` (вкл. `?dry_run=true`) |
+| `configs.update` | `PATCH /config/{id}` (вкл. `?dry_run=true`) |
+| `configs.delete` | `DELETE /config/{id}` |
+| `configs.activate` | `POST /config/{id}/activate`, `POST /config/{id}/deactivate` |
+| `configs.rollback` | `POST /config/{id}/rollback` |
+| `configs.schemas.manage` | `PUT /schemas/{type}` |
+| `configs.sensitive.read` | чтение незаредактированных `is_sensitive`-значений в GET/history |
+
+Назначение ролей пользователям — через стандартный механизм auth-service (`roles.assign`).
+В OpenAPI каждое требуемое право указано в расширении `x-required-permission`.
+
+---
+
 ## Observability
 
 ### Prometheus-метрики (из `backend_common.config_client`)

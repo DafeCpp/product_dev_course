@@ -16,6 +16,21 @@ info:
     **External access** (through auth-proxy): `/api/config-service/v1/...`
     **Internal access** (service-to-service): `/api/v1/...`
 
+    **RBAC:** each operation declares the system permission it requires via the
+    `x-required-permission` extension. Permissions are bundled into built-in
+    roles (auth-service migration `003_config_rbac.sql`):
+
+    | Role | Permissions |
+    |------|-------------|
+    | `config_viewer` | `configs.view` |
+    | `config_editor` | `configs.view`, `configs.create`, `configs.update`, `configs.delete` |
+    | `config_operator` | `configs.view`, `configs.activate`, `configs.rollback` |
+    | `config_admin` | all of the above + `configs.schemas.manage` + `configs.sensitive.read` |
+
+    The «4-eyes» principle is enforced at the permission level: an editor writes
+    drafts but cannot activate them; an operator activates/rolls back but cannot
+    edit. `superadmin` bypasses all checks.
+
     > **Note:** `GET /api/v1/configs/bulk` is an internal endpoint used only by the
     > consumer SDK. It is blocked at the auth-proxy level and not part of this spec.
 
@@ -31,10 +46,14 @@ tags:
   - name: schemas
     description: JSON Schema management per config type
 
+security:
+  - sessionCookie: []
+
 paths:
   /api/v1/config:
     post:
       operationId: createConfig
+      x-required-permission: configs.create
       summary: Create a config
       tags: [configs]
       parameters:
@@ -78,6 +97,7 @@ paths:
 
     get:
       operationId: listConfigs
+      x-required-permission: configs.view
       summary: List configs
       tags: [configs]
       parameters:
@@ -137,6 +157,7 @@ paths:
 
     get:
       operationId: getConfig
+      x-required-permission: configs.view
       summary: Get a config by ID
       tags: [configs]
       responses:
@@ -158,6 +179,7 @@ paths:
 
     patch:
       operationId: patchConfig
+      x-required-permission: configs.update
       summary: Update a config (optimistic lock)
       tags: [configs]
       parameters:
@@ -200,6 +222,7 @@ paths:
 
     delete:
       operationId: deleteConfig
+      x-required-permission: configs.delete
       summary: Soft-delete a config (optimistic lock)
       tags: [configs]
       parameters:
@@ -234,6 +257,7 @@ paths:
       - $ref: '#/components/parameters/ConfigId'
     post:
       operationId: activateConfig
+      x-required-permission: configs.activate
       summary: Activate a config
       tags: [configs]
       parameters:
@@ -268,6 +292,7 @@ paths:
       - $ref: '#/components/parameters/ConfigId'
     post:
       operationId: deactivateConfig
+      x-required-permission: configs.activate
       summary: Deactivate a config
       tags: [configs]
       parameters:
@@ -302,6 +327,7 @@ paths:
       - $ref: '#/components/parameters/ConfigId'
     post:
       operationId: rollbackConfig
+      x-required-permission: configs.rollback
       summary: Roll back a config to a previous version
       tags: [configs]
       parameters:
@@ -338,6 +364,7 @@ paths:
       - $ref: '#/components/parameters/ConfigId'
     get:
       operationId: getConfigHistory
+      x-required-permission: configs.view
       summary: Get version history for a config
       tags: [configs]
       parameters:
@@ -375,6 +402,7 @@ paths:
   /api/v1/schemas:
     get:
       operationId: listSchemas
+      x-required-permission: configs.view
       summary: List active schemas (one per config type)
       tags: [schemas]
       responses:
@@ -399,6 +427,7 @@ paths:
 
     get:
       operationId: getSchema
+      x-required-permission: configs.view
       summary: Get active schema for a config type
       tags: [schemas]
       responses:
@@ -417,6 +446,7 @@ paths:
 
     put:
       operationId: updateSchema
+      x-required-permission: configs.schemas.manage
       summary: Update the JSON Schema for a config type
       tags: [schemas]
       requestBody:
@@ -446,6 +476,7 @@ paths:
       - $ref: '#/components/parameters/ConfigTypeParam'
     get:
       operationId: getSchemaHistory
+      x-required-permission: configs.view
       summary: Get schema version history for a config type
       tags: [schemas]
       responses:
@@ -467,6 +498,17 @@ paths:
           $ref: '#/components/responses/Unauthorized'
 
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: |
+        Session cookie issued by auth-service and validated by auth-proxy. The
+        proxy strips any client-supplied `X-User-*` headers and re-injects
+        trusted identity/RBAC headers (`X-User-Id`, `X-User-Is-Superadmin`,
+        `X-User-System-Permissions`) from the authenticated session. Each
+        operation's required permission is declared via `x-required-permission`.
   parameters:
     ConfigId:
       name: config_id
