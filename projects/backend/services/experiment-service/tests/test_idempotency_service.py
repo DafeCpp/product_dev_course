@@ -70,6 +70,12 @@ class MockIdempotencyRepository:
                 completed=True,
             )
 
+    async def release(self, key: str) -> None:
+        # Mirrors DELETE ... WHERE completed = false: keep completed records.
+        record = self._storage.get(key)
+        if record is not None and not record.completed:
+            del self._storage[key]
+
     async def delete_expired(self, created_before: datetime) -> int:
         # Simplified: just clear all and return count
         count = len(self._storage)
@@ -359,6 +365,84 @@ class TestIdempotencyServiceCompleteResponse:
         assert cached is not None
         assert cached.status == 201
         assert cached.body == response_body
+
+
+class TestIdempotencyServiceReleaseAndGuard:
+    """Tests for release() and guard_reservation() (failed-mutation cleanup)."""
+
+    @pytest.mark.asyncio
+    async def test_release_drops_incomplete_reservation(self):
+        repo = MockIdempotencyRepository()
+        service = IdempotencyService(repo)
+        user_id = uuid4()
+        key = "test-key"
+
+        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
+        assert await repo.get(key) is not None
+
+        await service.release(key)
+
+        # Reservation gone — a retry may reserve the key again instead of hitting 503.
+        assert await repo.get(key) is None
+
+    @pytest.mark.asyncio
+    async def test_release_keeps_completed_record(self):
+        repo = MockIdempotencyRepository()
+        service = IdempotencyService(repo)
+        user_id = uuid4()
+        key = "test-key"
+
+        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
+        await service.complete_response(key, 201, {"id": "123"})
+
+        await service.release(key)
+
+        # Completed cached responses must survive release so replay still works.
+        record = await repo.get(key)
+        assert record is not None
+        assert record.completed is True
+
+    @pytest.mark.asyncio
+    async def test_guard_releases_key_when_mutation_raises(self):
+        repo = MockIdempotencyRepository()
+        service = IdempotencyService(repo)
+        user_id = uuid4()
+        key = "test-key"
+
+        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
+
+        with pytest.raises(ValueError):
+            async with service.guard_reservation(key):
+                raise ValueError("mutation failed")
+
+        # Poisoned reservation must be cleared so the client can retry.
+        assert await repo.get(key) is None
+
+    @pytest.mark.asyncio
+    async def test_guard_keeps_reservation_on_success(self):
+        repo = MockIdempotencyRepository()
+        service = IdempotencyService(repo)
+        user_id = uuid4()
+        key = "test-key"
+
+        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
+
+        async with service.guard_reservation(key):
+            pass  # mutation succeeded
+
+        # Reservation kept so complete_response can mark it done.
+        assert await repo.get(key) is not None
+
+    @pytest.mark.asyncio
+    async def test_guard_is_noop_without_key(self):
+        repo = MockIdempotencyRepository()
+        service = IdempotencyService(repo)
+
+        # No key (request without Idempotency-Key) — guard must not touch storage.
+        with pytest.raises(ValueError):
+            async with service.guard_reservation(None):
+                raise ValueError("boom")
+        assert repo._storage == {}
 
 
 class TestIdempotencyServiceAssertRecord:

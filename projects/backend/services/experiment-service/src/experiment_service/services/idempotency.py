@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any, AsyncIterator, Tuple
 from uuid import UUID
 
 from aiohttp import web
@@ -78,6 +79,26 @@ class IdempotencyService:
     ) -> None:
         """Mark the reserved key as complete with the actual response."""
         await self._repository.complete(key, response_status, response_body)
+
+    async def release(self, key: str) -> None:
+        """Drop a reserved-but-incomplete key so a failed mutation can be retried."""
+        await self._repository.release(key)
+
+    @asynccontextmanager
+    async def guard_reservation(self, key: str | None) -> AsyncIterator[None]:
+        """Release a reserved key if the wrapped mutation raises.
+
+        Wrap the business operation that follows a successful ``reserve_or_get_cached``
+        so that a failure (validation error, duplicate-name conflict, …) does not
+        leave the key stuck ``in_progress`` and poison subsequent retries with 503.
+        A no-op when ``key`` is ``None`` (request without an Idempotency-Key).
+        """
+        try:
+            yield
+        except BaseException:
+            if key:
+                await self.release(key)
+            raise
 
     @staticmethod
     def build_response(payload: IdempotencyPayload) -> web.Response:

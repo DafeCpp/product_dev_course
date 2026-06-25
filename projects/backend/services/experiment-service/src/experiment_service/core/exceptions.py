@@ -22,6 +22,17 @@ class NotFoundError(RepositoryError):
     status_code: int = 404
 
 
+class DuplicateResourceError(RepositoryError):
+    """Raised when an insert violates a uniqueness constraint.
+
+    Converts a leaked ``asyncpg.UniqueViolationError`` (which would otherwise
+    surface as a 500) into a clean 409 — e.g. two concurrent creates racing on
+    ``experiments_project_name_uindex`` / ``sensors_project_name_uindex``.
+    """
+
+    status_code: int = 409
+
+
 class ScopeMismatchError(ExperimentServiceError):
     """Raised when entity belongs to a different project."""
 

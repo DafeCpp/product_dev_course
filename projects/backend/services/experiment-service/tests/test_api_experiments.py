@@ -272,6 +272,51 @@ async def test_create_experiment_idempotency(service_client):
 
 
 @pytest.mark.asyncio
+async def test_create_experiment_duplicate_name_returns_409(service_client):
+    """Duplicate (project, name) must surface as a clean 409, not a leaked 500.
+
+    Regression for LOS-8 / BUG-B-004: a UniqueViolationError on
+    experiments_project_name_uindex previously bubbled up as HTTP 500.
+    """
+    project_id = uuid.uuid4()
+    headers = make_headers(project_id)
+    payload = {"project_id": str(project_id), "name": "Unique Name"}
+
+    resp1 = await service_client.post("/api/v1/experiments", json=payload, headers=headers)
+    assert resp1.status == 201
+
+    # Second create with the same name (no idempotency key) — the DB unique index fires.
+    resp2 = await service_client.post("/api/v1/experiments", json=payload, headers=headers)
+    assert resp2.status == 409
+
+
+@pytest.mark.asyncio
+async def test_duplicate_name_releases_idempotency_key(service_client):
+    """A failed create must release its reserved key so retries are not stuck on 503."""
+    project_id = uuid.uuid4()
+    headers = make_headers(project_id)
+
+    # Existing experiment occupies the name.
+    resp = await service_client.post(
+        "/api/v1/experiments",
+        json={"project_id": str(project_id), "name": "Taken"},
+        headers=headers,
+    )
+    assert resp.status == 201
+
+    idem_headers = {**headers, IDEMPOTENCY_HEADER: "idem-dup-key"}
+    dup_payload = {"project_id": str(project_id), "name": "Taken"}
+
+    # First attempt fails with 409 (duplicate name) — the reserved key is released.
+    resp1 = await service_client.post("/api/v1/experiments", json=dup_payload, headers=idem_headers)
+    assert resp1.status == 409
+
+    # Retrying with the same key must re-run and return 409 again, never 503/500.
+    resp2 = await service_client.post("/api/v1/experiments", json=dup_payload, headers=idem_headers)
+    assert resp2.status == 409
+
+
+@pytest.mark.asyncio
 async def test_update_experiment_invalid_status_transition(service_client):
     project_id = uuid.uuid4()
     headers = make_headers(project_id)
