@@ -58,6 +58,10 @@ class Settings(BaseServiceSettings):
     webhook_succeeded_retention_days: int = 30  # purge succeeded deliveries older than this
     audit_retention_days: int = 365  # delete run_events/capture_session_events older than this
 
+    config_client_enabled: bool = True
+    config_client_url: str = "http://config-service:8005"
+    config_client_poll_interval_seconds: float = 5.0
+
 
 @lru_cache
 def get_settings() -> Settings:
