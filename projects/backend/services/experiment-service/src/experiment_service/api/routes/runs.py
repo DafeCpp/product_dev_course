@@ -128,12 +128,13 @@ async def create_run(request: web.Request):
         if cached is not None:
             return IdempotencyService.build_response(cached)
     service = await get_run_service(request)
-    try:
-        run = await service.create_run(dto)
-    except ScopeMismatchError as exc:
-        raise web.HTTPForbidden(text="Forbidden") from exc
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+    async with idempotency_service.guard_reservation(idempotency_key):
+        try:
+            run = await service.create_run(dto)
+        except ScopeMismatchError as exc:
+            raise web.HTTPForbidden(text="Forbidden") from exc
+        except InvalidStatusTransitionError as exc:
+            raise web.HTTPBadRequest(text="Bad request") from exc
     response_payload = _run_response(run)
     if idempotency_key:
         await idempotency_service.complete_response(idempotency_key, 201, response_payload)

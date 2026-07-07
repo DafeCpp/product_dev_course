@@ -135,10 +135,11 @@ async def create_experiment(request: web.Request):
             raise web.HTTPConflict(text="Conflict") from exc
         if cached is not None:
             return IdempotencyService.build_response(cached)
-    try:
-        experiment = await service.create_experiment(dto)
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+    async with idempotency_service.guard_reservation(idempotency_key):
+        try:
+            experiment = await service.create_experiment(dto)
+        except InvalidStatusTransitionError as exc:
+            raise web.HTTPBadRequest(text="Bad request") from exc
     response_payload = _experiment_response(experiment)
     if idempotency_key:
         await idempotency_service.complete_response(idempotency_key, 201, response_payload)

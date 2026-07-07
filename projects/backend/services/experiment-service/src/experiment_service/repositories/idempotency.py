@@ -98,6 +98,19 @@ class IdempotencyRepository(BaseRepository):
             json.dumps(response_body, sort_keys=True, separators=(",", ":"), default=str),
         )
 
+    async def release(self, key: str) -> None:
+        """Remove a reserved-but-incomplete placeholder for *key*.
+
+        Used when the mutation that owns the reservation fails: dropping the
+        ``in_progress`` row lets the client retry with the same key instead of
+        getting stuck on 503 until TTL cleanup. Never touches a completed
+        record (its cached response must survive for replay).
+        """
+        await self._execute(
+            "DELETE FROM request_idempotency WHERE idempotency_key = $1 AND completed = false",
+            key,
+        )
+
     async def delete_expired(self, created_before: datetime) -> int:
         """Delete idempotency records older than *created_before*. Returns count."""
         result = await self._execute(

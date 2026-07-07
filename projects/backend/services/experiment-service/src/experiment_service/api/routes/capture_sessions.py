@@ -103,10 +103,11 @@ async def create_capture_session(request: web.Request):
             raise web.HTTPConflict(text="Conflict") from exc
         if cached is not None:
             return IdempotencyService.build_response(cached)
-    try:
-        session = await service.create_session(dto)
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+    async with idempotency_service.guard_reservation(idempotency_key):
+        try:
+            session = await service.create_session(dto)
+        except InvalidStatusTransitionError as exc:
+            raise web.HTTPBadRequest(text="Bad request") from exc
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
         capture_session_id=session.id,
