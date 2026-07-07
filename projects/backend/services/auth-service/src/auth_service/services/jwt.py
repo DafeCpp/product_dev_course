@@ -7,6 +7,7 @@ from typing import Any
 
 import jwt  # type: ignore[import-untyped]
 
+from auth_service.middleware.qos_config import QOS_CONFIG
 from auth_service.settings import settings
 
 
@@ -30,7 +31,7 @@ def create_access_token(
         "sub": user_id,
         "type": "access",
         "iat": now,
-        "exp": now + settings.access_token_ttl_sec,
+        "exp": now + QOS_CONFIG.access_token_ttl_sec,
     }
 
     # Add RBAC v2 claims
@@ -63,7 +64,7 @@ def create_refresh_token(user_id: str, family_id: str | None = None) -> str:
         "type": "refresh",
         "jti": str(uuid.uuid4()),
         "iat": now,
-        "exp": now + settings.refresh_token_ttl_sec,
+        "exp": now + QOS_CONFIG.refresh_token_ttl_sec,
     }
     if family_id is not None:
         payload["fid"] = family_id
