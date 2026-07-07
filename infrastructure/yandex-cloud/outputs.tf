@@ -44,6 +44,12 @@ output "experiment_database_url" {
   sensitive   = true
 }
 
+output "config_database_url" {
+  description = "CONFIG_DATABASE_URL for config-service"
+  value       = "postgresql://config_user:***@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/config_db?sslmode=verify-full"
+  sensitive   = true
+}
+
 output "ci_sa_key_id" {
   description = "CI service account key ID (for GitHub Secrets)"
   value       = yandex_iam_service_account_key.ci_sa_key.id
