@@ -19,9 +19,9 @@ from asyncpg.exceptions import PostgresError  # type: ignore[import-untyped]
 import structlog
 
 from backend_common.db.pool import get_pool_service as get_pool
+from telemetry_ingest_service.middleware.rate_limit_config import RATE_LIMIT_CONFIG
 from telemetry_ingest_service.services.spool import delete_spool, list_spool_files, read_spool
 from telemetry_ingest_service.services.telemetry import TelemetryIngestService
-from telemetry_ingest_service.settings import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -57,10 +57,12 @@ async def _flush_one(path: Path) -> bool:
 async def run_spool_flush_worker(app=None) -> None:
     """Periodically replay spooled batches until the task is cancelled."""
     log = logger.bind(worker="spool_flush")
-    log.info("spool_flush_worker_started", interval=settings.spool_flush_interval_seconds)
+    log.info("spool_flush_worker_started", interval=RATE_LIMIT_CONFIG.spool_flush_timeout_seconds)
 
     while True:
-        await asyncio.sleep(settings.spool_flush_interval_seconds)
+        # Re-read on every tick: the value is mutated at runtime by the
+        # config-service poller (workers/config_poller.py).
+        await asyncio.sleep(RATE_LIMIT_CONFIG.spool_flush_timeout_seconds)
 
         files = list_spool_files()
         if not files:

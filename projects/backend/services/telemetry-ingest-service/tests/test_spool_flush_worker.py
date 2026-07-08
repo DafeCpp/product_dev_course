@@ -16,6 +16,7 @@ import asyncpg
 import pytest
 from asyncpg.exceptions import PostgresError
 
+from telemetry_ingest_service.middleware.rate_limit_config import RATE_LIMIT_CONFIG
 from telemetry_ingest_service.services.spool import SpoolRecord, write_spool
 from telemetry_ingest_service.services.telemetry import TelemetryIngestService
 from telemetry_ingest_service.settings import settings
@@ -190,7 +191,7 @@ async def test_flush_one_returns_false_on_db_error(
 async def test_worker_idle_when_no_spool_files(service_client, tmp_path, monkeypatch):
     """With an empty spool dir the worker just loops without erroring."""
     monkeypatch.setattr(settings, "spool_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "spool_flush_interval_seconds", 0.01)
+    monkeypatch.setattr(RATE_LIMIT_CONFIG, "spool_flush_timeout_seconds", 0.01)
 
     task = asyncio.create_task(run_spool_flush_worker())
     try:
@@ -205,7 +206,7 @@ async def test_worker_flushes_multiple_files_in_one_cycle(
     service_client, pgsql, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(settings, "spool_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "spool_flush_interval_seconds", 0.01)
+    monkeypatch.setattr(RATE_LIMIT_CONFIG, "spool_flush_timeout_seconds", 0.01)
 
     project_id = uuid4()
     sensor_id = uuid4()
@@ -260,7 +261,7 @@ async def test_worker_aborts_cycle_on_db_error(
     """When the first file fails with PostgresError the worker breaks out
     of the cycle instead of attempting the rest."""
     monkeypatch.setattr(settings, "spool_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "spool_flush_interval_seconds", 0.01)
+    monkeypatch.setattr(RATE_LIMIT_CONFIG, "spool_flush_timeout_seconds", 0.01)
 
     project_id = uuid4()
     sensor_id = uuid4()
