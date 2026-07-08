@@ -104,6 +104,73 @@ export const createWebhookSchema = z.object({
 export type CreateWebhookOutput = z.output<typeof createWebhookSchema>
 
 // ---------------------------------------------------------------------------
+// Rate Limits & QoS
+// ---------------------------------------------------------------------------
+
+export const authQosSchema = z.object({
+  access_token_ttl_sec: z.coerce
+    .number()
+    .int()
+    .positive('Должно быть положительным целым числом'),
+  refresh_token_ttl_sec: z.coerce
+    .number()
+    .int()
+    .positive('Должно быть положительным целым числом'),
+})
+
+export type AuthQosOutput = z.output<typeof authQosSchema>
+
+export const experimentQosSchema = z.object({
+  rate_limit_max_requests: z.coerce
+    .number()
+    .int()
+    .positive('Должно быть положительным целым числом'),
+  downstream_timeout_seconds: z.coerce
+    .number()
+    .positive('Должно быть положительным числом'),
+})
+
+export type ExperimentQosOutput = z.output<typeof experimentQosSchema>
+
+export const telemetryRateLimitsSchema = z.object({
+  rest: z.object({
+    max_requests: z.coerce
+      .number()
+      .int()
+      .nonnegative('Должно быть неотрицательным'),
+    max_readings: z.coerce
+      .number()
+      .int()
+      .nonnegative('Должно быть неотрицательным'),
+    window_seconds: z.coerce
+      .number()
+      .positive('Должно быть положительным числом'),
+  }),
+  ws: z.object({
+    max_messages: z.coerce
+      .number()
+      .int()
+      .nonnegative('Должно быть неотрицательным'),
+    max_readings: z.coerce
+      .number()
+      .int()
+      .nonnegative('Должно быть неотрицательным'),
+    window_seconds: z.coerce
+      .number()
+      .positive('Должно быть положительным числом'),
+  }),
+  spool_flush_timeout_seconds: z.coerce
+    .number()
+    .positive('Должно быть положительным числом'),
+  ws_max_message_bytes: z.coerce
+    .number()
+    .int()
+    .positive('Должно быть положительным целым числом'),
+})
+
+export type TelemetryRateLimitsOutput = z.output<typeof telemetryRateLimitsSchema>
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

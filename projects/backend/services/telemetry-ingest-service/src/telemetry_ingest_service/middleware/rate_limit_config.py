@@ -22,7 +22,7 @@ from telemetry_ingest_service.settings import Settings, settings as _settings
 
 @dataclass
 class RateLimitConfig:
-    """Mutable limits for both ingest transports (fixed-window)."""
+    """Mutable limits for both ingest transports (fixed-window) + spool timeouts."""
 
     rest_max_requests: int
     rest_max_readings: int
@@ -30,6 +30,8 @@ class RateLimitConfig:
     ws_max_messages: int
     ws_max_readings: int
     ws_window_seconds: float
+    spool_flush_timeout_seconds: float
+    ws_max_message_bytes: int
 
     @classmethod
     def from_settings(cls, s: Settings) -> "RateLimitConfig":
@@ -40,6 +42,8 @@ class RateLimitConfig:
             ws_max_messages=s.ws_rate_limit_messages_per_window,
             ws_max_readings=s.ws_rate_limit_readings_per_window,
             ws_window_seconds=s.ws_rate_limit_window_seconds,
+            spool_flush_timeout_seconds=s.spool_flush_interval_seconds,
+            ws_max_message_bytes=s.ws_max_message_bytes,
         )
 
 

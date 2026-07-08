@@ -1,4 +1,4 @@
-"""Config-service poller for telemetry-ingest rate-limit configuration.
+"""Config-service poller for telemetry-ingest rate-limit & timeout configuration.
 
 Subscribes to ConfigClient bulk updates and mutates the shared
 ``RATE_LIMIT_CONFIG`` singleton in-place whenever the ``rate_limits`` key
@@ -11,7 +11,9 @@ Expected value shape for key ``"rate_limits"`` in config-service
 
     {
         "rest": {"max_requests": 600, "max_readings": 60000, "window_seconds": 60.0},
-        "ws":   {"max_messages": 600, "max_readings": 60000, "window_seconds": 1.0}
+        "ws":   {"max_messages": 600, "max_readings": 60000, "window_seconds": 1.0},
+        "spool_flush_timeout_seconds": 5.0,
+        "ws_max_message_bytes": 1048576
     }
 
 Any field may be omitted; missing fields keep their current value.
@@ -47,6 +49,8 @@ class _WsLimits(BaseModel, extra="ignore"):
 class _RateLimitsValue(BaseModel, extra="ignore"):
     rest: _RestLimits = _RestLimits()
     ws: _WsLimits = _WsLimits()
+    spool_flush_timeout_seconds: float | None = None
+    ws_max_message_bytes: int | None = None
 
 
 def _apply_config(configs: dict[str, Any]) -> None:
@@ -77,6 +81,10 @@ def _apply_config(configs: dict[str, Any]) -> None:
         RATE_LIMIT_CONFIG.ws_max_readings = ws.max_readings
     if ws.window_seconds is not None:
         RATE_LIMIT_CONFIG.ws_window_seconds = ws.window_seconds
+    if value.spool_flush_timeout_seconds is not None:
+        RATE_LIMIT_CONFIG.spool_flush_timeout_seconds = value.spool_flush_timeout_seconds
+    if value.ws_max_message_bytes is not None:
+        RATE_LIMIT_CONFIG.ws_max_message_bytes = value.ws_max_message_bytes
 
     logger.info(
         "config_poller applied rate_limits",
@@ -86,6 +94,8 @@ def _apply_config(configs: dict[str, Any]) -> None:
         ws_max_messages=RATE_LIMIT_CONFIG.ws_max_messages,
         ws_max_readings=RATE_LIMIT_CONFIG.ws_max_readings,
         ws_window_seconds=RATE_LIMIT_CONFIG.ws_window_seconds,
+        spool_flush_timeout_seconds=RATE_LIMIT_CONFIG.spool_flush_timeout_seconds,
+        ws_max_message_bytes=RATE_LIMIT_CONFIG.ws_max_message_bytes,
     )
 
 

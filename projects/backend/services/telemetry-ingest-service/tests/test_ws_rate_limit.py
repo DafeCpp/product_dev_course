@@ -34,6 +34,8 @@ def _ws_config(max_messages: int, max_readings: int, window: float) -> RateLimit
         ws_max_messages=max_messages,
         ws_max_readings=max_readings,
         ws_window_seconds=window,
+        spool_flush_timeout_seconds=5.0,
+        ws_max_message_bytes=1048576,
     )
 
 

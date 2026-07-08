@@ -448,18 +448,7 @@ dev-seed:
 # Используй когда пароль неизвестен после make dev-seed.
 dev-reset-admin:
 	@echo "Сброс пароля $(DEV_ADMIN_USER) на $(DEV_ADMIN_PASSWORD)..."
-	@$(DOCKER_COMPOSE) exec -T auth-service python -c "\
-import asyncio, asyncpg, os; \
-from auth_service.services.password import hash_password; \
-async def reset(): \
-    url = os.environ.get('DATABASE_URL', ''); \
-    conn = await asyncpg.connect(url); \
-    h = hash_password('$(DEV_ADMIN_PASSWORD)'); \
-    r = await conn.fetchrow(\"UPDATE users SET hashed_password=\$$1, password_change_required=false WHERE username=\$$2 RETURNING id\", h, '$(DEV_ADMIN_USER)'); \
-    await conn.close(); \
-    return r; \
-r = asyncio.run(reset()); \
-print('✅ Пароль сброшен' if r else '❌ Пользователь не найден')"
+	@$(DOCKER_COMPOSE) exec -T auth-service sh -c 'printf "%s\n" "import asyncio, asyncpg, os" "from auth_service.services.password import hash_password" "async def reset():" "    url = os.environ.get(\"DATABASE_URL\", \"\")" "    conn = await asyncpg.connect(url)" "    h = hash_password(\"$(DEV_ADMIN_PASSWORD)\")" "    r = await conn.fetchrow(\"UPDATE users SET hashed_password=\$$1, password_change_required=false WHERE username=\$$2 RETURNING id\", h, \"$(DEV_ADMIN_USER)\")" "    await conn.close()" "    return r" "r = asyncio.run(reset())" "print(\"✅ Пароль сброшен\" if r else \"❌ Пользователь не найден\")" | python3'
 
 # Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana
 dev-down:
