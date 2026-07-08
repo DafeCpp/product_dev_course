@@ -144,7 +144,12 @@ class PasswordResetConfirmRequest(BaseModel):
 class AdminUserResetRequest(BaseModel):
     """Admin reset of another user's password."""
 
-    new_password: str | None = None
+    new_password: str = Field(..., min_length=8, max_length=100)
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_complexity(cls, value: str) -> str:
+        return _check_password_complexity(value)
 
 
 class AdminUserUpdateRequest(BaseModel):

@@ -21,6 +21,7 @@ from telemetry_ingest_service.api.routes.health import health_routes
 from telemetry_ingest_service.api.routes.telemetry import routes as telemetry_routes
 from telemetry_ingest_service.api.routes.ws_ingest import ws_routes
 from telemetry_ingest_service.settings import settings
+from telemetry_ingest_service.workers.config_poller import build_config_client
 from telemetry_ingest_service.workers.spool_flush import run_spool_flush_worker
 
 # Configure structured logging
@@ -62,6 +63,13 @@ def create_app() -> web.Application:
 
     app.on_startup.append(init_pool)
     app.on_startup.append(_start_spool_worker)
+    if settings.config_client_enabled:
+        _cfg_client = build_config_client(
+            settings.config_client_url,
+            settings.config_client_poll_interval_seconds,
+        )
+        app.on_startup.append(_cfg_client.start)
+        app.on_cleanup.append(_cfg_client.stop)
     app.on_cleanup.append(_stop_spool_worker)
     app.on_cleanup.append(close_pool)
 

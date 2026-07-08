@@ -78,6 +78,8 @@ class TestCreateAccessToken:
 
     def test_token_expiration_is_correct(self):
         """Test token expiration is set correctly."""
+        from auth_service.middleware.qos_config import QOS_CONFIG
+
         now = int(time.time())
 
         with patch("auth_service.services.jwt.time.time", return_value=now):
@@ -88,7 +90,7 @@ class TestCreateAccessToken:
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
         )
-        expected_exp = now + settings.access_token_ttl_sec
+        expected_exp = now + QOS_CONFIG.access_token_ttl_sec
         assert decoded["exp"] == expected_exp
 
     def test_different_users_get_different_tokens(self):
@@ -191,6 +193,8 @@ class TestCreateRefreshToken:
 
     def test_token_expiration_is_correct(self):
         """Test token expiration is set correctly."""
+        from auth_service.middleware.qos_config import QOS_CONFIG
+
         now = int(time.time())
 
         with patch("auth_service.services.jwt.time.time", return_value=now):
@@ -201,7 +205,7 @@ class TestCreateRefreshToken:
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
         )
-        expected_exp = now + settings.refresh_token_ttl_sec
+        expected_exp = now + QOS_CONFIG.refresh_token_ttl_sec
         assert decoded["exp"] == expected_exp
 
     def test_refresh_token_longer_lived_than_access(self):
@@ -399,16 +403,20 @@ class TestGetJtiFromToken:
 
     def test_raises_on_expired_token(self):
         """Test get_jti_from_token raises on expired token."""
+        from auth_service.middleware.qos_config import QOS_CONFIG
+
         # Create a token with very short expiration
-        with patch("auth_service.services.jwt.settings.refresh_token_ttl_sec", 1):
+        original_ttl = QOS_CONFIG.refresh_token_ttl_sec
+        QOS_CONFIG.refresh_token_ttl_sec = 1
+        try:
             token = create_refresh_token("user-id")
-        
-        # Wait for token to expire
-        time.sleep(1.5)
-        
-        # Should raise expired error
-        with pytest.raises(ValueError, match="Token expired"):
-            get_jti_from_token(token)
+            # Wait for token to expire
+            time.sleep(1.5)
+            # Should raise expired error
+            with pytest.raises(ValueError, match="Token expired"):
+                get_jti_from_token(token)
+        finally:
+            QOS_CONFIG.refresh_token_ttl_sec = original_ttl
 
     def test_raises_on_invalid_token(self):
         """Test get_jti_from_token raises on invalid token."""

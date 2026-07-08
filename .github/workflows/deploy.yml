@@ -156,6 +156,9 @@ jobs:
           - service: telemetry-ingest-service
             context: ./projects/backend
             dockerfile: services/telemetry-ingest-service/Dockerfile
+          - service: config-service
+            context: ./projects/backend
+            dockerfile: services/config-service/Dockerfile
           - service: auth-proxy
             context: ./projects/frontend/apps/auth-proxy
             dockerfile: Dockerfile

@@ -33,30 +33,34 @@ class BackfillTaskRepository(BaseRepository):
         )
         return dict(row)  # type: ignore[arg-type]
 
-    async def get(self, task_id: UUID) -> dict[str, Any] | None:
+    async def get(self, project_id: UUID, task_id: UUID) -> dict[str, Any] | None:
         row = await self._fetchrow(
-            "SELECT * FROM conversion_backfill_tasks WHERE id = $1",
+            "SELECT * FROM conversion_backfill_tasks WHERE id = $1 AND project_id = $2",
             task_id,
+            project_id,
         )
         return dict(row) if row else None
 
     async def list_by_sensor(
-        self, sensor_id: UUID, *, limit: int = 20, offset: int = 0
+        self, project_id: UUID, sensor_id: UUID, *, limit: int = 20, offset: int = 0
     ) -> tuple[list[dict[str, Any]], int]:
         count_row = await self._fetchrow(
-            "SELECT count(*) AS cnt FROM conversion_backfill_tasks WHERE sensor_id = $1",
+            "SELECT count(*) AS cnt FROM conversion_backfill_tasks "
+            "WHERE sensor_id = $1 AND project_id = $2",
             sensor_id,
+            project_id,
         )
         total = int(count_row["cnt"]) if count_row else 0  # type: ignore[index]
 
         rows = await self._fetch(
             """
             SELECT * FROM conversion_backfill_tasks
-            WHERE sensor_id = $1
+            WHERE sensor_id = $1 AND project_id = $2
             ORDER BY created_at DESC
-            LIMIT $2 OFFSET $3
+            LIMIT $3 OFFSET $4
             """,
             sensor_id,
+            project_id,
             limit,
             offset,
         )

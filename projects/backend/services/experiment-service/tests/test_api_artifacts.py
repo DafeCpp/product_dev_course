@@ -244,6 +244,8 @@ async def test_get_artifact(client: TestClient) -> None:
     body = await resp.json()
     assert body["id"] == str(ARTIFACT_ID)
     assert body["type"] == "model"
+    # Lookup must be scoped to the project resolved from X-Project-Id.
+    svc.get_artifact.assert_awaited_once_with(PROJECT_ID, ARTIFACT_ID)
 
 
 @pytest.mark.asyncio
@@ -270,7 +272,7 @@ async def test_delete_artifact(client: TestClient) -> None:
             headers=EDITOR_HEADERS,
         )
     assert resp.status == 204
-    svc.delete_artifact.assert_awaited_once_with(ARTIFACT_ID)
+    svc.delete_artifact.assert_awaited_once_with(PROJECT_ID, ARTIFACT_ID)
 
 
 @pytest.mark.asyncio
@@ -301,6 +303,7 @@ async def test_approve_artifact(client: TestClient) -> None:
     assert resp.status == 200
     body = await resp.json()
     assert body["approved_by"] == str(USER_ID)
+    svc.approve_artifact.assert_awaited_once_with(PROJECT_ID, ARTIFACT_ID, USER_ID, "looks good")
 
 
 # ---------------------------------------------------------------------------

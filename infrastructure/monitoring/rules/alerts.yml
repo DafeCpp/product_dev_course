@@ -68,6 +68,73 @@ groups:
           summary: "Auth login failure spike"
           description: "Auth service is seeing >0.5 login failures/sec for 3+ minutes — possible brute-force attack."
 
+  - name: config_service
+    interval: 30s
+    rules:
+      - alert: ConfigPropagationLagHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(config_propagation_lag_seconds_bucket[5m]))
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Config propagation lag high for {{ $labels.service }}"
+          description: "p95 propagation lag for {{ $labels.service }} exceeds 30s (current: {{ $value | humanizeDuration }}). Consumers may be operating on stale config."
+
+      - alert: ConfigBulkNoSuccessful200
+        expr: |
+          sum(increase(config_bulk_responses_total{status="200"}[10m])) == 0
+          and
+          sum(increase(config_bulk_responses_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Config bulk endpoint returning no 200 responses"
+          description: "All bulk config requests are returning 304 (unchanged) for 10+ minutes. This is normal if configs are stable, but may indicate consumers are stuck on a stale ETag."
+
+      - alert: ConfigSchemaViolationsHigh
+        expr: |
+          sum(rate(config_read_schema_violations_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High config schema violation rate"
+          description: "Config-service is seeing >0.1 schema violations/sec. Indicates a misconfigured or corrupt config value in the store."
+
+      - alert: ConfigCompatRejectionHigh
+        expr: |
+          sum(rate(config_compat_check_rejections_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High config compatibility rejection rate"
+          description: "Config-service is rejecting >0.05 config updates/sec due to compatibility checks. Consumers may have conflicting schema expectations."
+
+      - alert: ConfigIdempotencyConflicts
+        expr: |
+          sum(rate(config_idempotency_hits_total{result="conflict"}[5m])) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Config idempotency key conflicts detected"
+          description: "Config-service is seeing idempotency key conflicts (same key, different payload). Indicates a client retrying with mutated request body."
+
+      - alert: ConfigOptimisticLockConflictsHigh
+        expr: |
+          sum(rate(config_optimistic_lock_conflicts_total[5m])) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High optimistic lock conflict rate in config-service"
+          description: "Config-service is seeing >0.1 version conflicts/sec. Multiple concurrent writers may be competing on the same config key."
+
   - name: database
     interval: 30s
     rules:

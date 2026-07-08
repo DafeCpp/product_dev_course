@@ -19,9 +19,9 @@ from experiment_service.core.exceptions import NotFoundError
 from experiment_service.core.s3_client import get_s3_client
 from experiment_service.services.dependencies import (
     ensure_permission,
+    ensure_project_context,
     get_artifact_service,
     require_current_user,
-    resolve_project_id,
 )
 
 routes = web.RouteTableDef()
@@ -37,7 +37,7 @@ def _artifact_response(artifact: object) -> dict:  # type: ignore[type-arg]
 async def create_artifact(request: web.Request) -> web.Response:
     """Create artifact record (editor+)."""
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     body = await read_json(request)
@@ -76,7 +76,7 @@ async def create_artifact(request: web.Request) -> web.Response:
 async def list_artifacts(request: web.Request) -> web.Response:
     """List artifacts for a run (viewer+)."""
     user = await require_current_user(request)
-    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_project_context(user)
     ensure_permission(user, "experiments.view")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     limit, offset = pagination_params(request)
@@ -103,13 +103,13 @@ async def list_artifacts(request: web.Request) -> web.Response:
 async def get_artifact(request: web.Request) -> web.Response:
     """Get artifact details (viewer+)."""
     user = await require_current_user(request)
-    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "experiments.view")
     artifact_id = parse_uuid(request.match_info["artifact_id"], "artifact_id")
 
     service = await get_artifact_service(request)
     try:
-        artifact = await service.get_artifact(artifact_id)
+        artifact = await service.get_artifact(project_id, artifact_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_artifact_response(artifact))
@@ -119,13 +119,13 @@ async def get_artifact(request: web.Request) -> web.Response:
 async def delete_artifact(request: web.Request) -> web.Response:
     """Delete artifact (editor+)."""
     user = await require_current_user(request)
-    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "runs.update")
     artifact_id = parse_uuid(request.match_info["artifact_id"], "artifact_id")
 
     service = await get_artifact_service(request)
     try:
-        await service.delete_artifact(artifact_id)
+        await service.delete_artifact(project_id, artifact_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)
@@ -135,7 +135,7 @@ async def delete_artifact(request: web.Request) -> web.Response:
 async def approve_artifact(request: web.Request) -> web.Response:
     """Approve artifact (owner)."""
     user = await require_current_user(request)
-    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "project.roles.manage")
     artifact_id = parse_uuid(request.match_info["artifact_id"], "artifact_id")
     body = await read_json(request)
@@ -143,7 +143,7 @@ async def approve_artifact(request: web.Request) -> web.Response:
 
     service = await get_artifact_service(request)
     try:
-        artifact = await service.approve_artifact(artifact_id, user.user_id, note)
+        artifact = await service.approve_artifact(project_id, artifact_id, user.user_id, note)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_artifact_response(artifact))
@@ -167,7 +167,7 @@ async def request_upload_url(request: web.Request) -> web.Response:
         s3_key: the object key in S3
     """
     user = await require_current_user(request)
-    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     body = await read_json(request)
@@ -226,13 +226,13 @@ async def get_download_url(request: web.Request) -> web.Response:
         expires_in: seconds until URL expires
     """
     user = await require_current_user(request)
-    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = ensure_project_context(user)
     ensure_permission(user, "experiments.view")
     artifact_id = parse_uuid(request.match_info["artifact_id"], "artifact_id")
 
     service = await get_artifact_service(request)
     try:
-        artifact = await service.get_artifact(artifact_id)
+        artifact = await service.get_artifact(project_id, artifact_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
 

@@ -29,10 +29,7 @@ def test_stabilization_engages_with_flag():
     free = _settled_steering(0.5, 0.2)                  # выкл → pass-through
     stab = _settled_steering(0.5, 0.2, stabilize=True)  # вкл → корректирует
     assert abs(free - 0.2) < 1e-3   # без стабилизации руль проходит как есть
-    # Стабилизация должна заметно уменьшить команду руля. Абсолютная величина
-    # зависит от параметров физ-модели и yaw PID; для этого sanity-теста важно,
-    # что --stabilize включает коррекцию, а не конкретное steady-state значение.
-    assert abs(stab) < abs(free) - 0.02
+    assert stab < free * 0.9        # с стабилизацией yaw-стаб заметно корректирует (≥10%)
 
 
 def test_reverse_no_steering_saturation():

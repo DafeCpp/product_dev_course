@@ -1,7 +1,8 @@
 # Идеи и задачи на проработку
 
 Черновой backlog идей, требующих дизайна и RFC перед реализацией.
-Более конкретные задачи с оценками — в [tasks-rbac-scripts.md](tasks-rbac-scripts.md) и
+Конкретные задачи с оценками и статусами ведутся в [Linear](https://linear.app/lostpointer).
+Дополнительно: [tasks-rbac-scripts.md](tasks-rbac-scripts.md) и
 [experiment-tracking-status-and-roadmap.md](experiment-tracking-status-and-roadmap.md).
 
 ---

@@ -43,6 +43,10 @@ class Settings(BaseServiceSettings):
     audit_retention_days: int = 365  # delete audit_log entries older than this
     worker_interval_seconds: float = 60.0  # how often the background worker runs
 
+    config_client_enabled: bool = True
+    config_client_url: str = "http://config-service:8005"
+    config_client_poll_interval_seconds: float = 5.0
+
     smtp_enabled: bool = False
     smtp_host: str = "localhost"
     smtp_port: int = 1025

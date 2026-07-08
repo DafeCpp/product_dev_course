@@ -35,7 +35,7 @@ BACKEND_BASE_DOCKERFILE := projects/backend/Dockerfile.base
 BACKEND_BASE_HASH := $(shell sha256sum $(BACKEND_BASE_DOCKERFILE) 2>/dev/null | awk '{print $$1}')
 BACKEND_DEV_SERVICES := auth-service experiment-service telemetry-ingest-service
 # All services managed by `make dev-*` targets
-DEV_ALL_SERVICES := postgres redis auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+DEV_ALL_SERVICES := postgres redis auth-service experiment-service telemetry-ingest-service config-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
 # Default dev credentials for `make dev-seed`
 DEV_ADMIN_USER     ?= admin
 DEV_ADMIN_EMAIL    ?= admin@example.com
@@ -448,18 +448,7 @@ dev-seed:
 # Используй когда пароль неизвестен после make dev-seed.
 dev-reset-admin:
 	@echo "Сброс пароля $(DEV_ADMIN_USER) на $(DEV_ADMIN_PASSWORD)..."
-	@$(DOCKER_COMPOSE) exec -T auth-service python -c "\
-import asyncio, asyncpg, os; \
-from auth_service.services.password import hash_password; \
-async def reset(): \
-    url = os.environ.get('DATABASE_URL', ''); \
-    conn = await asyncpg.connect(url); \
-    h = hash_password('$(DEV_ADMIN_PASSWORD)'); \
-    r = await conn.fetchrow(\"UPDATE users SET hashed_password=\$$1, password_change_required=false WHERE username=\$$2 RETURNING id\", h, '$(DEV_ADMIN_USER)'); \
-    await conn.close(); \
-    return r; \
-r = asyncio.run(reset()); \
-print('✅ Пароль сброшен' if r else '❌ Пользователь не найден')"
+	@$(DOCKER_COMPOSE) exec -T auth-service sh -c 'printf "%s\n" "import asyncio, asyncpg, os" "from auth_service.services.password import hash_password" "async def reset():" "    url = os.environ.get(\"DATABASE_URL\", \"\")" "    conn = await asyncpg.connect(url)" "    h = hash_password(\"$(DEV_ADMIN_PASSWORD)\")" "    r = await conn.fetchrow(\"UPDATE users SET hashed_password=\$$1, password_change_required=false WHERE username=\$$2 RETURNING id\", h, \"$(DEV_ADMIN_USER)\")" "    await conn.close()" "    return r" "r = asyncio.run(reset())" "print(\"✅ Пароль сброшен\" if r else \"❌ Пользователь не найден\")" | python3'
 
 # Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana
 dev-down:
@@ -760,6 +749,25 @@ script-migrate:
 # Инициализация script-service (создание БД + миграции)
 script-init: script-create-db script-migrate
 	@echo "✅ Script-service инициализирован"
+
+# Создание базы данных config_db (если не существует)
+config-create-db:
+	@echo "Создание базы данных config_db..."
+	@$(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'config_db'" | grep -q 1 && \
+		echo "✅ База данных config_db уже существует" || \
+		($(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE config_db;" && \
+		echo "✅ База данных config_db создана")
+
+# Применение миграций config-service
+config-migrate:
+	@echo "Применение миграций config-service..."
+	@$(DOCKER_COMPOSE) exec -T config-service python -m bin.migrate --database-url "$${CONFIG_DATABASE_URL:-postgresql://config_user:config_password@postgres:5432/config_db}" || \
+		$(DOCKER_COMPOSE) exec config-service python -m bin.migrate --database-url "$${CONFIG_DATABASE_URL:-postgresql://config_user:config_password@postgres:5432/config_db}"
+	@echo "✅ Миграции config-service применены"
+
+# Инициализация config-service (создание БД + миграции)
+config-init: config-create-db config-migrate
+	@echo "✅ Config-service инициализирован"
 
 # ============================================
 # Production Deploy (Yandex Cloud)

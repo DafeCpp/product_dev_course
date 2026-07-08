@@ -96,17 +96,18 @@ async def create_capture_session(request: web.Request):
     serialized_body, body_hash = IdempotencyService.canonical_body(body)
     if idempotency_key:
         try:
-            cached = await idempotency_service.get_cached_response(
+            cached = await idempotency_service.reserve_or_get_cached(
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
             raise web.HTTPConflict(text="Conflict") from exc
-        if cached:
+        if cached is not None:
             return IdempotencyService.build_response(cached)
-    try:
-        session = await service.create_session(dto)
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+    async with idempotency_service.guard_reservation(idempotency_key):
+        try:
+            session = await service.create_session(dto)
+        except InvalidStatusTransitionError as exc:
+            raise web.HTTPBadRequest(text="Bad request") from exc
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
         capture_session_id=session.id,
@@ -134,17 +135,7 @@ async def create_capture_session(request: web.Request):
     )
     response_payload = _session_response(session)
     if idempotency_key:
-        try:
-            await idempotency_service.store_response(
-                idempotency_key,
-                user.user_id,
-                request.rel_url.path,
-                body_hash,
-                201,
-                response_payload,
-            )
-        except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text="Conflict") from exc
+        await idempotency_service.complete_response(idempotency_key, 201, response_payload)
     return web.json_response(response_payload, status=201)
 
 

@@ -564,8 +564,11 @@ export default function TelemetryPanel({
                 setShowSettings(false)
             }
         }
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
+        // Use 'click' (not 'mousedown') so that clicks on the portaled MaterialSelect
+        // dropdown (rendered in document.body) fire the option's onClick before closing
+        // this popover. With 'mousedown' the popover unmounts before 'click' fires.
+        document.addEventListener('click', handleClickOutside)
+        return () => document.removeEventListener('click', handleClickOutside)
     }, [showSettings])
 
     const canStart = selectedSensorIds.length > 0 && status !== 'connecting'

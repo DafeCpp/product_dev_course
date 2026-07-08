@@ -22,6 +22,8 @@ const AdminUsers = lazy(() => import('./pages/AdminUsers'))
 const SystemRoles = lazy(() => import('./pages/SystemRoles'))
 const AuditLog = lazy(() => import('./pages/AuditLog'))
 const Scripts = lazy(() => import('./pages/Scripts'))
+const Configs = lazy(() => import('./pages/Configs'))
+const RateLimitsQos = lazy(() => import('./pages/RateLimitsQos'))
 const SensorMonitor = lazy(() => import('./pages/SensorMonitor'))
 const ComparisonPage = lazy(() => import('./pages/ComparisonPage'))
 
@@ -67,6 +69,8 @@ function App() {
                   <Route path="/admin/system-roles" element={<SystemRoles />} />
                   <Route path="/admin/audit" element={<AuditLog />} />
                   <Route path="/admin/scripts" element={<Scripts />} />
+                  <Route path="/admin/configs" element={<Configs />} />
+                  <Route path="/admin/rate-limits" element={<RateLimitsQos />} />
                 </Routes>
               </Layout>
             </ProtectedRoute>
