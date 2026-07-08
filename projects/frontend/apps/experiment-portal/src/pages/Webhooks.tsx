@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { webhooksApi } from '../api/client'
+import { projectsApi, webhooksApi } from '../api/client'
 import { format } from 'date-fns'
-import type { WebhookSubscription, WebhookDelivery } from '../types'
+import type { Project, WebhookSubscription, WebhookDelivery } from '../types'
 import { Loading, Error as ErrorComponent, EmptyState } from '../components/common'
 import { notifyError } from '../utils/notify'
 import { createWebhookSchema, flatFieldErrors } from '../schemas/forms'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import './Webhooks.scss'
 
 const PAGE_SIZE = 20
@@ -23,6 +24,41 @@ const KNOWN_EVENT_TYPES = [
 ]
 
 function Webhooks() {
+  const [projectId, setProjectId] = useState(() => getActiveProjectId() ?? '')
+  const [deliveryPage, setDeliveryPage] = useState(0)
+  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState('')
+
+  const { data: projectsData, isLoading: projectsLoading } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectsApi.list(),
+  })
+
+  useEffect(() => {
+    const projects = projectsData?.projects
+    if (!projects) return
+
+    if (projects.length === 0) {
+      if (projectId) {
+        setProjectId('')
+        setActiveProjectId('')
+      }
+      return
+    }
+
+    const projectExists = projects.some((project) => project.id === projectId)
+    if (!projectId || !projectExists) {
+      const nextProjectId = projects[0].id
+      setProjectId(nextProjectId)
+      setActiveProjectId(nextProjectId)
+      setDeliveryPage(0)
+    }
+  }, [projectId, projectsData])
+
+  const handleProjectChange = (nextProjectId: string) => {
+    setProjectId(nextProjectId)
+    setActiveProjectId(nextProjectId)
+    setDeliveryPage(0)
+  }
 
   // --- Subscriptions ---
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -36,8 +72,9 @@ function Webhooks() {
     isLoading: subsLoading,
     error: subsError,
   } = useQuery({
-    queryKey: ['webhooks'],
-    queryFn: () => webhooksApi.list({ page_size: 100 }),
+    queryKey: ['webhooks', projectId],
+    queryFn: () => webhooksApi.list({ project_id: projectId, page_size: 100 }),
+    enabled: !!projectId,
   })
 
   const handleCreateWebhook = () => {
@@ -59,7 +96,7 @@ function Webhooks() {
 
   const createMutation = useApiMutation({
     mutationFn: (data: { target_url: string; event_types: string[]; secret?: string }) =>
-      webhooksApi.create(data),
+      webhooksApi.create(data, { project_id: projectId }),
     invalidateKeys: [['webhooks']],
     successMessage: 'Webhook создан',
     errorFallback: 'Не удалось создать webhook',
@@ -73,37 +110,38 @@ function Webhooks() {
   })
 
   const deleteMutation = useApiMutation({
-    mutationFn: (id: string) => webhooksApi.delete(id),
+    mutationFn: (id: string) => webhooksApi.delete(id, { project_id: projectId }),
     invalidateKeys: [['webhooks']],
     successMessage: 'Webhook удалён',
     errorFallback: 'Не удалось удалить webhook',
   })
 
   // --- Deliveries ---
-  const [deliveryPage, setDeliveryPage] = useState(0)
-  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState('')
-
   const {
     data: deliveriesData,
     isLoading: deliveriesLoading,
     error: deliveriesError,
   } = useQuery({
-    queryKey: ['webhook-deliveries', deliveryPage, deliveryStatusFilter],
+    queryKey: ['webhook-deliveries', projectId, deliveryPage, deliveryStatusFilter],
     queryFn: () =>
       webhooksApi.listDeliveries({
+        project_id: projectId,
         page: deliveryPage + 1,
         page_size: PAGE_SIZE,
         status: deliveryStatusFilter || undefined,
       }),
+    enabled: !!projectId,
   })
 
   const retryMutation = useApiMutation({
-    mutationFn: (deliveryId: string) => webhooksApi.retryDelivery(deliveryId),
+    mutationFn: (deliveryId: string) =>
+      webhooksApi.retryDelivery(deliveryId, { project_id: projectId }),
     invalidateKeys: [['webhook-deliveries']],
     successMessage: 'Повторная доставка запрошена',
     errorFallback: 'Не удалось повторить доставку',
   })
 
+  const projects = projectsData?.projects || []
   const subscriptions = subscriptionsData?.webhooks || []
   const deliveries = deliveriesData?.deliveries || []
   const deliveriesTotal = deliveriesData?.total ?? 0
@@ -128,9 +166,25 @@ function Webhooks() {
       <div className="webhooks-subscriptions card">
         <div className="card-header">
           <h3>Webhook-подписки</h3>
+          <div className="filter-controls">
+            <label htmlFor="webhook-project-filter">Проект:</label>
+            <select
+              id="webhook-project-filter"
+              value={projectId}
+              onChange={(e) => handleProjectChange(e.target.value)}
+              disabled={projectsLoading || projects.length === 0}
+            >
+              {projects.map((project: Project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             className="btn btn-primary btn-sm"
             onClick={() => setShowCreateForm((v) => !v)}
+            disabled={!projectId}
           >
             {showCreateForm ? 'Отмена' : 'Создать'}
           </button>
@@ -200,8 +254,14 @@ function Webhooks() {
           </div>
         )}
 
+        {projectsLoading && <Loading message="Загрузка проектов..." />}
+
+        {!projectsLoading && projects.length === 0 && (
+          <EmptyState message="У вас нет проектов. Создайте проект, чтобы настроить webhook-подписки." />
+        )}
+
         {subsLoading && <Loading message="Загрузка подписок..." />}
-        {subsError && (
+        {!projectsLoading && projects.length > 0 && subsError && (
           <ErrorComponent
             message={
               subsError instanceof Error
@@ -211,7 +271,7 @@ function Webhooks() {
           />
         )}
 
-        {!subsLoading && !subsError && subscriptions.length === 0 && (
+        {!projectsLoading && projects.length > 0 && !subsLoading && !subsError && subscriptions.length === 0 && (
           <EmptyState message="Webhook-подписок пока нет">
             {!showCreateForm && (
               <button
@@ -224,7 +284,7 @@ function Webhooks() {
           </EmptyState>
         )}
 
-        {!subsLoading && !subsError && subscriptions.length > 0 && (
+        {!projectsLoading && projects.length > 0 && !subsLoading && !subsError && subscriptions.length > 0 && (
           <div className="webhooks-list">
             {subscriptions.map((wh: WebhookSubscription) => (
               <div key={wh.id} className="webhook-card">
@@ -292,8 +352,10 @@ function Webhooks() {
           </div>
         </div>
 
+        {!projectId && !projectsLoading && <EmptyState message="Выберите проект, чтобы посмотреть доставки." />}
+
         {deliveriesLoading && <Loading message="Загрузка доставок..." />}
-        {deliveriesError && (
+        {!!projectId && deliveriesError && (
           <ErrorComponent
             message={
               deliveriesError instanceof Error
@@ -303,11 +365,11 @@ function Webhooks() {
           />
         )}
 
-        {!deliveriesLoading && !deliveriesError && deliveries.length === 0 && (
+        {!!projectId && !deliveriesLoading && !deliveriesError && deliveries.length === 0 && (
           <EmptyState message="Доставок пока нет" />
         )}
 
-        {!deliveriesLoading && !deliveriesError && deliveries.length > 0 && (
+        {!!projectId && !deliveriesLoading && !deliveriesError && deliveries.length > 0 && (
           <>
             <div className="deliveries-list">
               <table>
