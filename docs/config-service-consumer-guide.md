@@ -111,39 +111,40 @@ client.subscribe(on_update)
 
 ## Паттерн QoS-конфига (рекомендуется)
 
-По образцу `telemetry-ingest-service/workers/config_poller.py`:
+Boilerplate подписчика (fail-open, частичные обновления, вложенные модели)
+вынесен в `backend_common.config_client.poller` — в сервисе остаются только
+Pydantic-модель значений и mutable singleton:
 
 ```python
 from pydantic import BaseModel
-from typing import Optional
 
-class _MyQosConfig(BaseModel):
-    max_requests: Optional[int] = None
-    window_seconds: Optional[float] = None
-    model_config = {"extra": "ignore"}
+from backend_common.config_client import ConfigClient, build_config_client, make_config_subscriber
+
+CONFIG_KEY = "my_service_qos"
 
 
-# Shared mutable singleton — лимитер держит ссылку
-_QOS_CONFIG = MyServiceQosConfig(max_requests=100, window_seconds=60.0)
+class _MyQosValue(BaseModel, extra="ignore"):
+    max_requests: int | None = None
+    window_seconds: float | None = None
 
 
-def _apply_config(configs: dict) -> None:
-    raw = configs.get("qos")
-    if raw is None:
-        return
-    try:
-        parsed = _MyQosConfig.model_validate(raw)
-    except Exception:
-        return  # fail-open: keep current values
+# Shared mutable singleton — лимитер держит ссылку и читает поля на каждый вызов
+_apply_qos_config = make_config_subscriber(CONFIG_KEY, _MyQosValue, QOS_CONFIG)
 
-    # Атомарная мутация in-place (asyncio single-threaded, await не нужен)
-    if parsed.max_requests is not None:
-        _QOS_CONFIG.max_requests = parsed.max_requests
-    if parsed.window_seconds is not None:
-        _QOS_CONFIG.window_seconds = parsed.window_seconds
+
+def build_qos_client(url: str, poll_interval: float) -> ConfigClient:
+    return build_config_client("my-service", url, poll_interval, _apply_qos_config)
 ```
 
-**Важно:** не переприсваивайте глобал (`_QOS_CONFIG = new_config`). Лимитер держит ссылку на исходный объект. Используйте мутацию полей in-place.
+Семантика подписчика (одинакова для всех сервисов):
+
+- отсутствие ключа в bulk-payload — no-op;
+- **fail-open**: невалидный payload логируется и игнорируется, действуют текущие значения;
+- применяются только не-`None` поля — частичный payload означает «остальное не трогать»;
+- вложенные модели маппятся на атрибуты с префиксом через подчёркивание
+  (`rest.max_requests` → `rest_max_requests`).
+
+**Важно:** не переприсваивайте глобал (`QOS_CONFIG = new_config`). Потребители держат ссылку на исходный объект — хелпер мутирует его поля in-place.
 
 ---
 
@@ -254,5 +255,6 @@ CONFIG_CLIENT_POLL_INTERVAL_SECONDS=5.0
 
 - RFC-0001: `docs/RFC/rfc-0001-config-service.md`
 - ADR-009: `docs/adr/ADR-009-auth-proxy-routing.md`
-- Пример реализации poller: `projects/backend/services/telemetry-ingest-service/src/telemetry_ingest_service/workers/config_poller.py`
+- Общий poller-хелпер: `projects/backend/common/src/backend_common/config_client/poller.py`
+- Пример использования: `projects/backend/services/telemetry-ingest-service/src/telemetry_ingest_service/workers/config_poller.py`
 - OpenAPI spec: `projects/backend/services/config-service/openapi/openapi.yaml`
