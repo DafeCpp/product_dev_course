@@ -881,6 +881,8 @@ async def test_ingest_returns_429_when_rate_limited(service_client, monkeypatch)
             ws_max_messages=0,
             ws_max_readings=0,
             ws_window_seconds=1.0,
+            spool_flush_timeout_seconds=5.0,
+            ws_max_message_bytes=1048576,
         )
     )
     monkeypatch.setattr(
@@ -925,6 +927,8 @@ async def test_ingest_rate_limit_sensor_isolation(service_client, monkeypatch):
             ws_max_messages=0,
             ws_max_readings=0,
             ws_window_seconds=1.0,
+            spool_flush_timeout_seconds=5.0,
+            ws_max_message_bytes=1048576,
         )
     )
     monkeypatch.setattr(

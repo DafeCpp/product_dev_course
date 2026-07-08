@@ -26,6 +26,8 @@ def _config(max_requests: int, max_readings: int, window: float) -> RateLimitCon
         ws_max_messages=0,
         ws_max_readings=0,
         ws_window_seconds=1.0,
+        spool_flush_timeout_seconds=5.0,
+        ws_max_message_bytes=1048576,
     )
 
 
