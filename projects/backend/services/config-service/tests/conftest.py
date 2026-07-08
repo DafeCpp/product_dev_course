@@ -27,15 +27,73 @@ _FEATURE_FLAG_SCHEMA = {
     "additionalProperties": False,
 }
 
+# Mirrors migrations/003_update_qos_schema.sql (active qos schema v2).
 _QOS_SCHEMA = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "required": ["__default__"],
-    "additionalProperties": {"$ref": "#/$defs/qosSettings"},
-    "properties": {
-        "__default__": {"$ref": "#/$defs/qosSettings"},
-    },
+    "anyOf": [
+        {"$ref": "#/$defs/authQos"},
+        {"$ref": "#/$defs/experimentQos"},
+        {"$ref": "#/$defs/telemetryRateLimits"},
+        {"$ref": "#/$defs/legacyQosMap"},
+    ],
     "$defs": {
+        "authQos": {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+                "access_token_ttl_sec": {"type": "integer", "minimum": 1},
+                "refresh_token_ttl_sec": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": False,
+        },
+        "experimentQos": {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+                "rate_limit_max_requests": {"type": "integer", "minimum": 1},
+                "downstream_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+            },
+            "additionalProperties": False,
+        },
+        "telemetryRateLimits": {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+                "rest": {"$ref": "#/$defs/restLimits"},
+                "ws": {"$ref": "#/$defs/wsLimits"},
+                "spool_flush_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+                "ws_max_message_bytes": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": False,
+        },
+        "restLimits": {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+                "max_requests": {"type": "integer", "minimum": 0},
+                "max_readings": {"type": "integer", "minimum": 0},
+                "window_seconds": {"type": "number", "exclusiveMinimum": 0},
+            },
+            "additionalProperties": False,
+        },
+        "wsLimits": {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+                "max_messages": {"type": "integer", "minimum": 0},
+                "max_readings": {"type": "integer", "minimum": 0},
+                "window_seconds": {"type": "number", "exclusiveMinimum": 0},
+            },
+            "additionalProperties": False,
+        },
+        "legacyQosMap": {
+            "type": "object",
+            "required": ["__default__"],
+            "properties": {
+                "__default__": {"$ref": "#/$defs/qosSettings"},
+            },
+            "additionalProperties": {"$ref": "#/$defs/qosSettings"},
+        },
         "qosSettings": {
             "type": "object",
             "required": ["timeout_ms", "retries"],
@@ -44,7 +102,7 @@ _QOS_SCHEMA = {
                 "retries": {"type": "integer", "minimum": 0, "maximum": 10},
             },
             "additionalProperties": False,
-        }
+        },
     },
 }
 

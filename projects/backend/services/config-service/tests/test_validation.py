@@ -36,24 +36,8 @@ FEATURE_FLAG_SCHEMA = {
     "additionalProperties": False,
 }
 
-QOS_SCHEMA = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "required": ["__default__"],
-    "additionalProperties": {"$ref": "#/$defs/qosSettings"},
-    "properties": {"__default__": {"$ref": "#/$defs/qosSettings"}},
-    "$defs": {
-        "qosSettings": {
-            "type": "object",
-            "required": ["timeout_ms", "retries"],
-            "properties": {
-                "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 600000},
-                "retries": {"type": "integer", "minimum": 0, "maximum": 10},
-            },
-            "additionalProperties": False,
-        }
-    },
-}
+# Active qos schema v2 (anyOf), mirrors migrations/003_update_qos_schema.sql.
+from conftest import _QOS_SCHEMA as QOS_SCHEMA  # noqa: E402
 
 
 @pytest.mark.asyncio
@@ -129,6 +113,85 @@ async def test_qos_missing_default():
     svc = ValidationService(repo)
     with pytest.raises(ConfigValidationError):
         await svc.validate_strict(ConfigType.qos, {"/v1/verify": {"timeout_ms": 100, "retries": 1}})
+
+
+def _make_qos_repo() -> MagicMock:
+    repo = MagicMock()
+    repo.get_active = AsyncMock(
+        return_value=ConfigSchema(
+            id=uuid.uuid4(),
+            config_type=ConfigType.qos,
+            schema=QOS_SCHEMA,
+            version=2,
+            is_active=True,
+            created_by="system",
+            created_at=datetime.now(tz=timezone.utc),
+        )
+    )
+    return repo
+
+
+@pytest.mark.asyncio
+async def test_qos_auth_payload_valid():
+    """auth_qos as written by auth-service / AuthQosForm (LOS-61)."""
+    svc = ValidationService(_make_qos_repo())
+    await svc.validate_strict(
+        ConfigType.qos,
+        {"access_token_ttl_sec": 900, "refresh_token_ttl_sec": 1209600},
+    )
+
+
+@pytest.mark.asyncio
+async def test_qos_experiment_payload_valid():
+    """experiment_qos as written by experiment-service / ExperimentQosForm (LOS-62)."""
+    svc = ValidationService(_make_qos_repo())
+    await svc.validate_strict(
+        ConfigType.qos,
+        {"rate_limit_max_requests": 100, "downstream_timeout_seconds": 5.0},
+    )
+
+
+@pytest.mark.asyncio
+async def test_qos_telemetry_rate_limits_payload_valid():
+    """rate_limits as written by TelemetryRateLimitsForm (LOS-63)."""
+    svc = ValidationService(_make_qos_repo())
+    await svc.validate_strict(
+        ConfigType.qos,
+        {
+            "rest": {"max_requests": 600, "max_readings": 60000, "window_seconds": 60.0},
+            "ws": {"max_messages": 600, "max_readings": 60000, "window_seconds": 1.0},
+            "spool_flush_timeout_seconds": 5.0,
+            "ws_max_message_bytes": 1048576,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_qos_telemetry_partial_payload_valid():
+    """Partial updates are allowed — pollers treat missing fields as 'keep current'."""
+    svc = ValidationService(_make_qos_repo())
+    await svc.validate_strict(ConfigType.qos, {"spool_flush_timeout_seconds": 10.0})
+
+
+@pytest.mark.asyncio
+async def test_qos_unknown_keys_rejected():
+    svc = ValidationService(_make_qos_repo())
+    with pytest.raises(ConfigValidationError):
+        await svc.validate_strict(ConfigType.qos, {"unknown_knob": 1})
+
+
+@pytest.mark.asyncio
+async def test_qos_wrong_type_rejected():
+    svc = ValidationService(_make_qos_repo())
+    with pytest.raises(ConfigValidationError):
+        await svc.validate_strict(ConfigType.qos, {"access_token_ttl_sec": "900"})
+
+
+@pytest.mark.asyncio
+async def test_qos_empty_object_rejected():
+    svc = ValidationService(_make_qos_repo())
+    with pytest.raises(ConfigValidationError):
+        await svc.validate_strict(ConfigType.qos, {})
 
 
 @pytest.mark.asyncio
