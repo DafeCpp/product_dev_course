@@ -303,3 +303,49 @@ async def test_ws_authorization_header_accepted(service_client, pgsql):
     msg = await ws.receive_json()
     assert msg["status"] == "accepted"
     await ws.close()
+
+
+async def test_ws_oversized_message_closes_connection(service_client, pgsql, monkeypatch):
+    """max_msg_size is read from RATE_LIMIT_CONFIG (dynamic), not static settings.
+
+    With a small dynamic limit the server must reject an oversized frame by
+    closing the connection with 1009 (Message Too Big), even though the static
+    settings default (1 MB) would have allowed it.
+    """
+    import aiohttp
+
+    from telemetry_ingest_service.middleware.rate_limit_config import RATE_LIMIT_CONFIG
+
+    monkeypatch.setattr(RATE_LIMIT_CONFIG, "ws_max_message_bytes", 256)
+
+    project_id, sensor_id, run_id, capture_session_id = uuid4(), uuid4(), uuid4(), uuid4()
+    token = "oversize-token"
+
+    db_uri = pgsql["telemetry_ingest_service"].conninfo.get_uri()
+    await _seed(
+        db_uri=db_uri,
+        project_id=project_id,
+        sensor_id=sensor_id,
+        token=token,
+        run_id=run_id,
+        capture_session_id=capture_session_id,
+    )
+
+    ws = await service_client.ws_connect(
+        f"/api/v1/telemetry/ws?sensor_id={sensor_id}&token={token}"
+    )
+    await ws.send_json(
+        {
+            "readings": [
+                {
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "raw_value": 1.0,
+                    "meta": {"pad": "x" * 512},
+                }
+            ]
+        }
+    )
+    msg = await ws.receive()
+    assert msg.type == aiohttp.WSMsgType.CLOSE
+    assert msg.data == aiohttp.WSCloseCode.MESSAGE_TOO_BIG
+    await ws.close()

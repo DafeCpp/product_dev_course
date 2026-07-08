@@ -26,7 +26,6 @@ from telemetry_ingest_service.prometheus_metrics import (
     WS_CONNECTIONS_ACTIVE,
 )
 from telemetry_ingest_service.services.telemetry import TelemetryIngestService, hash_sensor_token
-from telemetry_ingest_service.settings import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -108,7 +107,9 @@ async def ws_ingest(request: web.Request) -> web.WebSocketResponse:
         raise web.HTTPUnauthorized(text="Invalid sensor credentials")
 
     # --- upgrade connection ---
-    ws = web.WebSocketResponse(max_msg_size=settings.ws_max_message_bytes)
+    # Limit is fixed per connection at handshake; dynamic config-service
+    # updates apply to connections opened after the change.
+    ws = web.WebSocketResponse(max_msg_size=RATE_LIMIT_CONFIG.ws_max_message_bytes)
     await ws.prepare(request)
 
     service = TelemetryIngestService()
