@@ -2,8 +2,8 @@
 
 #include <atomic>
 #include <cerrno>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 
 #include "../common/config.hpp"
 #include "esp_log.h"
@@ -113,8 +113,7 @@ static bool parse_int_token(const char*& p, long min_value, long max_value,
   char* end = nullptr;
   errno = 0;
   long value = strtol(p, &end, 10);
-  if (p == end || errno == ERANGE || value < min_value ||
-      value > max_value) {
+  if (p == end || errno == ERANGE || value < min_value || value > max_value) {
     return false;
   }
   if (*end != '\0' && *end != ' ') {
