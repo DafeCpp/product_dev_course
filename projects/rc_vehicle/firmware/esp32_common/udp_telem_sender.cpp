@@ -1,7 +1,9 @@
 #include "udp_telem_sender.hpp"
 
 #include <atomic>
+#include <cerrno>
 #include <cstring>
+#include <cstdlib>
 
 #include "../common/config.hpp"
 #include "esp_log.h"
@@ -103,6 +105,27 @@ static bool is_valid_hz(uint8_t hz) {
   return hz == 10 || hz == 20 || hz == 50 || hz == 100;
 }
 
+static bool parse_int_token(const char*& p, long min_value, long max_value,
+                            long* out) {
+  while (*p == ' ') p++;
+  if (*p == '\0') return false;
+
+  char* end = nullptr;
+  errno = 0;
+  long value = strtol(p, &end, 10);
+  if (p == end || errno == ERANGE || value < min_value ||
+      value > max_value) {
+    return false;
+  }
+  if (*end != '\0' && *end != ' ') {
+    return false;
+  }
+
+  *out = value;
+  p = end;
+  return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sender task
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,12 +221,35 @@ static void handle_ctrl_start(const char* buf, struct sockaddr_in* src_addr,
   while (*p == ' ') p++;
 
   if (*p) {
-    port = (uint16_t)atoi(p);
-    // Find next space for hz
-    while (*p && *p != ' ') p++;
+    long port_l = 0;
+    if (!parse_int_token(p, 1024, 65535, &port_l)) {
+      char reply[128];
+      snprintf(reply, sizeof(reply),
+               "{\"ok\":false,\"error\":\"port must be in [1024,65535]\"}");
+      send_ctrl_reply(reply, src_addr, addr_len);
+      return;
+    }
+    port = static_cast<uint16_t>(port_l);
+
     while (*p == ' ') p++;
     if (*p) {
-      hz = (uint8_t)atoi(p);
+      long hz_l = 0;
+      if (!parse_int_token(p, 0, 255, &hz_l)) {
+        char reply[128];
+        snprintf(reply, sizeof(reply),
+                 "{\"ok\":false,\"error\":\"hz must be in [0,255]\"}");
+        send_ctrl_reply(reply, src_addr, addr_len);
+        return;
+      }
+      hz = static_cast<uint8_t>(hz_l);
+      while (*p == ' ') p++;
+      if (*p != '\0') {
+        char reply[128];
+        snprintf(reply, sizeof(reply),
+                 "{\"ok\":false,\"error\":\"unexpected trailing data\"}");
+        send_ctrl_reply(reply, src_addr, addr_len);
+        return;
+      }
     }
   }
 
