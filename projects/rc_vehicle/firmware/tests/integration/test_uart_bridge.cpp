@@ -61,8 +61,8 @@ static std::vector<uint8_t> BuildCommandFrame(float throttle = 0.5f,
   std::array<uint8_t, 32> buf{};
   auto result = Protocol::BuildCommand(buf, cmd);
 
-  if (IsOk(result)) {
-    size_t size = GetValue(result);
+  if (result.has_value()) {
+    size_t size = (*result);
     return std::vector<uint8_t>(buf.begin(), buf.begin() + size);
   }
   return {};
@@ -72,8 +72,8 @@ static std::vector<uint8_t> BuildPingFrame() {
   std::array<uint8_t, 16> buf{};
   auto result = Protocol::BuildPing(buf);
 
-  if (IsOk(result)) {
-    size_t size = GetValue(result);
+  if (result.has_value()) {
+    size_t size = (*result);
     return std::vector<uint8_t>(buf.begin(), buf.begin() + size);
   }
   return {};
@@ -83,8 +83,8 @@ static std::vector<uint8_t> BuildPongFrame() {
   std::array<uint8_t, 16> buf{};
   auto result = Protocol::BuildPong(buf);
 
-  if (IsOk(result)) {
-    size_t size = GetValue(result);
+  if (result.has_value()) {
+    size_t size = (*result);
     return std::vector<uint8_t>(buf.begin(), buf.begin() + size);
   }
   return {};
@@ -98,8 +98,8 @@ static std::vector<uint8_t> BuildTelemetryFrame(int16_t ax = 1000,
   std::array<uint8_t, 32> buf{};
   auto result = Protocol::BuildTelemetry(buf, telem);
 
-  if (IsOk(result)) {
-    size_t size = GetValue(result);
+  if (result.has_value()) {
+    size_t size = (*result);
     return std::vector<uint8_t>(buf.begin(), buf.begin() + size);
   }
   return {};

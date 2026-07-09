@@ -273,7 +273,8 @@ class UartBridgeBase {
   template <typename T>
   [[nodiscard]] std::optional<T> ReceiveFrame(
       protocol::MessageType expected_type,
-      protocol::Result<T> (*parse_func)(std::span<const uint8_t>));
+      std::expected<T, protocol::ParseError> (*parse_func)(
+          std::span<const uint8_t>));
 };
 
 }  // namespace rc_vehicle

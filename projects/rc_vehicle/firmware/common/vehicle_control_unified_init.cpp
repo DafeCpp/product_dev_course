@@ -17,18 +17,18 @@ PlatformError VehicleControlUnified::Init() {
   if (!platform_) return PlatformError::TaskCreateFailed;
 
   auto pwm_result = platform_->InitPwm();
-  if (IsError(pwm_result)) {
+  if (!pwm_result.has_value()) {
     platform_->Log(LogLevel::Error, "Failed to initialize PWM");
-    return GetError(pwm_result);
+    return pwm_result.error();
   }
 
   auto failsafe_result = platform_->InitFailsafe();
-  if (IsError(failsafe_result)) {
+  if (!failsafe_result.has_value()) {
     platform_->Log(LogLevel::Error, "Failed to initialize failsafe");
-    return GetError(failsafe_result);
+    return failsafe_result.error();
   }
 
-  rc_enabled_ = IsOk(platform_->InitRc());
+  rc_enabled_ = platform_->InitRc().has_value();
   if (!rc_enabled_) {
     platform_->Log(LogLevel::Warning,
                    "RC input init failed — continuing without RC-in");
@@ -46,9 +46,9 @@ PlatformError VehicleControlUnified::Init() {
   if (!InitializeComponents()) return PlatformError::TaskCreateFailed;
 
   auto task_result = platform_->CreateTask(ControlTaskEntry, this);
-  if (IsError(task_result)) {
+  if (!task_result.has_value()) {
     platform_->Log(LogLevel::Error, "Failed to create vehicle control task");
-    return GetError(task_result);
+    return task_result.error();
   }
 
   inited_ = true;
@@ -58,7 +58,7 @@ PlatformError VehicleControlUnified::Init() {
 }
 
 void VehicleControlUnified::InitImuSubsystem() {
-  if (!IsOk(platform_->InitImu())) {
+  if (!platform_->InitImu().has_value()) {
     imu_enabled_ = false;
     const int who = platform_->GetImuLastWhoAmI();
     platform_->Log(LogLevel::Warning,

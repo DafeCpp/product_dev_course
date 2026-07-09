@@ -19,8 +19,8 @@ namespace testing {
  * Example usage:
  * @code
  * MockPlatform mock;
- * EXPECT_CALL(mock, InitPwm()).WillOnce(Return(Result<Unit, PlatformError>{Unit{}}));
- * EXPECT_CALL(mock, SetPwm(0.5f, 0.0f)).Times(1);
+ * EXPECT_CALL(mock, InitPwm()).WillOnce(Return(std::expected<void,
+ * PlatformError>{})); EXPECT_CALL(mock, SetPwm(0.5f, 0.0f)).Times(1);
  * @endcode
  */
 class MockPlatform : public VehicleControlPlatform {
@@ -29,10 +29,11 @@ class MockPlatform : public VehicleControlPlatform {
   // Инициализация
   // ─────────────────────────────────────────────────────────────────────────
 
-  MOCK_METHOD((Result<Unit, PlatformError>), InitPwm, (), (override));
-  MOCK_METHOD((Result<Unit, PlatformError>), InitRc, (), (override));
-  MOCK_METHOD((Result<Unit, PlatformError>), InitImu, (), (override));
-  MOCK_METHOD((Result<Unit, PlatformError>), InitFailsafe, (), (override));
+  MOCK_METHOD((std::expected<void, PlatformError>), InitPwm, (), (override));
+  MOCK_METHOD((std::expected<void, PlatformError>), InitRc, (), (override));
+  MOCK_METHOD((std::expected<void, PlatformError>), InitImu, (), (override));
+  MOCK_METHOD((std::expected<void, PlatformError>), InitFailsafe, (),
+              (override));
 
   // ─────────────────────────────────────────────────────────────────────────
   // Время
@@ -60,8 +61,10 @@ class MockPlatform : public VehicleControlPlatform {
   // ─────────────────────────────────────────────────────────────────────────
 
   MOCK_METHOD(std::optional<ImuCalibData>, LoadCalib, (), (override));
-  MOCK_METHOD((Result<Unit, PlatformError>), SaveCalib, (const ImuCalibData& data), (override));
-  MOCK_METHOD((Result<Unit, PlatformError>), SaveComOffset, (const float offset[2]), (override));
+  MOCK_METHOD((std::expected<void, PlatformError>), SaveCalib,
+              (const ImuCalibData& data), (override));
+  MOCK_METHOD((std::expected<void, PlatformError>), SaveComOffset,
+              (const float offset[2]), (override));
   MOCK_METHOD(bool, LoadComOffset, (float offset[2]), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -72,7 +75,7 @@ class MockPlatform : public VehicleControlPlatform {
               (override));
   MOCK_METHOD(std::optional<StabilizationConfig>, LoadStabilizationConfig,
               (DriveMode mode), (override));
-  MOCK_METHOD((Result<Unit, PlatformError>), SaveStabilizationConfig,
+  MOCK_METHOD((std::expected<void, PlatformError>), SaveStabilizationConfig,
               (const StabilizationConfig& config), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -117,7 +120,8 @@ class MockPlatform : public VehicleControlPlatform {
   // Задачи и синхронизация
   // ─────────────────────────────────────────────────────────────────────────
 
-  MOCK_METHOD((Result<Unit, PlatformError>), CreateTask, (void (*entry)(void*), void* arg), (override));
+  MOCK_METHOD((std::expected<void, PlatformError>), CreateTask,
+              (void (*entry)(void*), void* arg), (override));
   MOCK_METHOD(void, DelayUntilNextTick, (uint32_t period_ms), (override));
 };
 
@@ -144,10 +148,18 @@ class FakePlatform : public VehicleControlPlatform {
   // Инициализация
   // ─────────────────────────────────────────────────────────────────────────
 
-  Result<Unit, PlatformError> InitPwm() override { return Unit{}; }
-  Result<Unit, PlatformError> InitRc() override { return Unit{}; }
-  Result<Unit, PlatformError> InitImu() override { return Unit{}; }
-  Result<Unit, PlatformError> InitFailsafe() override { return Unit{}; }
+  std::expected<void, PlatformError> InitPwm() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitRc() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitImu() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitFailsafe() override {
+    return std::expected<void, PlatformError>{};
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Время
@@ -185,14 +197,16 @@ class FakePlatform : public VehicleControlPlatform {
   // ─────────────────────────────────────────────────────────────────────────
 
   std::optional<ImuCalibData> LoadCalib() override { return calib_data_; }
-  Result<Unit, PlatformError> SaveCalib(const ImuCalibData& data) override {
+  std::expected<void, PlatformError> SaveCalib(
+      const ImuCalibData& data) override {
     calib_data_ = data;
-    return Unit{};
+    return std::expected<void, PlatformError>{};
   }
-  Result<Unit, PlatformError> SaveComOffset(const float offset[2]) override {
+  std::expected<void, PlatformError> SaveComOffset(
+      const float offset[2]) override {
     com_offset_[0] = offset[0];
     com_offset_[1] = offset[1];
-    return Unit{};
+    return std::expected<void, PlatformError>{};
   }
   bool LoadComOffset(float offset[2]) override {
     offset[0] = com_offset_[0];
@@ -223,10 +237,11 @@ class FakePlatform : public VehicleControlPlatform {
     return stab_configs_[static_cast<size_t>(mode)];
   }
 
-  Result<Unit, PlatformError> SaveStabilizationConfig(const StabilizationConfig& config) override {
+  std::expected<void, PlatformError> SaveStabilizationConfig(
+      const StabilizationConfig& config) override {
     stab_configs_[static_cast<size_t>(config.mode)] = config;
     active_mode_ = config.mode;
-    return Unit{};
+    return std::expected<void, PlatformError>{};
   }
 
   void SetStabilizationConfig(const StabilizationConfig& config) {
@@ -317,10 +332,11 @@ class FakePlatform : public VehicleControlPlatform {
   // Задачи и синхронизация
   // ─────────────────────────────────────────────────────────────────────────
 
-  Result<Unit, PlatformError> CreateTask(void (*entry)(void*), void* arg) override {
+  std::expected<void, PlatformError> CreateTask(void (*entry)(void*),
+                                                void* arg) override {
     (void)entry;
     (void)arg;
-    return Unit{};
+    return std::expected<void, PlatformError>{};
   }
 
   void DelayUntilNextTick(uint32_t period_ms) override {
