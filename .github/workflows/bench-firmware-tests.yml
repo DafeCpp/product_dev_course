@@ -1,0 +1,62 @@
+name: Bench Controller Firmware Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/bench_controller/firmware/**
+      - .github/workflows/bench-firmware-tests.yml
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/bench_controller/firmware/**
+      - .github/workflows/bench-firmware-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  bench-firmware-tests:
+    name: GTest (host)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/bench_controller/firmware/tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run unit + integration tests
+        run: ./build/unit_tests --gtest_output=xml:test-results.xml
+
+      # sim_host собирается и прогоняется как smoke: ядро как CLI —
+      # основной SIL-артефакт спайка, ломаться молча не должен.
+      - name: Build sim_host
+        run: cmake --build build -j"$(nproc)" --target sim_host
+
+      - name: Smoke sim_host (fake plant, разрушение + потеря связи)
+        run: |
+          # 4 с: разрушение на 1-й секунде, потеря связи на 1.5-й —
+          # grace 200 мс + рампа 1000 мс ⇒ SafeHold к ~2.7 с
+          ./build/sim_host --duration-s 4 --fail-at-ms 1000 \
+            --link-loss-at-ms 1500 > sim_smoke.csv
+          # CSV непустой и содержит и латч разрушения, и SafeHold
+          grep -q ",1$" sim_smoke.csv
+          grep -q ",hold," sim_smoke.csv
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-firmware-test-results
+          path: projects/bench_controller/firmware/tests/test-results.xml
+          if-no-files-found: ignore
