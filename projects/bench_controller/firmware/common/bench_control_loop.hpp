@@ -73,9 +73,7 @@ class BenchControlLoop {
     return snapshot_;
   }
   [[nodiscard]] const TickStats& Stats() const noexcept { return stats_; }
-  [[nodiscard]] ChannelController& Controller() noexcept {
-    return controller_;
-  }
+  [[nodiscard]] ChannelController& Controller() noexcept { return controller_; }
 
  private:
   static void ControlTaskEntry(void* arg);

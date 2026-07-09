@@ -25,8 +25,7 @@ class HostPlatform final : public BenchPlatform {
 
   void Log(LogLevel level, std::string_view msg) const override {
     static constexpr const char* kNames[] = {"INFO", "WARN", "ERROR"};
-    std::fprintf(stderr, "[%s] %.*s\n",
-                 kNames[static_cast<int>(level)],
+    std::fprintf(stderr, "[%s] %.*s\n", kNames[static_cast<int>(level)],
                  static_cast<int>(msg.size()), msg.data());
   }
 

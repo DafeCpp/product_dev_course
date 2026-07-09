@@ -35,10 +35,16 @@ struct Rig {
 BenchControlLoop::Config MakeConfig() {
   BenchControlLoop::Config cfg{};
   cfg.period_ms = kPeriodMs;
-  cfg.controller.force_gains = {.kp = 4e-5f, .ki = 2e-3f, .kd = 0.0f,
-                                .max_integral = 400.0f, .max_output = 1.0f};
-  cfg.controller.disp_gains = {.kp = 0.3f, .ki = 4.0f, .kd = 0.0f,
-                               .max_integral = 0.2f, .max_output = 1.0f};
+  cfg.controller.force_gains = {.kp = 4e-5f,
+                                .ki = 2e-3f,
+                                .kd = 0.0f,
+                                .max_integral = 400.0f,
+                                .max_output = 1.0f};
+  cfg.controller.disp_gains = {.kp = 0.3f,
+                               .ki = 4.0f,
+                               .kd = 0.0f,
+                               .max_integral = 0.2f,
+                               .max_output = 1.0f};
   // FF = 1/K_plant: сила — 1/(жёсткость·скорость поршня), позиция —
   // 1/скорость поршня (см. HydraulicPlantModel::Config).
   cfg.controller.force_ff = 1.0f / (5000.0f * 400.0f);
@@ -46,8 +52,10 @@ BenchControlLoop::Config MakeConfig() {
   cfg.controller.ff_lead_tau_s = 0.008f;  // компенсация лага золотника
   cfg.controller.output_slew_per_s = 400.0f;
   cfg.controller.capture_ramp_s = 0.3f;
-  cfg.failure = {.drop_fraction = 0.3f, .window_ticks = 10,
-                 .min_force_n = 1000.0f, .arm_ticks = 25};
+  cfg.failure = {.drop_fraction = 0.3f,
+                 .window_ticks = 10,
+                 .min_force_n = 1000.0f,
+                 .arm_ticks = 25};
   cfg.watchdog = {.grace_ms = 200, .ramp_ms = 1000};
   return cfg;
 }
@@ -62,8 +70,8 @@ std::vector<TickSnapshot> RunFor(Rig& rig, float duration_s) {
 }
 
 // (a) Слежение за синусом в force-режиме.
-void ExpectSineTracking(float freq_hz, float amplitude_n,
-                        float rms_limit_frac, float max_limit_frac) {
+void ExpectSineTracking(float freq_hz, float amplitude_n, float rms_limit_frac,
+                        float max_limit_frac) {
   Rig rig(MakeConfig());
   const SineProgram::Segment seg[] = {{.mean = 20'000.0f,
                                        .amplitude = amplitude_n,
@@ -81,11 +89,10 @@ void ExpectSineTracking(float freq_hz, float amplitude_n,
     sq_sum += static_cast<double>(err) * err;
     max_err = std::max(max_err, std::fabs(err));
   }
-  const float rms = static_cast<float>(
-      std::sqrt(sq_sum / static_cast<double>(snaps.size())));
+  const float rms =
+      static_cast<float>(std::sqrt(sq_sum / static_cast<double>(snaps.size())));
 
-  EXPECT_LT(rms, amplitude_n * rms_limit_frac)
-      << freq_hz << " Гц: RMS " << rms;
+  EXPECT_LT(rms, amplitude_n * rms_limit_frac) << freq_hz << " Гц: RMS " << rms;
   EXPECT_LT(max_err, amplitude_n * max_limit_frac)
       << freq_hz << " Гц: max " << max_err;
 }
@@ -176,16 +183,14 @@ TEST(ClosedLoop, LinkLossRampsDownSmoothlyToSafeHold) {
 
   rig.link.SetAlive(false);
 
-  const float max_step =
-      cfg.controller.output_slew_per_s * kDtSec * 1.001f;
+  const float max_step = cfg.controller.output_slew_per_s * kDtSec * 1.001f;
   float prev_cmd = rig.loop.LastSnapshot().valve_command;
   bool seen_ramp = false;
   TickSnapshot s{};
   // grace 200 мс + ramp 1000 мс + запас.
   for (int i = 0; i < 900; ++i) {
     s = rig.Tick();
-    EXPECT_LE(std::fabs(s.valve_command - prev_cmd), max_step)
-        << "tick " << i;
+    EXPECT_LE(std::fabs(s.valve_command - prev_cmd), max_step) << "tick " << i;
     prev_cmd = s.valve_command;
     if (s.link_state == LinkState::kRampDown) seen_ramp = true;
   }

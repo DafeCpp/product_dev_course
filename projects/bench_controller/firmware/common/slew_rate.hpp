@@ -11,10 +11,8 @@ inline float ApplySlewRate(float target, float current,
                            float max_change_per_sec, float dt_sec) {
   float max_change = max_change_per_sec * dt_sec;
   float diff = target - current;
-  if (diff > max_change)
-    return current + max_change;
-  if (diff < -max_change)
-    return current - max_change;
+  if (diff > max_change) return current + max_change;
+  if (diff < -max_change) return current - max_change;
   return target;
 }
 

@@ -23,8 +23,8 @@ namespace bench {
 class LinkWatchdog {
  public:
   struct Config {
-    uint32_t grace_ms{500};   ///< Ожидание восстановления связи
-    uint32_t ramp_ms{2000};   ///< Длительность плавной разгрузки
+    uint32_t grace_ms{500};  ///< Ожидание восстановления связи
+    uint32_t ramp_ms{2000};  ///< Длительность плавной разгрузки
   };
 
   LinkWatchdog() = default;

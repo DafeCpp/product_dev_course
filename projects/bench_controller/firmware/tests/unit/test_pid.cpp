@@ -6,8 +6,8 @@ namespace bench {
 namespace {
 
 TEST(PidController, ZeroDtReturnsZeroAndKeepsState) {
-  PidController pid({.kp = 1.0f, .ki = 1.0f, .max_integral = 10.0f,
-                     .max_output = 10.0f});
+  PidController pid(
+      {.kp = 1.0f, .ki = 1.0f, .max_integral = 10.0f, .max_output = 10.0f});
   EXPECT_EQ(pid.Step(5.0f, 0.0f), 0.0f);
   EXPECT_EQ(pid.GetIntegral(), 0.0f);
 }
@@ -40,8 +40,7 @@ TEST(PidController, OutputClamped) {
 
 TEST(PidController, SetIntegralPreloadsFirstOutput) {
   // Bumpless: при e = 0 первый выход должен равняться ki · I.
-  PidController pid({.ki = 2.0f, .max_integral = 10.0f,
-                     .max_output = 10.0f});
+  PidController pid({.ki = 2.0f, .max_integral = 10.0f, .max_output = 10.0f});
   pid.SetIntegral(0.25f);
   const float out = pid.Step(0.0f, 0.002f);
   EXPECT_NEAR(out, 0.5f, 1e-4f);

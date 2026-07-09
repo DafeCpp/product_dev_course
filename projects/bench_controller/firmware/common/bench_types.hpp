@@ -23,10 +23,10 @@ enum class ControlMode : uint8_t {
  * разгрузка до безопасного состояния.
  */
 enum class LinkState : uint8_t {
-  kRunning = 0,   ///< Связь есть, программа исполняется
-  kGracePeriod,   ///< Связь потеряна, ждём восстановления
-  kRampDown,      ///< Плавная разгрузка (амплитуда → 0)
-  kSafeHold,      ///< Безопасное удержание (displacement-hold)
+  kRunning = 0,  ///< Связь есть, программа исполняется
+  kGracePeriod,  ///< Связь потеряна, ждём восстановления
+  kRampDown,     ///< Плавная разгрузка (амплитуда → 0)
+  kSafeHold,     ///< Безопасное удержание (displacement-hold)
 };
 
 /**
@@ -56,8 +56,8 @@ struct ValveFeedback {
  * для спайка; для продакшена берутся из паспорта стенда.
  */
 struct PdoScaling {
-  static constexpr float kFullScaleForceN = 100'000.0f;   // ±100 кН
-  static constexpr float kFullScalePositionMm = 100.0f;   // ±100 мм
+  static constexpr float kFullScaleForceN = 100'000.0f;  // ±100 кН
+  static constexpr float kFullScalePositionMm = 100.0f;  // ±100 мм
   static constexpr float kRawFullScale = 32767.0f;
 
   static constexpr int16_t ForceToRaw(float n) noexcept {

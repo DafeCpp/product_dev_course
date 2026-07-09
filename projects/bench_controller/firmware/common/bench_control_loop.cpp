@@ -19,14 +19,12 @@ void BenchControlLoop::SetProgram(
   program_ = SineProgram(segments);
   // Программа задаёт усилие — контур стартует в force-режиме с
   // захватом текущего усилия (подвод в displacement — вне спайка).
-  controller_.RequestMode(ControlMode::kForce,
-                          valve_.ReadFeedback().force_n);
+  controller_.RequestMode(ControlMode::kForce, valve_.ReadFeedback().force_n);
 }
 
 std::expected<void, PlatformError> BenchControlLoop::Init() {
   last_loop_ms_ = platform_.GetTimeMs();
-  return platform_.CreateControlTask(&BenchControlLoop::ControlTaskEntry,
-                                     this);
+  return platform_.CreateControlTask(&BenchControlLoop::ControlTaskEntry, this);
 }
 
 void BenchControlLoop::ControlTaskEntry(void* arg) {

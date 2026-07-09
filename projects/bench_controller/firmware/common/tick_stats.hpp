@@ -63,8 +63,7 @@ class TickStats {
 
  private:
   [[nodiscard]] uint32_t Percentile(uint32_t pct) const noexcept {
-    const uint64_t threshold =
-        (static_cast<uint64_t>(count_) * pct + 99) / 100;
+    const uint64_t threshold = (static_cast<uint64_t>(count_) * pct + 99) / 100;
     uint64_t seen = 0;
     for (uint32_t i = 0; i < kBinCount; ++i) {
       seen += bins_[i];

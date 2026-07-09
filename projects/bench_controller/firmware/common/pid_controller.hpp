@@ -55,8 +55,7 @@ class PidController {
    * @param integral Значение накопителя (клампится max_integral)
    */
   void SetIntegral(float integral) noexcept {
-    integral_ =
-        std::clamp(integral, -gains_.max_integral, gains_.max_integral);
+    integral_ = std::clamp(integral, -gains_.max_integral, gains_.max_integral);
   }
 
   [[nodiscard]] float GetIntegral() const noexcept { return integral_; }

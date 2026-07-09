@@ -50,9 +50,7 @@ class HydraulicPlantModel {
   }
 
   [[nodiscard]] const State& GetState() const noexcept { return state_; }
-  [[nodiscard]] bool Failed() const noexcept {
-    return stiffness_scale_ < 1.0f;
-  }
+  [[nodiscard]] bool Failed() const noexcept { return stiffness_scale_ < 1.0f; }
 
  private:
   Config config_{};

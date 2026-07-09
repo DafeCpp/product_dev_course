@@ -11,10 +11,16 @@ constexpr float kDt = 0.002f;
 
 ChannelController::Config MakeConfig() {
   ChannelController::Config cfg{};
-  cfg.force_gains = {.kp = 4e-5f, .ki = 2e-3f, .kd = 0.0f,
-                     .max_integral = 400.0f, .max_output = 1.0f};
-  cfg.disp_gains = {.kp = 0.3f, .ki = 4.0f, .kd = 0.0f,
-                    .max_integral = 0.2f, .max_output = 1.0f};
+  cfg.force_gains = {.kp = 4e-5f,
+                     .ki = 2e-3f,
+                     .kd = 0.0f,
+                     .max_integral = 400.0f,
+                     .max_output = 1.0f};
+  cfg.disp_gains = {.kp = 0.3f,
+                    .ki = 4.0f,
+                    .kd = 0.0f,
+                    .max_integral = 0.2f,
+                    .max_output = 1.0f};
   cfg.output_slew_per_s = 20.0f;
   cfg.capture_ramp_s = 0.3f;
   return cfg;
@@ -68,8 +74,7 @@ TEST(ChannelController, BumplessSwitchToForce) {
   float prev = u_before;
   for (int i = 0; i < 50; ++i) {
     sp = c.Step(20'000.0f, fb, kDt);  // цель = захваченная сила
-    EXPECT_LE(std::fabs(sp.value - prev), max_step * 1.001f)
-        << "tick " << i;
+    EXPECT_LE(std::fabs(sp.value - prev), max_step * 1.001f) << "tick " << i;
     prev = sp.value;
   }
   // При e ≈ 0 команда осталась в окрестности прежней (bumpless), а не

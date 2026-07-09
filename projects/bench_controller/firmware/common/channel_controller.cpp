@@ -55,8 +55,7 @@ ValveSetpoint ChannelController::Step(float target, const ValveFeedback& fb,
     effective_target_ = target;
   }
 
-  PidController& active =
-      mode_ == ControlMode::kForce ? force_pid_ : disp_pid_;
+  PidController& active = mode_ == ControlMode::kForce ? force_pid_ : disp_pid_;
   const float error = effective_target_ - Measured(fb);
 
   // Feed-forward по производным цели — без него PI не отслеживает
@@ -84,8 +83,7 @@ ValveSetpoint ChannelController::Step(float target, const ValveFeedback& fb,
   // Затухание feed-forward синхронно с рампой захвата.
   if (ff_bias_ != 0.0f && config_.capture_ramp_s > 0.0f) {
     const float decay = dt_sec / config_.capture_ramp_s;
-    ff_bias_ = decay >= 1.0f ? 0.0f
-                             : ff_bias_ * (1.0f - decay);
+    ff_bias_ = decay >= 1.0f ? 0.0f : ff_bias_ * (1.0f - decay);
   }
 
   u = std::clamp(u, -1.0f, 1.0f);

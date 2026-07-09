@@ -25,15 +25,14 @@ namespace bench {
 class SpecimenFailureDetector {
  public:
   struct Config {
-    float drop_fraction{0.3f};  ///< Порог падения: actual < (1-drop)·|sp|
-    uint16_t window_ticks{10};  ///< Подряд идущих тиков до латча
+    float drop_fraction{0.3f};   ///< Порог падения: actual < (1-drop)·|sp|
+    uint16_t window_ticks{10};   ///< Подряд идущих тиков до латча
     float min_force_n{1000.0f};  ///< Уставки ниже — не анализируем
-    uint16_t arm_ticks{25};  ///< Тиков «в допуске» до взведения
+    uint16_t arm_ticks{25};      ///< Тиков «в допуске» до взведения
   };
 
   SpecimenFailureDetector() = default;
-  explicit SpecimenFailureDetector(const Config& config)
-      : config_(config) {}
+  explicit SpecimenFailureDetector(const Config& config) : config_(config) {}
 
   /**
    * @brief Шаг детектора (вызывается каждый тик в force-режиме)

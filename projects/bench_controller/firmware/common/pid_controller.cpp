@@ -9,8 +9,7 @@ float PidController::Step(float error, float dt_sec) noexcept {
 
   // Интегральная составляющая с anti-windup
   integral_ += error * dt_sec;
-  integral_ =
-      std::clamp(integral_, -gains_.max_integral, gains_.max_integral);
+  integral_ = std::clamp(integral_, -gains_.max_integral, gains_.max_integral);
 
   // Дифференциальная составляющая (0 на первом шаге)
   float derivative = 0.0f;
@@ -20,8 +19,8 @@ float PidController::Step(float error, float dt_sec) noexcept {
   first_step_ = false;
   prev_error_ = error;
 
-  const float output = gains_.kp * error + gains_.ki * integral_ +
-                       gains_.kd * derivative;
+  const float output =
+      gains_.kp * error + gains_.ki * integral_ + gains_.kd * derivative;
   return std::clamp(output, -gains_.max_output, gains_.max_output);
 }
 

@@ -32,10 +32,14 @@ Args ParseArgs(int argc, char** argv) {
   for (int i = 1; i < argc - 1; ++i) {
     const std::string key = argv[i];
     const char* val = argv[i + 1];
-    if (key == "--duration-s") a.duration_s = std::strtof(val, nullptr);
-    else if (key == "--freq") a.freq_hz = std::strtof(val, nullptr);
-    else if (key == "--amplitude") a.amplitude_n = std::strtof(val, nullptr);
-    else if (key == "--mean") a.mean_n = std::strtof(val, nullptr);
+    if (key == "--duration-s")
+      a.duration_s = std::strtof(val, nullptr);
+    else if (key == "--freq")
+      a.freq_hz = std::strtof(val, nullptr);
+    else if (key == "--amplitude")
+      a.amplitude_n = std::strtof(val, nullptr);
+    else if (key == "--mean")
+      a.mean_n = std::strtof(val, nullptr);
     else if (key == "--fail-at-ms")
       a.fail_at_ms = std::strtoul(val, nullptr, 10);
     else if (key == "--link-loss-at-ms")
@@ -50,10 +54,14 @@ const char* ModeName(bench::ControlMode m) {
 
 const char* LinkName(bench::LinkState s) {
   switch (s) {
-    case bench::LinkState::kRunning: return "running";
-    case bench::LinkState::kGracePeriod: return "grace";
-    case bench::LinkState::kRampDown: return "ramp";
-    case bench::LinkState::kSafeHold: return "hold";
+    case bench::LinkState::kRunning:
+      return "running";
+    case bench::LinkState::kGracePeriod:
+      return "grace";
+    case bench::LinkState::kRampDown:
+      return "ramp";
+    case bench::LinkState::kSafeHold:
+      return "hold";
   }
   return "?";
 }
@@ -64,8 +72,7 @@ int main(int argc, char** argv) {
   const Args args = ParseArgs(argc, argv);
 
   bench::HostPlatform platform;
-  bench::testing::PlantValveChannel valve(
-      bench::HydraulicPlantModel::Config{});
+  bench::testing::PlantValveChannel valve(bench::HydraulicPlantModel::Config{});
   bench::StubSupervisoryLink link;
 
   bench::BenchControlLoop::Config cfg{};
@@ -114,8 +121,8 @@ int main(int argc, char** argv) {
     const bench::TickSnapshot s = loop.HostStep(cfg.period_ms);
     std::printf("%u,%s,%s,%.1f,%.1f,%.4f,%.1f,%.3f,%d\n", s.now_ms,
                 ModeName(s.mode), LinkName(s.link_state), s.program_target,
-                s.effective_target, s.valve_command, s.force_n,
-                s.position_mm, s.failure_latched ? 1 : 0);
+                s.effective_target, s.valve_command, s.force_n, s.position_mm,
+                s.failure_latched ? 1 : 0);
   }
   return 0;
 }

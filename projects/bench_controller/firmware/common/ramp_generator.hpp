@@ -25,8 +25,8 @@ class RampGenerator {
     if (duration_ms_ == 0) return 0.0f;
     uint32_t elapsed = now_ms - start_ms_;
     if (elapsed >= duration_ms_) return 0.0f;
-    return 1.0f - static_cast<float>(elapsed) /
-                      static_cast<float>(duration_ms_);
+    return 1.0f -
+           static_cast<float>(elapsed) / static_cast<float>(duration_ms_);
   }
 
   /// Рампа завершена (масштаб достиг 0)
