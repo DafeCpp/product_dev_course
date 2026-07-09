@@ -1,4 +1,4 @@
-.PHONY: test test-backend test-frontend test-telemetry-cli type-check backend-install frontend-install
+.PHONY: bench-firmware-test test test-backend test-frontend test-telemetry-cli type-check backend-install frontend-install
 .PHONY: test-coverage test-coverage-backend test-coverage-frontend test-coverage-firmware
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
@@ -165,6 +165,11 @@ test-backend: backend-install
 	done; \
 	"$(PYTHON)" scripts/pytest_totals.py "$$out_file" || true; \
 	exit $$failed
+
+# Host-тесты прошивки контроллера стенда (GTest); не входят в make test —
+# запускаются явно (как test-coverage-firmware у rc_vehicle)
+bench-firmware-test:
+	$(MAKE) -C projects/bench_controller/firmware test
 
 test-telemetry-cli:
 	@echo "🧪 Running tests for telemetry-cli..."
