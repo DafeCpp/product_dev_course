@@ -69,7 +69,7 @@ class TestExperimentTransitions:
 
     def test_all_statuses_have_transitions(self):
         """Test all ExperimentStatus values have transition rules."""
-        for status in ExperimentStatus:
+        for status in list(ExperimentStatus):
             assert status in EXPERIMENT_TRANSITIONS
 
 
@@ -115,7 +115,7 @@ class TestRunTransitions:
 
     def test_all_statuses_have_transitions(self):
         """Test all RunStatus values have transition rules."""
-        for status in RunStatus:
+        for status in list(RunStatus):
             assert status in RUN_TRANSITIONS
 
 
@@ -169,7 +169,7 @@ class TestCaptureTransitions:
 
     def test_all_statuses_have_transitions(self):
         """Test all CaptureSessionStatus values have transition rules."""
-        for status in CaptureSessionStatus:
+        for status in list(CaptureSessionStatus):
             assert status in CAPTURE_TRANSITIONS
 
 
@@ -215,7 +215,7 @@ class TestConversionProfileTransitions:
 
     def test_all_statuses_have_transitions(self):
         """Test all ConversionProfileStatus values have transition rules."""
-        for status in ConversionProfileStatus:
+        for status in list(ConversionProfileStatus):
             assert status in CONVERSION_PROFILE_TRANSITIONS
 
 
@@ -251,7 +251,7 @@ class TestValidateExperimentTransition:
 
     def test_archived_to_any_raises(self):
         """Test ARCHIVED to any status raises."""
-        for status in ExperimentStatus:
+        for status in list(ExperimentStatus):
             if status != ExperimentStatus.ARCHIVED:
                 with pytest.raises(InvalidStatusTransitionError):
                     validate_experiment_transition(
@@ -298,7 +298,7 @@ class TestValidateRunTransition:
 
     def test_archived_to_any_raises(self):
         """Test ARCHIVED to any status raises."""
-        for status in RunStatus:
+        for status in list(RunStatus):
             if status != RunStatus.ARCHIVED:
                 with pytest.raises(InvalidStatusTransitionError):
                     validate_run_transition(RunStatus.ARCHIVED, status)
@@ -377,7 +377,7 @@ class TestValidateConversionProfileTransition:
 
     def test_deprecated_to_any_raises(self):
         """Test DEPRECATED to any status raises."""
-        for status in ConversionProfileStatus:
+        for status in list(ConversionProfileStatus):
             if status != ConversionProfileStatus.DEPRECATED:
                 with pytest.raises(InvalidStatusTransitionError):
                     validate_conversion_profile_transition(
@@ -399,22 +399,22 @@ class TestTransitionCoverage:
 
     def test_experiment_all_statuses_covered(self):
         """Test all ExperimentStatus values are in transitions dict."""
-        for status in ExperimentStatus:
+        for status in list(ExperimentStatus):
             assert status in EXPERIMENT_TRANSITIONS, f"Missing transitions for {status}"
 
     def test_run_all_statuses_covered(self):
         """Test all RunStatus values are in transitions dict."""
-        for status in RunStatus:
+        for status in list(RunStatus):
             assert status in RUN_TRANSITIONS, f"Missing transitions for {status}"
 
     def test_capture_all_statuses_covered(self):
         """Test all CaptureSessionStatus values are in transitions dict."""
-        for status in CaptureSessionStatus:
+        for status in list(CaptureSessionStatus):
             assert status in CAPTURE_TRANSITIONS, f"Missing transitions for {status}"
 
     def test_conversion_profile_all_statuses_covered(self):
         """Test all ConversionProfileStatus values are in transitions dict."""
-        for status in ConversionProfileStatus:
+        for status in list(ConversionProfileStatus):
             assert status in CONVERSION_PROFILE_TRANSITIONS, f"Missing transitions for {status}"
 
     def test_experiment_transitions_are_sets(self):
