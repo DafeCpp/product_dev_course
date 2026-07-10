@@ -102,6 +102,8 @@ void BenchControlLoop::TickOnce(uint32_t now_ms, uint32_t dt_ms) {
       .force_n = fb.force_n,
       .position_mm = fb.position_mm,
       .failure_latched = failure_detector_.Latched(),
+      .fb_fresh = fb.fresh,
+      .fb_age_ticks = fb.age_ticks,
   };
 }
 

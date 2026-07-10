@@ -29,6 +29,8 @@ struct TickSnapshot {
   float force_n{0.0f};
   float position_mm{0.0f};
   bool failure_latched{false};
+  bool fb_fresh{false};      ///< Пришёл ли новый feedback в этом тике
+  uint32_t fb_age_ticks{0};  ///< Возраст feedback в тиках
 };
 
 /**
