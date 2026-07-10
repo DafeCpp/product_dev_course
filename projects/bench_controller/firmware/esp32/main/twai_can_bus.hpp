@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "esp_twai.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -46,10 +48,25 @@ class TwaiCanBus final : public ICanBus {
   static bool OnRxDone(twai_node_handle_t handle,
                        const twai_rx_done_event_data_t* edata, void* ctx);
 
+  // Постоянные TX-слоты. TWAI node-API кладёт в свою очередь УКАЗАТЕЛЬ
+  // на twai_frame_t и его buffer (не копию), поэтому кадр и payload
+  // должны жить до фактической передачи. Send() копирует в
+  // следующий слот кольца; глубина > tx_queue_depth (32), а очередь
+  // при 1 Мбит/с (~130 мкс/кадр) опустошается за единицы кадров, так
+  // что слот не переиспользуется до отправки. Индекс — atomic
+  // (Send зовут задачи с двух ядер).
+  static constexpr uint32_t kTxSlots = 48;
+  struct TxSlot {
+    twai_frame_t frame;
+    uint8_t data[8];
+  };
+
   twai_node_handle_t node_{nullptr};
   QueueHandle_t rx_queue_{nullptr};
   QueueHandle_t tap_{nullptr};
   uint64_t last_rx_ts_{0};
+  TxSlot tx_slots_[kTxSlots]{};
+  std::atomic<uint32_t> tx_idx_{0};
 };
 
 /// Внутренний тип очереди: кадр + аппаратный таймстамп

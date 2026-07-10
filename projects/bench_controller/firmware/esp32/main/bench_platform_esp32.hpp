@@ -29,7 +29,7 @@ class BenchPlatformEsp32 final : public BenchPlatform {
   void FeedTaskWdt() noexcept override;
 
   /// Зарегистрировать текущую задачу в Task WDT (из тела задачи)
-  void RegisterTaskWdt();
+  void RegisterTaskWdt() override;
 
  private:
   TickType_t last_wake_time_{0};

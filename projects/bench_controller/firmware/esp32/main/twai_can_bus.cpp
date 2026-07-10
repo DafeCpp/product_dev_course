@@ -44,7 +44,16 @@ bool TwaiCanBus::OnRxDone(twai_node_handle_t handle,
   item.timestamp = rx.header.timestamp;
 
   BaseType_t hp_task_woken = pdFALSE;
-  xQueueSendFromISR(self->rx_queue_, &item, &hp_task_woken);
+  // В loopback контроллер слышит и собственный SYNC (0x080). Мастер —
+  // SYNC-продюсер и не должен ПОЛУЧАТЬ SYNC: иначе CANopenNode на
+  // эхо-кадре (PumpRx идёт до ProcessSyncRpdo) сбрасывает SYNC-таймер и
+  // пропускает плановую отправку тика → synchronous-feedback падает до
+  // 250 Гц. Поэтому свой SYNC в очередь мастера не кладём (эмулятору он
+  // нужен для sync-режима — идёт только в tap). Остальные свои кадры
+  // (0x220/0x701/0x620) стек мастера и так игнорирует по rxArray.
+  if (item.frame.id != 0x080) {
+    xQueueSendFromISR(self->rx_queue_, &item, &hp_task_woken);
+  }
   if (self->tap_ != nullptr) {
     BaseType_t hp2 = pdFALSE;
     xQueueSendFromISR(self->tap_, &item, &hp2);
@@ -89,13 +98,20 @@ bool TwaiCanBus::Init(int gpio_tx, int gpio_rx, uint32_t bitrate) {
 }
 
 bool TwaiCanBus::Send(const CanFrame& frame) {
-  twai_frame_t tx = {};
-  tx.header.id = frame.id;
-  tx.header.dlc = frame.dlc;
-  tx.buffer = const_cast<uint8_t*>(frame.data);
-  tx.buffer_len = frame.dlc > 8 ? 8 : frame.dlc;
+  // Копируем в постоянный слот: драйвер держит указатель на кадр/буфер
+  // до фактической передачи, а стековый twai_frame_t тут же исчезнет
+  // (см. TxSlot в заголовке).
+  const uint32_t slot = tx_idx_.fetch_add(1) % kTxSlots;
+  TxSlot& s = tx_slots_[slot];
+  const uint8_t len = frame.dlc > 8 ? 8 : frame.dlc;
+  std::memcpy(s.data, frame.data, len);
+  s.frame = {};
+  s.frame.header.id = frame.id;
+  s.frame.header.dlc = frame.dlc;
+  s.frame.buffer = s.data;
+  s.frame.buffer_len = len;
   // timeout 0 — неблокирующая постановка в TX-очередь (hot path)
-  return twai_node_transmit(node_, &tx, 0) == ESP_OK;
+  return twai_node_transmit(node_, &s.frame, 0) == ESP_OK;
 }
 
 std::optional<CanFrame> TwaiCanBus::Poll() {

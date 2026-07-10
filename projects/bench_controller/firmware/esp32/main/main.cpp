@@ -112,6 +112,15 @@ extern "C" void app_main(void) {
   const uint64_t t0 = static_cast<uint64_t>(esp_timer_get_time());
   vTaskDelay(pdMS_TO_TICKS(kMeasureSeconds * 1000));
   const uint64_t t1 = static_cast<uint64_t>(esp_timer_get_time());
+
+  // Остановить тики контура ДО чтения статистики: TickStats и
+  // feedback-счётчик мутируются задачей на ядре 1, а читаем мы с ядра
+  // 0 — без остановки снимок был бы неатомарным (в т.ч. 64-битные
+  // поля TickStats). Ждём подтверждения, что TickOnce больше не идёт.
+  g_loop->RequestStop();
+  for (int i = 0; i < 100 && !g_loop->Stopped(); ++i) {
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
   const uint32_t fb_after = g_channel.FeedbackCount();
 
   const bench::TickStats::Report r = g_loop->Stats().MakeReport();
