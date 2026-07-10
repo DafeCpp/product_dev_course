@@ -75,6 +75,9 @@ struct PdoScaling {
   static constexpr int16_t CommandToRaw(float cmd) noexcept {
     return Saturate(cmd * kRawFullScale);
   }
+  static constexpr float RawToCommand(int16_t raw) noexcept {
+    return static_cast<float>(raw) / kRawFullScale;
+  }
 
  private:
   static constexpr int16_t Saturate(float v) noexcept {
