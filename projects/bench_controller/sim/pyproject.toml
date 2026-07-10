@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "benchsim"
+version = "0.1.0"
+description = "Измерительный риг спайка LOS-76: эмулятор CANopen-узла клапана Atos + сценарии"
+requires-python = ">=3.10"
+dependencies = [
+    "python-can>=4.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["benchsim"]
