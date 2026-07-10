@@ -60,6 +60,13 @@ class ValveNode:
         self.last_hb = 0.0
         self.rx_setpoints = 0
         self.tx_feedback = 0
+        # Момент перехода в operational (NMT Start от мастера) — это и
+        # есть "now_ms=0" в CSV контроллера (его цикл стартует сразу
+        # после Init/NMT-старта). Таймер --fail-at-s считается отсюда,
+        # а не от старта потока эмулятора: иначе задержка bootup-паузы
+        # и запуска subprocess'а sim_host сдвигает событие раньше, чем
+        # показывает время контроллера.
+        self.became_operational_at: float | None = None
 
     def start(self) -> None:
         self._send(COB_HEARTBEAT, bytes([0x00]))  # bootup
@@ -109,15 +116,22 @@ class ValveNode:
             if data[1] in (NODE_ID, 0x00):
                 if data[0] == 0x01:
                     self.nmt_state = NMT_OPERATIONAL
+                    if self.became_operational_at is None:
+                        self.became_operational_at = time.monotonic()
                 elif data[0] in (0x02, 0x80):
                     self.nmt_state = NMT_PREOPERATIONAL
         elif cob == COB_SETPOINT and self.nmt_state == NMT_OPERATIONAL:
             if len(data) >= 3:
                 raw, control = struct.unpack_from("<hB", data)
+                # Сначала докатываем модель со СТАРОЙ командой на весь
+                # интервал простоя, и только потом применяем новую —
+                # иначе первый setpoint после паузы (bootup, разрыв
+                # событий) задним числом интегрируется так, будто
+                # действовал всё время простоя.
+                self._step_plant()
                 self.valve_cmd = raw_to_command(raw)
                 self.enabled = bool(control & 0x80)
                 self.rx_setpoints += 1
-                self._step_plant()
                 if self.transmission == TRANSMISSION_EVENT:
                     self._send_feedback()
         elif cob == COB_SYNC:
@@ -148,8 +162,14 @@ def run(channel: str, sync_mode: bool, fail_at_s: float,
             if msg is not None and not msg.is_error_frame:
                 node.handle(msg)
             node.tick()
+            # Отсчёт от NMT-старта (≈ момент, когда контроллер начинает
+            # свой цикл), а не от запуска потока эмулятора — иначе
+            # bootup-пауза и старт subprocess'а sim_host сдвигают
+            # событие раньше, чем показывает CSV-время контроллера.
             if (fail_at_s > 0 and not failed
-                    and time.monotonic() - started >= fail_at_s):
+                    and node.became_operational_at is not None
+                    and time.monotonic() - node.became_operational_at
+                    >= fail_at_s):
                 node.plant.trigger_failure()
                 failed = True
     finally:

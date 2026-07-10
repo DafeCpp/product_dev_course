@@ -100,10 +100,15 @@ void CoMaster::ProcessMain(uint32_t dt_us) {
 }
 
 bool CoMaster::ValveOperational() const {
+  // CO_HBconsumer_getState()==ACTIVE значит только «heartbeat приходит
+  // вовремя» — узел мог проигнорировать NMT-старт или позже уйти в
+  // pre-operational, продолжая слать HB. Проверяем именно NMT-состояние,
+  // которое HB-consumer уже расшифровывает из payload кадра (byte 0).
   // Consumer настроен единственной записью 0x1016[0] → idx 0.
-  const CO_HBconsumer_state_t state =
-      CO_HBconsumer_getState(AsCo(co_)->HBcons, 0);
-  return state == CO_HBconsumer_ACTIVE;
+  CO_NMT_internalState_t nmt_state = CO_NMT_UNKNOWN;
+  const int8_t ret =
+      CO_HBconsumer_getNmtState(AsCo(co_)->HBcons, 0, &nmt_state);
+  return ret == 0 && nmt_state == CO_NMT_OPERATIONAL;
 }
 
 bool CoMaster::SdoWriteU8(uint16_t index, uint8_t sub, uint8_t value) {
