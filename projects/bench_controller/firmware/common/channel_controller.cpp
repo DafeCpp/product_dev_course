@@ -1,8 +1,7 @@
 #include "channel_controller.hpp"
 
 #include <algorithm>
-
-#include "slew_rate.hpp"
+#include <firmware_common/slew_rate.hpp>
 
 namespace bench {
 
@@ -18,9 +17,9 @@ void ChannelController::RequestMode(ControlMode mode,
   }
   mode_ = mode;
 
-  PidController& incoming =
+  firmware_common::PidController& incoming =
       mode_ == ControlMode::kForce ? force_pid_ : disp_pid_;
-  const PidController::Gains& gains = incoming.GetGains();
+  const firmware_common::PidController::Gains& gains = incoming.GetGains();
 
   incoming.Reset();
   if (gains.ki > 0.0f) {
@@ -55,7 +54,8 @@ ValveSetpoint ChannelController::Step(float target, const ValveFeedback& fb,
     effective_target_ = target;
   }
 
-  PidController& active = mode_ == ControlMode::kForce ? force_pid_ : disp_pid_;
+  firmware_common::PidController& active =
+      mode_ == ControlMode::kForce ? force_pid_ : disp_pid_;
   const float error = effective_target_ - Measured(fb);
 
   // Feed-forward по производным цели — без него PI не отслеживает
@@ -87,8 +87,8 @@ ValveSetpoint ChannelController::Step(float target, const ValveFeedback& fb,
   }
 
   u = std::clamp(u, -1.0f, 1.0f);
-  last_output_ =
-      ApplySlewRate(u, last_output_, config_.output_slew_per_s, dt_sec);
+  last_output_ = firmware_common::ApplySlewRate(
+      u, last_output_, config_.output_slew_per_s, dt_sec);
 
   return ValveSetpoint{
       .mode = mode_, .value = last_output_, .enable = enabled_};

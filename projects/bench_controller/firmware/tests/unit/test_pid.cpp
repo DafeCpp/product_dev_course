@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "pid_controller.hpp"
+#include <firmware_common/pid_controller.hpp>
 
 namespace bench {
 namespace {
+
+using firmware_common::PidController;
 
 TEST(PidController, ZeroDtReturnsZeroAndKeepsState) {
   PidController pid(

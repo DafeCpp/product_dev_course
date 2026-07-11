@@ -8,9 +8,10 @@
 #   → переменные BENCH_PORTABLE_SOURCES, BENCH_PORTABLE_INCLUDE_DIRS
 
 set(BENCH_COMMON_DIR ${BENCH_FIRMWARE_DIR}/common)
+include(${BENCH_FIRMWARE_DIR}/../../firmware_common/sources.cmake)
 
 set(BENCH_PORTABLE_SOURCES
-    ${BENCH_COMMON_DIR}/pid_controller.cpp
+    ${FIRMWARE_COMMON_SOURCES}
     ${BENCH_COMMON_DIR}/sine_program.cpp
     ${BENCH_COMMON_DIR}/specimen_failure_detector.cpp
     ${BENCH_COMMON_DIR}/link_watchdog.cpp
@@ -21,6 +22,7 @@ set(BENCH_PORTABLE_SOURCES
 
 set(BENCH_PORTABLE_INCLUDE_DIRS
     ${BENCH_COMMON_DIR}
+    ${FIRMWARE_COMMON_INCLUDE_DIRS}
 )
 
 # --- CANopen-слой (портируемый: hosted-драйвер поверх ICanBus) ---

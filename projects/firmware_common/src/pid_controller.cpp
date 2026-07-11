@@ -1,17 +1,15 @@
-#include "pid_controller.hpp"
+#include "firmware_common/pid_controller.hpp"
 
-namespace bench {
+namespace firmware_common {
 
 float PidController::Step(float error, float dt_sec) noexcept {
   if (dt_sec <= 0.0f) {
     return 0.0f;
   }
 
-  // Интегральная составляющая с anti-windup
   integral_ += error * dt_sec;
   integral_ = std::clamp(integral_, -gains_.max_integral, gains_.max_integral);
 
-  // Дифференциальная составляющая (0 на первом шаге)
   float derivative = 0.0f;
   if (!first_step_) {
     derivative = (error - prev_error_) / dt_sec;
@@ -30,4 +28,4 @@ void PidController::Reset() noexcept {
   first_step_ = true;
 }
 
-}  // namespace bench
+}  // namespace firmware_common
