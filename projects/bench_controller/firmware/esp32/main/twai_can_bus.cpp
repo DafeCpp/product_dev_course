@@ -105,11 +105,14 @@ bool TwaiCanBus::Init(int gpio_tx, int gpio_rx, uint32_t bitrate) {
 }
 
 bool TwaiCanBus::Send(const CanFrame& frame) {
-  // try-lock без блокировки hot-path: секция микроскопична (memcpy 8Б +
-  // неблокирующая постановка), коллизия двух ядер практически
-  // невозможна; при ней кадр дропаем (стек = TX overflow), чем блокируем
-  // тик контура.
-  if (xSemaphoreTake(tx_mutex_, 0) != pdTRUE) {
+  // Блокирующий take: секция микроскопична (memcpy 8Б + неблокирующая
+  // постановка ≈ единицы мкс), поэтому ожидание при коллизии двух ядер
+  // ничтожно (« периода 2 мс) и не стоит риска дропнуть one-shot кадр.
+  // Try-lock (timeout 0) ронял бы NMT Start / SDO из CoMaster::Init при
+  // редкой коллизии с HB-задачей эмулятора → узел навсегда
+  // pre-operational и вся сессия невалидна. Мьютекс с priority
+  // inheritance исключает инверсию; вложенных Send нет → без дедлока.
+  if (xSemaphoreTake(tx_mutex_, portMAX_DELAY) != pdTRUE) {
     return false;
   }
   TxSlot& s = tx_slots_[tx_idx_ % kTxSlots];

@@ -104,7 +104,11 @@ void ValveEmulator::Handle(const CanFrame& frame) {
         std::memcpy(&raw, &frame.data[0], 2);
         valve_cmd_ = PdoScaling::RawToCommand(raw);
         enabled_ = (frame.data[2] & 0x80) != 0;
-        SendFeedback();
+        // Только в event-режиме feedback идёт на setpoint; в sync —
+        // строго по SYNC (иначе прогон был бы одновременно event+sync).
+        if (!sync_mode_) {
+          SendFeedback();
+        }
       }
       break;
 
@@ -117,6 +121,15 @@ void ValveEmulator::Handle(const CanFrame& frame) {
 
     case kCobSdoRx:
       if (frame.dlc >= 4) {
+        // Expedited download 0x1800:02 (тип передачи TPDO) переключает
+        // режim feedback — как benchsim/valve_node.py; иначе мастер
+        // считает, что sync/event сменился, а эмулятор — нет.
+        const uint16_t index = static_cast<uint16_t>(
+            frame.data[1] | (static_cast<uint16_t>(frame.data[2]) << 8));
+        const uint8_t sub = frame.data[3];
+        if (index == 0x1800 && sub == 0x02 && frame.dlc >= 5) {
+          sync_mode_ = (frame.data[4] == 0x01);  // 0x01=sync, 0xFE=event
+        }
         CanFrame resp = {};
         resp.id = kCobSdoTx;
         resp.dlc = 8;
