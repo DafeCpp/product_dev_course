@@ -7,6 +7,7 @@ on:
       - develop
     paths:
       - projects/bench_controller/firmware/**
+      - projects/firmware_common/**
       - .github/workflows/bench-firmware-tests.yml
   pull_request:
     branches:
@@ -14,6 +15,7 @@ on:
       - develop
     paths:
       - projects/bench_controller/firmware/**
+      - projects/firmware_common/**
       - .github/workflows/bench-firmware-tests.yml
 
 permissions:

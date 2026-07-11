@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-
 #include <firmware_common/slew_rate.hpp>
 
 namespace rc_vehicle {
