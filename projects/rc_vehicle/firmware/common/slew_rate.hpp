@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <firmware_common/slew_rate.hpp>
+
 namespace rc_vehicle {
 
 /**
@@ -10,14 +12,9 @@ namespace rc_vehicle {
  * и весов стабилизации.
  */
 inline float ApplySlewRate(float target, float current,
-                           float max_change_per_sec, uint32_t dt_ms) {
-  float max_change = max_change_per_sec * (dt_ms / 1000.0f);
-  float diff = target - current;
-  if (diff > max_change)
-    return current + max_change;
-  if (diff < -max_change)
-    return current - max_change;
-  return target;
+                           float max_change_per_sec, uint32_t dt_ms) noexcept {
+  return firmware_common::ApplySlewRate(target, current, max_change_per_sec,
+                                        dt_ms / 1000.0f);
 }
 
 }  // namespace rc_vehicle
