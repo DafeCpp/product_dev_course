@@ -1,8 +1,9 @@
 #pragma once
 
+#include <firmware_common/pid_controller.hpp>
+
 #include "control_components.hpp"
 #include "madgwick_filter.hpp"
-#include "pid_controller.hpp"
 #include "stabilization_config.hpp"
 #include "vehicle_ekf.hpp"
 
@@ -61,12 +62,14 @@ class YawRateController {
   void Reset() noexcept { pid_.Reset(); }
 
   /** @brief Доступ к PID (для тестирования). */
-  [[nodiscard]] const PidController& GetPid() const noexcept { return pid_; }
+  [[nodiscard]] const firmware_common::PidController& GetPid() const noexcept {
+    return pid_;
+  }
 
  private:
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
-  PidController pid_;
+  firmware_common::PidController pid_;
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -156,12 +159,14 @@ class SlipAngleController {
   void Reset() noexcept { pid_.Reset(); }
 
   /** @brief Доступ к PID (для тестирования). */
-  [[nodiscard]] const PidController& GetPid() const noexcept { return pid_; }
+  [[nodiscard]] const firmware_common::PidController& GetPid() const noexcept {
+    return pid_;
+  }
 
  private:
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
-  PidController pid_;
+  firmware_common::PidController pid_;
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -169,7 +174,8 @@ class SlipAngleController {
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * @brief Обнаружение заноса (oversteer prediction) и опциональное снижение газа.
+ * @brief Обнаружение заноса (oversteer prediction) и опциональное снижение
+ * газа.
  *
  * Срабатывает когда |slip_angle| > thresh_slip И |d(slip)/dt| > thresh_rate.
  * В режимах Normal/Sport снижает газ на oversteer_throttle_reduction.
@@ -219,8 +225,8 @@ class OversteerGuard {
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
 
-  float prev_slip_deg_{0.0f};   ///< Предыдущий угол заноса для оценки dslip/dt
-  bool oversteer_active_{false}; ///< Текущее состояние oversteer detection
+  float prev_slip_deg_{0.0f};  ///< Предыдущий угол заноса для оценки dslip/dt
+  bool oversteer_active_{false};  ///< Текущее состояние oversteer detection
 };
 
 }  // namespace rc_vehicle

@@ -2,12 +2,12 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <firmware_common/slew_rate.hpp>
 #include <mutex>
 
 #include "drive_mode_registry.hpp"
 #include "esp_log.h"
 #include "log_format.hpp"
-#include "slew_rate.hpp"
 
 namespace rc_vehicle {
 
@@ -38,13 +38,13 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     // Detailed validation logging
     ESP_LOGE("stab_mgr", "magic=0x%08X (expected 0x%08X)",
              validated_config.magic, kStabilizationConfigMagic);
-    ESP_LOGE("stab_mgr", "filter.valid=%d yaw.valid=%d slip.valid=%d", 
-             validated_config.filter.IsValid(), 
+    ESP_LOGE("stab_mgr", "filter.valid=%d yaw.valid=%d slip.valid=%d",
+             validated_config.filter.IsValid(),
              validated_config.yaw_rate.IsValid(),
              validated_config.slip_angle.IsValid());
-    ESP_LOGE("stab_mgr", "yaw.kp=%.3f ki=%.3f kd=%.4f max_corr=%.3f max_int=%.3f",
-             validated_config.yaw_rate.pid.kp,
-             validated_config.yaw_rate.pid.ki,
+    ESP_LOGE("stab_mgr",
+             "yaw.kp=%.3f ki=%.3f kd=%.4f max_corr=%.3f max_int=%.3f",
+             validated_config.yaw_rate.pid.kp, validated_config.yaw_rate.pid.ki,
              validated_config.yaw_rate.pid.kd,
              validated_config.yaw_rate.pid.max_correction,
              validated_config.yaw_rate.pid.max_integral);
@@ -180,10 +180,9 @@ void StabilizationManager::UpdateWeights(const StabilizationConfig& cfg,
   if (cfg.fade_ms == 0) {
     stab_weight_ = target_weight;
   } else {
-    const float fade_rate_per_sec =
-        1000.0f / static_cast<float>(cfg.fade_ms);
-    stab_weight_ =
-        ApplySlewRate(target_weight, stab_weight_, fade_rate_per_sec, dt_ms);
+    const float fade_rate_per_sec = 1000.0f / static_cast<float>(cfg.fade_ms);
+    stab_weight_ = firmware_common::ApplySlewRate(
+        target_weight, stab_weight_, fade_rate_per_sec, dt_ms / 1000.0f);
   }
 
   // Сброс ПИД при полном отключении — убирает накопленный интегратор
@@ -203,8 +202,8 @@ void StabilizationManager::UpdateWeights(const StabilizationConfig& cfg,
       mode_transition_weight_ = 1.0f;
     } else {
       const float fade_rate = 1000.0f / static_cast<float>(cfg.fade_ms);
-      mode_transition_weight_ =
-          ApplySlewRate(1.0f, mode_transition_weight_, fade_rate, dt_ms);
+      mode_transition_weight_ = firmware_common::ApplySlewRate(
+          1.0f, mode_transition_weight_, fade_rate, dt_ms / 1000.0f);
     }
   }
 }

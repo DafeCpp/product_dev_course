@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <firmware_common/pid_controller.hpp>
 
 #include "bench_types.hpp"
-#include "pid_controller.hpp"
 
 namespace bench {
 
@@ -26,8 +26,8 @@ namespace bench {
 class ChannelController {
  public:
   struct Config {
-    PidController::Gains force_gains{};
-    PidController::Gains disp_gains{};
+    firmware_common::PidController::Gains force_gains{};
+    firmware_common::PidController::Gains disp_gains{};
     /// Feed-forward по производной уставки: u_ff = ff · d(target)/dt.
     /// Для гидравлики ≈ 1/K_plant (обратный коэффициент передачи
     /// «команда → скорость изменения величины»); PID добирает остаток.
@@ -85,8 +85,8 @@ class ChannelController {
 
   Config config_{};
   ControlMode mode_{ControlMode::kDisplacement};
-  PidController force_pid_{};
-  PidController disp_pid_{};
+  firmware_common::PidController force_pid_{};
+  firmware_common::PidController disp_pid_{};
 
   float last_output_{0.0f};
   bool enabled_{true};

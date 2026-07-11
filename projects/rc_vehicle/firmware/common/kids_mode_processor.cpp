@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-
-#include "slew_rate.hpp"
+#include <firmware_common/slew_rate.hpp>
 
 namespace rc_vehicle {
 
@@ -41,10 +40,10 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   // ─────────────────────────────────────────────────────────────────────────
 
   if (dt_ms > 0) {
-    smoothed_throttle_ =
-        ApplySlewRate(throttle, smoothed_throttle_, km.slew_throttle, dt_ms);
-    smoothed_steering_ =
-        ApplySlewRate(steering, smoothed_steering_, km.slew_steering, dt_ms);
+    smoothed_throttle_ = firmware_common::ApplySlewRate(
+        throttle, smoothed_throttle_, km.slew_throttle, dt_ms / 1000.0f);
+    smoothed_steering_ = firmware_common::ApplySlewRate(
+        steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
 
     throttle = smoothed_throttle_;
     steering = smoothed_steering_;
