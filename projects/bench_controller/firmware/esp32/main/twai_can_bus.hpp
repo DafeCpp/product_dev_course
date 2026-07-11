@@ -1,10 +1,9 @@
 #pragma once
 
-#include <atomic>
-
 #include "esp_twai.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "i_can_bus.hpp"
 
 namespace bench {
@@ -48,13 +47,19 @@ class TwaiCanBus final : public ICanBus {
   static bool OnRxDone(twai_node_handle_t handle,
                        const twai_rx_done_event_data_t* edata, void* ctx);
 
-  // Постоянные TX-слоты. TWAI node-API кладёт в свою очередь УКАЗАТЕЛЬ
-  // на twai_frame_t и его buffer (не копию), поэтому кадр и payload
-  // должны жить до фактической передачи. Send() копирует в
-  // следующий слот кольца; глубина > tx_queue_depth (32), а очередь
-  // при 1 Мбит/с (~130 мкс/кадр) опустошается за единицы кадров, так
-  // что слот не переиспользуется до отправки. Индекс — atomic
-  // (Send зовут задачи с двух ядер).
+  // Постоянные TX-слоты. TWAI node-API кладёт в очередь УКАЗАТЕЛЬ на
+  // twai_frame_t и его buffer (не копию), поэтому кадр и payload должны
+  // жить до фактической передачи. Send() пишет в слот и продвигает
+  // индекс ТОЛЬКО при успешной постановке — тогда:
+  //   * слот, израсходованный на неудачной постановке (очередь
+  //     переполнена), драйвер НЕ держит → переиспользуется на след.
+  //     Send без порчи;
+  //   * держатся драйвером ≤ tx_queue_depth (32) слотов, а кольцо 48 >
+  //     32 ⇒ слот переиспользуется только через 48 успешных отправок,
+  //     когда он давно передан.
+  // Выбор+запись+постановка+инкремент атомарны под мьютексом (Send
+  // зовут задачи с двух ядер); try-lock без блокировки hot-path — при
+  // редкой коллизии кадр дропается (стек трактует как TX overflow).
   static constexpr uint32_t kTxSlots = 48;
   struct TxSlot {
     twai_frame_t frame;
@@ -66,7 +71,8 @@ class TwaiCanBus final : public ICanBus {
   QueueHandle_t tap_{nullptr};
   uint64_t last_rx_ts_{0};
   TxSlot tx_slots_[kTxSlots]{};
-  std::atomic<uint32_t> tx_idx_{0};
+  uint32_t tx_idx_{0};  ///< под tx_mutex_
+  SemaphoreHandle_t tx_mutex_{nullptr};
 };
 
 /// Внутренний тип очереди: кадр + аппаратный таймстамп

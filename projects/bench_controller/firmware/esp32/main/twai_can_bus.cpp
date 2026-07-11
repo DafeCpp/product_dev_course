@@ -21,6 +21,9 @@ TwaiCanBus::~TwaiCanBus() {
   if (rx_queue_ != nullptr) {
     vQueueDelete(rx_queue_);
   }
+  if (tx_mutex_ != nullptr) {
+    vSemaphoreDelete(tx_mutex_);
+  }
 }
 
 bool TwaiCanBus::OnRxDone(twai_node_handle_t handle,
@@ -63,6 +66,10 @@ bool TwaiCanBus::OnRxDone(twai_node_handle_t handle,
 }
 
 bool TwaiCanBus::Init(int gpio_tx, int gpio_rx, uint32_t bitrate) {
+  tx_mutex_ = xSemaphoreCreateMutex();
+  if (tx_mutex_ == nullptr) {
+    return false;
+  }
   rx_queue_ = xQueueCreate(kRxQueueDepth, sizeof(TwaiRxItem));
   if (rx_queue_ == nullptr) {
     return false;
@@ -98,11 +105,14 @@ bool TwaiCanBus::Init(int gpio_tx, int gpio_rx, uint32_t bitrate) {
 }
 
 bool TwaiCanBus::Send(const CanFrame& frame) {
-  // Копируем в постоянный слот: драйвер держит указатель на кадр/буфер
-  // до фактической передачи, а стековый twai_frame_t тут же исчезнет
-  // (см. TxSlot в заголовке).
-  const uint32_t slot = tx_idx_.fetch_add(1) % kTxSlots;
-  TxSlot& s = tx_slots_[slot];
+  // try-lock без блокировки hot-path: секция микроскопична (memcpy 8Б +
+  // неблокирующая постановка), коллизия двух ядер практически
+  // невозможна; при ней кадр дропаем (стек = TX overflow), чем блокируем
+  // тик контура.
+  if (xSemaphoreTake(tx_mutex_, 0) != pdTRUE) {
+    return false;
+  }
+  TxSlot& s = tx_slots_[tx_idx_ % kTxSlots];
   const uint8_t len = frame.dlc > 8 ? 8 : frame.dlc;
   std::memcpy(s.data, frame.data, len);
   s.frame = {};
@@ -110,8 +120,16 @@ bool TwaiCanBus::Send(const CanFrame& frame) {
   s.frame.header.dlc = frame.dlc;
   s.frame.buffer = s.data;
   s.frame.buffer_len = len;
-  // timeout 0 — неблокирующая постановка в TX-очередь (hot path)
-  return twai_node_transmit(node_, &s.frame, 0) == ESP_OK;
+  // timeout 0 — неблокирующая постановка. Индекс двигаем ТОЛЬКО при
+  // успехе: слот считается «занятым драйвером» лишь когда кадр реально
+  // поставлен в очередь; неудачная постановка слот не отдаёт драйверу,
+  // и он переиспользуется на следующем Send без порчи.
+  const bool ok = twai_node_transmit(node_, &s.frame, 0) == ESP_OK;
+  if (ok) {
+    ++tx_idx_;
+  }
+  xSemaphoreGive(tx_mutex_);
+  return ok;
 }
 
 std::optional<CanFrame> TwaiCanBus::Poll() {
