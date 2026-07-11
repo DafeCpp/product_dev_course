@@ -32,12 +32,19 @@ void BenchControlLoop::ControlTaskEntry(void* arg) {
 }
 
 void BenchControlLoop::ControlTaskLoop() {
+  platform_.RegisterTaskWdt();  // до первого FeedTaskWdt (esp_task_wdt_add)
   while (true) {
     platform_.DelayUntilNextTick(config_.period_ms);
+    platform_.FeedTaskWdt();  // кормим WDT всегда, даже после остановки
+    if (stop_requested_.load()) {
+      // Прекращаем тики: Stats()/feedback-счётчики больше никто не
+      // меняет — их можно безопасно снять с другого ядра.
+      stopped_ack_.store(true);
+      continue;
+    }
     const uint32_t now = platform_.GetTimeMs();
     TickOnce(now, now - last_loop_ms_);
     last_loop_ms_ = now;
-    platform_.FeedTaskWdt();
   }
 }
 

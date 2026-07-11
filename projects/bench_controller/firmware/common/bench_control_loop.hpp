@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -77,6 +78,19 @@ class BenchControlLoop {
   [[nodiscard]] const TickStats& Stats() const noexcept { return stats_; }
   [[nodiscard]] ChannelController& Controller() noexcept { return controller_; }
 
+  /**
+   * @brief Попросить задачу контура прекратить тики (для снятия
+   *        статистики без гонки).
+   *
+   * Задача остаётся живой и кормит watchdog, но перестаёт вызывать
+   * TickOnce — после Stopped() значения Stats()/feedback-счётчиков
+   * никто конкурентно не меняет, их можно читать с другого ядра.
+   */
+  void RequestStop() noexcept { stop_requested_.store(true); }
+
+  /// Тик-луп подтвердил остановку (TickOnce больше не вызывается)
+  [[nodiscard]] bool Stopped() const noexcept { return stopped_ack_.load(); }
+
  private:
   static void ControlTaskEntry(void* arg);
   void ControlTaskLoop();
@@ -97,6 +111,9 @@ class BenchControlLoop {
   bool holding_{false};           ///< Разрушение или SafeHold
   uint32_t last_loop_ms_{0};
   TickSnapshot snapshot_{};
+
+  std::atomic<bool> stop_requested_{false};
+  std::atomic<bool> stopped_ack_{false};
 };
 
 }  // namespace bench

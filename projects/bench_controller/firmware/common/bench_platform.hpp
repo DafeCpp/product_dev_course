@@ -57,6 +57,11 @@ class BenchPlatform {
    */
   virtual void DelayUntilNextTick(uint32_t period_ms) = 0;
 
+  /// Зарегистрировать задачу контура в task watchdog (из тела задачи,
+  /// один раз перед циклом). No-op по умолчанию; на ESP32 обязателен
+  /// перед FeedTaskWdt() (esp_task_wdt_add до esp_task_wdt_reset).
+  virtual void RegisterTaskWdt() {}
+
   /// Сброс task watchdog (no-op по умолчанию)
   virtual void FeedTaskWdt() noexcept {}
 };
