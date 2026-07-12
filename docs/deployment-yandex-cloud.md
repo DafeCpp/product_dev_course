@@ -304,22 +304,46 @@ VM_HOST=84.201.xxx.xxx REGISTRY_ID=crp... ./scripts/deploy.sh [v1.0.0]
 
 ## Миграции БД
 
-При первом запуске миграции должны применяться автоматически (если сервисы это поддерживают).
+Миграции применяются автоматически на каждом деплое одноразовыми (one-shot) сервисами
+в `docker-compose.prod.yml`. Каждый из них выполняет `python -m bin.migrate`, отрабатывает
+до конца и завершается; соответствующий рантайм-сервис стартует только после успешного
+завершения своего миграционного джоба (`condition: service_completed_successfully`).
 
-Для ручного запуска:
+| One-shot джоб | База | Блокирует старт |
+|---|---|---|
+| `auth-migrate` | `auth_db` | `auth-service` |
+| `config-migrate` | `config_db` | `config-service` |
+| `experiment-migrate` | `experiment_db` | `experiment-service` |
+| `telemetry-ingest-migrate` | `experiment_db` | `telemetry-ingest-service` |
+
+telemetry-ingest использует **ту же** `experiment_db`, что и experiment-service, и обе
+службы пишут в общую таблицу `schema_migrations` (ключ — имя файла миграции, поэтому
+`005_idempotency_reservation` и `005_sensor_error_log` не конфликтуют). Чтобы джобы не
+гонялись за `CREATE TABLE IF NOT EXISTS schema_migrations`, `telemetry-ingest-migrate`
+запускается строго после `experiment-migrate`.
+
+Миграции идемпотентны: повторный прогон на актуальной схеме печатает `No pending migrations.`
+и ничего не меняет, поэтому джобы безопасно выполняются на каждом релизе.
+
+Проверить, что миграции применились:
 
 ```bash
 ssh deploy@<VM_IP>
 cd /opt/experiment-tracking
 
-# Auth Service миграции
-docker compose -f docker-compose.prod.yml exec auth-service \
-  python -m auth_service.migrate
-
-# Experiment Service миграции
-docker compose -f docker-compose.prod.yml exec experiment-service \
-  python -m experiment_service.migrate
+docker compose -f docker-compose.prod.yml logs experiment-migrate
+docker compose -f docker-compose.prod.yml logs telemetry-ingest-migrate
 ```
+
+Ручной прогон (например, если джоб упал и был пропущен):
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm experiment-migrate
+docker compose -f docker-compose.prod.yml run --rm telemetry-ingest-migrate
+```
+
+Базы и пользователи (`experiment_db` / `experiment_user` и др.) создаются Terraform —
+см. `infrastructure/yandex-cloud/database.tf`. Миграции их не создают.
 
 ## Мониторинг
 

@@ -185,6 +185,24 @@ services:
       - experiment-tracking-network
     restart: "no"
 
+  # Telemetry-ingest DB migrations — мигрирует ту же experiment_db, что и
+  # experiment-service, и пишет в общую таблицу schema_migrations. Запускается
+  # строго после experiment-migrate, чтобы они не гонялись за CREATE TABLE IF NOT EXISTS.
+  telemetry-ingest-migrate:
+    build:
+      context: ./projects/backend
+      dockerfile: services/telemetry-ingest-service/Dockerfile
+    container_name: telemetry-ingest-migrate
+    environment:
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}
+    command: ["python", "-m", "bin.migrate"]
+    depends_on:
+      experiment-migrate:
+        condition: service_completed_successfully
+    networks:
+      - experiment-tracking-network
+    restart: "no"
+
   # Auth Service - сервис аутентификации
   auth-service:
     build:
@@ -295,8 +313,8 @@ services:
     ports:
       - "${TELEMETRY_INGEST_PORT:-8003}:8003"
     depends_on:
-      postgres:
-        condition: service_healthy
+      telemetry-ingest-migrate:
+        condition: service_completed_successfully
     networks:
       - experiment-tracking-network
     restart: unless-stopped
