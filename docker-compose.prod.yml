@@ -47,6 +47,38 @@ services:
       - app
     restart: "no"
 
+  experiment-migrate:
+    image: ${CR_REGISTRY}/experiment-service:${IMAGE_TAG:-latest}
+    container_name: experiment-migrate
+    environment:
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - PGSSLROOTCERT=/certs/yandex-ca.pem
+    volumes:
+      - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
+    command: ["python", "-m", "bin.migrate"]
+    networks:
+      - app
+    restart: "no"
+
+  # telemetry-ingest migrates the same experiment_db as experiment-service, and
+  # both write the shared schema_migrations table. Runs strictly after
+  # experiment-migrate so the two never race on CREATE TABLE IF NOT EXISTS.
+  telemetry-ingest-migrate:
+    image: ${CR_REGISTRY}/telemetry-ingest-service:${IMAGE_TAG:-latest}
+    container_name: telemetry-ingest-migrate
+    depends_on:
+      experiment-migrate:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - PGSSLROOTCERT=/certs/yandex-ca.pem
+    volumes:
+      - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
+    command: ["python", "-m", "bin.migrate"]
+    networks:
+      - app
+    restart: "no"
+
   auth-service:
     image: ${CR_REGISTRY}/auth-service:${IMAGE_TAG:-latest}
     container_name: auth-service
@@ -101,6 +133,8 @@ services:
     ports:
       - "127.0.0.1:8002:8002"
     depends_on:
+      experiment-migrate:
+        condition: service_completed_successfully
       auth-service:
         condition: service_healthy
     networks:
@@ -135,6 +169,8 @@ services:
     ports:
       - "8003:8003"
     depends_on:
+      telemetry-ingest-migrate:
+        condition: service_completed_successfully
       auth-service:
         condition: service_healthy
     networks:
