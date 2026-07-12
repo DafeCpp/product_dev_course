@@ -250,7 +250,9 @@ jobs:
             # На случай если контейнеры остались с конфликтующими именами — удаляем принудительно
             docker rm -f auth-service experiment-service telemetry-ingest-service \
               auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
-            docker system prune -af --volumes || true
+            # Чистим только неиспользуемые образы и build cache, не трогая volumes с данными Loki/Grafana.
+            docker image prune -af || true
+            docker builder prune -f || true
 
             # Пуллим новые образы
             docker compose -f docker-compose.prod.yml pull
