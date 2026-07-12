@@ -89,15 +89,16 @@ CREATE INDEX IF NOT EXISTS idx_config_schemas_type
 
 -- Must match migrations 001 + 004 (shared backend_common.idempotency layout).
 CREATE TABLE IF NOT EXISTS idempotency_keys (
-    idempotency_key VARCHAR(255) NOT NULL,
-    user_id         VARCHAR(255) NOT NULL,
-    request_path    TEXT NOT NULL,
-    request_hash    VARCHAR(64) NOT NULL,
-    response_status INTEGER,
-    response_body   JSONB,
-    completed       BOOLEAN NOT NULL DEFAULT false,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    idempotency_key   VARCHAR(255) NOT NULL,
+    user_id           VARCHAR(255) NOT NULL,
+    request_path      TEXT NOT NULL,
+    request_hash      VARCHAR(64) NOT NULL,
+    response_status   INTEGER,
+    response_body     JSONB,
+    completed         BOOLEAN NOT NULL DEFAULT false,
+    reservation_token UUID NOT NULL,
+    expires_at        TIMESTAMPTZ NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (idempotency_key, user_id)
 );
 

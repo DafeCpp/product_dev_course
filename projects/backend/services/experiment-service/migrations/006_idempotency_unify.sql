@@ -33,6 +33,18 @@ ALTER TABLE request_idempotency
 ALTER TABLE request_idempotency
     ALTER COLUMN response_body DROP DEFAULT;
 
+-- Generation of the current reservation. Reserving an expired row installs a fresh
+-- token, so an owner whose request outlived the TTL can no longer write its response
+-- into the row a retry has since taken over. Existing rows are all completed, so any
+-- token will do — they will never be completed again.
+ALTER TABLE request_idempotency
+    ADD COLUMN IF NOT EXISTS reservation_token uuid;
+UPDATE request_idempotency
+    SET reservation_token = gen_random_uuid()
+    WHERE reservation_token IS NULL;
+ALTER TABLE request_idempotency
+    ALTER COLUMN reservation_token SET NOT NULL;
+
 -- Scope the key per user: the same Idempotency-Key from a different user is an
 -- independent request, not a conflict. Existing keys were globally unique, so
 -- the composite key cannot collide.

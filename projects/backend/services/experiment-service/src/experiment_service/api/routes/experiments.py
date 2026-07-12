@@ -126,25 +126,24 @@ async def create_experiment(request: web.Request):
     except ValidationError as exc:
         raise web.HTTPBadRequest(text=exc.json()) from exc
     serialized_body, body_hash = IdempotencyService.canonical_body(body)
+    reservation = None
     if idempotency_key:
         try:
-            cached = await idempotency_service.reserve_or_get_cached(
+            reservation, cached = await idempotency_service.reserve_or_get_cached(
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
             raise web.HTTPConflict(text="Conflict") from exc
         if cached is not None:
             return IdempotencyService.build_response(cached)
-    async with idempotency_service.guard_reservation(idempotency_key, user.user_id):
+    async with idempotency_service.guard_reservation(reservation):
         try:
             experiment = await service.create_experiment(dto)
         except InvalidStatusTransitionError as exc:
             raise web.HTTPBadRequest(text="Bad request") from exc
     response_payload = _experiment_response(experiment)
-    if idempotency_key:
-        await idempotency_service.complete_response(
-            idempotency_key, user.user_id, 201, response_payload
-        )
+    if reservation is not None:
+        await idempotency_service.complete_response(reservation, 201, response_payload)
     return web.json_response(response_payload, status=201)
 
 

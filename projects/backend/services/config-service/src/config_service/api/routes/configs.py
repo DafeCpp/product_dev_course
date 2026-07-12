@@ -154,9 +154,10 @@ async def create_config(request: web.Request) -> web.Response:
     idempotency_key = request.headers.get(_IDEMPOTENCY_KEY_HEADER)
 
     body_hash = idempotency_svc.body_hash(body) if idempotency_key else None
+    reservation = None
     if idempotency_key and body_hash is not None:
         try:
-            cached = await idempotency_svc.reserve_or_get_cached(
+            reservation, cached = await idempotency_svc.reserve_or_get_cached(
                 idempotency_key, user.user_id, request.path, body_hash
             )
         except IdempotencyConflictError:
@@ -167,7 +168,7 @@ async def create_config(request: web.Request) -> web.Response:
             return idempotency_svc.build_response(cached)
 
     try:
-        async with idempotency_svc.guard_reservation(idempotency_key, user.user_id):
+        async with idempotency_svc.guard_reservation(reservation):
             config = await svc.create(
                 service_name=dto.service_name,
                 project_id=dto.project_id,
@@ -209,8 +210,8 @@ async def create_config(request: web.Request) -> web.Response:
     redact = config.is_sensitive and "configs.sensitive.read" not in user.system_permissions
     resp_body = _config_to_response(config, redact)
 
-    if idempotency_key and body_hash is not None:
-        await idempotency_svc.complete_response(idempotency_key, user.user_id, 201, resp_body)
+    if reservation is not None:
+        await idempotency_svc.complete_response(reservation, 201, resp_body)
 
     return web.json_response(resp_body, status=201, headers={"ETag": f'"{config.version}"'})
 

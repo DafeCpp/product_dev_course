@@ -6,15 +6,19 @@
 -- users describes two independent requests.
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
-    idempotency_key VARCHAR(255) NOT NULL,
-    user_id         VARCHAR(255) NOT NULL,
-    request_path    TEXT NOT NULL,
-    request_hash    VARCHAR(64) NOT NULL,      -- sha256 hex of the canonical body
-    response_status INTEGER,                    -- NULL while the reservation is pending
-    response_body   JSONB,                      -- NULL while the reservation is pending
-    completed       BOOLEAN NOT NULL DEFAULT false,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    idempotency_key   VARCHAR(255) NOT NULL,
+    user_id           VARCHAR(255) NOT NULL,
+    request_path      TEXT NOT NULL,
+    request_hash      VARCHAR(64) NOT NULL,    -- sha256 hex of the canonical body
+    response_status   INTEGER,                 -- NULL while the reservation is pending
+    response_body     JSONB,                   -- NULL while the reservation is pending
+    completed         BOOLEAN NOT NULL DEFAULT false,
+    -- Generation of the current reservation. Reserving an expired row installs a
+    -- fresh token, so an owner that outlived its TTL can no longer complete the
+    -- row the retry now holds.
+    reservation_token UUID NOT NULL,
+    expires_at        TIMESTAMPTZ NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (idempotency_key, user_id)
 );
 
