@@ -302,7 +302,7 @@ VM_HOST=84.201.xxx.xxx REGISTRY_ID=crp... ./scripts/deploy.sh [v1.0.0]
 ```
 Если тег не указан, используется короткий SHA текущего коммита.
 
-## Миграции БД
+## Миграции БД и инициализация
 
 Миграции применяются автоматически на каждом деплое одноразовыми (one-shot) сервисами
 в `docker-compose.prod.yml`. Каждый из них выполняет `python -m bin.migrate`, отрабатывает
@@ -344,6 +344,27 @@ docker compose -f docker-compose.prod.yml run --rm telemetry-ingest-migrate
 
 Базы и пользователи (`experiment_db` / `experiment_user` и др.) создаются Terraform —
 см. `infrastructure/yandex-cloud/database.tf`. Миграции их не создают.
+
+Создание первого админа (требуется `ADMIN_PASSWORD`) — отдельный шаг, миграциями не
+покрывается:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T auth-service \
+  python -m bin.seed \
+    --database-url "$AUTH_DATABASE_URL" \
+    --username admin \
+    --email admin@example.com \
+    --password "$ADMIN_PASSWORD"
+```
+
+### Инициализация админа при первом деплое
+
+При развёртывании в production необходимо:
+1. Установить переменную окружения `ADMIN_PASSWORD` перед запуском контейнеров (в `.env` или Terraform)
+2. Запустить `docker compose exec -T auth-service python -m bin.seed` (или просто запустить сервисы, если init-скрипты настроены)
+3. Первый админ будет создан с логином из `ADMIN_USERNAME` (по умолчанию: `admin`) и паролем из `ADMIN_PASSWORD`
+
+**Совет:** используйте сильные пароли для production. Админ может позже создать других пользователей через API или CSV-импорт.
 
 ## Мониторинг
 
