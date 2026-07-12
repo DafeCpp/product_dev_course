@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <string_view>
 
@@ -8,10 +9,14 @@
 #include "mag_calibration.hpp"
 #include "mag_sensor.hpp"
 #include "mpu6050_spi.hpp"
-#include "result.hpp"
 #include "stabilization_config.hpp"
 
 namespace rc_vehicle {
+
+// FW-RF8: PublishTelem принимает снимок по const-ссылке — достаточно
+// предобъявления (полное определение в control_components.hpp, который сам
+// включает этот заголовок — иначе был бы цикл).
+struct TelemetrySnapshot;
 
 /**
  * @brief Ошибки инициализации платформы
@@ -62,27 +67,27 @@ class VehicleControlPlatform {
 
   /**
    * @brief Инициализация PWM-выходов (throttle, steering)
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> InitPwm() = 0;
+  [[nodiscard]] virtual std::expected<void, PlatformError> InitPwm() = 0;
 
   /**
    * @brief Инициализация RC-входов (PWM capture)
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> InitRc() = 0;
+  [[nodiscard]] virtual std::expected<void, PlatformError> InitRc() = 0;
 
   /**
    * @brief Инициализация IMU (SPI, I2C)
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> InitImu() = 0;
+  [[nodiscard]] virtual std::expected<void, PlatformError> InitImu() = 0;
 
   /**
    * @brief Инициализация failsafe
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> InitFailsafe() = 0;
+  [[nodiscard]] virtual std::expected<void, PlatformError> InitFailsafe() = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Время
@@ -168,17 +173,17 @@ class VehicleControlPlatform {
   /**
    * @brief Сохранить калибровку IMU в энергонезависимую память
    * @param data Данные калибровки
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> SaveCalib(
+  [[nodiscard]] virtual std::expected<void, PlatformError> SaveCalib(
       const ImuCalibData& data) = 0;
 
   /**
    * @brief Сохранить смещение IMU→CoM в энергонезависимую память
    * @param offset Массив [rx, ry] в метрах
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> SaveComOffset(
+  [[nodiscard]] virtual std::expected<void, PlatformError> SaveComOffset(
       const float offset[2]) = 0;
 
   /**
@@ -200,12 +205,25 @@ class VehicleControlPlatform {
   LoadStabilizationConfig() = 0;
 
   /**
+   * @brief Загрузить сохранённую конфигурацию конкретного режима из NVS
+   * @param mode Режим, чью конфигурацию загрузить
+   * @return Конфигурация режима, если для него сохранена и валидна
+   *
+   * Используется при переключении режима: вместо хардкод-дефолтов
+   * восстанавливается ранее сохранённая пользователем настройка режима
+   * (per-mode persistence). Если для режима ничего не сохранено — вернёт
+   * std::nullopt, и вызывающий применит дефолты режима.
+   */
+  [[nodiscard]] virtual std::optional<StabilizationConfig>
+  LoadStabilizationConfig(DriveMode mode) = 0;
+
+  /**
    * @brief Сохранить конфигурацию стабилизации в энергонезависимую память
    * @param config Конфигурация стабилизации
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> SaveStabilizationConfig(
-      const StabilizationConfig& config) = 0;
+  [[nodiscard]] virtual std::expected<void, PlatformError>
+  SaveStabilizationConfig(const StabilizationConfig& config) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // RC Input
@@ -263,10 +281,14 @@ class VehicleControlPlatform {
   [[nodiscard]] virtual unsigned GetWebSocketClientCount() const noexcept = 0;
 
   /**
-   * @brief Отправить телеметрию по WebSocket
-   * @param json JSON-строка с телеметрией
+   * @brief Опубликовать снимок телеметрии (FW-RF8)
+   * @param snap POD-снимок состояния
+   *
+   * Вызывается из control loop. Реализация должна только поставить снимок в
+   * очередь (без аллокаций/блокировок) — построение JSON и отправка по WS
+   * выполняются в отдельной задаче телеметрии вне горячего 500 Гц пути.
    */
-  virtual void SendTelem(std::string_view json) = 0;
+  virtual void PublishTelem(const TelemetrySnapshot& snap) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Wi-Fi команды (только для ESP32)
@@ -293,9 +315,9 @@ class VehicleControlPlatform {
    * @brief Создать задачу control loop
    * @param entry Функция-точка входа задачи
    * @param arg Аргумент для передачи в entry
-   * @return Result with Unit on success or PlatformError on failure
+   * @return void on success or PlatformError on failure
    */
-  [[nodiscard]] virtual Result<Unit, PlatformError> CreateTask(
+  [[nodiscard]] virtual std::expected<void, PlatformError> CreateTask(
       void (*entry)(void*), void* arg) = 0;
 
   /**

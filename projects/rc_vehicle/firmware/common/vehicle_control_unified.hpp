@@ -2,17 +2,19 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 
 #include "auto_drive_coordinator.hpp"
 #include "calibration_manager.hpp"
 #include "control_components.hpp"
+#include "control_loop_processor.hpp"
 #include "drive_mode_registry.hpp"
 #include "i_vehicle_control.hpp"
 #include "imu_calibration.hpp"
-#include "mag_calibration.hpp"
-#include "self_test.hpp"
 #include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
+#include "mag_calibration.hpp"
+#include "self_test.hpp"
 #include "stabilization_config.hpp"
 #include "stabilization_manager.hpp"
 #include "stabilization_pipeline.hpp"
@@ -63,14 +65,16 @@ class VehicleControlUnified : public IVehicleControl {
    * @brief Запуск калибровки IMU, этап 1
    * @param full true — полная (gyro+accel+g), false — только гироскоп
    */
-  void StartCalibration(bool full) override { calib_mgr_->StartCalibration(full); }
+  void StartCalibration(bool full) override {
+    if (calib_mgr_) calib_mgr_->StartCalibration(full);
+  }
 
   /**
    * @brief Запуск этапа 2 калибровки (движение вперёд/назад)
    * @return true при успешном запуске
    */
   bool StartForwardCalibration() override {
-    return calib_mgr_->StartForwardCalibration();
+    return calib_mgr_ && calib_mgr_->StartForwardCalibration();
   }
 
   /**
@@ -79,7 +83,8 @@ class VehicleControlUnified : public IVehicleControl {
    * @return true при успешном запуске
    */
   bool StartAutoForwardCalibration(float target_accel_g = 0.1f) override {
-    return calib_mgr_->StartAutoForwardCalibration(target_accel_g);
+    return calib_mgr_ &&
+           calib_mgr_->StartAutoForwardCalibration(target_accel_g);
   }
 
   /**
@@ -87,14 +92,16 @@ class VehicleControlUnified : public IVehicleControl {
    * @return "idle", "collecting", "done", "failed"
    */
   [[nodiscard]] const char* GetCalibStatus() const override {
-    return calib_mgr_->GetStatus();
+    return calib_mgr_ ? calib_mgr_->GetStatus() : "idle";
   }
 
   /**
    * @brief Текущий этап калибровки
    * @return 0, 1 (стояние), 2 (вперёд/назад)
    */
-  [[nodiscard]] int GetCalibStage() const override { return calib_mgr_->GetStage(); }
+  [[nodiscard]] int GetCalibStage() const override {
+    return calib_mgr_ ? calib_mgr_->GetStage() : 0;
+  }
 
   // ─── Относительный курс ──────────────────────────────────────────────────
 
@@ -142,7 +149,7 @@ class VehicleControlUnified : public IVehicleControl {
    * @param fz Z компонента вектора
    */
   void SetForwardDirection(float fx, float fy, float fz) override {
-    calib_mgr_->SetForwardDirection(fx, fy, fz);
+    if (calib_mgr_) calib_mgr_->SetForwardDirection(fx, fy, fz);
   }
 
   /**
@@ -262,7 +269,7 @@ class VehicleControlUnified : public IVehicleControl {
    * @return Конфигурация стабилизации
    */
   [[nodiscard]] StabilizationConfig GetStabilizationConfig() const override {
-    return stab_mgr_->GetConfig();
+    return stab_mgr_ ? stab_mgr_->GetConfig() : StabilizationConfig{};
   }
 
   /**
@@ -273,7 +280,7 @@ class VehicleControlUnified : public IVehicleControl {
    */
   bool SetStabilizationConfig(const StabilizationConfig& config,
                               bool save_to_nvs = true) override {
-    return stab_mgr_->SetConfig(config, save_to_nvs);
+    return stab_mgr_ && stab_mgr_->SetConfig(config, save_to_nvs);
   }
 
   /**
@@ -282,7 +289,9 @@ class VehicleControlUnified : public IVehicleControl {
    * @param cap_out   Ёмкость буфера
    */
   void GetLogInfo(size_t& count_out, size_t& cap_out) const override {
-    telem_mgr_->GetLogInfo(count_out, cap_out);
+    count_out = 0;
+    cap_out = 0;
+    if (telem_mgr_) telem_mgr_->GetLogInfo(count_out, cap_out);
   }
 
   /**
@@ -291,24 +300,29 @@ class VehicleControlUnified : public IVehicleControl {
    * @param out Выходной кадр
    * @return true если idx < Count()
    */
-  bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const override {
-    return telem_mgr_->GetLogFrame(idx, out);
+  [[nodiscard]] bool GetLogFrame(size_t idx,
+                                 TelemetryLogFrame& out) const override {
+    return telem_mgr_ && telem_mgr_->GetLogFrame(idx, out);
   }
 
   /**
    * @brief Очистить буфер телеметрии
    */
-  void ClearLog() override { telem_mgr_->Clear(); }
+  void ClearLog() override {
+    if (telem_mgr_) telem_mgr_->Clear();
+  }
 
   // ── Лог событий ───────────────────────────────────────────────────────────
 
   [[nodiscard]] size_t GetEventCount() const override {
-    return telem_mgr_->GetEventCount();
+    return telem_mgr_ ? telem_mgr_->GetEventCount() : 0;
   }
-  bool GetEvent(size_t idx, TelemetryEvent& out) const override {
-    return telem_mgr_->GetEvent(idx, out);
+  [[nodiscard]] bool GetEvent(size_t idx, TelemetryEvent& out) const override {
+    return telem_mgr_ && telem_mgr_->GetEvent(idx, out);
   }
-  void ClearEventLog() override { telem_mgr_->ClearEvents(); }
+  void ClearEventLog() override {
+    if (telem_mgr_) telem_mgr_->ClearEvents();
+  }
 
   // ── Калибровка магнитометра ───────────────────────────────────────────────
 
@@ -330,6 +344,19 @@ class VehicleControlUnified : public IVehicleControl {
     return control_task_ready_.load(std::memory_order_acquire);
   }
 
+  /**
+   * @brief Выполнить одну итерацию control loop из хоста (SIL/тесты).
+   *
+   * Не для прода — драйвер для host-симуляции (`sim_host`, FW-S2.1) и
+   * юнит-тестов. Лениво собирает processor на первом вызове (через тот же путь,
+   * что и реальный ControlTaskLoop), затем делает один Step() с текущим
+   * временем платформы и заданным dt. Вызывающий сам продвигает логическое
+   * время платформы.
+   *
+   * @param dt_ms Шаг времени с прошлой итерации [мс]
+   */
+  void HostStep(uint32_t dt_ms);
+
   VehicleControlUnified(const VehicleControlUnified&) = delete;
   VehicleControlUnified& operator=(const VehicleControlUnified&) = delete;
 
@@ -345,6 +372,15 @@ class VehicleControlUnified : public IVehicleControl {
    * @brief Основной цикл управления
    */
   void ControlTaskLoop();
+
+  /**
+   * @brief Собрать ControlLoopContext + ControlLoopProcessor (идемпотентно).
+   *
+   * Единый источник истины для реального цикла (ControlTaskLoop) и
+   * host-драйвера (HostStep). Должен вызываться после Init() (все
+   * компоненты/хендлеры готовы).
+   */
+  void BuildProcessor();
 
   /** Инициализация IMU подсистемы (менеджеры, NVS, авто-калибровка). */
   void InitImuSubsystem();
@@ -405,6 +441,11 @@ class VehicleControlUnified : public IVehicleControl {
   std::unique_ptr<CalibrationManager> calib_mgr_;
   std::unique_ptr<StabilizationManager> stab_mgr_;
   std::unique_ptr<TelemetryManager> telem_mgr_;
+
+  // Контекст и процессор control loop. Объявлены последними: processor_ держит
+  // ссылку на loop_ctx_, поэтому должен разрушаться раньше (обратный порядок).
+  std::optional<ControlLoopContext> loop_ctx_;
+  std::unique_ptr<ControlLoopProcessor> processor_;
 };
 
 }  // namespace rc_vehicle

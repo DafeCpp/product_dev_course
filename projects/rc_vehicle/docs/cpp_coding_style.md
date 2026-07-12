@@ -99,6 +99,42 @@ esp_err_t WiFiApInit(void);
 - Проверять возвращаемые значения
 - Логировать ошибки через `ESP_LOGE`, `ESP_LOGW`
 
+### `std::expected` (C++23)
+- Использовать `std::expected<T, E>` вместо output-параметров и кастомных `Result`-типов
+- Тип ошибки — осмысленный `enum class` (например, `ParseError`, `PlatformError`, `SensorError`)
+- Успешный результат — неявное构造 (`return value;`)
+- Ошибка — `std::unexpected(error)` (`return std::unexpected(MyError::kInvalidInput);`)
+- Проверка — `.has_value()`, не `IsOk()` / `IsError()` (устаревшие хелперы удалены)
+- Доступ к значению — `*result` или `result.value()`
+- Доступ к ошибке — `result.error()`
+- Для void-успеха — `std::expected<void, E>`, возврат `{}` или `Unit{}`
+
+Пример:
+```cpp
+enum class SensorError { kInitFailed, kReadTimeout, kInvalidData };
+
+std::expected<ImuData, SensorError> ReadImu() {
+  ImuData data{};
+  if (hw_read(data) != 0) {
+    return std::unexpected(SensorError::kReadTimeout);
+  }
+  return data;  // неявный conversion → std::expected
+}
+
+// Вызывающий сторона:
+auto result = sensor.ReadImu();
+if (!result.has_value()) {
+  Log("Read failed: %d", static_cast<int>(result.error()));
+  return;
+}
+ImuData& data = *result;
+```
+
+Не допускать:
+- Output-параметры для возврата данных (`bool Read(Data& out)` → `std::expected<Data, E>`)
+- Кастомные `Result<T,E>` на базе `std::variant` (использовать `std::expected` напрямую)
+- Проверку через `== 0` / `!= -1` для функций, возвращающих `std::expected`
+
 ## Исключения и особенности для embedded
 
 ### Разрешённые исключения

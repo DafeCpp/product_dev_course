@@ -25,7 +25,7 @@ class OversteerGuardTest : public ::testing::Test {
     cfg_.oversteer.rate_thresh_deg_s = 50.0f;
     cfg_.oversteer.throttle_reduction = 0.5f;
 
-    guard_.Init(cfg_, ekf_, &imu_handler_);
+    guard_.Init(ekf_, &imu_handler_);
     guard_.Reset();
   }
 
@@ -36,7 +36,7 @@ class OversteerGuardTest : public ::testing::Test {
     ekf_.SetState(vx, vy, yaw_rate_rad);
     float throttle = 1.0f;
     for (int i = 0; i < iterations; ++i) {
-      guard_.Process(throttle, 2);  // dt = 2 ms (500 Hz)
+      guard_.Process(cfg_, throttle, 2);  // dt = 2 ms (500 Hz)
     }
     return guard_.IsActive();
   }
@@ -83,7 +83,7 @@ TEST_F(OversteerGuardTest, Triggers_WhenHighYawRate_AndHighSlip) {
   // Первая итерация: устанавливаем базовое состояние (нет jump в slip_rate)
   ekf_.SetState(5.0f, 0.0f, 1.0f);
   float throttle = 1.0f;
-  guard_.Process(throttle, 2);
+  guard_.Process(cfg_, throttle, 2);
 
   // Резкое боковое скольжение: vx=5, vy=2.5 → slip ≈ 26.5°
   // yaw_rate = 1.0 рад/с > kMinYawRateRad
@@ -92,7 +92,7 @@ TEST_F(OversteerGuardTest, Triggers_WhenHighYawRate_AndHighSlip) {
   // Прогоняем несколько итераций — slip_rate должен превысить 50°/с
   bool triggered = false;
   for (int i = 0; i < 20; ++i) {
-    guard_.Process(throttle, 2);
+    guard_.Process(cfg_, throttle, 2);
     if (guard_.IsActive()) {
       triggered = true;
       break;
@@ -103,12 +103,53 @@ TEST_F(OversteerGuardTest, Triggers_WhenHighYawRate_AndHighSlip) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Тесты: реактивация после простоя не даёт ложного всплеска slip_rate (FW-R2)
+// ══════════════════════════════════════════════════════════════════════════════
+
+TEST_F(OversteerGuardTest, NoTrigger_OnReactivation_WhenSlipRateLow) {
+  // Фаза 1: медленная езда (speed < 0.5 м/с) с уже большим slip ≈ 21.8°
+  // (atan2(0.12, 0.3)). Guard в idle-ветке, prev_slip_deg_ отслеживает slip.
+  RunWithEkfState(0.3f, 0.12f, 1.0f, 10);
+  ASSERT_FALSE(guard_.IsActive());
+
+  // Фаза 2: скорость выросла, slip тот же (atan2(0.8, 2.0) ≈ 21.8°).
+  // slip > slip_thresh (20°), но реальный slip_rate ≈ 0 < 50°/с.
+  // До фикса prev_slip_deg_ обнулялся в idle-ветке → на первом тике
+  // slip_rate = 21.8/0.002 ≈ 10900°/с → ложное срабатывание.
+  ekf_.SetState(2.0f, 0.8f, 1.0f);
+  float throttle = 1.0f;
+  guard_.Process(cfg_, throttle, 2);
+  EXPECT_FALSE(guard_.IsActive())
+      << "Реактивация без реального роста slip не должна давать занос";
+}
+
+TEST_F(OversteerGuardTest, Triggers_OnRealSlipJumpAfterReactivation) {
+  // Фаза 1: медленная езда без заноса (slip ≈ 0)
+  RunWithEkfState(0.4f, 0.0f, 1.0f, 10);
+  ASSERT_FALSE(guard_.IsActive());
+
+  // Фаза 2: резкий реальный занос — slip скачком 0 → 26.5°
+  ekf_.SetState(5.0f, 2.5f, 1.0f);
+  float throttle = 1.0f;
+  bool triggered = false;
+  for (int i = 0; i < 20; ++i) {
+    guard_.Process(cfg_, throttle, 2);
+    if (guard_.IsActive()) {
+      triggered = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(triggered)
+      << "Реальный быстрый рост slip после простоя должен детектироваться";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Тест: при warn_enabled=false guard всегда молчит
 // ══════════════════════════════════════════════════════════════════════════════
 
 TEST_F(OversteerGuardTest, NoTrigger_WhenWarnDisabled) {
   cfg_.oversteer.warn_enabled = false;
-  guard_.Init(cfg_, ekf_, &imu_handler_);
+  guard_.Init(ekf_, &imu_handler_);
   EXPECT_FALSE(RunWithEkfState(5.0f, 5.0f, 2.0f))
       << "При warn_enabled=false занос не должен срабатывать никогда";
 }
@@ -121,10 +162,10 @@ TEST_F(OversteerGuardTest, Reset_ClearsActiveFlag) {
   // Вызвать занос
   ekf_.SetState(5.0f, 0.0f, 1.0f);
   float throttle = 1.0f;
-  guard_.Process(throttle, 2);
+  guard_.Process(cfg_, throttle, 2);
   ekf_.SetState(5.0f, 2.5f, 1.0f);
   for (int i = 0; i < 20; ++i) {
-    guard_.Process(throttle, 2);
+    guard_.Process(cfg_, throttle, 2);
   }
 
   guard_.Reset();

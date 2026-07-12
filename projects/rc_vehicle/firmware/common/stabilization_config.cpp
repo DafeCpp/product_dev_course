@@ -1,11 +1,31 @@
 #include "stabilization_config.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 
 #include "drive_mode_registry.hpp"
 
 namespace rc_vehicle {
+
+namespace {
+
+// Единый источник истины для возрастных пресетов Kids Mode: те же значения
+// throttle_limit/steering_limit читает ApplyPreset() и отдаёт WS-ответ
+// kids_presets. Custom — NaN (пользовательские настройки не трогаются).
+constexpr std::array<KidsPresetInfo, 4> kKidsPresetTable{{
+    {KidsPreset::Custom, "Custom", "User-defined settings", NAN, NAN},
+    {KidsPreset::Toddler, "Toddler", "3-5 years old", 0.15f, 0.5f},
+    {KidsPreset::Child, "Child", "6-9 years old", 0.30f, 0.7f},
+    {KidsPreset::Preteen, "Preteen", "10-12 years old", 0.50f, 0.85f},
+}};
+
+}  // namespace
+
+std::span<const KidsPresetInfo> GetKidsPresetTable() noexcept {
+  return kKidsPresetTable;
+}
 
 // ============================================================================
 // PidConfig
@@ -100,11 +120,19 @@ void KidsModeConfig::Clamp() noexcept {
 }
 
 void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
+  // throttle_limit/steering_limit — из таблицы (единый источник истины с UI).
+  // Остальные поля пресета задаются ниже (в UI не отображаются).
+  for (const KidsPresetInfo& info : GetKidsPresetTable()) {
+    if (info.id == preset && !std::isnan(info.throttle_limit)) {
+      throttle_limit = info.throttle_limit;
+      steering_limit = info.steering_limit;
+      break;
+    }
+  }
+
   switch (preset) {
     case KidsPreset::Toddler:
-      throttle_limit = 0.15f;
       reverse_limit = 0.10f;
-      steering_limit = 0.5f;
       slew_throttle = 0.2f;
       slew_steering = 0.3f;
       anti_spin_threshold_deg = 5.0f;
@@ -119,9 +147,7 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       break;
 
     case KidsPreset::Child:
-      throttle_limit = 0.30f;
       reverse_limit = 0.20f;
-      steering_limit = 0.7f;
       slew_throttle = 0.3f;
       slew_steering = 0.5f;
       anti_spin_threshold_deg = 10.0f;
@@ -136,9 +162,7 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       break;
 
     case KidsPreset::Preteen:
-      throttle_limit = 0.50f;
       reverse_limit = 0.35f;
-      steering_limit = 0.85f;
       slew_throttle = 0.4f;
       slew_steering = 0.7f;
       anti_spin_threshold_deg = 15.0f;

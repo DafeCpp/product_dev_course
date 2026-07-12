@@ -94,6 +94,50 @@ TEST_F(StabilizationManagerTest, LoadFromNvs_WithData_ReturnsTrue) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Per-mode persistence (FW-R15)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Регресс FW-R15: кастомизация режима не должна теряться при переключении
+// туда-обратно. Сохраняем кастомный slew_steering в Normal, уходим в Sport
+// (применяются дефолты Sport), возвращаемся в Normal — наша настройка должна
+// восстановиться, а не сброситься в дефолт.
+TEST_F(StabilizationManagerTest, ModeSwitch_RestoresSavedPerModeConfig) {
+  StabilizationConfig normal;
+  normal.Reset();  // mode = Normal
+  normal.slew_steering = 9.0f;
+  ASSERT_TRUE(mgr_->SetConfig(normal, true));
+  EXPECT_FLOAT_EQ(mgr_->GetConfig().slew_steering, 9.0f);
+
+  // Переключение в Sport — без сохранённого профиля применяются дефолты Sport.
+  StabilizationConfig to_sport = mgr_->GetConfig();
+  to_sport.mode = DriveMode::Sport;
+  ASSERT_TRUE(mgr_->SetConfig(to_sport, true));
+  EXPECT_EQ(mgr_->GetConfig().mode, DriveMode::Sport);
+  EXPECT_FLOAT_EQ(mgr_->GetConfig().slew_steering, 5.0f);  // Sport default
+
+  // Возврат в Normal — восстанавливается сохранённые 9.0, а не дефолт 3.0.
+  StabilizationConfig back = mgr_->GetConfig();
+  back.mode = DriveMode::Normal;
+  ASSERT_TRUE(mgr_->SetConfig(back, true));
+  EXPECT_EQ(mgr_->GetConfig().mode, DriveMode::Normal);
+  EXPECT_FLOAT_EQ(mgr_->GetConfig().slew_steering, 9.0f);
+}
+
+// Поля, пришедшие вместе со сменой mode, относятся к старому режиму и не должны
+// «протекать» в новый: профиль нового режима задаётся его сохранёнными данными
+// (или дефолтами), а не инлайн-значениями запроса на переключение.
+TEST_F(StabilizationManagerTest, ModeSwitch_IgnoresInlineFieldsForNewMode) {
+  StabilizationConfig req;
+  req.Reset();
+  req.mode = DriveMode::Sport;  // смена режима Normal -> Sport
+  req.slew_steering = 8.0f;     // «довесок» — должен быть проигнорирован
+  ASSERT_TRUE(mgr_->SetConfig(req, false));
+
+  EXPECT_EQ(mgr_->GetConfig().mode, DriveMode::Sport);
+  EXPECT_FLOAT_EQ(mgr_->GetConfig().slew_steering, 5.0f);  // дефолт Sport
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Weights
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -103,7 +147,7 @@ TEST_F(StabilizationManagerTest, InitialWeights_StabZero_ModeOne) {
 }
 
 TEST_F(StabilizationManagerTest, UpdateWeights_ZeroDt_NoChange) {
-  mgr_->UpdateWeights(0);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 0);
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 0.0f);
 }
 
@@ -114,7 +158,7 @@ TEST_F(StabilizationManagerTest, UpdateWeights_EnabledWithZeroFade_ImmediateWeig
   cfg.fade_ms = 0;
   mgr_->SetConfig(cfg, false);
 
-  mgr_->UpdateWeights(2);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 2);
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 1.0f);
 }
 
@@ -126,7 +170,7 @@ TEST_F(StabilizationManagerTest, UpdateWeights_EnabledWithFade_GradualIncrease) 
   mgr_->SetConfig(cfg, false);
 
   // After 100ms, weight should be ~0.1
-  mgr_->UpdateWeights(100);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 100);
   float w = mgr_->GetStabilizationWeight();
   EXPECT_GT(w, 0.0f);
   EXPECT_LT(w, 0.5f);
@@ -138,7 +182,7 @@ TEST_F(StabilizationManagerTest, ResetWeights_SetsStabToZeroModeToOne) {
   cfg.enabled = true;
   cfg.fade_ms = 0;
   mgr_->SetConfig(cfg, false);
-  mgr_->UpdateWeights(2);
+  mgr_->UpdateWeights(mgr_->GetConfig(), 2);
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 1.0f);
 
   mgr_->ResetWeights();

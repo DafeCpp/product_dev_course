@@ -1216,6 +1216,19 @@ async function downloadBinaryLog() {
             { name: 'test_marker',    off: 124, type: 'u8'  },
         ];
 
+        const maxFieldEnd = FIELD_OFFSETS.reduce((maxEnd, f) => {
+            const size = (f.type === 'u32' || f.type === 'f32') ? 4 : 1;
+            return Math.max(maxEnd, f.off + size);
+        }, 0);
+        if (frameSize < maxFieldEnd) {
+            alert('Неподдерживаемый размер кадра: ' + frameSize);
+            return;
+        }
+        if (framesEnd > buf.byteLength) {
+            alert('Повреждённый лог: ожидалось ' + framesEnd + ' байт, получено ' + buf.byteLength);
+            return;
+        }
+
         // ── Section 2: parse events into a map keyed by ts_ms ─────────────
         // Events are sparse — join them into frame rows by closest timestamp.
         // Map: ts_ms → { name, param_desc, value1, value2 }
@@ -1223,28 +1236,32 @@ async function downloadBinaryLog() {
         if (framesEnd + 8 <= buf.byteLength) {
             const eventCount = view.getUint32(framesEnd,     true);
             const eventSize  = view.getUint32(framesEnd + 4, true);
-            for (let i = 0; i < eventCount; i++) {
-                const base = framesEnd + 8 + i * eventSize;
-                if (base + eventSize > buf.byteLength) break;
-                const ts     = view.getUint32(base,     true);
-                const typeId = view.getUint8 (base + 4);
-                const param  = view.getUint8 (base + 5);
-                // value1/value2 at bytes 8-15 (present if eventSize >= 16)
-                const value1 = eventSize >= 16 ? view.getFloat32(base + 8,  true) : NaN;
-                const value2 = eventSize >= 16 ? view.getFloat32(base + 12, true) : NaN;
-                const name   = EVENT_TYPE_NAMES[typeId] || 'Unknown_' + typeId;
-                const desc   = eventParamDesc(typeId, param);
-                const v1str  = isNaN(value1) || value1 === 0 ? '' : value1.toFixed(4);
-                const v2str  = isNaN(value2) || value2 === 0 ? '' : value2.toFixed(4);
-                // Multiple events at same ts: concatenate with '|'
-                if (eventByTs.has(ts)) {
-                    const prev = eventByTs.get(ts);
-                    eventByTs.set(ts, { name: prev.name + '|' + name,
-                                        desc: prev.desc + '|' + desc,
-                                        v1:   prev.v1   + '|' + v1str,
-                                        v2:   prev.v2   + '|' + v2str });
-                } else {
-                    eventByTs.set(ts, { name, desc, v1: v1str, v2: v2str });
+            if (eventSize < 8) {
+                console.warn('Ignoring telemetry events with invalid size: ' + eventSize);
+            } else {
+                for (let i = 0; i < eventCount; i++) {
+                    const base = framesEnd + 8 + i * eventSize;
+                    if (base + eventSize > buf.byteLength) break;
+                    const ts     = view.getUint32(base,     true);
+                    const typeId = view.getUint8 (base + 4);
+                    const param  = view.getUint8 (base + 5);
+                    // value1/value2 at bytes 8-15 (present if eventSize >= 16)
+                    const value1 = eventSize >= 16 ? view.getFloat32(base + 8,  true) : NaN;
+                    const value2 = eventSize >= 16 ? view.getFloat32(base + 12, true) : NaN;
+                    const name   = EVENT_TYPE_NAMES[typeId] || 'Unknown_' + typeId;
+                    const desc   = eventParamDesc(typeId, param);
+                    const v1str  = isNaN(value1) || value1 === 0 ? '' : value1.toFixed(4);
+                    const v2str  = isNaN(value2) || value2 === 0 ? '' : value2.toFixed(4);
+                    // Multiple events at same ts: concatenate with '|'
+                    if (eventByTs.has(ts)) {
+                        const prev = eventByTs.get(ts);
+                        eventByTs.set(ts, { name: prev.name + '|' + name,
+                                            desc: prev.desc + '|' + desc,
+                                            v1:   prev.v1   + '|' + v1str,
+                                            v2:   prev.v2   + '|' + v2str });
+                    } else {
+                        eventByTs.set(ts, { name, desc, v1: v1str, v2: v2str });
+                    }
                 }
             }
         }

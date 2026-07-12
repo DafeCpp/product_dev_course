@@ -188,7 +188,7 @@
 - ❌ Фикстуры `demo_project` с заранее записанными capture sessions.
 - ❌ Скрипт `bin/demo_seed.py`.
 - ✅ Docker Compose: `docker-compose up` разворачивает полный стенд.
-- ✅ Документация: `docs/demo-flow.md`, `docs/manual-testing.md`, `docs/local-dev-docker-setup.md`.
+- ✅ Документация: `docs/demo-flow.md`, `docs/manual-testing/`, `docs/local-dev-docker-setup.md`.
 
 ### 6.11 Производительность фронтенда
 - ⚠️ Время первой отрисовки — не замерялось формально; Vite build + code splitting используются.
@@ -280,6 +280,6 @@
 |----------|--------|
 | Все обязательные сервисы разворачиваются `docker-compose up` без ручных правок | ✅ |
 | 80% функционала покрыто авто-тестами (unit + integration) | ⚠️ (покрытие есть, но не замерялось процентно) |
-| Описаны и протестированы основные сценарии из раздела 3 | ✅ (`docs/manual-testing.md`, `docs/demo-flow.md`) |
+| Описаны и протестированы основные сценарии из раздела 3 | ✅ (`docs/manual-testing/`, `docs/demo-flow.md`) |
 | Документация (README + OpenAPI + ADR) актуальна | ✅ |
 | Демо: поток от минимум 3 датчиков, live-графики, цикл «Старт/Стоп отсчёта» с сохранением данных | ✅ (sensor-simulator + TelemetryViewer) |

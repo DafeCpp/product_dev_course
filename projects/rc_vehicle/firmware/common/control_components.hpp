@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <type_traits>
 
 #include "config.hpp"
 #include "imu_calibration.hpp"
@@ -232,6 +234,15 @@ class ImuHandler : public ControlComponent {
   void ResetHeadingRef() noexcept { heading_ref_set_ = false; }
 
  private:
+  /// Опорная СК фильтра — обновляется при смене состояния калибровки
+  void UpdateVehicleFrame();
+  /// Чтение mag (100 Гц), калибровка, PCA-heading, опорный курс
+  void UpdateMagAndHeading(uint32_t now_ms);
+  /// Heading через проекцию на калибровочную плоскость (PCA)
+  [[nodiscard]] float ComputePcaHeadingDeg(const MagData& mag_cal) const;
+  /// Шаг Madgwick: 9DOF при наличии mag, иначе 6DOF
+  void FeedMadgwick(float raw_ax, float raw_ay, float raw_az, float dt_sec);
+
   VehicleControlPlatform& platform_;
   ImuCalibration& calib_;
   MadgwickFilter& filter_;
@@ -247,6 +258,7 @@ class ImuHandler : public ControlComponent {
 
   // Магнетометр (опционален)
   MagData mag_data_{};
+  MagData mag_calibrated_{};  ///< Последний семпл после Apply() калибровки
   bool mag_enabled_{false};
   uint32_t last_mag_read_ms_{0};
   static constexpr uint32_t kMagReadIntervalMs = 10;  ///< 100 Hz
@@ -308,6 +320,8 @@ struct TelemetrySnapshot {
   // Link status
   bool rc_ok{false};
   bool wifi_ok{false};
+  bool failsafe{false};  ///< Снимок failsafe (FW-RF8: чтобы JSON строился вне
+                         ///< control loop, без обращения к платформе)
 
   // IMU
   bool imu_enabled{false};
@@ -368,6 +382,22 @@ struct TelemetrySnapshot {
   uint32_t uptime_ms{0};
 };
 
+// FW-RF8: снапшот публикуется в очередь control loop'ом и копируется в задачу
+// телеметрии (FreeRTOS xQueueOverwrite = memcpy), поэтому должен быть POD без
+// динамики и фиксированного размера. Этот static_assert ловит регресс, если
+// кто-то добавит в снапшот std::string/указатель и т.п.
+static_assert(std::is_trivially_copyable_v<TelemetrySnapshot>,
+              "TelemetrySnapshot must stay trivially copyable for queue copy");
+
+/**
+ * @brief Построить JSON-строку телеметрии из снимка (чистая функция).
+ *
+ * Не зависит от платформы и потока — вызывается в задаче телеметрии (вне
+ * control loop), что исключает heap-аллокации cJSON в горячем 500 Гц пути.
+ * Все нужные данные (включая failsafe) берутся из снимка.
+ */
+[[nodiscard]] std::string BuildTelemJson(const TelemetrySnapshot& snap);
+
 // ═════════════════════════════════════════════════════════════════════════
 // Telemetry Handler
 // ═════════════════════════════════════════════════════════════════════════
@@ -394,9 +424,13 @@ class TelemetryHandler {
       : platform_(platform), send_interval_ms_(send_interval_ms) {}
 
   /**
-   * @brief Отправить телеметрию с переданным снимком данных
+   * @brief Опубликовать телеметрию с переданным снимком данных
    * @param now_ms Текущее время в миллисекундах
    * @param snap Снимок данных телеметрии
+   *
+   * FW-RF8: только гейт по частоте + публикация POD-снимка в очередь платформы
+   * (PublishTelem). Построение JSON НЕ делается здесь — оно переехало в задачу
+   * телеметрии, чтобы control loop не платил за cJSON heap-аллокации.
    */
   void SendTelemetry(uint32_t now_ms, const TelemetrySnapshot& snap);
 
@@ -404,13 +438,6 @@ class TelemetryHandler {
   VehicleControlPlatform& platform_;
   uint32_t send_interval_ms_;
   uint32_t last_send_ms_{0};
-
-  /**
-   * @brief Построить JSON-строку с телеметрией
-   * @param snap Снимок данных
-   * @return JSON-строка
-   */
-  [[nodiscard]] std::string BuildTelemJson(const TelemetrySnapshot& snap) const;
 };
 
 }  // namespace rc_vehicle

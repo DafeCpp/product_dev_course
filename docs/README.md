@@ -15,7 +15,7 @@
 
 ## Демонстрация
 - `demo-flow.md` — сценарий демо (что показать и в каком порядке).
-- `manual-testing.md` — ручной E2E чеклист (Portal → Auth Proxy → Services → DB).
+- `manual-testing/` — сценарии ручного тестирования (индекс в `manual-testing/README.md`): E2E happy-path, auth-флоу, smoke-навигация.
 
 ## Дебаг и наблюдаемость
 - `ui-debugging.md` — debug toast в Portal + как искать `trace_id/request_id` в логах.

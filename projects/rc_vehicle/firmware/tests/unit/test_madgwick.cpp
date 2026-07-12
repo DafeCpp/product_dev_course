@@ -1053,3 +1053,96 @@ TEST(MadgwickTest, NegativeBeta) {
   EXPECT_TRUE(IsQuaternionNormalized(qw, qx, qy, qz))
       << "Filter should not crash with negative beta";
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// 9DOF (UpdateWithMag) — полный калиброванный вектор магнитометра (FW-R3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Земное поле с наклонением (dip): north + down компоненты, в долях нормы
+static constexpr float kFieldN = 0.6f;
+static constexpr float kFieldD = 0.8f;
+
+TEST(MadgwickTest, UpdateWithMag_LevelSensor_YawConvergesToZero) {
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  // Сенсор горизонтален, ориентирован на север: accel = (0,0,1),
+  // mag = поле как есть
+  for (int i = 0; i < 2000; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                         kFieldN, 0.0f, kFieldD, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(pitch, 0.0f, 2.0f);
+  EXPECT_NEAR(roll, 0.0f, 2.0f);
+  EXPECT_NEAR(yaw, 0.0f, 2.0f);
+}
+
+TEST(MadgwickTest, UpdateWithMag_TiltedSensor_YawNotDistorted) {
+  // Ключевое свойство FW-R3: при наклоне сенсора (pitch 30°) полный
+  // mag-вектор НЕ искажает yaw — Madgwick сам проецирует поле
+  // (bx = sqrt(hx²+hy²)). Прежняя схема (px, py, dot_n) на наклонном
+  // монтаже давала смешение систем координат.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  // Сенсор повёрнут на +30° вокруг Y (pitch), yaw = 0.
+  // a_s = Ry(30)^T * (0,0,1);  m_s = Ry(30)^T * (N, 0, D)
+  const float c = std::cos(30.0f * 3.14159265f / 180.0f);
+  const float s = std::sin(30.0f * 3.14159265f / 180.0f);
+  const float ax = -s, ay = 0.0f, az = c;
+  const float mx = kFieldN * c - kFieldD * s;
+  const float my = 0.0f;
+  const float mz = kFieldN * s + kFieldD * c;
+
+  for (int i = 0; i < 3000; ++i) {
+    filter.UpdateWithMag(ax, ay, az, 0.0f, 0.0f, 0.0f, mx, my, mz, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(std::abs(pitch), 30.0f, 2.0f) << "Наклон должен отслеживаться";
+  EXPECT_NEAR(roll, 0.0f, 2.0f);
+  EXPECT_NEAR(yaw, 0.0f, 2.0f)
+      << "Yaw не должен искажаться наклоном сенсора (FW-R3)";
+}
+
+TEST(MadgwickTest, UpdateWithMag_YawedSensor_DetectsHeading) {
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  // Сенсор горизонтален, повёрнут вокруг вертикали на 40°:
+  // m_s = Rz(40)^T * (N, 0, D)
+  const float c = std::cos(40.0f * 3.14159265f / 180.0f);
+  const float s = std::sin(40.0f * 3.14159265f / 180.0f);
+  const float mx = kFieldN * c;
+  const float my = -kFieldN * s;
+  const float mz = kFieldD;
+
+  for (int i = 0; i < 3000; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                         mx, my, mz, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(std::abs(yaw), 40.0f, 3.0f)
+      << "9DOF должен сходиться к курсу по магнитометру";
+  EXPECT_NEAR(pitch, 0.0f, 2.0f);
+  EXPECT_NEAR(roll, 0.0f, 2.0f);
+}
+
+TEST(MadgwickTest, UpdateWithMag_QuaternionStaysNormalized) {
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  for (int i = 0; i < 1000; ++i) {
+    filter.UpdateWithMag(0.1f, -0.05f, 0.95f, 1.0f, -2.0f, 0.5f,
+                         0.4f, 0.2f, 0.7f, 0.002f);
+  }
+
+  float qw, qx, qy, qz;
+  filter.GetQuaternion(qw, qx, qy, qz);
+  EXPECT_TRUE(IsQuaternionNormalized(qw, qx, qy, qz));
+}

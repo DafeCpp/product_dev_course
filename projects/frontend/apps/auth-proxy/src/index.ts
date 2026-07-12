@@ -8,11 +8,13 @@ import { randomUUID } from 'crypto'
 import { PassThrough } from 'stream'
 import Redis from 'ioredis'
 import { registerAuthProxy } from './proxyFactory'
+import { buildProxyRouteTable, type ProxyRouteDefinition, type ProxyRouteName } from './routeTable'
 
 type Config = {
     port: number
     targetExperimentUrl: string
     targetTelemetryUrl: string
+    targetConfigServiceUrl: string
     targetScriptUrl: string
     authUrl: string
     corsOrigins: string[]
@@ -48,6 +50,8 @@ export function parseConfig(): Config {
             // In Docker, `localhost` would mean "inside auth-proxy container".
             // Default to the docker-compose service name so telemetry proxy works out of the box.
             process.env.TARGET_TELEMETRY_URL || 'http://telemetry-ingest-service:8003',
+        targetConfigServiceUrl:
+            process.env.TARGET_CONFIG_SERVICE_URL || 'http://config-service:8005',
         targetScriptUrl:
             process.env.TARGET_SCRIPT_URL || 'http://script-service:8004',
         authUrl: process.env.AUTH_URL || 'http://localhost:8001',
@@ -309,6 +313,16 @@ function _isJwtExpired(token: string, skewSec = 30): boolean {
 }
 
 export async function buildServer(config: Config, _cache?: PermissionsCache) {
+    const proxyRoutes = buildProxyRouteTable(config)
+    const routeByName = new Map<ProxyRouteName, ProxyRouteDefinition>(
+        proxyRoutes.map((route) => [route.name, route])
+    )
+    const getProxyRoute = (name: ProxyRouteName): ProxyRouteDefinition => {
+        const route = routeByName.get(name)
+        if (!route) throw new Error(`Missing proxy route: ${name}`)
+        return route
+    }
+
     const app = fastify({
         logger: {
             level: config.logLevel,
@@ -824,7 +838,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
     })
 
     // Password reset routes — public, no auth/CSRF required
-    app.post('/auth/password-reset/request', async (request, reply) => {
+    app.post('/auth/password-reset/request', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const { traceId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
@@ -841,7 +855,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         return res.json().catch(() => ({}))
     })
 
-    app.post('/auth/password-reset/confirm', async (request, reply) => {
+    app.post('/auth/password-reset/confirm', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const { traceId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
 
@@ -1133,11 +1147,13 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         }
     })
 
+    const projectsWebRoute = getProxyRoute('projects-web')
+
     // Projects proxy - forward /projects/* to Auth Service
     await app.register(httpProxy, {
-        prefix: '/projects',
-        upstream: config.authUrl,
-        rewritePrefix: '/projects',
+        prefix: projectsWebRoute.prefix,
+        upstream: projectsWebRoute.upstream,
+        rewritePrefix: projectsWebRoute.rewritePrefix,
         http2: false,
         replyOptions: {
             rewriteRequestHeaders: (req, headers) => {
@@ -1202,12 +1218,14 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         },
     })
 
+    const telemetryRoute = getProxyRoute('telemetry-ingest')
+
     // Telemetry ingest proxy (SSE + REST ingest). This must be registered BEFORE /api proxy,
     // otherwise /api/* would forward telemetry endpoints to experiment-service.
     await app.register(httpProxy, {
-        prefix: '/api/v1/telemetry',
-        upstream: config.targetTelemetryUrl,
-        rewritePrefix: '/api/v1/telemetry',
+        prefix: telemetryRoute.prefix,
+        upstream: telemetryRoute.upstream,
+        rewritePrefix: telemetryRoute.rewritePrefix,
         http2: false,
         replyOptions: {
             rewriteRequestHeaders: (req, headers) => {
@@ -1258,11 +1276,11 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
     })
 
     // Script service proxy — /api/v1/scripts and /api/v1/executions → script-service
-    for (const prefix of ['/api/v1/scripts', '/api/v1/executions']) {
+    for (const route of proxyRoutes.filter((r) => r.kind === 'script')) {
         await app.register(httpProxy, {
-            prefix,
-            upstream: config.targetScriptUrl,
-            rewritePrefix: prefix,
+            prefix: route.prefix,
+            upstream: route.upstream,
+            rewritePrefix: route.rewritePrefix,
             http2: false,
             replyOptions: {
                 rewriteRequestHeaders: (req, headers) => {
@@ -1297,23 +1315,16 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         })
     }
 
-    // Users API proxy — forward /api/v1/users/* to Auth Service (must be before generic /api proxy)
-    await registerAuthProxy(app, {
-        prefix: '/api/v1/users',
-        upstream: config.authUrl,
-        accessCookieName: config.accessCookieName,
-        deleteCookie: false,
-        ensureJsonContentType: false,
-    })
-
-    // Auth Service API proxies — these endpoints live in auth-service, not experiment-service.
-    // Must be registered BEFORE the generic `/api` proxy so they win route matching.
-    for (const prefix of ['/api/v1/system-roles', '/api/v1/permissions', '/api/v1/audit-log']) {
+    // Auth Service API proxies live in auth-service, not experiment-service.
+    // Must be registered BEFORE the generic /api proxy so they win route matching.
+    for (const route of proxyRoutes.filter((r) => r.kind === 'auth-api')) {
         await registerAuthProxy(app, {
-            prefix,
-            upstream: config.authUrl,
+            prefix: route.prefix,
+            upstream: route.upstream,
+            rewritePrefix: route.rewritePrefix,
             accessCookieName: config.accessCookieName,
-            ensureJsonContentType: false,
+            deleteCookie: route.deleteCookie,
+            ensureJsonContentType: route.ensureJsonContentType,
         })
     }
 
@@ -1359,13 +1370,90 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         }
     )
 
+    const configServiceRoute = getProxyRoute('config-service-api')
+
+    // Config-service proxy (ADR-009 Variant B: explicit service prefix).
+    // Must be registered BEFORE the generic /api catch-all so it wins route matching.
+    //
+    // Security model:
+    //  - Strip all incoming X-User-* headers to prevent client spoofing.
+    //  - Re-inject from preHandler-attached permissions (permissionsIsSuperadmin etc.).
+    //  - Only expose admin CRUD + schema endpoints; bulk polling is internal-only.
+
+    // Block the internal bulk-polling endpoint: consumers call config-service directly,
+    // not through the public proxy.
+    app.all('/api/config-service/v1/configs/bulk', async (_req, reply) => {
+        reply.status(404).send({ error: 'Not Found' })
+    })
+
+    await app.register(httpProxy, {
+        prefix: configServiceRoute.prefix,
+        upstream: configServiceRoute.upstream,
+        rewritePrefix: configServiceRoute.rewritePrefix,
+        http2: false,
+        replyOptions: {
+            rewriteRequestHeaders: (req, headers) => {
+                const cookies = parseCookies(req.headers.cookie as string | undefined)
+                const access = cookies[config.accessCookieName]
+                const traceId = normalizeUUID(req.headers['x-trace-id'] as string) || generateUUID()
+                const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+                app.log.info({
+                    method: req.method,
+                    url: req.url,
+                    upstream: config.targetConfigServiceUrl,
+                    has_auth_token: !!access,
+                    trace_id: outgoingHeaders['X-Trace-Id'],
+                    request_id: outgoingHeaders['X-Request-Id'],
+                }, 'Proxying request to Config Service')
+
+                const newHeaders: Record<string, string> = {}
+
+                for (const [key, value] of Object.entries(headers)) {
+                    // Strip all incoming X-User-* to prevent client spoofing.
+                    if (key.toLowerCase().startsWith('x-user-')) continue
+                    if (typeof value === 'string') {
+                        newHeaders[key] = value
+                    } else if (Array.isArray(value) && value.length > 0) {
+                        newHeaders[key] = String(value[0])
+                    }
+                }
+
+                newHeaders['X-Trace-Id'] = outgoingHeaders['X-Trace-Id']
+                newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
+
+                if (access) {
+                    newHeaders['authorization'] = `Bearer ${access}`
+                    const decoded = decodeJWT(access)
+                    if (decoded?.user_id) {
+                        newHeaders['X-User-Id'] = decoded.user_id
+                    }
+                }
+
+                // Re-inject RBAC headers from preHandler (attached for all /api/* requests).
+                const permIsSuperadmin = (req as any).permissionsIsSuperadmin
+                if (permIsSuperadmin !== undefined) {
+                    newHeaders['X-User-Is-Superadmin'] = permIsSuperadmin ? 'true' : 'false'
+                    newHeaders['X-User-System-Permissions'] = (req as any).permissionsSystemPerms ?? ''
+                    newHeaders['X-User-Permissions'] = (req as any).permissionsProjectPerms ?? ''
+                }
+
+                delete newHeaders['cookie']
+
+                return newHeaders
+            },
+        },
+    })
+
+    const experimentServiceRoute = getProxyRoute('experiment-service-api')
+
     // Experiment service proxy (+future gateway), with WS/SSE
     await app.register(httpProxy, {
-        prefix: '/api',
-        upstream: config.targetExperimentUrl,
-        rewritePrefix: '/api',
+        prefix: experimentServiceRoute.prefix,
+        upstream: experimentServiceRoute.upstream,
+        rewritePrefix: experimentServiceRoute.rewritePrefix,
         http2: false,
-        websocket: true,
+        websocket: experimentServiceRoute.websocket === true,
         replyOptions: {
             rewriteRequestHeaders: (req, headers) => {
                 const cookies = parseCookies(req.headers.cookie as string | undefined)

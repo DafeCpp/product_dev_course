@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from telemetry_ingest_service.api.utils import read_json
 from telemetry_ingest_service.core.exceptions import NotFoundError, ScopeMismatchError, UnauthorizedError
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO
+from telemetry_ingest_service.middleware.rate_limit_config import RATE_LIMIT_CONFIG
 from telemetry_ingest_service.middleware.rest_rate_limit import IngestRateLimiter
 from telemetry_ingest_service.prometheus_metrics import (
     INGEST_RATE_LIMITED,
@@ -67,11 +68,7 @@ def _fire_and_forget_error_log(
     asyncio.create_task(_log())
 
 
-_rest_limiter = IngestRateLimiter(
-    max_requests_per_window=settings.rest_rate_limit_requests_per_window,
-    max_readings_per_window=settings.rest_rate_limit_readings_per_window,
-    window_seconds=settings.rest_rate_limit_window_seconds,
-)
+_rest_limiter = IngestRateLimiter(RATE_LIMIT_CONFIG)
 
 
 def _normalize_bearer(value: str | None) -> str | None:
@@ -131,7 +128,7 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
             text=f"Rate limit exceeded. Retry in {retry_after}s.",
             headers={
                 "Retry-After": str(retry_after),
-                "X-RateLimit-Limit": str(_rest_limiter._max_requests),
+                "X-RateLimit-Limit": str(_rest_limiter.max_requests),
             },
         )
 
@@ -270,26 +267,32 @@ async def _authorize_user_token(*, token: str, project_id: UUID) -> None:
         base = base[: -len("/api/v1")]
     headers = {"Authorization": f"Bearer {token}"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{base}/auth/me", headers=headers) as resp:
-            if resp.status != 200:
-                raise web.HTTPUnauthorized(text="Unauthorized")
-            me = await resp.json()
-            user_id = me.get("id")
-            if not user_id:
-                raise web.HTTPUnauthorized(text="Unauthorized")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{base}/auth/me", headers=headers) as resp:
+                if resp.status != 200:
+                    raise web.HTTPUnauthorized(text="Unauthorized")
+                me = await resp.json()
+                user_id = me.get("id")
+                if not user_id:
+                    raise web.HTTPUnauthorized(text="Unauthorized")
 
-        async with session.get(f"{base}/projects/{project_id}/members", headers=headers) as resp:
-            if resp.status == 403:
-                raise web.HTTPForbidden(text="Forbidden")
-            if resp.status == 404:
-                raise web.HTTPNotFound(text="Project not found")
-            if resp.status != 200:
-                raise web.HTTPBadGateway(text="Auth service error")
-            data = await resp.json()
-            members = data.get("members") or []
-            if not any(str(m.get("user_id")) == str(user_id) for m in members):
-                raise web.HTTPForbidden(text="Forbidden")
+            async with session.get(f"{base}/projects/{project_id}/members", headers=headers) as resp:
+                if resp.status == 403:
+                    raise web.HTTPForbidden(text="Forbidden")
+                if resp.status == 404:
+                    raise web.HTTPNotFound(text="Project not found")
+                if resp.status != 200:
+                    raise web.HTTPBadGateway(text="Auth service error")
+                data = await resp.json()
+                members = data.get("members") or []
+                if not any(str(m.get("user_id")) == str(user_id) for m in members):
+                    raise web.HTTPForbidden(text="Forbidden")
+    except web.HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("auth_service_error", error=str(exc))
+        raise web.HTTPBadGateway(text="Auth service error") from exc
 
 
 @routes.get("/api/v1/telemetry/stream")

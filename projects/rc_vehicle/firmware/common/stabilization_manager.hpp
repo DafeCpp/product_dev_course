@@ -79,9 +79,11 @@ class StabilizationManager {
 
   /**
    * @brief Обновить веса стабилизации и перехода (вызывается из control loop)
+   * @param cfg Snapshot конфигурации, снятый вызывающим в начале итерации
+   *            (FW-RF5: убирает лишнюю копию под мьютексом на 500 Гц)
    * @param dt_ms Время с последнего обновления
    */
-  void UpdateWeights(uint32_t dt_ms);
+  void UpdateWeights(const StabilizationConfig& cfg, uint32_t dt_ms);
 
   /**
    * @brief Сбросить веса при failsafe
@@ -89,6 +91,9 @@ class StabilizationManager {
   void ResetWeights();
 
  private:
+  /** Применить параметры конфига к фильтрам (Madgwick beta, LPF, enable). */
+  void ApplyToFilters(const StabilizationConfig& cfg);
+
   VehicleControlPlatform& platform_;
   MadgwickFilter& madgwick_;
   YawRateController& yaw_ctrl_;

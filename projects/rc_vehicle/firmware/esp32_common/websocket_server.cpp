@@ -1,10 +1,13 @@
 #include "websocket_server.hpp"
 
-#include <atomic>
 #include <string.h>
+
+#include <atomic>
+#include <string>
 
 #include "cJSON.h"
 #include "config.hpp"
+#include "control_components.hpp"  // rc_vehicle::TelemetrySnapshot, BuildTelemJson
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -17,15 +20,17 @@ static httpd_handle_t ws_server_handle = NULL;
 /** Макс. число HTTP-соединений httpd (для httpd_get_client_list). */
 static constexpr size_t MAX_HTTPD_CLIENTS = 8;
 
-/** Размер одного буфера телеметрии (JSON). */
-static constexpr size_t TELEM_BUF_SIZE = 2048;
-/** Очередь длины 1: индекс буфера (0 или 1), готового к отправке. */
+/**
+ * Очередь телеметрии передаёт POD-снимок (rc_vehicle::TelemetrySnapshot) ПО
+ * ЗНАЧЕНИЮ. FreeRTOS копирует элемент целиком (memcpy), поэтому control loop
+ * (продьюсер) и telem_sender_task не разделяют память — гонка двойной
+ * буферизации исключена by-design (FW-R6). FW-RF8: построение JSON из снимка
+ * вынесено в telem_sender_task, в очередь кладётся только снимок.
+ */
+using TelemMsg = rc_vehicle::TelemetrySnapshot;
+
+/** Очередь длины 1 (xQueueOverwrite): всегда самый свежий снимок. */
 static QueueHandle_t s_telem_queue = NULL;
-static char s_telem_buf[2][TELEM_BUF_SIZE];
-// Index of the buffer that the *next* WebSocketEnqueueTelem() call will write
-// into. Atomic to ensure the store to the buffer is visible to
-// telem_sender_task on the other core before the index swap.
-static std::atomic<uint8_t> s_telem_write_idx{0};
 
 /**
  * Кешированное количество WS-клиентов.
@@ -41,12 +46,16 @@ static void telem_sender_task(void* arg) {
   (void)arg;
   uint32_t frames_sent = 0;
   TickType_t last_diag = xTaskGetTickCount();
+  // static: снимок крупный для стека задачи; задача одна — гонок нет
+  static TelemMsg snap;
   for (;;) {
-    uint8_t idx;
-    if (xQueueReceive(s_telem_queue, &idx, portMAX_DELAY) != pdTRUE) {
+    if (xQueueReceive(s_telem_queue, &snap, portMAX_DELAY) != pdTRUE) {
       continue;
     }
-    WebSocketSendTelem(s_telem_buf[idx]);
+    // FW-RF8: cJSON heap-аллокации — здесь (Core 0, низкий приоритет), а не в
+    // 500 Гц control loop.
+    std::string json = rc_vehicle::BuildTelemJson(snap);
+    WebSocketSendTelem(json.c_str());
     frames_sent++;
 
     // Диагностический лог каждые 10 секунд
@@ -160,11 +169,18 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
   ws_server_handle = server;
 
   if (s_telem_queue == NULL) {
-    s_telem_queue = xQueueCreate(1, sizeof(uint8_t));
+    s_telem_queue = xQueueCreate(1, sizeof(TelemMsg));
     if (s_telem_queue != NULL) {
       const UBaseType_t prio = 5;
-      if (xTaskCreate(telem_sender_task, "ws_telem", 3072, NULL, prio, NULL) !=
-          pdPASS) {
+      // FW-RF8 переносит построение JSON-телеметрии в эту задачу
+      // (cJSON_PrintUnformatted → sprintf на каждое float-поле; форматирование
+      // float в xtensa newlib крайне прожорливо по стеку). Со стеком 3072 это
+      // даёт «stack overflow in task ws_telem» (краш в cvt/vfprintf) и
+      // reboot-петлю при первом же кадре. Эта же работа раньше жила в
+      // control-task со стеком 12288; даём ws_telem запас 8192.
+      constexpr uint32_t kTelemTaskStack = 8192;
+      if (xTaskCreate(telem_sender_task, "ws_telem", kTelemTaskStack, NULL,
+                      prio, NULL) != pdPASS) {
         vQueueDelete(s_telem_queue);
         s_telem_queue = NULL;
       }
@@ -180,23 +196,14 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
   return ret;
 }
 
-void WebSocketEnqueueTelem(const char* telem_json) {
-  if (telem_json == NULL || s_telem_queue == NULL) {
+void WebSocketEnqueueTelem(const rc_vehicle::TelemetrySnapshot& snap) {
+  if (s_telem_queue == NULL) {
     return;
   }
-  size_t len = strlen(telem_json);
-  if (len >= TELEM_BUF_SIZE) {
-    ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes", len, TELEM_BUF_SIZE);
-    len = TELEM_BUF_SIZE - 1;
-  }
-  // Read current write index (relaxed — only this task writes it).
-  const uint8_t idx = s_telem_write_idx.load(std::memory_order_relaxed);
-  memcpy(s_telem_buf[idx], telem_json, len);
-  s_telem_buf[idx][len] = '\0';
-  // Swap write index with release: guarantees the memcpy above is visible to
-  // telem_sender_task (on potentially different core) before it reads the buffer.
-  s_telem_write_idx.store(1 - idx, std::memory_order_release);
-  xQueueOverwrite(s_telem_queue, &idx);
+  // Очередь копирует снимок целиком (memcpy); при заполненной очереди старый
+  // снимок перезаписывается свежим (телеметрия — последнее состояние важнее
+  // истории). Вызывается из control loop — детерминированно, без аллокаций.
+  xQueueOverwrite(s_telem_queue, &snap);
 }
 
 esp_err_t WebSocketSendTelem(const char* telem_json) {

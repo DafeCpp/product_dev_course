@@ -120,33 +120,24 @@ async def create_run(request: web.Request):
     serialized_body, body_hash = IdempotencyService.canonical_body(body)
     if idempotency_key:
         try:
-            cached = await idempotency_service.get_cached_response(
+            cached = await idempotency_service.reserve_or_get_cached(
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
             raise web.HTTPConflict(text="Conflict") from exc
-        if cached:
+        if cached is not None:
             return IdempotencyService.build_response(cached)
     service = await get_run_service(request)
-    try:
-        run = await service.create_run(dto)
-    except ScopeMismatchError as exc:
-        raise web.HTTPForbidden(text="Forbidden") from exc
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+    async with idempotency_service.guard_reservation(idempotency_key):
+        try:
+            run = await service.create_run(dto)
+        except ScopeMismatchError as exc:
+            raise web.HTTPForbidden(text="Forbidden") from exc
+        except InvalidStatusTransitionError as exc:
+            raise web.HTTPBadRequest(text="Bad request") from exc
     response_payload = _run_response(run)
     if idempotency_key:
-        try:
-            await idempotency_service.store_response(
-                idempotency_key,
-                user.user_id,
-                request.rel_url.path,
-                body_hash,
-                201,
-                response_payload,
-            )
-        except IdempotencyConflictError as exc:
-            raise web.HTTPConflict(text="Conflict") from exc
+        await idempotency_service.complete_response(idempotency_key, 201, response_payload)
     return web.json_response(response_payload, status=201)
 
 

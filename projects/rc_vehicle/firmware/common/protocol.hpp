@@ -1,13 +1,13 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <span>
 #include <string_view>
-
-#include "result.hpp"
 
 namespace rc_vehicle::protocol {
 
@@ -52,19 +52,11 @@ enum class ParseError {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Result type for protocol parsing (uses generic Result<T, E> from result.hpp)
+// Result type for protocol parsing
 // ═══════════════════════════════════════════════════════════════════════════
 
 template <typename T>
-using Result = rc_vehicle::Result<T, ParseError>;
-
-// Helper functions are inherited from rc_vehicle namespace:
-// - IsOk(result)
-// - IsError(result)
-// - GetValue(result)
-// - GetError(result)
-// - Ok<T, ParseError>(value)
-// - Err<T, ParseError>(error)
+using Result = std::expected<T, ParseError>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Структуры данных
@@ -278,7 +270,7 @@ class Protocol {
   /**
    * Распарсить кадр PING (MCU принимает от ESP32).
    * @param buffer Буфер с данными
-   * @return void или ошибка (используйте IsOk для проверки)
+   * @return true или ошибка парсинга
    */
   [[nodiscard]] static Result<bool> ParsePing(
       std::span<const uint8_t> buffer) noexcept;
@@ -286,7 +278,7 @@ class Protocol {
   /**
    * Распарсить кадр PONG (ESP32 принимает от MCU).
    * @param buffer Буфер с данными
-   * @return void или ошибка (используйте IsOk для проверки)
+   * @return true или ошибка парсинга
    */
   [[nodiscard]] static Result<bool> ParsePong(
       std::span<const uint8_t> buffer) noexcept;
@@ -314,7 +306,9 @@ class Protocol {
   }
 
  private:
-  static uint16_t next_command_seq_;  // Счётчик последовательности команд
+  // Счётчик последовательности команд. Атомарный: BuildCommand может
+  // вызываться из разных задач (UART bridge, будущие каналы).
+  static std::atomic<uint16_t> next_command_seq_;
 };
 
 }  // namespace rc_vehicle::protocol

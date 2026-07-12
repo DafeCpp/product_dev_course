@@ -18,6 +18,7 @@
               |  +-----------+  |          |  - auth_db        |
               |  | Auth      |--+---:8080  |  - experiment_db  |
               |  | Proxy BFF |  |          |  + TimescaleDB    |
+              |  +-----------+  |          |  - config_db      |
               |  +-----------+  |          +--------+----------+
               |  +-----------+  |                   |
               |  | Auth Svc  |--+---(внутр.)--------+
@@ -303,29 +304,57 @@ VM_HOST=84.201.xxx.xxx REGISTRY_ID=crp... ./scripts/deploy.sh [v1.0.0]
 
 ## Миграции БД и инициализация
 
-При первом запуске миграции должны применяться автоматически (если сервисы это поддерживают).
+Миграции применяются автоматически на каждом деплое одноразовыми (one-shot) сервисами
+в `docker-compose.prod.yml`. Каждый из них выполняет `python -m bin.migrate`, отрабатывает
+до конца и завершается; соответствующий рантайм-сервис стартует только после успешного
+завершения своего миграционного джоба (`condition: service_completed_successfully`).
 
-Для ручного запуска:
+| One-shot джоб | База | Блокирует старт |
+|---|---|---|
+| `auth-migrate` | `auth_db` | `auth-service` |
+| `config-migrate` | `config_db` | `config-service` |
+| `experiment-migrate` | `experiment_db` | `experiment-service` |
+| `telemetry-ingest-migrate` | `experiment_db` | `telemetry-ingest-service` |
+
+telemetry-ingest использует **ту же** `experiment_db`, что и experiment-service, и обе
+службы пишут в общую таблицу `schema_migrations` (ключ — имя файла миграции, поэтому
+`005_idempotency_reservation` и `005_sensor_error_log` не конфликтуют). Чтобы джобы не
+гонялись за `CREATE TABLE IF NOT EXISTS schema_migrations`, `telemetry-ingest-migrate`
+запускается строго после `experiment-migrate`.
+
+Миграции идемпотентны: повторный прогон на актуальной схеме печатает `No pending migrations.`
+и ничего не меняет, поэтому джобы безопасно выполняются на каждом релизе.
+
+Проверить, что миграции применились:
 
 ```bash
 ssh deploy@<VM_IP>
 cd /opt/experiment-tracking
 
-# Auth Service миграции
-docker compose -f docker-compose.prod.yml exec -T auth-service \
-  python -m bin.migrate --database-url "$AUTH_DATABASE_URL"
+docker compose -f docker-compose.prod.yml logs experiment-migrate
+docker compose -f docker-compose.prod.yml logs telemetry-ingest-migrate
+```
 
-# Auth Service: создание первого админа (требуется ADMIN_PASSWORD)
+Ручной прогон (например, если джоб упал и был пропущен):
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm experiment-migrate
+docker compose -f docker-compose.prod.yml run --rm telemetry-ingest-migrate
+```
+
+Базы и пользователи (`experiment_db` / `experiment_user` и др.) создаются Terraform —
+см. `infrastructure/yandex-cloud/database.tf`. Миграции их не создают.
+
+Создание первого админа (требуется `ADMIN_PASSWORD`) — отдельный шаг, миграциями не
+покрывается:
+
+```bash
 docker compose -f docker-compose.prod.yml exec -T auth-service \
   python -m bin.seed \
     --database-url "$AUTH_DATABASE_URL" \
     --username admin \
     --email admin@example.com \
     --password "$ADMIN_PASSWORD"
-
-# Experiment Service миграции
-docker compose -f docker-compose.prod.yml exec -T experiment-service \
-  python -m bin.migrate --database-url "$EXPERIMENT_DATABASE_URL"
 ```
 
 ### Инициализация админа при первом деплое
@@ -441,7 +470,8 @@ yc managed-postgresql cluster restore \
 | **user name 'postgres' is not allowed** | В Yandex Managed PostgreSQL имя `postgres` зарезервировано. Используется переменная `pg_admin_username` (по умолчанию `cluster_admin`). Если в state уже был пользователь с именем postgres: `terraform state rm yandex_mdb_postgresql_user.admin`, затем снова `terraform apply`. |
 | Контейнер не стартует | `docker compose logs <service>` |
 | **dependency failed: container auth-service is unhealthy** | На VM проверить: 1) `AUTH_DATABASE_URL` в `.env` и доступность БД (Security Group, сертификат `./certs/yandex-ca.pem`); 2) `JWT_SECRET` задан; 3) `docker compose -f docker-compose.prod.yml logs auth-service` — по логам увидеть ошибку (подключение к БД, SSL и т.д.). При падении деплоя в CI шаг «Show auth-service logs on deploy failure» выведет логи. |
-| **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db` и `experiment_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db). |
+| **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db`, `experiment_db` и `config_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db / config_db). |
+| **config-роли не появились после релиза (RBAC config-service не работает)** | Миграция `auth-service/003_config_rbac.sql` применяется one-shot сервисом `auth-migrate` на деплое. Убедитесь, что `auth-migrate` отработал успешно (`docker compose -f docker-compose.prod.yml logs auth-migrate`). Для config-service миграции применяет `config-migrate`; база `config_db` и пользователь `config_user` должны быть созданы Terraform (`database.tf`). |
 | **experiment-service: functionality not supported under the current "apache" license** (TimescaleDB) | В Yandex MDB используется TimescaleDB с лицензией Apache 2.0: компрессия и continuous aggregates недоступны. Миграции 001/002 принудительно пропускают эти шаги (DO ... EXCEPTION). Сервис должен стартовать; экспорт телеметрии с агрегацией 1m на Yandex недоступен (нет материализованного представления `telemetry_1m`). |
 | Нет подключения к БД | Проверить Security Group, `sslmode=verify-full`, сертификат |
 | 502 Bad Gateway | Подождать 30-60 сек, проверить healthcheck |

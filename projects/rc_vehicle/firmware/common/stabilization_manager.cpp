@@ -2,12 +2,12 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <firmware_common/slew_rate.hpp>
 #include <mutex>
 
 #include "drive_mode_registry.hpp"
 #include "esp_log.h"
 #include "log_format.hpp"
-#include "slew_rate.hpp"
 
 namespace rc_vehicle {
 
@@ -36,14 +36,15 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
   if (!validated_config.IsValid()) {
     platform_.Log(LogLevel::Error, "Invalid stabilization config");
     // Detailed validation logging
-    ESP_LOGE("stab_mgr", "magic=0x%08X (expected 0x%08X)", validated_config.magic, 0x53544232);
-    ESP_LOGE("stab_mgr", "filter.valid=%d yaw.valid=%d slip.valid=%d", 
-             validated_config.filter.IsValid(), 
+    ESP_LOGE("stab_mgr", "magic=0x%08X (expected 0x%08X)",
+             validated_config.magic, kStabilizationConfigMagic);
+    ESP_LOGE("stab_mgr", "filter.valid=%d yaw.valid=%d slip.valid=%d",
+             validated_config.filter.IsValid(),
              validated_config.yaw_rate.IsValid(),
              validated_config.slip_angle.IsValid());
-    ESP_LOGE("stab_mgr", "yaw.kp=%.3f ki=%.3f kd=%.4f max_corr=%.3f max_int=%.3f",
-             validated_config.yaw_rate.pid.kp,
-             validated_config.yaw_rate.pid.ki,
+    ESP_LOGE("stab_mgr",
+             "yaw.kp=%.3f ki=%.3f kd=%.4f max_corr=%.3f max_int=%.3f",
+             validated_config.yaw_rate.pid.kp, validated_config.yaw_rate.pid.ki,
              validated_config.yaw_rate.pid.kd,
              validated_config.yaw_rate.pid.max_correction,
              validated_config.yaw_rate.pid.max_integral);
@@ -57,10 +58,25 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     current_mode = config_.mode;
   }
 
-  // При смене режима автоматически применить предустановки PID для нового
-  // режима
+  // При смене режима восстановить ранее сохранённую настройку нового режима
+  // (per-mode persistence): кастомизация режима не должна теряться при
+  // переключении туда-обратно. Если для режима ничего не сохранено — применить
+  // хардкод-дефолты режима. Поля, пришедшие в запросе вместе со сменой mode,
+  // относятся к СТАРОМУ режиму и игнорируются: профиль режима задаётся его
+  // сохранённой конфигурацией, а не «довеском» к переключению.
   if (validated_config.mode != current_mode) {
-    validated_config.ApplyModeDefaults();
+    const DriveMode target_mode = validated_config.mode;
+    auto saved = platform_.LoadStabilizationConfig(target_mode);
+    bool restored = false;
+    if (saved.has_value()) {
+      validated_config = *saved;
+      validated_config.mode = target_mode;  // на всякий случай
+      validated_config.Clamp();
+      restored = validated_config.IsValid();
+    }
+    if (!restored) {
+      validated_config.ApplyModeDefaults();
+    }
     // Сброс ПИД при смене режима — очищает интегратор предыдущего режима,
     // предотвращая рывок при переходе (особенно при переходе в/из drift mode)
     yaw_ctrl_.Reset();
@@ -68,24 +84,15 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     mode_transition_weight_ = 0.0f;  // Запустить плавный переход
     {
       LogFormat fmt;
-      fmt << "Mode changed: "
-          << DriveModeRegistry::Get(current_mode).GetName() << " -> "
-          << DriveModeRegistry::Get(validated_config.mode).GetName()
-          << ", defaults applied, PID reset";
+      fmt << "Mode changed: " << DriveModeRegistry::Get(current_mode).GetName()
+          << " -> " << DriveModeRegistry::Get(target_mode).GetName() << ", "
+          << (restored ? "saved profile restored" : "defaults applied")
+          << ", PID reset";
       platform_.Log(LogLevel::Info, fmt.str());
     }
   }
 
-  // Применить к фильтрам
-  madgwick_.SetBeta(validated_config.filter.madgwick_beta);
-  madgwick_.SetAdaptiveBeta(validated_config.filter.adaptive_beta_enabled,
-                            validated_config.filter.adaptive_accel_threshold_g);
-
-  // Применить к LPF и Madgwick enable (если IMU включен)
-  if (imu_handler_) {
-    imu_handler_->SetLpfCutoff(validated_config.filter.lpf_cutoff_hz);
-    imu_handler_->SetMadgwickEnabled(validated_config.filter.madgwick_enabled);
-  }
+  ApplyToFilters(validated_config);
 
   // Обновить коэффициенты ПИД yaw rate и slip angle
   yaw_ctrl_.SetGains(validated_config);
@@ -107,7 +114,7 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
 
   if (save_to_nvs) {
     auto result = platform_.SaveStabilizationConfig(validated_config);
-    if (IsOk(result)) {
+    if (result.has_value()) {
       platform_.Log(LogLevel::Info, "Stabilization config saved to NVS");
     } else {
       platform_.Log(LogLevel::Warning,
@@ -144,28 +151,25 @@ void StabilizationManager::ApplyConfig() {
     std::lock_guard<std::mutex> lock(config_mutex_);
     cfg = config_;
   }
+  ApplyToFilters(cfg);
+}
 
-  // Применить конфигурацию к фильтрам
+void StabilizationManager::ApplyToFilters(const StabilizationConfig& cfg) {
   madgwick_.SetBeta(cfg.filter.madgwick_beta);
   madgwick_.SetAdaptiveBeta(cfg.filter.adaptive_beta_enabled,
                             cfg.filter.adaptive_accel_threshold_g);
 
-  // Применить к LPF и Madgwick enable (если IMU включен)
+  // LPF и Madgwick enable — только если IMU есть
   if (imu_handler_) {
     imu_handler_->SetLpfCutoff(cfg.filter.lpf_cutoff_hz);
     imu_handler_->SetMadgwickEnabled(cfg.filter.madgwick_enabled);
   }
 }
 
-void StabilizationManager::UpdateWeights(uint32_t dt_ms) {
+void StabilizationManager::UpdateWeights(const StabilizationConfig& cfg,
+                                         uint32_t dt_ms) {
   if (dt_ms == 0) {
     return;
-  }
-
-  StabilizationConfig cfg;
-  {
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    cfg = config_;
   }
 
   // ─────────────────────────────────────────────────────────────────────
@@ -176,10 +180,9 @@ void StabilizationManager::UpdateWeights(uint32_t dt_ms) {
   if (cfg.fade_ms == 0) {
     stab_weight_ = target_weight;
   } else {
-    const float fade_rate_per_sec =
-        1000.0f / static_cast<float>(cfg.fade_ms);
-    stab_weight_ =
-        ApplySlewRate(target_weight, stab_weight_, fade_rate_per_sec, dt_ms);
+    const float fade_rate_per_sec = 1000.0f / static_cast<float>(cfg.fade_ms);
+    stab_weight_ = firmware_common::ApplySlewRate(
+        target_weight, stab_weight_, fade_rate_per_sec, dt_ms / 1000.0f);
   }
 
   // Сброс ПИД при полном отключении — убирает накопленный интегратор
@@ -199,8 +202,8 @@ void StabilizationManager::UpdateWeights(uint32_t dt_ms) {
       mode_transition_weight_ = 1.0f;
     } else {
       const float fade_rate = 1000.0f / static_cast<float>(cfg.fade_ms);
-      mode_transition_weight_ =
-          ApplySlewRate(1.0f, mode_transition_weight_, fade_rate, dt_ms);
+      mode_transition_weight_ = firmware_common::ApplySlewRate(
+          1.0f, mode_transition_weight_, fade_rate, dt_ms / 1000.0f);
     }
   }
 }

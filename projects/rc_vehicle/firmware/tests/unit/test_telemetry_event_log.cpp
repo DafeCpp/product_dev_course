@@ -128,7 +128,7 @@ TEST(TelemetryEventLogTest, MultipleEventTypes_StoredInOrder) {
   EXPECT_EQ(log.Count(), 6u);
 
   TelemetryEvent out{};
-  log.GetEvent(4, out);
+  EXPECT_TRUE(log.GetEvent(4, out));
   EXPECT_EQ(out.type, TelemetryEventType::TestStart);
   EXPECT_EQ(out.param, 3u);  // Step
 }

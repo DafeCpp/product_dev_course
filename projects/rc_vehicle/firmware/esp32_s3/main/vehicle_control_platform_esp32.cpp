@@ -22,10 +22,6 @@
 
 namespace rc_vehicle {
 
-using rc_vehicle::Err;
-using rc_vehicle::Ok;
-using rc_vehicle::Unit;
-
 static const char* TAG = "platform_esp32";
 
 // Константы для задачи control loop
@@ -51,27 +47,25 @@ VehicleControlPlatformEsp32::~VehicleControlPlatformEsp32() {
 // Инициализация
 // ─────────────────────────────────────────────────────────────────────────
 
-Result<Unit, PlatformError> VehicleControlPlatformEsp32::InitPwm() {
+std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitPwm() {
   return (PwmControlInit() == 0)
-             ? Ok<Unit, PlatformError>(Unit{})
-             : Err<Unit, PlatformError>(PlatformError::PwmInitFailed);
+             ? std::expected<void, PlatformError>{}
+             : std::unexpected(PlatformError::PwmInitFailed);
 }
 
-Result<Unit, PlatformError> VehicleControlPlatformEsp32::InitRc() {
-  return (RcInputInit() == 0)
-             ? Ok<Unit, PlatformError>(Unit{})
-             : Err<Unit, PlatformError>(PlatformError::RcInitFailed);
+std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitRc() {
+  return (RcInputInit() == 0) ? std::expected<void, PlatformError>{}
+                              : std::unexpected(PlatformError::RcInitFailed);
 }
 
-Result<Unit, PlatformError> VehicleControlPlatformEsp32::InitImu() {
-  return (ImuInit() == 0)
-             ? Ok<Unit, PlatformError>(Unit{})
-             : Err<Unit, PlatformError>(PlatformError::ImuInitFailed);
+std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitImu() {
+  return (ImuInit() == 0) ? std::expected<void, PlatformError>{}
+                          : std::unexpected(PlatformError::ImuInitFailed);
 }
 
-Result<Unit, PlatformError> VehicleControlPlatformEsp32::InitFailsafe() {
+std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitFailsafe() {
   // Failsafe инициализируется в конструкторе
-  return Ok<Unit, PlatformError>(Unit{});
+  return std::expected<void, PlatformError>{};
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -171,18 +165,18 @@ std::optional<ImuCalibData> VehicleControlPlatformEsp32::LoadCalib() {
   return std::nullopt;
 }
 
-Result<Unit, PlatformError> VehicleControlPlatformEsp32::SaveCalib(
+std::expected<void, PlatformError> VehicleControlPlatformEsp32::SaveCalib(
     const ImuCalibData& data) {
   return (imu_nvs::Save(data) == ESP_OK)
-             ? Ok<Unit, PlatformError>(Unit{})
-             : Err<Unit, PlatformError>(PlatformError::CalibSaveFailed);
+             ? std::expected<void, PlatformError>{}
+             : std::unexpected(PlatformError::CalibSaveFailed);
 }
 
-Result<Unit, PlatformError> VehicleControlPlatformEsp32::SaveComOffset(
+std::expected<void, PlatformError> VehicleControlPlatformEsp32::SaveComOffset(
     const float offset[2]) {
   return (imu_nvs::SaveComOffset(offset) == ESP_OK)
-             ? Ok<Unit, PlatformError>(Unit{})
-             : Err<Unit, PlatformError>(PlatformError::CalibSaveFailed);
+             ? std::expected<void, PlatformError>{}
+             : std::unexpected(PlatformError::CalibSaveFailed);
 }
 
 bool VehicleControlPlatformEsp32::LoadComOffset(float offset[2]) {
@@ -202,12 +196,21 @@ VehicleControlPlatformEsp32::LoadStabilizationConfig() {
   return std::nullopt;
 }
 
-Result<Unit, PlatformError>
+std::optional<StabilizationConfig>
+VehicleControlPlatformEsp32::LoadStabilizationConfig(DriveMode mode) {
+  StabilizationConfig config{};
+  if (stab_config_nvs::Load(mode, config) == ESP_OK && config.IsValid()) {
+    return config;
+  }
+  return std::nullopt;
+}
+
+std::expected<void, PlatformError>
 VehicleControlPlatformEsp32::SaveStabilizationConfig(
     const StabilizationConfig& config) {
   return (stab_config_nvs::Save(config) == ESP_OK)
-             ? Ok<Unit, PlatformError>(Unit{})
-             : Err<Unit, PlatformError>(PlatformError::CalibSaveFailed);
+             ? std::expected<void, PlatformError>{}
+             : std::unexpected(PlatformError::CalibSaveFailed);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -261,17 +264,10 @@ unsigned VehicleControlPlatformEsp32::GetWebSocketClientCount() const noexcept {
   return WebSocketGetClientCount();
 }
 
-void VehicleControlPlatformEsp32::SendTelem(std::string_view json) {
-  // Не блокировать цикл управления на TCP: ставим в очередь, отправляет ws_telem
-  char buffer[2048];
-  if (json.size() >= sizeof(buffer)) {
-    ESP_LOGW(TAG, "Telem JSON truncated: %zu > %zu bytes — увеличьте буфер",
-             json.size(), sizeof(buffer) - 1);
-  }
-  size_t len = std::min(json.size(), sizeof(buffer) - 1);
-  std::memcpy(buffer, json.data(), len);
-  buffer[len] = '\0';
-  WebSocketEnqueueTelem(buffer);
+void VehicleControlPlatformEsp32::PublishTelem(const TelemetrySnapshot& snap) {
+  // FW-RF8: из control loop — только публикация POD-снимка в очередь (memcpy,
+  // без аллокаций). Построение JSON и отправку по WS делает telem_sender_task.
+  WebSocketEnqueueTelem(snap);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -303,14 +299,13 @@ void VehicleControlPlatformEsp32::SendWifiCommand(float throttle,
 // Задачи и синхронизация
 // ─────────────────────────────────────────────────────────────────────────
 
-Result<Unit, PlatformError> VehicleControlPlatformEsp32::CreateTask(
+std::expected<void, PlatformError> VehicleControlPlatformEsp32::CreateTask(
     void (*entry)(void*), void* arg) {
   BaseType_t result =
       xTaskCreatePinnedToCore(entry, "vehicle_ctrl", CONTROL_TASK_STACK, arg,
                               CONTROL_TASK_PRIORITY, nullptr, 1);
-  return (result == pdPASS)
-             ? Ok<Unit, PlatformError>(Unit{})
-             : Err<Unit, PlatformError>(PlatformError::TaskCreateFailed);
+  return (result == pdPASS) ? std::expected<void, PlatformError>{}
+                            : std::unexpected(PlatformError::TaskCreateFailed);
 }
 
 void VehicleControlPlatformEsp32::DelayUntilNextTick(uint32_t period_ms) {

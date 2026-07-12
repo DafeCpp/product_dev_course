@@ -18,9 +18,73 @@ version: "3.9"
 name: product_dev_course
 
 services:
+  # One-shot DB migrations — run to completion before the services start.
+  # Managed PostgreSQL is external; the target databases/users must already
+  # exist (provisioned via Terraform). Idempotent: tracks schema_migrations.
+  auth-migrate:
+    image: ${CR_REGISTRY}/auth-service:${IMAGE_TAG:-latest}
+    container_name: auth-migrate
+    environment:
+      - DATABASE_URL=${AUTH_DATABASE_URL}
+      - PGSSLROOTCERT=/certs/yandex-ca.pem
+    volumes:
+      - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
+    command: ["python", "-m", "bin.migrate"]
+    networks:
+      - app
+    restart: "no"
+
+  config-migrate:
+    image: ${CR_REGISTRY}/config-service:${IMAGE_TAG:-latest}
+    container_name: config-migrate
+    environment:
+      - DATABASE_URL=${CONFIG_DATABASE_URL}
+      - PGSSLROOTCERT=/certs/yandex-ca.pem
+    volumes:
+      - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
+    command: ["python", "-m", "bin.migrate"]
+    networks:
+      - app
+    restart: "no"
+
+  experiment-migrate:
+    image: ${CR_REGISTRY}/experiment-service:${IMAGE_TAG:-latest}
+    container_name: experiment-migrate
+    environment:
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - PGSSLROOTCERT=/certs/yandex-ca.pem
+    volumes:
+      - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
+    command: ["python", "-m", "bin.migrate"]
+    networks:
+      - app
+    restart: "no"
+
+  # telemetry-ingest migrates the same experiment_db as experiment-service, and
+  # both write the shared schema_migrations table. Runs strictly after
+  # experiment-migrate so the two never race on CREATE TABLE IF NOT EXISTS.
+  telemetry-ingest-migrate:
+    image: ${CR_REGISTRY}/telemetry-ingest-service:${IMAGE_TAG:-latest}
+    container_name: telemetry-ingest-migrate
+    depends_on:
+      experiment-migrate:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - PGSSLROOTCERT=/certs/yandex-ca.pem
+    volumes:
+      - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
+    command: ["python", "-m", "bin.migrate"]
+    networks:
+      - app
+    restart: "no"
+
   auth-service:
     image: ${CR_REGISTRY}/auth-service:${IMAGE_TAG:-latest}
     container_name: auth-service
+    depends_on:
+      auth-migrate:
+        condition: service_completed_successfully
     environment:
       - DATABASE_URL=${AUTH_DATABASE_URL}
       - ENV=production
@@ -69,6 +133,8 @@ services:
     ports:
       - "127.0.0.1:8002:8002"
     depends_on:
+      experiment-migrate:
+        condition: service_completed_successfully
       auth-service:
         condition: service_healthy
     networks:
@@ -103,6 +169,8 @@ services:
     ports:
       - "8003:8003"
     depends_on:
+      telemetry-ingest-migrate:
+        condition: service_completed_successfully
       auth-service:
         condition: service_healthy
     networks:
@@ -119,6 +187,40 @@ services:
         limits:
           memory: 256M
 
+  config-service:
+    image: ${CR_REGISTRY}/config-service:${IMAGE_TAG:-latest}
+    container_name: config-service
+    depends_on:
+      config-migrate:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=${CONFIG_DATABASE_URL}
+      - ENV=production
+      - HOST=0.0.0.0
+      - PORT=8005
+      - DB_POOL_SIZE=${CONFIG_SERVICE_DB_POOL_SIZE:-10}
+      - AUTH_SERVICE_URL=http://auth-service:8001/api/v1
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - PGSSLROOTCERT=/certs/yandex-ca.pem
+    volumes:
+      - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
+    command: ["python", "-m", "config_service.main"]
+    ports:
+      - "127.0.0.1:8005:8005"
+    networks:
+      - app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8005/health').read()\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
   auth-proxy:
     image: ${CR_REGISTRY}/auth-proxy:${IMAGE_TAG:-latest}
     container_name: auth-proxy
@@ -126,6 +228,7 @@ services:
       - PORT=8080
       - TARGET_EXPERIMENT_URL=http://experiment-service:8002
       - TARGET_TELEMETRY_URL=http://telemetry-ingest-service:8003
+      - TARGET_CONFIG_SERVICE_URL=http://config-service:8005
       - AUTH_URL=http://auth-service:8001
       - COOKIE_DOMAIN=${COOKIE_DOMAIN}
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
@@ -145,6 +248,8 @@ services:
       experiment-service:
         condition: service_healthy
       auth-service:
+        condition: service_healthy
+      config-service:
         condition: service_healthy
     networks:
       - app

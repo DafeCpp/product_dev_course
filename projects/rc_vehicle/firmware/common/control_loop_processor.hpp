@@ -73,7 +73,8 @@ class ControlLoopProcessor {
   void UpdateSensorsAndEkf(uint32_t dt_ms);
   void UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms);
   void UpdateStabilization(uint32_t dt_ms);
-  void HandleFailsafe();
+  /** @return true — failsafe активен, PWM удерживается в нейтрали. */
+  bool HandleFailsafe();
   void UpdatePwm(uint32_t now, uint32_t dt_ms);
   void UpdateTelemetry(uint32_t now, uint32_t dt_ms);
 
@@ -85,9 +86,23 @@ class ControlLoopProcessor {
   float applied_throttle_{0.0f};
   float applied_steering_{0.0f};
   float prev_gz_rad_s_{0.0f};
+  bool failsafe_was_active_{false};
   uint32_t last_pwm_update_;
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;
+
+#ifdef RC_PROFILE_LOOP
+  // FW-R16: профилирование стадий итерации (debug-сборка). Накапливаем мкс по
+  // стадиям и раз в диаг-интервал печатаем средние us/iter. Включается флагом
+  // -DRC_PROFILE_LOOP=1; в обычной сборке кода нет (нулевой оверхед).
+  void EmitProfile(uint32_t loops);
+  uint64_t prof_components_us_{0};
+  uint64_t prof_sensors_us_{0};
+  uint64_t prof_control_us_{0};
+  uint64_t prof_stab_us_{0};
+  uint64_t prof_pwm_us_{0};
+  uint64_t prof_telem_us_{0};
+#endif
 
   // Кэшированный снимок датчиков (обновляется в UpdateSensorsAndEkf)
   SensorSnapshot sensors_;

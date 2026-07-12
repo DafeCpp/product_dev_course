@@ -11,13 +11,39 @@
 #include "udp_telem_sender.hpp"
 #endif
 
+#ifdef RC_PROFILE_LOOP
+#include "log_format.hpp"
+// FW-R16: засечки времени по стадиям итерации. PROF_START() заводит локальный
+// курсор времени, PROF_LAP(acc) добавляет дельту с прошлой засечки в
+// аккумулятор и сдвигает курсор. В обычной сборке — пустышки (нулевой оверхед,
+// без _pt).
+#define PROF_START() uint64_t _pt = ctx_.platform.GetTimeUs()
+#define PROF_LAP(acc)                              \
+  do {                                             \
+    const uint64_t _n = ctx_.platform.GetTimeUs(); \
+    (acc) += _n - _pt;                             \
+    _pt = _n;                                      \
+  } while (0)
+#else
+#define PROF_START() ((void)0)
+#define PROF_LAP(acc) ((void)0)
+#endif
+
 namespace rc_vehicle {
 
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   ++diag_loop_count_;
 
-  UpdateComponents(now, dt_ms);
-  UpdateSensorsAndEkf(dt_ms);
+  // Единственный snapshot конфига на итерацию (FW-RF5): одна копия под
+  // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
+  stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+
+  PROF_START();
+
+  UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
+  PROF_LAP(prof_components_us_);
+  UpdateSensorsAndEkf(dt_ms);  // snapshot + ComOffset + EKF
+  PROF_LAP(prof_sensors_us_);
 
   if (ctx_.calib_mgr) {
     ctx_.calib_mgr->ProcessRequest(now);
@@ -26,19 +52,33 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
   UpdateAutoDrive(now, dt_ms);
-
-  stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+  PROF_LAP(prof_control_us_);
 
   UpdateStabilization(dt_ms);
-  HandleFailsafe();
-  UpdatePwm(now, dt_ms);
+  PROF_LAP(prof_stab_us_);
+  // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
+  // перезаписал бы нейтраль ненулевым trim'ом — моторы ползли бы при
+  // потере сигнала (FW-R1).
+  if (!HandleFailsafe()) {
+    UpdatePwm(now, dt_ms);
+  }
+  PROF_LAP(prof_pwm_us_);
   UpdateTelemetry(now, dt_ms);
+  PROF_LAP(prof_telem_us_);
 
   {
     const DiagnosticsContext dctx{ctx_.platform, *ctx_.stab_mgr, ctx_.madgwick,
                                   ctx_.ekf, ctx_.imu_handler,
                                   ctx_.last_loop_hz};
-    PrintDiagnostics(dctx, now, diag_loop_count_, diag_start_ms_);
+#ifdef RC_PROFILE_LOOP
+    const uint32_t prof_loops = diag_loop_count_;
+#endif
+    PrintDiagnostics(dctx, stab_cfg_, now, diag_loop_count_, diag_start_ms_);
+#ifdef RC_PROFILE_LOOP
+    // diag_loop_count_ обнуляется в PrintDiagnostics, когда сработал интервал —
+    // это и есть сигнал напечатать средние и сбросить аккумуляторы.
+    if (diag_loop_count_ == 0) EmitProfile(prof_loops);
+#endif
   }
 }
 
@@ -54,8 +94,7 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   prev_gz_rad_s_ =
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
 
-  const bool ekf_active =
-      ctx_.stab_mgr && ctx_.stab_mgr->GetConfig().filter.ekf_enabled;
+  const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
   if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
@@ -87,7 +126,7 @@ void ControlLoopProcessor::UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms) {
 void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
   if (!ctx_.stab_mgr) return;
 
-  ctx_.stab_mgr->UpdateWeights(dt_ms);
+  ctx_.stab_mgr->UpdateWeights(stab_cfg_, dt_ms);
 
   const DriveMode drive_mode = stab_cfg_.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
@@ -97,41 +136,54 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
     if (sensors_.imu_enabled) {
       kids_fwd_accel = ctx_.imu_calib.GetForwardAccel(sensors_.imu_data);
     }
-    ctx_.kids_processor.Process(commanded_throttle_, commanded_steering_,
-                                dt_ms, kids_fwd_accel);
+    ctx_.kids_processor.Process(stab_cfg_, commanded_throttle_,
+                                commanded_steering_, dt_ms, kids_fwd_accel);
   }
 
   const float sw = ctx_.stab_mgr->GetStabilizationWeight();
   const float mw = ctx_.stab_mgr->GetModeTransitionWeight();
 
   if (traits.yaw_rate_active)
-    ctx_.yaw_ctrl.Process(commanded_steering_, sw, mw, dt_ms);
+    ctx_.yaw_ctrl.Process(stab_cfg_, commanded_steering_, sw, mw, dt_ms,
+                          commanded_throttle_ < 0.0f);
   if (traits.pitch_comp_active)
-    ctx_.pitch_ctrl.Process(commanded_throttle_, sw);
+    ctx_.pitch_ctrl.Process(stab_cfg_, commanded_throttle_, sw);
   if (traits.slip_angle_active)
-    ctx_.slip_ctrl.Process(commanded_throttle_, sw, mw, dt_ms);
+    ctx_.slip_ctrl.Process(stab_cfg_, commanded_throttle_, sw, mw, dt_ms);
   if (traits.oversteer_guard_active)
-    ctx_.oversteer_guard.Process(commanded_throttle_, dt_ms,
+    ctx_.oversteer_guard.Process(stab_cfg_, commanded_throttle_, dt_ms,
                                  traits.oversteer_reduces_throttle);
 }
 
-void ControlLoopProcessor::HandleFailsafe() {
-  if (!ctx_.platform.FailsafeUpdate(sensors_.rc_active, sensors_.wifi_active))
-    return;
+bool ControlLoopProcessor::HandleFailsafe() {
+  if (!ctx_.platform.FailsafeUpdate(sensors_.rc_active, sensors_.wifi_active)) {
+    failsafe_was_active_ = false;
+    return false;
+  }
 
   commanded_throttle_ = 0.0f;
   commanded_steering_ = 0.0f;
   applied_throttle_ = 0.0f;
   applied_steering_ = 0.0f;
-  ctx_.yaw_ctrl.Reset();
-  ctx_.slip_ctrl.Reset();
-  ctx_.oversteer_guard.Reset();
-  ctx_.kids_processor.Reset();
-  ctx_.ekf.Reset();
-  if (ctx_.stab_mgr) ctx_.stab_mgr->ResetWeights();
-  if (ctx_.telem_mgr) ctx_.telem_mgr->ResetLastLogTime();
-  ctx_.auto_drive.StopAll();
+
+  // Сброс подсистем — однократно на переходе Inactive→Active.
+  // Повторять каждые 2 мс бессмысленно (EKF/ПИД и так пусты), а EKF
+  // при длительном failsafe может продолжать оценку без помех.
+  if (!failsafe_was_active_) {
+    failsafe_was_active_ = true;
+    ctx_.yaw_ctrl.Reset();
+    ctx_.slip_ctrl.Reset();
+    ctx_.oversteer_guard.Reset();
+    ctx_.kids_processor.Reset();
+    ctx_.ekf.Reset();
+    if (ctx_.stab_mgr) ctx_.stab_mgr->ResetWeights();
+    if (ctx_.telem_mgr) ctx_.telem_mgr->ResetLastLogTime();
+    ctx_.auto_drive.StopAll();
+  }
+
+  // Нейтраль удерживается каждый тик (defense-in-depth)
   ctx_.platform.SetPwmNeutral();
+  return true;
 }
 
 void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
@@ -172,6 +224,9 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
                                        drive_mode, applied_throttle_,
                                        applied_steering_, commanded_throttle_,
                                        commanded_steering_);
+    // FW-RF8: failsafe в снимок — чтобы JSON строился в задаче телеметрии без
+    // обращения к платформе из чужого потока.
+    snap.failsafe = ctx_.platform.FailsafeIsActive();
     ctx_.telem_handler->SendTelemetry(now, snap);
   }
 
@@ -189,5 +244,25 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
     }
   }
 }
+
+#ifdef RC_PROFILE_LOOP
+void ControlLoopProcessor::EmitProfile(uint32_t loops) {
+  if (loops == 0) return;
+  LogFormat fmt;
+  fmt << "PROF(us/iter): comp=" << (prof_components_us_ / loops)
+      << " sens=" << (prof_sensors_us_ / loops)
+      << " ctrl=" << (prof_control_us_ / loops)
+      << " stab=" << (prof_stab_us_ / loops)
+      << " pwm=" << (prof_pwm_us_ / loops)
+      << " telem=" << (prof_telem_us_ / loops);
+  ctx_.platform.Log(LogLevel::Info, fmt.str());
+  prof_components_us_ = 0;
+  prof_sensors_us_ = 0;
+  prof_control_us_ = 0;
+  prof_stab_us_ = 0;
+  prof_pwm_us_ = 0;
+  prof_telem_us_ = 0;
+}
+#endif
 
 }  // namespace rc_vehicle

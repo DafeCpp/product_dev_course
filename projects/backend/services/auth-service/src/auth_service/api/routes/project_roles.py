@@ -259,6 +259,8 @@ async def grant_role_to_member(request: web.Request) -> web.Response:
         user_id = UUID(request.match_info["user_id"])
         
         data = await read_json(request)
+        if "role_id" not in data:
+            return web.json_response({"error": "role_id is required"}, status=400)
         role_id = UUID(data["role_id"])
         expires_at = data.get("expires_at")
         if expires_at:

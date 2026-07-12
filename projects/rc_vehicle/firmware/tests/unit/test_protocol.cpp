@@ -26,8 +26,8 @@ TEST(ProtocolTest, BuildTelemetryFrame) {
   std::array<uint8_t, 32> buffer{};
   auto result = Protocol::BuildTelemetry(buffer, data);
 
-  ASSERT_TRUE(IsOk(result)) << "BuildTelemetry should succeed";
-  EXPECT_EQ(GetValue(result), 23) << "Expected frame size is 23 bytes";
+  ASSERT_TRUE(result.has_value()) << "BuildTelemetry should succeed";
+  EXPECT_EQ((*result), 23) << "Expected frame size is 23 bytes";
 
   // Verify frame structure
   EXPECT_EQ(buffer[0], FRAME_PREFIX_0) << "First prefix byte should be 0xAA";
@@ -42,13 +42,13 @@ TEST(ProtocolTest, ParseTelemetryFrame) {
   TelemetryData original{.seq = 100, .status = 0x05, .ax = 2000, .ay = -1000};
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildTelemetry(buffer, original);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   // Parse it back
   auto parse_result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsOk(parse_result)) << "ParseTelemetry should succeed";
+  ASSERT_TRUE(parse_result.has_value()) << "ParseTelemetry should succeed";
 
-  auto parsed = GetValue(parse_result);
+  auto parsed = (*parse_result);
   EXPECT_EQ(parsed.seq, original.seq) << "Sequence number should match";
   EXPECT_EQ(parsed.status, original.status) << "Status should match";
   EXPECT_EQ(parsed.ax, original.ax) << "Accelerometer X should match";
@@ -59,15 +59,15 @@ TEST(ProtocolTest, DetectCorruptedCRC) {
   TelemetryData data{.seq = 1};
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildTelemetry(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   // Corrupt CRC (last 2 bytes)
-  size_t frame_size = GetValue(build_result);
+  size_t frame_size = (*build_result);
   buffer[frame_size - 2] ^= 0xFF;
 
   auto parse_result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(parse_result)) << "Should detect corrupted CRC";
-  EXPECT_EQ(GetError(parse_result), ParseError::CrcMismatch)
+  ASSERT_TRUE(!parse_result.has_value()) << "Should detect corrupted CRC";
+  EXPECT_EQ(parse_result.error(), ParseError::CrcMismatch)
       << "Error should be CrcMismatch";
 }
 
@@ -106,8 +106,8 @@ TEST(ProtocolTest, BuildCommandFrame) {
   std::array<uint8_t, 32> buffer{};
   auto result = Protocol::BuildCommand(buffer, data);
 
-  ASSERT_TRUE(IsOk(result)) << "BuildCommand should succeed";
-  EXPECT_EQ(GetValue(result), 15) << "Expected frame size is 15 bytes";
+  ASSERT_TRUE(result.has_value()) << "BuildCommand should succeed";
+  EXPECT_EQ((*result), 15) << "Expected frame size is 15 bytes";
 
   // Verify frame structure
   EXPECT_EQ(buffer[0], FRAME_PREFIX_0);
@@ -120,12 +120,12 @@ TEST(ProtocolTest, ParseCommandFrame) {
   CommandData original{.seq = 50, .throttle = 0.75f, .steering = 0.25f};
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildCommand(buffer, original);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseCommand(buffer);
-  ASSERT_TRUE(IsOk(parse_result)) << "ParseCommand should succeed";
+  ASSERT_TRUE(parse_result.has_value()) << "ParseCommand should succeed";
 
-  auto parsed = GetValue(parse_result);
+  auto parsed = (*parse_result);
   // Note: seq is auto-incremented by BuildCommand, not taken from original
   EXPECT_GE(parsed.seq, 0) << "Sequence should be valid";
   EXPECT_NEAR(parsed.throttle, original.throttle, 0.01f)
@@ -152,19 +152,19 @@ TEST(ProtocolTest, CommandClamping) {
 TEST(ProtocolTest, BuildAndParsePing) {
   std::array<uint8_t, 16> buffer{};
   auto build_result = Protocol::BuildPing(buffer);
-  ASSERT_TRUE(IsOk(build_result)) << "BuildPing should succeed";
+  ASSERT_TRUE(build_result.has_value()) << "BuildPing should succeed";
 
   auto parse_result = Protocol::ParsePing(buffer);
-  ASSERT_TRUE(IsOk(parse_result)) << "ParsePing should succeed";
+  ASSERT_TRUE(parse_result.has_value()) << "ParsePing should succeed";
 }
 
 TEST(ProtocolTest, BuildAndParsePong) {
   std::array<uint8_t, 16> buffer{};
   auto build_result = Protocol::BuildPong(buffer);
-  ASSERT_TRUE(IsOk(build_result)) << "BuildPong should succeed";
+  ASSERT_TRUE(build_result.has_value()) << "BuildPong should succeed";
 
   auto parse_result = Protocol::ParsePong(buffer);
-  ASSERT_TRUE(IsOk(parse_result)) << "ParsePong should succeed";
+  ASSERT_TRUE(parse_result.has_value()) << "ParsePong should succeed";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -176,12 +176,12 @@ TEST(ProtocolTest, BuildAndParseLog) {
   std::array<uint8_t, 256> buffer{};
 
   auto build_result = Protocol::BuildLog(buffer, msg);
-  ASSERT_TRUE(IsOk(build_result)) << "BuildLog should succeed";
+  ASSERT_TRUE(build_result.has_value()) << "BuildLog should succeed";
 
   auto parse_result = Protocol::ParseLog(buffer);
-  ASSERT_TRUE(IsOk(parse_result)) << "ParseLog should succeed";
+  ASSERT_TRUE(parse_result.has_value()) << "ParseLog should succeed";
 
-  auto parsed_msg = GetValue(parse_result);
+  auto parsed_msg = (*parse_result);
   EXPECT_EQ(parsed_msg, msg) << "Log message should match";
 }
 
@@ -191,13 +191,13 @@ TEST(ProtocolTest, LogMessageTruncation) {
   std::array<uint8_t, 256> buffer{};
 
   auto build_result = Protocol::BuildLog(buffer, long_msg);
-  ASSERT_TRUE(IsOk(build_result))
+  ASSERT_TRUE(build_result.has_value())
       << "BuildLog should succeed even with long message";
 
   auto parse_result = Protocol::ParseLog(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed_msg = GetValue(parse_result);
+  auto parsed_msg = (*parse_result);
   EXPECT_LE(parsed_msg.size(), LOG_MAX_PAYLOAD)
       << "Message should be truncated to LOG_MAX_PAYLOAD";
 }
@@ -232,8 +232,8 @@ TEST(ProtocolTest, BufferTooSmall) {
   std::array<uint8_t, 10> small_buffer{};  // Too small for telemetry frame
 
   auto result = Protocol::BuildTelemetry(small_buffer, data);
-  ASSERT_TRUE(IsError(result)) << "Should fail with small buffer";
-  EXPECT_EQ(GetError(result), ParseError::BufferTooSmall);
+  ASSERT_TRUE(!result.has_value()) << "Should fail with small buffer";
+  EXPECT_EQ(result.error(), ParseError::BufferTooSmall);
 }
 
 TEST(ProtocolTest, InvalidPrefix) {
@@ -242,8 +242,8 @@ TEST(ProtocolTest, InvalidPrefix) {
   buffer[1] = 0xFF;
 
   auto result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(result)) << "Should fail with invalid prefix";
-  EXPECT_EQ(GetError(result), ParseError::InvalidPrefix);
+  ASSERT_TRUE(!result.has_value()) << "Should fail with invalid prefix";
+  EXPECT_EQ(result.error(), ParseError::InvalidPrefix);
 }
 
 TEST(ProtocolTest, InsufficientData) {
@@ -254,7 +254,7 @@ TEST(ProtocolTest, InsufficientData) {
   buffer[3] = static_cast<uint8_t>(MessageType::Telemetry);
 
   auto result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(result)) << "Should fail with insufficient data";
+  ASSERT_TRUE(!result.has_value()) << "Should fail with insufficient data";
   // Parser checks header first, then payload length, so we get InvalidVersion
   // or InsufficientData depending on implementation order. Just verify it's an
   // error.
@@ -300,9 +300,8 @@ TEST(ProtocolTest, FrameBuilderWithEmptyPayload) {
 
   auto result = builder.Build(buffer, std::span<const uint8_t>());
 
-  ASSERT_TRUE(IsOk(result)) << "Should build frame with empty payload";
-  EXPECT_EQ(GetValue(result), MIN_FRAME_SIZE)
-      << "Frame size should be header + CRC";
+  ASSERT_TRUE(result.has_value()) << "Should build frame with empty payload";
+  EXPECT_EQ((*result), MIN_FRAME_SIZE) << "Frame size should be header + CRC";
 }
 
 TEST(ProtocolTest, FrameBuilderWithMaxPayload) {
@@ -313,8 +312,8 @@ TEST(ProtocolTest, FrameBuilderWithMaxPayload) {
   std::array<uint8_t, 256> buffer{};
   auto result = builder.Build(buffer, payload);
 
-  ASSERT_TRUE(IsOk(result)) << "Should build frame with max payload";
-  EXPECT_EQ(GetValue(result), HEADER_SIZE + LOG_MAX_PAYLOAD + CRC_SIZE);
+  ASSERT_TRUE(result.has_value()) << "Should build frame with max payload";
+  EXPECT_EQ((*result), HEADER_SIZE + LOG_MAX_PAYLOAD + CRC_SIZE);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -330,8 +329,8 @@ TEST(ProtocolTest, ValidateHeaderWithInvalidVersion) {
 
   auto result = FrameParser::ValidateHeader(buffer);
 
-  ASSERT_TRUE(IsError(result)) << "Should reject invalid version";
-  EXPECT_EQ(GetError(result), ParseError::InvalidVersion);
+  ASSERT_TRUE(!result.has_value()) << "Should reject invalid version";
+  EXPECT_EQ(result.error(), ParseError::InvalidVersion);
 }
 
 TEST(ProtocolTest, GetPayloadLengthLittleEndian) {
@@ -345,8 +344,8 @@ TEST(ProtocolTest, GetPayloadLengthLittleEndian) {
 
   auto result = FrameParser::GetPayloadLength(buffer);
 
-  ASSERT_TRUE(IsOk(result));
-  EXPECT_EQ(GetValue(result), 0x1234) << "Should parse little-endian length";
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ((*result), 0x1234) << "Should parse little-endian length";
 }
 
 TEST(ProtocolTest, FindFrameStartAtBeginning) {
@@ -401,12 +400,12 @@ TEST(ProtocolTest, TelemetryWithNegativeValues) {
 
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildTelemetry(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed = GetValue(parse_result);
+  auto parsed = (*parse_result);
   EXPECT_EQ(parsed.ax, data.ax) << "Negative ax should be preserved";
   EXPECT_EQ(parsed.ay, data.ay) << "Negative ay should be preserved";
   EXPECT_EQ(parsed.az, data.az) << "Negative az should be preserved";
@@ -427,12 +426,12 @@ TEST(ProtocolTest, TelemetryWithMaxValues) {
 
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildTelemetry(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed = GetValue(parse_result);
+  auto parsed = (*parse_result);
   EXPECT_EQ(parsed.seq, data.seq);
   EXPECT_EQ(parsed.status, data.status);
   EXPECT_EQ(parsed.ax, data.ax);
@@ -469,8 +468,8 @@ TEST(ProtocolTest, TelemetryInvalidPayloadLength) {
   buffer[5] = 0;
 
   auto result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(result));
-  EXPECT_EQ(GetError(result), ParseError::InvalidPayloadLength);
+  ASSERT_TRUE(!result.has_value());
+  EXPECT_EQ(result.error(), ParseError::InvalidPayloadLength);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -482,12 +481,12 @@ TEST(ProtocolTest, CommandWithZeroValues) {
 
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildCommand(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseCommand(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed = GetValue(parse_result);
+  auto parsed = (*parse_result);
   EXPECT_NEAR(parsed.throttle, 0.0f, 0.001f);
   EXPECT_NEAR(parsed.steering, 0.0f, 0.001f);
 }
@@ -497,12 +496,12 @@ TEST(ProtocolTest, CommandWithMaxValues) {
 
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildCommand(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseCommand(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed = GetValue(parse_result);
+  auto parsed = (*parse_result);
   EXPECT_NEAR(parsed.throttle, 1.0f, 0.001f);
   EXPECT_NEAR(parsed.steering, 1.0f, 0.001f);
 }
@@ -512,12 +511,12 @@ TEST(ProtocolTest, CommandWithMinValues) {
 
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildCommand(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseCommand(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed = GetValue(parse_result);
+  auto parsed = (*parse_result);
   EXPECT_NEAR(parsed.throttle, -1.0f, 0.001f);
   EXPECT_NEAR(parsed.steering, -1.0f, 0.001f);
 }
@@ -549,17 +548,17 @@ TEST(ProtocolTest, CommandSequenceIncrement) {
   auto result1 = Protocol::BuildCommand(buffer1, data1);
   auto result2 = Protocol::BuildCommand(buffer2, data2);
 
-  ASSERT_TRUE(IsOk(result1));
-  ASSERT_TRUE(IsOk(result2));
+  ASSERT_TRUE(result1.has_value());
+  ASSERT_TRUE(result2.has_value());
 
   auto parsed1 = Protocol::ParseCommand(buffer1);
   auto parsed2 = Protocol::ParseCommand(buffer2);
 
-  ASSERT_TRUE(IsOk(parsed1));
-  ASSERT_TRUE(IsOk(parsed2));
+  ASSERT_TRUE(parsed1.has_value());
+  ASSERT_TRUE(parsed2.has_value());
 
   // Sequence should auto-increment
-  EXPECT_EQ(GetValue(parsed2).seq, GetValue(parsed1).seq + 1)
+  EXPECT_EQ((*parsed2).seq, (*parsed1).seq + 1)
       << "Command sequence should auto-increment";
 }
 
@@ -573,8 +572,8 @@ TEST(ProtocolTest, CommandInvalidPayloadLength) {
   buffer[5] = 0;
 
   auto result = Protocol::ParseCommand(buffer);
-  ASSERT_TRUE(IsError(result));
-  EXPECT_EQ(GetError(result), ParseError::InvalidPayloadLength);
+  ASSERT_TRUE(!result.has_value());
+  EXPECT_EQ(result.error(), ParseError::InvalidPayloadLength);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -586,12 +585,12 @@ TEST(ProtocolTest, LogEmptyMessage) {
   std::array<uint8_t, 256> buffer{};
 
   auto build_result = Protocol::BuildLog(buffer, msg);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseLog(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed_msg = GetValue(parse_result);
+  auto parsed_msg = (*parse_result);
   EXPECT_EQ(parsed_msg.size(), 0) << "Empty message should be preserved";
 }
 
@@ -600,12 +599,12 @@ TEST(ProtocolTest, LogWithSpecialCharacters) {
   std::array<uint8_t, 256> buffer{};
 
   auto build_result = Protocol::BuildLog(buffer, msg);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseLog(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed_msg = GetValue(parse_result);
+  auto parsed_msg = (*parse_result);
   EXPECT_EQ(parsed_msg, msg) << "Special characters should be preserved";
 }
 
@@ -614,12 +613,12 @@ TEST(ProtocolTest, LogExactlyMaxLength) {
   std::array<uint8_t, 256> buffer{};
 
   auto build_result = Protocol::BuildLog(buffer, msg);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParseLog(buffer);
-  ASSERT_TRUE(IsOk(parse_result));
+  ASSERT_TRUE(parse_result.has_value());
 
-  auto parsed_msg = GetValue(parse_result);
+  auto parsed_msg = (*parse_result);
   EXPECT_EQ(parsed_msg.size(), LOG_MAX_PAYLOAD);
   EXPECT_EQ(parsed_msg, msg);
 }
@@ -634,8 +633,8 @@ TEST(ProtocolTest, LogInvalidPayloadLengthTooLarge) {
   buffer[5] = ((LOG_MAX_PAYLOAD + 1) >> 8) & 0xFF;
 
   auto result = Protocol::ParseLog(buffer);
-  ASSERT_TRUE(IsError(result));
-  EXPECT_EQ(GetError(result), ParseError::InvalidPayloadLength);
+  ASSERT_TRUE(!result.has_value());
+  EXPECT_EQ(result.error(), ParseError::InvalidPayloadLength);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -646,18 +645,16 @@ TEST(ProtocolTest, PingFrameSize) {
   std::array<uint8_t, 16> buffer{};
   auto result = Protocol::BuildPing(buffer);
 
-  ASSERT_TRUE(IsOk(result));
-  EXPECT_EQ(GetValue(result), MIN_FRAME_SIZE)
-      << "Ping frame should be minimum size";
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ((*result), MIN_FRAME_SIZE) << "Ping frame should be minimum size";
 }
 
 TEST(ProtocolTest, PongFrameSize) {
   std::array<uint8_t, 16> buffer{};
   auto result = Protocol::BuildPong(buffer);
 
-  ASSERT_TRUE(IsOk(result));
-  EXPECT_EQ(GetValue(result), MIN_FRAME_SIZE)
-      << "Pong frame should be minimum size";
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ((*result), MIN_FRAME_SIZE) << "Pong frame should be minimum size";
 }
 
 TEST(ProtocolTest, PingWithNonZeroPayload) {
@@ -670,8 +667,8 @@ TEST(ProtocolTest, PingWithNonZeroPayload) {
   buffer[5] = 0;
 
   auto result = Protocol::ParsePing(buffer);
-  ASSERT_TRUE(IsError(result));
-  EXPECT_EQ(GetError(result), ParseError::InvalidPayloadLength)
+  ASSERT_TRUE(!result.has_value());
+  EXPECT_EQ(result.error(), ParseError::InvalidPayloadLength)
       << "Ping should have zero payload";
 }
 
@@ -685,8 +682,8 @@ TEST(ProtocolTest, PongWithNonZeroPayload) {
   buffer[5] = 0;
 
   auto result = Protocol::ParsePong(buffer);
-  ASSERT_TRUE(IsError(result));
-  EXPECT_EQ(GetError(result), ParseError::InvalidPayloadLength)
+  ASSERT_TRUE(!result.has_value());
+  EXPECT_EQ(result.error(), ParseError::InvalidPayloadLength)
       << "Pong should have zero payload";
 }
 
@@ -699,23 +696,23 @@ TEST(ProtocolTest, ParseWrongMessageType) {
   CommandData cmd{.seq = 1, .throttle = 0.5f, .steering = 0.0f};
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildCommand(buffer, cmd);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   // Try to parse as Telemetry
   auto parse_result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(parse_result));
-  EXPECT_EQ(GetError(parse_result), ParseError::InvalidType)
+  ASSERT_TRUE(!parse_result.has_value());
+  EXPECT_EQ(parse_result.error(), ParseError::InvalidType)
       << "Should reject wrong message type";
 }
 
 TEST(ProtocolTest, ParsePingAsPong) {
   std::array<uint8_t, 16> buffer{};
   auto build_result = Protocol::BuildPing(buffer);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   auto parse_result = Protocol::ParsePong(buffer);
-  ASSERT_TRUE(IsError(parse_result));
-  EXPECT_EQ(GetError(parse_result), ParseError::InvalidType);
+  ASSERT_TRUE(!parse_result.has_value());
+  EXPECT_EQ(parse_result.error(), ParseError::InvalidType);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -726,37 +723,37 @@ TEST(ProtocolTest, CorruptedPayload) {
   TelemetryData data{.seq = 42, .ax = 1000};
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildTelemetry(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   // Corrupt payload (not CRC)
   buffer[10] ^= 0xFF;
 
   auto parse_result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(parse_result));
-  EXPECT_EQ(GetError(parse_result), ParseError::CrcMismatch);
+  ASSERT_TRUE(!parse_result.has_value());
+  EXPECT_EQ(parse_result.error(), ParseError::CrcMismatch);
 }
 
 TEST(ProtocolTest, PartialFrame) {
   TelemetryData data{.seq = 1};
   std::array<uint8_t, 32> buffer{};
   auto build_result = Protocol::BuildTelemetry(buffer, data);
-  ASSERT_TRUE(IsOk(build_result));
+  ASSERT_TRUE(build_result.has_value());
 
   // Create partial frame (only first 10 bytes)
   std::array<uint8_t, 10> partial{};
   std::copy_n(buffer.begin(), 10, partial.begin());
 
   auto parse_result = Protocol::ParseTelemetry(partial);
-  ASSERT_TRUE(IsError(parse_result));
-  EXPECT_EQ(GetError(parse_result), ParseError::InsufficientData);
+  ASSERT_TRUE(!parse_result.has_value());
+  EXPECT_EQ(parse_result.error(), ParseError::InsufficientData);
 }
 
 TEST(ProtocolTest, AllZeroBuffer) {
   std::array<uint8_t, 32> buffer{};  // All zeros
 
   auto result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(result));
-  EXPECT_EQ(GetError(result), ParseError::InvalidPrefix);
+  ASSERT_TRUE(!result.has_value());
+  EXPECT_EQ(result.error(), ParseError::InvalidPrefix);
 }
 
 TEST(ProtocolTest, RandomGarbage) {
@@ -766,7 +763,7 @@ TEST(ProtocolTest, RandomGarbage) {
   }
 
   auto result = Protocol::ParseTelemetry(buffer);
-  ASSERT_TRUE(IsError(result)) << "Should reject random garbage";
+  ASSERT_TRUE(!result.has_value()) << "Should reject random garbage";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -786,12 +783,12 @@ TEST(ProtocolTest, TelemetryRoundTripMultiple) {
 
     std::array<uint8_t, 32> buffer{};
     auto build_result = Protocol::BuildTelemetry(buffer, original);
-    ASSERT_TRUE(IsOk(build_result));
+    ASSERT_TRUE(build_result.has_value());
 
     auto parse_result = Protocol::ParseTelemetry(buffer);
-    ASSERT_TRUE(IsOk(parse_result));
+    ASSERT_TRUE(parse_result.has_value());
 
-    auto parsed = GetValue(parse_result);
+    auto parsed = (*parse_result);
     EXPECT_EQ(parsed.seq, original.seq);
     EXPECT_EQ(parsed.status, original.status);
     EXPECT_EQ(parsed.ax, original.ax);
@@ -808,12 +805,12 @@ TEST(ProtocolTest, CommandRoundTripMultiple) {
 
     std::array<uint8_t, 32> buffer{};
     auto build_result = Protocol::BuildCommand(buffer, original);
-    ASSERT_TRUE(IsOk(build_result));
+    ASSERT_TRUE(build_result.has_value());
 
     auto parse_result = Protocol::ParseCommand(buffer);
-    ASSERT_TRUE(IsOk(parse_result));
+    ASSERT_TRUE(parse_result.has_value());
 
-    auto parsed = GetValue(parse_result);
+    auto parsed = (*parse_result);
     EXPECT_NEAR(parsed.throttle, std::clamp(value, -1.0f, 1.0f), 0.001f);
     EXPECT_NEAR(parsed.steering, std::clamp(-value, -1.0f, 1.0f), 0.001f);
   }

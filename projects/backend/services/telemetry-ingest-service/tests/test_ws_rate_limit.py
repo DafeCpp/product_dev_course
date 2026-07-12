@@ -20,9 +20,27 @@ import time
 from uuid import UUID, uuid4
 
 import asyncpg
-import pytest
 
+from telemetry_ingest_service.middleware.rate_limit_config import RateLimitConfig
 from telemetry_ingest_service.middleware.ws_rate_limit import RateLimitExceeded, WsRateLimiter
+
+
+def _ws_config(max_messages: int, max_readings: int, window: float) -> RateLimitConfig:
+    """Build a config with the given WS limits (REST fields irrelevant here)."""
+    return RateLimitConfig(
+        rest_max_requests=0,
+        rest_max_readings=0,
+        rest_window_seconds=60.0,
+        ws_max_messages=max_messages,
+        ws_max_readings=max_readings,
+        ws_window_seconds=window,
+        spool_flush_timeout_seconds=5.0,
+        ws_max_message_bytes=1048576,
+    )
+
+
+def _ws_limiter(max_messages: int, max_readings: int, window: float) -> WsRateLimiter:
+    return WsRateLimiter(_ws_config(max_messages, max_readings, window))
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +85,7 @@ async def _seed(
 
 
 def test_limiter_accepts_within_limits():
-    limiter = WsRateLimiter(max_messages=5, max_readings=100, window_seconds=60.0)
+    limiter = _ws_limiter(5, 100, 60.0)
     uid = uuid4()
     for _ in range(5):
         result = limiter.check(uid, 10)
@@ -75,7 +93,7 @@ def test_limiter_accepts_within_limits():
 
 
 def test_limiter_messages_exceeded():
-    limiter = WsRateLimiter(max_messages=2, max_readings=10_000, window_seconds=60.0)
+    limiter = _ws_limiter(2, 10_000, 60.0)
     uid = uuid4()
     limiter.check(uid, 1)
     limiter.check(uid, 1)
@@ -86,7 +104,7 @@ def test_limiter_messages_exceeded():
 
 
 def test_limiter_readings_exceeded():
-    limiter = WsRateLimiter(max_messages=1_000, max_readings=5, window_seconds=60.0)
+    limiter = _ws_limiter(1_000, 5, 60.0)
     uid = uuid4()
     limiter.check(uid, 3)
     result = limiter.check(uid, 3)  # would bring total to 6 > 5
@@ -96,7 +114,7 @@ def test_limiter_readings_exceeded():
 
 
 def test_limiter_window_resets(monkeypatch):
-    limiter = WsRateLimiter(max_messages=1, max_readings=100, window_seconds=1.0)
+    limiter = _ws_limiter(1, 100, 1.0)
     uid = uuid4()
     limiter.check(uid, 1)
 
@@ -108,7 +126,7 @@ def test_limiter_window_resets(monkeypatch):
 
 
 def test_limiter_per_sensor_isolation():
-    limiter = WsRateLimiter(max_messages=1, max_readings=100, window_seconds=60.0)
+    limiter = _ws_limiter(1, 100, 60.0)
     sensor_a = uuid4()
     sensor_b = uuid4()
 
@@ -119,7 +137,7 @@ def test_limiter_per_sensor_isolation():
 
 
 def test_limiter_retry_after_is_non_negative():
-    limiter = WsRateLimiter(max_messages=1, max_readings=100, window_seconds=10.0)
+    limiter = _ws_limiter(1, 100, 10.0)
     uid = uuid4()
     limiter.check(uid, 1)
     result = limiter.check(uid, 1)
@@ -129,7 +147,7 @@ def test_limiter_retry_after_is_non_negative():
 
 def test_limiter_rejected_frame_does_not_increment_readings():
     """A rejected frame must not change the readings counter."""
-    limiter = WsRateLimiter(max_messages=1_000, max_readings=5, window_seconds=60.0)
+    limiter = _ws_limiter(1_000, 5, 60.0)
     uid = uuid4()
     limiter.check(uid, 3)   # readings = 3
 
@@ -141,6 +159,35 @@ def test_limiter_rejected_frame_does_not_increment_readings():
     assert result is None
 
 
+def test_ws_raising_limit_at_runtime_unblocks_without_rebuilding():
+    """Mutating the shared config lifts the WS limit on the next check."""
+    config = _ws_config(1, 100, 60.0)
+    limiter = WsRateLimiter(config)
+    uid = uuid4()
+
+    assert limiter.check(uid, 1) is None
+    assert isinstance(limiter.check(uid, 1), RateLimitExceeded)  # message quota hit
+
+    config.ws_max_messages = 5  # raise live
+
+    assert limiter.check(uid, 1) is None
+
+
+def test_ws_zero_messages_limit_means_unlimited():
+    """ws_max_messages=0 disables the message counter (unlimited)."""
+    limiter = _ws_limiter(0, 1000, 60.0)
+    uid = uuid4()
+    for _ in range(1000):
+        assert limiter.check(uid, 1) is None
+
+
+def test_ws_zero_readings_limit_means_unlimited():
+    """ws_max_readings=0 disables the readings counter (unlimited)."""
+    limiter = _ws_limiter(1_000_000, 0, 60.0)
+    uid = uuid4()
+    assert limiter.check(uid, 10_000_000) is None
+
+
 # ---------------------------------------------------------------------------
 # Integration tests — DB required
 # ---------------------------------------------------------------------------
@@ -148,9 +195,7 @@ def test_limiter_rejected_frame_does_not_increment_readings():
 
 async def test_ws_rate_limited_sends_error_frame(service_client, pgsql, monkeypatch):
     """When the message limit is 1, the second frame gets a rate_limited error."""
-    from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
-
-    tight = WsRateLimiter(max_messages=1, max_readings=100_000, window_seconds=60.0)
+    tight = _ws_limiter(1, 100_000, 60.0)
     monkeypatch.setattr(
         "telemetry_ingest_service.api.routes.ws_ingest._ws_limiter",
         tight,
@@ -200,9 +245,7 @@ async def test_ws_rate_limited_sends_error_frame(service_client, pgsql, monkeypa
 
 async def test_ws_rate_limited_connection_stays_alive(service_client, pgsql, monkeypatch):
     """After a rate_limited error the client can keep the connection open."""
-    from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
-
-    tight = WsRateLimiter(max_messages=1, max_readings=100_000, window_seconds=60.0)
+    tight = _ws_limiter(1, 100_000, 60.0)
     monkeypatch.setattr(
         "telemetry_ingest_service.api.routes.ws_ingest._ws_limiter",
         tight,
@@ -249,9 +292,7 @@ async def test_ws_rate_limited_connection_stays_alive(service_client, pgsql, mon
 
 async def test_ws_rate_limit_sensor_isolation(service_client, pgsql, monkeypatch):
     """Two sensors share a rate limiter instance but have independent quotas."""
-    from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
-
-    tight = WsRateLimiter(max_messages=1, max_readings=100_000, window_seconds=60.0)
+    tight = _ws_limiter(1, 100_000, 60.0)
     monkeypatch.setattr(
         "telemetry_ingest_service.api.routes.ws_ingest._ws_limiter",
         tight,

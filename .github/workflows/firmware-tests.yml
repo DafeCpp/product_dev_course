@@ -1,0 +1,75 @@
+name: Firmware Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/rc_vehicle/firmware/**
+      - projects/firmware_common/**
+      - .github/workflows/firmware-tests.yml
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/rc_vehicle/firmware/**
+      - projects/firmware_common/**
+      - .github/workflows/firmware-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  firmware-tests:
+    name: GTest (host)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/rc_vehicle/firmware/tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run unit tests
+        run: ./build/unit_tests --gtest_output=xml:test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-test-results
+          path: projects/rc_vehicle/firmware/tests/test-results.xml
+          if-no-files-found: ignore
+
+  sil-sim:
+    name: SIL (sim_host + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build sim_host
+        working-directory: projects/rc_vehicle/firmware/tests
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)" --target sim_host
+
+      - name: Install sim package
+        working-directory: projects/rc_vehicle/firmware/sim
+        run: pip install -e ".[dev]"
+
+      - name: Run pytest (model + replay + closed-loop + validation)
+        working-directory: projects/rc_vehicle/firmware/sim
+        env:
+          SIM_HOST_BIN: ${{ github.workspace }}/projects/rc_vehicle/firmware/tests/build/sim_host
+        run: python -m pytest -q

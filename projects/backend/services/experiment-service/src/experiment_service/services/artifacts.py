@@ -50,8 +50,8 @@ class ArtifactService:
             is_restricted=is_restricted,
         )
 
-    async def get_artifact(self, artifact_id: UUID) -> Artifact:
-        artifact = await self._repository.get(artifact_id)
+    async def get_artifact(self, project_id: UUID, artifact_id: UUID) -> Artifact:
+        artifact = await self._repository.get(project_id, artifact_id)
         if artifact is None:
             raise NotFoundError("Artifact not found")
         return artifact
@@ -71,18 +71,19 @@ class ArtifactService:
             offset=offset,
         )
 
-    async def delete_artifact(self, artifact_id: UUID) -> None:
-        deleted = await self._repository.delete(artifact_id)
+    async def delete_artifact(self, project_id: UUID, artifact_id: UUID) -> None:
+        deleted = await self._repository.delete(project_id, artifact_id)
         if not deleted:
             raise NotFoundError("Artifact not found")
 
     async def approve_artifact(
         self,
+        project_id: UUID,
         artifact_id: UUID,
         user_id: UUID,
         note: str | None = None,
     ) -> Artifact:
-        artifact = await self._repository.approve(artifact_id, user_id, note)
+        artifact = await self._repository.approve(project_id, artifact_id, user_id, note)
         if artifact is None:
             raise NotFoundError("Artifact not found")
         return artifact

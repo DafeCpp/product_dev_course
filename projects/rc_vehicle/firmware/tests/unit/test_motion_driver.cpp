@@ -247,6 +247,49 @@ TEST(MotionDriverTest, LinearRamp_ReachesTargetAtEnd) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// min_effective_throttle — только для LinearRamp (FW-R5)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(MotionDriverTest, LinearRamp_MinEffectiveThrottle_FloorsRampStart) {
+  MotionDriver d;
+  d.Start(LinearRampConfig(0.3f));  // min_effective_throttle = 0.15
+  // Первый тик: ramp = 0.3 * (0.002/1.5) ≈ 0.0004 → поднимается до пола
+  float thr = d.Update(0, 1.0f, 0, 0.002f);
+  EXPECT_FLOAT_EQ(thr, 0.15f);
+}
+
+TEST(MotionDriverTest, PidAccel_MinEffectiveThrottle_NotAppliedInRampPhase) {
+  MotionDriver d;
+  auto cfg = DefaultPidConfig(0.1f);
+  cfg.min_effective_throttle = 0.15f;
+  d.Start(cfg);
+  // Фаза A (open-loop рампа): ramp_rate=0.5, dt=0.002 → throttle = 0.001.
+  // Пол НЕ должен применяться — рампа остаётся плавной.
+  float thr = d.Update(0.0f, 1.0f, 0.0f, 0.002f);
+  EXPECT_GT(thr, 0.0f);
+  EXPECT_LT(thr, 0.01f);
+}
+
+TEST(MotionDriverTest, PidAccel_MinEffectiveThrottle_NotAppliedInPiPhase) {
+  MotionDriver d;
+  auto cfg = DefaultPidConfig(0.1f);
+  cfg.min_effective_throttle = 0.15f;
+  cfg.breakaway.confirm_ticks = 1;  // мгновенный breakaway
+  d.Start(cfg);
+
+  // Breakaway на первом тике → base_throttle ≈ 0.001
+  d.Update(0.05f, 1.0f, 0.0f, 0.002f);
+
+  // Фаза B: measured >> target → PI снижает выход к нулю.
+  // Пол НЕ должен мешать контроллеру опускать газ ниже 0.15.
+  float thr = 1.0f;
+  for (int i = 0; i < 50; ++i) {
+    thr = d.Update(0.5f, 1.0f, 0.0f, 0.002f);
+  }
+  EXPECT_LT(thr, 0.1f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Cruise
 // ═══════════════════════════════════════════════════════════════════════════
 

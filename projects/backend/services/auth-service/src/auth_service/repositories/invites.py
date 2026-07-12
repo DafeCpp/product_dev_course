@@ -64,12 +64,32 @@ class InviteRepository(BaseRepository):
             )
         return [InviteToken.from_row(dict(row)) for row in rows]
 
-    async def mark_used(self, token: UUID, user_id: UUID) -> InviteToken:
-        """Mark an invite token as used by the given user."""
+    async def claim(self, token: UUID) -> InviteToken | None:
+        """Atomically claim an unused, unexpired invite token.
+
+        Sets ``used_at`` only if the token is still unused and not expired.
+        Returns the updated token, or ``None`` if another caller already
+        claimed it (or it expired). This conditional ``UPDATE`` is the
+        single-use serialization point: concurrent registrations racing on the
+        same token will see exactly one ``RETURNING`` row.
+        """
         row = await self._fetchrow(
             """
             UPDATE invite_tokens
-            SET used_at = now(), used_by = $2
+            SET used_at = now()
+            WHERE token = $1 AND used_at IS NULL AND expires_at > now()
+            RETURNING id, token, created_by, email_hint, expires_at, used_at, used_by, created_at
+            """,
+            token,
+        )
+        return InviteToken.from_row(dict(row)) if row else None
+
+    async def mark_used(self, token: UUID, user_id: UUID) -> InviteToken:
+        """Record which user consumed an already-claimed invite token."""
+        row = await self._fetchrow(
+            """
+            UPDATE invite_tokens
+            SET used_by = $2
             WHERE token = $1
             RETURNING id, token, created_by, email_hint, expires_at, used_at, used_by, created_at
             """,
@@ -78,6 +98,41 @@ class InviteRepository(BaseRepository):
         )
         assert row is not None
         return InviteToken.from_row(dict(row))
+
+    async def unclaim(self, token: UUID) -> None:
+        """Release a previously claimed invite when user creation failed.
+
+        Only resets used_at when used_by IS NULL (no user was ever linked),
+        so a successfully consumed invite can never be recycled.
+        """
+        await self._execute(
+            """
+            UPDATE invite_tokens
+            SET used_at = NULL
+            WHERE token = $1 AND used_by IS NULL
+            """,
+            token,
+        )
+
+    async def claim_and_assign(self, token: UUID, user_id: UUID) -> InviteToken | None:
+        """Atomically claim an invite and record its consumer in one UPDATE.
+
+        Sets both ``used_at`` and ``used_by`` only if the token is still unused
+        and not expired. No intermediate state is possible: either both fields are
+        set (success) or neither is touched (another caller won the race or the
+        token expired). Returns ``None`` if the token could not be claimed.
+        """
+        row = await self._fetchrow(
+            """
+            UPDATE invite_tokens
+            SET used_at = now(), used_by = $2
+            WHERE token = $1 AND used_at IS NULL AND expires_at > now()
+            RETURNING id, token, created_by, email_hint, expires_at, used_at, used_by, created_at
+            """,
+            token,
+            user_id,
+        )
+        return InviteToken.from_row(dict(row)) if row else None
 
     async def delete(self, token: UUID) -> bool:
         """Delete an invite token. Returns True if a row was deleted."""

@@ -15,7 +15,7 @@
 - **mpu6050_spi.hpp / mpu6050_spi.cpp** — драйвер MPU-6050 по SPI: структура `ImuData`, класс `Mpu6050Spi(SpiDevice*)` с `Init()`, `Read(ImuData&)`, `ConvertToTelem(const ImuData&, int16_t&, ...)`.
 - **rc_vehicle_common.hpp** — утилиты PWM/RC: `rc_vehicle::PulseWidthUsFromNormalized(...)`, `NormalizedFromPulseWidthUs(...)`, `ClampNormalized(value)`. Используются в pwm_control и rc_input (ESP32-S3).
 - **failsafe_core.hpp / failsafe_core.cpp** — общая логика failsafe: `FailsafeUpdate(now_ms, rc_active, wifi_active)`, `FailsafeIsActive()`. Используется в control loop ESP32-S3.
-- **slew_rate.hpp** — ограничение скорости изменения: `ApplySlewRate(target, current, max_change_per_sec, dt_ms)`. Используется в control loop ESP32-S3.
+- **firmware_common/slew_rate.hpp** — общий ограничитель скорости изменения; RC-вызовы переводят `dt_ms` в секунды.
 
 Платформа ESP32-S3 использует:
 - **SPI (IMU):** `SpiBusEsp32` / `SpiDeviceEsp32` в `esp32_s3/main/spi_esp32.cpp` (ESP-IDF SPI master).

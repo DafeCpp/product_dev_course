@@ -1,8 +1,7 @@
 #pragma once
 
 #include <cstdint>
-
-#include "pid_controller.hpp"
+#include <firmware_common/pid_controller.hpp>
 
 namespace rc_vehicle {
 
@@ -40,28 +39,30 @@ class MotionDriver {
   /** Конфигурация ZUPT (Zero-velocity Update) для детекции остановки. */
   struct ZuptConfig {
     float accel_thresh{0.05f};  ///< |accel_mag − 1g| < thresh
-    float gyro_thresh{3.0f};   ///< |gyro_z| < thresh; 0 → без проверки гиро
+    float gyro_thresh{3.0f};    ///< |gyro_z| < thresh; 0 → без проверки гиро
   };
 
   /** Конфигурация фазы breakaway (только для AccelMode::Pid). */
   struct BreakawayConfig {
-    float ramp_rate{0.5f};          ///< Рост throttle [1/с] в open-loop рампе
-    float max_throttle{0.25f};      ///< Макс throttle при breakaway (fallback)
-    float accel_thresh_g{0.03f};    ///< Порог детекции отрыва [g]
-    int   confirm_ticks{25};        ///< Подтверждение отрыва (~50мс при 500Hz)
+    float ramp_rate{0.5f};        ///< Рост throttle [1/с] в open-loop рампе
+    float max_throttle{0.25f};    ///< Макс throttle при breakaway (fallback)
+    float accel_thresh_g{0.03f};  ///< Порог детекции отрыва [g]
+    int confirm_ticks{25};        ///< Подтверждение отрыва (~50мс при 500Hz)
   };
 
   /** Полная конфигурация одного прогона. */
   struct Config {
     AccelMode accel_mode{AccelMode::Pid};
-    PidController::Gains pid_gains{0.3f, 0.2f, 0.0f, 0.15f, 0.5f};
-    float target_value{0.1f};             ///< accel_g (Pid) или throttle (Ramp)
+    firmware_common::PidController::Gains pid_gains{0.3f, 0.2f, 0.0f, 0.15f,
+                                                    0.5f};
+    float target_value{0.1f};  ///< accel_g (Pid) или throttle (Ramp)
     float accel_duration_sec{1.5f};
-    float min_effective_throttle{0.0f};    ///< Только для LinearRamp; 0 → отключено
-    float brake_throttle{0.0f};            ///< 0 = coast, <0 = reverse
+    float min_effective_throttle{
+        0.0f};                   ///< Только для LinearRamp; 0 → отключено
+    float brake_throttle{0.0f};  ///< 0 = coast, <0 = reverse
     float brake_timeout_sec{3.0f};
     ZuptConfig zupt{};
-    BreakawayConfig breakaway{};           ///< Только для AccelMode::Pid
+    BreakawayConfig breakaway{};  ///< Только для AccelMode::Pid
   };
 
   MotionDriver() = default;
@@ -92,8 +93,8 @@ class MotionDriver {
    * @param dt_sec           Шаг времени (с)
    * @return throttle [-0.5 .. 0.5]
    */
-  float Update(float current_accel_g, float accel_magnitude,
-               float gyro_z_dps, float dt_sec);
+  float Update(float current_accel_g, float accel_magnitude, float gyro_z_dps,
+               float dt_sec);
 
   /**
    * @brief Сигнал окончания круиза → переход в Brake.
@@ -110,7 +111,7 @@ class MotionDriver {
  private:
   Config config_{};
   MotionPhase phase_{MotionPhase::Idle};
-  PidController pid_;
+  firmware_common::PidController pid_;
   float phase_elapsed_sec_{0.0f};
   float cruise_throttle_{0.0f};
 

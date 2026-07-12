@@ -262,8 +262,9 @@ CREATE TABLE request_idempotency (
     user_id uuid NOT NULL,
     request_path text NOT NULL,
     request_body_hash bytea NOT NULL,
-    response_status integer NOT NULL,
-    response_body jsonb NOT NULL DEFAULT '{}'::jsonb,
+    response_status integer,
+    response_body jsonb DEFAULT '{}'::jsonb,
+    completed boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now()
 );
 

@@ -141,7 +141,7 @@ docker-compose down
 - [Инвентаризация сервисов](docs/local-dev-inventory.md)
 - [Нормализация окружения](docs/local-dev-env-normalization.md)
 - [Настройка Docker и hot-reload](docs/local-dev-docker-setup.md)
-- [Ручное тестирование (E2E)](docs/manual-testing.md)
+- [Ручное тестирование (сценарии)](docs/manual-testing/README.md)
 
 ## Итоговый проект
 
@@ -315,6 +315,7 @@ graph TB
 
 ## Связь
 
+- **Задачи и баги:** [Linear](https://linear.app/lostpointer)
 - **Вопросы по заданиям:** GitHub Issues в репозитории курса
 - **Code Review:** Pull Requests в backend-project
 - **Общие вопросы:** Telegram-чат курса

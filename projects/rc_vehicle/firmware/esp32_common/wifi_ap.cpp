@@ -380,22 +380,32 @@ esp_err_t WiFiStaConnect(const char* ssid, const char* password, bool save) {
   StaStatusSetConfigured(ssid);
   StaStatusSetConnected(false);
 
+  s_sta_retry_count = 0;  // Сброс backoff при ручном подключении
+  if (s_sta_retry_timer) esp_timer_stop(s_sta_retry_timer);
+
+  esp_err_t e = esp_wifi_set_mode(WIFI_MODE_APSTA);
+  if (e != ESP_OK) return e;
+
+  // Выйти из состояния "connecting" ДО esp_wifi_set_config: пока драйвер
+  // крутит ретраи (например, со старым паролем из NVS), set_config вернёт
+  // "sta is connecting, cannot set config", и новый конфиг не применится к
+  // живому драйверу — пароль начнёт действовать только после перезагрузки.
+  // На время реконфигурации глушим авто-reconnect из обработчика
+  // STA_DISCONNECTED, иначе он переподключится со старым конфигом и снова
+  // загонит STA в connecting.
+  portENTER_CRITICAL(&s_wifi_mux);
+  s_sta_should_connect = false;
+  portEXIT_CRITICAL(&s_wifi_mux);
+  (void)esp_wifi_disconnect();
+
+  e = esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+
   portENTER_CRITICAL(&s_wifi_mux);
   s_sta_should_connect = true;
   portEXIT_CRITICAL(&s_wifi_mux);
 
-  s_sta_retry_count = 0;  // Сброс backoff при ручном подключении
-  if (s_sta_retry_timer) esp_timer_stop(s_sta_retry_timer);
-
-  // Обновить конфиг и начать подключение (AP остаётся включён).
-  esp_err_t e = esp_wifi_set_mode(WIFI_MODE_APSTA);
   if (e != ESP_OK) return e;
-  e = esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
-  if (e != ESP_OK) return e;
-
-  (void)esp_wifi_disconnect();
-  e = esp_wifi_connect();
-  return e;
+  return esp_wifi_connect();
 }
 
 esp_err_t WiFiStaDisconnect(bool forget) {

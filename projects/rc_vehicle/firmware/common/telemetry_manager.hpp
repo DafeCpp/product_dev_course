@@ -57,7 +57,7 @@ class TelemetryManager {
    * @param out Выходной кадр
    * @return true если idx < Count()
    */
-  bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const {
+  [[nodiscard]] bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const {
     return telem_log_.GetFrame(idx, out);
   }
 
@@ -101,7 +101,7 @@ class TelemetryManager {
    * @param out Выходное событие
    * @return true если idx < Count()
    */
-  bool GetEvent(size_t idx, TelemetryEvent& out) const {
+  [[nodiscard]] bool GetEvent(size_t idx, TelemetryEvent& out) const {
     return event_log_.GetEvent(idx, out);
   }
 
