@@ -3,7 +3,7 @@
 ALTER TABLE request_idempotency
     ALTER COLUMN response_status DROP NOT NULL,
     ALTER COLUMN response_body DROP NOT NULL,
-    ADD COLUMN IF NOT EXISTS completed boolean NOT NULL DEFAULT false;
+    ADD COLUMN completed boolean NOT NULL DEFAULT false;
 
 -- All existing rows were already complete.
 UPDATE request_idempotency SET completed = true WHERE completed = false;

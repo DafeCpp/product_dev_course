@@ -103,7 +103,7 @@ async def create_capture_session(request: web.Request):
             raise web.HTTPConflict(text="Conflict") from exc
         if cached is not None:
             return IdempotencyService.build_response(cached)
-    async with idempotency_service.guard_reservation(idempotency_key):
+    async with idempotency_service.guard_reservation(idempotency_key, user.user_id):
         try:
             session = await service.create_session(dto)
         except InvalidStatusTransitionError as exc:
@@ -135,7 +135,9 @@ async def create_capture_session(request: web.Request):
     )
     response_payload = _session_response(session)
     if idempotency_key:
-        await idempotency_service.complete_response(idempotency_key, 201, response_payload)
+        await idempotency_service.complete_response(
+            idempotency_key, user.user_id, 201, response_payload
+        )
     return web.json_response(response_payload, status=201)
 
 

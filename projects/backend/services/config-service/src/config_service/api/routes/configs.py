@@ -160,13 +160,14 @@ async def create_config(request: web.Request) -> web.Response:
                 idempotency_key, user.user_id, request.path, body_hash
             )
         except IdempotencyConflictError:
+            config_idempotency_hits_total.labels(result="conflict").inc()
             raise web.HTTPConflict(reason="Idempotency key reused with different payload")
         if cached is not None:
-            config_idempotency_hits_total.inc()
+            config_idempotency_hits_total.labels(result="hit").inc()
             return idempotency_svc.build_response(cached)
 
     try:
-        async with idempotency_svc.guard_reservation(idempotency_key):
+        async with idempotency_svc.guard_reservation(idempotency_key, user.user_id):
             config = await svc.create(
                 service_name=dto.service_name,
                 project_id=dto.project_id,
@@ -209,7 +210,7 @@ async def create_config(request: web.Request) -> web.Response:
     resp_body = _config_to_response(config, redact)
 
     if idempotency_key and body_hash is not None:
-        await idempotency_svc.complete_response(idempotency_key, 201, resp_body)
+        await idempotency_svc.complete_response(idempotency_key, user.user_id, 201, resp_body)
 
     return web.json_response(resp_body, status=201, headers={"ETag": f'"{config.version}"'})
 

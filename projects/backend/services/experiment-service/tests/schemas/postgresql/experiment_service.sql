@@ -257,17 +257,18 @@ CREATE TRIGGER artifacts_set_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
 
+-- Must match migrations 001 + 005 + 006 (shared backend_common.idempotency layout).
 CREATE TABLE request_idempotency (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
-    user_id         VARCHAR(255) NOT NULL,
-    request_path    TEXT NOT NULL,
-    request_hash    VARCHAR(64) NOT NULL,
-    response_status INTEGER,
-    response_body   JSONB,
-    completed       BOOLEAN NOT NULL DEFAULT false,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    idempotency_key text NOT NULL,
+    user_id         varchar(255) NOT NULL,
+    request_path    text NOT NULL,
+    request_hash    varchar(64) NOT NULL,
+    response_status integer,
+    response_body   jsonb,
+    completed       boolean NOT NULL DEFAULT false,
+    expires_at      timestamptz NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (idempotency_key, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS request_idempotency_expires_at_idx

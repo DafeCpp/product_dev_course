@@ -1,4 +1,10 @@
-"""Shared Idempotency-Key repository and service helpers."""
+"""Shared Idempotency-Key repository and service helpers.
+
+Keys are scoped to ``(idempotency_key, user_id)``: the same key sent by two
+different users describes two independent requests, not a conflict. Every
+repository method therefore takes the ``user_id`` alongside the key — without it
+one caller could complete or release another caller's reservation.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -16,8 +22,16 @@ from backend_common.repositories.base import BaseRepository
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 DEFAULT_TABLE_NAME = "idempotency_keys"
 
+CONFLICT_OTHER_REQUEST = "Idempotency key belongs to another request"
+CONFLICT_DIFFERENT_PAYLOAD = "Idempotency key reused with different payload"
 
-@dataclass(init=False)
+_IN_PROGRESS_TEXT = (
+    "Duplicate request in progress — retry with the same Idempotency-Key "
+    "after the original completes"
+)
+
+
+@dataclass
 class IdempotencyRecord:
     key: str
     user_id: str
@@ -28,40 +42,6 @@ class IdempotencyRecord:
     completed: bool
     expires_at: datetime
     created_at: datetime | None = None
-
-    def __init__(
-        self,
-        key: str | None = None,
-        user_id: str = "",
-        request_path: str = "",
-        request_hash: str | None = None,
-        response_status: int | None = None,
-        response_body: dict[str, Any] | None = None,
-        completed: bool = False,
-        expires_at: datetime | None = None,
-        created_at: datetime | None = None,
-        idempotency_key: str | None = None,
-        request_body_hash: bytes | None = None,
-    ) -> None:
-        self.key = key or idempotency_key or ""
-        self.user_id = str(user_id)
-        self.request_path = request_path
-        if request_hash is None and request_body_hash is not None:
-            request_hash = request_body_hash.hex()
-        self.request_hash = request_hash or ""
-        self.response_status = response_status
-        self.response_body = response_body
-        self.completed = completed
-        self.expires_at = expires_at or datetime.now(tz=UTC)
-        self.created_at = created_at
-
-    @property
-    def idempotency_key(self) -> str:
-        return self.key
-
-    @property
-    def request_body_hash(self) -> bytes:
-        return bytes.fromhex(self.request_hash)
 
 
 @dataclass
@@ -74,20 +54,28 @@ class IdempotencyConflictError(Exception):
     """Raised when an idempotency key is reused for a different request."""
 
 
+def _dumps(body: dict[str, Any]) -> str:
+    return json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
+
+
 class IdempotencyRepository(BaseRepository):
-    """Persistence layer for the shared ``idempotency_keys`` table.
+    """Persistence layer for the shared idempotency table.
 
     The table uses a reservation-first workflow: a request atomically inserts a
     pending row before running the mutation, then stores the final response when
     the mutation succeeds. This prevents concurrent requests with the same key
     from executing the mutation twice.
+
+    ``table_name`` exists because services name their table differently
+    (``idempotency_keys`` in config-service, ``request_idempotency`` in
+    experiment-service); the column layout is identical.
     """
 
     def __init__(self, pool: Any, *, table_name: str = DEFAULT_TABLE_NAME) -> None:
         super().__init__(pool)
         self._table_name = table_name
 
-    async def get(self, key: str) -> IdempotencyRecord | None:
+    async def get(self, key: str, user_id: str) -> IdempotencyRecord | None:
         row = await self._fetchrow(
             f"""
             SELECT idempotency_key,
@@ -100,9 +88,10 @@ class IdempotencyRepository(BaseRepository):
                    expires_at,
                    created_at
             FROM {self._table_name}
-            WHERE idempotency_key = $1 AND expires_at > NOW()
+            WHERE idempotency_key = $1 AND user_id = $2 AND expires_at > NOW()
             """,
             key,
+            user_id,
         )
         if row is None:
             return None
@@ -116,12 +105,27 @@ class IdempotencyRepository(BaseRepository):
         request_hash: str,
         expires_at: datetime,
     ) -> bool:
+        """Insert a pending row, returning True when this caller owns the key.
+
+        An expired row is taken over in the same statement: without that, the
+        insert would lose the uniqueness race against a row that ``get`` then
+        filters out by ``expires_at``, and the caller would run the mutation
+        with no reservation protecting it.
+        """
         row = await self._fetchrow(
             f"""
             INSERT INTO {self._table_name} (
                 idempotency_key, user_id, request_path, request_hash, expires_at, completed
             ) VALUES ($1, $2, $3, $4, $5, false)
-            ON CONFLICT (idempotency_key) DO NOTHING
+            ON CONFLICT (idempotency_key, user_id) DO UPDATE
+            SET request_path    = EXCLUDED.request_path,
+                request_hash    = EXCLUDED.request_hash,
+                expires_at      = EXCLUDED.expires_at,
+                completed       = false,
+                response_status = NULL,
+                response_body   = NULL,
+                created_at      = NOW()
+            WHERE {self._table_name}.expires_at <= NOW()
             RETURNING idempotency_key
             """,
             key,
@@ -132,28 +136,37 @@ class IdempotencyRepository(BaseRepository):
         )
         return row is not None
 
-    async def complete(self, key: str, response_status: int, response_body: dict[str, Any]) -> None:
+    async def complete(
+        self, key: str, user_id: str, response_status: int, response_body: dict[str, Any]
+    ) -> None:
         await self._execute(
             f"""
             UPDATE {self._table_name}
             SET completed = true,
-                response_status = $2,
-                response_body = $3::jsonb
-            WHERE idempotency_key = $1
+                response_status = $3,
+                response_body = $4::jsonb
+            WHERE idempotency_key = $1 AND user_id = $2
             """,
             key,
+            user_id,
             response_status,
-            json.dumps(response_body, sort_keys=True, separators=(",", ":"), default=str),
+            _dumps(response_body),
         )
 
-    async def release(self, key: str) -> None:
+    async def release(self, key: str, user_id: str) -> None:
         await self._execute(
-            f"DELETE FROM {self._table_name} WHERE idempotency_key = $1 AND completed = false",
+            f"""
+            DELETE FROM {self._table_name}
+            WHERE idempotency_key = $1 AND user_id = $2 AND completed = false
+            """,
             key,
+            user_id,
         )
 
     async def delete_expired(self) -> int:
-        result = await self._execute(f"DELETE FROM {self._table_name} WHERE expires_at <= NOW()")
+        result = await self._execute(
+            f"DELETE FROM {self._table_name} WHERE expires_at <= NOW()"
+        )
         return int(result.split()[-1])
 
     @staticmethod
@@ -175,90 +188,108 @@ class IdempotencyRepository(BaseRepository):
 
 
 class IdempotencyService:
-    """Shared Idempotency-Key workflow for aiohttp handlers."""
+    """Shared Idempotency-Key workflow for aiohttp handlers.
+
+    ``conflict_error_factory`` receives ``(key, reason)`` so each service can
+    raise its own 409 exception type while keeping the shared reason strings.
+    """
 
     def __init__(
         self,
         repository: IdempotencyRepository,
         *,
         ttl: timedelta,
-        conflict_error_factory: Callable[[str], Exception] | None = None,
+        conflict_error_factory: Callable[[str, str], Exception] | None = None,
     ) -> None:
         self._repository = repository
         self._ttl = ttl
-        self._conflict_error_factory = conflict_error_factory or IdempotencyConflictError
+        self._conflict_error_factory = conflict_error_factory or (
+            lambda key, reason: IdempotencyConflictError(reason)
+        )
 
     @staticmethod
     def body_hash(body: dict[str, Any]) -> str:
-        serialized = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
-        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        return hashlib.sha256(_dumps(body).encode("utf-8")).hexdigest()
 
     @staticmethod
     def canonical_body(body: dict[str, Any]) -> tuple[str, str]:
-        serialized = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
+        serialized = _dumps(body)
         return serialized, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     async def reserve_or_get_cached(
         self,
         key: str,
-        user_id: str,
+        user_id: Any,
         request_path: str,
         body_hash: str,
     ) -> IdempotencyPayload | None:
+        """Reserve the key before a mutation, or return the cached result.
+
+        Returns ``None`` when this caller owns the key and may run the mutation.
+        Returns a payload when a previous request already completed it. Raises a
+        409 on same-key/different-request and a 503 while another request holds
+        the key.
+        """
+        user = str(user_id)
         expires_at = datetime.now(tz=UTC) + self._ttl
-        reserved = await self._repository.reserve(key, str(user_id), request_path, body_hash, expires_at)
-        if reserved:
+        if await self._repository.reserve(key, user, request_path, body_hash, expires_at):
             return None
-        existing = await self._repository.get(key)
+
+        existing = await self._repository.get(key, user)
         if existing is None:
+            # Row disappeared between reserve and get (TTL cleanup) — treat as a miss.
             return None
-        self._assert_record(existing, str(user_id), request_path, body_hash)
+        self._assert_record(existing, request_path, body_hash)
         if not existing.completed:
-            raise web.HTTPServiceUnavailable(
-                text="Duplicate request in progress — retry with the same Idempotency-Key after the original completes"
-            )
+            raise web.HTTPServiceUnavailable(text=_IN_PROGRESS_TEXT)
         assert existing.response_status is not None and existing.response_body is not None
         return IdempotencyPayload(existing.response_status, existing.response_body)
 
-    async def complete_response(self, key: str, response_status: int, response_body: dict[str, Any]) -> None:
-        await self._repository.complete(key, response_status, response_body)
+    async def complete_response(
+        self, key: str, user_id: Any, response_status: int, response_body: dict[str, Any]
+    ) -> None:
+        await self._repository.complete(key, str(user_id), response_status, response_body)
 
-    async def release(self, key: str) -> None:
-        await self._repository.release(key)
+    async def release(self, key: str, user_id: Any) -> None:
+        await self._repository.release(key, str(user_id))
 
     @asynccontextmanager
-    async def guard_reservation(self, key: str | None) -> AsyncIterator[None]:
+    async def guard_reservation(self, key: str | None, user_id: Any) -> AsyncIterator[None]:
+        """Release a reserved key if the wrapped mutation raises.
+
+        Without this, a failed mutation leaves the key pending and poisons every
+        retry with a 503 until the TTL expires. A no-op when ``key`` is ``None``
+        (request sent without an Idempotency-Key).
+        """
         try:
             yield
         except BaseException:
             if key:
-                await self.release(key)
+                await self.release(key, user_id)
             raise
 
     @staticmethod
     def build_response(payload: IdempotencyPayload) -> web.Response:
         return web.json_response(payload.body, status=payload.status)
 
-    async def get_cached_response(self, key: str, user_id: str, request_path: str, body_hash: str) -> IdempotencyPayload | None:
-        """Compatibility helper for legacy handlers that do not reserve first."""
-        record = await self._repository.get(key)
-        if record is None:
-            return None
-        self._assert_record(record, str(user_id), request_path, body_hash)
-        if not record.completed:
-            raise web.HTTPServiceUnavailable(text="Duplicate request in progress — retry with the same Idempotency-Key after the original completes")
-        assert record.response_status is not None and record.response_body is not None
-        return IdempotencyPayload(record.response_status, record.response_body)
-
-    async def store_response(self, key: str, user_id: str, request_path: str, body_hash: str, response_status: int, response_body: dict[str, Any]) -> None:
-        await self.reserve_or_get_cached(key, str(user_id), request_path, body_hash)
-        await self.complete_response(key, response_status, response_body)
-
     def _assert_record(
-        self, record: IdempotencyRecord, user_id: Any, request_path: str, body_hash: Any
+        self, record: IdempotencyRecord, request_path: str, body_hash: str
     ) -> None:
-        normalized_hash = body_hash.hex() if isinstance(body_hash, bytes) else str(body_hash)
-        if record.user_id != str(user_id) or record.request_path != request_path:
-            raise self._conflict_error_factory(record.key)
-        if record.request_hash != normalized_hash:
-            raise self._conflict_error_factory(record.key)
+        # user_id needs no check here: records are fetched scoped to the caller.
+        if record.request_path != request_path:
+            raise self._conflict_error_factory(record.key, CONFLICT_OTHER_REQUEST)
+        if record.request_hash != body_hash:
+            raise self._conflict_error_factory(record.key, CONFLICT_DIFFERENT_PAYLOAD)
+
+
+__all__ = [
+    "CONFLICT_DIFFERENT_PAYLOAD",
+    "CONFLICT_OTHER_REQUEST",
+    "DEFAULT_TABLE_NAME",
+    "IDEMPOTENCY_HEADER",
+    "IdempotencyConflictError",
+    "IdempotencyPayload",
+    "IdempotencyRecord",
+    "IdempotencyRepository",
+    "IdempotencyService",
+]

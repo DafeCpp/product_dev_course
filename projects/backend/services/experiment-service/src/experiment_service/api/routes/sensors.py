@@ -74,7 +74,7 @@ async def register_sensor(request: web.Request):
         if cached is not None:
             return IdempotencyService.build_response(cached)
     service = await get_sensor_service(request)
-    async with idempotency_service.guard_reservation(idempotency_key):
+    async with idempotency_service.guard_reservation(idempotency_key, user.user_id):
         try:
             sensor, token = await service.register_sensor(
                 dto, created_by=user.user_id, initial_profile=profile_dto
@@ -83,7 +83,9 @@ async def register_sensor(request: web.Request):
             raise web.HTTPBadRequest(text="Bad request") from exc
     payload = {"sensor": _sensor_response(sensor), "token": token}
     if idempotency_key:
-        await idempotency_service.complete_response(idempotency_key, 201, payload)
+        await idempotency_service.complete_response(
+            idempotency_key, user.user_id, 201, payload
+        )
     return web.json_response(payload, status=201)
 
 

@@ -226,24 +226,16 @@ CREATE TRIGGER artifacts_set_updated_at
     EXECUTE FUNCTION set_updated_at();
 
 CREATE TABLE request_idempotency (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
-    user_id         VARCHAR(255) NOT NULL,
-    request_path    TEXT NOT NULL,
-    request_hash    VARCHAR(64) NOT NULL,
-    response_status INTEGER,
-    response_body   JSONB,
-    completed       BOOLEAN NOT NULL DEFAULT false,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    idempotency_key text PRIMARY KEY,
+    user_id uuid NOT NULL,
+    request_path text NOT NULL,
+    request_body_hash bytea NOT NULL,
+    response_status integer NOT NULL,
+    response_body jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS request_idempotency_expires_at_idx
-    ON request_idempotency (expires_at);
-
-CREATE INDEX IF NOT EXISTS request_idempotency_user_idx
-    ON request_idempotency (user_id, created_at DESC);
-
+CREATE INDEX request_idempotency_user_idx ON request_idempotency (user_id, created_at DESC);
 
 CREATE TABLE telemetry_records (
     id bigserial NOT NULL,

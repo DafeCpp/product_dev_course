@@ -1,20 +1,21 @@
 """Experiment-service adapter for the shared idempotency repository."""
 from __future__ import annotations
 
-from datetime import datetime
+from typing import Any
 
-from backend_common.idempotency import IdempotencyRecord, IdempotencyRepository as CommonIdempotencyRepository
+from backend_common.idempotency import (
+    IdempotencyRecord,
+    IdempotencyRepository as CommonIdempotencyRepository,
+)
+
+TABLE_NAME = "request_idempotency"
 
 
 class IdempotencyRepository(CommonIdempotencyRepository):
-    async def delete_expired(self, created_before: datetime | None = None) -> int:  # type: ignore[override]
-        if created_before is None:
-            return await super().delete_expired()
-        result = await self._execute(
-            f"DELETE FROM {self._table_name} WHERE created_at < $1",
-            created_before,
-        )
-        return int(result.split()[-1])
+    """Shared repository pointed at this service's table name."""
+
+    def __init__(self, pool: Any) -> None:
+        super().__init__(pool, table_name=TABLE_NAME)
 
 
-__all__ = ["IdempotencyRecord", "IdempotencyRepository"]
+__all__ = ["TABLE_NAME", "IdempotencyRecord", "IdempotencyRepository"]

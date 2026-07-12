@@ -16,7 +16,7 @@ class IdempotencyService(CommonIdempotencyService):
         super().__init__(
             repository,
             ttl=timedelta(minutes=settings.idempotency_ttl_minutes),
-            conflict_error_factory=IdempotencyConflictError,
+            conflict_error_factory=lambda key, _reason: IdempotencyConflictError(key),
         )
 
 

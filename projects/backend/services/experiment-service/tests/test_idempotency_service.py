@@ -1,18 +1,16 @@
-"""Unit tests for IdempotencyService."""
+"""Unit tests for experiment-service's IdempotencyService adapter."""
 from __future__ import annotations
 
 import hashlib
-import json
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
-from uuid import UUID, uuid4
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from aiohttp import web
+from backend_common.idempotency import IdempotencyRecord
 
 from experiment_service.core.exceptions import IdempotencyConflictError
-from experiment_service.repositories.idempotency import IdempotencyRecord, IdempotencyRepository
 from experiment_service.services.idempotency import (
     IDEMPOTENCY_HEADER,
     IdempotencyPayload,
@@ -20,76 +18,65 @@ from experiment_service.services.idempotency import (
 )
 
 
-# Mock repository for unit testing
 class MockIdempotencyRepository:
-    """In-memory mock for IdempotencyRepository."""
+    """In-memory stand-in keyed the same way as the table: (key, user_id)."""
 
     def __init__(self) -> None:
-        self._storage: dict[str, IdempotencyRecord] = {}
-        self._deleted_count: int = 0
-
-    async def get(self, key: str) -> IdempotencyRecord | None:
-        return self._storage.get(key)
+        self.records: dict[tuple[str, str], IdempotencyRecord] = {}
 
     async def reserve(
         self,
         key: str,
-        user_id: UUID,
+        user_id: str,
         request_path: str,
-        request_body_hash: bytes,
+        request_hash: str,
+        expires_at: datetime,
     ) -> bool:
-        if key in self._storage:
-            # Mirrors INSERT ... ON CONFLICT DO NOTHING: existing row wins.
+        existing = self.records.get((key, user_id))
+        if existing is not None and existing.expires_at > datetime.now(tz=UTC):
+            # Mirrors INSERT ... ON CONFLICT DO UPDATE ... WHERE expires_at <= NOW().
             return False
-        self._storage[key] = IdempotencyRecord(
+        self.records[(key, user_id)] = IdempotencyRecord(
             key=key,
             user_id=user_id,
             request_path=request_path,
-            request_body_hash=request_body_hash,
+            request_hash=request_hash,
             response_status=None,
             response_body=None,
             completed=False,
+            expires_at=expires_at,
         )
         return True
 
+    async def get(self, key: str, user_id: str) -> IdempotencyRecord | None:
+        record = self.records.get((key, user_id))
+        if record is None or record.expires_at <= datetime.now(tz=UTC):
+            return None
+        return record
+
     async def complete(
-        self,
-        key: str,
-        response_status: int,
-        response_body: dict,
+        self, key: str, user_id: str, response_status: int, response_body: dict
     ) -> None:
-        record = self._storage.get(key)
+        record = self.records.get((key, user_id))
         if record is not None:
-            self._storage[key] = IdempotencyRecord(
-                key=record.key,
-                user_id=record.user_id,
-                request_path=record.request_path,
-                request_body_hash=record.request_body_hash,
+            self.records[(key, user_id)] = replace(
+                record,
+                completed=True,
                 response_status=response_status,
                 response_body=response_body,
-                completed=True,
             )
 
-    async def release(self, key: str) -> None:
-        # Mirrors DELETE ... WHERE completed = false: keep completed records.
-        record = self._storage.get(key)
+    async def release(self, key: str, user_id: str) -> None:
+        # Mirrors DELETE ... WHERE completed = false: completed records survive.
+        record = self.records.get((key, user_id))
         if record is not None and not record.completed:
-            del self._storage[key]
+            del self.records[(key, user_id)]
 
-    async def delete_expired(self, created_before: datetime) -> int:
-        # Simplified: just clear all and return count
-        count = len(self._storage)
-        self._storage.clear()
-        self._deleted_count = count
-        return count
 
-    def set_record(self, record: IdempotencyRecord) -> None:
-        self._storage[record.key] = record
+PATH = "/api/v1/experiments"
 
 
 class TestIdempotencyPayload:
-    """Tests for IdempotencyPayload dataclass."""
-
     def test_create_payload(self):
         payload = IdempotencyPayload(status=200, body={"id": "123"})
         assert payload.status == 200
@@ -103,302 +90,206 @@ class TestIdempotencyPayload:
 
 
 class TestIdempotencyServiceCanonicalBody:
-    """Tests for IdempotencyService.canonical_body static method."""
-
     def test_canonical_body_produces_deterministic_output(self):
-        body1 = {"b": 2, "a": 1}
-        body2 = {"a": 1, "b": 2}
-        _, hash1 = IdempotencyService.canonical_body(body1)
-        _, hash2 = IdempotencyService.canonical_body(body2)
+        _, hash1 = IdempotencyService.canonical_body({"b": 2, "a": 1})
+        _, hash2 = IdempotencyService.canonical_body({"a": 1, "b": 2})
         assert hash1 == hash2
 
     def test_canonical_body_serializes_nested(self):
-        body = {"outer": {"b": 2, "a": 1}, "list": [3, 2, 1]}
-        serialized, digest = IdempotencyService.canonical_body(body)
+        serialized, digest = IdempotencyService.canonical_body(
+            {"outer": {"b": 2, "a": 1}, "list": [3, 2, 1]}
+        )
         assert '"a":1' in serialized
         assert '"b":2' in serialized
-        assert isinstance(digest, bytes)
-        assert len(digest) == 32  # SHA256
+        # The shared contract is a sha256 hex string — it goes straight into a varchar(64).
+        assert isinstance(digest, str)
+        assert len(digest) == 64
 
     def test_canonical_body_handles_datetime(self):
-        now = datetime.now(timezone.utc)
-        body = {"timestamp": now}
-        serialized, digest = IdempotencyService.canonical_body(body)
+        serialized, digest = IdempotencyService.canonical_body({"timestamp": datetime.now(tz=UTC)})
         assert serialized is not None
         assert digest is not None
 
     def test_canonical_body_empty_dict(self):
         serialized, digest = IdempotencyService.canonical_body({})
         assert serialized == "{}"
-        assert digest == hashlib.sha256(b"{}").digest()
-
-    def test_canonical_body_different_order_same_hash(self):
-        body1 = {"z": 1, "a": 2, "m": 3}
-        body2 = {"a": 2, "m": 3, "z": 1}
-        _, hash1 = IdempotencyService.canonical_body(body1)
-        _, hash2 = IdempotencyService.canonical_body(body2)
-        assert hash1 == hash2
+        assert digest == hashlib.sha256(b"{}").hexdigest()
 
     def test_canonical_body_different_content_different_hash(self):
-        body1 = {"a": 1}
-        body2 = {"a": 2}
-        _, hash1 = IdempotencyService.canonical_body(body1)
-        _, hash2 = IdempotencyService.canonical_body(body2)
+        _, hash1 = IdempotencyService.canonical_body({"a": 1})
+        _, hash2 = IdempotencyService.canonical_body({"a": 2})
         assert hash1 != hash2
+
+    def test_canonical_body_matches_body_hash(self):
+        body = {"a": 1, "b": [2, 3]}
+        _, digest = IdempotencyService.canonical_body(body)
+        assert digest == IdempotencyService.body_hash(body)
 
 
 class TestIdempotencyServiceBuildResponse:
-    """Tests for IdempotencyService.build_response static method."""
-
     def test_build_response_200(self):
-        payload = IdempotencyPayload(status=200, body={"success": True})
-        response = IdempotencyService.build_response(payload)
+        response = IdempotencyService.build_response(
+            IdempotencyPayload(status=200, body={"success": True})
+        )
         assert isinstance(response, web.Response)
         assert response.status == 200
 
     def test_build_response_201(self):
-        payload = IdempotencyPayload(status=201, body={"id": "123"})
-        response = IdempotencyService.build_response(payload)
+        response = IdempotencyService.build_response(
+            IdempotencyPayload(status=201, body={"id": "123"})
+        )
         assert response.status == 201
 
     def test_build_response_content_type(self):
-        payload = IdempotencyPayload(status=200, body={"key": "value"})
-        response = IdempotencyService.build_response(payload)
+        response = IdempotencyService.build_response(
+            IdempotencyPayload(status=200, body={"key": "value"})
+        )
         assert response.content_type == "application/json"
 
 
 class TestIdempotencyServiceReserveOrGetCached:
-    """Tests for IdempotencyService.reserve_or_get_cached method."""
-
     @pytest.mark.asyncio
     async def test_returns_none_when_key_is_new(self):
-        """New key is reserved successfully — caller may proceed with mutation."""
-        repo = MockIdempotencyRepository()
-        service = IdempotencyService(repo)
+        service = IdempotencyService(MockIdempotencyRepository())
         result = await service.reserve_or_get_cached(
             key="new-key",
             user_id=uuid4(),
-            request_path="/api/test",
-            body_hash=b"hash",
+            request_path=PATH,
+            body_hash=service.body_hash({"a": 1}),
         )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_cached_payload_when_key_is_completed(self):
-        """Completed key returns its stored payload."""
-        repo = MockIdempotencyRepository()
+        service = IdempotencyService(MockIdempotencyRepository())
         user_id = uuid4()
-        key = "test-key"
-        record = IdempotencyRecord(
-            key=key,
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"hash",
-            response_status=201,
-            response_body={"result": "cached"},
-            completed=True,
-        )
-        repo.set_record(record)
-        service = IdempotencyService(repo)
+        body_hash = service.body_hash({"a": 1})
 
-        result = await service.reserve_or_get_cached(
-            key=key,
-            user_id=user_id,
-            request_path="/api/test",
-            body_hash=b"hash",
-        )
+        await service.reserve_or_get_cached("test-key", user_id, PATH, body_hash)
+        await service.complete_response("test-key", user_id, 201, {"result": "cached"})
 
+        result = await service.reserve_or_get_cached("test-key", user_id, PATH, body_hash)
         assert result is not None
         assert result.status == 201
         assert result.body == {"result": "cached"}
 
     @pytest.mark.asyncio
     async def test_raises_503_when_key_is_pending(self):
-        """A pending (not-yet-completed) key signals that another request owns it."""
-        repo = MockIdempotencyRepository()
+        service = IdempotencyService(MockIdempotencyRepository())
         user_id = uuid4()
-        key = "pending-key"
-        record = IdempotencyRecord(
-            key=key,
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"hash",
-            response_status=None,
-            response_body=None,
-            completed=False,
-        )
-        repo.set_record(record)
-        service = IdempotencyService(repo)
+        body_hash = service.body_hash({"a": 1})
+
+        await service.reserve_or_get_cached("pending-key", user_id, PATH, body_hash)
 
         with pytest.raises(web.HTTPServiceUnavailable):
-            await service.reserve_or_get_cached(
-                key=key,
-                user_id=user_id,
-                request_path="/api/test",
-                body_hash=b"hash",
-            )
+            await service.reserve_or_get_cached("pending-key", user_id, PATH, body_hash)
 
     @pytest.mark.asyncio
-    async def test_raises_conflict_on_user_id_mismatch(self):
-        repo = MockIdempotencyRepository()
-        user_id = uuid4()
-        different_user_id = uuid4()
-        key = "test-key"
-        record = IdempotencyRecord(
-            key=key,
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"hash",
-            response_status=200,
-            response_body={"result": "cached"},
-            completed=True,
-        )
-        repo.set_record(record)
-        service = IdempotencyService(repo)
+    async def test_same_key_from_another_user_is_independent(self):
+        """Keys are scoped per user: another user's key is a separate request, not a 409."""
+        service = IdempotencyService(MockIdempotencyRepository())
+        body_hash = service.body_hash({"a": 1})
+        owner, other = uuid4(), uuid4()
 
-        with pytest.raises(IdempotencyConflictError, match="belongs to another request"):
-            await service.reserve_or_get_cached(
-                key=key,
-                user_id=different_user_id,
-                request_path="/api/test",
-                body_hash=b"hash",
-            )
+        await service.reserve_or_get_cached("test-key", owner, PATH, body_hash)
+        await service.complete_response("test-key", owner, 201, {"result": "owner"})
+
+        # No conflict, and no replay of the owner's response.
+        assert await service.reserve_or_get_cached("test-key", other, PATH, body_hash) is None
 
     @pytest.mark.asyncio
     async def test_raises_conflict_on_request_path_mismatch(self):
-        repo = MockIdempotencyRepository()
+        service = IdempotencyService(MockIdempotencyRepository())
         user_id = uuid4()
-        key = "test-key"
-        record = IdempotencyRecord(
-            key=key,
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"hash",
-            response_status=200,
-            response_body={"result": "cached"},
-            completed=True,
-        )
-        repo.set_record(record)
-        service = IdempotencyService(repo)
+        body_hash = service.body_hash({"a": 1})
+
+        await service.reserve_or_get_cached("test-key", user_id, PATH, body_hash)
 
         with pytest.raises(IdempotencyConflictError, match="belongs to another request"):
-            await service.reserve_or_get_cached(
-                key=key,
-                user_id=user_id,
-                request_path="/api/different",
-                body_hash=b"hash",
-            )
+            await service.reserve_or_get_cached("test-key", user_id, "/api/different", body_hash)
 
     @pytest.mark.asyncio
     async def test_raises_conflict_on_body_hash_mismatch(self):
-        repo = MockIdempotencyRepository()
+        service = IdempotencyService(MockIdempotencyRepository())
         user_id = uuid4()
-        key = "test-key"
-        record = IdempotencyRecord(
-            key=key,
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"original-hash",
-            response_status=200,
-            response_body={"result": "cached"},
-            completed=True,
+
+        await service.reserve_or_get_cached(
+            "test-key", user_id, PATH, service.body_hash({"a": 1})
         )
-        repo.set_record(record)
-        service = IdempotencyService(repo)
 
         with pytest.raises(IdempotencyConflictError, match="different payload"):
             await service.reserve_or_get_cached(
-                key=key,
-                user_id=user_id,
-                request_path="/api/test",
-                body_hash=b"different-hash",
+                "test-key", user_id, PATH, service.body_hash({"a": 2})
             )
+
+    @pytest.mark.asyncio
+    async def test_expired_reservation_is_reclaimed(self):
+        """An expired row is taken over, so the retry still runs under a reservation."""
+        repo = MockIdempotencyRepository()
+        user_id = uuid4()
+        service = IdempotencyService(repo)
+        body_hash = service.body_hash({"a": 1})
+
+        await service.reserve_or_get_cached("test-key", user_id, PATH, body_hash)
+        stale = repo.records[("test-key", str(user_id))]
+        repo.records[("test-key", str(user_id))] = replace(
+            stale, expires_at=datetime.now(tz=UTC) - timedelta(seconds=1)
+        )
+
+        assert await service.reserve_or_get_cached("test-key", user_id, PATH, body_hash) is None
+        assert repo.records[("test-key", str(user_id))].expires_at > datetime.now(tz=UTC)
 
 
 class TestIdempotencyServiceCompleteResponse:
-    """Tests for IdempotencyService.complete_response method."""
-
     @pytest.mark.asyncio
     async def test_marks_record_as_completed(self):
         repo = MockIdempotencyRepository()
         service = IdempotencyService(repo)
         user_id = uuid4()
-        key = "test-key"
 
-        # Reserve the key first
         reserved = await service.reserve_or_get_cached(
-            key=key,
-            user_id=user_id,
-            request_path="/api/test",
-            body_hash=b"hash",
+            "test-key", user_id, PATH, service.body_hash({"a": 1})
         )
-        assert reserved is None  # key was reserved
+        assert reserved is None
 
-        # Complete it
         response_body = {"id": "123", "created": True}
-        await service.complete_response(key=key, response_status=201, response_body=response_body)
+        await service.complete_response("test-key", user_id, 201, response_body)
 
-        # Verify the record is now completed
-        record = await repo.get(key)
+        record = await repo.get("test-key", str(user_id))
         assert record is not None
         assert record.completed is True
         assert record.response_status == 201
         assert record.response_body == response_body
 
-    @pytest.mark.asyncio
-    async def test_completed_key_returns_cached_payload_on_retry(self):
-        """After complete_response, reserve_or_get_cached returns the stored payload."""
-        repo = MockIdempotencyRepository()
-        service = IdempotencyService(repo)
-        user_id = uuid4()
-        key = "test-key"
-        request_path = "/api/v1/experiments"
-        body_hash = b"body-hash"
-        response_body = {"id": str(uuid4()), "name": "Test Experiment"}
-
-        # First request — reserve and complete
-        await service.reserve_or_get_cached(key, user_id, request_path, body_hash)
-        await service.complete_response(key, 201, response_body)
-
-        # Retry — should return the cached payload
-        cached = await service.reserve_or_get_cached(key, user_id, request_path, body_hash)
-        assert cached is not None
-        assert cached.status == 201
-        assert cached.body == response_body
-
 
 class TestIdempotencyServiceReleaseAndGuard:
-    """Tests for release() and guard_reservation() (failed-mutation cleanup)."""
-
     @pytest.mark.asyncio
     async def test_release_drops_incomplete_reservation(self):
         repo = MockIdempotencyRepository()
         service = IdempotencyService(repo)
         user_id = uuid4()
-        key = "test-key"
 
-        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
-        assert await repo.get(key) is not None
+        await service.reserve_or_get_cached("test-key", user_id, PATH, service.body_hash({"a": 1}))
+        assert await repo.get("test-key", str(user_id)) is not None
 
-        await service.release(key)
+        await service.release("test-key", user_id)
 
         # Reservation gone — a retry may reserve the key again instead of hitting 503.
-        assert await repo.get(key) is None
+        assert await repo.get("test-key", str(user_id)) is None
 
     @pytest.mark.asyncio
     async def test_release_keeps_completed_record(self):
         repo = MockIdempotencyRepository()
         service = IdempotencyService(repo)
         user_id = uuid4()
-        key = "test-key"
 
-        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
-        await service.complete_response(key, 201, {"id": "123"})
+        await service.reserve_or_get_cached("test-key", user_id, PATH, service.body_hash({"a": 1}))
+        await service.complete_response("test-key", user_id, 201, {"id": "123"})
 
-        await service.release(key)
+        await service.release("test-key", user_id)
 
         # Completed cached responses must survive release so replay still works.
-        record = await repo.get(key)
+        record = await repo.get("test-key", str(user_id))
         assert record is not None
         assert record.completed is True
 
@@ -407,31 +298,29 @@ class TestIdempotencyServiceReleaseAndGuard:
         repo = MockIdempotencyRepository()
         service = IdempotencyService(repo)
         user_id = uuid4()
-        key = "test-key"
 
-        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
+        await service.reserve_or_get_cached("test-key", user_id, PATH, service.body_hash({"a": 1}))
 
         with pytest.raises(ValueError):
-            async with service.guard_reservation(key):
+            async with service.guard_reservation("test-key", user_id):
                 raise ValueError("mutation failed")
 
         # Poisoned reservation must be cleared so the client can retry.
-        assert await repo.get(key) is None
+        assert await repo.get("test-key", str(user_id)) is None
 
     @pytest.mark.asyncio
     async def test_guard_keeps_reservation_on_success(self):
         repo = MockIdempotencyRepository()
         service = IdempotencyService(repo)
         user_id = uuid4()
-        key = "test-key"
 
-        await service.reserve_or_get_cached(key, user_id, "/api/v1/experiments", b"hash")
+        await service.reserve_or_get_cached("test-key", user_id, PATH, service.body_hash({"a": 1}))
 
-        async with service.guard_reservation(key):
+        async with service.guard_reservation("test-key", user_id):
             pass  # mutation succeeded
 
         # Reservation kept so complete_response can mark it done.
-        assert await repo.get(key) is not None
+        assert await repo.get("test-key", str(user_id)) is not None
 
     @pytest.mark.asyncio
     async def test_guard_is_noop_without_key(self):
@@ -440,131 +329,47 @@ class TestIdempotencyServiceReleaseAndGuard:
 
         # No key (request without Idempotency-Key) — guard must not touch storage.
         with pytest.raises(ValueError):
-            async with service.guard_reservation(None):
+            async with service.guard_reservation(None, uuid4()):
                 raise ValueError("boom")
-        assert repo._storage == {}
-
-
-class TestIdempotencyServiceAssertRecord:
-    """Tests for IdempotencyService._assert_record static method."""
-
-    def test_no_raise_on_matching_record(self):
-        user_id = uuid4()
-        record = IdempotencyRecord(
-            key="test-key",
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"hash",
-            response_status=200,
-            response_body={},
-            completed=True,
-        )
-        # Should not raise
-        IdempotencyService._assert_record(record, user_id, "/api/test", b"hash")
-
-    def test_raises_on_user_id_mismatch(self):
-        user_id = uuid4()
-        different_user_id = uuid4()
-        record = IdempotencyRecord(
-            key="test-key",
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"hash",
-            response_status=200,
-            response_body={},
-            completed=True,
-        )
-        with pytest.raises(IdempotencyConflictError, match="belongs to another request"):
-            IdempotencyService._assert_record(record, different_user_id, "/api/test", b"hash")
-
-    def test_raises_on_request_path_mismatch(self):
-        user_id = uuid4()
-        record = IdempotencyRecord(
-            key="test-key",
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"hash",
-            response_status=200,
-            response_body={},
-            completed=True,
-        )
-        with pytest.raises(IdempotencyConflictError, match="belongs to another request"):
-            IdempotencyService._assert_record(record, user_id, "/api/different", b"hash")
-
-    def test_raises_on_body_hash_mismatch(self):
-        user_id = uuid4()
-        record = IdempotencyRecord(
-            key="test-key",
-            user_id=user_id,
-            request_path="/api/test",
-            request_body_hash=b"original-hash",
-            response_status=200,
-            response_body={},
-            completed=True,
-        )
-        with pytest.raises(IdempotencyConflictError, match="different payload"):
-            IdempotencyService._assert_record(record, user_id, "/api/test", b"different-hash")
+        assert repo.records == {}
 
 
 class TestIdempotencyHeader:
-    """Tests for idempotency header constant."""
-
     def test_idempotency_header_constant(self):
         assert IDEMPOTENCY_HEADER == "Idempotency-Key"
 
 
 class TestIdempotencyServiceIntegration:
-    """Integration-style tests for IdempotencyService."""
-
     @pytest.mark.asyncio
     async def test_full_idempotent_flow(self):
-        repo = MockIdempotencyRepository()
-        service = IdempotencyService(repo)
+        service = IdempotencyService(MockIdempotencyRepository())
         user_id = uuid4()
         key = "idempotency-key-123"
-        request_path = "/api/v1/experiments"
         body = {"name": "Test Experiment", "project_id": str(uuid4())}
         _, body_hash = IdempotencyService.canonical_body(body)
 
-        # First request — key is new, returns None (proceed with mutation)
-        cached = await service.reserve_or_get_cached(key, user_id, request_path, body_hash)
-        assert cached is None
+        assert await service.reserve_or_get_cached(key, user_id, PATH, body_hash) is None
 
-        # Complete the response after mutation succeeds
         response_body = {"id": str(uuid4()), "name": "Test Experiment", "status": "draft"}
-        await service.complete_response(
-            key=key,
-            response_status=201,
-            response_body=response_body,
-        )
+        await service.complete_response(key, user_id, 201, response_body)
 
-        # Second request — should return cached response
-        cached = await service.reserve_or_get_cached(key, user_id, request_path, body_hash)
+        cached = await service.reserve_or_get_cached(key, user_id, PATH, body_hash)
         assert cached is not None
         assert cached.status == 201
         assert cached.body == response_body
-
-        # Build HTTP response
-        http_response = IdempotencyService.build_response(cached)
-        assert http_response.status == 201
+        assert IdempotencyService.build_response(cached).status == 201
 
     @pytest.mark.asyncio
     async def test_idempotency_with_different_bodies(self):
-        repo = MockIdempotencyRepository()
-        service = IdempotencyService(repo)
+        service = IdempotencyService(MockIdempotencyRepository())
         user_id = uuid4()
         key = "same-key"
-        request_path = "/api/test"
 
-        body1 = {"action": "create", "value": 1}
-        body2 = {"action": "create", "value": 2}
-        _, hash1 = IdempotencyService.canonical_body(body1)
-        _, hash2 = IdempotencyService.canonical_body(body2)
+        _, hash1 = IdempotencyService.canonical_body({"action": "create", "value": 1})
+        _, hash2 = IdempotencyService.canonical_body({"action": "create", "value": 2})
 
-        # Reserve and complete with first body
-        await service.reserve_or_get_cached(key, user_id, request_path, hash1)
-        await service.complete_response(key, 200, {"value": 1})
+        await service.reserve_or_get_cached(key, user_id, PATH, hash1)
+        await service.complete_response(key, user_id, 200, {"value": 1})
 
-        # Second request with different body should raise conflict
         with pytest.raises(IdempotencyConflictError, match="different payload"):
-            await service.reserve_or_get_cached(key, user_id, request_path, hash2)
+            await service.reserve_or_get_cached(key, user_id, PATH, hash2)

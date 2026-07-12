@@ -39,10 +39,9 @@ async def test_idempotency_cleanup_returns_summary(mock_pool_idempotency):
         result = await idempotency_cleanup(now)
 
     assert result == "deleted=5"
-    instance.delete_expired.assert_awaited_once()
-    call_arg = instance.delete_expired.call_args[0][0]
-    assert isinstance(call_arg, datetime)
-    assert call_arg < now
+    # TTL now lives in expires_at, written at reservation time — the worker no
+    # longer computes a created_at cutoff from idempotency_ttl_hours.
+    instance.delete_expired.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
