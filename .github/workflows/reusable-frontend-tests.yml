@@ -50,7 +50,7 @@ jobs:
           echo ""
 
           for app in experiment-portal sensor-simulator auth-proxy; do
-            if echo "$CHANGED_FILES" | grep -E "^projects/frontend/(apps/$app|common)/|\.github/workflows/(frontend-tests|reusable-frontend-tests)\.yml" > /dev/null; then
+            if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "^projects/frontend/(apps/$app|common)/|\.github/workflows/(frontend-tests|reusable-frontend-tests)\.yml" > /dev/null; then
               echo "$app=true" >> $GITHUB_OUTPUT
               echo "✓ $app changed"
             else
