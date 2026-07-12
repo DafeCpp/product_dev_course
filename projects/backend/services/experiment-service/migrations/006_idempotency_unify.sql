@@ -14,7 +14,13 @@ ALTER TABLE request_idempotency
 
 -- TTL moves from "created_at older than idempotency_ttl_hours" (enforced by the
 -- cleanup worker) to an explicit expires_at, which reserve() also uses to take
--- over expired rows. Backfill preserves the current 48h expiry of existing rows.
+-- over expired rows.
+--
+-- The backfill hard-codes the 48h that settings.idempotency_ttl_hours defaults to,
+-- because SQL cannot read the service config. No deployment overrides that setting
+-- today, so existing rows keep the exact expiry the cleanup worker gave them. If a
+-- deployment ever does override it, this interval has to be changed to match before
+-- the migration runs, or old rows will expire on the wrong schedule.
 ALTER TABLE request_idempotency
     ADD COLUMN IF NOT EXISTS expires_at timestamptz;
 UPDATE request_idempotency

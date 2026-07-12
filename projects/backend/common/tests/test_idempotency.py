@@ -172,6 +172,60 @@ async def test_expired_key_is_reclaimed_rather_than_silently_unreserved():
 
 
 @pytest.mark.asyncio
+async def test_row_vanishing_between_reserve_and_get_is_retried_not_waved_through():
+    """Losing the insert and then reading back nothing must not look like ownership.
+
+    The row we lose to can expire (or be swept by the cleanup worker) before we
+    read it. Returning None there would run the mutation with no pending row
+    guarding it, so the service has to take another run at reserving.
+    """
+
+    class VanishingRepository(FakeRepository):
+        def __init__(self, misses: int) -> None:
+            super().__init__()
+            self.misses = misses
+            self.reserve_calls = 0
+
+        async def reserve(self, key, user_id, request_path, request_hash, expires_at):
+            self.reserve_calls += 1
+            if self.misses > 0:
+                self.misses -= 1
+                return False  # somebody else holds the key…
+            return await super().reserve(key, user_id, request_path, request_hash, expires_at)
+
+        async def get(self, key, user_id):
+            if self.misses > 0 or self.reserve_calls <= 1:
+                return None  # …but it is gone by the time we read it back
+            return await super().get(key, user_id)
+
+    repo = VanishingRepository(misses=1)
+    svc = _service(repo)
+    request_hash = svc.body_hash({"name": "same"})
+
+    assert await svc.reserve_or_get_cached("key-1", "user-1", "/resource", request_hash) is None
+
+    assert repo.reserve_calls == 2  # retried instead of proceeding unreserved
+    assert repo.records[("key-1", "user-1")].completed is False
+
+
+@pytest.mark.asyncio
+async def test_reservation_that_never_settles_returns_503():
+    """If the row keeps vanishing, make the client retry rather than run unguarded."""
+
+    class ChurningRepository(FakeRepository):
+        async def reserve(self, key, user_id, request_path, request_hash, expires_at):
+            return False
+
+        async def get(self, key, user_id):
+            return None
+
+    svc = _service(ChurningRepository())
+
+    with pytest.raises(web.HTTPServiceUnavailable):
+        await svc.reserve_or_get_cached("key-1", "user-1", "/resource", svc.body_hash({"a": 1}))
+
+
+@pytest.mark.asyncio
 async def test_guard_releases_pending_reservation_on_error():
     repo = FakeRepository()
     svc = _service(repo)

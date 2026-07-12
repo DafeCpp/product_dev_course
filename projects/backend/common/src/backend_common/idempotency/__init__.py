@@ -30,6 +30,10 @@ _IN_PROGRESS_TEXT = (
     "after the original completes"
 )
 
+# How many times reserve() may lose the insert and then find nothing to read back
+# before we give up and make the client retry. See reserve_or_get_cached().
+_RESERVE_ATTEMPTS = 3
+
 
 @dataclass
 class IdempotencyRecord:
@@ -231,19 +235,27 @@ class IdempotencyService:
         the key.
         """
         user = str(user_id)
-        expires_at = datetime.now(tz=UTC) + self._ttl
-        if await self._repository.reserve(key, user, request_path, body_hash, expires_at):
-            return None
+        for _ in range(_RESERVE_ATTEMPTS):
+            expires_at = datetime.now(tz=UTC) + self._ttl
+            if await self._repository.reserve(key, user, request_path, body_hash, expires_at):
+                return None
 
-        existing = await self._repository.get(key, user)
-        if existing is None:
-            # Row disappeared between reserve and get (TTL cleanup) — treat as a miss.
-            return None
-        self._assert_record(existing, request_path, body_hash)
-        if not existing.completed:
-            raise web.HTTPServiceUnavailable(text=_IN_PROGRESS_TEXT)
-        assert existing.response_status is not None and existing.response_body is not None
-        return IdempotencyPayload(existing.response_status, existing.response_body)
+            existing = await self._repository.get(key, user)
+            if existing is None:
+                # The row that beat us to the insert expired (or the cleanup worker
+                # deleted it) before we could read it back. Returning None here would
+                # run the mutation with no reservation guarding it, so try again.
+                continue
+
+            self._assert_record(existing, request_path, body_hash)
+            if not existing.completed:
+                raise web.HTTPServiceUnavailable(text=_IN_PROGRESS_TEXT)
+            assert existing.response_status is not None and existing.response_body is not None
+            return IdempotencyPayload(existing.response_status, existing.response_body)
+
+        # Every attempt lost the insert and then found nothing to read back: the row
+        # keeps vanishing under us. Make the client retry rather than run unguarded.
+        raise web.HTTPServiceUnavailable(text=_IN_PROGRESS_TEXT)
 
     async def complete_response(
         self, key: str, user_id: Any, response_status: int, response_body: dict[str, Any]
