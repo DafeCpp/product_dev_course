@@ -18,44 +18,11 @@
 
 import httpProxy from '@fastify/http-proxy'
 import type { FastifyInstance } from 'fastify'
-import { randomUUID } from 'crypto'
-
-// ---------------------------------------------------------------------------
-// Internal helpers (duplicated from index.ts to avoid circular imports)
-// ---------------------------------------------------------------------------
-
-/**
- * Normalises a UUID string by stripping dashes.
- * Returns undefined when the input is falsy.
- */
-function normalizeUUID(uuid: string | undefined): string | undefined {
-    return uuid ? uuid.replace(/-/g, '') : undefined
-}
-
-function generateUUID(): string {
-    return randomUUID().replace(/-/g, '')
-}
-
-/**
- * Parses a raw `Cookie` header value into a key→value map.
- * Identical to the implementation in index.ts; kept here to avoid a circular
- * import.  If the cookie-parsing logic ever changes, update both files.
- */
-export function parseCookiesLocal(header: string | undefined): Record<string, string> {
-    if (!header) return {}
-    return header
-        .split(';')
-        .map((v) => v.trim())
-        .filter(Boolean)
-        .reduce<Record<string, string>>((acc, pair) => {
-            const idx = pair.indexOf('=')
-            if (idx === -1) return acc
-            const key = decodeURIComponent(pair.slice(0, idx).trim())
-            const val = decodeURIComponent(pair.slice(idx + 1).trim())
-            acc[key] = val
-            return acc
-        }, {})
-}
+import {
+    generateUUID,
+    normalizeUUID,
+    parseCookies,
+} from './security'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -131,7 +98,7 @@ export async function registerAuthProxy(
         http2: false,
         replyOptions: {
             rewriteRequestHeaders: (req, headers) => {
-                const cookies = parseCookiesLocal(req.headers.cookie as string | undefined)
+                const cookies = parseCookies(req.headers.cookie as string | undefined)
                 const access = cookies[accessCookieName]
 
                 const traceId =
