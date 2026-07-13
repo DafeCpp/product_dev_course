@@ -52,4 +52,16 @@ resource "yandex_compute_instance" "app" {
   service_account_id = yandex_iam_service_account.vm_sa.id
 
   allow_stopping_for_update = true
+
+  # The application VM contains runtime secrets, certificates, and Docker
+  # volumes. Replacing it must be a separate, reviewed maintenance operation.
+  # COI families resolve to a new image ID over time; that drift must not turn
+  # an otherwise unrelated terraform apply into a VM replacement.
+  lifecycle {
+    prevent_destroy = true
+
+    ignore_changes = [
+      boot_disk[0].initialize_params[0].image_id,
+    ]
+  }
 }

@@ -49,13 +49,14 @@
 
 | Сервис | Для чего | Примерная стоимость |
 |--------|----------|---------------------|
-| **Compute Cloud** | VM для Docker Compose (2 vCPU, 4 GB) | ~2500 руб/мес |
+| **Compute Cloud** | VM для Docker Compose (2 vCPU, 6 GB) | зависит от актуального тарифа |
 | **Managed PostgreSQL** | БД с TimescaleDB (s2.micro, 20 GB SSD) | ~4000 руб/мес |
 | **Container Registry** | Хранение Docker-образов | ~100 руб/мес |
 | **VPC + Static IP** | Сеть и статический адрес | ~300 руб/мес |
-| **Итого** | | **~7000 руб/мес** |
+| **Итого** | | зависит от актуальных тарифов |
 
-> Для экономии можно использовать прерываемую VM (`vm_preemptible = true`) — в 3 раза дешевле, но может быть остановлена.
+> Прерываемую VM (`vm_preemptible = true`) можно использовать только в dev/staging.
+> Production VM должна оставаться непрерываемой (`vm_preemptible = false`).
 
 ## Пререквизиты
 
@@ -63,8 +64,9 @@
 2. **Права в каталоге:** учётная запись, от которой выполняется `terraform apply` (OAuth через `yc init` или сервисный аккаунт), должна иметь в каталоге роль **Администратор** (или как минимум роли для создания ресурсов + **Управление доступом к ресурсам** / `resource-manager.admin`). Иначе создание IAM-привязок для VM и CI завершится ошибкой *Permission denied*.
 3. **Yandex Cloud CLI** (`yc`): [инструкция](https://cloud.yandex.ru/docs/cli/quickstart)
 4. **Terraform** >= 1.5: [установка](https://developer.hashicorp.com/terraform/install)
-5. **Docker** для локальной сборки образов (опционально)
-6. **SSH-ключ** для доступа к VM
+5. **jq** для проверки сохранённого Terraform plan
+6. **Docker** для локальной сборки образов (опционально)
+7. **SSH-ключ** для доступа к VM
 
 ## Установка пререквизитов (Linux)
 
@@ -144,11 +146,12 @@ terraform init
 # Если используется .terraform.lock.hcl и провайдер не подтянулся, привяжите lock к зеркалу:
 # terraform providers lock -net-mirror=https://terraform-mirror.yandexcloud.net -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_arm64 yandex-cloud/yandex
 
-# Предпросмотр
-terraform plan
+# Предпросмотр с сохранением точного плана
+terraform plan -out=tfplan
+terraform show tfplan
 
 # Создание ресурсов (~10-15 минут)
-terraform apply
+terraform apply tfplan
 ```
 
 Terraform создаст:
@@ -421,9 +424,46 @@ VM_HOST=<ip> REGISTRY_ID=<id> ./scripts/deploy.sh v1.0.0
 
 ```bash
 cd infrastructure/yandex-cloud
-terraform plan    # проверить изменения
-terraform apply   # применить
+terraform fmt -check
+terraform validate
+terraform plan -out=tfplan
+terraform show tfplan
+
+# Проверить, что план не удаляет и не заменяет ресурсы.
+terraform show -json tfplan | jq -e \
+  '[.resource_changes[] | select(.change.actions | index("delete"))] | length == 0'
+
+# Production VM должна оставаться без изменений.
+terraform show -json tfplan | jq -e \
+  '[.resource_changes[] | select(.address == "yandex_compute_instance.app") | .change.actions] == [["no-op"]]'
+
+# Применять только сохранённый и проверенный план.
+terraform apply tfplan
 ```
+
+Если любая из проверок завершилась ошибкой, `terraform apply` выполнять нельзя.
+Добавление новых ресурсов допустимо, но действия `delete` и `replace` должны быть
+разобраны и согласованы отдельно. Не используйте `-target`, удаление ресурса из
+state или `-replace`, чтобы обойти защиту production VM.
+
+Изменение актуального образа семейства COI игнорируется для уже созданной VM:
+новый `image_id` не должен превращать обычное обновление инфраструктуры в
+пересоздание машины.
+
+### Контролируемая замена production VM
+
+`yandex_compute_instance.app` защищена через `prevent_destroy`. Если VM
+действительно требуется заменить:
+
+1. Создайте отдельную задачу и PR с причиной замены и планом миграции.
+2. Сохраните `.env`, сертификаты и данные persistent Docker volumes в защищённое
+   хранилище и проверьте восстановление.
+3. Запланируйте maintenance window и способ отката на старую VM.
+4. В отдельном PR временно измените lifecycle-защиту и приложите проверенный
+   Terraform plan, в котором replacement является единственным ожидаемым
+   destructive action.
+5. После миграции верните `prevent_destroy = true` и убедитесь, что новый plan
+   не содержит изменений.
 
 ## Откат
 
