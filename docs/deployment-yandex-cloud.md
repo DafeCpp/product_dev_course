@@ -134,6 +134,9 @@ provider_installation {
 Так Terraform будет ставить провайдер Yandex с [официального зеркала Yandex Cloud](https://yandex.cloud/en/docs/terraform/quickstart) без обращения к registry.terraform.io.
 
 ```bash
+(
+set -euo pipefail
+
 cd infrastructure/yandex-cloud
 
 # Копируем и заполняем переменные
@@ -157,6 +160,7 @@ terraform show "$TFPLAN"
 terraform apply "$TFPLAN"
 rm -f "$TFPLAN"
 trap - EXIT
+)
 ```
 
 Terraform создаст:
@@ -353,26 +357,11 @@ docker compose -f docker-compose.prod.yml run --rm telemetry-ingest-migrate
 Базы и пользователи (`experiment_db` / `experiment_user` и др.) создаются Terraform —
 см. `infrastructure/yandex-cloud/database.tf`. Миграции их не создают.
 
-Создание первого админа (требуется `ADMIN_PASSWORD`) — отдельный шаг, миграциями не
-покрывается:
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T auth-service \
-  python -m bin.seed \
-    --database-url "$AUTH_DATABASE_URL" \
-    --username admin \
-    --email admin@example.com \
-    --password "$ADMIN_PASSWORD"
-```
-
-### Инициализация админа при первом деплое
-
-При развёртывании в production необходимо:
-1. Установить переменную окружения `ADMIN_PASSWORD` перед запуском контейнеров (в `.env` или Terraform)
-2. Запустить `docker compose exec -T auth-service python -m bin.seed` (или просто запустить сервисы, если init-скрипты настроены)
-3. Первый админ будет создан с логином из `ADMIN_USERNAME` (по умолчанию: `admin`) и паролем из `ADMIN_PASSWORD`
-
-**Совет:** используйте сильные пароли для production. Админ может позже создать других пользователей через API или CSV-импорт.
+Создание первого администратора — отдельный одноразовый шаг после успешного
+deploy; миграции его не выполняют. Не сохраняйте bootstrap credentials в
+Terraform, production `.env` или GitHub Actions secrets. Используйте canonical
+процедуру с передачей пароля через stdin из
+[инструкции по инициализации администратора](admin-initialization.md#production-yandex-cloud).
 
 ## Мониторинг
 
@@ -428,6 +417,9 @@ VM_HOST=<ip> REGISTRY_ID=<id> ./scripts/deploy.sh v1.0.0
 ### Обновление инфраструктуры
 
 ```bash
+(
+set -euo pipefail
+
 cd infrastructure/yandex-cloud
 terraform fmt -check
 terraform validate
@@ -451,6 +443,7 @@ terraform show -json "$TFPLAN" | jq -e \
 terraform apply "$TFPLAN"
 rm -f "$TFPLAN"
 trap - EXIT
+)
 ```
 
 Если любая из проверок завершилась ошибкой, `terraform apply` выполнять нельзя.

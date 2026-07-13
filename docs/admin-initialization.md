@@ -51,6 +51,9 @@ PostgreSQL из `docker-compose.yml`, которого нет в production comp
 seed внутри работающего `auth-service`:
 
 ```bash
+(
+set -euo pipefail
+
 ssh deploy@<VM_IP>
 cd /opt/experiment-tracking
 
@@ -60,19 +63,19 @@ read -rp "Admin email: " ADMIN_EMAIL
 read -rsp "Admin password: " ADMIN_PASSWORD
 echo
 
+printf '%s\n' "$ADMIN_PASSWORD" | \
 docker compose -f docker-compose.prod.yml exec -T \
   -e ADMIN_USERNAME="$ADMIN_USERNAME" \
   -e ADMIN_EMAIL="$ADMIN_EMAIL" \
-  -e ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-  auth-service sh -c '
+  auth-service sh -ceu '
+    IFS= read -r ADMIN_PASSWORD
+    export ADMIN_PASSWORD
     python -m bin.seed \
       --database-url "$DATABASE_URL" \
       --username "$ADMIN_USERNAME" \
-      --email "$ADMIN_EMAIL" \
-      --password "$ADMIN_PASSWORD"
+      --email "$ADMIN_EMAIL"
   '
-
-unset ADMIN_PASSWORD ADMIN_EMAIL ADMIN_USERNAME
+)
 ```
 
 Seed идемпотентен: если активный admin или superadmin уже существует, повторный
