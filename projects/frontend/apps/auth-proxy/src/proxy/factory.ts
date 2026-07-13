@@ -22,7 +22,7 @@ import {
     generateUUID,
     normalizeUUID,
     parseCookies,
-} from './security'
+} from '../security'
 
 // ---------------------------------------------------------------------------
 // Public types
