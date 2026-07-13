@@ -51,6 +51,8 @@ if [[ "${confirm}" != "y" && "${confirm}" != "Y" ]]; then
   exit 0
 fi
 
+scp scripts/validate-production-env.sh "${VM_USER}@${VM_HOST}:${APP_DIR}/validate-production-env.sh"
+
 ssh "${VM_USER}@${VM_HOST}" bash -s <<REMOTE
 set -euo pipefail
 cd ${APP_DIR}
@@ -61,6 +63,11 @@ grep "^IMAGE_TAG=" .env || echo "(not set)"
 echo ""
 echo "==> Switching to: ${IMAGE_TAG}"
 sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
+
+echo "==> Validating production runtime env..."
+chmod 700 validate-production-env.sh
+./validate-production-env.sh .env docker-compose.prod.yml
+docker compose --env-file .env -f docker-compose.prod.yml config --quiet
 
 echo "==> Pulling images for tag ${IMAGE_TAG}..."
 docker compose -f docker-compose.prod.yml pull
