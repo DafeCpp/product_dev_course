@@ -1,78 +1,31 @@
-import 'dotenv/config'
 import fastify, { FastifyReply, FastifyRequest } from 'fastify'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import rateLimit from '@fastify/rate-limit'
 import httpProxy from '@fastify/http-proxy'
-import { randomUUID } from 'crypto'
 import { PassThrough } from 'stream'
 import Redis from 'ioredis'
+import { parseConfig, type Config } from './config'
 import { registerAuthProxy } from './proxyFactory'
 import { buildProxyRouteTable, type ProxyRouteDefinition, type ProxyRouteName } from './routeTable'
+import { registerAuthRoutes } from './routes/auth'
+import {
+    AuthTokens,
+    clearAuthCookies,
+    decodeJwtPayload,
+    decodeJwtUserId,
+    generateUUID,
+    getOutgoingRequestHeaders,
+    getTraceContext,
+    isJwtExpired,
+    normalizeUUID,
+    parseCookies,
+    setAuthCookies,
+    setCsrfCookie,
+} from './security'
 
-type Config = {
-    port: number
-    targetExperimentUrl: string
-    targetTelemetryUrl: string
-    targetConfigServiceUrl: string
-    targetScriptUrl: string
-    authUrl: string
-    corsOrigins: string[]
-    cookieDomain?: string
-    cookieSecure: boolean
-    cookieSameSite: 'lax' | 'strict' | 'none'
-    accessCookieName: string
-    refreshCookieName: string
-    accessTtlSec: number
-    refreshTtlSec: number
-    rateLimitWindowMs: number
-    rateLimitMax: number
-    logLevel: string
-    redisUrl?: string
-}
-
-export function parseConfig(): Config {
-    const num = (value: string | undefined, fallback: number) => {
-        const parsed = value ? Number(value) : NaN
-        return Number.isFinite(parsed) ? parsed : fallback
-    }
-
-    const bool = (value: string | undefined, fallback: boolean) => {
-        if (value === undefined) return fallback
-        return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase())
-    }
-
-    return {
-        port: num(process.env.PORT, 8080),
-        targetExperimentUrl:
-            process.env.TARGET_EXPERIMENT_URL || 'http://localhost:8002',
-        targetTelemetryUrl:
-            // In Docker, `localhost` would mean "inside auth-proxy container".
-            // Default to the docker-compose service name so telemetry proxy works out of the box.
-            process.env.TARGET_TELEMETRY_URL || 'http://telemetry-ingest-service:8003',
-        targetConfigServiceUrl:
-            process.env.TARGET_CONFIG_SERVICE_URL || 'http://config-service:8005',
-        targetScriptUrl:
-            process.env.TARGET_SCRIPT_URL || 'http://script-service:8004',
-        authUrl: process.env.AUTH_URL || 'http://localhost:8001',
-        corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000')
-            .split(',')
-            .map((o) => o.trim())
-            .filter(Boolean),
-        cookieDomain: process.env.COOKIE_DOMAIN,
-        cookieSecure: bool(process.env.COOKIE_SECURE, false),
-        cookieSameSite:
-            (process.env.COOKIE_SAMESITE as Config['cookieSameSite']) || 'lax',
-        accessCookieName: process.env.ACCESS_COOKIE_NAME || 'access_token',
-        refreshCookieName: process.env.REFRESH_COOKIE_NAME || 'refresh_token',
-        accessTtlSec: num(process.env.ACCESS_TTL_SEC, 900),
-        refreshTtlSec: num(process.env.REFRESH_TTL_SEC, 1_209_600),
-        rateLimitWindowMs: num(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
-        rateLimitMax: num(process.env.RATE_LIMIT_MAX, 60),
-        logLevel: process.env.LOG_LEVEL || 'info',
-        redisUrl: process.env.REDIS_URL || undefined,
-    }
-}
+export { getOutgoingRequestHeaders, parseCookies } from './security'
+export { parseConfig, type Config } from './config'
 
 // ---------------------------------------------------------------------------
 // Permissions cache interface + implementations
@@ -161,155 +114,6 @@ class RedisPermissionsCache implements PermissionsCache {
             // ignore
         }
     }
-}
-
-type AuthTokens = {
-    access_token: string
-    refresh_token?: string
-    expires_in?: number
-    refresh_expires_in?: number
-    token_type?: string
-    [key: string]: unknown
-}
-
-export function parseCookies(header: string | undefined): Record<string, string> {
-    if (!header) return {}
-    return header
-        .split(';')
-        .map((v) => v.trim())
-        .filter(Boolean)
-        .reduce<Record<string, string>>((acc, pair) => {
-            const idx = pair.indexOf('=')
-            if (idx === -1) return acc
-            const key = decodeURIComponent(pair.slice(0, idx).trim())
-            const val = decodeURIComponent(pair.slice(idx + 1).trim())
-            acc[key] = val
-            return acc
-        }, {})
-}
-
-export function setAuthCookies(
-    reply: FastifyReply,
-    cfg: Config,
-    tokens: AuthTokens,
-    opts?: { skipRefresh?: boolean }
-) {
-    const accessTtl = tokens.expires_in ?? cfg.accessTtlSec
-    reply.setCookie(cfg.accessCookieName, tokens.access_token, {
-        httpOnly: true,
-        secure: cfg.cookieSecure,
-        sameSite: cfg.cookieSameSite,
-        domain: cfg.cookieDomain,
-        path: '/',
-        maxAge: accessTtl,
-    })
-
-    if (!opts?.skipRefresh && tokens.refresh_token) {
-        const refreshTtl = tokens.refresh_expires_in ?? cfg.refreshTtlSec
-        reply.setCookie(cfg.refreshCookieName, tokens.refresh_token, {
-            httpOnly: true,
-            secure: cfg.cookieSecure,
-            sameSite: cfg.cookieSameSite,
-            domain: cfg.cookieDomain,
-            path: '/',
-            maxAge: refreshTtl,
-        })
-    }
-}
-
-export function clearAuthCookies(reply: FastifyReply, cfg: Config) {
-    reply.clearCookie(cfg.accessCookieName, { path: '/' })
-    reply.clearCookie(cfg.refreshCookieName, { path: '/' })
-    reply.clearCookie('csrf_token', { path: '/' })
-}
-
-function setCsrfCookie(reply: FastifyReply, cfg: Config) {
-    // Double-submit cookie: client must echo cookie value in X-CSRF-Token header.
-    // Cookie must NOT be HttpOnly (frontend reads it).
-    reply.setCookie('csrf_token', generateUUID(), {
-        httpOnly: false,
-        secure: cfg.cookieSecure,
-        sameSite: cfg.cookieSameSite,
-        domain: cfg.cookieDomain,
-        path: '/',
-        maxAge: cfg.refreshTtlSec,
-    })
-}
-
-/**
- * Генерирует UUID без дефисов
- */
-function generateUUID(): string {
-    return randomUUID().replace(/-/g, '')
-}
-
-/**
- * Нормализует UUID, убирая дефисы (если есть)
- */
-function normalizeUUID(uuid: string | undefined): string | undefined {
-    return uuid ? uuid.replace(/-/g, '') : undefined
-}
-
-/**
- * Извлекает trace_id из заголовков (или генерирует новый для запроса от фронтенда)
- * Генерирует новый request_id для каждого запроса в auth-proxy
- */
-export function getTraceContext(request: FastifyRequest): {
-    traceId: string
-    requestId: string
-} {
-    // trace_id должен быть уникален для каждого запроса от фронтенда
-    // извлекаем из заголовков (нормализуем, убирая дефисы) или генерируем новый
-    const traceId = normalizeUUID(request.headers['x-trace-id'] as string) || generateUUID()
-    // request_id должен быть уникален для каждого запроса в каждом сервисе
-    // всегда генерируем новый для auth-proxy
-    const requestId = generateUUID()
-    return { traceId, requestId }
-}
-
-/**
- * Генерирует новый request_id для исходящего запроса к другому сервису
- * trace_id передается без изменений
- */
-export function getOutgoingRequestHeaders(traceId: string): {
-    'X-Trace-Id': string
-    'X-Request-Id': string
-} {
-    return {
-        'X-Trace-Id': traceId,
-        'X-Request-Id': generateUUID(), // новый request_id для каждого исходящего запроса
-    }
-}
-
-function _decodeJwtPayload(token: string): Record<string, unknown> | null {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-    try {
-        const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-        const padded = payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), '=')
-        const decoded = Buffer.from(padded, 'base64').toString('utf-8')
-        const data = JSON.parse(decoded)
-        return typeof data === 'object' && data ? (data as Record<string, unknown>) : null
-    } catch {
-        return null
-    }
-}
-
-function _isJwtExpired(token: string, skewSec = 30): boolean {
-    const payload = _decodeJwtPayload(token)
-    const expRaw = payload?.exp
-    let exp: number | null = null
-    if (typeof expRaw === 'number') {
-        exp = expRaw
-    } else if (typeof expRaw === 'string') {
-        const parsed = Number(expRaw)
-        exp = Number.isFinite(parsed) ? parsed : null
-    }
-    if (exp === null) return false
-    // Some issuers may provide exp in milliseconds.
-    if (exp > 1_000_000_000_000) exp = Math.floor(exp / 1000)
-    const nowSec = Math.floor(Date.now() / 1000)
-    return exp <= nowSec + skewSec
 }
 
 export async function buildServer(config: Config, _cache?: PermissionsCache) {
@@ -590,7 +394,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         if (request.headers?.authorization) return
 
         const access = request.cookies?.[config.accessCookieName]
-        if (access && !_isJwtExpired(access)) {
+        if (access && !isJwtExpired(access)) {
             ; (request.headers as any).authorization = `Bearer ${access}`
             return
         }
@@ -688,229 +492,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         return newPayload
     })
 
-    // Auth routes (login/refresh/logout/me) — устанавливают куки
-    //
-    // Per-route `config.rateLimit` is set explicitly on each authenticator/credential
-    // handler so static analysis (CodeQL js/missing-rate-limiting) recognises that
-    // the route is protected, and so we can apply stricter limits than the global
-    // default for credential-handling endpoints (login/register).
-    const authLoginRateLimit = { max: 10, timeWindow: config.rateLimitWindowMs }
-    const authRegisterRateLimit = { max: 5, timeWindow: config.rateLimitWindowMs }
-    const authMutationRateLimit = { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs }
-    app.post('/auth/login', { config: { rateLimit: authLoginRateLimit } }, async (request, reply) => {
-        const { traceId } = getTraceContext(request)
-        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
-
-        const res = await fetch(`${config.authUrl}/auth/login`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                ...outgoingHeaders,
-            },
-            body: JSON.stringify(request.body ?? {}),
-        })
-
-        if (!res.ok) {
-            reply.status(res.status)
-            return res.json().catch(() => ({}))
-        }
-
-        const data = (await res.json()) as AuthTokens
-        if (!data.access_token) {
-            reply.status(502)
-            return { error: 'Auth service response missing access_token' }
-        }
-
-        setAuthCookies(reply, config, data)
-        setCsrfCookie(reply, config)
-
-        const { access_token, refresh_token, ...rest } = data
-        // Forward password_change_required so the frontend can redirect to the
-        // change-password page. Strip it from the object if it is falsy to
-        // keep the response body lean.
-        if (!rest.password_change_required) {
-            delete rest.password_change_required
-        }
-        return rest
-    })
-
-    app.post('/auth/register', { config: { rateLimit: authRegisterRateLimit } }, async (request, reply) => {
-        const { traceId } = getTraceContext(request)
-        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
-
-        const res = await fetch(`${config.authUrl}/auth/register`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                ...outgoingHeaders,
-            },
-            body: JSON.stringify(request.body ?? {}),
-        })
-
-        if (!res.ok) {
-            reply.status(res.status)
-            return res.json().catch(() => ({}))
-        }
-
-        const data = (await res.json()) as AuthTokens
-        if (!data.access_token) {
-            reply.status(502)
-            return { error: 'Auth service response missing access_token' }
-        }
-
-        setAuthCookies(reply, config, data)
-        setCsrfCookie(reply, config)
-
-        const { access_token, refresh_token, ...rest } = data
-        return rest
-    })
-
-    app.post('/auth/refresh', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
-        const refreshToken =
-            request.cookies[config.refreshCookieName] ??
-            (request.body as Record<string, unknown> | undefined)?.[
-            config.refreshCookieName
-            ]
-
-        if (!refreshToken) {
-            reply.status(401)
-            return { error: 'Refresh token not provided' }
-        }
-
-        const { traceId } = getTraceContext(request)
-        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
-
-        const res = await fetch(`${config.authUrl}/auth/refresh`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                ...outgoingHeaders,
-            },
-            body: JSON.stringify({ refresh_token: refreshToken }),
-        })
-
-        if (!res.ok) {
-            clearAuthCookies(reply, config)
-            reply.status(res.status)
-            return res.json().catch(() => ({}))
-        }
-
-        const data = (await res.json()) as AuthTokens
-        if (!data.access_token) {
-            reply.status(502)
-            return { error: 'Auth service response missing access_token' }
-        }
-
-        setAuthCookies(reply, config, data)
-        setCsrfCookie(reply, config)
-        const { access_token, refresh_token, ...rest } = data
-        return rest
-    })
-
-    app.post('/auth/logout', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
-        const { traceId, requestId } = getTraceContext(request)
-        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
-
-        const refreshToken = request.cookies?.[config.refreshCookieName]
-
-        // Best-effort revoke — always pass the refresh token so the auth-service
-        // can invalidate the token family (rotation support).
-        try {
-            await fetch(`${config.authUrl}/auth/logout`, {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                    ...outgoingHeaders,
-                },
-                body: JSON.stringify(
-                    refreshToken ? { refresh_token: refreshToken } : {}
-                ),
-            })
-        } catch (err) {
-            request.log.warn(
-                { err, trace_id: traceId, request_id: requestId },
-                'Auth logout upstream failed'
-            )
-        }
-
-        clearAuthCookies(reply, config)
-        return { ok: true }
-    })
-
-    // Password reset routes — public, no auth/CSRF required
-    app.post('/auth/password-reset/request', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
-        const { traceId } = getTraceContext(request)
-        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
-
-        const res = await fetch(`${config.authUrl}/auth/password-reset/request`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                ...outgoingHeaders,
-            },
-            body: JSON.stringify(request.body ?? {}),
-        })
-
-        reply.status(res.status)
-        return res.json().catch(() => ({}))
-    })
-
-    app.post('/auth/password-reset/confirm', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
-        const { traceId } = getTraceContext(request)
-        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
-
-        const res = await fetch(`${config.authUrl}/auth/password-reset/confirm`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                ...outgoingHeaders,
-            },
-            body: JSON.stringify(request.body ?? {}),
-        })
-
-        if (!res.ok) {
-            reply.status(res.status)
-            return res.json().catch(() => ({}))
-        }
-
-        const data = (await res.json()) as AuthTokens
-        if (data.access_token) {
-            setAuthCookies(reply, config, data)
-            setCsrfCookie(reply, config)
-            const { access_token, refresh_token, ...rest } = data
-            return rest
-        }
-
-        return data
-    })
-
-    app.get('/auth/me', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
-        const access = request.cookies[config.accessCookieName]
-        if (!access) {
-            reply.status(401)
-            return { error: 'Unauthorized' }
-        }
-
-        const { traceId } = getTraceContext(request)
-        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
-
-        const res = await fetch(`${config.authUrl}/auth/me`, {
-            headers: {
-                authorization: `Bearer ${access}`,
-                ...outgoingHeaders,
-            },
-        })
-
-        if (!res.ok) {
-            if (res.status === 401) {
-                clearAuthCookies(reply, config)
-            }
-            reply.status(res.status)
-            return res.json().catch(() => ({}))
-        }
-
-        return res.json().catch(() => ({}))
-    })
+    await app.register(registerAuthRoutes, { config })
 
     // Admin routes proxy — forward /auth/admin/* to Auth Service with access token from cookie
     await registerAuthProxy(app, {
@@ -919,27 +501,6 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
         accessCookieName: config.accessCookieName,
         deleteCookie: false,
     })
-
-    /**
-     * Декодирует JWT токен и извлекает user_id
-     */
-    function decodeJWT(token: string): { user_id?: string } | null {
-        try {
-            // JWT состоит из трех частей: header.payload.signature
-            const parts = token.split('.')
-            if (parts.length !== 3) return null
-
-            // Декодируем payload (base64url)
-            const payload = parts[1]
-            const decoded = Buffer.from(payload, 'base64url').toString('utf-8')
-            const parsed = JSON.parse(decoded)
-
-            // JWT payload содержит sub (subject) с user_id
-            return { user_id: parsed.sub || parsed.user_id }
-        } catch (err) {
-            return null
-        }
-    }
 
     /**
      * Извлекает project_id из query параметров
@@ -1045,7 +606,7 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
     }
 
     function getRbacClaimsFromJwt(token: string): JwtRbacClaims | null {
-        const payload = _decodeJwtPayload(token)
+        const payload = decodeJwtPayload(token)
         if (!payload) return null
         const userId = (payload.sub ?? payload.user_id) as string | undefined
         if (!userId) return null
@@ -1297,9 +858,9 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
                     newHeaders['X-Request-Id'] = outgoingHeaders['X-Request-Id']
                     if (access) {
                         newHeaders['authorization'] = `Bearer ${access}`
-                        const decoded = decodeJWT(access)
-                        if (decoded?.user_id) {
-                            newHeaders['X-User-Id'] = decoded.user_id
+                        const userId = decodeJwtUserId(access)
+                        if (userId) {
+                            newHeaders['X-User-Id'] = userId
                         }
                     }
                     const permIsSuperadmin = (req as any).permissionsIsSuperadmin
@@ -1424,9 +985,9 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
 
                 if (access) {
                     newHeaders['authorization'] = `Bearer ${access}`
-                    const decoded = decodeJWT(access)
-                    if (decoded?.user_id) {
-                        newHeaders['X-User-Id'] = decoded.user_id
+                    const userId = decodeJwtUserId(access)
+                    if (userId) {
+                        newHeaders['X-User-Id'] = userId
                     }
                 }
 
@@ -1508,9 +1069,9 @@ export async function buildServer(config: Config, _cache?: PermissionsCache) {
                     newHeaders['authorization'] = `Bearer ${access}`
 
                     // Декодируем JWT для получения user_id
-                    const decoded = decodeJWT(access)
-                    if (decoded?.user_id) {
-                        newHeaders['X-User-Id'] = decoded.user_id
+                    const userId = decodeJwtUserId(access)
+                    if (userId) {
+                        newHeaders['X-User-Id'] = userId
                     }
                 }
 

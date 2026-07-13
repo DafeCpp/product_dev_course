@@ -1,6 +1,6 @@
 import fastify from 'fastify'
 import cookie from '@fastify/cookie'
-import { parseCookiesLocal, registerAuthProxy, RegisterAuthProxyOptions } from '../src/proxyFactory'
+import { registerAuthProxy, RegisterAuthProxyOptions } from '../src/proxyFactory'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -25,41 +25,6 @@ async function makeProxy(upstream: string, opts: Omit<RegisterAuthProxyOptions, 
     await app.ready()
     return app
 }
-
-// ---------------------------------------------------------------------------
-// parseCookiesLocal
-// ---------------------------------------------------------------------------
-
-describe('parseCookiesLocal', () => {
-    it('parses a simple key=value pair', () => {
-        expect(parseCookiesLocal('a=1')).toEqual({ a: '1' })
-    })
-
-    it('parses multiple pairs separated by semicolons', () => {
-        expect(parseCookiesLocal('a=1; b=2; c=3')).toEqual({ a: '1', b: '2', c: '3' })
-    })
-
-    it('decodes percent-encoded values', () => {
-        expect(parseCookiesLocal('token=hello%20world')).toEqual({ token: 'hello world' })
-    })
-
-    it('returns empty object for undefined input', () => {
-        expect(parseCookiesLocal(undefined)).toEqual({})
-    })
-
-    it('returns empty object for empty string', () => {
-        expect(parseCookiesLocal('')).toEqual({})
-    })
-
-    it('handles a cookie with an embedded equals sign in its value', () => {
-        const result = parseCookiesLocal('jwt=header.payload.sig==')
-        expect(result['jwt']).toBe('header.payload.sig==')
-    })
-
-    it('ignores malformed pairs without an equals sign', () => {
-        expect(parseCookiesLocal('bad; a=1')).toEqual({ a: '1' })
-    })
-})
 
 // ---------------------------------------------------------------------------
 // registerAuthProxy — header injection
