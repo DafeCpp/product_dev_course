@@ -15,6 +15,7 @@ export type ProxyRouteKind =
     | 'experiment-service'
 
 export type ProxyRouteName =
+    | 'auth-admin'
     | 'projects-web'
     | 'telemetry-ingest'
     | 'scripts-api'
@@ -40,6 +41,14 @@ export interface ProxyRouteDefinition {
 
 export function buildProxyRouteTable(config: ProxyRouteConfig): ProxyRouteDefinition[] {
     return [
+        {
+            name: 'auth-admin',
+            kind: 'auth-api',
+            prefix: '/auth/admin',
+            upstream: config.authUrl,
+            rewritePrefix: '/auth/admin',
+            deleteCookie: false,
+        },
         {
             name: 'projects-web',
             kind: 'auth-web',

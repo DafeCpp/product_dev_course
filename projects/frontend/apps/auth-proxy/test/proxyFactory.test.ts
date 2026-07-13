@@ -1,6 +1,6 @@
 import fastify from 'fastify'
 import cookie from '@fastify/cookie'
-import { registerAuthProxy, RegisterAuthProxyOptions } from '../src/proxyFactory'
+import { registerAuthProxy, RegisterAuthProxyOptions } from '../src/proxy/factory'
 
 // ---------------------------------------------------------------------------
 // Helpers

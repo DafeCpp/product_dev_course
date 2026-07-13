@@ -1,4 +1,4 @@
-import { buildProxyRouteTable, ProxyRouteConfig } from '../src/routeTable'
+import { buildProxyRouteTable, ProxyRouteConfig } from '../src/proxy/routes'
 
 const config: ProxyRouteConfig = {
     authUrl: 'http://auth-service:8001',
@@ -15,6 +15,7 @@ describe('buildProxyRouteTable', () => {
         )
 
         expect(routesByPrefix.get('/projects')?.upstream).toBe(config.authUrl)
+        expect(routesByPrefix.get('/auth/admin')?.upstream).toBe(config.authUrl)
         expect(routesByPrefix.get('/api/v1/users')?.upstream).toBe(config.authUrl)
         expect(routesByPrefix.get('/api/v1/system-roles')?.upstream).toBe(config.authUrl)
         expect(routesByPrefix.get('/api/v1/permissions')?.upstream).toBe(config.authUrl)
