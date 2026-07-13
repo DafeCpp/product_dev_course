@@ -146,12 +146,17 @@ terraform init
 # Если используется .terraform.lock.hcl и провайдер не подтянулся, привяжите lock к зеркалу:
 # terraform providers lock -net-mirror=https://terraform-mirror.yandexcloud.net -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_arm64 yandex-cloud/yandex
 
-# Предпросмотр с сохранением точного плана
-terraform plan -out=tfplan
-terraform show tfplan
+# Saved plan содержит sensitive values: закрываем права и храним в ignored .terraform/.
+umask 077
+TFPLAN=.terraform/tfplan
+trap 'rm -f "$TFPLAN"' EXIT
+terraform plan -out="$TFPLAN"
+terraform show "$TFPLAN"
 
 # Создание ресурсов (~10-15 минут)
-terraform apply tfplan
+terraform apply "$TFPLAN"
+rm -f "$TFPLAN"
+trap - EXIT
 ```
 
 Terraform создаст:
@@ -426,19 +431,26 @@ VM_HOST=<ip> REGISTRY_ID=<id> ./scripts/deploy.sh v1.0.0
 cd infrastructure/yandex-cloud
 terraform fmt -check
 terraform validate
-terraform plan -out=tfplan
-terraform show tfplan
+
+# Saved plan содержит sensitive values: закрываем права и храним в ignored .terraform/.
+umask 077
+TFPLAN=.terraform/tfplan
+trap 'rm -f "$TFPLAN"' EXIT
+terraform plan -out="$TFPLAN"
+terraform show "$TFPLAN"
 
 # Проверить, что план не удаляет и не заменяет ресурсы.
-terraform show -json tfplan | jq -e \
+terraform show -json "$TFPLAN" | jq -e \
   '[.resource_changes[] | select(.change.actions | index("delete"))] | length == 0'
 
 # Production VM должна оставаться без изменений.
-terraform show -json tfplan | jq -e \
+terraform show -json "$TFPLAN" | jq -e \
   '[.resource_changes[] | select(.address == "yandex_compute_instance.app") | .change.actions] == [["no-op"]]'
 
 # Применять только сохранённый и проверенный план.
-terraform apply tfplan
+terraform apply "$TFPLAN"
+rm -f "$TFPLAN"
+trap - EXIT
 ```
 
 Если любая из проверок завершилась ошибкой, `terraform apply` выполнять нельзя.
@@ -479,12 +491,27 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## Удаление инфраструктуры
 
-```bash
-cd infrastructure/yandex-cloud
-terraform destroy
-```
+Обычный `terraform destroy` и `make infra-destroy` намеренно не могут удалить
+production VM: ресурс защищён через `prevent_destroy`. Полный teardown выполняйте
+только как отдельную контролируемую операцию:
 
-> ВНИМАНИЕ: удалит все ресурсы, включая базу данных. Сделайте бэкап перед удалением.
+1. Создайте задачу и reviewed PR, обосновывающие полное удаление окружения.
+2. Сделайте и проверьте бэкапы Managed PostgreSQL, `.env`, сертификатов и
+   persistent Docker volumes.
+3. В этом PR временно удалите `prevent_destroy` из
+   `yandex_compute_instance.app`, выполните `terraform plan -destroy` и
+   добавьте текстовое резюме результата. Saved plan не публикуйте: он может
+   содержать секреты. Не удаляйте VM из Terraform state для обхода защиты.
+4. После merge выполните teardown с явным подтверждением:
+
+   ```bash
+   make infra-destroy CONFIRM_PRODUCTION_DESTROY=destroy-production
+   ```
+
+5. Отдельным PR верните `prevent_destroy = true`, чтобы следующее окружение снова
+   создавалось с защитой.
+
+> ВНИМАНИЕ: teardown удалит все управляемые ресурсы, включая базу данных.
 
 ## Бэкапы
 
