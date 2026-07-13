@@ -1,6 +1,8 @@
 """Asyncpg connection pool helpers."""
+
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import asyncpg  # type: ignore[import-untyped]
 
 from typing import Any, AsyncIterator, Protocol
@@ -54,6 +56,7 @@ def get_pool_sync() -> asyncpg.Pool:
     return _sync_pool
 
 
+@asynccontextmanager
 async def get_connection() -> AsyncIterator[asyncpg.Connection]:
     """Yield a connection from the global pool."""
     pool = await get_pool()
@@ -61,7 +64,9 @@ async def get_connection() -> AsyncIterator[asyncpg.Connection]:
         yield conn
 
 
-def create_pool_wrappers(settings: SettingsProtocol) -> tuple[
+def create_pool_wrappers(
+    settings: SettingsProtocol,
+) -> tuple[
     Any,
     Any,
 ]:
@@ -73,6 +78,7 @@ def create_pool_wrappers(settings: SettingsProtocol) -> tuple[
     Returns:
         Tuple of (init_pool_wrapper, close_pool_wrapper) functions
     """
+
     async def init_pool_wrapper(_app: Any = None) -> None:
         """Initialize global asyncpg pool using service settings."""
         await init_pool(str(settings.database_url), settings.db_pool_size, _app)
@@ -92,9 +98,7 @@ async def init_pool_service(_app: Any = None, settings: SettingsProtocol | None 
         settings: Settings object with database_url and db_pool_size.
     """
     if settings is None:
-        raise RuntimeError(
-            "settings parameter is required. Pass the service settings explicitly."
-        )
+        raise RuntimeError("settings parameter is required. Pass the service settings explicitly.")
     await init_pool(str(settings.database_url), settings.db_pool_size, _app)
 
 
@@ -111,4 +115,3 @@ async def get_pool_service() -> asyncpg.Pool:
 def get_pool_service_sync() -> asyncpg.Pool:
     """Get pool (sync version) - compatibility wrapper."""
     return get_pool_sync()
-

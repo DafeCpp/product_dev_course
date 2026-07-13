@@ -1,12 +1,21 @@
 """Unit tests for backend_common.db.pool module."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import asyncpg
 import pytest
 
 from backend_common.db import pool
+
+
+@pytest.fixture(autouse=True)
+def reset_pool_state():
+    pool.pool = None
+    pool._sync_pool = None
+    yield
+    pool.pool = None
+    pool._sync_pool = None
 
 
 class TestPoolInitialization:
@@ -15,7 +24,9 @@ class TestPoolInitialization:
     @pytest.mark.asyncio
     async def test_init_pool_creates_pool(self):
         """Test that init_pool creates an asyncpg pool."""
-        with patch("backend_common.db.pool.asyncpg.create_pool") as mock_create:
+        with patch(
+            "backend_common.db.pool.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create:
             mock_pool = AsyncMock()
             mock_create.return_value = mock_pool
 
@@ -35,7 +46,9 @@ class TestPoolInitialization:
         pool.pool = None
         pool._sync_pool = None
 
-        with patch("backend_common.db.pool.asyncpg.create_pool") as mock_create:
+        with patch(
+            "backend_common.db.pool.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create:
             mock_pool = AsyncMock()
             mock_create.return_value = mock_pool
 
@@ -52,7 +65,9 @@ class TestPoolInitialization:
         pool.pool = existing_pool
         pool._sync_pool = existing_pool
 
-        with patch("backend_common.db.pool.asyncpg.create_pool") as mock_create:
+        with patch(
+            "backend_common.db.pool.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create:
             await pool.init_pool("postgresql://localhost/db", 5)
 
             mock_create.assert_not_called()
@@ -61,7 +76,9 @@ class TestPoolInitialization:
     @pytest.mark.asyncio
     async def test_init_pool_with_app_parameter(self):
         """Test init_pool accepts optional app parameter."""
-        with patch("backend_common.db.pool.asyncpg.create_pool") as mock_create:
+        with patch(
+            "backend_common.db.pool.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create:
             mock_pool = AsyncMock()
             mock_create.return_value = mock_pool
 
@@ -76,7 +93,9 @@ class TestPoolInitialization:
         pool.pool = None
         pool._sync_pool = AsyncMock()
 
-        with patch("backend_common.db.pool.asyncpg.create_pool") as mock_create:
+        with patch(
+            "backend_common.db.pool.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create:
             new_pool = AsyncMock()
             mock_create.return_value = new_pool
 
@@ -182,7 +201,7 @@ class TestGetConnection:
     @pytest.mark.asyncio
     async def test_get_connection_yields_connection(self):
         """Test get_connection yields a connection from pool."""
-        mock_pool = AsyncMock()
+        mock_pool = MagicMock()
         mock_conn = AsyncMock()
 
         # Setup async context manager
@@ -199,7 +218,7 @@ class TestGetConnection:
     @pytest.mark.asyncio
     async def test_get_connection_releases_on_exit(self):
         """Test get_connection releases connection on exit."""
-        mock_pool = AsyncMock()
+        mock_pool = MagicMock()
         mock_conn = AsyncMock()
 
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
@@ -207,7 +226,7 @@ class TestGetConnection:
 
         pool.pool = mock_pool
 
-        async with pool.get_connection() as conn:
+        async with pool.get_connection():
             pass
 
         mock_pool.acquire.return_value.__aexit__.assert_called_once()
@@ -290,7 +309,7 @@ class TestCreatePoolWrappers:
 
         with patch("backend_common.db.pool.close_pool") as mock_close:
             _, close_fn = pool.create_pool_wrappers(mock_settings)
-            await close_pool_wrapper(mock_app)
+            await close_fn(mock_app)
 
             mock_close.assert_called_once_with(mock_app)
 
@@ -377,7 +396,9 @@ class TestPoolGlobalState:
         pool.pool = None
         pool._sync_pool = None
 
-        with patch("backend_common.db.pool.asyncpg.create_pool") as mock_create:
+        with patch(
+            "backend_common.db.pool.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create:
             mock_pool_obj = AsyncMock()
             mock_create.return_value = mock_pool_obj
 
@@ -397,7 +418,9 @@ class TestPoolGlobalState:
         pool.pool = None
         pool._sync_pool = None
 
-        with patch("backend_common.db.pool.asyncpg.create_pool") as mock_create:
+        with patch(
+            "backend_common.db.pool.asyncpg.create_pool", new_callable=AsyncMock
+        ) as mock_create:
             mock_pool1 = AsyncMock()
             mock_pool2 = AsyncMock()
             mock_create.side_effect = [mock_pool1, mock_pool2]

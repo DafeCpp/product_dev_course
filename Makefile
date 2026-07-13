@@ -8,11 +8,13 @@
 SHELL := /bin/bash
 
 BACKEND_SERVICES_DIR := projects/backend/services
+BACKEND_COMMON_DIR := projects/backend/common
 BACKEND_DIR := projects/backend/services/experiment-service
 FRONTEND_DIR := projects/frontend/apps/experiment-portal
 OPENAPI_SPEC := openapi/openapi.yaml
 # Find all backend services (directories with pyproject.toml)
 BACKEND_SERVICES := $(shell find $(BACKEND_SERVICES_DIR) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort)
+BACKEND_PROJECTS := $(BACKEND_COMMON_DIR) $(BACKEND_SERVICES)
 # Python interpreter to use for Poetry virtualenv.
 # Override examples:
 #   make PYTHON=/path/to/python backend-install
@@ -52,11 +54,11 @@ TEST_POSTGRESQL_DSN ?=
 test: type-check test-backend test-telemetry-cli test-frontend
 
 backend-install:
-	@if [ -z "$(BACKEND_SERVICES)" ]; then \
-		echo "⚠️  Не найдено ни одного backend сервиса в $(BACKEND_SERVICES_DIR)"; \
+	@if [ -z "$(BACKEND_PROJECTS)" ]; then \
+		echo "⚠️  Не найдено ни одного backend проекта"; \
 		exit 1; \
 	fi; \
-	for service in $(BACKEND_SERVICES); do \
+	for service in $(BACKEND_PROJECTS); do \
 		echo "📦 Installing dependencies for $$(basename $$service)..."; \
 		cd $$service && \
 			PY=""; \
@@ -158,6 +160,9 @@ test-backend: backend-install
 	failed=0; \
 	out_file="$$(mktemp -t backend-pytest.XXXXXX.log)"; \
 	trap 'rm -f "$$out_file"' EXIT; \
+	echo "🧪 Running tests for backend-common..."; \
+	set -o pipefail; \
+	(cd $(BACKEND_COMMON_DIR) && poetry run pytest) 2>&1 | tee -a "$$out_file" || failed=1; \
 	for service in $(BACKEND_SERVICES); do \
 		echo "🧪 Running tests for $$(basename $$service)..."; \
 		set -o pipefail; \
