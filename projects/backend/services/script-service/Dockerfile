@@ -19,6 +19,7 @@ RUN poetry install --no-root
 
 # Copy source code
 COPY services/script-service/src ./src
+COPY services/script-service/bin ./bin
 COPY services/script-service/migrations ./migrations
 
 # Set PYTHONPATH to include src directory
