@@ -165,7 +165,7 @@ trap - EXIT
 
 Terraform создаст:
 - VPC + подсеть + security groups
-- Managed PostgreSQL кластер с двумя БД
+- Managed PostgreSQL кластер с тремя БД
 - Container Registry
 - Compute VM с Docker
 - Service accounts для VM и CI/CD
@@ -182,8 +182,14 @@ terraform output container_registry_url
 # PostgreSQL хост
 terraform output pg_cluster_host
 
+# Готовые sensitive DSN для production .env.
+# Команда -raw выводит пароль в терминал: не сохраняйте вывод в shell history или git.
+terraform output -raw auth_database_url
+terraform output -raw experiment_database_url
+terraform output -raw config_database_url
+
 # CI ключ (для GitHub Secrets)
-terraform output -json ci_sa_key_private
+terraform output -raw ci_sa_key_json
 ```
 
 ### 4. Настройка VM
@@ -201,16 +207,22 @@ ssh deploy@<VM_IP> 'bash ~/setup-vm.sh'
 ```bash
 # Скопировать конфигурацию
 scp docker-compose.prod.yml deploy@<VM_IP>:/opt/experiment-tracking/
+scp scripts/validate-production-env.sh deploy@<VM_IP>:/opt/experiment-tracking/
 scp env.production.example deploy@<VM_IP>:/opt/experiment-tracking/.env
 scp -r infrastructure/logging/ deploy@<VM_IP>:/opt/experiment-tracking/infrastructure/
 
 # На VM — отредактировать .env
 ssh deploy@<VM_IP>
 nano /opt/experiment-tracking/.env
-# Заполнить: DATABASE_URL, JWT_SECRET, CR_REGISTRY, пароли
+# Заменить все PASSWORD / CHANGE_ME / GENERATE_* / YOUR_* и доменные заглушки.
 
-# Запустить
+# Pre-flight выполняется до любых действий с работающим стеком.
 cd /opt/experiment-tracking
+chmod 700 validate-production-env.sh
+./validate-production-env.sh .env docker-compose.prod.yml
+docker compose --env-file .env -f docker-compose.prod.yml config --quiet
+
+# Запустить только после успешного pre-flight
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
@@ -362,6 +374,40 @@ deploy; миграции его не выполняют. Не сохраняйт
 Terraform, production `.env` или GitHub Actions secrets. Используйте canonical
 процедуру с передачей пароля через stdin из
 [инструкции по инициализации администратора](admin-initialization.md#production-yandex-cloud).
+
+## Чеклист подключения нового сервиса к production
+
+Новый backend-сервис нельзя считать готовым к production только после добавления в
+`docker-compose.prod.yml`. Перед merge и первым релизом пройдите весь checklist:
+
+- **Test/build:** сервис присутствует в CI test matrix и release build/push matrix;
+  production Docker image действительно содержит runtime-код и миграции.
+- **Compose runtime:** runtime-сервис добавлен в `docker-compose.prod.yml`, имеет
+  healthcheck, restart/resource policy, внутреннюю сеть и только необходимые внешние порты.
+- **Миграции:** для сервиса с `migrations/` существует one-shot `*-migrate`;
+  runtime зависит от него через `service_completed_successfully`.
+- **Terraform DB:** добавлены DB/user, password variable с `sensitive = true`,
+  корректный owner/extensions и usable sensitive DSN output. Перед apply сохраните и
+  прочитайте plan: production VM не должна удаляться или заменяться.
+- **Применение инфраструктуры:** Terraform-ресурсы реально применены, а не только
+  описаны в коде; повторный `terraform plan` не показывает неожиданный drift.
+- **Runtime env:** каждый обязательный ключ используется в compose через
+  `${VAR:?message}`, добавлен в `env.production.example` и вручную доставлен в
+  `/opt/experiment-tracking/.env` без вывода секрета в логи.
+- **Pre-flight:** `validate-production-env.sh` и
+  `docker compose --env-file .env -f docker-compose.prod.yml config --quiet` проходят
+  на VM до первого `compose down`, `pull` или `up`.
+- **Маршрутизация:** proxy target, auth/RBAC, CORS и health-based dependencies обновлены.
+- **Диагностика:** сервис включён в deploy status/failure logs и централизованный сбор
+  логов; сообщение об ошибке не раскрывает значения env.
+- **Smoke:** migrate-job завершился, сервис healthy, запрос через публичный маршрут
+  проходит; негативный pre-flight с удалённым обязательным ключом падает без остановки
+  уже работающего стека.
+- **Документация:** runbook описывает получение инфраструктурных outputs, доставку env,
+  ручной deploy, rollback и восстановление после ошибки.
+
+Полный автоматический drift-check между manifest, dev/prod compose, build matrix,
+миграциями и Terraform остаётся предметом LOS-112.
 
 ## Мониторинг
 

@@ -34,19 +34,19 @@ output "pg_cluster_host" {
 
 output "auth_database_url" {
   description = "AUTH_DATABASE_URL for auth-service"
-  value       = "postgresql://auth_user:***@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/auth_db?sslmode=verify-full"
+  value       = "postgresql://auth_user:${replace(urlencode(var.pg_auth_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/auth_db?sslmode=verify-full"
   sensitive   = true
 }
 
 output "experiment_database_url" {
   description = "EXPERIMENT_DATABASE_URL for experiment-service"
-  value       = "postgresql://experiment_user:***@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/experiment_db?sslmode=verify-full"
+  value       = "postgresql://experiment_user:${replace(urlencode(var.pg_experiment_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/experiment_db?sslmode=verify-full"
   sensitive   = true
 }
 
 output "config_database_url" {
   description = "CONFIG_DATABASE_URL for config-service"
-  value       = "postgresql://config_user:***@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/config_db?sslmode=verify-full"
+  value       = "postgresql://config_user:${replace(urlencode(var.pg_config_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/config_db?sslmode=verify-full"
   sensitive   = true
 }
 

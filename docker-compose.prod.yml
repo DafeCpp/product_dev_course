@@ -22,10 +22,10 @@ services:
   # Managed PostgreSQL is external; the target databases/users must already
   # exist (provisioned via Terraform). Idempotent: tracks schema_migrations.
   auth-migrate:
-    image: ${CR_REGISTRY}/auth-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/auth-service:${IMAGE_TAG:-latest}
     container_name: auth-migrate
     environment:
-      - DATABASE_URL=${AUTH_DATABASE_URL}
+      - DATABASE_URL=${AUTH_DATABASE_URL:?AUTH_DATABASE_URL must be set in production .env}
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
       - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
@@ -35,10 +35,10 @@ services:
     restart: "no"
 
   config-migrate:
-    image: ${CR_REGISTRY}/config-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/config-service:${IMAGE_TAG:-latest}
     container_name: config-migrate
     environment:
-      - DATABASE_URL=${CONFIG_DATABASE_URL}
+      - DATABASE_URL=${CONFIG_DATABASE_URL:?CONFIG_DATABASE_URL must be set in production .env}
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
       - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
@@ -48,10 +48,10 @@ services:
     restart: "no"
 
   experiment-migrate:
-    image: ${CR_REGISTRY}/experiment-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/experiment-service:${IMAGE_TAG:-latest}
     container_name: experiment-migrate
     environment:
-      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:?EXPERIMENT_DATABASE_URL must be set in production .env}
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
       - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
@@ -64,13 +64,13 @@ services:
   # both write the shared schema_migrations table. Runs strictly after
   # experiment-migrate so the two never race on CREATE TABLE IF NOT EXISTS.
   telemetry-ingest-migrate:
-    image: ${CR_REGISTRY}/telemetry-ingest-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/telemetry-ingest-service:${IMAGE_TAG:-latest}
     container_name: telemetry-ingest-migrate
     depends_on:
       experiment-migrate:
         condition: service_completed_successfully
     environment:
-      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:?EXPERIMENT_DATABASE_URL must be set in production .env}
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
       - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
@@ -80,23 +80,23 @@ services:
     restart: "no"
 
   auth-service:
-    image: ${CR_REGISTRY}/auth-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/auth-service:${IMAGE_TAG:-latest}
     container_name: auth-service
     depends_on:
       auth-migrate:
         condition: service_completed_successfully
     environment:
-      - DATABASE_URL=${AUTH_DATABASE_URL}
+      - DATABASE_URL=${AUTH_DATABASE_URL:?AUTH_DATABASE_URL must be set in production .env}
       - ENV=production
       - HOST=0.0.0.0
       - PORT=8001
       - DB_POOL_SIZE=${AUTH_SERVICE_DB_POOL_SIZE:-20}
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in production .env}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ACCESS_TOKEN_TTL_SEC=${ACCESS_TTL_SEC:-900}
       - REFRESH_TOKEN_TTL_SEC=${REFRESH_TTL_SEC:-1209600}
       - BCRYPT_ROUNDS=${BCRYPT_ROUNDS:-12}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS must be set in production .env}
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
       - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
@@ -117,10 +117,10 @@ services:
           memory: 512M
 
   experiment-service:
-    image: ${CR_REGISTRY}/experiment-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/experiment-service:${IMAGE_TAG:-latest}
     container_name: experiment-service
     environment:
-      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:?EXPERIMENT_DATABASE_URL must be set in production .env}
       - ENV=production
       - HOST=0.0.0.0
       - PORT=8002
@@ -152,15 +152,15 @@ services:
           memory: 512M
 
   telemetry-ingest-service:
-    image: ${CR_REGISTRY}/telemetry-ingest-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/telemetry-ingest-service:${IMAGE_TAG:-latest}
     container_name: telemetry-ingest-service
     environment:
-      - DATABASE_URL=${EXPERIMENT_DATABASE_URL}
+      - DATABASE_URL=${EXPERIMENT_DATABASE_URL:?EXPERIMENT_DATABASE_URL must be set in production .env}
       - ENV=production
       - HOST=0.0.0.0
       - PORT=8003
       - DB_POOL_SIZE=${TELEMETRY_INGEST_DB_POOL_SIZE:-20}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS must be set in production .env}
       - AUTH_SERVICE_URL=http://auth-service:8001
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
@@ -188,19 +188,19 @@ services:
           memory: 256M
 
   config-service:
-    image: ${CR_REGISTRY}/config-service:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/config-service:${IMAGE_TAG:-latest}
     container_name: config-service
     depends_on:
       config-migrate:
         condition: service_completed_successfully
     environment:
-      - DATABASE_URL=${CONFIG_DATABASE_URL}
+      - DATABASE_URL=${CONFIG_DATABASE_URL:?CONFIG_DATABASE_URL must be set in production .env}
       - ENV=production
       - HOST=0.0.0.0
       - PORT=8005
       - DB_POOL_SIZE=${CONFIG_SERVICE_DB_POOL_SIZE:-10}
       - AUTH_SERVICE_URL=http://auth-service:8001/api/v1
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS must be set in production .env}
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
       - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
@@ -222,7 +222,7 @@ services:
           memory: 256M
 
   auth-proxy:
-    image: ${CR_REGISTRY}/auth-proxy:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/auth-proxy:${IMAGE_TAG:-latest}
     container_name: auth-proxy
     environment:
       - PORT=8080
@@ -230,14 +230,14 @@ services:
       - TARGET_TELEMETRY_URL=http://telemetry-ingest-service:8003
       - TARGET_CONFIG_SERVICE_URL=http://config-service:8005
       - AUTH_URL=http://auth-service:8001
-      - COOKIE_DOMAIN=${COOKIE_DOMAIN}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:?COOKIE_DOMAIN must be set in production .env}
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
       - COOKIE_SAMESITE=${COOKIE_SAMESITE:-lax}
       - ACCESS_COOKIE_NAME=${ACCESS_COOKIE_NAME:-access_token}
       - REFRESH_COOKIE_NAME=${REFRESH_COOKIE_NAME:-refresh_token}
       - ACCESS_TTL_SEC=${ACCESS_TTL_SEC:-900}
       - REFRESH_TTL_SEC=${REFRESH_TTL_SEC:-1209600}
-      - CORS_ORIGINS=${CORS_ORIGINS}
+      - CORS_ORIGINS=${CORS_ORIGINS:?CORS_ORIGINS must be set in production .env}
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-60}
       - LOG_LEVEL=${AUTH_PROXY_LOG_LEVEL:-warn}
@@ -266,7 +266,7 @@ services:
           memory: 256M
 
   experiment-portal:
-    image: ${CR_REGISTRY}/experiment-portal:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/experiment-portal:${IMAGE_TAG:-latest}
     container_name: experiment-portal
     environment:
       - NODE_ENV=production
@@ -289,7 +289,7 @@ services:
           memory: 128M
 
   sensor-simulator:
-    image: ${CR_REGISTRY}/sensor-simulator:${IMAGE_TAG:-latest}
+    image: ${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/sensor-simulator:${IMAGE_TAG:-latest}
     container_name: sensor-simulator
     environment:
       - NODE_ENV=production
@@ -353,7 +353,7 @@ services:
       - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in production .env}
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3001}
     volumes:

@@ -1,0 +1,55 @@
+name: Production Contract Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - docker-compose.prod.yml
+      - env.production.example
+      - scripts/validate-production-env.sh
+      - scripts/tests/test_production_deploy_contract.py
+      - infrastructure/yandex-cloud/outputs.tf
+      - .github/workflows/deploy.yml
+      - .github/workflows/production-contract-tests.yml
+      - Makefile
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - docker-compose.prod.yml
+      - env.production.example
+      - scripts/validate-production-env.sh
+      - scripts/tests/test_production_deploy_contract.py
+      - infrastructure/yandex-cloud/outputs.tf
+      - .github/workflows/deploy.yml
+      - .github/workflows/production-contract-tests.yml
+      - Makefile
+
+permissions:
+  contents: read
+
+jobs:
+  production-contract:
+    name: Production runtime contract
+    runs-on: ubuntu-latest
+    env:
+      CR_REGISTRY: cr.yandex/ci-test-registry
+      AUTH_DATABASE_URL: postgresql://auth_user:ci-secret@db.example.net:6432/auth_db?sslmode=verify-full
+      EXPERIMENT_DATABASE_URL: postgresql://experiment_user:ci-secret@db.example.net:6432/experiment_db?sslmode=verify-full
+      CONFIG_DATABASE_URL: postgresql://config_user:ci-secret@db.example.net:6432/config_db?sslmode=verify-full
+      JWT_SECRET: ci-test-secret-longer-than-thirty-two-characters
+      COOKIE_DOMAIN: prod.example.net
+      CORS_ORIGINS: https://prod.example.net
+      CORS_ALLOWED_ORIGINS: https://prod.example.net
+      GRAFANA_ADMIN_PASSWORD: ci-test-grafana-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run contract tests
+        run: make test-deploy-contract
+
+      - name: Render production compose
+        run: docker compose -f docker-compose.prod.yml config --quiet
