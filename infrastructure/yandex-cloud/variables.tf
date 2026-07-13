@@ -70,7 +70,7 @@ variable "vm_cores" {
 variable "vm_memory_gb" {
   description = "RAM in GB"
   type        = number
-  default     = 4
+  default     = 6
 }
 
 variable "vm_core_fraction" {
@@ -104,7 +104,7 @@ variable "vm_ssh_public_key_path" {
 }
 
 variable "vm_preemptible" {
-  description = "Use preemptible (spot) VM for cost savings. Will be stopped after 24h."
+  description = "Use a preemptible VM. Must remain false for production."
   type        = bool
   default     = false
 }

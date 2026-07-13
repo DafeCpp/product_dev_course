@@ -49,13 +49,14 @@
 
 | Сервис | Для чего | Примерная стоимость |
 |--------|----------|---------------------|
-| **Compute Cloud** | VM для Docker Compose (2 vCPU, 4 GB) | ~2500 руб/мес |
+| **Compute Cloud** | VM для Docker Compose (2 vCPU, 6 GB) | зависит от актуального тарифа |
 | **Managed PostgreSQL** | БД с TimescaleDB (s2.micro, 20 GB SSD) | ~4000 руб/мес |
 | **Container Registry** | Хранение Docker-образов | ~100 руб/мес |
 | **VPC + Static IP** | Сеть и статический адрес | ~300 руб/мес |
-| **Итого** | | **~7000 руб/мес** |
+| **Итого** | | зависит от актуальных тарифов |
 
-> Для экономии можно использовать прерываемую VM (`vm_preemptible = true`) — в 3 раза дешевле, но может быть остановлена.
+> Прерываемую VM (`vm_preemptible = true`) можно использовать только в dev/staging.
+> Production VM должна оставаться непрерываемой (`vm_preemptible = false`).
 
 ## Пререквизиты
 
@@ -63,8 +64,9 @@
 2. **Права в каталоге:** учётная запись, от которой выполняется `terraform apply` (OAuth через `yc init` или сервисный аккаунт), должна иметь в каталоге роль **Администратор** (или как минимум роли для создания ресурсов + **Управление доступом к ресурсам** / `resource-manager.admin`). Иначе создание IAM-привязок для VM и CI завершится ошибкой *Permission denied*.
 3. **Yandex Cloud CLI** (`yc`): [инструкция](https://cloud.yandex.ru/docs/cli/quickstart)
 4. **Terraform** >= 1.5: [установка](https://developer.hashicorp.com/terraform/install)
-5. **Docker** для локальной сборки образов (опционально)
-6. **SSH-ключ** для доступа к VM
+5. **jq** для проверки сохранённого Terraform plan
+6. **Docker** для локальной сборки образов (опционально)
+7. **SSH-ключ** для доступа к VM
 
 ## Установка пререквизитов (Linux)
 
@@ -132,6 +134,9 @@ provider_installation {
 Так Terraform будет ставить провайдер Yandex с [официального зеркала Yandex Cloud](https://yandex.cloud/en/docs/terraform/quickstart) без обращения к registry.terraform.io.
 
 ```bash
+(
+set -euo pipefail
+
 cd infrastructure/yandex-cloud
 
 # Копируем и заполняем переменные
@@ -144,11 +149,18 @@ terraform init
 # Если используется .terraform.lock.hcl и провайдер не подтянулся, привяжите lock к зеркалу:
 # terraform providers lock -net-mirror=https://terraform-mirror.yandexcloud.net -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_arm64 yandex-cloud/yandex
 
-# Предпросмотр
-terraform plan
+# Saved plan содержит sensitive values: закрываем права и храним в ignored .terraform/.
+umask 077
+TFPLAN=.terraform/tfplan
+trap 'rm -f "$TFPLAN"' EXIT
+terraform plan -out="$TFPLAN"
+terraform show "$TFPLAN"
 
 # Создание ресурсов (~10-15 минут)
-terraform apply
+terraform apply "$TFPLAN"
+rm -f "$TFPLAN"
+trap - EXIT
+)
 ```
 
 Terraform создаст:
@@ -345,26 +357,11 @@ docker compose -f docker-compose.prod.yml run --rm telemetry-ingest-migrate
 Базы и пользователи (`experiment_db` / `experiment_user` и др.) создаются Terraform —
 см. `infrastructure/yandex-cloud/database.tf`. Миграции их не создают.
 
-Создание первого админа (требуется `ADMIN_PASSWORD`) — отдельный шаг, миграциями не
-покрывается:
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T auth-service \
-  python -m bin.seed \
-    --database-url "$AUTH_DATABASE_URL" \
-    --username admin \
-    --email admin@example.com \
-    --password "$ADMIN_PASSWORD"
-```
-
-### Инициализация админа при первом деплое
-
-При развёртывании в production необходимо:
-1. Установить переменную окружения `ADMIN_PASSWORD` перед запуском контейнеров (в `.env` или Terraform)
-2. Запустить `docker compose exec -T auth-service python -m bin.seed` (или просто запустить сервисы, если init-скрипты настроены)
-3. Первый админ будет создан с логином из `ADMIN_USERNAME` (по умолчанию: `admin`) и паролем из `ADMIN_PASSWORD`
-
-**Совет:** используйте сильные пароли для production. Админ может позже создать других пользователей через API или CSV-импорт.
+Создание первого администратора — отдельный одноразовый шаг после успешного
+deploy; миграции его не выполняют. Не сохраняйте bootstrap credentials в
+Terraform, production `.env` или GitHub Actions secrets. Используйте canonical
+процедуру с передачей пароля через stdin из
+[инструкции по инициализации администратора](admin-initialization.md#production-yandex-cloud).
 
 ## Мониторинг
 
@@ -420,10 +417,58 @@ VM_HOST=<ip> REGISTRY_ID=<id> ./scripts/deploy.sh v1.0.0
 ### Обновление инфраструктуры
 
 ```bash
+(
+set -euo pipefail
+
 cd infrastructure/yandex-cloud
-terraform plan    # проверить изменения
-terraform apply   # применить
+terraform fmt -check
+terraform validate
+
+# Saved plan содержит sensitive values: закрываем права и храним в ignored .terraform/.
+umask 077
+TFPLAN=.terraform/tfplan
+trap 'rm -f "$TFPLAN"' EXIT
+terraform plan -out="$TFPLAN"
+terraform show "$TFPLAN"
+
+# Проверить, что план не удаляет и не заменяет ресурсы.
+terraform show -json "$TFPLAN" | jq -e \
+  '[.resource_changes[] | select(.change.actions | index("delete"))] | length == 0'
+
+# Production VM должна оставаться без изменений.
+terraform show -json "$TFPLAN" | jq -e \
+  '[.resource_changes[] | select(.address == "yandex_compute_instance.app") | .change.actions] == [["no-op"]]'
+
+# Применять только сохранённый и проверенный план.
+terraform apply "$TFPLAN"
+rm -f "$TFPLAN"
+trap - EXIT
+)
 ```
+
+Если любая из проверок завершилась ошибкой, `terraform apply` выполнять нельзя.
+Добавление новых ресурсов допустимо, но действия `delete` и `replace` должны быть
+разобраны и согласованы отдельно. Не используйте `-target`, удаление ресурса из
+state или `-replace`, чтобы обойти защиту production VM.
+
+Изменение актуального образа семейства COI игнорируется для уже созданной VM:
+новый `image_id` не должен превращать обычное обновление инфраструктуры в
+пересоздание машины.
+
+### Контролируемая замена production VM
+
+`yandex_compute_instance.app` защищена через `prevent_destroy`. Если VM
+действительно требуется заменить:
+
+1. Создайте отдельную задачу и PR с причиной замены и планом миграции.
+2. Сохраните `.env`, сертификаты и данные persistent Docker volumes в защищённое
+   хранилище и проверьте восстановление.
+3. Запланируйте maintenance window и способ отката на старую VM.
+4. В отдельном PR временно измените lifecycle-защиту и приложите проверенный
+   Terraform plan, в котором replacement является единственным ожидаемым
+   destructive action.
+5. После миграции верните `prevent_destroy = true` и убедитесь, что новый plan
+   не содержит изменений.
 
 ## Откат
 
@@ -439,12 +484,27 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## Удаление инфраструктуры
 
-```bash
-cd infrastructure/yandex-cloud
-terraform destroy
-```
+Обычный `terraform destroy` и `make infra-destroy` намеренно не могут удалить
+production VM: ресурс защищён через `prevent_destroy`. Полный teardown выполняйте
+только как отдельную контролируемую операцию:
 
-> ВНИМАНИЕ: удалит все ресурсы, включая базу данных. Сделайте бэкап перед удалением.
+1. Создайте задачу и reviewed PR, обосновывающие полное удаление окружения.
+2. Сделайте и проверьте бэкапы Managed PostgreSQL, `.env`, сертификатов и
+   persistent Docker volumes.
+3. В этом PR временно удалите `prevent_destroy` из
+   `yandex_compute_instance.app`, выполните `terraform plan -destroy` и
+   добавьте текстовое резюме результата. Saved plan не публикуйте: он может
+   содержать секреты. Не удаляйте VM из Terraform state для обхода защиты.
+4. После merge выполните teardown с явным подтверждением:
+
+   ```bash
+   make infra-destroy CONFIRM_PRODUCTION_DESTROY=destroy-production
+   ```
+
+5. Отдельным PR верните `prevent_destroy = true`, чтобы следующее окружение снова
+   создавалось с защитой.
+
+> ВНИМАНИЕ: teardown удалит все управляемые ресурсы, включая базу данных.
 
 ## Бэкапы
 

@@ -800,7 +800,12 @@ infra-apply:
 	@cd infrastructure/yandex-cloud && terraform apply
 
 infra-destroy:
-	@echo "ВНИМАНИЕ: удалит ВСЮ инфраструктуру в Yandex Cloud!"
+	@if [ "$(CONFIRM_PRODUCTION_DESTROY)" != "destroy-production" ]; then \
+		echo "ОТКАЗ: production teardown требует CONFIRM_PRODUCTION_DESTROY=destroy-production"; \
+		echo "Сначала выполните процедуру снятия prevent_destroy из docs/deployment-yandex-cloud.md"; \
+		exit 1; \
+	fi
+	@echo "ВНИМАНИЕ: удаляется ВСЯ инфраструктура в Yandex Cloud!"
 	@cd infrastructure/yandex-cloud && terraform destroy
 
 .PHONY: mvp-demo-check

@@ -36,52 +36,64 @@ curl -X POST http://localhost:8001/auth/admin/bootstrap \
   }'
 ```
 
-## Production (Yandex Cloud / Terraform)
+## Production (Yandex Cloud)
 
-### 1. Установка пароля в Terraform
+Production bootstrap-данные не являются Terraform-переменными. Не добавляйте
+`admin_username`, `admin_email` или `admin_password` в
+`infrastructure/yandex-cloud/terraform.tfvars`: Terraform их не использует, а
+state и сохранённый plan могут раскрыть переданные секреты.
 
-В `infrastructure/yandex-cloud/terraform.tfvars`:
+Миграции auth-service выполняет one-shot сервис `auth-migrate` при deploy.
+`make auth-init` предназначен только для development: он ожидает локальный
+PostgreSQL из `docker-compose.yml`, которого нет в production compose.
 
-```hcl
-# Переменная окружения для первого админа
-admin_password = "GenerateStrongPassword123!@#"
-admin_email    = "admin@yourdomain.com"
-admin_username = "admin"
-```
-
-В `infrastructure/yandex-cloud/main.tf` эти переменные передаются в `.env` на VM.
-
-### 2. Миграции + seed при запуске
-
-После deploy Terraform:
+После успешного deploy подключитесь к production VM:
 
 ```bash
 ssh deploy@<VM_IP>
-cd /opt/experiment-tracking
-
-# Применить миграции и создать админа одновременно
-make auth-init ADMIN_PASSWORD="$ADMIN_PASSWORD"
-
-# Или вручную:
-docker compose -f docker-compose.prod.yml exec -T auth-service \
-  python -m bin.migrate --database-url "$AUTH_DATABASE_URL"
-
-docker compose -f docker-compose.prod.yml exec -T auth-service \
-  python -m bin.seed \
-    --database-url "$AUTH_DATABASE_URL" \
-    --username admin \
-    --email "$ADMIN_EMAIL" \
-    --password "$ADMIN_PASSWORD"
 ```
 
-### 3. Безопасность
+В открытой SSH-сессии создайте первого администратора одноразовым запуском
+seed внутри работающего `auth-service`:
 
-- **Пароль:** используйте генератор (например, `openssl rand -base64 32`)
-- **Переменные окружения:** передавайте `ADMIN_PASSWORD` через:
-  - Terraform переменные → `.env` на VM
-  - или GitHub Actions secrets → Terraform
-- **После инициализации:** создайте дополнительных админов через API или управляющий интерфейс
-- **Смена пароля:** первый админ может сменить пароль через API `/auth/me`
+```bash
+(
+set -euo pipefail
+
+cd /opt/experiment-tracking
+
+read -rp "Admin username [admin]: " ADMIN_USERNAME
+ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+read -rp "Admin email: " ADMIN_EMAIL
+read -rsp "Admin password: " ADMIN_PASSWORD
+echo
+
+printf '%s\n' "$ADMIN_PASSWORD" | \
+docker compose -f docker-compose.prod.yml exec -T \
+  -e ADMIN_USERNAME="$ADMIN_USERNAME" \
+  -e ADMIN_EMAIL="$ADMIN_EMAIL" \
+  auth-service sh -ceu '
+    IFS= read -r ADMIN_PASSWORD
+    export ADMIN_PASSWORD
+    python -m bin.seed \
+      --database-url "$DATABASE_URL" \
+      --username "$ADMIN_USERNAME" \
+      --email "$ADMIN_EMAIL"
+  '
+)
+```
+
+Seed идемпотентен: если активный admin или superadmin уже существует, повторный
+запуск ничего не изменит.
+
+### Безопасность production bootstrap
+
+- Генерируйте уникальный пароль длиной не менее 8 символов, например через
+  password manager или `openssl rand -base64 32`.
+- Не сохраняйте bootstrap-пароль в Git, Terraform, `.env` или shell history.
+- После команды удалите пароль из окружения через `unset`.
+- Дополнительных администраторов создавайте через API или управляющий интерфейс.
+- Первый администратор может сменить пароль через API `/auth/me`.
 
 ## API создания админа вручную
 
@@ -134,9 +146,9 @@ UPDATE users SET password_change_required = true WHERE username = 'admin';
 
 | Переменная | Default | Описание |
 |------------|---------|---------|
-| `ADMIN_USERNAME` | `admin` | Логин первого админа |
-| `ADMIN_EMAIL` | `admin@example.com` | Email первого админа |
-| `ADMIN_PASSWORD` | (не установлена) | Пароль первого админа (ТРЕБУЕТСЯ для создания) |
+| `ADMIN_USERNAME` | `admin` | Одноразовый параметр `bin.seed`; не Terraform/runtime-конфигурация |
+| `ADMIN_EMAIL` | `admin@example.com` | Одноразовый параметр `bin.seed`; не Terraform/runtime-конфигурация |
+| `ADMIN_PASSWORD` | (не установлена) | Одноразовый секрет `bin.seed`; не хранить в Terraform или `.env` |
 | `AUTH_DATABASE_URL` | `postgresql://auth_user:auth_password@postgres:5432/auth_db` | Connection string auth БД |
 
 ## Статус: как проверить
