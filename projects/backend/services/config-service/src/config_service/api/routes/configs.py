@@ -21,7 +21,10 @@ from config_service.domain.dto import (
     RollbackRequest,
 )
 from config_service.domain.enums import ConfigType
-from config_service.prometheus_metrics import config_optimistic_lock_conflicts_total
+from config_service.prometheus_metrics import (
+    config_idempotency_hits_total,
+    config_optimistic_lock_conflicts_total,
+)
 from config_service.services.dependencies import (
     ensure_permission,
     get_audit_service,
@@ -150,34 +153,38 @@ async def create_config(request: web.Request) -> web.Response:
     audit_svc = await get_audit_service(request)
     idempotency_key = request.headers.get(_IDEMPOTENCY_KEY_HEADER)
 
-    if idempotency_key:
-        body_hash = idempotency_svc.body_hash(body)
+    body_hash = idempotency_svc.body_hash(body) if idempotency_key else None
+    reservation = None
+    if idempotency_key and body_hash is not None:
         try:
-            cached = await idempotency_svc.get_cached_response(
+            reservation, cached = await idempotency_svc.reserve_or_get_cached(
                 idempotency_key, user.user_id, request.path, body_hash
             )
         except IdempotencyConflictError:
+            config_idempotency_hits_total.labels(result="conflict").inc()
             raise web.HTTPConflict(reason="Idempotency key reused with different payload")
         if cached is not None:
+            config_idempotency_hits_total.labels(result="hit").inc()
             return idempotency_svc.build_response(cached)
 
     try:
-        config = await svc.create(
-            service_name=dto.service_name,
-            project_id=dto.project_id,
-            key=dto.key,
-            config_type=dto.config_type,
-            description=dto.description,
-            value=dto.value,
-            metadata=dto.metadata,
-            is_critical=dto.is_critical,
-            is_sensitive=dto.is_sensitive,
-            created_by=user.user_id,
-            change_reason=dto.change_reason,
-            source_ip=_source_ip(request),
-            user_agent=request.headers.get("User-Agent"),
-            correlation_id=_correlation_id(request),
-        )
+        async with idempotency_svc.guard_reservation(reservation):
+            config = await svc.create(
+                service_name=dto.service_name,
+                project_id=dto.project_id,
+                key=dto.key,
+                config_type=dto.config_type,
+                description=dto.description,
+                value=dto.value,
+                metadata=dto.metadata,
+                is_critical=dto.is_critical,
+                is_sensitive=dto.is_sensitive,
+                created_by=user.user_id,
+                change_reason=dto.change_reason,
+                source_ip=_source_ip(request),
+                user_agent=request.headers.get("User-Agent"),
+                correlation_id=_correlation_id(request),
+            )
     except ConfigValidationError as exc:
         raise web.HTTPUnprocessableEntity(
             text=json.dumps({"error": "Validation failed", "details": exc.errors}),
@@ -203,11 +210,8 @@ async def create_config(request: web.Request) -> web.Response:
     redact = config.is_sensitive and "configs.sensitive.read" not in user.system_permissions
     resp_body = _config_to_response(config, redact)
 
-    if idempotency_key:
-        body_hash = idempotency_svc.body_hash(body)
-        await idempotency_svc.store_response(
-            idempotency_key, user.user_id, request.path, body_hash, 201, resp_body
-        )
+    if reservation is not None:
+        await idempotency_svc.complete_response(reservation, 201, resp_body)
 
     return web.json_response(resp_body, status=201, headers={"ETag": f'"{config.version}"'})
 

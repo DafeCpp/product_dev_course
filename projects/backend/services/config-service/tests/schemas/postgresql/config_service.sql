@@ -87,20 +87,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_config_schemas_active_unique
 CREATE INDEX IF NOT EXISTS idx_config_schemas_type
     ON config_schemas (config_type, version DESC);
 
+-- Must match migrations 001 + 004 (shared backend_common.idempotency layout).
 CREATE TABLE IF NOT EXISTS idempotency_keys (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
-    user_id         VARCHAR(255) NOT NULL,
-    request_path    TEXT NOT NULL,
-    request_hash    VARCHAR(64) NOT NULL,
-    response_status INTEGER NOT NULL,
-    response_body   JSONB NOT NULL,
-    expires_at      TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    idempotency_key   VARCHAR(255) NOT NULL,
+    user_id           VARCHAR(255) NOT NULL,
+    request_path      TEXT NOT NULL,
+    request_hash      VARCHAR(64) NOT NULL,
+    response_status   INTEGER,
+    response_body     JSONB,
+    completed         BOOLEAN NOT NULL DEFAULT false,
+    reservation_token UUID NOT NULL,
+    expires_at        TIMESTAMPTZ NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (idempotency_key, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_keys_expires_at
     ON idempotency_keys (expires_at);
+
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version    TEXT PRIMARY KEY,
