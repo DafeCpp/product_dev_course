@@ -47,14 +47,19 @@ state и сохранённый plan могут раскрыть передан�
 `make auth-init` предназначен только для development: он ожидает локальный
 PostgreSQL из `docker-compose.yml`, которого нет в production compose.
 
-После успешного deploy создайте первого администратора одноразовым запуском
+После успешного deploy подключитесь к production VM:
+
+```bash
+ssh deploy@<VM_IP>
+```
+
+В открытой SSH-сессии создайте первого администратора одноразовым запуском
 seed внутри работающего `auth-service`:
 
 ```bash
 (
 set -euo pipefail
 
-ssh deploy@<VM_IP>
 cd /opt/experiment-tracking
 
 read -rp "Admin username [admin]: " ADMIN_USERNAME
