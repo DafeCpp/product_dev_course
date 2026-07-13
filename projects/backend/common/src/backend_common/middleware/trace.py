@@ -1,4 +1,5 @@
 """Middleware for trace_id and request_id logging."""
+
 from __future__ import annotations
 
 import time
@@ -23,12 +24,12 @@ SENSITIVE_HEADERS = {
 }
 
 
-def is_valid_uuid(value: str) -> bool:
+def is_valid_uuid(value: str | None) -> bool:
     """Check if string is a valid UUID."""
     try:
         UUID(value)
         return True
-    except (ValueError, AttributeError):
+    except (ValueError, TypeError, AttributeError):
         return False
 
 
@@ -36,7 +37,7 @@ def get_safe_headers(headers) -> dict:
     """Get headers dict with sensitive headers filtered out."""
     safe_headers = {}
     # Преобразуем MultiDictProxy или dict в обычный dict
-    headers_dict = dict(headers) if hasattr(headers, "items") else headers
+    headers_dict = dict(headers.items()) if hasattr(headers, "items") else headers
 
     for key, value in headers_dict.items():
         if key.lower() not in SENSITIVE_HEADERS:
@@ -54,6 +55,7 @@ def get_safe_headers(headers) -> dict:
 
 def create_trace_middleware(service_name: str):
     """Create trace middleware with specified service name."""
+
     @web.middleware
     async def trace_middleware(request: web.Request, handler):
         """Middleware to extract and log trace_id and request_id."""
@@ -85,7 +87,7 @@ def create_trace_middleware(service_name: str):
         )
 
         # Подготавливаем информацию о запросе для логирования
-        request_info = {
+        request_info: dict[str, object] = {
             "method": request.method,
             "url": str(request.url),
             "path": request.path,
@@ -173,4 +175,3 @@ def create_trace_middleware(service_name: str):
             structlog.contextvars.clear_contextvars()
 
     return trace_middleware
-
