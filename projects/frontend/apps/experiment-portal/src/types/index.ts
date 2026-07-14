@@ -1,5 +1,4 @@
 /** Типы для экспериментов и runs */
-import type { TelemetryQueryRecord } from './telemetry'
 import type { UserProjectRole } from './permissions'
 export type { UserProjectRole }
 
@@ -362,30 +361,11 @@ export interface TelemetryIngestResponse {
 }
 
 export type { TelemetryStreamRecord, TelemetryQueryRecord } from './telemetry'
-
-export interface TelemetryQueryResponse {
-  points: TelemetryQueryRecord[]
-  next_since_id: number | null
-}
-
-export interface TelemetryAggregatedRecord {
-  bucket: string
-  sensor_id: string | null
-  signal: string | null
-  capture_session_id: string | null
-  sample_count: number
-  avg_raw: number | null
-  min_raw: number | null
-  max_raw: number | null
-  avg_physical: number | null
-  min_physical: number | null
-  max_physical: number | null
-}
-
-export interface TelemetryAggregatedResponse {
-  buckets: TelemetryAggregatedRecord[]
-  bucket_interval: string
-}
+export type {
+  TelemetryQueryResponse,
+  TelemetryAggregatedRecord,
+  TelemetryAggregatedResponse,
+} from 'frontend-common'
 
 /** Типы для проектов */
 

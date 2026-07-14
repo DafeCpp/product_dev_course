@@ -446,8 +446,8 @@ services:
   # Experiment Portal - Frontend SPA
   experiment-portal:
     build:
-      context: ./projects/frontend/apps/experiment-portal
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/frontend/apps/experiment-portal/Dockerfile
       target: production
     container_name: experiment-portal
     environment:

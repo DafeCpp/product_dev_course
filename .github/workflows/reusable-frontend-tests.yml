@@ -23,6 +23,7 @@ jobs:
       experiment-portal: ${{ steps.detect.outputs.experiment-portal }}
       sensor-simulator: ${{ steps.detect.outputs.sensor-simulator }}
       auth-proxy: ${{ steps.detect.outputs.auth-proxy }}
+      frontend-common: ${{ steps.detect.outputs.frontend-common }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,7 +33,7 @@ jobs:
         id: detect
         run: |
           if [ "${{ inputs.run-all }}" = "true" ]; then
-            for app in experiment-portal sensor-simulator auth-proxy; do
+            for app in experiment-portal sensor-simulator auth-proxy frontend-common; do
               echo "$app=true" >> $GITHUB_OUTPUT
               echo "✓ $app forced by run-all"
             done
@@ -59,6 +60,14 @@ jobs:
             fi
           done
 
+          if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "^(package(-lock)?\.json|projects/frontend/common/)|\.github/workflows/(frontend-tests|reusable-frontend-tests)\.yml" > /dev/null; then
+            echo "frontend-common=true" >> $GITHUB_OUTPUT
+            echo "✓ frontend-common changed"
+          else
+            echo "frontend-common=false" >> $GITHUB_OUTPUT
+            echo "✗ frontend-common not changed"
+          fi
+
   experiment-portal:
     name: experiment-portal tests
     needs: detect-changes
@@ -77,7 +86,7 @@ jobs:
         with:
           node-version-file: ${{ inputs.node-version-file }}
           cache: npm
-          cache-dependency-path: projects/frontend/apps/experiment-portal/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -91,6 +100,38 @@ jobs:
         with:
           name: coverage-experiment-portal
           path: projects/frontend/apps/experiment-portal/coverage
+          if-no-files-found: ignore
+          retention-days: 14
+
+  frontend-common:
+    name: frontend-common tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend-common == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm run test:coverage --workspace=frontend-common
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend-common
+          path: projects/frontend/common/coverage
           if-no-files-found: ignore
           retention-days: 14
 

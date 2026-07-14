@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useTelemetryQuery } from 'frontend-common'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
 import { EmptyState, FloatingActionButton, LiveSwitch, Loading, MaterialSelect, FolderIcon, FlaskIcon, PlayCircleIcon, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
@@ -66,12 +67,7 @@ function TelemetryViewer() {
     const [historyMaxPoints, setHistoryMaxPoints] = useState(HISTORY_MAX_POINTS_DEFAULT)
     const [historyOrder, setHistoryOrder] = useState<'asc' | 'desc'>('asc')
     const [historyUseAggregated, setHistoryUseAggregated] = useState(false)
-    const [historyLoading, setHistoryLoading] = useState(false)
     const [historyError, setHistoryError] = useState<string | null>(null)
-    const [historyPoints, setHistoryPoints] = useState<TelemetryQueryRecord[]>([])
-    const [historyAggBuckets, setHistoryAggBuckets] = useState<TelemetryAggregatedRecord[]>([])
-    const [historyLoadedCount, setHistoryLoadedCount] = useState(0)
-    const [historyWasTruncated, setHistoryWasTruncated] = useState(false)
     const [historySensorFilter, setHistorySensorFilter] = useState('')
     const [showExportModal, setShowExportModal] = useState(false)
     const [historyTimeRange, setHistoryTimeRange] = useState<[string, string] | null>(null)
@@ -389,12 +385,49 @@ function TelemetryViewer() {
         }
     }, [historyMaxPoints])
 
-    useEffect(() => {
-        setHistoryPoints([])
-        setHistoryLoadedCount(0)
-        setHistoryWasTruncated(false)
-        setHistoryError(null)
-    }, [historyCaptureSessionId, historySensorIds, historyIncludeLate, historyOrder, historyMaxPoints])
+    const historyDisplayMaxPoints = useMemo(() => {
+        const value =
+            Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
+        return Math.min(HISTORY_MAX_POINTS_LIMIT, value)
+    }, [historyMaxPoints])
+
+    const historyQueryParams = useMemo(
+        () =>
+            historyUseAggregated
+                ? ({
+                      mode: 'aggregated' as const,
+                      captureSessionId: historyCaptureSessionId,
+                      sensorIds: historySensorIds.length > 0 ? historySensorIds : undefined,
+                      order: historyOrder,
+                      limit: historyDisplayMaxPoints,
+                      hardCapLimit: HISTORY_MAX_POINTS_LIMIT,
+                  })
+                : ({
+                      mode: 'raw' as const,
+                      captureSessionId: historyCaptureSessionId,
+                      sensorIds: historySensorIds.length > 0 ? historySensorIds : undefined,
+                      includeLate: historyIncludeLate,
+                      order: historyOrder,
+                      maxPoints: historyDisplayMaxPoints,
+                      pageSize: HISTORY_PAGE_SIZE,
+                      hardCapLimit: HISTORY_MAX_POINTS_LIMIT,
+                  }),
+        [historyUseAggregated, historyCaptureSessionId, historySensorIds, historyOrder, historyDisplayMaxPoints, historyIncludeLate]
+    )
+
+    const historyQuery = useTelemetryQuery({
+        ...historyQueryParams,
+        enabled: false,
+        query: telemetryApi.query,
+        aggregated: telemetryApi.aggregated,
+    })
+
+    const historyLoading = historyQuery.isFetching
+    const historyLoadedCount = historyQuery.loadedCount
+    const historyPoints = historyQuery.mode === 'raw' ? historyQuery.points : []
+    const historyAggBuckets = historyQuery.mode === 'aggregated' ? historyQuery.buckets : []
+    const historyWasTruncated = historyQuery.mode === 'raw' ? historyQuery.wasTruncated : false
+    const historyLoadError = historyQuery.error?.message ?? null
 
     const historySensorsById = useMemo(() => {
         const map = new Map<string, Sensor>()
@@ -499,12 +532,6 @@ function TelemetryViewer() {
         })
         return result
     }, [historyPoints])
-
-    const historyDisplayMaxPoints = useMemo(() => {
-        const value =
-            Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
-        return Math.min(HISTORY_MAX_POINTS_LIMIT, value)
-    }, [historyMaxPoints])
 
     const historyHasData = useMemo(
         () =>
@@ -723,65 +750,14 @@ function TelemetryViewer() {
         setViewMode('live')
     }
 
-    const loadHistory = async () => {
+    const loadHistory = () => {
         if (!historyCaptureSessionId) return
         setHistoryError(null)
         if (historySensorOverLimit) {
             setHistoryError('Можно выбрать не более 50 сенсоров')
             return
         }
-        setHistoryLoading(true)
-        setHistoryPoints([])
-        setHistoryAggBuckets([])
-        setHistoryLoadedCount(0)
-        setHistoryWasTruncated(false)
-        try {
-            if (historyUseAggregated) {
-                // --- Aggregated (1m buckets from continuous aggregate) ---
-                const safeLimit = Math.min(
-                    HISTORY_MAX_POINTS_LIMIT,
-                    Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT,
-                )
-                const resp = await telemetryApi.aggregated({
-                    capture_session_id: historyCaptureSessionId,
-                    sensor_id: historySensorIds.length > 0 ? historySensorIds : undefined,
-                    limit: safeLimit,
-                    order: historyOrder,
-                })
-                setHistoryAggBuckets(resp.buckets)
-                setHistoryLoadedCount(resp.buckets.length)
-            } else {
-                // --- Raw points ---
-                let sinceId = 0
-                const collected: TelemetryQueryRecord[] = []
-                const safeMaxPointsRaw =
-                    Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
-                const safeMaxPoints = Math.min(HISTORY_MAX_POINTS_LIMIT, safeMaxPointsRaw)
-                let lastHasMore = false
-                while (collected.length < safeMaxPoints) {
-                    const pageLimit = Math.min(HISTORY_PAGE_SIZE, safeMaxPoints - collected.length)
-                    const resp = await telemetryApi.query({
-                        capture_session_id: historyCaptureSessionId,
-                        sensor_id: historySensorIds.length > 0 ? historySensorIds : undefined,
-                        since_id: sinceId,
-                        limit: pageLimit,
-                        include_late: historyIncludeLate,
-                        order: historyOrder,
-                    })
-                    collected.push(...resp.points)
-                    setHistoryLoadedCount(collected.length)
-                    lastHasMore = !!resp.next_since_id && resp.points.length > 0
-                    if (!lastHasMore) break
-                    sinceId = resp.next_since_id ?? sinceId
-                }
-                setHistoryPoints(collected)
-                setHistoryWasTruncated(lastHasMore && collected.length >= safeMaxPoints)
-            }
-        } catch (err: any) {
-            setHistoryError(err?.message || 'Ошибка загрузки истории')
-        } finally {
-            setHistoryLoading(false)
-        }
+        void historyQuery.refetch()
     }
 
     return (
@@ -1177,7 +1153,9 @@ function TelemetryViewer() {
                                     </div>
                                 </div>
 
-                                {historyError && <div className="telemetry-view__error">{historyError}</div>}
+                                {(historyError || historyLoadError) && (
+                                    <div className="telemetry-view__error">{historyError || historyLoadError}</div>
+                                )}
                                 {(historyLoadedCount > 0 || historyWasTruncated) && (
                                     <div className="telemetry-view__history-summary">
                                         {historyUseAggregated

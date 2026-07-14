@@ -51,4 +51,3 @@ export function createSSEParser(onEvent: (evt: SSEEvent) => void) {
 
     return { feed, reset }
 }
-
