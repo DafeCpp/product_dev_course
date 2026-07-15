@@ -132,12 +132,19 @@ function SensorStream({
         onRecords(sensorId, stream.points)
     }, [sensorId, stream.points, onRecords])
 
+    const valueModeRef = useRef(valueMode)
+    valueModeRef.current = valueMode
+
     const lastRecord = stream.lastRecord
     useEffect(() => {
+        // Deliberately excludes valueMode from deps: this must fire only when a
+        // new record actually arrives, not on every physical/raw toggle (which
+        // would re-emit the same record and duplicate points downstream).
         if (!lastRecord) return
-        const val = valueMode === 'physical' ? lastRecord.physical_value : lastRecord.raw_value
+        const val = valueModeRef.current === 'physical' ? lastRecord.physical_value : lastRecord.raw_value
         if (typeof val === 'number' && Number.isFinite(val)) onRecordReceived?.(sensorId, val)
-    }, [sensorId, lastRecord, valueMode, onRecordReceived])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sensorId, lastRecord, onRecordReceived])
 
     return null
 }

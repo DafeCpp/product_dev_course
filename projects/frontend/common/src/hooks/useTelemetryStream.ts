@@ -42,6 +42,10 @@ export interface UseTelemetryStreamResult {
 
 const DEFAULT_BUFFER_SIZE = 5000
 const DEFAULT_IDLE_TIMEOUT_SECONDS = 30
+// Finite by default so permanent failures (401/403/404, a backend "error" event)
+// eventually surface a visible error instead of retrying forever. Callers that
+// want indefinite retry can pass backoff: { maxAttempts: Infinity } explicitly.
+const DEFAULT_MAX_ATTEMPTS = 10
 
 export function useTelemetryStream(
   sensorId: string,
@@ -94,7 +98,7 @@ export function useTelemetryStream(
           return
         }
         const shouldAutoReconnect = currentOpts.autoReconnect ?? true
-        const maxAttempts = currentOpts.backoff?.maxAttempts ?? Infinity
+        const maxAttempts = currentOpts.backoff?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
         const nextAttempt = attemptRef.current + 1
 
         if (!shouldAutoReconnect || nextAttempt > maxAttempts) {

@@ -213,6 +213,24 @@ describe('useTelemetryStream', () => {
     expect(onError).toHaveBeenLastCalledWith(expect.any(Error), { willRetry: false, attempt: 2 })
   })
 
+  it('gives up after the default maxAttempts (10) instead of retrying forever', async () => {
+    // A permanent failure (401/403/404, a backend "error" event) must eventually
+    // surface a terminal error rather than reconnecting indefinitely.
+    const open = vi.fn(async () => {
+      throw new Error('forbidden')
+    })
+    const onError = vi.fn()
+    const { result } = renderHook(() =>
+      useTelemetryStream('s1', { open, backoff: FAST_BACKOFF, onError }),
+    )
+
+    act(() => result.current.start())
+
+    await waitFor(() => expect(result.current.status).toBe('error'), { timeout: 3000 })
+    expect(open).toHaveBeenCalledTimes(11) // initial attempt + 10 retries
+    expect(onError).toHaveBeenLastCalledWith(expect.any(Error), { willRetry: false, attempt: 10 })
+  })
+
   it('does not crash on malformed JSON in a telemetry event', async () => {
     const { open, streams } = makeOpenMock()
     const { result } = renderHook(() => useTelemetryStream('s1', { open }))
