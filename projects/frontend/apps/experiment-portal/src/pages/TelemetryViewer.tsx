@@ -1,1240 +1,258 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { useQuery } from '@tanstack/react-query'
-import { useTelemetryQuery } from 'frontend-common'
-import Plotly from 'plotly.js-dist-min'
-import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
-import { EmptyState, FloatingActionButton, LiveSwitch, Loading, MaterialSelect, FolderIcon, FlaskIcon, PlayCircleIcon, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
-import TelemetryPanel from '../components/TelemetryPanel'
-import TelemetryExportModal from '../components/TelemetryExportModal'
-import CaptureSessionTimeline from '../components/CaptureSessionTimeline'
-import LiveSensorPanel from '../components/LiveSensorPanel'
-import { setActiveProjectId } from '../utils/activeProject'
-import { generateUUID } from '../utils/uuid'
-import type { CaptureSession, Sensor, TelemetryQueryRecord, TelemetryAggregatedRecord } from '../types'
-import './TelemetryViewer.scss'
+import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  captureSessionsApi,
+  experimentsApi,
+  projectsApi,
+  runsApi,
+  sensorsApi,
+} from "../api/client";
+import {
+  EmptyState,
+  FloatingActionButton,
+  Loading,
+} from "../components/common";
+import TelemetryExportModal from "../components/TelemetryExportModal";
+import LiveTelemetryWorkspace from "../components/telemetry/LiveTelemetryWorkspace";
+import TelemetryFilters from "../components/telemetry/TelemetryFilters";
+import TelemetryHistoryPanel from "../components/telemetry/TelemetryHistoryPanel";
+import useLiveTelemetryWorkspace from "../hooks/useLiveTelemetryWorkspace";
+import useTelemetryHistory from "../hooks/useTelemetryHistory";
+import useTelemetryViewerState from "../hooks/useTelemetryViewerState";
+import { setActiveProjectId } from "../utils/activeProject";
+import { generateUUID } from "../utils/uuid";
+import type { CaptureSession, Sensor } from "../types";
+import "./TelemetryViewer.scss";
 
-function hexToRgba(hex: string, alpha: number): string {
-    const r = parseInt(hex.slice(1, 3), 16)
-    const g = parseInt(hex.slice(3, 5), 16)
-    const b = parseInt(hex.slice(5, 7), 16)
-    return `rgba(${r},${g},${b},${alpha})`
-}
-
-type TelemetryViewerState = {
-    projectId: string
-    experimentId: string
-    runId: string
-    viewMode: TelemetryViewMode
-}
-
-type TelemetryViewMode = 'live' | 'history'
-type HistoryValueMode = 'physical' | 'raw'
-type TelemetryHistoryState = {
-    captureSessionId: string
-    sensorIds: string[]
-    valueMode: HistoryValueMode
-    includeLate: boolean
-    maxPoints: number
-    order: 'asc' | 'desc'
-}
-
-const HISTORY_MAX_POINTS_DEFAULT = 5000
-const HISTORY_MAX_POINTS_LIMIT = 20000
-const HISTORY_PAGE_SIZE = 2000
-const HISTORY_MAX_SENSORS = 50
-
-function TelemetryViewer() {
-    const [projectId, setProjectId] = useState<string>('')
-    const [experimentId, setExperimentId] = useState<string>('')
-    const [runId, setRunId] = useState<string>('')
-    const [panelIds, setPanelIds] = useState<string[]>([])
-    const [viewMode, setViewMode] = useState<TelemetryViewMode>('live')
-    const [draggingPanelId, setDraggingPanelId] = useState<string | null>(null)
-    const [dragOverPanelId, setDragOverPanelId] = useState<string | null>(null)
-    const panelsLoadedRef = useRef(false)
-    const viewerStateLoadedRef = useRef(false)
-    const historyStateLoadedRef = useRef(false)
-    const [panelSizes, setPanelSizes] = useState<Record<string, { width: number; height: number }>>({})
-    const panelsWrapRef = useRef<HTMLDivElement | null>(null)
-    const [panelsWrapWidth, setPanelsWrapWidth] = useState(0)
-    const historyPlotRef = useRef<HTMLDivElement | null>(null)
-
-    const [historyCaptureSessionId, setHistoryCaptureSessionId] = useState('')
-    const [historySensorIds, setHistorySensorIds] = useState<string[]>([])
-    const [historyValueMode, setHistoryValueMode] = useState<HistoryValueMode>('physical')
-    const [historyIncludeLate, setHistoryIncludeLate] = useState(true)
-    const [historyMaxPoints, setHistoryMaxPoints] = useState(HISTORY_MAX_POINTS_DEFAULT)
-    const [historyOrder, setHistoryOrder] = useState<'asc' | 'desc'>('asc')
-    const [historyUseAggregated, setHistoryUseAggregated] = useState(false)
-    const [historyError, setHistoryError] = useState<string | null>(null)
-    const [historySensorFilter, setHistorySensorFilter] = useState('')
-    const [showExportModal, setShowExportModal] = useState(false)
-    const [historyTimeRange, setHistoryTimeRange] = useState<[string, string] | null>(null)
-    const [recentValuesBySensor, setRecentValuesBySensor] = useState<Record<string, number[]>>({})
-    const RECENT_VALUES_MAX = 30
-    const [showHistorySettings, setShowHistorySettings] = useState(false)
-    const historySettingsRef = useRef<HTMLDivElement | null>(null)
-
-    const handleRecordReceived = useCallback((sensorId: string, value: number) => {
-        setRecentValuesBySensor(prev => {
-            const arr = prev[sensorId] ?? []
-            const next = arr.length >= RECENT_VALUES_MAX ? arr.slice(arr.length - RECENT_VALUES_MAX + 1) : arr
-            return { ...prev, [sensorId]: [...next, value] }
-        })
-    }, [])
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        const raw = window.localStorage.getItem('telemetry_panel_ids')
-        if (!raw) {
-            panelsLoadedRef.current = true
-            return
-        }
-        try {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed)) {
-                const next = parsed.filter((id) => typeof id === 'string' && id.trim().length > 0)
-                if (next.length > 0) setPanelIds(next)
-            }
-        } catch {
-            // ignore malformed local storage
-        } finally {
-            panelsLoadedRef.current = true
-        }
-    }, [])
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        const raw = window.localStorage.getItem('telemetry_viewer_state')
-        if (!raw) {
-            viewerStateLoadedRef.current = true
-            return
-        }
-        try {
-            const parsed = JSON.parse(raw) as Partial<TelemetryViewerState>
-            if (typeof parsed.projectId === 'string') setProjectId(parsed.projectId)
-            if (typeof parsed.experimentId === 'string') setExperimentId(parsed.experimentId)
-            if (typeof parsed.runId === 'string') setRunId(parsed.runId)
-            if (parsed.viewMode === 'live' || parsed.viewMode === 'history') setViewMode(parsed.viewMode)
-        } catch {
-            // ignore malformed local storage
-        } finally {
-            viewerStateLoadedRef.current = true
-        }
-    }, [])
-
-    useEffect(() => {
-        if (typeof window === 'undefined' || !viewerStateLoadedRef.current) return
-        const payload: TelemetryViewerState = {
-            projectId,
-            experimentId,
-            runId,
-            viewMode,
-        }
-        window.localStorage.setItem('telemetry_viewer_state', JSON.stringify(payload))
-    }, [projectId, experimentId, runId, viewMode])
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        const raw = window.localStorage.getItem('telemetry_history_state')
-        if (!raw) {
-            historyStateLoadedRef.current = true
-            return
-        }
-        try {
-            const parsed = JSON.parse(raw) as Partial<TelemetryHistoryState>
-            if (typeof parsed.captureSessionId === 'string') setHistoryCaptureSessionId(parsed.captureSessionId)
-            if (Array.isArray(parsed.sensorIds)) {
-                const next = parsed.sensorIds.filter((id) => typeof id === 'string' && id.trim().length > 0)
-                const limited = next.slice(0, HISTORY_MAX_SENSORS)
-                setHistorySensorIds(limited)
-                if (next.length > HISTORY_MAX_SENSORS) {
-                    setHistoryError('Можно выбрать не более 50 сенсоров')
-                }
-            }
-            if (parsed.valueMode === 'physical' || parsed.valueMode === 'raw') setHistoryValueMode(parsed.valueMode)
-            if (typeof parsed.includeLate === 'boolean') setHistoryIncludeLate(parsed.includeLate)
-            if (typeof parsed.maxPoints === 'number' && Number.isFinite(parsed.maxPoints)) {
-                setHistoryMaxPoints(Math.max(100, Math.min(20000, Math.round(parsed.maxPoints))))
-            }
-            if (parsed.order === 'asc' || parsed.order === 'desc') {
-                setHistoryOrder(parsed.order)
-            }
-        } catch {
-            // ignore malformed local storage
-        } finally {
-            historyStateLoadedRef.current = true
-        }
-    }, [])
-
-    useEffect(() => {
-        if (typeof window === 'undefined' || !historyStateLoadedRef.current) return
-        const payload: TelemetryHistoryState = {
-            captureSessionId: historyCaptureSessionId,
-            sensorIds: historySensorIds,
-            valueMode: historyValueMode,
-            includeLate: historyIncludeLate,
-            maxPoints: historyMaxPoints,
-            order: historyOrder,
-        }
-        window.localStorage.setItem('telemetry_history_state', JSON.stringify(payload))
-    }, [historyCaptureSessionId, historySensorIds, historyValueMode, historyIncludeLate, historyMaxPoints, historyOrder])
-
-    useEffect(() => {
-        if (typeof window === 'undefined' || !panelsLoadedRef.current) return
-        window.localStorage.setItem('telemetry_panel_ids', JSON.stringify(panelIds))
-    }, [panelIds])
-
-    useEffect(() => {
-        const element = panelsWrapRef.current
-        if (!element || typeof ResizeObserver === 'undefined') return
-
-        const updateSize = () => {
-            const rect = element.getBoundingClientRect()
-            setPanelsWrapWidth(Math.max(0, Math.round(rect.width)))
-        }
-
-        updateSize()
-        const observer = new ResizeObserver(updateSize)
-        observer.observe(element)
-
-        return () => observer.disconnect()
-    }, [])
-
-    const handlePanelSizeChange = (panelId: string, size: { width: number; height: number }) => {
-        setPanelSizes((prev) => {
-            const existing = prev[panelId]
-            if (existing && existing.width === size.width && existing.height === size.height) return prev
-            return { ...prev, [panelId]: size }
-        })
+export default function TelemetryViewer() {
+  const viewer = useTelemetryViewerState();
+  const live = useLiveTelemetryWorkspace();
+  const [showExportModal, setShowExportModal] = useState(false);
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => projectsApi.list(),
+  });
+  const sensorsQuery = useQuery({
+    queryKey: ["sensors", viewer.projectId],
+    queryFn: () => listAllSensors(viewer.projectId),
+    enabled: !!viewer.projectId,
+  });
+  const experimentsQuery = useQuery({
+    queryKey: ["experiments", viewer.projectId],
+    queryFn: () =>
+      experimentsApi.list({ project_id: viewer.projectId, page_size: 100 }),
+    enabled: !!viewer.projectId,
+  });
+  const runsQuery = useQuery({
+    queryKey: ["runs", viewer.experimentId],
+    queryFn: () => runsApi.list(viewer.experimentId, { page_size: 100 }),
+    enabled: !!viewer.experimentId,
+  });
+  const sessionsQuery = useQuery({
+    queryKey: ["capture-sessions", viewer.runId],
+    queryFn: () => captureSessionsApi.list(viewer.runId, { page_size: 200 }),
+    enabled: !!viewer.runId,
+  });
+  const sensors = sensorsQuery.data?.sensors || [];
+  const history = useTelemetryHistory(sensors);
+  const projects = projectsQuery.data?.projects || [];
+  const experiments = experimentsQuery.data?.experiments || [];
+  const runs = runsQuery.data?.runs || [];
+  const sessions = sessionsQuery.data?.capture_sessions || [];
+  useEffect(() => {
+    if (!projects.length) return;
+    if (!projects.some((project) => project.id === viewer.projectId)) {
+      viewer.setProjectId(projects[0].id);
+      viewer.setExperimentId("");
+      viewer.setRunId("");
+      setActiveProjectId(projects[0].id);
     }
-
-    const { data: projectsData, isLoading: projectsLoading } = useQuery({
-        queryKey: ['projects'],
-        queryFn: () => projectsApi.list(),
-    })
-
-    useEffect(() => {
-        if (!projectsData?.projects?.length) return
-        const exists = projectsData.projects.some((project) => project.id === projectId)
-        if (!projectId || !exists) {
-            const id = projectsData.projects[0].id
-            setProjectId(id)
-            setExperimentId('')
-            setRunId('')
-            setActiveProjectId(id)
-        }
-    }, [projectId, projectsData])
-
-    useEffect(() => {
-        if (projectId) setActiveProjectId(projectId)
-    }, [projectId])
-
-    const { data: sensorsData, isLoading, error } = useQuery({
-        queryKey: ['sensors', projectId],
-        queryFn: async () => {
-            // The backend paginates with limit/offset and caps limit at 100.
-            // For Telemetry we want a complete sensor list for selection.
-            const limit = 100
-            let offset = 0
-            let total = 0
-            const collected: Sensor[] = []
-
-            // Safety guard: avoid an infinite loop if upstream misbehaves.
-            const maxTotalToFetch = 5000
-
-            while (collected.length < maxTotalToFetch) {
-                const resp = await sensorsApi.list({ project_id: projectId, limit, offset })
-                total = resp.total
-                collected.push(...resp.sensors)
-
-                if (resp.sensors.length === 0) break
-                offset += resp.sensors.length
-                if (resp.sensors.length < limit) break
-                if (total > 0 && collected.length >= total) break
-            }
-
-            return {
-                sensors: collected,
-                total,
-                page: 1,
-                page_size: collected.length,
-            }
-        },
-        enabled: !!projectId,
-    })
-
-    const { data: experimentsData, isLoading: experimentsLoading } = useQuery({
-        queryKey: ['experiments', projectId],
-        queryFn: () => experimentsApi.list({ project_id: projectId, page_size: 100 }),
-        enabled: !!projectId,
-    })
-
-    const { data: runsData, isLoading: runsLoading } = useQuery({
-        queryKey: ['runs', experimentId],
-        queryFn: () => runsApi.list(experimentId, { page_size: 100 }),
-        enabled: !!experimentId,
-    })
-
-    const { data: captureSessionsData } = useQuery({
-        queryKey: ['capture-sessions', runId],
-        queryFn: () => captureSessionsApi.list(runId, { page_size: 200 }),
-        enabled: !!runId,
-    })
-
-    useEffect(() => {
-        if (!experimentId) return
-        const exists = experimentsData?.experiments?.some((experiment) => experiment.id === experimentId)
-        if (!exists) {
-            setExperimentId('')
-            setRunId('')
-        }
-    }, [experimentId, experimentsData])
-
-    useEffect(() => {
-        if (!runId) return
-        const exists = runsData?.runs?.some((run) => run.id === runId)
-        if (!exists) setRunId('')
-    }, [runId, runsData])
-
-    useEffect(() => {
-        if (viewMode !== 'history') return
-        const sessions = captureSessionsData?.capture_sessions || []
-        const exists = sessions.some((s) => s.id === historyCaptureSessionId)
-        if (!historyCaptureSessionId || !exists) {
-            setHistoryCaptureSessionId(sessions[0]?.id || '')
-        }
-    }, [captureSessionsData, historyCaptureSessionId, viewMode])
-
-    const sensors = sensorsData?.sensors || []
-    const experiments = experimentsData?.experiments || []
-    const runs = runsData?.runs || []
-    const captureSessions = captureSessionsData?.capture_sessions || []
-
-    const selectedHistorySession = captureSessions.find(
-        (s: CaptureSession) => s.id === historyCaptureSessionId
+  }, [projects, viewer]);
+  useEffect(() => {
+    if (viewer.projectId) setActiveProjectId(viewer.projectId);
+  }, [viewer.projectId]);
+  useEffect(() => {
+    if (
+      viewer.experimentId &&
+      !experiments.some((item) => item.id === viewer.experimentId)
+    ) {
+      viewer.setExperimentId("");
+      viewer.setRunId("");
+    }
+  }, [experiments, viewer]);
+  useEffect(() => {
+    if (viewer.runId && !runs.some((item) => item.id === viewer.runId))
+      viewer.setRunId("");
+  }, [runs, viewer]);
+  useEffect(() => {
+    if (
+      viewer.viewMode === "history" &&
+      sessions.length &&
+      !sessions.some((session) => session.id === history.captureSessionId)
     )
-
-    const hasProjects = !!projectsData?.projects?.length
-    const isLiveMode = viewMode === 'live'
-    const canAddPanel =
-        isLiveMode &&
-        !!projectId &&
-        sensors.length > 0 &&
-        !projectsLoading &&
-        !experimentsLoading &&
-        !runsLoading &&
-        !isLoading &&
-        !error
-
-    const addPanel = () => {
-        setPanelIds((prev) => [...prev, generateUUID()])
-    }
-
-    const removePanel = (id: string) => {
-        setPanelIds((prev) => prev.filter((panelId) => panelId !== id))
-    }
-
-    const movePanel = (sourceId: string, targetId: string) => {
-        if (sourceId === targetId) return
-        setPanelIds((prev) => {
-            const next = [...prev]
-            const fromIndex = next.indexOf(sourceId)
-            const toIndex = next.indexOf(targetId)
-            if (fromIndex === -1 || toIndex === -1) return prev
-            next.splice(fromIndex, 1)
-            next.splice(toIndex, 0, sourceId)
-            return next
-        })
-    }
-
-    const panelTitleSeed = useMemo(() => {
-        if (!projectId) return 'Панель'
-        const projectName = projectsData?.projects.find((p) => p.id === projectId)?.name
-        return projectName ? `Панель: ${projectName}` : 'Панель'
-    }, [projectId, projectsData])
-
-    const availableHistorySensors = useMemo(
-        () => sensors.filter((s) => !historySensorIds.includes(s.id)),
-        [sensors, historySensorIds]
-    )
-
-    const filteredHistorySensors = useMemo(() => {
-        const query = historySensorFilter.trim().toLowerCase()
-        if (!query) return availableHistorySensors
-        return availableHistorySensors.filter((sensor) => {
-            const hay = `${sensor.name} ${sensor.type} ${sensor.id}`.toLowerCase()
-            return hay.includes(query)
-        })
-    }, [availableHistorySensors, historySensorFilter])
-
-    const historySensorOverLimit = historySensorIds.length > HISTORY_MAX_SENSORS
-    const historySensorLimitReached = historySensorIds.length >= HISTORY_MAX_SENSORS
-
-    useEffect(() => {
-        if (historySensorOverLimit && historyError?.includes('сенсоров')) return
-        if (!historySensorOverLimit && historyError === 'Можно выбрать не более 50 сенсоров') {
-            setHistoryError(null)
-        }
-    }, [historySensorOverLimit, historyError])
-
-    useEffect(() => {
-        if (historyMaxPoints > HISTORY_MAX_POINTS_LIMIT) {
-            setHistoryMaxPoints(HISTORY_MAX_POINTS_LIMIT)
-        }
-    }, [historyMaxPoints])
-
-    const historyDisplayMaxPoints = useMemo(() => {
-        const value =
-            Number.isFinite(historyMaxPoints) && historyMaxPoints > 0 ? historyMaxPoints : HISTORY_MAX_POINTS_DEFAULT
-        return Math.min(HISTORY_MAX_POINTS_LIMIT, value)
-    }, [historyMaxPoints])
-
-    const historyQueryParams = useMemo(
-        () =>
-            historyUseAggregated
-                ? ({
-                      mode: 'aggregated' as const,
-                      captureSessionId: historyCaptureSessionId,
-                      sensorIds: historySensorIds.length > 0 ? historySensorIds : undefined,
-                      order: historyOrder,
-                      limit: historyDisplayMaxPoints,
-                      hardCapLimit: HISTORY_MAX_POINTS_LIMIT,
-                  })
-                : ({
-                      mode: 'raw' as const,
-                      captureSessionId: historyCaptureSessionId,
-                      sensorIds: historySensorIds.length > 0 ? historySensorIds : undefined,
-                      includeLate: historyIncludeLate,
-                      order: historyOrder,
-                      maxPoints: historyDisplayMaxPoints,
-                      pageSize: HISTORY_PAGE_SIZE,
-                      hardCapLimit: HISTORY_MAX_POINTS_LIMIT,
-                  }),
-        [historyUseAggregated, historyCaptureSessionId, historySensorIds, historyOrder, historyDisplayMaxPoints, historyIncludeLate]
-    )
-
-    const historyQuery = useTelemetryQuery({
-        ...historyQueryParams,
-        enabled: false,
-        query: telemetryApi.query,
-        aggregated: telemetryApi.aggregated,
-    })
-
-    const historyLoading = historyQuery.isFetching
-    const historyLoadedCount = historyQuery.loadedCount
-    const historyPoints = historyQuery.mode === 'raw' ? historyQuery.points : []
-    const historyAggBuckets = historyQuery.mode === 'aggregated' ? historyQuery.buckets : []
-    const historyWasTruncated = historyQuery.mode === 'raw' ? historyQuery.wasTruncated : false
-    const historyLoadError = historyQuery.error?.message ?? null
-
-    const historySensorsById = useMemo(() => {
-        const map = new Map<string, Sensor>()
-        sensors.forEach((sensor) => map.set(sensor.id, sensor))
-        return map
-    }, [sensors])
-
-    const historySeriesData = useMemo(() => {
-        const bySensor = new Map<string, TelemetryQueryRecord[]>()
-        historyPoints.forEach((point) => {
-            const list = bySensor.get(point.sensor_id) || []
-            list.push(point)
-            bySensor.set(point.sensor_id, list)
-        })
-        return Array.from(bySensor.entries()).map(([sensorId, points]) => {
-            const sensor = historySensorsById.get(sensorId)
-            const ordered = points.slice().sort((a, b) => a.id - b.id)
-            return {
-                id: sensorId,
-                name: sensor?.name || sensorId,
-                x: ordered.map((p) => p.timestamp),
-                y: ordered.map((p) =>
-                    historyValueMode === 'physical' ? p.physical_value : p.raw_value
-                ),
-            }
-        })
-    }, [historyPoints, historySensorsById, historyValueMode])
-
-    // Aggregated series: group by sensor_id+signal, build avg / min / max arrays
-    const historyAggSeriesData = useMemo(() => {
-        type AggGroup = {
-            sensorId: string
-            signal: string | null
-            buckets: TelemetryAggregatedRecord[]
-        }
-        const key = (b: TelemetryAggregatedRecord) =>
-            `${b.sensor_id ?? ''}::${b.signal ?? ''}`
-        const groups = new Map<string, AggGroup>()
-        historyAggBuckets.forEach((b) => {
-            const k = key(b)
-            let g = groups.get(k)
-            if (!g) {
-                g = { sensorId: b.sensor_id ?? '', signal: b.signal, buckets: [] }
-                groups.set(k, g)
-            }
-            g.buckets.push(b)
-        })
-        return Array.from(groups.values()).map((g) => {
-            const ordered = g.buckets.slice().sort(
-                (a, b) => new Date(a.bucket).getTime() - new Date(b.bucket).getTime()
-            )
-            const sensor = historySensorsById.get(g.sensorId)
-            const label = `${sensor?.name || g.sensorId}${g.signal ? ` / ${g.signal}` : ''}`
-            return {
-                id: g.sensorId,
-                signal: g.signal,
-                name: label,
-                x: ordered.map((r) => r.bucket),
-                avg: ordered.map((r) =>
-                    historyValueMode === 'physical' ? r.avg_physical : r.avg_raw
-                ),
-                min: ordered.map((r) =>
-                    historyValueMode === 'physical' ? r.min_physical : r.min_raw
-                ),
-                max: ordered.map((r) =>
-                    historyValueMode === 'physical' ? r.max_physical : r.max_raw
-                ),
-                count: ordered.map((r) => r.sample_count),
-            }
-        })
-    }, [historyAggBuckets, historySensorsById, historyValueMode])
-
-    const historyEffectiveSensorIds = useMemo(() => {
-        if (historySensorIds.length > 0) return historySensorIds
-        const unique = new Set<string>()
-        historyPoints.forEach((point) => unique.add(point.sensor_id))
-        return Array.from(unique)
-    }, [historySensorIds, historyPoints])
-
-    const historyLastTimestamp = useMemo(() => {
-        let latest = 0
-        historyPoints.forEach((point) => {
-            const parsed = Date.parse(point.timestamp)
-            if (Number.isFinite(parsed) && parsed > latest) latest = parsed
-        })
-        return latest > 0 ? new Date(latest).toISOString() : null
-    }, [historyPoints])
-
-    const historyCursorBySensor = useMemo(() => {
-        const latestBySensor = new Map<string, { tsMs: number; id: number }>()
-        historyPoints.forEach((point) => {
-            const tsMs = Date.parse(point.timestamp)
-            if (!Number.isFinite(tsMs)) return
-            const current = latestBySensor.get(point.sensor_id)
-            if (!current || tsMs > current.tsMs || (tsMs === current.tsMs && point.id > current.id)) {
-                latestBySensor.set(point.sensor_id, { tsMs, id: point.id })
-            }
-        })
-        const result: Record<string, { timestamp: string; id: number }> = {}
-        latestBySensor.forEach((value, sensorId) => {
-            result[sensorId] = { timestamp: new Date(value.tsMs).toISOString(), id: value.id }
-        })
-        return result
-    }, [historyPoints])
-
-    const historyHasData = useMemo(
-        () =>
-            historyUseAggregated
-                ? historyAggSeriesData.some((s) => s.avg.length > 0)
-                : historySeriesData.some((series) => series.y.length > 0),
-        [historySeriesData, historyAggSeriesData, historyUseAggregated]
-    )
-
-    const SERIES_COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#06b6d4', '#e11d48']
-
-    const historyPlotlyData = useMemo(() => {
-        if (historyUseAggregated) {
-            // For each sensor+signal group: min band (invisible base), max band (filled to min), avg line
-            const traces: any[] = []
-            historyAggSeriesData.forEach((series, index) => {
-                const color = SERIES_COLORS[index % SERIES_COLORS.length]
-                // min line — invisible lower bound for fill
-                traces.push({
-                    x: series.x,
-                    y: series.min,
-                    type: 'scatter' as const,
-                    mode: 'lines' as const,
-                    name: `${series.name} min`,
-                    line: { color: 'transparent', width: 0 },
-                    showlegend: false,
-                    hoverinfo: 'skip' as const,
-                })
-                // max line — filled down to min
-                traces.push({
-                    x: series.x,
-                    y: series.max,
-                    type: 'scatter' as const,
-                    mode: 'lines' as const,
-                    name: `${series.name} range`,
-                    line: { color: 'transparent', width: 0 },
-                    fill: 'tonexty' as const,
-                    fillcolor: hexToRgba(color, 0.15),
-                    showlegend: false,
-                    hovertemplate: `min: %{y:.3f}<extra>${series.name} max</extra>`,
-                })
-                // avg line
-                traces.push({
-                    x: series.x,
-                    y: series.avg,
-                    type: 'scatter' as const,
-                    mode: 'lines' as const,
-                    name: `${series.name} avg`,
-                    line: { color, width: 2 },
-                    hovertemplate: `avg: %{y:.3f}<extra>${series.name}</extra>`,
-                })
-            })
-            return traces
-        }
-        return historySeriesData.map((series, index) => ({
-            x: series.x,
-            y: series.y,
-            type: 'scattergl' as const,
-            mode: 'lines' as const,
-            name: series.name,
-            line: {
-                color: SERIES_COLORS[index % SERIES_COLORS.length],
-                width: 2,
-            },
-            hovertemplate: '%{x}<br>%{y:.3f}<extra></extra>',
-        }))
-    }, [historySeriesData, historyAggSeriesData, historyUseAggregated])
-
-    const historyPlotlyLayout = useMemo(
-        () => ({
-            autosize: true,
-            margin: { l: 42, r: 14, t: 12, b: 24 },
-            showlegend: true,
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(15, 23, 42, 0.04)',
-            xaxis: {
-                showgrid: true,
-                zeroline: false,
-                gridcolor: 'rgba(15, 23, 42, 0.12)',
-                tickfont: { size: 10, color: '#475569' },
-                ticks: 'outside' as const,
-                tickcolor: 'rgba(15, 23, 42, 0.12)',
-            },
-            yaxis: {
-                showgrid: true,
-                zeroline: false,
-                gridcolor: 'rgba(15, 23, 42, 0.12)',
-                tickfont: { size: 10, color: '#475569' },
-                ticks: 'outside' as const,
-                tickcolor: 'rgba(15, 23, 42, 0.12)',
-            },
-        }),
-        []
-    )
-
-    const historyPlotlyConfig = useMemo(
-        () => ({
-            responsive: true,
-            displayModeBar: false,
-            displaylogo: false,
-        }),
-        []
-    )
-
-    useEffect(() => {
-        const element = historyPlotRef.current
-        if (!element) return
-        const data = historyHasData ? historyPlotlyData : []
-        Plotly.react(element, data, historyPlotlyLayout, historyPlotlyConfig)
-    }, [historyPlotlyData, historyPlotlyLayout, historyPlotlyConfig, historyHasData])
-
-    useEffect(() => {
-        const element = historyPlotRef.current
-        if (!element || typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver(() => {
-            Plotly.Plots.resize(element)
-        })
-        observer.observe(element)
-        return () => observer.disconnect()
-    }, [])
-
-    // Track Plotly zoom/pan to sync CaptureSessionTimeline
-    useEffect(() => {
-        const element = historyPlotRef.current
-        if (!element) return
-        const handler = (eventData: any) => {
-            const xRange = eventData?.['xaxis.range']
-            const x0 = eventData?.['xaxis.range[0]']
-            const x1 = eventData?.['xaxis.range[1]']
-            if (xRange && xRange.length === 2) {
-                setHistoryTimeRange([String(xRange[0]), String(xRange[1])])
-            } else if (x0 && x1) {
-                setHistoryTimeRange([String(x0), String(x1)])
-            } else if (eventData?.['xaxis.autorange']) {
-                setHistoryTimeRange(null)
-            }
-        }
-        ;(element as any).on?.('plotly_relayout', handler)
-        return () => {
-            ;(element as any).removeAllListeners?.('plotly_relayout')
-        }
-    }, [historyHasData])
-
-    useEffect(() => {
-        return () => {
-            const element = historyPlotRef.current
-            if (element) Plotly.purge(element)
-        }
-    }, [])
-
-    useEffect(() => {
-        if (!showHistorySettings) return
-        const handleClickOutside = (e: MouseEvent) => {
-            if (historySettingsRef.current && !historySettingsRef.current.contains(e.target as Node)) {
-                setShowHistorySettings(false)
-            }
-        }
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [showHistorySettings])
-
-    const addHistorySensor = (sensorId: string) => {
-        if (!sensorId) return
-        setHistorySensorIds((prev) => {
-            if (prev.includes(sensorId)) return prev
-            if (prev.length >= HISTORY_MAX_SENSORS) {
-                setHistoryError('Можно выбрать не более 50 сенсоров')
-                return prev
-            }
-            return [...prev, sensorId]
-        })
-    }
-
-    const addAllHistorySensors = () => {
-        if (availableHistorySensors.length === 0) return
-        setHistorySensorIds((prev) => {
-            const next = new Set(prev)
-            for (const sensor of availableHistorySensors) {
-                if (next.size >= HISTORY_MAX_SENSORS) break
-                next.add(sensor.id)
-            }
-            if (next.size >= HISTORY_MAX_SENSORS && availableHistorySensors.length > next.size) {
-                setHistoryError('Можно выбрать не более 50 сенсоров')
-            }
-            return Array.from(next)
-        })
-    }
-
-    const removeHistorySensor = (sensorId: string) => {
-        setHistorySensorIds((prev) => prev.filter((id) => id !== sensorId))
-    }
-
-    const clearHistorySensors = () => {
-        setHistorySensorIds([])
-    }
-
-    const continueHistoryInLive = () => {
-        if (typeof window === 'undefined') return
-        const sensorIds = historyEffectiveSensorIds
-        if (sensorIds.length === 0) return
-        const panelId = generateUUID()
-        const startFromCursorBySensor =
-            Object.keys(historyCursorBySensor).length > 0 ? historyCursorBySensor : undefined
-        const payload = {
-            title: 'History -> Live',
-            selectedSensorIds: sensorIds,
-            valueMode: historyValueMode,
-            maxPoints: 500,
-            timeWindowSeconds: 300,
-            useLatestAnchor: true,
-            startFromTimestamp: historyLastTimestamp ?? undefined,
-            startFromCursorBySensor,
-        }
-        window.localStorage.setItem(`telemetry_panel_state_${panelId}`, JSON.stringify(payload))
-        setPanelIds((prev) => [...prev, panelId])
-        setViewMode('live')
-    }
-
-    const loadHistory = () => {
-        if (!historyCaptureSessionId) return
-        setHistoryError(null)
-        if (historySensorOverLimit) {
-            setHistoryError('Можно выбрать не более 50 сенсоров')
-            return
-        }
-        void historyQuery.refetch()
-    }
-
-    return (
-        <div className="telemetry-view detail-page">
-            {projectsLoading && <Loading message="Загрузка проектов..." />}
-
-            {!projectsLoading && !hasProjects && (
-                <EmptyState message="У вас нет проектов. Создайте проект, чтобы просматривать телеметрию." />
+      history.setCaptureSessionId(sessions[0].id);
+  }, [history, sessions, viewer.viewMode]);
+  const selectedSession = sessions.find(
+    (session: CaptureSession) => session.id === history.captureSessionId,
+  );
+  const projectName = projects.find(
+    (project) => project.id === viewer.projectId,
+  )?.name;
+  const canAddPanel =
+    viewer.viewMode === "live" &&
+    !!viewer.projectId &&
+    sensors.length > 0 &&
+    !projectsQuery.isLoading &&
+    !sensorsQuery.isLoading &&
+    !sensorsQuery.error;
+  const continueLive = () => {
+    if (!history.effectiveSensorIds.length) return;
+    const panelId = generateUUID();
+    window.localStorage.setItem(
+      `telemetry_panel_state_${panelId}`,
+      JSON.stringify({
+        title: "History -> Live",
+        selectedSensorIds: history.effectiveSensorIds,
+        valueMode: history.valueMode,
+        maxPoints: 500,
+        timeWindowSeconds: 300,
+        useLatestAnchor: true,
+        startFromTimestamp: history.lastTimestamp || undefined,
+        startFromCursorBySensor: Object.keys(history.cursorBySensor).length
+          ? history.cursorBySensor
+          : undefined,
+      }),
+    );
+    live.setPanelIds((value) => [...value, panelId]);
+    viewer.setViewMode("live");
+  };
+  return (
+    <div className="telemetry-view detail-page">
+      {projectsQuery.isLoading && <Loading message="Загрузка проектов..." />}
+      {!projectsQuery.isLoading && !projects.length && (
+        <EmptyState message="У вас нет проектов. Создайте проект, чтобы просматривать телеметрию." />
+      )}
+      {projects.length > 0 && (
+        <>
+          <div
+            className={`telemetry-view__workspace telemetry-view__workspace--${viewer.viewMode}`}
+          >
+            <TelemetryFilters
+              projectId={viewer.projectId}
+              experimentId={viewer.experimentId}
+              runId={viewer.runId}
+              viewMode={viewer.viewMode}
+              projects={projects}
+              experiments={experiments}
+              runs={runs}
+              projectsLoading={projectsQuery.isLoading}
+              experimentsLoading={experimentsQuery.isLoading}
+              runsLoading={runsQuery.isLoading}
+              onProjectChange={(id) => {
+                viewer.setProjectId(id);
+                viewer.setExperimentId("");
+                viewer.setRunId("");
+                setActiveProjectId(id);
+              }}
+              onExperimentChange={(id) => {
+                viewer.setExperimentId(id);
+                viewer.setRunId("");
+              }}
+              onRunChange={viewer.setRunId}
+              onViewModeChange={viewer.setViewMode}
+            />
+            {viewer.viewMode === "live" ? (
+              <LiveTelemetryWorkspace
+                panelIds={live.panelIds}
+                sensors={sensors}
+                sensorsLoading={sensorsQuery.isLoading}
+                sensorsError={sensorsQuery.error}
+                projectId={viewer.projectId}
+                projectName={projectName}
+                sessions={sessions}
+                recentValues={live.recentValuesBySensor}
+                panelSizes={live.panelSizes}
+                containerWidth={live.panelsWrapWidth}
+                containerRef={live.panelsWrapRef}
+                draggingId={live.draggingPanelId}
+                dragOverId={live.dragOverPanelId}
+                onAddHistorySession={(id) => {
+                  history.setCaptureSessionId(id);
+                  viewer.setViewMode("history");
+                }}
+                onRemove={live.removePanel}
+                onMove={live.movePanel}
+                onSizeChange={live.onSizeChange}
+                onRecordReceived={live.onRecordReceived}
+                onDraggingChange={live.setDraggingPanelId}
+                onDragOverChange={live.setDragOverPanelId}
+              />
+            ) : (
+              <TelemetryHistoryPanel
+                history={history}
+                sessions={sessions}
+                sensors={sensors}
+                selectedSession={selectedSession}
+                runId={viewer.runId}
+                onContinueLive={continueLive}
+                onExport={() => setShowExportModal(true)}
+              />
             )}
-
-            {hasProjects && (
-                <>
-                    <div className={`telemetry-view__workspace telemetry-view__workspace--${viewMode}`}>
-                        <section className="telemetry-view__filters card">
-                            <div className="filter-capsule signal-route-capsule">
-                                <LiveSwitch
-                                    live={viewMode === 'live'}
-                                    onChange={(live) => setViewMode(live ? 'live' : 'history')}
-                                />
-                                <MaterialSelect
-                                    id="telemetry_project_id"
-                                    label="Проект"
-                                    placeholder="Выберите проект"
-                                    value={projectId}
-                                    onChange={(id) => {
-                                        setProjectId(id)
-                                        setActiveProjectId(id)
-                                        setExperimentId('')
-                                        setRunId('')
-                                    }}
-                                    disabled={projectsLoading}
-                                    variant="pill"
-                                    icon={<FolderIcon />}
-                                >
-                                    {projectsData?.projects.map((project) => (
-                                        <option key={project.id} value={project.id}>
-                                            {project.name}
-                                        </option>
-                                    ))}
-                                </MaterialSelect>
-                                <MaterialSelect
-                                    id="telemetry_experiment_id"
-                                    label="Эксперимент"
-                                    placeholder="Выберите эксперимент"
-                                    value={experimentId}
-                                    onChange={(id) => {
-                                        setExperimentId(id)
-                                        setRunId('')
-                                    }}
-                                    disabled={!projectId || experimentsLoading || projectsLoading}
-                                    variant="pill"
-                                    icon={<FlaskIcon />}
-                                >
-                                    {experiments.map((experiment) => (
-                                        <option key={experiment.id} value={experiment.id}>
-                                            {experiment.name}
-                                        </option>
-                                    ))}
-                                </MaterialSelect>
-                                <MaterialSelect
-                                    id="telemetry_run_id"
-                                    label="Пуск"
-                                    value={runId}
-                                    onChange={setRunId}
-                                    placeholder="Выберите пуск"
-                                    disabled={!experimentId || runsLoading || experimentsLoading || projectsLoading}
-                                    variant="pill"
-                                    icon={<PlayCircleIcon />}
-                                >
-                                    {runs.map((run) => (
-                                        <option key={run.id} value={run.id}>
-                                            {run.name}
-                                        </option>
-                                    ))}
-                                </MaterialSelect>
-                            </div>
-                        </section>
-
-                        {isLiveMode ? (
-                            <div className="telemetry-view__live-layout">
-                            <section className="telemetry-view__live-stage card detail-card">
-                                <div className="detail-section-header">
-                                    <div className="detail-section-header__copy">
-                                        <span className="detail-card__eyebrow">Live Canvas</span>
-                                        <h3 className="detail-card__title">Панели live-телеметрии</h3>
-                                        <p>
-                                            Добавляйте независимые панели, меняйте их порядок и отслеживайте
-                                            несколько сенсоров параллельно.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {captureSessions.length > 0 && (
-                                    <CaptureSessionTimeline
-                                        sessions={captureSessions}
-                                        onSessionClick={(sessionId) => {
-                                            setHistoryCaptureSessionId(sessionId)
-                                            setViewMode('history')
-                                        }}
-                                    />
-                                )}
-
-                                {panelIds.length === 0 ? (
-                                    <EmptyState message="Добавьте панель, чтобы начать просмотр графиков." />
-                                ) : (
-                                    <div className="telemetry-view__panels" ref={panelsWrapRef}>
-                                        {panelIds.map((panelId, index) => {
-                                            const panelSize = panelSizes[panelId]
-                                            const isWide =
-                                                panelsWrapWidth > 0 && panelSize
-                                                    ? panelSize.width > panelsWrapWidth / 2
-                                                    : false
-                                            return (
-                                                <div
-                                                    key={panelId}
-                                                    className={`telemetry-view__panel-item${
-                                                        draggingPanelId === panelId
-                                                            ? ' telemetry-view__panel-item--dragging'
-                                                            : ''
-                                                    }${
-                                                        dragOverPanelId === panelId
-                                                            ? ' telemetry-view__panel-item--over'
-                                                            : ''
-                                                    }${isWide ? ' telemetry-view__panel-item--full' : ''}`}
-                                                    onDragOver={(event) => {
-                                                        if (!draggingPanelId || draggingPanelId === panelId) return
-                                                        event.preventDefault()
-                                                        event.dataTransfer.dropEffect = 'move'
-                                                        setDragOverPanelId(panelId)
-                                                    }}
-                                                    onDragLeave={(event) => {
-                                                        if (event.currentTarget.contains(event.relatedTarget as Node))
-                                                            return
-                                                        setDragOverPanelId((prev) => (prev === panelId ? null : prev))
-                                                    }}
-                                                    onDrop={(event) => {
-                                                        event.preventDefault()
-                                                        if (draggingPanelId) movePanel(draggingPanelId, panelId)
-                                                        setDragOverPanelId(null)
-                                                        setDraggingPanelId(null)
-                                                    }}
-                                                >
-                                                    <TelemetryPanel
-                                                        panelId={panelId}
-                                                        sensors={sensors}
-                                                        sensorsLoading={isLoading}
-                                                        sensorsError={
-                                                            error
-                                                                ? typeof error === 'string'
-                                                                    ? error
-                                                                    : (error as Error)?.message ??
-                                                                      'Ошибка загрузки сенсоров'
-                                                                : null
-                                                        }
-                                                        title={`${panelTitleSeed} #${index + 1}`}
-                                                        onRemove={() => removePanel(panelId)}
-                                                        onSizeChange={(size) => handlePanelSizeChange(panelId, size)}
-                                                        onRecordReceived={handleRecordReceived}
-                                                        dragHandleProps={{
-                                                            draggable: true,
-                                                            onDragStart: (event) => {
-                                                                setDraggingPanelId(panelId)
-                                                                event.dataTransfer.effectAllowed = 'move'
-                                                                event.dataTransfer.setData('text/plain', panelId)
-                                                            },
-                                                            onDragEnd: () => {
-                                                                setDraggingPanelId(null)
-                                                                setDragOverPanelId(null)
-                                                            },
-                                                        }}
-                                                    />
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                )}
-                            </section>
-
-                            {projectId && sensors.length > 0 && (
-                                <LiveSensorPanel sensors={sensors} projectId={projectId} recentValues={recentValuesBySensor} />
-                            )}
-                            </div>
-                        ) : (
-                            <section className="telemetry-view__history card detail-card">
-                                <div className="history-panel-header">
-                                    <div className="history-panel-header__copy">
-                                        <span className="detail-card__eyebrow">History</span>
-                                        <h3 className="detail-card__title">
-                                            {selectedHistorySession
-                                                ? `Capture #${selectedHistorySession.ordinal_number}`
-                                                : 'Историческая выборка'}
-                                        </h3>
-                                        {selectedHistorySession?.started_at && (
-                                            <div className="history-panel-header__sub">
-                                                {new Date(selectedHistorySession.started_at).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
-                                                {selectedHistorySession.stopped_at && ` → ${new Date(selectedHistorySession.stopped_at).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}`}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="history-panel-header__actions">
-                                        <button
-                                            type="button"
-                                            className="pill-btn pill-btn--primary"
-                                            onClick={loadHistory}
-                                            disabled={historyLoading || !historyCaptureSessionId || historySensorOverLimit}
-                                        >
-                                            <RefreshCwIcon />
-                                            {historyLoading ? 'Загрузка…' : 'Загрузить'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="pill-btn"
-                                            onClick={continueHistoryInLive}
-                                            disabled={historyLoading || historyEffectiveSensorIds.length === 0 || !historyLastTimestamp}
-                                            title="Переключиться в live и продолжить с последних точек истории"
-                                        >
-                                            <ArrowRightIcon />
-                                            Продолжить в live
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="pill-btn"
-                                            onClick={() => setShowExportModal(true)}
-                                            disabled={!historyCaptureSessionId || !runId}
-                                            title="Открыть диалог настроек экспорта телеметрии"
-                                        >
-                                            <ExportIcon />
-                                            Экспорт…
-                                        </button>
-                                        <div className="history-settings-wrap" ref={historySettingsRef}>
-                                            <button
-                                                type="button"
-                                                className="pill-btn"
-                                                aria-expanded={showHistorySettings}
-                                                onClick={() => setShowHistorySettings((prev) => !prev)}
-                                            >
-                                                <SettingsIcon />
-                                                Настройки
-                                            </button>
-                                            {showHistorySettings && (
-                                                <div className="history-settings-popover" role="dialog" aria-label="Дополнительные настройки">
-                                                    <span className="hsp-arrow" />
-                                                    <div className="hsp-section-title">Данные</div>
-                                                    <div className="hsp-row">
-                                                        <span className="hsp-name">
-                                                            Включать поздние точки
-                                                            <span className="hsp-hint"> (include late)</span>
-                                                        </span>
-                                                        <label className="history-toggle">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={historyIncludeLate}
-                                                                onChange={(e) => setHistoryIncludeLate(e.target.checked)}
-                                                                disabled={historyUseAggregated}
-                                                            />
-                                                        </label>
-                                                    </div>
-                                                    <div className="hsp-row">
-                                                        <span className="hsp-name">
-                                                            Агрегация 1 мин
-                                                            <span className="hsp-hint"> (avg / min / max)</span>
-                                                        </span>
-                                                        <label className="history-toggle">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={historyUseAggregated}
-                                                                onChange={(e) => setHistoryUseAggregated(e.target.checked)}
-                                                            />
-                                                        </label>
-                                                    </div>
-                                                    <div className="hsp-section-title">Отображение</div>
-                                                    <div className="hsp-row">
-                                                        <span className="hsp-name">Порядок</span>
-                                                        <div className="history-seg">
-                                                            <label className={historyOrder === 'asc' ? 'on' : ''}>
-                                                                <input type="radio" name="hsp-order" checked={historyOrder === 'asc'} onChange={() => setHistoryOrder('asc')} />
-                                                                <span>от начала</span>
-                                                            </label>
-                                                            <label className={historyOrder === 'desc' ? 'on' : ''}>
-                                                                <input type="radio" name="hsp-order" checked={historyOrder === 'desc'} onChange={() => setHistoryOrder('desc')} />
-                                                                <span>последние</span>
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                    <div className="hsp-row">
-                                                        <span className="hsp-name">Значения</span>
-                                                        <div className="history-seg">
-                                                            <label className={historyValueMode === 'physical' ? 'on' : ''}>
-                                                                <input type="radio" name="hsp-value-mode" checked={historyValueMode === 'physical'} onChange={() => setHistoryValueMode('physical')} />
-                                                                <span>physical</span>
-                                                            </label>
-                                                            <label className={historyValueMode === 'raw' ? 'on' : ''}>
-                                                                <input type="radio" name="hsp-value-mode" checked={historyValueMode === 'raw'} onChange={() => setHistoryValueMode('raw')} />
-                                                                <span>raw</span>
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                    <div className="hsp-section-title">Данные</div>
-                                                    <div className="hsp-row">
-                                                        <span className="hsp-name">Максимум точек</span>
-                                                        <input
-                                                            type="number"
-                                                            min={100}
-                                                            max={20000}
-                                                            className="hsp-number-input"
-                                                            value={historyMaxPoints}
-                                                            onChange={(e) => setHistoryMaxPoints(Number(e.target.value || HISTORY_MAX_POINTS_DEFAULT))}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="telemetry-view__history-controls">
-                                    <div className="telemetry-view__history-sensors">
-                                    <div className="telemetry-view__sensor-filter">
-                                        <label htmlFor="telemetry_history_sensor_filter">Фильтр сенсоров</label>
-                                        <input
-                                            id="telemetry_history_sensor_filter"
-                                            type="text"
-                                            className="telemetry-view__text-input"
-                                            value={historySensorFilter}
-                                            onChange={(event) => setHistorySensorFilter(event.target.value)}
-                                            placeholder="Имя, тип, id"
-                                        />
-                                    </div>
-                                    <MaterialSelect
-                                        id="telemetry_history_sensors"
-                                        value=""
-                                        label="Сенсоры"
-                                        onChange={(value, event) => {
-                                            addHistorySensor(value)
-                                            if (event?.currentTarget) {
-                                                event.currentTarget.value = ''
-                                            }
-                                        }}
-                                        disabled={
-                                            filteredHistorySensors.length === 0 || historySensorLimitReached
-                                        }
-                                    >
-                                        <option value="">Добавить сенсор</option>
-                                        {filteredHistorySensors.map((sensor) => (
-                                            <option key={sensor.id} value={sensor.id}>
-                                                {sensor.name} ({sensor.type})
-                                            </option>
-                                        ))}
-                                    </MaterialSelect>
-                                    <div className="telemetry-view__sensor-actions">
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary btn-xs"
-                                            onClick={addAllHistorySensors}
-                                            disabled={
-                                                availableHistorySensors.length === 0 || historySensorLimitReached
-                                            }
-                                        >
-                                            Добавить все
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost btn-xs"
-                                            onClick={clearHistorySensors}
-                                            disabled={historySensorIds.length === 0}
-                                        >
-                                            Очистить
-                                        </button>
-                                    </div>
-                                    <div className="telemetry-view__sensor-meta">
-                                        Выбрано {historySensorIds.length} / {HISTORY_MAX_SENSORS}
-                                    </div>
-                                    <div className="telemetry-view__sensor-list">
-                                        {historySensorIds.length === 0 && (
-                                            <span className="telemetry-view__hint">Сенсоры не выбраны</span>
-                                        )}
-                                        {historySensorIds.map((id) => {
-                                            const sensor = historySensorsById.get(id)
-                                            return (
-                                                <span key={id} className="telemetry-view__sensor-pill">
-                                                    {sensor?.name || id}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeHistorySensor(id)}
-                                                        aria-label="Удалить сенсор"
-                                                    >
-                                                        ×
-                                                    </button>
-                                                </span>
-                                            )
-                                        })}
-                                    </div>
-                                    </div>
-                                </div>
-
-                                {(historyError || historyLoadError) && (
-                                    <div className="telemetry-view__error">{historyError || historyLoadError}</div>
-                                )}
-                                {(historyLoadedCount > 0 || historyWasTruncated) && (
-                                    <div className="telemetry-view__history-summary">
-                                        {historyUseAggregated
-                                            ? `Загружено бакетов (1m): ${historyLoadedCount}`
-                                            : `Загружено точек: ${historyLoadedCount}`}
-                                        {historyWasTruncated &&
-                                            ` (показаны ${
-                                                historyOrder === 'desc' ? 'последние' : 'первые'
-                                            } ${historyDisplayMaxPoints})`}
-                                    </div>
-                                )}
-
-                                {captureSessions.length > 0 && (
-                                    <CaptureSessionTimeline
-                                        sessions={captureSessions}
-                                        timeRange={historyTimeRange}
-                                        onSessionClick={(sessionId) => {
-                                            setHistoryCaptureSessionId(sessionId)
-                                        }}
-                                    />
-                                )}
-
-                                <div className="telemetry-view__history-chart">
-                                    <div ref={historyPlotRef} className="telemetry-view__plotly" />
-                                    {historyLoading && (
-                                        <div className="telemetry-view__history-loading">
-                                            Загрузка истории…
-                                            {historyLoadedCount > 0 && (
-                                                <span>
-                                                    {' '}
-                                                    {historyLoadedCount} / {historyMaxPoints}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                    {!historyHasData && !historyLoading && (
-                                        <div className="telemetry-view__empty">Нет данных — нажмите «Загрузить»</div>
-                                    )}
-                                </div>
-                            </section>
-                                )}
-                    </div>
-
-                    {isLiveMode &&
-                        typeof document !== 'undefined' &&
-                        createPortal(
-                            <FloatingActionButton
-                                onClick={addPanel}
-                                title="Добавить панель"
-                                ariaLabel="Добавить панель"
-                                disabled={!canAddPanel}
-                            />,
-                            document.body
-                        )}
-
-                    {showExportModal && runId && (
-                        <TelemetryExportModal
-                            isOpen
-                            onClose={() => setShowExportModal(false)}
-                            runId={runId}
-                            mode="session"
-                            sessionId={historyCaptureSessionId || undefined}
-                            sessionOrdinal={
-                                captureSessions.find((s: CaptureSession) => s.id === historyCaptureSessionId)
-                                    ?.ordinal_number
-                            }
-                            sessions={captureSessions}
-                            sensors={sensors}
-                            initialCaptureSessionId={historyCaptureSessionId}
-                            initialSensorId={historyEffectiveSensorIds.length === 1 ? historyEffectiveSensorIds[0] : ''}
-                            initialRawOrPhysical={historyValueMode === 'raw' ? 'raw' : 'physical'}
-                            initialIncludeLate={historyIncludeLate}
-                            initialUseAggregation={historyUseAggregated}
-                        />
-                    )}
-                </>
+          </div>
+          {viewer.viewMode === "live" &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <FloatingActionButton
+                onClick={live.addPanel}
+                title="Добавить панель"
+                ariaLabel="Добавить панель"
+                disabled={!canAddPanel}
+              />,
+              document.body,
             )}
-        </div>
-    )
+          {showExportModal && viewer.runId && (
+            <TelemetryExportModal
+              isOpen
+              onClose={() => setShowExportModal(false)}
+              runId={viewer.runId}
+              mode="session"
+              sessionId={history.captureSessionId || undefined}
+              sessionOrdinal={selectedSession?.ordinal_number}
+              sessions={sessions}
+              sensors={sensors}
+              initialCaptureSessionId={history.captureSessionId}
+              initialSensorId={
+                history.effectiveSensorIds.length === 1
+                  ? history.effectiveSensorIds[0]
+                  : ""
+              }
+              initialRawOrPhysical={history.valueMode}
+              initialIncludeLate={history.includeLate}
+              initialUseAggregation={history.useAggregated}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
 }
-
-export default TelemetryViewer
+async function listAllSensors(projectId: string) {
+  const sensors: Sensor[] = [];
+  let offset = 0;
+  while (sensors.length < 5000) {
+    const result = await sensorsApi.list({
+      project_id: projectId,
+      limit: 100,
+      offset,
+    });
+    sensors.push(...result.sensors);
+    if (
+      result.sensors.length < 100 ||
+      (result.total > 0 && sensors.length >= result.total)
+    )
+      break;
+    offset += result.sensors.length;
+  }
+  return { sensors, total: sensors.length, page: 1, page_size: sensors.length };
+}
