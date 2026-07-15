@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from tests.utils import ADMIN_HEADERS, make_headers
+from tests.config_service_test_utils import ADMIN_HEADERS, make_headers
 
 _PAYLOAD = {
     "service_name": "idem-svc",

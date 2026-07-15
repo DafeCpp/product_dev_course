@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.utils import ADMIN_HEADERS, EDITOR_HEADERS
+from tests.config_service_test_utils import ADMIN_HEADERS, EDITOR_HEADERS
 
 _PAYLOAD = {
     "service_name": "dry-svc",
