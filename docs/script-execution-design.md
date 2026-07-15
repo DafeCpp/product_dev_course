@@ -29,7 +29,7 @@
 
 > **Примечание:** Ранее в этом разделе описывалась упрощённая модель `user_capabilities`.
 > Она заменена на полноценный RBAC v2 с ролями и гранулярными permissions.
-> Полное описание: [rbac-v2-design.md](rbac-v2-design.md), задачи: [tasks-rbac-scripts.md](tasks-rbac-scripts.md).
+> Полное описание: [rbac-v2-design.md](rbac-v2-design.md), задачи: [EPIC LOS-142 — Frontend RBAC + Scripts](https://linear.app/lostpointer/issue/LOS-142).
 
 ### 1.1 Модель доступа (краткое описание)
 
@@ -451,7 +451,7 @@ projects/backend/
 ## 7. План реализации (этапы)
 
 ### Этап 1: RBAC v2 в auth-service
-> Детальная разбивка: [tasks-rbac-scripts.md](tasks-rbac-scripts.md), фазы 1–2.
+> Детальная разбивка: [EPIC LOS-142 — Frontend RBAC + Scripts](https://linear.app/lostpointer/issue/LOS-142), фазы 1–2.
 
 1. Новая схема БД (permissions, roles, user_system_roles, user_project_roles).
 2. Domain models, repositories, PermissionService.
