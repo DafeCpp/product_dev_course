@@ -6,7 +6,7 @@
 
 **Предусловие:** нужны минимум 2-3 пользователя помимо `admin`. Создать через регистрацию (`/register`) или инвайты (`POST /auth/admin/invites`).
 
-> ⚠️ **Важно (выявлено 2026-06-10):** выдача/отзыв проектных ролей через auth-proxy **не работает** — `/api/v1/projects/*/roles` отдаёт 404 (см. [BUG-F-015](../bugs.md)). Для прогона enforcement-сценариев роли выдавались в обход прокси, прямо в auth-service (`:8001`, `Authorization: Bearer <admin_token>`), payload `{"role_id":"<uuid>"}` (role_id: owner `…010`, editor `…011`, viewer `…012`).
+> ⚠️ **Важно (выявлено 2026-06-10):** выдача/отзыв проектных ролей через auth-proxy **не работает** — `/api/v1/projects/*/roles` отдаёт 404 (см. [BUG-F-015](https://linear.app/lostpointer/issue/LOS-5/bug-f-015-rbac-project-roles-return-404-apiv1projectsroles-not-routed)). Для прогона enforcement-сценариев роли выдавались в обход прокси, прямо в auth-service (`:8001`, `Authorization: Bearer <admin_token>`), payload `{"role_id":"<uuid>"}` (role_id: owner `…010`, editor `…011`, viewer `…012`).
 
 ---
 

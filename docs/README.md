@@ -33,7 +33,7 @@
 - `telemetry-storage-timescaledb.md` — хранение телеметрии датчиков в TimescaleDB (hypertable, индексы, retention/compression).
 
 ## Баги
-- `bugs.md` — единый список всех известных багов (Frontend + Firmware).
+- Все баги и задачи ведутся в [Linear](https://linear.app/lostpointer).
 
 ## Roadmap
 - `experiment-tracking-status-and-roadmap.md` — единый статус и roadmap платформы (включая Experiment Service и Frontend).

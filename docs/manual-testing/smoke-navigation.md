@@ -24,7 +24,7 @@ done
 | `/admin/users`, `/admin/audit`, `/admin/scripts` | 200 |
 | `/projects` | 200 |
 
-**Факт (2026-06-10):** ⚠️ Все роуты вернули `200`, **кроме `/projects` → HTTP 500**. См. [BUG-F-013](../bugs.md). Прямой заход/перезагрузка страницы «Проекты» ломается; client-side навигация (клик по пункту меню) работает.
+**Факт (2026-06-10):** ⚠️ Все роуты вернули `200`, **кроме `/projects` → HTTP 500**. См. [BUG-F-013](https://linear.app/lostpointer/issue/LOS-6/bug-f-013-projects-page-returns-http-500-on-direct-load-f5-reload). Прямой заход/перезагрузка страницы «Проекты» ломается; client-side навигация (клик по пункту меню) работает.
 
 ---
 
@@ -49,12 +49,12 @@ done
 | 1 | Открыть каждый раздел, проверить консоль браузера | Нет ошибок уровня `error` (кроме осознанно ожидаемых, напр. `401 /auth/me` до логина) |
 
 **Факт (2026-06-10):** ⚠️ Найдено:
-- `/webhooks` → `400 Bad Request` на `GET /api/v1/webhooks` и `/api/v1/webhooks/deliveries` — запросы уходят без `project_id`. См. [BUG-F-014](../bugs.md). Воспроизводится на пустом воркспейсе (нет проектов).
-- `/projects` (прямой заход) → `500` (следствие [BUG-F-013](../bugs.md)).
+- `/webhooks` → `400 Bad Request` на `GET /api/v1/webhooks` и `/api/v1/webhooks/deliveries` — запросы уходят без `project_id`. См. [BUG-F-014](https://linear.app/lostpointer/issue/LOS-7/bug-f-014-webhooks-page-sends-requests-without-project-id-400-bad). Воспроизводится на пустом воркспейсе (нет проектов).
+- `/projects` (прямой заход) → `500` (следствие [BUG-F-013](https://linear.app/lostpointer/issue/LOS-6/bug-f-013-projects-page-returns-http-500-on-direct-load-f5-reload)).
 - Остальные разделы — консоль чистая.
 
 ---
 
 ## Заметка по окружению
 
-Portal в dev раздаётся **Vite dev-сервером** (`npm run dev`, не nginx). Часть путей проксируется на `auth-proxy` через `server.proxy` в `vite.config.ts`. Прокси-правило по «голому» префиксу `/projects` перехватывает одноимённый SPA-роут — корень [BUG-F-013](../bugs.md).
+Portal в dev раздаётся **Vite dev-сервером** (`npm run dev`, не nginx). Часть путей проксируется на `auth-proxy` через `server.proxy` в `vite.config.ts`. Прокси-правило по «голому» префиксу `/projects` перехватывает одноимённый SPA-роут — корень [BUG-F-013](https://linear.app/lostpointer/issue/LOS-6/bug-f-013-projects-page-returns-http-500-on-direct-load-f5-reload).
