@@ -1,4 +1,5 @@
 """Integration tests: Idempotency-Key header."""
+
 from __future__ import annotations
 
 import uuid
@@ -88,3 +89,56 @@ async def test_no_idempotency_key_creates_duplicates(service_client):
     assert r1.status == 201
     assert r2.status == 201
     assert (await r1.json())["id"] != (await r2.json())["id"]
+
+
+@pytest.mark.asyncio
+async def test_sensitive_replay_reapplies_current_permissions_without_second_write(service_client):
+    idem_key = str(uuid.uuid4())
+    payload = {**_PAYLOAD, "key": "idem_permission_change", "is_sensitive": True}
+    reader = make_headers(
+        user_id="idem-changing-user",
+        system_permissions=["configs.create", "configs.view", "configs.sensitive.read"],
+    )
+    revoked = make_headers(
+        user_id="idem-changing-user",
+        system_permissions=["configs.create", "configs.view"],
+    )
+
+    first = await service_client.post(
+        "/api/v1/config", json=payload, headers={**reader, "Idempotency-Key": idem_key}
+    )
+    assert first.status == 201, await first.text()
+    assert (await first.json())["value"] == {"enabled": True}
+
+    replay = await service_client.post(
+        "/api/v1/config", json=payload, headers={**revoked, "Idempotency-Key": idem_key}
+    )
+    assert replay.status == 201, await replay.text()
+    assert (await replay.json())["value"] == "***"
+
+    listed = await service_client.get("/api/v1/config?service=idem-svc", headers=revoked)
+    matching = [item for item in (await listed.json())["items"] if item["key"] == payload["key"]]
+    assert len(matching) == 1
+
+
+@pytest.mark.asyncio
+async def test_sensitive_replay_reveals_cached_full_value_after_permission_grant(service_client):
+    idem_key = str(uuid.uuid4())
+    payload = {**_PAYLOAD, "key": "idem_permission_granted", "is_sensitive": True}
+    creator = make_headers(user_id="idem-granted-user", system_permissions=["configs.create"])
+    reader = make_headers(
+        user_id="idem-granted-user",
+        system_permissions=["configs.create", "configs.sensitive.read"],
+    )
+
+    first = await service_client.post(
+        "/api/v1/config", json=payload, headers={**creator, "Idempotency-Key": idem_key}
+    )
+    assert first.status == 201, await first.text()
+    assert (await first.json())["value"] == "***"
+
+    replay = await service_client.post(
+        "/api/v1/config", json=payload, headers={**reader, "Idempotency-Key": idem_key}
+    )
+    assert replay.status == 201, await replay.text()
+    assert (await replay.json())["value"] == {"enabled": True}

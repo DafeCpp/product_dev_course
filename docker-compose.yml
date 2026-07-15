@@ -375,7 +375,7 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
     command: ["python", "-m", "config_service.main"]
     ports:
-      - "${CONFIG_SERVICE_PORT:-8005}:8005"
+      - "127.0.0.1:${CONFIG_SERVICE_PORT:-8005}:8005"
     depends_on:
       config-migrate:
         condition: service_completed_successfully

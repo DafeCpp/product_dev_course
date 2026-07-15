@@ -1,4 +1,5 @@
 """Integration tests: bulk endpoint."""
+
 from __future__ import annotations
 
 import pytest
@@ -28,9 +29,7 @@ async def test_bulk_returns_active_configs(service_client):
     await _create_ff(service_client, "flag_a")
     await _create_ff(service_client, "flag_b", enabled=False)
 
-    resp = await service_client.get(
-        f"/api/v1/configs/bulk?service={_SERVICE}"
-    )
+    resp = await service_client.get(f"/api/v1/configs/bulk?service={_SERVICE}")
     assert resp.status == 200, await resp.text()
     data = await resp.json()
     assert "configs" in data
@@ -89,3 +88,23 @@ async def test_bulk_empty_service(service_client):
     assert resp.status == 200
     data = await resp.json()
     assert data["configs"] == {}
+
+
+@pytest.mark.asyncio
+async def test_bulk_returns_unredacted_sensitive_value(service_client):
+    response = await service_client.post(
+        "/api/v1/config",
+        json={
+            "service_name": _SERVICE,
+            "key": "bulk_secret",
+            "config_type": "feature_flag",
+            "value": {"enabled": True},
+            "is_sensitive": True,
+        },
+        headers=ADMIN_HEADERS,
+    )
+    assert response.status == 201, await response.text()
+
+    bulk = await service_client.get(f"/api/v1/configs/bulk?service={_SERVICE}")
+    assert bulk.status == 200, await bulk.text()
+    assert (await bulk.json())["configs"]["bulk_secret"] == {"enabled": True}

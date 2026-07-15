@@ -1,4 +1,5 @@
 """Config CRUD endpoints."""
+
 from __future__ import annotations
 
 import json
@@ -7,6 +8,12 @@ from uuid import UUID, uuid4
 
 from aiohttp import web
 
+from config_service.api.response_serializers import (
+    serialize_config,
+    serialize_config_full,
+    serialize_config_preview,
+    serialize_history,
+)
 from config_service.core.exceptions import (
     ConfigNotFoundError,
     ConfigValidationError,
@@ -17,7 +24,6 @@ from config_service.domain.dto import (
     ActivateDeactivateRequest,
     ConfigCreate,
     ConfigPatch,
-    ConfigResponse,
     RollbackRequest,
 )
 from config_service.domain.enums import ConfigType
@@ -68,9 +74,7 @@ def _extract_version(request: web.Request, body: dict[str, object]) -> tuple[int
     except (TypeError, ValueError):
         raise web.HTTPBadRequest(reason="version in body must be an integer")
     if header_version_int != body_version_int:
-        raise web.HTTPBadRequest(
-            reason="version mismatch between If-Match header and request body"
-        )
+        raise web.HTTPBadRequest(reason="version mismatch between If-Match header and request body")
     return header_version_int, body_version_int
 
 
@@ -91,15 +95,6 @@ def _extract_version_from_query(request: web.Request) -> int:
             reason="version mismatch between If-Match header and version query param"
         )
     return header_v
-
-
-def _config_to_response(config: object, redact: bool) -> dict[str, object]:
-    resp: dict[str, object] = ConfigResponse.model_validate(
-        config, from_attributes=True
-    ).model_dump(mode="json")
-    if redact:
-        resp["value"] = "***"
-    return resp
 
 
 @routes.post("/api/v1/config")
@@ -126,7 +121,6 @@ async def create_config(request: web.Request) -> web.Response:
                 content_type="application/json",
             )
         now = datetime.now(tz=UTC).isoformat()
-        redact = dto.is_sensitive and "configs.sensitive.read" not in user.system_permissions
         preview: dict[str, object] = {
             "id": str(uuid4()),
             "service_name": dto.service_name,
@@ -134,7 +128,7 @@ async def create_config(request: web.Request) -> web.Response:
             "key": dto.key,
             "config_type": dto.config_type.value,
             "description": dto.description,
-            "value": "***" if redact else dto.value,
+            "value": dto.value,
             "metadata": dto.metadata,
             "is_active": True,
             "is_critical": dto.is_critical,
@@ -146,7 +140,10 @@ async def create_config(request: web.Request) -> web.Response:
             "updated_at": now,
             "deleted_at": None,
         }
-        return web.json_response({"preview": preview, "dry_run": True}, status=200)
+        return web.json_response(
+            {"preview": serialize_config_preview(preview, user), "dry_run": True},
+            status=200,
+        )
 
     svc = await get_config_service(request)
     idempotency_svc = await get_idempotency_service(request)
@@ -165,7 +162,9 @@ async def create_config(request: web.Request) -> web.Response:
             raise web.HTTPConflict(reason="Idempotency key reused with different payload")
         if cached is not None:
             config_idempotency_hits_total.labels(result="hit").inc()
-            return idempotency_svc.build_response(cached)
+            return web.json_response(
+                serialize_config_preview(cached.body, user), status=cached.status
+            )
 
     try:
         async with idempotency_svc.guard_reservation(reservation):
@@ -207,11 +206,11 @@ async def create_config(request: web.Request) -> web.Response:
         value=config.value,
     )
 
-    redact = config.is_sensitive and "configs.sensitive.read" not in user.system_permissions
-    resp_body = _config_to_response(config, redact)
+    canonical_body = serialize_config_full(config)
+    resp_body = serialize_config(config, user)
 
     if reservation is not None:
-        await idempotency_svc.complete_response(reservation, 201, resp_body)
+        await idempotency_svc.complete_response(reservation, 201, canonical_body)
 
     return web.json_response(resp_body, status=201, headers={"ETag": f'"{config.version}"'})
 
@@ -242,8 +241,7 @@ async def list_configs(request: web.Request) -> web.Response:
         cursor=cursor,
     )
 
-    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
-    result = [_config_to_response(c, c.is_sensitive and not can_read_sensitive) for c in items]
+    result = [serialize_config(c, user) for c in items]
     return web.json_response({"items": result, "next_cursor": next_cursor})
 
 
@@ -260,10 +258,8 @@ async def get_config(request: web.Request) -> web.Response:
     except ConfigNotFoundError:
         raise web.HTTPNotFound()
 
-    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
-    redact = config.is_sensitive and not can_read_sensitive
     return web.json_response(
-        _config_to_response(config, redact),
+        serialize_config(config, user),
         headers={"ETag": f'"{config.version}"'},
     )
 
@@ -305,8 +301,9 @@ async def patch_config(request: web.Request) -> web.Response:
         merged_value = dto.value if dto.value is not None else current.value
         merged_meta = dto.metadata if dto.metadata is not None else current.metadata
         merged_active = dto.is_active if dto.is_active is not None else current.is_active
-        can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
-        redact = current.is_sensitive and not can_read_sensitive
+        proposed_sensitive = (
+            dto.is_sensitive if dto.is_sensitive is not None else current.is_sensitive
+        )
         preview = {
             "id": str(current.id),
             "service_name": current.service_name,
@@ -314,11 +311,11 @@ async def patch_config(request: web.Request) -> web.Response:
             "key": current.key,
             "config_type": current.config_type.value,
             "description": dto.description if dto.description is not None else current.description,
-            "value": "***" if redact else merged_value,
+            "value": merged_value,
             "metadata": merged_meta,
             "is_active": merged_active,
             "is_critical": dto.is_critical if dto.is_critical is not None else current.is_critical,
-            "is_sensitive": dto.is_sensitive if dto.is_sensitive is not None else current.is_sensitive,
+            "is_sensitive": proposed_sensitive,
             "version": current.version + 1,
             "created_by": current.created_by,
             "updated_by": user.user_id,
@@ -326,7 +323,16 @@ async def patch_config(request: web.Request) -> web.Response:
             "updated_at": datetime.now(tz=UTC).isoformat(),
             "deleted_at": None,
         }
-        return web.json_response({"preview": preview, "dry_run": True})
+        return web.json_response(
+            {
+                "preview": serialize_config_preview(
+                    preview,
+                    user,
+                    contains_sensitive_value=current.is_sensitive or proposed_sensitive,
+                ),
+                "dry_run": True,
+            }
+        )
 
     try:
         config = await svc.patch(
@@ -371,9 +377,7 @@ async def patch_config(request: web.Request) -> web.Response:
         value=config.value,
     )
 
-    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
-    redact = config.is_sensitive and not can_read_sensitive
-    resp_body = _config_to_response(config, redact)
+    resp_body = serialize_config(config, user)
 
     return web.json_response(resp_body, headers={"ETag": f'"{config.version}"'})
 
@@ -457,9 +461,8 @@ async def activate_config(request: web.Request) -> web.Response:
         config_optimistic_lock_conflicts_total.labels(route="POST activate").inc()
         raise web.HTTPPreconditionFailed(reason="Version conflict")
 
-    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
     return web.json_response(
-        _config_to_response(config, config.is_sensitive and not can_read_sensitive),
+        serialize_config(config, user),
         headers={"ETag": f'"{config.version}"'},
     )
 
@@ -496,9 +499,8 @@ async def deactivate_config(request: web.Request) -> web.Response:
         config_optimistic_lock_conflicts_total.labels(route="POST deactivate").inc()
         raise web.HTTPPreconditionFailed(reason="Version conflict")
 
-    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
     return web.json_response(
-        _config_to_response(config, config.is_sensitive and not can_read_sensitive),
+        serialize_config(config, user),
         headers={"ETag": f'"{config.version}"'},
     )
 
@@ -558,9 +560,8 @@ async def rollback_config(request: web.Request) -> web.Response:
         value=config.value,
     )
 
-    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
     return web.json_response(
-        _config_to_response(config, config.is_sensitive and not can_read_sensitive),
+        serialize_config(config, user),
         headers={"ETag": f'"{config.version}"'},
     )
 
@@ -580,23 +581,6 @@ async def get_history(request: web.Request) -> web.Response:
     except ConfigNotFoundError:
         raise web.HTTPNotFound()
 
-    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
-    items = []
-    for h in history:
-        items.append({
-            "id": str(h.id),
-            "config_id": str(h.config_id),
-            "version": h.version,
-            "service_name": h.service_name,
-            "key": h.key,
-            "config_type": h.config_type.value,
-            "value": "***" if h.is_sensitive and not can_read_sensitive else h.value,
-            "metadata": h.metadata,
-            "is_active": h.is_active,
-            "changed_by": h.changed_by,
-            "change_reason": h.change_reason,
-            "correlation_id": h.correlation_id,
-            "changed_at": h.changed_at.isoformat(),
-        })
+    items = [serialize_history(item, user) for item in history]
 
     return web.json_response({"items": items})
