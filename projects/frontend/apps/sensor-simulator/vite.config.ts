@@ -4,6 +4,15 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
     plugins: [react()],
+    resolve: {
+        // frontend-common is consumed from its source tree; force one React
+        // instance so hooks shared across workspaces use the app dispatcher.
+        dedupe: ['react', 'react-dom'],
+        alias: {
+            react: '/home/lostpointer/product_dev_course/projects/frontend/apps/sensor-simulator/node_modules/react',
+            'react-dom': '/home/lostpointer/product_dev_course/projects/frontend/apps/sensor-simulator/node_modules/react-dom',
+        },
+    },
     server: {
         port: 3006,
         strictPort: true,
@@ -43,4 +52,3 @@ export default defineConfig({
         },
     },
 })
-
