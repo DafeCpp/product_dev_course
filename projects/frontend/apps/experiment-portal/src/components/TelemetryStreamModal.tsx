@@ -176,12 +176,14 @@ export default function TelemetryStreamModal({
         onError: onStreamError,
     })
 
-    const { status: streamStatus, points: records, error: streamError, cursor, start: startStream, stop: stopStream } = stream
+    const { status: streamStatus, points: records, error: streamError, cursor, start: startStream, stop: stopStream, clear: clearStream } = stream
 
     useEffect(() => {
         if (!isOpen) {
-            // ensure stopped when modal closes
+            // ensure stopped when modal closes, and wipe accumulated records/cursor
+            // so reopening (possibly for a different sensor) doesn't show stale data
             stopStream()
+            clearStream()
             setSinceTs(new Date().toISOString())
             setSinceId('0')
             setIdleTimeoutSeconds('30')

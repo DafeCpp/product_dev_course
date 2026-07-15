@@ -141,6 +141,9 @@ export function useTelemetryStream(
           const reader = response.body.getReader()
           const decoder = new TextDecoder()
           const parser = createSSEParser((evt) => {
+            if (evt.event === 'error') {
+              throw new Error(evt.data || 'Telemetry stream reported an error')
+            }
             if (evt.event !== 'telemetry' && evt.event !== 'message') return
             let record: TelemetryStreamRecord
             try {
@@ -218,7 +221,11 @@ export function useTelemetryStream(
 
   const clear = useCallback(() => {
     setPoints([])
-  }, [])
+    setLastRecord(null)
+    const resetCursor: TelemetryStreamCursor = { sinceTs: initialSinceTs, sinceId: initialSinceId }
+    cursorRef.current = resetCursor
+    setCursor(resetCursor)
+  }, [initialSinceTs, initialSinceId])
 
   useEffect(() => {
     return () => {

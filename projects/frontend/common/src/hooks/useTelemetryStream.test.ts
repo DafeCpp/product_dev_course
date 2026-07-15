@@ -262,4 +262,51 @@ describe('useTelemetryStream', () => {
     await new Promise((r) => setTimeout(r, 50))
     expect(open).toHaveBeenCalledTimes(1)
   })
+
+  it('treats a server-sent "error" event as a stream failure, not a clean end', async () => {
+    const { open, streams } = makeOpenMock()
+    const onError = vi.fn()
+    const { result } = renderHook(() =>
+      useTelemetryStream('s1', { open, backoff: FAST_BACKOFF, onError }),
+    )
+
+    act(() => result.current.start())
+    await waitFor(() => expect(streams).toHaveLength(1))
+
+    act(() => {
+      streams[0].pushRaw('event: error\ndata: sensor disconnected\n\n')
+    })
+
+    await waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'sensor disconnected' }),
+      { willRetry: true, attempt: 1 },
+    )
+    await waitFor(() => expect(streams).toHaveLength(2))
+  })
+
+  it('clear() resets points, lastRecord, and cursor back to the initial values', async () => {
+    const { open, streams } = makeOpenMock()
+    const { result } = renderHook(() =>
+      useTelemetryStream('s1', {
+        open,
+        initialSinceTs: '2024-01-01T00:00:00.000Z',
+        initialSinceId: 3,
+      }),
+    )
+
+    act(() => result.current.start())
+    await waitFor(() => expect(streams).toHaveLength(1))
+
+    act(() => {
+      streams[0].push('telemetry', makeRecord({ id: 99, timestamp: '2024-01-01T00:01:39.000Z' }))
+    })
+    await waitFor(() => expect(result.current.lastRecord?.id).toBe(99))
+
+    act(() => result.current.clear())
+
+    expect(result.current.points).toEqual([])
+    expect(result.current.lastRecord).toBeNull()
+    expect(result.current.cursor).toEqual({ sinceTs: '2024-01-01T00:00:00.000Z', sinceId: 3 })
+  })
 })
