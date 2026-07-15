@@ -1,4 +1,8 @@
 {
+  "workspaces": [
+    "projects/frontend/common",
+    "projects/frontend/apps/experiment-portal"
+  ],
   "dependencies": {
     "sass": "^1.97.3"
   }

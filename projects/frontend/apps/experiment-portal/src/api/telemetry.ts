@@ -136,6 +136,7 @@ export const telemetryApi = {
       since_id?: number
       max_events?: number
       idle_timeout_seconds?: number
+      signal?: AbortSignal
     }
   ): Promise<{ response: Response; debug: { url: string; headers: Record<string, string>; method: string } }> => {
     // Stream is user-authenticated via auth-proxy session cookies.
@@ -177,6 +178,7 @@ export const telemetryApi = {
         method: debug.method,
         headers: debug.headers,
         credentials: 'include',
+        signal: params.signal,
       })
       if (response.status === 401) {
         const refreshed = await tryRefresh()
@@ -187,6 +189,7 @@ export const telemetryApi = {
             method: retryDebug.method,
             headers: retryDebug.headers,
             credentials: 'include',
+            signal: params.signal,
           })
           return { response: retryResponse, debug: retryDebug }
         }
