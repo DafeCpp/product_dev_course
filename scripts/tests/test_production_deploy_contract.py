@@ -188,6 +188,16 @@ class ProductionDeployContractTest(unittest.TestCase):
         first_down = workflow.index("docker compose -p experiment-tracking")
         self.assertLess(validation, first_down)
 
+    def test_release_contract_job_declares_every_required_env(self) -> None:
+        workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+        job = re.search(
+            r"(?ms)^  production-contract-tests:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n)",
+            workflow,
+        )
+        self.assertIsNotNone(job)
+        declared = set(re.findall(r"(?m)^      ([A-Z_][A-Z0-9_]*):", job.group("body")))
+        self.assertEqual(EXPECTED_REQUIRED_KEYS - declared, set())
+
     def test_terraform_database_url_outputs_do_not_contain_masked_passwords(self) -> None:
         outputs = TERRAFORM_OUTPUTS.read_text(encoding="utf-8")
         self.assertNotIn(":***@", outputs)
