@@ -11,6 +11,8 @@ on:
       - scripts/validate-production-env.sh
       - scripts/tests/test_production_deploy_contract.py
       - infrastructure/yandex-cloud/outputs.tf
+      - infrastructure/yandex-cloud/object-storage.tf
+      - infrastructure/yandex-cloud/variables.tf
       - .github/workflows/deploy.yml
       - .github/workflows/production-contract-tests.yml
       - Makefile
@@ -24,6 +26,8 @@ on:
       - scripts/validate-production-env.sh
       - scripts/tests/test_production_deploy_contract.py
       - infrastructure/yandex-cloud/outputs.tf
+      - infrastructure/yandex-cloud/object-storage.tf
+      - infrastructure/yandex-cloud/variables.tf
       - .github/workflows/deploy.yml
       - .github/workflows/production-contract-tests.yml
       - Makefile

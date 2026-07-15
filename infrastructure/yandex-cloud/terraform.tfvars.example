@@ -27,6 +27,13 @@ pg_auth_db_password       = "CHANGE_ME_strong_password_2"
 pg_experiment_db_password = "CHANGE_ME_strong_password_3"
 pg_config_db_password     = "CHANGE_ME_strong_password_4"
 
+# --- Object Storage ---
+# Bucket names are globally unique. Use a stable production-specific name.
+artifacts_bucket_name = "experiment-artifacts-your-unique-suffix"
+artifacts_cors_allowed_origins = [
+  "https://your-domain.com",
+]
+
 # --- IAM (если Terraform не имеет прав на управление IAM каталога — см. Troubleshooting) ---
 # manage_folder_iam = false
 

@@ -169,6 +169,7 @@ Terraform создаст:
 - Container Registry
 - Compute VM с Docker
 - Service accounts для VM и CI/CD
+- Приватный Object Storage bucket и отдельный bucket-scoped service account для артефактов
 
 ### 3. Сохранение outputs
 
@@ -190,6 +191,15 @@ terraform output -raw config_database_url
 
 # CI ключ (для GitHub Secrets)
 terraform output -raw ci_sa_key_json
+
+# Object Storage: несекретные значения
+terraform output -raw artifacts_s3_endpoint_url
+terraform output -raw artifacts_bucket_name
+
+# Object Storage: static key. -raw выводит секреты в терминал;
+# переносите их сразу в production .env, не записывая в файлы внутри репозитория.
+terraform output -raw artifacts_s3_access_key
+terraform output -raw artifacts_s3_secret_key
 ```
 
 ### 4. Настройка VM
@@ -219,6 +229,11 @@ nano /opt/experiment-tracking/.env
 # REDIS_URL=redis://redis:6379/0
 # TELEMETRY_BROKER_URL=redis://redis:6379/0
 # CONFIG_CLIENT_URL=http://config-service:8005
+# S3_ENDPOINT_URL=https://storage.yandexcloud.net
+# S3_PUBLIC_ENDPOINT_URL=https://storage.yandexcloud.net
+# S3_BUCKET=<terraform output -raw artifacts_bucket_name>
+# S3_ACCESS_KEY и S3_SECRET_KEY — sensitive Terraform outputs
+# S3_PRESIGN_EXPIRE_SECONDS=3600
 
 # Pre-flight выполняется до любых действий с работающим стеком.
 cd /opt/experiment-tracking
@@ -417,6 +432,51 @@ Terraform, production `.env` или GitHub Actions secrets. Используйт
 
 Полный автоматический drift-check между manifest, dev/prod compose, build matrix,
 миграциями и Terraform остаётся предметом LOS-112.
+
+## Object Storage: smoke-тест и ротация ключа
+
+MinIO используется только в локальном `docker-compose.yml`. Production
+`experiment-service` обращается к приватному Yandex Object Storage bucket через
+`https://storage.yandexcloud.net`; браузер получает короткоживущие presigned URL.
+
+После `terraform apply` и deploy проверьте полный путь через UI или API:
+
+1. запросить presigned upload URL и выполнить `PUT` тестового файла с тем же
+   `Content-Type`, который был указан при создании URL;
+2. запросить presigned download URL и сверить содержимое файла;
+3. удалить artifact через API и убедиться, что последующий download возвращает 404;
+4. проверить логи `experiment-service`, не выводя значения ключей.
+
+Bucket приватный, `force_destroy = false`, а runtime service account получает
+`storage.editor` через bucket IAM binding — доступа к другим bucket каталога у него нет.
+CORS origins задаются переменной `artifacts_cors_allowed_origins`; wildcard origin в
+production не используйте.
+
+### Ротация static access key
+
+Секрет static key доступен Terraform только при создании. Для плановой ротации:
+
+```bash
+cd infrastructure/yandex-cloud
+umask 077
+terraform plan -replace=yandex_iam_service_account_static_access_key.artifacts_sa_key -out=.terraform/rotate-artifacts-key.tfplan
+terraform apply .terraform/rotate-artifacts-key.tfplan
+terraform output -raw artifacts_s3_access_key
+terraform output -raw artifacts_s3_secret_key
+rm -f .terraform/rotate-artifacts-key.tfplan
+```
+
+Сразу замените оба значения в `/opt/experiment-tracking/.env`, выполните pre-flight и
+пересоздайте только `experiment-service`:
+
+```bash
+./validate-production-env.sh .env docker-compose.prod.yml
+docker compose --env-file .env -f docker-compose.prod.yml up -d --no-deps --force-recreate experiment-service
+docker compose --env-file .env -f docker-compose.prod.yml ps experiment-service
+```
+
+Старый ключ удаляется самим Terraform replacement. Не помещайте ключи в shell scripts,
+GitHub Actions logs, task comments или файлы репозитория.
 
 ## Мониторинг
 
