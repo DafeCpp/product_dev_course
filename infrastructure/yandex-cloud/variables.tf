@@ -179,6 +179,28 @@ variable "cr_name" {
   default     = "experiment-tracking-cr"
 }
 
+# --- Object Storage ---
+
+variable "artifacts_bucket_name" {
+  description = "Globally unique private Object Storage bucket for experiment-service artifacts"
+  type        = string
+
+  validation {
+    condition     = length(var.artifacts_bucket_name) >= 3 && length(var.artifacts_bucket_name) <= 63
+    error_message = "artifacts_bucket_name must contain between 3 and 63 characters."
+  }
+}
+
+variable "artifacts_cors_allowed_origins" {
+  description = "Browser origins allowed to upload/download artifacts through presigned URLs"
+  type        = list(string)
+
+  validation {
+    condition     = length(var.artifacts_cors_allowed_origins) > 0 && alltrue([for origin in var.artifacts_cors_allowed_origins : startswith(origin, "https://")])
+    error_message = "artifacts_cors_allowed_origins must contain at least one HTTPS origin."
+  }
+}
+
 # --- Application ---
 
 variable "jwt_secret" {

@@ -50,6 +50,28 @@ output "config_database_url" {
   sensitive   = true
 }
 
+output "artifacts_bucket_name" {
+  description = "S3_BUCKET for experiment-service"
+  value       = yandex_storage_bucket.artifacts.bucket
+}
+
+output "artifacts_s3_endpoint_url" {
+  description = "S3_ENDPOINT_URL and S3_PUBLIC_ENDPOINT_URL for Yandex Object Storage"
+  value       = "https://storage.yandexcloud.net"
+}
+
+output "artifacts_s3_access_key" {
+  description = "S3_ACCESS_KEY for experiment-service"
+  value       = yandex_iam_service_account_static_access_key.artifacts_sa_key.access_key
+  sensitive   = true
+}
+
+output "artifacts_s3_secret_key" {
+  description = "S3_SECRET_KEY for experiment-service; available only when the key is created"
+  value       = yandex_iam_service_account_static_access_key.artifacts_sa_key.secret_key
+  sensitive   = true
+}
+
 output "ci_sa_key_id" {
   description = "CI service account key ID (for GitHub Secrets)"
   value       = yandex_iam_service_account_key.ci_sa_key.id

@@ -11,6 +11,8 @@ on:
       - scripts/validate-production-env.sh
       - scripts/tests/test_production_deploy_contract.py
       - infrastructure/yandex-cloud/outputs.tf
+      - infrastructure/yandex-cloud/object-storage.tf
+      - infrastructure/yandex-cloud/variables.tf
       - .github/workflows/deploy.yml
       - .github/workflows/production-contract-tests.yml
       - Makefile
@@ -24,6 +26,8 @@ on:
       - scripts/validate-production-env.sh
       - scripts/tests/test_production_deploy_contract.py
       - infrastructure/yandex-cloud/outputs.tf
+      - infrastructure/yandex-cloud/object-storage.tf
+      - infrastructure/yandex-cloud/variables.tf
       - .github/workflows/deploy.yml
       - .github/workflows/production-contract-tests.yml
       - Makefile
@@ -47,6 +51,12 @@ jobs:
       GRAFANA_ADMIN_PASSWORD: ci-test-grafana-secret
       REDIS_URL: redis://redis:6379/0
       TELEMETRY_BROKER_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: https://storage.yandexcloud.net
+      S3_PUBLIC_ENDPOINT_URL: https://storage.yandexcloud.net
+      S3_ACCESS_KEY: ci-test-access-key
+      S3_SECRET_KEY: ci-test-secret-key
+      S3_BUCKET: ci-test-artifacts
+      S3_PRESIGN_EXPIRE_SECONDS: "3600"
       CONFIG_CLIENT_ENABLED: "true"
       CONFIG_CLIENT_URL: http://config-service:8005
       CONFIG_CLIENT_POLL_INTERVAL_SECONDS: "5.0"

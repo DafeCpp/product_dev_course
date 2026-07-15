@@ -13,6 +13,7 @@ COMPOSE = ROOT / "docker-compose.prod.yml"
 ENV_EXAMPLE = ROOT / "env.production.example"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 TERRAFORM_OUTPUTS = ROOT / "infrastructure" / "yandex-cloud" / "outputs.tf"
+TERRAFORM_OBJECT_STORAGE = ROOT / "infrastructure" / "yandex-cloud" / "object-storage.tf"
 
 EXPECTED_REQUIRED_KEYS = {
     "AUTH_DATABASE_URL",
@@ -28,6 +29,12 @@ EXPECTED_REQUIRED_KEYS = {
     "GRAFANA_ADMIN_PASSWORD",
     "JWT_SECRET",
     "REDIS_URL",
+    "S3_ACCESS_KEY",
+    "S3_BUCKET",
+    "S3_ENDPOINT_URL",
+    "S3_PRESIGN_EXPIRE_SECONDS",
+    "S3_PUBLIC_ENDPOINT_URL",
+    "S3_SECRET_KEY",
     "TELEMETRY_BROKER_URL",
 }
 
@@ -46,6 +53,12 @@ TELEMETRY_BROKER_URL=redis://redis:6379/0
 CONFIG_CLIENT_ENABLED=true
 CONFIG_CLIENT_URL=http://config-service:8005
 CONFIG_CLIENT_POLL_INTERVAL_SECONDS=5.0
+S3_ENDPOINT_URL=https://storage.yandexcloud.net
+S3_PUBLIC_ENDPOINT_URL=https://storage.yandexcloud.net
+S3_ACCESS_KEY=test-access-key
+S3_SECRET_KEY=test-secret-key
+S3_BUCKET=test-artifacts-bucket
+S3_PRESIGN_EXPIRE_SECONDS=3600
 """
 
 
@@ -97,6 +110,28 @@ class ProductionDeployContractTest(unittest.TestCase):
             self.assertIn(f"{key}=${{{key}:?", compose)
         self.assertIn("config-service:\n        condition: service_healthy", compose)
 
+    def test_object_storage_runtime_contract_is_explicit(self) -> None:
+        compose = COMPOSE.read_text(encoding="utf-8")
+        for key in (
+            "S3_ENDPOINT_URL",
+            "S3_PUBLIC_ENDPOINT_URL",
+            "S3_ACCESS_KEY",
+            "S3_SECRET_KEY",
+            "S3_BUCKET",
+            "S3_PRESIGN_EXPIRE_SECONDS",
+        ):
+            self.assertIn(f"{key}=${{{key}:?", compose)
+
+    def test_artifact_storage_iam_is_bucket_scoped(self) -> None:
+        storage = TERRAFORM_OBJECT_STORAGE.read_text(encoding="utf-8")
+        self.assertIn('resource "yandex_iam_service_account_static_access_key" "artifacts_sa_key"', storage)
+        self.assertIn('resource "yandex_storage_bucket" "artifacts"', storage)
+        self.assertIn('resource "yandex_storage_bucket_iam_binding" "artifacts_editor"', storage)
+        self.assertIn('role   = "storage.editor"', storage)
+        self.assertIn('bucket = yandex_storage_bucket.artifacts.bucket', storage)
+        self.assertNotIn('yandex_resourcemanager_folder_iam_member', storage)
+        self.assertIn('force_destroy = false', storage)
+
     def test_valid_env_passes(self) -> None:
         result = self.run_validator(VALID_ENV)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -133,11 +168,35 @@ class ProductionDeployContractTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("CR_REGISTRY still contains a template value", result.stderr)
 
+    def test_s3_template_values_fail(self) -> None:
+        placeholders = {
+            "S3_ACCESS_KEY": "CHANGE_ME_TERRAFORM_OUTPUT_ARTIFACTS_S3_ACCESS_KEY",
+            "S3_SECRET_KEY": "CHANGE_ME_TERRAFORM_OUTPUT_ARTIFACTS_S3_SECRET_KEY",
+            "S3_BUCKET": "YOUR_ARTIFACTS_BUCKET_NAME",
+        }
+        for key, placeholder in placeholders.items():
+            with self.subTest(key=key):
+                result = self.run_validator(
+                    re.sub(rf"^{key}=.*$", f"{key}={placeholder}", VALID_ENV, flags=re.MULTILINE)
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"{key} still contains a template value", result.stderr)
+
     def test_release_workflow_validates_before_stopping_stack(self) -> None:
         workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
         validation = workflow.index("./validate-production-env.sh .env docker-compose.prod.yml")
         first_down = workflow.index("docker compose -p experiment-tracking")
         self.assertLess(validation, first_down)
+
+    def test_release_contract_job_declares_every_required_env(self) -> None:
+        workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+        job = re.search(
+            r"(?ms)^  production-contract-tests:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n)",
+            workflow,
+        )
+        self.assertIsNotNone(job)
+        declared = set(re.findall(r"(?m)^      ([A-Z_][A-Z0-9_]*):", job.group("body")))
+        self.assertEqual(EXPECTED_REQUIRED_KEYS - declared, set())
 
     def test_terraform_database_url_outputs_do_not_contain_masked_passwords(self) -> None:
         outputs = TERRAFORM_OUTPUTS.read_text(encoding="utf-8")
@@ -145,6 +204,15 @@ class ProductionDeployContractTest(unittest.TestCase):
         self.assertIn("urlencode(var.pg_auth_db_password)", outputs)
         self.assertIn("urlencode(var.pg_experiment_db_password)", outputs)
         self.assertIn("urlencode(var.pg_config_db_password)", outputs)
+
+    def test_object_storage_credentials_are_sensitive_outputs(self) -> None:
+        outputs = TERRAFORM_OUTPUTS.read_text(encoding="utf-8")
+        for output_name in ("artifacts_s3_access_key", "artifacts_s3_secret_key"):
+            block = re.search(
+                rf'output "{output_name}" \{{(?P<body>.*?)\n\}}', outputs, re.DOTALL
+            )
+            self.assertIsNotNone(block)
+            self.assertIn("sensitive   = true", block.group("body"))
 
 
 if __name__ == "__main__":
