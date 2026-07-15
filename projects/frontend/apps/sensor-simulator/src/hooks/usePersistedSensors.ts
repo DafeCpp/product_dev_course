@@ -5,6 +5,7 @@ import {
   type SensorConfig,
 } from "../domain";
 import { createEmptySensor, loadPersistedState } from "../storage";
+
 export function usePersistedSensors(onLog?: (line: string) => void) {
   const initial = useMemo(
     () =>
@@ -23,6 +24,7 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
     () => sensors.find((s) => s.key === selectedSensorKey) ?? sensors[0],
     [sensors, selectedSensorKey],
   );
+
   useEffect(() => {
     if (!sensors.length) {
       const s = createEmptySensor();
@@ -31,6 +33,7 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
     } else if (!sensors.some((s) => s.key === selectedSensorKey))
       setSelectedSensorKey(sensors[0].key);
   }, [sensors, selectedSensorKey]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
@@ -44,6 +47,7 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
     }, 500);
     return () => window.clearTimeout(timer);
   }, [sensors, selectedSensorKey]);
+
   const updateSensor = useCallback(
     (key: string, patch: Partial<SensorConfig>) =>
       setSensors((prev) =>
@@ -51,6 +55,7 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
       ),
     [],
   );
+
   const updateSensorSettings = useCallback(
     (key: string, patch: Partial<PersistedSettings>) =>
       setSensors((prev) =>
@@ -60,6 +65,7 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
       ),
     [],
   );
+
   const addSensor = useCallback(() => {
     const s = createEmptySensor();
     if (selectedSensor) s.settings = { ...selectedSensor.settings };
@@ -67,6 +73,7 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
     setSelectedSensorKey(s.key);
     onLog?.(`[${new Date().toISOString()}] ➕ add sensor`);
   }, [onLog, selectedSensor]);
+
   const removeSensor = useCallback(
     (key: string) => {
       setSensors((prev) => prev.filter((s) => s.key !== key));
@@ -74,12 +81,14 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
     },
     [onLog],
   );
+
   const copySettingsToAll = useCallback(() => {
     if (selectedSensor)
       setSensors((prev) =>
         prev.map((s) => ({ ...s, settings: { ...selectedSensor.settings } })),
       );
   }, [selectedSensor]);
+
   return {
     sensors,
     selectedSensor,

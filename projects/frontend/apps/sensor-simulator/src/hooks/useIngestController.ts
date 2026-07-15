@@ -13,6 +13,7 @@ import {
   scenarioIsPausedAt,
   type GeneratorRuntime,
 } from "../generator";
+
 export function useIngestController(
   sensors: SensorConfig[],
   onLogExternal?: (line: string) => void,
@@ -30,6 +31,7 @@ export function useIngestController(
   latest.current = sensors;
   const runtimes = useRef(new Map<string, GeneratorRuntime>());
   const lastSend = useRef(new Map<string, number>());
+
   const appendLog = useCallback(
     (line: string) => {
       setLog((prev) =>
@@ -39,6 +41,7 @@ export function useIngestController(
     },
     [onLogExternal],
   );
+
   const sendBatch = useCallback(
     async (
       sensor: SensorConfig,
@@ -95,6 +98,7 @@ export function useIngestController(
     },
     [appendLog],
   );
+
   const sendOneBatch = useCallback(() => {
     void Promise.all(
       latest.current
@@ -109,6 +113,7 @@ export function useIngestController(
         ),
     );
   }, [sendBatch]);
+
   const stop = useCallback(() => {
     running.current = false;
     setIsRunning(false);
@@ -118,6 +123,7 @@ export function useIngestController(
     }
     appendLog(`[${new Date().toISOString()}] ⏹ stop`);
   }, [appendLog]);
+
   const start = useCallback(() => {
     const startMs = Date.now();
     if (!latest.current.some(sensorIsReady)) return;
@@ -151,6 +157,7 @@ export function useIngestController(
     };
     timer.current = window.setTimeout(tick, 0);
   }, [appendLog, sendBatch]);
+
   const reset = useCallback(() => {
     setSent(0);
     setAccepted(0);
@@ -161,6 +168,7 @@ export function useIngestController(
     lastSend.current.clear();
     appendLog(`[${new Date().toISOString()}] 🧹 reset counters/log`);
   }, [appendLog]);
+
   useEffect(
     () => () => {
       running.current = false;
@@ -168,6 +176,7 @@ export function useIngestController(
     },
     [],
   );
+
   return {
     isRunning,
     sent,

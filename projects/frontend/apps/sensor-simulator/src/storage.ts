@@ -32,6 +32,7 @@ export function createEmptySensor(): SensorConfig {
     settings: { ...DEFAULT_SETTINGS },
   };
 }
+
 export function sanitizeSettings(raw: unknown): PersistedSettings {
   const s =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -64,6 +65,7 @@ export function sanitizeSettings(raw: unknown): PersistedSettings {
     dutyCycle: number(s.dutyCycle, DEFAULT_SETTINGS.dutyCycle),
   };
 }
+
 export function sanitizeSensors(
   value: unknown,
   fallback = DEFAULT_SETTINGS,
@@ -92,6 +94,7 @@ export function sanitizeSensors(
     .filter((x): x is SensorConfig => x !== null);
   return result.length ? result : null;
 }
+
 export function loadPersistedState(): PersistedStateV2 | null {
   if (typeof window === "undefined") return null;
   try {

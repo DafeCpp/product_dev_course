@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { loadPersistedState } from "./storage";
 import { STORAGE_KEY } from "./domain";
+
 describe("sensor storage", () => {
   beforeEach(() => localStorage.clear());
   it("migrates v1 settings to v2 sensors", () => {

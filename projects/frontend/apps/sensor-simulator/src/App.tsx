@@ -37,6 +37,7 @@ export function App() {
       : ingest.lastHttpStatus < 300
         ? "pill ok"
         : "pill bad";
+
   return (
     <div className="container">
       <div className="header">

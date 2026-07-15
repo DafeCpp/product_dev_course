@@ -5,6 +5,7 @@ import type {
   Waveform,
 } from "../domain";
 import { sensorDisplayName, sensorIsReady } from "../domain";
+
 interface Props {
   sensors: SensorConfig[];
   selected?: SensorConfig;
@@ -17,6 +18,7 @@ interface Props {
   onRemove: () => void;
   onCopy: () => void;
 }
+
 export default function ConfigurationCard(p: Props) {
   const s = p.selected;
   const set = (patch: Partial<SensorConfig>) => s && p.onUpdate(s.key, patch);
@@ -168,6 +170,7 @@ export default function ConfigurationCard(p: Props) {
     </div>
   );
 }
+
 function field(
   label: string,
   value: string,

@@ -5,12 +5,14 @@ import {
   type TelemetryIngestReading,
   type SensorConfig,
 } from "./domain";
+
 export interface GeneratorRuntime {
   sequence: number;
   lastTimestampMs: number;
   rngState: number;
   seed: number;
 }
+
 export const hashStringToUint32 = (str: string) => {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -19,6 +21,7 @@ export const hashStringToUint32 = (str: string) => {
   }
   return h >>> 0;
 };
+
 export function mulberry32(seed: number): () => number {
   let t = seed >>> 0;
   return () => {
@@ -28,6 +31,7 @@ export function mulberry32(seed: number): () => number {
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
   };
 }
+
 export function waveformValue(
   waveform: PersistedSettings["waveform"],
   tSec: number,
@@ -42,11 +46,13 @@ export function waveformValue(
   if (waveform === "saw") return (2 * phase - 1) * a;
   return phase < clamp(dutyCycle, 0, 1) ? a : 0;
 }
+
 export function scenarioIsPausedAt(s: PersistedSettings, nowSec: number) {
   if (s.scenario !== "dropout") return false;
   const cycle = s.dropoutEverySec + s.dropoutDurationSec;
   return cycle > 0 && nowSec % cycle >= s.dropoutEverySec;
 }
+
 export function scenarioEffectiveRate(s: PersistedSettings, nowSec: number) {
   if (s.scenario === "bursts") {
     const cycle = s.burstEverySec + s.burstDurationSec;
@@ -55,6 +61,7 @@ export function scenarioEffectiveRate(s: PersistedSettings, nowSec: number) {
   }
   return s.rateHz;
 }
+
 export function buildReadings(
   sensorKey: string,
   n: number,
@@ -113,6 +120,7 @@ export function buildReadings(
   }
   return readings;
 }
+
 export function assemblePayload(
   sensor: SensorConfig,
   n: number,

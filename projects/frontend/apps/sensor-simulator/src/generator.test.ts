@@ -8,12 +8,14 @@ import {
   waveformValue,
   type GeneratorRuntime,
 } from "./generator";
+
 const runtime = (): GeneratorRuntime => ({
   sequence: 0,
   lastTimestampMs: 0,
   rngState: 0,
   seed: 42,
 });
+
 describe("sensor generator", () => {
   it("supports waveform boundaries", () => {
     expect(waveformValue("sine", 0, 10, 5, 0.1)).toBeCloseTo(0);

@@ -9,6 +9,7 @@ interface Props {
   events: Record<string, unknown>[];
   streamOn: boolean;
 }
+
 export default function StreamCard(p: Props) {
   return (
     <div className="card">
@@ -60,6 +61,7 @@ export default function StreamCard(p: Props) {
     </div>
   );
 }
+
 function field(label: string, value: string, readOnly: boolean) {
   return (
     <div>

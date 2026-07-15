@@ -13,6 +13,7 @@ interface Props {
   onSend: () => void;
   onReset: () => void;
 }
+
 export default function IngestCard(p: Props) {
   return (
     <div className="card">
@@ -50,6 +51,7 @@ export default function IngestCard(p: Props) {
     </div>
   );
 }
+
 function K({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="kpi">

@@ -1,4 +1,5 @@
 import { TELEMETRY_BASE, type TelemetryIngestBody } from "./domain";
+
 export async function postTelemetry(body: TelemetryIngestBody, token: string) {
   const response = await fetch(`${TELEMETRY_BASE}/api/v1/telemetry`, {
     method: "POST",
@@ -14,6 +15,7 @@ export async function postTelemetry(body: TelemetryIngestBody, token: string) {
     text: await response.text(),
   };
 }
+
 export async function openTelemetryStream(
   sensorId: string,
   token: string,
