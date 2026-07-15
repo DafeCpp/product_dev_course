@@ -264,3 +264,74 @@ async def test_history_non_sensitive_not_redacted(service_client):
     assert len(items) >= 1
     for item in items:
         assert item["value"] == {"enabled": True}
+
+
+@pytest.mark.asyncio
+async def test_history_uses_sensitive_snapshot_after_true_to_false(service_client):
+    create_resp = await service_client.post(
+        "/api/v1/config",
+        json={**_SENSITIVE_PAYLOAD, "key": "hist_sensitive_to_public"},
+        headers=ADMIN_HEADERS,
+    )
+    assert create_resp.status == 201, await create_resp.text()
+    config_id = (await create_resp.json())["id"]
+
+    patch_resp = await service_client.patch(
+        f"/api/v1/config/{config_id}",
+        json={
+            "version": 1,
+            "is_sensitive": False,
+            "change_reason": "make public",
+        },
+        headers={**ADMIN_HEADERS, "If-Match": '"1"'},
+    )
+    assert patch_resp.status == 200, await patch_resp.text()
+
+    viewer_resp = await service_client.get(
+        f"/api/v1/config/{config_id}/history", headers=VIEWER_HEADERS
+    )
+    assert viewer_resp.status == 200
+    viewer_items = {item["version"]: item for item in (await viewer_resp.json())["items"]}
+    assert viewer_items[1]["value"] == "***"
+    assert viewer_items[2]["value"] == {"enabled": True}
+
+    reader_resp = await service_client.get(
+        f"/api/v1/config/{config_id}/history", headers=_SENSITIVE_READ_HEADERS
+    )
+    assert reader_resp.status == 200
+    reader_items = (await reader_resp.json())["items"]
+    assert all(item["value"] == {"enabled": True} for item in reader_items)
+
+
+@pytest.mark.asyncio
+async def test_history_uses_sensitive_snapshot_after_false_to_true(service_client):
+    create_resp = await service_client.post(
+        "/api/v1/config",
+        json={
+            **_SENSITIVE_PAYLOAD,
+            "key": "hist_public_to_sensitive",
+            "is_sensitive": False,
+        },
+        headers=ADMIN_HEADERS,
+    )
+    assert create_resp.status == 201, await create_resp.text()
+    config_id = (await create_resp.json())["id"]
+
+    patch_resp = await service_client.patch(
+        f"/api/v1/config/{config_id}",
+        json={
+            "version": 1,
+            "is_sensitive": True,
+            "change_reason": "make sensitive",
+        },
+        headers={**ADMIN_HEADERS, "If-Match": '"1"'},
+    )
+    assert patch_resp.status == 200, await patch_resp.text()
+
+    viewer_resp = await service_client.get(
+        f"/api/v1/config/{config_id}/history", headers=VIEWER_HEADERS
+    )
+    assert viewer_resp.status == 200
+    viewer_items = {item["version"]: item for item in (await viewer_resp.json())["items"]}
+    assert viewer_items[1]["value"] == {"enabled": True}
+    assert viewer_items[2]["value"] == "***"

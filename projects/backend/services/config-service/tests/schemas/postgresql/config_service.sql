@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS config_history (
     value           JSONB NOT NULL DEFAULT '{}',
     metadata        JSONB NOT NULL DEFAULT '{}',
     is_active       BOOLEAN NOT NULL,
+    is_sensitive    BOOLEAN NOT NULL,
     changed_by      VARCHAR(255) NOT NULL,
     change_reason   TEXT,
     source_ip       VARCHAR(45),
