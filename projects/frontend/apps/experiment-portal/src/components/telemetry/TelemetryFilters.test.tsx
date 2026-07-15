@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import TelemetryFilters from './TelemetryFilters'
 
 describe('TelemetryFilters', () => {
