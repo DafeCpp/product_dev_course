@@ -457,8 +457,9 @@ async def activate_config(request: web.Request) -> web.Response:
         config_optimistic_lock_conflicts_total.labels(route="POST activate").inc()
         raise web.HTTPPreconditionFailed(reason="Version conflict")
 
+    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
     return web.json_response(
-        _config_to_response(config, False),
+        _config_to_response(config, config.is_sensitive and not can_read_sensitive),
         headers={"ETag": f'"{config.version}"'},
     )
 
@@ -495,8 +496,9 @@ async def deactivate_config(request: web.Request) -> web.Response:
         config_optimistic_lock_conflicts_total.labels(route="POST deactivate").inc()
         raise web.HTTPPreconditionFailed(reason="Version conflict")
 
+    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
     return web.json_response(
-        _config_to_response(config, False),
+        _config_to_response(config, config.is_sensitive and not can_read_sensitive),
         headers={"ETag": f'"{config.version}"'},
     )
 
@@ -556,8 +558,9 @@ async def rollback_config(request: web.Request) -> web.Response:
         value=config.value,
     )
 
+    can_read_sensitive = user.is_superadmin or "configs.sensitive.read" in user.system_permissions
     return web.json_response(
-        _config_to_response(config, False),
+        _config_to_response(config, config.is_sensitive and not can_read_sensitive),
         headers={"ETag": f'"{config.version}"'},
     )
 

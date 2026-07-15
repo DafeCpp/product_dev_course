@@ -18,6 +18,61 @@ _SENSITIVE_READ_HEADERS = make_headers(
     system_permissions=["configs.view", "configs.sensitive.read"],
 )
 
+_LIFECYCLE_HEADERS = make_headers(
+    user_id="sensitive-operator",
+    system_permissions=["configs.activate", "configs.rollback"],
+)
+
+_LIFECYCLE_SENSITIVE_READ_HEADERS = make_headers(
+    user_id="sensitive-operator-reader",
+    system_permissions=[
+        "configs.activate",
+        "configs.rollback",
+        "configs.sensitive.read",
+    ],
+)
+
+
+async def _assert_lifecycle_responses(
+    service_client,
+    *,
+    key: str,
+    headers: dict[str, str],
+    is_sensitive: bool,
+    expected_value: object,
+) -> None:
+    create_resp = await service_client.post(
+        "/api/v1/config",
+        json={**_SENSITIVE_PAYLOAD, "key": key, "is_sensitive": is_sensitive},
+        headers=ADMIN_HEADERS,
+    )
+    assert create_resp.status == 201, await create_resp.text()
+    config_id = (await create_resp.json())["id"]
+
+    operations = (
+        ("deactivate", 1, {"version": 1, "change_reason": "maintenance"}, False),
+        ("activate", 2, {"version": 2, "change_reason": "resume"}, True),
+        (
+            "rollback",
+            3,
+            {"version": 3, "target_version": 1, "change_reason": "restore"},
+            True,
+        ),
+    )
+    for operation, current_version, payload, expected_is_active in operations:
+        response = await service_client.post(
+            f"/api/v1/config/{config_id}/{operation}",
+            json=payload,
+            headers={**headers, "If-Match": f'"{current_version}"'},
+        )
+        assert response.status == 200, await response.text()
+        expected_version = current_version + 1
+        assert response.headers.get("ETag") == f'"{expected_version}"'
+        data = await response.json()
+        assert data["version"] == expected_version
+        assert data["is_active"] is expected_is_active
+        assert data["value"] == expected_value
+
 
 @pytest.mark.asyncio
 async def test_sensitive_redacted_for_viewer(service_client):
@@ -94,6 +149,42 @@ async def test_non_sensitive_not_redacted_for_viewer(service_client):
     )
     data = await resp.json()
     assert data["value"] == {"enabled": True}
+
+
+# --- lifecycle endpoint redaction -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sensitive_lifecycle_redacted_without_permission(service_client):
+    await _assert_lifecycle_responses(
+        service_client,
+        key="lifecycle_secret_operator",
+        headers=_LIFECYCLE_HEADERS,
+        is_sensitive=True,
+        expected_value="***",
+    )
+
+
+@pytest.mark.asyncio
+async def test_sensitive_lifecycle_visible_with_permission(service_client):
+    await _assert_lifecycle_responses(
+        service_client,
+        key="lifecycle_secret_reader",
+        headers=_LIFECYCLE_SENSITIVE_READ_HEADERS,
+        is_sensitive=True,
+        expected_value={"enabled": True},
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_sensitive_lifecycle_not_redacted_without_permission(service_client):
+    await _assert_lifecycle_responses(
+        service_client,
+        key="lifecycle_public_operator",
+        headers=_LIFECYCLE_HEADERS,
+        is_sensitive=False,
+        expected_value={"enabled": True},
+    )
 
 
 # --- history endpoint redaction -------------------------------------------
