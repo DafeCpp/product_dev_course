@@ -391,10 +391,10 @@
   - `backend_common/script_runner/runner.py` — `ScriptRunner` объединяет Consumer + Executor как embeddable компонент для любого сервиса.
   - Experiment Service интегрирует `ScriptRunner` с graceful failure при недоступности RabbitMQ.
   - Тесты: `backend_common/tests/test_script_executor.py`, `test_script_runner.py`.
-- **✅ RBAC v2 + интеграция (актуализировано 2026-03-30):** полная реализация — новая схема БД (`permissions`, `roles`, `role_permissions`, `user_system_roles`, `user_project_roles`), `PermissionService`, JWT с `sa`/`sys` claims, API endpoints (`/permissions`, `/system-roles`, `/projects/{pid}/roles`), auth-proxy с заголовками `X-User-Permissions`/`X-User-System-Permissions`/`X-User-Is-Superadmin`, Redis-кэш effective-permissions, `ensure_permission` в experiment-service. Подробности — `docs/tasks-rbac-scripts.md`.
+- **✅ RBAC v2 + интеграция (актуализировано 2026-03-30):** полная реализация — новая схема БД (`permissions`, `roles`, `role_permissions`, `user_system_roles`, `user_project_roles`), `PermissionService`, JWT с `sa`/`sys` claims, API endpoints (`/permissions`, `/system-roles`, `/projects/{pid}/roles`), auth-proxy с заголовками `X-User-Permissions`/`X-User-System-Permissions`/`X-User-Is-Superadmin`, Redis-кэш effective-permissions, `ensure_permission` в experiment-service. Задачи и дальнейшая детализация — в [EPIC LOS-142 — Frontend RBAC + Scripts](https://linear.app/lostpointer/issue/LOS-142).
 - **✅ Script Service API (актуализировано 2026-03-30):** сервис `projects/backend/services/script-service/` реализован — CRUD скриптов, Execution API, RabbitMQ dispatcher, тесты. **⚠️ Отсутствует:** `git_client.py` — git-интеграция для валидации/загрузки скриптов из репозитория.
 - **❌ Не реализовано / в backlog** (подробности — в секции «Нереализованные задачи» ниже):
-  - Frontend RBAC: `usePermissions`, `PermissionGate`, страницы «Аудит» и «Скрипты» (фаза 6 в `docs/tasks-rbac-scripts.md`)
+  - Frontend RBAC: `usePermissions`, `PermissionGate`, страницы «Аудит» и «Скрипты» (фаза 6 в [EPIC LOS-142 — Frontend RBAC + Scripts](https://linear.app/lostpointer/issue/LOS-142))
   - `git_client.py` для script_runner (script-service + backend_common)
   - SLO/SLI мониторинг
   - Chaos-тесты
