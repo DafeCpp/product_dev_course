@@ -26,16 +26,16 @@
 
 ## Контекст
 
-- Задача происходит из [docs/tasks.md](../tasks.md) — «RFC: система управления
+- Задача происходит из [эпик RFC-0004 (LOS-66)](https://linear.app/lostpointer/issue/LOS-66) — «RFC: система управления
   экспериментом (closed-loop control)».
 - Прецедент **edge-control** уже существует в проекте: прошивка RC Vehicle
   (`projects/rc_vehicle/firmware`) реализует локальный контур 500 Гц через
   Madgwick + Butterworth + PID. Эту же модель предлагается распространить на
   лабораторные стенды.
-- Смежные RFC-идеи (см. [docs/tasks.md](../tasks.md)):
-  - **RFC-0002 Computed Channels** — вычисляемые величины (Mach, расход и др.);
+- Смежные RFC-идеи (см. связанные Linear issues):
+  - [RFC-0002 Computed Channels (LOS-138)](https://linear.app/lostpointer/issue/LOS-138) — вычисляемые величины (Mach, расход и др.);
     могут использоваться как вход rule engine.
-  - **RFC-0003 Alerts + Dashboards** — rule engine для порогов; переиспользуется
+  - [RFC-0003 Alerts + Dashboards (LOS-139)](https://linear.app/lostpointer/issue/LOS-139) — rule engine для порогов; переиспользуется
     в closed-loop автоматизации.
 
 ---

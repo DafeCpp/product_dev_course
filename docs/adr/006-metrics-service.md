@@ -1,6 +1,6 @@
 # ADR 006: Metrics Service -- API для работы с run_metrics
 
-Статус: proposed
+Статус: accepted
 Дата: 2026-03-19
 
 ## Context

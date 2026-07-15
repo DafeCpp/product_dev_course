@@ -187,7 +187,6 @@ make deploy VM_HOST=<ip> REGISTRY_ID=<id>
 | `docs/adr/` | Architecture Decision Records |
 | `projects/backend/services/experiment-service/openapi/openapi.yaml` | API-спецификация |
 | `projects/rc_vehicle/firmware/common/` | Платформенно-независимые алгоритмы (фильтры, протокол) |
-| `projects/rc_vehicle/docs/ts.md` | ТЗ прошивки и MVP-критерии |
 | `Makefile` | Все команды сборки/тестирования |
 | `docker-compose.yml` | Конфигурация сервисов (порты, переменные) |
 | `.env.example` | Шаблон переменных окружения (dev) |

@@ -159,7 +159,7 @@ docker-compose down
 
 **Техническое задание:** полное описание требований, архитектуры и критериев приемки доступно в `docs/experiment-tracking-ts.md`. Рекомендовано ознакомиться перед началом работы над итоговым проектом.
 
-**Статус и roadmap платформы:** см. `docs/experiment-tracking-status-and-roadmap.md`.
+Актуальные задачи и прогресс ведутся в [Linear](https://linear.app/lostpointer).
 
 ## Карта сервисов
 

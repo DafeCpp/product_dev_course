@@ -98,7 +98,7 @@ docker exec backend-postgres psql -U postgres -d experiment_db -c \
 | 2 | Прекратить отправку, подождать | Connection status переходит в offline/stale по таймауту |
 | 3 | Запрос error-log датчика (`GET /api/v1/sensors/{id}/error-log`) | Отдаётся из telemetry-ingest (см. BUG-B-003), не 404 |
 
-**Факт (2026-06-10):** ❌→✅ На странице датчика error-log падал с **500** (`relation "sensor_error_log" does not exist`) — нашёл [BUG-B-005](../bugs.md): миграция telemetry-ingest 005 не применяется авто-сервисом в docker-compose. После `make telemetry-ingest-migrate` эндпоинт вернул `200 {"entries":[],"total":0}`, тост в UI исчез.
+**Факт (2026-06-10):** ❌→✅ На странице датчика error-log падал с **500** (`relation "sensor_error_log" does not exist`) — нашёл [BUG-B-005](https://linear.app/lostpointer/issue/LOS-9/bug-b-005-sensor-error-log-returns-500-telemetry-ingest-migrations-not): миграция telemetry-ingest 005 не применяется авто-сервисом в docker-compose. После `make telemetry-ingest-migrate` эндпоинт вернул `200 {"entries":[],"total":0}`, тост в UI исчез.
 
 ---
 

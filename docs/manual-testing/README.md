@@ -15,7 +15,7 @@
 | [`telemetry-e2e.md`](telemetry-e2e.md) | Датчик → токен → ingest → конверсия raw→physical → UI/БД, heartbeat, backfill | E2E |
 | [`test-reports.md`](test-reports.md) | Журнал прохождений: дата, окружение, результаты, найденные баги | Отчёты |
 
-Найденные при прогоне баги фиксируются в [`../bugs.md`](../bugs.md).
+Найденные при прогоне баги фиксируются в [Linear](https://linear.app/lostpointer).
 
 ## Предусловия (общие)
 
@@ -55,4 +55,4 @@ npx playwright install chrome
 
 ## История прогонов
 
-Отчёты о прохождениях — в [`test-reports.md`](test-reports.md) (новые сверху). Последний: **2026-06-10** — auth-флоу (OK) + smoke-навигация, найдены [BUG-F-013](../bugs.md), [BUG-F-014](../bugs.md).
+Отчёты о прохождениях — в [`test-reports.md`](test-reports.md) (новые сверху). Последний: **2026-06-10** — auth-флоу (OK) + smoke-навигация, найдены [BUG-F-013](https://linear.app/lostpointer/issue/LOS-6/bug-f-013-projects-page-returns-http-500-on-direct-load-f5-reload), [BUG-F-014](https://linear.app/lostpointer/issue/LOS-7/bug-f-014-webhooks-page-sends-requests-without-project-id-400-bad).

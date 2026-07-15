@@ -1,6 +1,6 @@
 # ADR 007: Comparison Service -- сравнение метрик нескольких runs
 
-Статус: proposed
+Статус: accepted
 Дата: 2026-03-20
 
 ## Context

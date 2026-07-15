@@ -1,6 +1,6 @@
 # Отчёты о прогонах ручного тестирования
 
-Журнал прохождений сценариев из этой папки. Новые отчёты добавляются **сверху** (свежие первыми). Определения сценариев — в [`auth-flow.md`](auth-flow.md), [`smoke-navigation.md`](smoke-navigation.md), [`e2e-happy-path.md`](e2e-happy-path.md). Баги — в [`../bugs.md`](../bugs.md).
+Журнал прохождений сценариев из этой папки. Новые отчёты добавляются **сверху** (свежие первыми). Определения сценариев — в [`auth-flow.md`](auth-flow.md), [`smoke-navigation.md`](smoke-navigation.md), [`e2e-happy-path.md`](e2e-happy-path.md). Баги — в [Linear](https://linear.app/lostpointer).
 
 Шаблон отчёта — в конце файла.
 
@@ -25,7 +25,7 @@
 | TC-RBAC-03 viewer: read-only | ✅ Читает (`200`); создать → `403 experiments.create` |
 | TC-RBAC-04 защита sole owner | ✅ Снять owner у единственного владельца → `409 Cannot revoke the last owner` |
 | TC-RBAC-05 изоляция проектов (IDOR) | ✅ editor к чужому проекту B → `403 experiments.view` / `403 project.members.view` |
-| Выдача ролей через UI/прокси | ❌ → [BUG-F-015](../bugs.md): `/api/v1/projects/*/roles` = 404 |
+| Выдача ролей через UI/прокси | ❌ → [BUG-F-015](https://linear.app/lostpointer/issue/LOS-5/bug-f-015-rbac-project-roles-return-404-apiv1projectsroles-not-routed): `/api/v1/projects/*/roles` = 404 |
 
 **Итого:** RBAC-**enforcement** работает корректно по всем проверенным осям. Но **управление** ролями через auth-proxy сломано (404).
 
@@ -33,7 +33,7 @@
 
 | ID | Severity | Кратко |
 |----|----------|--------|
-| [BUG-F-015](../bugs.md) | HIGH | `/api/v1/projects/*/roles` не маршрутизируется на auth-service → 404 (RBAC role-management UI не работает). Вторично: assign-role 500 при payload `{"role"}` вместо `{"role_id"}`. |
+| [BUG-F-015](https://linear.app/lostpointer/issue/LOS-5/bug-f-015-rbac-project-roles-return-404-apiv1projectsroles-not-routed) | HIGH | `/api/v1/projects/*/roles` не маршрутизируется на auth-service → 404 (RBAC role-management UI не работает). Вторично: assign-role 500 при payload `{"role"}` вместо `{"role_id"}`. |
 
 ---
 
@@ -80,7 +80,7 @@
 | TC-TELE-01 Регистрация датчика + токен | ✅ Создан через UI, токен показан и держится, heartbeat пуст |
 | TC-TELE-03 Ingest телеметрии | ✅ 3 reading'а → `202 accepted:3`; в БД 3 записи. `physical_value=null` (профиля нет — TC-TELE-02 не делался) |
 | TC-TELE-04 Проверка в UI и БД | ✅ Heartbeat «1 мин назад»; Live SSE подтянул все 3 события; график по `raw` ок; БД совпадает |
-| TC-TELE-06 error-log датчика | ❌→✅ Падал `500`; нашёл [BUG-B-005](../bugs.md); после миграции `200` |
+| TC-TELE-06 error-log датчика | ❌→✅ Падал `500`; нашёл [BUG-B-005](https://linear.app/lostpointer/issue/LOS-9/bug-b-005-sensor-error-log-returns-500-telemetry-ingest-migrations-not); после миграции `200` |
 
 **Итого:** сквозной путь датчик → токен → ingest → БД → Live SSE в UI работает. По дороге найден баг с миграцией error-log.
 
@@ -88,7 +88,7 @@
 
 | ID | Severity | Кратко |
 |----|----------|--------|
-| [BUG-B-005](../bugs.md) | MEDIUM | `sensor_error_log` не создаётся «из коробки» — в docker-compose нет авто-миграции telemetry-ingest → error-log endpoint 500. |
+| [BUG-B-005](https://linear.app/lostpointer/issue/LOS-9/bug-b-005-sensor-error-log-returns-500-telemetry-ingest-migrations-not) | MEDIUM | `sensor_error_log` не создаётся «из коробки» — в docker-compose нет авто-миграции telemetry-ingest → error-log endpoint 500. |
 
 ### Замечания
 - `physical_value` остаётся `null` без активного conversion profile (ожидаемо). Для проверки конверсии нужно отдельно прогнать TC-TELE-02 + TC-TELE-05 (backfill).
@@ -139,7 +139,7 @@
 |----------|------|
 | TC-IDEM-01 Повтор с тем же ключом+телом | ✅ Оба ответа `201` с одним `id` (replay из кэша), в БД 1 объект |
 | TC-IDEM-02 Тот же ключ, другое тело | ✅ `HTTP 409 Conflict` |
-| TC-IDEM-03 Конкурентные запросы с одним ключом | ❌ Победитель `201`, проигравший **`500`** (а не replay/409). В БД 1 объект (целостность ок). См. [BUG-B-004](../bugs.md) |
+| TC-IDEM-03 Конкурентные запросы с одним ключом | ❌ Победитель `201`, проигравший **`500`** (а не replay/409). В БД 1 объект (целостность ок). См. [BUG-B-004](https://linear.app/lostpointer/issue/LOS-8/bug-b-004-concurrent-post-with-same-idempotency-key-http-500) |
 
 **Итого:** базовая идемпотентность (replay, конфликт по телу) работает. Под гонкой — необработанный `UniqueViolationError` → 500.
 
@@ -147,7 +147,7 @@
 
 | ID | Severity | Кратко |
 |----|----------|--------|
-| [BUG-B-004](../bugs.md) | MEDIUM | Конкурентные POST с одним `Idempotency-Key` → 500 у проигравшего. Ключ застолбляется после create, а не до. |
+| [BUG-B-004](https://linear.app/lostpointer/issue/LOS-8/bug-b-004-concurrent-post-with-same-idempotency-key-http-500) | MEDIUM | Конкурентные POST с одним `Idempotency-Key` → 500 у проигравшего. Ключ застолбляется после create, а не до. |
 
 ### Побочные наблюдения
 - В логах experiment-service на каждом create эксперимента: `Audit write failed status=404 action='experiment.create'` — попытка записи в аудит получает 404. Не фейлит запрос (warning), но стоит проверить роутинг audit-эндпоинта.
@@ -185,8 +185,8 @@
 
 | ID | Severity | Кратко |
 |----|----------|--------|
-| [BUG-F-013](../bugs.md) | HIGH | `/projects` → HTTP 500 при прямом заходе/перезагрузке. Корень: «голый» префикс `/projects` в API-клиенте + перехват SPA-роута прокси-правилом `vite.config.ts`. |
-| [BUG-F-014](../bugs.md) | MEDIUM | Страница Webhooks шлёт `GET /api/v1/webhooks(/deliveries)` без `project_id` → `400`. Воспроизводится на пустом воркспейсе. |
+| [BUG-F-013](https://linear.app/lostpointer/issue/LOS-6/bug-f-013-projects-page-returns-http-500-on-direct-load-f5-reload) | HIGH | `/projects` → HTTP 500 при прямом заходе/перезагрузке. Корень: «голый» префикс `/projects` в API-клиенте + перехват SPA-роута прокси-правилом `vite.config.ts`. |
+| [BUG-F-014](https://linear.app/lostpointer/issue/LOS-7/bug-f-014-webhooks-page-sends-requests-without-project-id-400-bad) | MEDIUM | Страница Webhooks шлёт `GET /api/v1/webhooks(/deliveries)` без `project_id` → `400`. Воспроизводится на пустом воркспейсе. |
 
 ### Замечания / не покрыто
 
