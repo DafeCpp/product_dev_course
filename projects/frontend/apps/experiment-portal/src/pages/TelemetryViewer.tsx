@@ -5,11 +5,11 @@ import { useTelemetryQuery } from 'frontend-common'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
 import { EmptyState, FloatingActionButton, Loading, MaterialSelect, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
-import TelemetryPanel from '../components/TelemetryPanel'
 import TelemetryExportModal from '../components/TelemetryExportModal'
 import CaptureSessionTimeline from '../components/CaptureSessionTimeline'
 import LiveSensorPanel from '../components/LiveSensorPanel'
 import TelemetryFilters from '../components/telemetry/TelemetryFilters'
+import TelemetryPanelGrid from '../components/telemetry/TelemetryPanelGrid'
 import useTelemetryViewerState from '../hooks/useTelemetryViewerState'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
@@ -772,80 +772,7 @@ function TelemetryViewer() {
                                     />
                                 )}
 
-                                {panelIds.length === 0 ? (
-                                    <EmptyState message="Добавьте панель, чтобы начать просмотр графиков." />
-                                ) : (
-                                    <div className="telemetry-view__panels" ref={panelsWrapRef}>
-                                        {panelIds.map((panelId, index) => {
-                                            const panelSize = panelSizes[panelId]
-                                            const isWide =
-                                                panelsWrapWidth > 0 && panelSize
-                                                    ? panelSize.width > panelsWrapWidth / 2
-                                                    : false
-                                            return (
-                                                <div
-                                                    key={panelId}
-                                                    className={`telemetry-view__panel-item${
-                                                        draggingPanelId === panelId
-                                                            ? ' telemetry-view__panel-item--dragging'
-                                                            : ''
-                                                    }${
-                                                        dragOverPanelId === panelId
-                                                            ? ' telemetry-view__panel-item--over'
-                                                            : ''
-                                                    }${isWide ? ' telemetry-view__panel-item--full' : ''}`}
-                                                    onDragOver={(event) => {
-                                                        if (!draggingPanelId || draggingPanelId === panelId) return
-                                                        event.preventDefault()
-                                                        event.dataTransfer.dropEffect = 'move'
-                                                        setDragOverPanelId(panelId)
-                                                    }}
-                                                    onDragLeave={(event) => {
-                                                        if (event.currentTarget.contains(event.relatedTarget as Node))
-                                                            return
-                                                        setDragOverPanelId((prev) => (prev === panelId ? null : prev))
-                                                    }}
-                                                    onDrop={(event) => {
-                                                        event.preventDefault()
-                                                        if (draggingPanelId) movePanel(draggingPanelId, panelId)
-                                                        setDragOverPanelId(null)
-                                                        setDraggingPanelId(null)
-                                                    }}
-                                                >
-                                                    <TelemetryPanel
-                                                        panelId={panelId}
-                                                        sensors={sensors}
-                                                        sensorsLoading={isLoading}
-                                                        sensorsError={
-                                                            error
-                                                                ? typeof error === 'string'
-                                                                    ? error
-                                                                    : (error as Error)?.message ??
-                                                                      'Ошибка загрузки сенсоров'
-                                                                : null
-                                                        }
-                                                        title={`${panelTitleSeed} #${index + 1}`}
-                                                        onRemove={() => removePanel(panelId)}
-                                                        onSizeChange={(size) => handlePanelSizeChange(panelId, size)}
-                                                        onRecordReceived={handleRecordReceived}
-                                                        dragHandleProps={{
-                                                            draggable: true,
-                                                            onDragStart: (event) => {
-                                                                setDraggingPanelId(panelId)
-                                                                event.dataTransfer.effectAllowed = 'move'
-                                                                event.dataTransfer.setData('text/plain', panelId)
-                                                            },
-                                                            onDragEnd: () => {
-                                                                setDraggingPanelId(null)
-                                                                setDragOverPanelId(null)
-                                                            },
-                                                        }}
-                                                    />
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                )}
+                                <TelemetryPanelGrid panelIds={panelIds} sensors={sensors} sensorsLoading={isLoading} sensorsError={error} titleSeed={panelTitleSeed} panelSizes={panelSizes} containerWidth={panelsWrapWidth} containerRef={panelsWrapRef} draggingId={draggingPanelId} dragOverId={dragOverPanelId} onRemove={removePanel} onMove={movePanel} onSizeChange={handlePanelSizeChange} onRecordReceived={handleRecordReceived} onDraggingChange={setDraggingPanelId} onDragOverChange={setDragOverPanelId} />
                             </section>
 
                             {projectId && sensors.length > 0 && (
