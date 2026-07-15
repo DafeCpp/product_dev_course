@@ -1,9 +1,10 @@
 """Integration tests: dry-run mode."""
+
 from __future__ import annotations
 
 import pytest
 
-from tests.utils import ADMIN_HEADERS
+from tests.config_service_test_utils import ADMIN_HEADERS, EDITOR_HEADERS
 
 _PAYLOAD = {
     "service_name": "dry-svc",
@@ -36,9 +37,7 @@ async def test_dry_run_create_no_db_write(service_client):
         headers=ADMIN_HEADERS,
     )
 
-    list_resp = await service_client.get(
-        "/api/v1/config?service=dry-svc", headers=ADMIN_HEADERS
-    )
+    list_resp = await service_client.get("/api/v1/config?service=dry-svc", headers=ADMIN_HEADERS)
     data = await list_resp.json()
     assert len(data["items"]) == 0
 
@@ -79,9 +78,7 @@ async def test_dry_run_patch_no_db_write(service_client):
     )
 
     # Version should still be 1
-    get_resp = await service_client.get(
-        f"/api/v1/config/{config_id}", headers=ADMIN_HEADERS
-    )
+    get_resp = await service_client.get(f"/api/v1/config/{config_id}", headers=ADMIN_HEADERS)
     data = await get_resp.json()
     assert data["version"] == 1
     assert data["value"] == {"enabled": True}
@@ -96,3 +93,49 @@ async def test_dry_run_validation_failure(service_client):
         headers=ADMIN_HEADERS,
     )
     assert resp.status == 422
+
+
+@pytest.mark.asyncio
+async def test_sensitive_create_and_dry_run_redacted_without_sensitive_read(service_client):
+    payload = {**_PAYLOAD, "key": "dry_sensitive_create", "is_sensitive": True}
+
+    dry_run = await service_client.post(
+        "/api/v1/config?dry_run=true", json=payload, headers=EDITOR_HEADERS
+    )
+    assert dry_run.status == 200, await dry_run.text()
+    assert (await dry_run.json())["preview"]["value"] == "***"
+
+    created = await service_client.post("/api/v1/config", json=payload, headers=EDITOR_HEADERS)
+    assert created.status == 201, await created.text()
+    assert (await created.json())["value"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_patch_dry_run_protects_current_or_proposed_sensitive_value(service_client):
+    sensitive = await service_client.post(
+        "/api/v1/config",
+        json={**_PAYLOAD, "key": "dry_sensitive_to_public", "is_sensitive": True},
+        headers=ADMIN_HEADERS,
+    )
+    sensitive_id = (await sensitive.json())["id"]
+    preview_public = await service_client.patch(
+        f"/api/v1/config/{sensitive_id}?dry_run=true",
+        json={"version": 1, "is_sensitive": False, "change_reason": "preview public"},
+        headers={**EDITOR_HEADERS, "If-Match": '"1"'},
+    )
+    assert preview_public.status == 200, await preview_public.text()
+    assert (await preview_public.json())["preview"]["value"] == "***"
+
+    public = await service_client.post(
+        "/api/v1/config",
+        json={**_PAYLOAD, "key": "dry_public_to_sensitive"},
+        headers=ADMIN_HEADERS,
+    )
+    public_id = (await public.json())["id"]
+    preview_sensitive = await service_client.patch(
+        f"/api/v1/config/{public_id}?dry_run=true",
+        json={"version": 1, "is_sensitive": True, "change_reason": "preview secret"},
+        headers={**EDITOR_HEADERS, "If-Match": '"1"'},
+    )
+    assert preview_sensitive.status == 200, await preview_sensitive.text()
+    assert (await preview_sensitive.json())["preview"]["value"] == "***"

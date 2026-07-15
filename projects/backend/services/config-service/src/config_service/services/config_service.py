@@ -191,6 +191,7 @@ class ConfigService:
             value=target.value,
             metadata=target.metadata,
             is_active=target.is_active,
+            is_sensitive=target.is_sensitive,
         )
         if result is None:
             raise VersionConflictError(str(config_id), expected_version, -1)
