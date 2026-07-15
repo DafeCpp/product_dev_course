@@ -1,6 +1,6 @@
 # ADR 004: Audit Log Retention Policy
 
-Статус: proposed
+Статус: accepted
 Дата: 2026-03-19
 
 ## Контекст
