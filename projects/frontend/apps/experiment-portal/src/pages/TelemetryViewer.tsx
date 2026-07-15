@@ -4,11 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useTelemetryQuery } from 'frontend-common'
 import Plotly from 'plotly.js-dist-min'
 import { captureSessionsApi, experimentsApi, projectsApi, runsApi, sensorsApi, telemetryApi } from '../api/client'
-import { EmptyState, FloatingActionButton, LiveSwitch, Loading, MaterialSelect, FolderIcon, FlaskIcon, PlayCircleIcon, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
+import { EmptyState, FloatingActionButton, Loading, MaterialSelect, RefreshCwIcon, ArrowRightIcon, ExportIcon, SettingsIcon } from '../components/common'
 import TelemetryPanel from '../components/TelemetryPanel'
 import TelemetryExportModal from '../components/TelemetryExportModal'
 import CaptureSessionTimeline from '../components/CaptureSessionTimeline'
 import LiveSensorPanel from '../components/LiveSensorPanel'
+import TelemetryFilters from '../components/telemetry/TelemetryFilters'
+import useTelemetryViewerState from '../hooks/useTelemetryViewerState'
 import { setActiveProjectId } from '../utils/activeProject'
 import { generateUUID } from '../utils/uuid'
 import type { CaptureSession, Sensor, TelemetryQueryRecord, TelemetryAggregatedRecord } from '../types'
@@ -21,14 +23,6 @@ function hexToRgba(hex: string, alpha: number): string {
     return `rgba(${r},${g},${b},${alpha})`
 }
 
-type TelemetryViewerState = {
-    projectId: string
-    experimentId: string
-    runId: string
-    viewMode: TelemetryViewMode
-}
-
-type TelemetryViewMode = 'live' | 'history'
 type HistoryValueMode = 'physical' | 'raw'
 type TelemetryHistoryState = {
     captureSessionId: string
@@ -45,15 +39,11 @@ const HISTORY_PAGE_SIZE = 2000
 const HISTORY_MAX_SENSORS = 50
 
 function TelemetryViewer() {
-    const [projectId, setProjectId] = useState<string>('')
-    const [experimentId, setExperimentId] = useState<string>('')
-    const [runId, setRunId] = useState<string>('')
+    const { projectId, setProjectId, experimentId, setExperimentId, runId, setRunId, viewMode, setViewMode } = useTelemetryViewerState()
     const [panelIds, setPanelIds] = useState<string[]>([])
-    const [viewMode, setViewMode] = useState<TelemetryViewMode>('live')
     const [draggingPanelId, setDraggingPanelId] = useState<string | null>(null)
     const [dragOverPanelId, setDragOverPanelId] = useState<string | null>(null)
     const panelsLoadedRef = useRef(false)
-    const viewerStateLoadedRef = useRef(false)
     const historyStateLoadedRef = useRef(false)
     const [panelSizes, setPanelSizes] = useState<Record<string, { width: number; height: number }>>({})
     const panelsWrapRef = useRef<HTMLDivElement | null>(null)
@@ -104,36 +94,6 @@ function TelemetryViewer() {
         }
     }, [])
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        const raw = window.localStorage.getItem('telemetry_viewer_state')
-        if (!raw) {
-            viewerStateLoadedRef.current = true
-            return
-        }
-        try {
-            const parsed = JSON.parse(raw) as Partial<TelemetryViewerState>
-            if (typeof parsed.projectId === 'string') setProjectId(parsed.projectId)
-            if (typeof parsed.experimentId === 'string') setExperimentId(parsed.experimentId)
-            if (typeof parsed.runId === 'string') setRunId(parsed.runId)
-            if (parsed.viewMode === 'live' || parsed.viewMode === 'history') setViewMode(parsed.viewMode)
-        } catch {
-            // ignore malformed local storage
-        } finally {
-            viewerStateLoadedRef.current = true
-        }
-    }, [])
-
-    useEffect(() => {
-        if (typeof window === 'undefined' || !viewerStateLoadedRef.current) return
-        const payload: TelemetryViewerState = {
-            projectId,
-            experimentId,
-            runId,
-            viewMode,
-        }
-        window.localStorage.setItem('telemetry_viewer_state', JSON.stringify(payload))
-    }, [projectId, experimentId, runId, viewMode])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -771,70 +731,22 @@ function TelemetryViewer() {
             {hasProjects && (
                 <>
                     <div className={`telemetry-view__workspace telemetry-view__workspace--${viewMode}`}>
-                        <section className="telemetry-view__filters card">
-                            <div className="filter-capsule signal-route-capsule">
-                                <LiveSwitch
-                                    live={viewMode === 'live'}
-                                    onChange={(live) => setViewMode(live ? 'live' : 'history')}
-                                />
-                                <MaterialSelect
-                                    id="telemetry_project_id"
-                                    label="Проект"
-                                    placeholder="Выберите проект"
-                                    value={projectId}
-                                    onChange={(id) => {
-                                        setProjectId(id)
-                                        setActiveProjectId(id)
-                                        setExperimentId('')
-                                        setRunId('')
-                                    }}
-                                    disabled={projectsLoading}
-                                    variant="pill"
-                                    icon={<FolderIcon />}
-                                >
-                                    {projectsData?.projects.map((project) => (
-                                        <option key={project.id} value={project.id}>
-                                            {project.name}
-                                        </option>
-                                    ))}
-                                </MaterialSelect>
-                                <MaterialSelect
-                                    id="telemetry_experiment_id"
-                                    label="Эксперимент"
-                                    placeholder="Выберите эксперимент"
-                                    value={experimentId}
-                                    onChange={(id) => {
-                                        setExperimentId(id)
-                                        setRunId('')
-                                    }}
-                                    disabled={!projectId || experimentsLoading || projectsLoading}
-                                    variant="pill"
-                                    icon={<FlaskIcon />}
-                                >
-                                    {experiments.map((experiment) => (
-                                        <option key={experiment.id} value={experiment.id}>
-                                            {experiment.name}
-                                        </option>
-                                    ))}
-                                </MaterialSelect>
-                                <MaterialSelect
-                                    id="telemetry_run_id"
-                                    label="Пуск"
-                                    value={runId}
-                                    onChange={setRunId}
-                                    placeholder="Выберите пуск"
-                                    disabled={!experimentId || runsLoading || experimentsLoading || projectsLoading}
-                                    variant="pill"
-                                    icon={<PlayCircleIcon />}
-                                >
-                                    {runs.map((run) => (
-                                        <option key={run.id} value={run.id}>
-                                            {run.name}
-                                        </option>
-                                    ))}
-                                </MaterialSelect>
-                            </div>
-                        </section>
+                        <TelemetryFilters
+                            projectId={projectId}
+                            experimentId={experimentId}
+                            runId={runId}
+                            viewMode={viewMode}
+                            projects={projectsData?.projects || []}
+                            experiments={experiments}
+                            runs={runs}
+                            projectsLoading={projectsLoading}
+                            experimentsLoading={experimentsLoading}
+                            runsLoading={runsLoading}
+                            onProjectChange={(id) => { setProjectId(id); setActiveProjectId(id); setExperimentId(''); setRunId('') }}
+                            onExperimentChange={(id) => { setExperimentId(id); setRunId('') }}
+                            onRunChange={setRunId}
+                            onViewModeChange={setViewMode}
+                        />
 
                         {isLiveMode ? (
                             <div className="telemetry-view__live-layout">
