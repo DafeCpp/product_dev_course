@@ -215,6 +215,10 @@ scp -r infrastructure/logging/ deploy@<VM_IP>:/opt/experiment-tracking/infrastru
 ssh deploy@<VM_IP>
 nano /opt/experiment-tracking/.env
 # Заменить все PASSWORD / CHANGE_ME / GENERATE_* / YOUR_* и доменные заглушки.
+# Оставить внутренние runtime URL на Compose DNS:
+# REDIS_URL=redis://redis:6379/0
+# TELEMETRY_BROKER_URL=redis://redis:6379/0
+# CONFIG_CLIENT_URL=http://config-service:8005
 
 # Pre-flight выполняется до любых действий с работающим стеком.
 cd /opt/experiment-tracking
@@ -237,6 +241,11 @@ docker compose -f docker-compose.prod.yml ps
 curl http://<VM_IP>/           # Portal
 curl http://<VM_IP>:8080/health  # Auth Proxy
 curl http://<VM_IP>:8003/health  # Telemetry Ingest
+
+# Redis доступен только внутри app network и должен отвечать PONG.
+docker compose -f docker-compose.prod.yml exec -T redis redis-cli ping
+# В колонке PORTS у redis не должно быть опубликованного 6379.
+docker compose -f docker-compose.prod.yml ps redis
 ```
 
 ## CI/CD (GitHub Actions)
@@ -575,6 +584,7 @@ yc managed-postgresql cluster restore \
 | **terraform apply: "Failed to Update IAM Policy" / "Permission denied"** | Либо выдать учётной записи Terraform роль **Администратор** в каталоге (Права доступа). Либо отключить создание IAM-привязок: в `terraform.tfvars` задать `manage_folder_iam = false`, затем вручную в консоли выдать SA `container-registry.images.puller` (для VM) и `container-registry.images.pusher`/`puller` (для CI). |
 | **user name 'postgres' is not allowed** | В Yandex Managed PostgreSQL имя `postgres` зарезервировано. Используется переменная `pg_admin_username` (по умолчанию `cluster_admin`). Если в state уже был пользователь с именем postgres: `terraform state rm yandex_mdb_postgresql_user.admin`, затем снова `terraform apply`. |
 | Контейнер не стартует | `docker compose logs <service>` |
+| **redis unhealthy / consumers не стартуют** | Проверить `docker compose -f docker-compose.prod.yml logs redis` и `docker compose -f docker-compose.prod.yml exec -T redis redis-cli ping`. Убедиться, что `REDIS_URL` и `TELEMETRY_BROKER_URL` равны `redis://redis:6379/0`; Redis не должен публиковать порт на VM. |
 | **dependency failed: container auth-service is unhealthy** | На VM проверить: 1) `AUTH_DATABASE_URL` в `.env` и доступность БД (Security Group, сертификат `./certs/yandex-ca.pem`); 2) `JWT_SECRET` задан; 3) `docker compose -f docker-compose.prod.yml logs auth-service` — по логам увидеть ошибку (подключение к БД, SSL и т.д.). При падении деплоя в CI шаг «Show auth-service logs on deploy failure» выведет логи. |
 | **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db`, `experiment_db` и `config_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db / config_db). |
 | **config-роли не появились после релиза (RBAC config-service не работает)** | Миграция `auth-service/003_config_rbac.sql` применяется one-shot сервисом `auth-migrate` на деплое. Убедитесь, что `auth-migrate` отработал успешно (`docker compose -f docker-compose.prod.yml logs auth-migrate`). Для config-service миграции применяет `config-migrate`; база `config_db` и пользователь `config_user` должны быть созданы Terraform (`database.tf`). |
