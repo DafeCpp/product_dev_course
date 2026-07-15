@@ -67,6 +67,8 @@ export async function buildServer(config: Config, injectedCache?: PermissionsCac
             'X-CSRF-Token',
             'X-Project-Id',
             'X-User-Id',
+            'If-Match',
+            'Idempotency-Key',
         ],
         exposedHeaders: ['X-Trace-Id', 'X-Request-Id'],
     })
