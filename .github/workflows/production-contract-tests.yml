@@ -45,6 +45,11 @@ jobs:
       CORS_ORIGINS: https://prod.example.net
       CORS_ALLOWED_ORIGINS: https://prod.example.net
       GRAFANA_ADMIN_PASSWORD: ci-test-grafana-secret
+      REDIS_URL: redis://redis:6379/0
+      TELEMETRY_BROKER_URL: redis://redis:6379/0
+      CONFIG_CLIENT_ENABLED: "true"
+      CONFIG_CLIENT_URL: http://config-service:8005
+      CONFIG_CLIENT_POLL_INTERVAL_SECONDS: "5.0"
     steps:
       - uses: actions/checkout@v4
 

@@ -17,6 +17,9 @@ TERRAFORM_OUTPUTS = ROOT / "infrastructure" / "yandex-cloud" / "outputs.tf"
 EXPECTED_REQUIRED_KEYS = {
     "AUTH_DATABASE_URL",
     "CONFIG_DATABASE_URL",
+    "CONFIG_CLIENT_ENABLED",
+    "CONFIG_CLIENT_POLL_INTERVAL_SECONDS",
+    "CONFIG_CLIENT_URL",
     "COOKIE_DOMAIN",
     "CORS_ALLOWED_ORIGINS",
     "CORS_ORIGINS",
@@ -24,6 +27,8 @@ EXPECTED_REQUIRED_KEYS = {
     "EXPERIMENT_DATABASE_URL",
     "GRAFANA_ADMIN_PASSWORD",
     "JWT_SECRET",
+    "REDIS_URL",
+    "TELEMETRY_BROKER_URL",
 }
 
 VALID_ENV = """\
@@ -36,6 +41,11 @@ COOKIE_DOMAIN=prod.example.net
 CORS_ORIGINS=https://prod.example.net
 CORS_ALLOWED_ORIGINS=https://prod.example.net
 GRAFANA_ADMIN_PASSWORD=a-real-grafana-secret
+REDIS_URL=redis://redis:6379/0
+TELEMETRY_BROKER_URL=redis://redis:6379/0
+CONFIG_CLIENT_ENABLED=true
+CONFIG_CLIENT_URL=http://config-service:8005
+CONFIG_CLIENT_POLL_INTERVAL_SECONDS=5.0
 """
 
 
@@ -62,6 +72,30 @@ class ProductionDeployContractTest(unittest.TestCase):
         example = ENV_EXAMPLE.read_text(encoding="utf-8")
         declared = {match.group(1) for match in re.finditer(r"^([A-Z_][A-Z0-9_]*)=", example, re.MULTILINE)}
         self.assertEqual(EXPECTED_REQUIRED_KEYS - declared, set())
+
+    def test_redis_is_internal_persistent_and_health_checked(self) -> None:
+        compose = COMPOSE.read_text(encoding="utf-8")
+        redis_service = re.search(r"^  redis:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n)", compose, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(redis_service)
+        body = redis_service.group("body")
+        self.assertIn("image: redis:7.4.9-alpine", body)
+        self.assertIn("redis_data:/data", body)
+        self.assertNotIn("ports:", body)
+        self.assertIn('["CMD", "redis-cli", "ping"]', body)
+        self.assertIn("restart: unless-stopped", body)
+        self.assertRegex(compose, r"(?m)^  redis_data:\n    name: experiment-redis-data$")
+
+    def test_redis_consumers_wait_for_healthy_redis(self) -> None:
+        compose = COMPOSE.read_text(encoding="utf-8")
+        self.assertIn("TELEMETRY_BROKER_URL=${TELEMETRY_BROKER_URL:?", compose)
+        self.assertIn("REDIS_URL=${REDIS_URL:?", compose)
+        self.assertEqual(compose.count("redis:\n        condition: service_healthy"), 2)
+
+    def test_telemetry_config_client_contract_is_explicit(self) -> None:
+        compose = COMPOSE.read_text(encoding="utf-8")
+        for key in ("CONFIG_CLIENT_ENABLED", "CONFIG_CLIENT_URL", "CONFIG_CLIENT_POLL_INTERVAL_SECONDS"):
+            self.assertIn(f"{key}=${{{key}:?", compose)
+        self.assertIn("config-service:\n        condition: service_healthy", compose)
 
     def test_valid_env_passes(self) -> None:
         result = self.run_validator(VALID_ENV)
