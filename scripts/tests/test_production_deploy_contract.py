@@ -168,6 +168,20 @@ class ProductionDeployContractTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("CR_REGISTRY still contains a template value", result.stderr)
 
+    def test_s3_template_values_fail(self) -> None:
+        placeholders = {
+            "S3_ACCESS_KEY": "CHANGE_ME_TERRAFORM_OUTPUT_ARTIFACTS_S3_ACCESS_KEY",
+            "S3_SECRET_KEY": "CHANGE_ME_TERRAFORM_OUTPUT_ARTIFACTS_S3_SECRET_KEY",
+            "S3_BUCKET": "YOUR_ARTIFACTS_BUCKET_NAME",
+        }
+        for key, placeholder in placeholders.items():
+            with self.subTest(key=key):
+                result = self.run_validator(
+                    re.sub(rf"^{key}=.*$", f"{key}={placeholder}", VALID_ENV, flags=re.MULTILINE)
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"{key} still contains a template value", result.stderr)
+
     def test_release_workflow_validates_before_stopping_stack(self) -> None:
         workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
         validation = workflow.index("./validate-production-env.sh .env docker-compose.prod.yml")
