@@ -35,8 +35,6 @@
 ## Баги
 - Все баги и задачи ведутся в [Linear](https://linear.app/lostpointer).
 
-## Roadmap
-- `experiment-tracking-status-and-roadmap.md` — единый статус и roadmap платформы (включая Experiment Service и Frontend).
 
 ## Архитектурные решения (ADR)
 - `adr/` — журнал архитектурных решений (Architecture Decision Records).
