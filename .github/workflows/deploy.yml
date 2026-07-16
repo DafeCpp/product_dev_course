@@ -37,6 +37,7 @@ jobs:
       AUTH_DATABASE_URL: postgresql://auth_user:ci-secret@db.example.net:6432/auth_db?sslmode=verify-full
       EXPERIMENT_DATABASE_URL: postgresql://experiment_user:ci-secret@db.example.net:6432/experiment_db?sslmode=verify-full
       CONFIG_DATABASE_URL: postgresql://config_user:ci-secret@db.example.net:6432/config_db?sslmode=verify-full
+      SCRIPT_DATABASE_URL: postgresql://script_user:ci-secret@db.example.net:6432/script_db?sslmode=verify-full
       JWT_SECRET: ci-test-secret-longer-than-thirty-two-characters
       COOKIE_DOMAIN: prod.example.net
       CORS_ORIGINS: https://prod.example.net
@@ -127,6 +128,9 @@ jobs:
           - service: config-service
             context: ./projects/backend
             dockerfile: services/config-service/Dockerfile
+          - service: script-service
+            context: ./projects/backend
+            dockerfile: services/script-service/Dockerfile
           - service: auth-proxy
             context: ./projects/frontend/apps/auth-proxy
             dockerfile: Dockerfile
@@ -134,8 +138,8 @@ jobs:
             context: ./projects/frontend/apps/experiment-portal
             dockerfile: Dockerfile
           - service: sensor-simulator
-            context: ./projects/frontend/apps/sensor-simulator
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space (runner)
@@ -284,7 +288,8 @@ jobs:
             docker compose -p experiment-tracking -f docker-compose.prod.yml down --remove-orphans || true
             docker compose -f docker-compose.prod.yml down --remove-orphans || true
             # На случай если контейнеры остались с конфликтующими именами — удаляем принудительно
-            docker rm -f auth-service experiment-service telemetry-ingest-service \
+            docker rm -f auth-migrate config-migrate experiment-migrate telemetry-ingest-migrate script-migrate \
+              auth-service experiment-service telemetry-ingest-service config-service script-service \
               auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
             # Чистим только неиспользуемые образы и build cache, не трогая volumes с данными Loki/Grafana.
             docker image prune -af || true
@@ -327,6 +332,10 @@ jobs:
             docker compose -f docker-compose.prod.yml logs --tail=100 auth-service || true
             echo "=== experiment-service logs (last 100 lines) ==="
             docker compose -f docker-compose.prod.yml logs --tail=100 experiment-service || true
+            echo "=== script-migrate logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 script-migrate || true
+            echo "=== script-service logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 script-service || true
 
       - name: Health check (via SSH on VM — avoids dependency on public reachability from GitHub)
         uses: appleboy/ssh-action@v1

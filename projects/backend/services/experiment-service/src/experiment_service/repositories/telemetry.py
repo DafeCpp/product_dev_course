@@ -8,7 +8,7 @@ from uuid import UUID
 from asyncpg import Pool  # type: ignore[import-untyped]
 
 from experiment_service.domain.dto import TelemetryRecordCreateDTO
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class TelemetryRepository(BaseRepository):
@@ -84,4 +84,3 @@ class TelemetryRepository(BaseRepository):
             result = await conn.execute(query, capture_session_id, str(capture_session_id))
             # asyncpg returns "UPDATE N"
             return int(result.split()[-1])
-

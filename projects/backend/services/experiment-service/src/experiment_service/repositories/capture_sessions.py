@@ -14,7 +14,7 @@ from experiment_service.domain.dto import (
     CaptureSessionUpdateDTO,
 )
 from experiment_service.domain.models import CaptureSession
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class CaptureSessionRepository(BaseRepository):
@@ -238,4 +238,3 @@ class CaptureSessionRepository(BaseRepository):
         )
         if record is None:
             raise NotFoundError("Capture session not found")
-

@@ -10,7 +10,7 @@ from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.webhooks import WebhookDelivery, WebhookSubscription
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class WebhookSubscriptionRepository(BaseRepository):
@@ -364,4 +364,3 @@ class WebhookDeliveryRepository(BaseRepository):
             created_before,
         )
         return int(result.split()[-1])
-

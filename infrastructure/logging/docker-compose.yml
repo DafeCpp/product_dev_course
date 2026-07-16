@@ -15,7 +15,7 @@ version: "3.9"
 services:
   # Loki - система хранения и агрегации логов
   loki:
-    image: grafana/loki:2.9.0
+    image: grafana/loki:3.5.8
     container_name: loki
     ports:
       - "${LOKI_PORT:-3100}:3100"
@@ -35,7 +35,7 @@ services:
 
   # Grafana Alloy - сборщик логов из Docker контейнеров
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.17.1
     container_name: alloy
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -50,10 +50,16 @@ services:
     restart: unless-stopped
     ports:
       - "12345:12345"  # HTTP сервер для метрик и UI
+    healthcheck:
+      test: ["CMD", "alloy", "fmt", "/etc/alloy/config.river"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Grafana - веб-интерфейс для визуализации логов
   grafana:
-    image: grafana/grafana:10.0.0
+    image: grafana/grafana:12.4.5
     container_name: grafana
     ports:
       - "${GRAFANA_PORT:-3001}:3000"

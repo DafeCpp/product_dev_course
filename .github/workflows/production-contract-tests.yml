@@ -44,6 +44,7 @@ jobs:
       AUTH_DATABASE_URL: postgresql://auth_user:ci-secret@db.example.net:6432/auth_db?sslmode=verify-full
       EXPERIMENT_DATABASE_URL: postgresql://experiment_user:ci-secret@db.example.net:6432/experiment_db?sslmode=verify-full
       CONFIG_DATABASE_URL: postgresql://config_user:ci-secret@db.example.net:6432/config_db?sslmode=verify-full
+      SCRIPT_DATABASE_URL: postgresql://script_user:ci-secret@db.example.net:6432/script_db?sslmode=verify-full
       JWT_SECRET: ci-test-secret-longer-than-thirty-two-characters
       COOKIE_DOMAIN: prod.example.net
       CORS_ORIGINS: https://prod.example.net

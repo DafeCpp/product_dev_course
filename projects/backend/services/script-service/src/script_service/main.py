@@ -10,6 +10,7 @@ from backend_common.aiohttp_app import add_cors_to_routes, create_base_app
 from backend_common.db.migrations import create_migration_runner
 from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
 from backend_common.logging_config import configure_logging
+from backend_common.otel import setup_otel, shutdown_otel
 
 from script_service.api.router import setup_routes
 from script_service.api.routes.health import health_routes
@@ -38,8 +39,15 @@ def create_app() -> web.Application:
     app.add_routes(health_routes)
     setup_routes(app)
 
+    setup_otel(
+        app,
+        service_name=settings.app_name,
+        exporter_endpoint=settings.otel_exporter_endpoint,
+    )
+
     app.on_startup.append(init_pool)
     app.on_startup.append(apply_migrations_on_startup)
+    app.on_cleanup.append(shutdown_otel)
     app.on_cleanup.append(close_pool)
 
     add_cors_to_routes(app, cors)

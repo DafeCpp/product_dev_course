@@ -5,25 +5,16 @@ from uuid import UUID
 
 from aiohttp import web
 
-
-def extract_client_ip(request: web.Request) -> str | None:
-    """Extract client IP address, respecting X-Forwarded-For."""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.remote or None
-
-
-def extract_user_agent(request: web.Request) -> str | None:
-    """Extract User-Agent header."""
-    return request.headers.get("User-Agent") or None
-
 from auth_service.core.exceptions import InvalidCredentialsError
 from auth_service.repositories.users import UserRepository
 from auth_service.services.jwt import get_user_id_from_token
 from auth_service.services.permission import PermissionService
 from backend_common.db.pool import get_pool_service as get_pool
 
+
+def extract_user_agent(request: web.Request) -> str | None:
+    """Extract User-Agent header."""
+    return request.headers.get("User-Agent") or None
 
 def extract_bearer_token(request: web.Request) -> str | None:
     """Extract Bearer token from Authorization header."""
