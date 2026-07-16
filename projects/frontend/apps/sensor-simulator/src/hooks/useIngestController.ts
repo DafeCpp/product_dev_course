@@ -132,19 +132,38 @@ export function useIngestController(
     appendLog(
       `[${new Date().toISOString()}] ▶️ start sensors=${latest.current.filter(sensorIsReady).length}`,
     );
+
     const tick = () => {
       const elapsed = (Date.now() - startMs) / 1000;
       let interval = 1000;
       const rates: string[] = [];
-      for (const sensor of latest.current.filter(sensorIsReady)) {
+      const activeSensors = latest.current.filter(sensorIsReady);
+
+      if (!activeSensors.length) {
+        running.current = false;
+        setIsRunning(false);
+        setEffectiveRateDisplay("");
+        timer.current = null;
+        appendLog(`[${new Date().toISOString()}] ⚠️ no active sensors — stopping`);
+        return;
+      }
+
+      for (const sensor of activeSensors) {
         if (scenarioIsPausedAt(sensor.settings, elapsed)) continue;
-        const rate = scenarioEffectiveRate(sensor.settings, elapsed);
-        interval = Math.min(interval, 1000 / clamp(rate, 1, 10000));
+        const rate = clamp(
+          scenarioEffectiveRate(sensor.settings, elapsed),
+          1,
+          10000,
+        );
+        const intervalMs = 1000 / rate;
+
+        interval = Math.min(interval, intervalMs);
         rates.push(`${sensorDisplayName(sensor)}: ${rate.toFixed(1)} Hz`);
+
         const last = lastSend.current.get(sensor.key) ?? 0;
-        if (Date.now() - last >= (1000 / rate) * 0.8) {
+        if (Date.now() - last >= intervalMs * 0.8) {
           const count = Math.min(
-            Math.max(1, Math.round((Date.now() - last) / (1000 / rate))),
+            Math.max(1, Math.round((Date.now() - last) / intervalMs)),
             Math.max(10, Math.round(rate * 2)),
           );
           void sendBatch(sensor, count, rate, true, last || startMs);
