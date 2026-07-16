@@ -165,6 +165,46 @@ export default function ConfigurationCard(p: Props) {
               ss.waveform !== "pulses",
             )}
           </div>
+
+          {ss.scenario === "bursts" && (
+            <div className="row" style={{ marginTop: 10 }}>
+              {numberField("burst every (sec)", ss.burstEverySec, (v) =>
+                setS({ burstEverySec: v }),
+              )}
+              {numberField("burst duration (sec)", ss.burstDurationSec, (v) =>
+                setS({ burstDurationSec: v }),
+              )}
+            </div>
+          )}
+
+          {ss.scenario === "dropout" && (
+            <div className="row" style={{ marginTop: 10 }}>
+              {numberField("dropout every (sec)", ss.dropoutEverySec, (v) =>
+                setS({ dropoutEverySec: v }),
+              )}
+              {numberField("dropout duration (sec)", ss.dropoutDurationSec, (v) =>
+                setS({ dropoutDurationSec: v }),
+              )}
+            </div>
+          )}
+
+          {ss.scenario === "late_data" && (
+            <div className="row" style={{ marginTop: 10 }}>
+              {numberField("late seconds (timestamp - N)", ss.lateSeconds, (v) =>
+                setS({ lateSeconds: v }),
+              )}
+            </div>
+          )}
+
+          {ss.scenario === "out_of_order" && (
+            <div className="row" style={{ marginTop: 10 }}>
+              {numberField(
+                "out-of-order fraction (0..1)",
+                ss.outOfOrderFraction,
+                (v) => setS({ outOfOrderFraction: v }),
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
