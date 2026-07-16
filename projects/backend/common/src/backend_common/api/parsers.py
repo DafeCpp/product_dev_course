@@ -39,6 +39,44 @@ def parse_datetime(value: str | None, label: str) -> datetime | None:
         raise web.HTTPBadRequest(text=f"Invalid datetime for {label}: {value}") from exc
 
 
+def parse_int(value: str | None, *, default: int) -> int:
+    """Parse an integer query parameter, returning ``default`` when omitted."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="Invalid integer query param") from exc
+
+
+def parse_bool(value: str | None, *, default: bool) -> bool:
+    """Parse common boolean query representations."""
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    raise web.HTTPBadRequest(text="Invalid boolean query param")
+
+
+def parse_rfc3339(value: str | None, *, default: datetime | None = None) -> datetime | None:
+    """Parse an RFC3339/ISO-8601 value and normalize it to UTC."""
+    if value is None or not value.strip():
+        return default
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        result = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="Invalid since_ts (expected ISO8601/RFC3339)") from exc
+    if result.tzinfo is None:
+        result = result.replace(tzinfo=timezone.utc)
+    return result.astimezone(timezone.utc)
+
+
 def pagination_params(
     request: web.Request,
     *,
