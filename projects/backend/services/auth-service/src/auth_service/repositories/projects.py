@@ -5,7 +5,7 @@ from uuid import UUID
 
 from auth_service.core.exceptions import NotFoundError
 from auth_service.domain.models import Project, UserProjectRole
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class ProjectRepository(BaseRepository):

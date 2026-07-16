@@ -9,7 +9,7 @@ from auth_service.domain.models import (
     UserProjectRole,
     UserSystemRole,
 )
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class UserRoleRepository(BaseRepository):
