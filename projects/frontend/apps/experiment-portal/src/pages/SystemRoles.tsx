@@ -90,7 +90,7 @@ function SystemRoles() {
     setForm({
       name: role.name,
       description: role.description ?? '',
-      selectedPermissions: role.permissions.map((p) => p.name),
+      selectedPermissions: role.permissions,
     })
     setModalOpen(true)
   }
@@ -211,9 +211,9 @@ function SystemRoles() {
                         <span className="text-muted">—</span>
                       ) : (
                         <div className="perm-tags">
-                          {role.permissions.map((p) => (
-                            <span key={p.id} className="perm-tag">
-                              {p.name}
+                          {role.permissions.map((permission) => (
+                            <span key={permission} className="perm-tag">
+                              {permission}
                             </span>
                           ))}
                         </div>
