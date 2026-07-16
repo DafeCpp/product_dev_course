@@ -12,6 +12,7 @@ VALIDATOR = ROOT / "scripts" / "validate-production-env.sh"
 COMPOSE = ROOT / "docker-compose.prod.yml"
 ENV_EXAMPLE = ROOT / "env.production.example"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
+PRODUCTION_CONTRACT_WORKFLOW = ROOT / ".github" / "workflows" / "production-contract-tests.yml"
 TERRAFORM_OUTPUTS = ROOT / "infrastructure" / "yandex-cloud" / "outputs.tf"
 TERRAFORM_OBJECT_STORAGE = ROOT / "infrastructure" / "yandex-cloud" / "object-storage.tf"
 
@@ -35,6 +36,7 @@ EXPECTED_REQUIRED_KEYS = {
     "S3_PRESIGN_EXPIRE_SECONDS",
     "S3_PUBLIC_ENDPOINT_URL",
     "S3_SECRET_KEY",
+    "SCRIPT_DATABASE_URL",
     "TELEMETRY_BROKER_URL",
 }
 
@@ -43,6 +45,7 @@ CR_REGISTRY=cr.yandex/test-registry
 AUTH_DATABASE_URL=postgresql://auth_user:secret@db.example.net:6432/auth_db?sslmode=verify-full
 EXPERIMENT_DATABASE_URL=postgresql://experiment_user:secret@db.example.net:6432/experiment_db?sslmode=verify-full
 CONFIG_DATABASE_URL=postgresql://config_user:secret@db.example.net:6432/config_db?sslmode=verify-full
+SCRIPT_DATABASE_URL=postgresql://script_user:secret@db.example.net:6432/script_db?sslmode=verify-full
 JWT_SECRET=a-real-secret-longer-than-thirty-two-characters
 COOKIE_DOMAIN=prod.example.net
 CORS_ORIGINS=https://prod.example.net
@@ -109,6 +112,13 @@ class ProductionDeployContractTest(unittest.TestCase):
         for key in ("CONFIG_CLIENT_ENABLED", "CONFIG_CLIENT_URL", "CONFIG_CLIENT_POLL_INTERVAL_SECONDS"):
             self.assertIn(f"{key}=${{{key}:?", compose)
         self.assertIn("config-service:\n        condition: service_healthy", compose)
+
+    def test_script_service_production_wiring_is_explicit(self) -> None:
+        compose = COMPOSE.read_text(encoding="utf-8")
+        self.assertIn("DATABASE_URL=${SCRIPT_DATABASE_URL:?", compose)
+        self.assertIn("script-migrate:\n        condition: service_completed_successfully", compose)
+        self.assertIn("TARGET_SCRIPT_URL=http://script-service:8004", compose)
+        self.assertIn("script-service:\n        condition: service_healthy", compose)
 
     def test_object_storage_runtime_contract_is_explicit(self) -> None:
         compose = COMPOSE.read_text(encoding="utf-8")
@@ -198,12 +208,23 @@ class ProductionDeployContractTest(unittest.TestCase):
         declared = set(re.findall(r"(?m)^      ([A-Z_][A-Z0-9_]*):", job.group("body")))
         self.assertEqual(EXPECTED_REQUIRED_KEYS - declared, set())
 
+    def test_production_contract_workflow_declares_every_required_env(self) -> None:
+        workflow = PRODUCTION_CONTRACT_WORKFLOW.read_text(encoding="utf-8")
+        job = re.search(
+            r"(?ms)^  production-contract:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+            workflow,
+        )
+        self.assertIsNotNone(job)
+        declared = set(re.findall(r"(?m)^      ([A-Z_][A-Z0-9_]*):", job.group("body")))
+        self.assertEqual(EXPECTED_REQUIRED_KEYS - declared, set())
+
     def test_terraform_database_url_outputs_do_not_contain_masked_passwords(self) -> None:
         outputs = TERRAFORM_OUTPUTS.read_text(encoding="utf-8")
         self.assertNotIn(":***@", outputs)
         self.assertIn("urlencode(var.pg_auth_db_password)", outputs)
         self.assertIn("urlencode(var.pg_experiment_db_password)", outputs)
         self.assertIn("urlencode(var.pg_config_db_password)", outputs)
+        self.assertIn("urlencode(var.pg_script_db_password)", outputs)
 
     def test_object_storage_credentials_are_sensitive_outputs(self) -> None:
         outputs = TERRAFORM_OUTPUTS.read_text(encoding="utf-8")

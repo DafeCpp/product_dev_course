@@ -50,6 +50,12 @@ output "config_database_url" {
   sensitive   = true
 }
 
+output "script_database_url" {
+  description = "SCRIPT_DATABASE_URL for script-service"
+  value       = "postgresql://script_user:${replace(urlencode(var.pg_script_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/script_db?sslmode=verify-full"
+  sensitive   = true
+}
+
 output "artifacts_bucket_name" {
   description = "S3_BUCKET for experiment-service"
   value       = yandex_storage_bucket.artifacts.bucket
