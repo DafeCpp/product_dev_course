@@ -12,6 +12,7 @@ VALIDATOR = ROOT / "scripts" / "validate-production-env.sh"
 COMPOSE = ROOT / "docker-compose.prod.yml"
 ENV_EXAMPLE = ROOT / "env.production.example"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
+PRODUCTION_CONTRACT_WORKFLOW = ROOT / ".github" / "workflows" / "production-contract-tests.yml"
 TERRAFORM_OUTPUTS = ROOT / "infrastructure" / "yandex-cloud" / "outputs.tf"
 TERRAFORM_OBJECT_STORAGE = ROOT / "infrastructure" / "yandex-cloud" / "object-storage.tf"
 
@@ -201,6 +202,16 @@ class ProductionDeployContractTest(unittest.TestCase):
         workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
         job = re.search(
             r"(?ms)^  production-contract-tests:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n)",
+            workflow,
+        )
+        self.assertIsNotNone(job)
+        declared = set(re.findall(r"(?m)^      ([A-Z_][A-Z0-9_]*):", job.group("body")))
+        self.assertEqual(EXPECTED_REQUIRED_KEYS - declared, set())
+
+    def test_production_contract_workflow_declares_every_required_env(self) -> None:
+        workflow = PRODUCTION_CONTRACT_WORKFLOW.read_text(encoding="utf-8")
+        job = re.search(
+            r"(?ms)^  production-contract:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
             workflow,
         )
         self.assertIsNotNone(job)
