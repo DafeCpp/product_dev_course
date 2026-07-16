@@ -46,6 +46,35 @@ describe("sensor generator", () => {
     );
     expect(a).toEqual(b);
   });
+
+  it("continues the random sequence across batches", () => {
+    const settings = { ...DEFAULT_SETTINGS, amplitude: 0 };
+    const state = runtime();
+    const firstBatch = buildReadings(
+      "sensor",
+      3,
+      10,
+      settings,
+      state,
+      true,
+      1000,
+      1000,
+    );
+    const secondBatch = buildReadings(
+      "sensor",
+      3,
+      10,
+      settings,
+      state,
+      true,
+      1000,
+      1000,
+    );
+
+    expect(secondBatch.map((reading) => reading.raw_value)).not.toEqual(
+      firstBatch.map((reading) => reading.raw_value),
+    );
+  });
   it("generates late timestamps and out-of-order timestamps", () => {
     const late = buildReadings(
       "s",

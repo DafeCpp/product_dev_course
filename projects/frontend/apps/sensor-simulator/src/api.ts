@@ -28,5 +28,15 @@ export async function openTelemetryStream(
   );
   url.searchParams.set("sensor_id", sensorId);
   if (sinceId > 0) url.searchParams.set("since_id", String(sinceId));
-  return fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal });
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`HTTP ${response.status}: ${body || response.statusText}`);
+  }
+
+  return response;
 }

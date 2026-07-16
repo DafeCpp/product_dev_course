@@ -32,6 +32,16 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+function nextRandom(runtime: GeneratorRuntime): number {
+  let state = (runtime.rngState + 0x6d2b79f5) >>> 0;
+  runtime.rngState = state;
+
+  let value = Math.imul(state ^ (state >>> 15), 1 | state);
+  value ^= value + Math.imul(value ^ (value >>> 7), 61 | value);
+
+  return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+}
+
 export function waveformValue(
   waveform: PersistedSettings["waveform"],
   tSec: number,
@@ -73,7 +83,17 @@ export function buildReadings(
   now = Date.now(),
 ): TelemetryIngestReading[] {
   const step = 1000 / clamp(rateHz, 1, 10000);
-  const rng = mulberry32((settings.seed >>> 0) ^ hashStringToUint32(sensorKey));
+
+  if (
+    runtime.seed !== settings.seed ||
+    (runtime.rngState === 0 && runtime.sequence === 0)
+  ) {
+    runtime.seed = settings.seed;
+    runtime.rngState =
+      ((settings.seed >>> 0) ^ hashStringToUint32(sensorKey)) >>> 0;
+  }
+
+  const rng = () => nextRandom(runtime);
   let base =
     runtime.lastTimestampMs > 0
       ? runtime.lastTimestampMs + step
@@ -107,7 +127,7 @@ export function buildReadings(
     });
   }
   runtime.lastTimestampMs = base + (n - 1) * step;
-  runtime.rngState = 1;
+
   if (settings.scenario === "out_of_order") {
     const swaps = Math.floor(
       readings.length * clamp(settings.outOfOrderFraction, 0, 1),
