@@ -35,6 +35,7 @@ EXPECTED_REQUIRED_KEYS = {
     "S3_PRESIGN_EXPIRE_SECONDS",
     "S3_PUBLIC_ENDPOINT_URL",
     "S3_SECRET_KEY",
+    "SCRIPT_DATABASE_URL",
     "TELEMETRY_BROKER_URL",
 }
 
@@ -43,6 +44,7 @@ CR_REGISTRY=cr.yandex/test-registry
 AUTH_DATABASE_URL=postgresql://auth_user:secret@db.example.net:6432/auth_db?sslmode=verify-full
 EXPERIMENT_DATABASE_URL=postgresql://experiment_user:secret@db.example.net:6432/experiment_db?sslmode=verify-full
 CONFIG_DATABASE_URL=postgresql://config_user:secret@db.example.net:6432/config_db?sslmode=verify-full
+SCRIPT_DATABASE_URL=postgresql://script_user:secret@db.example.net:6432/script_db?sslmode=verify-full
 JWT_SECRET=a-real-secret-longer-than-thirty-two-characters
 COOKIE_DOMAIN=prod.example.net
 CORS_ORIGINS=https://prod.example.net
@@ -109,6 +111,13 @@ class ProductionDeployContractTest(unittest.TestCase):
         for key in ("CONFIG_CLIENT_ENABLED", "CONFIG_CLIENT_URL", "CONFIG_CLIENT_POLL_INTERVAL_SECONDS"):
             self.assertIn(f"{key}=${{{key}:?", compose)
         self.assertIn("config-service:\n        condition: service_healthy", compose)
+
+    def test_script_service_production_wiring_is_explicit(self) -> None:
+        compose = COMPOSE.read_text(encoding="utf-8")
+        self.assertIn("DATABASE_URL=${SCRIPT_DATABASE_URL:?", compose)
+        self.assertIn("script-migrate:\n        condition: service_completed_successfully", compose)
+        self.assertIn("TARGET_SCRIPT_URL=http://script-service:8004", compose)
+        self.assertIn("script-service:\n        condition: service_healthy", compose)
 
     def test_object_storage_runtime_contract_is_explicit(self) -> None:
         compose = COMPOSE.read_text(encoding="utf-8")
@@ -204,6 +213,7 @@ class ProductionDeployContractTest(unittest.TestCase):
         self.assertIn("urlencode(var.pg_auth_db_password)", outputs)
         self.assertIn("urlencode(var.pg_experiment_db_password)", outputs)
         self.assertIn("urlencode(var.pg_config_db_password)", outputs)
+        self.assertIn("urlencode(var.pg_script_db_password)", outputs)
 
     def test_object_storage_credentials_are_sensitive_outputs(self) -> None:
         outputs = TERRAFORM_OUTPUTS.read_text(encoding="utf-8")

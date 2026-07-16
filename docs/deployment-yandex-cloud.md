@@ -188,6 +188,7 @@ terraform output pg_cluster_host
 terraform output -raw auth_database_url
 terraform output -raw experiment_database_url
 terraform output -raw config_database_url
+terraform output -raw script_database_url
 
 # CI ключ (для GitHub Secrets)
 terraform output -raw ci_sa_key_json
@@ -229,6 +230,7 @@ nano /opt/experiment-tracking/.env
 # REDIS_URL=redis://redis:6379/0
 # TELEMETRY_BROKER_URL=redis://redis:6379/0
 # CONFIG_CLIENT_URL=http://config-service:8005
+# script-service доступен только через auth-proxy: http://script-service:8004
 # S3_ENDPOINT_URL=https://storage.yandexcloud.net
 # S3_PUBLIC_ENDPOINT_URL=https://storage.yandexcloud.net
 # S3_BUCKET=<terraform output -raw artifacts_bucket_name>
@@ -256,6 +258,7 @@ docker compose -f docker-compose.prod.yml ps
 curl http://<VM_IP>/           # Portal
 curl http://<VM_IP>:8080/health  # Auth Proxy
 curl http://<VM_IP>:8003/health  # Telemetry Ingest
+curl http://127.0.0.1:8004/health # Script Service (internal)
 
 # Redis доступен только внутри app network и должен отвечать PONG.
 docker compose -f docker-compose.prod.yml exec -T redis redis-cli ping
@@ -361,6 +364,7 @@ VM_HOST=84.201.xxx.xxx REGISTRY_ID=crp... ./scripts/deploy.sh [v1.0.0]
 |---|---|---|
 | `auth-migrate` | `auth_db` | `auth-service` |
 | `config-migrate` | `config_db` | `config-service` |
+| `script-migrate` | `script_db` | `script-service` |
 | `experiment-migrate` | `experiment_db` | `experiment-service` |
 | `telemetry-ingest-migrate` | `experiment_db` | `telemetry-ingest-service` |
 
@@ -381,6 +385,7 @@ cd /opt/experiment-tracking
 
 docker compose -f docker-compose.prod.yml logs experiment-migrate
 docker compose -f docker-compose.prod.yml logs telemetry-ingest-migrate
+docker compose -f docker-compose.prod.yml logs script-migrate
 ```
 
 Ручной прогон (например, если джоб упал и был пропущен):
@@ -388,6 +393,7 @@ docker compose -f docker-compose.prod.yml logs telemetry-ingest-migrate
 ```bash
 docker compose -f docker-compose.prod.yml run --rm experiment-migrate
 docker compose -f docker-compose.prod.yml run --rm telemetry-ingest-migrate
+docker compose -f docker-compose.prod.yml run --rm script-migrate
 ```
 
 Базы и пользователи (`experiment_db` / `experiment_user` и др.) создаются Terraform —
@@ -646,7 +652,8 @@ yc managed-postgresql cluster restore \
 | Контейнер не стартует | `docker compose logs <service>` |
 | **redis unhealthy / consumers не стартуют** | Проверить `docker compose -f docker-compose.prod.yml logs redis` и `docker compose -f docker-compose.prod.yml exec -T redis redis-cli ping`. Убедиться, что `REDIS_URL` и `TELEMETRY_BROKER_URL` равны `redis://redis:6379/0`; Redis не должен публиковать порт на VM. |
 | **dependency failed: container auth-service is unhealthy** | На VM проверить: 1) `AUTH_DATABASE_URL` в `.env` и доступность БД (Security Group, сертификат `./certs/yandex-ca.pem`); 2) `JWT_SECRET` задан; 3) `docker compose -f docker-compose.prod.yml logs auth-service` — по логам увидеть ошибку (подключение к БД, SSL и т.д.). При падении деплоя в CI шаг «Show auth-service logs on deploy failure» выведет логи. |
-| **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db`, `experiment_db` и `config_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db / config_db). |
+| **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db`, `experiment_db`, `config_db` и `script_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db / config_db / script_db). |
+| **script-service не стартует / proxy отдаёт 502** | Проверить `SCRIPT_DATABASE_URL` в `.env`, затем `docker compose -f docker-compose.prod.yml logs script-migrate script-service`. Убедиться, что `script-migrate` завершился успешно и порт `8004` не опубликован наружу. |
 | **config-роли не появились после релиза (RBAC config-service не работает)** | Миграция `auth-service/003_config_rbac.sql` применяется one-shot сервисом `auth-migrate` на деплое. Убедитесь, что `auth-migrate` отработал успешно (`docker compose -f docker-compose.prod.yml logs auth-migrate`). Для config-service миграции применяет `config-migrate`; база `config_db` и пользователь `config_user` должны быть созданы Terraform (`database.tf`). |
 | **experiment-service: functionality not supported under the current "apache" license** (TimescaleDB) | В Yandex MDB используется TimescaleDB с лицензией Apache 2.0: компрессия и continuous aggregates недоступны. Миграции 001/002 принудительно пропускают эти шаги (DO ... EXCEPTION). Сервис должен стартовать; экспорт телеметрии с агрегацией 1m на Yandex недоступен (нет материализованного представления `telemetry_1m`). |
 | Нет подключения к БД | Проверить Security Group, `sslmode=verify-full`, сертификат |

@@ -171,6 +171,12 @@ variable "pg_config_db_password" {
   sensitive   = true
 }
 
+variable "pg_script_db_password" {
+  description = "Password for script_user (script_db)"
+  type        = string
+  sensitive   = true
+}
+
 # --- Container Registry ---
 
 variable "cr_name" {
