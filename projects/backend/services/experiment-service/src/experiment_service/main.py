@@ -14,6 +14,7 @@ from backend_common.aiohttp_app import (
 from backend_common.metrics import metrics_handler, metrics_middleware
 from backend_common.middleware.error_handler import error_handling_middleware
 from backend_common.logging_config import configure_logging
+from backend_common.otel import setup_otel, shutdown_otel
 
 from experiment_service.core.s3_client import get_s3_client
 from experiment_service.api.router import setup_routes
@@ -23,7 +24,6 @@ from experiment_service.middleware.audit import audit_middleware, _AUDIT_CLIENT_
 from experiment_service.services.audit_client import AuditClient
 from experiment_service.workers import start_background_worker, stop_background_worker
 from experiment_service.workers.qos_config_poller import build_qos_client
-from experiment_service.otel import setup_otel, shutdown_otel
 from experiment_service.settings import settings
 from experiment_service.webhooks_dispatcher import start_webhook_dispatcher, stop_webhook_dispatcher
 from backend_common.script_runner import ScriptRunner
@@ -102,7 +102,11 @@ def create_app() -> web.Application:
     app.router.add_get("/metrics", metrics_handler)
 
     # OpenTelemetry (auto-instruments aiohttp server; no-op when endpoint not set)
-    setup_otel(app)
+    setup_otel(
+        app,
+        service_name=settings.app_name,
+        exporter_endpoint=settings.otel_exporter_endpoint,
+    )
 
     app.on_startup.append(init_pool)
     app.on_startup.append(init_s3_bucket)
@@ -143,4 +147,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

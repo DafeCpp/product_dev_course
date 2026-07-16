@@ -13,7 +13,7 @@ from experiment_service.core.exceptions import DuplicateResourceError, NotFoundE
 from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateDTO
 from experiment_service.domain.enums import ExperimentStatus
 from experiment_service.domain.models import Experiment
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class ExperimentRepository(BaseRepository):
@@ -241,4 +241,3 @@ class ExperimentRepository(BaseRepository):
         )
         if record is None:
             raise NotFoundError("Experiment not found")
-

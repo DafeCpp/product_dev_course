@@ -12,7 +12,7 @@ from experiment_service.core.exceptions import DuplicateResourceError, NotFoundE
 from experiment_service.domain.dto import SensorCreateDTO, SensorUpdateDTO
 from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 from experiment_service.settings import settings
 
 _CONNECTION_STATUS_EXPR = f"""

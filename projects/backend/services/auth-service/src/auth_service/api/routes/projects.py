@@ -6,7 +6,8 @@ from uuid import UUID
 
 from aiohttp import web
 
-from auth_service.api.utils import extract_client_ip, extract_user_agent, get_requester_id
+from auth_service.api.utils import extract_user_agent, get_requester_id
+from backend_common.api import extract_client_ip
 from auth_service.core.exceptions import AuthError, ForbiddenError, NotFoundError, handle_auth_error
 from auth_service.domain.dto import (
     ProjectCreateRequest,

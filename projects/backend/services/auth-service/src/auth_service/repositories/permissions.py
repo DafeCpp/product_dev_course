@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from auth_service.domain.models import Permission
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class PermissionRepository(BaseRepository):

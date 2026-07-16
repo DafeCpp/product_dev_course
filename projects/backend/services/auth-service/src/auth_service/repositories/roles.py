@@ -5,7 +5,7 @@ from uuid import UUID
 
 from auth_service.core.exceptions import NotFoundError
 from auth_service.domain.models import Role, ScopeType
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 _ROLE_COLS = (
     "id, name, scope_type, project_id, is_builtin, description, "

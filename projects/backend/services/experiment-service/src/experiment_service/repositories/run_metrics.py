@@ -8,7 +8,7 @@ from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.domain.dto import RunMetricIngestDTO
 from experiment_service.domain.models import RunMetric
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class RunMetricsRepository(BaseRepository):

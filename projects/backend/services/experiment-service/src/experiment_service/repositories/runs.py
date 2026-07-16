@@ -12,7 +12,7 @@ from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import RunCreateDTO, RunUpdateDTO
 from experiment_service.domain.enums import RunStatus
 from experiment_service.domain.models import Run, RunSensor
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class RunRepository(BaseRepository):

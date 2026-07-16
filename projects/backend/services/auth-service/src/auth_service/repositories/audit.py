@@ -7,7 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from auth_service.domain.models import AuditEntry
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class AuditRepository(BaseRepository):

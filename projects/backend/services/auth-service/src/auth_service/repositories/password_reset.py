@@ -6,7 +6,7 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class PasswordResetRepository(BaseRepository):
