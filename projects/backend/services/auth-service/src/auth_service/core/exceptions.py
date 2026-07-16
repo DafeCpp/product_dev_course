@@ -3,7 +3,26 @@ from __future__ import annotations
 
 from aiohttp import web
 
-from backend_common.core.exceptions import ServiceError
+from backend_common.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ServiceError,
+    UnauthorizedError,
+)
+
+__all__ = [
+    "AuthError",
+    "ConflictError",
+    "ForbiddenError",
+    "InvalidCredentialsError",
+    "InvalidTokenError",
+    "NotFoundError",
+    "UnauthorizedError",
+    "UserAlreadyExistsError",
+    "UserNotFoundError",
+    "handle_auth_error",
+]
 
 
 class AuthError(ServiceError):
@@ -21,59 +40,37 @@ class AuthError(ServiceError):
         self.message = message or self.message
 
 
-class InvalidCredentialsError(AuthError):
+class InvalidCredentialsError(UnauthorizedError, AuthError):
     """Invalid username or password."""
 
     status_code = 401
     message = "Invalid credentials"
 
 
-class UserNotFoundError(AuthError):
+class UserNotFoundError(NotFoundError, AuthError):
     """User not found."""
 
     status_code = 404
     message = "User not found"
 
 
-class UserAlreadyExistsError(AuthError):
+class UserAlreadyExistsError(ConflictError, AuthError):
     """User already exists."""
 
     status_code = 409
     message = "User already exists"
 
 
-class InvalidTokenError(AuthError):
+class InvalidTokenError(UnauthorizedError, AuthError):
     """Invalid or expired token."""
 
     status_code = 401
     message = "Invalid or expired token"
 
 
-class NotFoundError(AuthError):
-    """Resource not found."""
-
-    status_code = 404
-    message = "Resource not found"
-
-
-class ForbiddenError(AuthError):
-    """Access forbidden."""
-
-    status_code = 403
-    message = "Access forbidden"
-
-
-class ConflictError(AuthError):
-    """Resource conflict."""
-
-    status_code = 409
-    message = "Conflict"
-
-
-def handle_auth_error(request: web.Request, error: AuthError) -> web.Response:
+def handle_auth_error(request: web.Request, error: ServiceError) -> web.Response:
     """Handle authentication errors."""
     return web.json_response(
-        {"error": error.message},
+        {"error": str(error) or type(error).__name__},
         status=error.status_code,
     )
-

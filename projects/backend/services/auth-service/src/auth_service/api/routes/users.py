@@ -6,7 +6,9 @@ from uuid import UUID
 import structlog
 from aiohttp import web
 
-from auth_service.core.exceptions import AuthError, handle_auth_error
+from backend_common.core.exceptions import ServiceError as AuthError
+
+from auth_service.core.exceptions import handle_auth_error
 from auth_service.domain.dto import UserSearchResult
 from auth_service.repositories.users import UserRepository
 from auth_service.api.utils import get_requester_id
