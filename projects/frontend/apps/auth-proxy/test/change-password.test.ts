@@ -145,6 +145,52 @@ describe('POST /auth/change-password', () => {
         }
     })
 
+    test('refreshes and retries when auth-service rejects a stale access token', async () => {
+        const upstream = fastify({ logger: false })
+        const authorizations: string[] = []
+        upstream.post('/auth/refresh', async () => ({
+            access_token: 'refreshed-access-token',
+            refresh_token: 'refreshed-refresh-token',
+        }))
+        upstream.post('/auth/change-password', async (request, reply) => {
+            authorizations.push(String(request.headers.authorization))
+            if (authorizations.length === 1) {
+                reply.status(401)
+                return { error: 'Unauthorized' }
+            }
+            return {
+                id: 'user-1',
+                access_token: 'changed-access-token',
+                refresh_token: 'changed-refresh-token',
+            }
+        })
+        const app = await createProxy(upstream)
+
+        try {
+            const res = await app.inject({
+                method: 'POST',
+                url: '/auth/change-password',
+                headers: {
+                    ...authenticatedHeaders(),
+                    cookie: `access_token=stale-access-token; refresh_token=refresh-token; csrf_token=${csrfToken}`,
+                },
+                payload: JSON.stringify({ old_password: 'old-password', new_password: 'new-password' }),
+            })
+
+            expect(res.statusCode).toBe(200)
+            expect(authorizations).toEqual([
+                'Bearer stale-access-token',
+                'Bearer refreshed-access-token',
+            ])
+            const cookies = getSetCookies(res)
+            expect(cookies.map((value) => cookieValue(value, 'access_token'))).toContain('changed-access-token')
+            expect(cookies.map((value) => cookieValue(value, 'refresh_token'))).toContain('changed-refresh-token')
+        } finally {
+            await app.close()
+            await upstream.close()
+        }
+    })
+
     test('requires CSRF validation before reaching auth-service', async () => {
         const upstream = fastify({ logger: false })
         let called = false
