@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './Layout'
 import { authApi } from '../api/auth'
@@ -32,6 +33,7 @@ const createWrapper = () => {
 describe('Layout', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        window.localStorage.clear()
         const mockMe = vi.mocked(authApi.me)
         mockMe.mockResolvedValue({
             id: '1',
@@ -94,5 +96,35 @@ describe('Layout', () => {
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /выйти/i })).toBeInTheDocument()
         })
+    })
+
+    it('clears workspace storage after a successful logout', async () => {
+        const user = userEvent.setup()
+        vi.mocked(authApi.logout).mockResolvedValue(undefined)
+        window.localStorage.setItem('experiment_portal.active_project_id', 'project-1')
+        window.localStorage.setItem('telemetry_panel_ids', '["panel-1"]')
+        window.localStorage.setItem('telemetry_history_state', '{"sensorIds":["sensor-1"]}')
+        window.localStorage.setItem('telemetry_viewer_state', '{"projectId":"project-1"}')
+        window.localStorage.setItem('telemetry_panel_state_panel-1', '{"selectedSensorIds":["sensor-1"]}')
+        window.localStorage.setItem('experiment_portal_sidebar_desktop_collapsed', '1')
+
+        render(
+            <Layout>
+                <div>Test content</div>
+            </Layout>,
+            { wrapper: createWrapper() }
+        )
+
+        await user.click(await screen.findByRole('button', { name: /выйти/i }))
+
+        await waitFor(() => {
+            expect(authApi.logout).toHaveBeenCalledOnce()
+            expect(window.localStorage.getItem('experiment_portal.active_project_id')).toBeNull()
+        })
+        expect(window.localStorage.getItem('telemetry_panel_ids')).toBeNull()
+        expect(window.localStorage.getItem('telemetry_history_state')).toBeNull()
+        expect(window.localStorage.getItem('telemetry_viewer_state')).toBeNull()
+        expect(window.localStorage.getItem('telemetry_panel_state_panel-1')).toBeNull()
+        expect(window.localStorage.getItem('experiment_portal_sidebar_desktop_collapsed')).toBe('1')
     })
 })

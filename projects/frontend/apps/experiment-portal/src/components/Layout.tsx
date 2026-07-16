@@ -5,6 +5,7 @@ import { authApi } from '../api/auth'
 import { usePermissions } from '../hooks/usePermissions'
 import UserProfileModal from './UserProfileModal'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { clearWorkspaceStorage } from '../utils/activeProject'
 import './Layout.scss'
 
 interface LayoutProps {
@@ -202,7 +203,11 @@ function Layout({ children }: LayoutProps) {
     mutationFn: () => authApi.logout(),
     successMessage: 'Выход выполнен',
     errorFallback: 'Ошибка выхода',
-    onSuccess: () => { queryClient.clear(); navigate('/login') },
+    onSuccess: () => {
+      clearWorkspaceStorage()
+      queryClient.clear()
+      navigate('/login')
+    },
   })
 
   const { hasAnyPermission, isSuperadmin } = usePermissions()
