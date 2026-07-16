@@ -13,6 +13,8 @@ UI-раздел **Телеметрия** (`/telemetry`): живой поток (
 
 **Предусловие:** авторизован как `admin`; есть датчик с телеметрией (см. [`telemetry-e2e.md`](telemetry-e2e.md) TC-TELE-03).
 
+**Факт (2026-07-16, smoke):** ✅ `/telemetry` открывается без ошибок (`GET /api/v1/sensors`, `.../error-log`, `.../heartbeat-history`, `.../status-summary` → все `200`, консоль чистая). Live/history/export (TC-TELE-08…10) отдельно не прогонялись.
+
 ---
 
 ### TC-TELE-08 — Live-поток телеметрии (SSE)
