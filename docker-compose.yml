@@ -469,8 +469,8 @@ services:
   # Sensor Simulator - separate frontend SPA for telemetry simulation
   sensor-simulator:
     build:
-      context: ./projects/frontend/apps/sensor-simulator
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
       target: production
     container_name: sensor-simulator
     environment:
@@ -577,4 +577,3 @@ networks:
   experiment-tracking-network:
     name: ${DOCKER_NETWORK_NAME:-experiment-tracking-network}
     driver: bridge
-

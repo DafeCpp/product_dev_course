@@ -138,8 +138,8 @@ jobs:
             context: ./projects/frontend/apps/experiment-portal
             dockerfile: Dockerfile
           - service: sensor-simulator
-            context: ./projects/frontend/apps/sensor-simulator
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space (runner)
