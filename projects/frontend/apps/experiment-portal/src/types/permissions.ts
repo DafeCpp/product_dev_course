@@ -13,7 +13,7 @@ export interface Role {
   scope: 'system' | 'project'
   is_builtin: boolean
   project_id: string | null
-  permissions: Permission[]
+  permissions: string[]
   created_at: string
   updated_at: string
 }
