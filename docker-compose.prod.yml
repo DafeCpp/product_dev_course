@@ -402,7 +402,7 @@ services:
           memory: 128M
 
   loki:
-    image: grafana/loki:2.9.0
+    image: grafana/loki:3.5.8
     container_name: loki
     ports:
       - "127.0.0.1:3100:3100"
@@ -421,7 +421,7 @@ services:
       start_period: 10s
 
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.17.1
     container_name: alloy
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -434,9 +434,15 @@ services:
     networks:
       - app
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "alloy", "fmt", "/etc/alloy/config.river"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   grafana:
-    image: grafana/grafana:10.0.0
+    image: grafana/grafana:12.4.5
     container_name: grafana
     ports:
       - "3001:3000"
