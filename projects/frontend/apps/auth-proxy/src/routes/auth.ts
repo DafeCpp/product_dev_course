@@ -211,6 +211,42 @@ export const registerAuthRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
         return data
     })
 
+    app.post('/auth/change-password', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
+        const access = request.cookies[config.accessCookieName]
+        if (!access) {
+            reply.status(401)
+            return { error: 'Unauthorized' }
+        }
+
+        const { traceId } = getTraceContext(request)
+        const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+        const res = await fetch(`${config.authUrl}/auth/change-password`, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${access}`,
+                ...outgoingHeaders,
+            },
+            body: JSON.stringify(request.body ?? {}),
+        })
+
+        if (!res.ok) {
+            reply.status(res.status)
+            return res.json().catch(() => ({}))
+        }
+
+        const data = (await res.json()) as AuthTokens
+        if (!data.access_token) {
+            reply.status(502)
+            return { error: 'Auth service response missing access_token' }
+        }
+
+        setAuthCookies(reply, config, data)
+        setCsrfCookie(reply, config)
+        const { access_token, refresh_token, ...rest } = data
+        return rest
+    })
+
     app.get('/auth/me', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
         const access = request.cookies[config.accessCookieName]
         if (!access) {
