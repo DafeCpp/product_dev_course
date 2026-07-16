@@ -176,7 +176,7 @@ async def telemetry_stream(request: web.Request) -> web.StreamResponse:
         raise
     except Exception:
         logger.exception("SSE telemetry stream failed")
-        await response.write(b"event: error\n\ndata: stream error\n\n")
+        await response.write(b"event: error\ndata: stream error\n\n")
         return response
     finally:
         SSE_CONNECTIONS_ACTIVE.dec()
