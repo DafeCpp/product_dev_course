@@ -99,6 +99,52 @@ describe('POST /auth/change-password', () => {
         }
     })
 
+    test('refreshes an expired access session before changing the password', async () => {
+        const upstream = fastify({ logger: false })
+        let refreshBody: unknown
+        let receivedAuthorization: string | undefined
+        upstream.post('/auth/refresh', async (request) => {
+            refreshBody = request.body
+            return {
+                access_token: 'refreshed-access-token',
+                refresh_token: 'refreshed-refresh-token',
+            }
+        })
+        upstream.post('/auth/change-password', async (request) => {
+            receivedAuthorization = request.headers.authorization
+            return {
+                id: 'user-1',
+                access_token: 'changed-access-token',
+                refresh_token: 'changed-refresh-token',
+            }
+        })
+        const app = await createProxy(upstream)
+
+        try {
+            const res = await app.inject({
+                method: 'POST',
+                url: '/auth/change-password',
+                headers: {
+                    origin: 'http://localhost:3000',
+                    cookie: `refresh_token=refresh-token; csrf_token=${csrfToken}`,
+                    'x-csrf-token': csrfToken,
+                    'content-type': 'application/json',
+                },
+                payload: JSON.stringify({ old_password: 'old-password', new_password: 'new-password' }),
+            })
+
+            expect(res.statusCode).toBe(200)
+            expect(refreshBody).toEqual({ refresh_token: 'refresh-token' })
+            expect(receivedAuthorization).toBe('Bearer refreshed-access-token')
+            const cookies = getSetCookies(res)
+            expect(cookies.map((value) => cookieValue(value, 'access_token'))).toContain('changed-access-token')
+            expect(cookies.map((value) => cookieValue(value, 'refresh_token'))).toContain('changed-refresh-token')
+        } finally {
+            await app.close()
+            await upstream.close()
+        }
+    })
+
     test('requires CSRF validation before reaching auth-service', async () => {
         const upstream = fastify({ logger: false })
         let called = false
@@ -129,7 +175,7 @@ describe('POST /auth/change-password', () => {
         }
     })
 
-    test('rejects requests without an access-token cookie', async () => {
+    test('rejects requests without session cookies', async () => {
         const upstream = fastify({ logger: false })
         const app = await createProxy(upstream)
 

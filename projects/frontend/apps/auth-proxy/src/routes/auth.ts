@@ -212,14 +212,42 @@ export const registerAuthRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     })
 
     app.post('/auth/change-password', { config: { rateLimit: authMutationRateLimit } }, async (request, reply) => {
-        const access = request.cookies[config.accessCookieName]
-        if (!access) {
-            reply.status(401)
-            return { error: 'Unauthorized' }
-        }
+        let access = request.cookies[config.accessCookieName]
+        let refreshedTokens: AuthTokens | undefined
 
         const { traceId } = getTraceContext(request)
         const outgoingHeaders = getOutgoingRequestHeaders(traceId)
+
+        if (!access) {
+            const refreshToken = request.cookies[config.refreshCookieName]
+            if (!refreshToken) {
+                reply.status(401)
+                return { error: 'Unauthorized' }
+            }
+
+            const refreshRes = await fetch(`${config.authUrl}/auth/refresh`, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    ...outgoingHeaders,
+                },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+            })
+
+            if (!refreshRes.ok) {
+                clearAuthCookies(reply, config)
+                reply.status(refreshRes.status)
+                return refreshRes.json().catch(() => ({}))
+            }
+
+            refreshedTokens = (await refreshRes.json()) as AuthTokens
+            if (!refreshedTokens.access_token) {
+                reply.status(502)
+                return { error: 'Auth service response missing access_token' }
+            }
+            access = refreshedTokens.access_token
+        }
+
         const res = await fetch(`${config.authUrl}/auth/change-password`, {
             method: 'POST',
             headers: {
@@ -231,12 +259,20 @@ export const registerAuthRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
         })
 
         if (!res.ok) {
+            if (refreshedTokens) {
+                setAuthCookies(reply, config, refreshedTokens)
+                setCsrfCookie(reply, config)
+            }
             reply.status(res.status)
             return res.json().catch(() => ({}))
         }
 
         const data = (await res.json()) as AuthTokens
         if (!data.access_token) {
+            if (refreshedTokens) {
+                setAuthCookies(reply, config, refreshedTokens)
+                setCsrfCookie(reply, config)
+            }
             reply.status(502)
             return { error: 'Auth service response missing access_token' }
         }
