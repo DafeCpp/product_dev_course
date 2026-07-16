@@ -1,8 +1,23 @@
 import { useCallback, useState } from "react";
-import { useTelemetryStream } from "../../../../common/src/hooks/useTelemetryStream";
+import {
+  useTelemetryStream,
+  type TelemetryStreamStatus,
+} from "../../../../common/src/hooks/useTelemetryStream";
 import type { TelemetryStreamRecord } from "../../../../common/src/types/telemetry";
 import { openTelemetryStream } from "../api";
 import type { SensorConfig } from "../domain";
+
+export function streamIsActive(
+  activeKey: string | null,
+  status: TelemetryStreamStatus,
+): boolean {
+  return (
+    activeKey !== null &&
+    (status === "connecting" ||
+      status === "streaming" ||
+      status === "reconnecting")
+  );
+}
 
 export function useSensorStream(
   sensor: SensorConfig | undefined,
@@ -47,9 +62,6 @@ export function useSensorStream(
     ...stream,
     connect,
     disconnect,
-    streamOn:
-      activeKey !== null &&
-      stream.status !== "stopped" &&
-      stream.status !== "idle",
+    streamOn: streamIsActive(activeKey, stream.status),
   };
 }
