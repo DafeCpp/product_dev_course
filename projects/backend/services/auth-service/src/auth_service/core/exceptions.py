@@ -68,9 +68,9 @@ class InvalidTokenError(UnauthorizedError, AuthError):
     message = "Invalid or expired token"
 
 
-def handle_auth_error(request: web.Request, error: AuthError) -> web.Response:
+def handle_auth_error(request: web.Request, error: ServiceError) -> web.Response:
     """Handle authentication errors."""
     return web.json_response(
-        {"error": error.message},
+        {"error": str(error) or type(error).__name__},
         status=error.status_code,
     )
