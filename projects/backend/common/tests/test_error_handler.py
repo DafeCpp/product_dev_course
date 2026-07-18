@@ -12,8 +12,9 @@ from backend_common.core.exceptions import (
     NotFoundError,
     UnauthorizedError,
     ValidationError,
+    ServiceError,
 )
-from backend_common.middleware.error_handler import error_handling_middleware
+from backend_common.middleware.error_handler import error_handling_middleware, register_error_mappings
 
 
 @pytest.mark.asyncio
@@ -45,3 +46,44 @@ async def test_preserves_domain_specific_status_code() -> None:
     response = await error_handling_middleware(MagicMock(spec=web.Request), handler)
 
     assert response.status == 422
+
+
+@pytest.mark.asyncio
+async def test_preserves_aiohttp_error_and_maps_registered_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = MagicMock(spec=web.Request)
+    aiohttp_handler = AsyncMock(side_effect=web.HTTPTooManyRequests())
+
+    with pytest.raises(web.HTTPTooManyRequests):
+        await error_handling_middleware(request, aiohttp_handler)
+
+    monkeypatch.setattr("backend_common.middleware.error_handler._extra_mappings", {})
+    register_error_mappings({KeyError: 418})
+    response = await error_handling_middleware(request, AsyncMock(side_effect=KeyError("missing")))
+
+    assert response.status == 418
+    assert response.text == '{"error": "\'missing\'"}'
+
+
+@pytest.mark.asyncio
+async def test_hides_unexpected_error_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("backend_common.middleware.error_handler._extra_mappings", {})
+
+    response = await error_handling_middleware(
+        MagicMock(spec=web.Request), AsyncMock(side_effect=RuntimeError("sensitive detail"))
+    )
+
+    assert response.status == 500
+    assert response.text == '{"error": "Internal server error"}'
+
+
+@pytest.mark.asyncio
+async def test_uses_exception_class_name_for_empty_server_error() -> None:
+    class EmptyServerError(ServiceError):
+        status_code = 503
+
+    response = await error_handling_middleware(
+        MagicMock(spec=web.Request), AsyncMock(side_effect=EmptyServerError())
+    )
+
+    assert response.status == 503
+    assert response.text == '{"error": "EmptyServerError"}'

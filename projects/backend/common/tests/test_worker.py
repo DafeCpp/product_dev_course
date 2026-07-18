@@ -143,9 +143,12 @@ class TestBackgroundWorkerExecution:
     async def test_successful_task_execution(self):
         """Test that tasks are executed successfully."""
         executed = []
+        second_execution = asyncio.Event()
 
         async def task_fn(now: datetime) -> str | None:
             executed.append(now)
+            if len(executed) == 2:
+                second_execution.set()
             return "completed"
 
         worker = BackgroundWorker(
@@ -155,7 +158,7 @@ class TestBackgroundWorkerExecution:
         app = web.Application()
 
         await worker.start(app)
-        await asyncio.sleep(0.12)  # Allow at least 2 executions
+        await asyncio.wait_for(second_execution.wait(), timeout=1.0)
         await worker.stop(app)
 
         assert len(executed) >= 2
@@ -346,9 +349,12 @@ class TestBackgroundWorkerInterval:
     async def test_short_interval(self):
         """Test worker with very short interval."""
         count = [0]
+        third_execution = asyncio.Event()
 
         async def task_fn(now: datetime) -> str | None:
             count[0] += 1
+            if count[0] == 3:
+                third_execution.set()
             return None
 
         worker = BackgroundWorker(
@@ -358,7 +364,7 @@ class TestBackgroundWorkerInterval:
         app = web.Application()
 
         await worker.start(app)
-        await asyncio.sleep(0.1)
+        await asyncio.wait_for(third_execution.wait(), timeout=1.0)
         await worker.stop(app)
 
         # Should have executed multiple times

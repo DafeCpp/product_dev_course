@@ -3,15 +3,54 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
 
 from backend_common.idempotency import (
     IdempotencyConflictError,
+    IdempotencyRepository,
     IdempotencyRecord,
     IdempotencyService,
 )
+
+
+@pytest.mark.asyncio
+async def test_repository_maps_rows_and_reports_write_outcomes() -> None:
+    repository = IdempotencyRepository(MagicMock(), table_name="request_idempotency")
+    now = datetime.now(tz=UTC)
+    row = {
+        "idempotency_key": "key-1",
+        "user_id": uuid.uuid4(),
+        "request_path": "/resource",
+        "request_hash": "hash",
+        "response_status": 201,
+        "response_body": '{"id":"created"}',
+        "completed": True,
+        "expires_at": now,
+        "created_at": now,
+    }
+    repository._fetchrow = AsyncMock(return_value=row)
+    record = await repository.get("key-1", "user-1")
+    assert record is not None
+    assert record.response_body == {"id": "created"}
+    assert record.user_id == str(row["user_id"])
+
+    repository._fetchrow.return_value = None
+    assert await repository.get("missing", "user-1") is None
+
+    repository._fetchrow.return_value = {"idempotency_key": "key-1"}
+    assert await repository.reserve("key-1", "user-1", "/resource", "hash", now, uuid.uuid4()) is True
+    repository._fetchrow.return_value = None
+    assert await repository.reserve("key-1", "user-1", "/resource", "hash", now, uuid.uuid4()) is False
+
+    repository._execute = AsyncMock(side_effect=["UPDATE 1", "UPDATE 0", "DELETE 3", "DELETE 2"])
+    token = uuid.uuid4()
+    assert await repository.complete("key-1", "user-1", token, 201, {"id": "created"}) is True
+    assert await repository.complete("key-1", "user-1", token, 201, {"id": "created"}) is False
+    await repository.release("key-1", "user-1", token)
+    assert await repository.delete_expired() == 2
 
 
 @dataclass
