@@ -146,6 +146,9 @@ class AutoDriveCoordinator {
 
   TelemetryEventLog* event_log_{nullptr};
   bool last_rc_active_{false};
+  // Время последнего тика: старт/остановка приходят из WS-потока, где времени
+  // нет, а событиям нужна метка в одной шкале с кадрами телеметрии (LOS-226).
+  uint32_t last_ts_ms_{0};
 };
 
 }  // namespace rc_vehicle

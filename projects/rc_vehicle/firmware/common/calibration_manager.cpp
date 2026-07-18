@@ -49,8 +49,12 @@ bool CalibrationManager::StartAutoForwardCalibration(float target_accel_g) {
   platform_.Log(LogLevel::Info, msg);
   if (event_log_) {
     // param: 2 = auto_forward (stage 2)
-    event_log_->Push({0, TelemetryEventType::ImuCalibStart, 2, {},
-                      cfg.target_value, 0.0f});
+    event_log_->Push({platform_.GetTimeMs(),
+                      TelemetryEventType::ImuCalibStart,
+                      2,
+                      {},
+                      cfg.target_value,
+                      0.0f});
   }
   return true;
 }
@@ -94,7 +98,25 @@ void CalibrationManager::StopAutoForward() {
     // доберёт остаток уже без управляемого разгона (под RC или на стоящей
     // машине) и запишет в NVS мусорную ось «вперёд» — ровно тот сценарий,
     // который и привёл к LOS-214.
+    //
+    // Прерванный сбор логируем: до LOS-226 обрыв auto-forward не оставлял в
+    // логе никакого следа. Условие — сбор реально шёл: ProcessCompletion()
+    // зовёт нас и при штатном завершении (Done/Failed), и тогда событие об
+    // обрыве было бы ложным.
+    const bool was_collecting =
+        imu_calib_.GetStatus() == CalibStatus::Collecting;
     imu_calib_.CancelCalibration();
+    if (was_collecting && event_log_) {
+      // param: 2 = stage 2 (auto_forward), как у ImuCalibStart
+      event_log_->Push(
+          {platform_.GetTimeMs(), TelemetryEventType::ImuCalibFailed, 2});
+      // Об этом обрыве уже сообщили. ProcessCompletion() выполняется раньше
+      // UpdateAutoDrive() в тике, поэтому переход Collecting → Failed он
+      // увидит только на следующем и записал бы второе ImuCalibFailed — да
+      // ещё с param = 0, потому что после отмены GetCalibStage() не помнит
+      // стадию. Синхронизируем, чтобы дубля не было.
+      prev_calib_status_ = imu_calib_.GetStatus();
+    }
     platform_.Log(LogLevel::Info, "Auto-forward calibration stopped");
   }
 }
