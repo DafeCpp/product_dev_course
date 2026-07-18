@@ -135,8 +135,8 @@ jobs:
             context: ./projects/frontend/apps/auth-proxy
             dockerfile: Dockerfile
           - service: experiment-portal
-            context: ./projects/frontend/apps/experiment-portal
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: projects/frontend/apps/experiment-portal/Dockerfile
           - service: sensor-simulator
             context: .
             dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
