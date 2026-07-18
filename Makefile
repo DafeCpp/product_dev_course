@@ -166,7 +166,7 @@ test-backend: backend-install
 	trap 'rm -f "$$out_file"' EXIT; \
 	echo "🧪 Running tests for backend-common..."; \
 	set -o pipefail; \
-	(cd $(BACKEND_COMMON_DIR) && poetry run pytest) 2>&1 | tee -a "$$out_file" || failed=1; \
+	(cd $(BACKEND_COMMON_DIR) && TEST_POSTGRESQL_DSN="$$PG_TEST_DSN" poetry run pytest) 2>&1 | tee -a "$$out_file" || failed=1; \
 	for service in $(BACKEND_SERVICES); do \
 		echo "🧪 Running tests for $$(basename $$service)..."; \
 		set -o pipefail; \
