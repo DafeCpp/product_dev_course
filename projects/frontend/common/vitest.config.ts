@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const enforceCoverageRatchet = process.env.COVERAGE_ENFORCE_RATCHET === 'true'
+
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -12,6 +14,12 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov', 'json-summary', 'cobertura'],
       reportsDirectory: './coverage',
+      thresholds: enforceCoverageRatchet
+        ? {
+            lines: 94.65,
+            branches: 82.6,
+          }
+        : undefined,
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
         'src/**/*.test.{ts,tsx}',
