@@ -104,7 +104,11 @@ class TestAuditLogQuery:
         )
         assert resp.status == 200
         data = await resp.json()
-        assert isinstance(data, list)
+        assert set(data) == {"entries", "total", "limit", "offset"}
+        assert isinstance(data["entries"], list)
+        assert data["total"] >= len(data["entries"])
+        assert data["limit"] == 50
+        assert data["offset"] == 0
 
     @pytest.mark.asyncio
     async def test_admin_with_audit_read_can_query(self, service_client, admin_user_token):
@@ -139,9 +143,12 @@ class TestAuditLogQuery:
         )
         assert resp.status == 200
         data = await resp.json()
-        assert len(data) == 1
-        assert data[0]["action"] == unique_action
-        assert data[0]["actor_id"] == actor_id
+        assert data["total"] == 1
+        assert data["limit"] == 50
+        assert data["offset"] == 0
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["action"] == unique_action
+        assert data["entries"][0]["actor_id"] == actor_id
 
     @pytest.mark.asyncio
     async def test_filter_by_actor_id(self, service_client, superadmin_token):
@@ -165,7 +172,8 @@ class TestAuditLogQuery:
         )
         assert resp.status == 200
         data = await resp.json()
-        assert all(e["actor_id"] == actor_id for e in data)
+        assert data["total"] == 1
+        assert all(entry["actor_id"] == actor_id for entry in data["entries"])
 
     @pytest.mark.asyncio
     async def test_pagination(self, service_client, superadmin_token):
@@ -185,14 +193,20 @@ class TestAuditLogQuery:
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         all_data = await resp_all.json()
-        assert len(all_data) == 5
+        assert all_data["total"] == 5
+        assert all_data["limit"] == 10
+        assert all_data["offset"] == 0
+        assert len(all_data["entries"]) == 5
 
         resp_page = await service_client.get(
             f"/api/v1/audit-log?action={unique_action}&limit=2&offset=0",
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         page_data = await resp_page.json()
-        assert len(page_data) == 2
+        assert page_data["total"] == 5
+        assert page_data["limit"] == 2
+        assert page_data["offset"] == 0
+        assert len(page_data["entries"]) == 2
 
     @pytest.mark.asyncio
     async def test_response_structure(self, service_client, superadmin_token):
@@ -217,7 +231,8 @@ class TestAuditLogQuery:
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         assert resp.status == 200
-        entries = await resp.json()
+        data = await resp.json()
+        entries = data["entries"]
         assert len(entries) == 1
         entry = entries[0]
 
@@ -259,7 +274,7 @@ class TestAuditLogQuery:
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         assert resp.status == 200
-        entries = await resp.json()
+        entries = (await resp.json())["entries"]
         assert len(entries) >= 1
         assert entries[0]["action"] == "auth.login"
         assert entries[0]["actor_id"] == user_id

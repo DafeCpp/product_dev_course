@@ -192,9 +192,9 @@ function AuditLog() {
                     }}
                   >
                     <td className="audit-log-table__time">
-                      {format(new Date(entry.created_at), 'dd MMM yyyy HH:mm:ss')}
+                      {format(new Date(entry.timestamp), 'dd MMM yyyy HH:mm:ss')}
                     </td>
-                    <td>{entry.actor_username}</td>
+                    <td>{entry.actor_id}</td>
                     <td>
                       <span className="audit-log-table__action">{entry.action}</span>
                     </td>
@@ -235,14 +235,13 @@ function AuditLog() {
             <div className="audit-log-detail__row">
               <span className="audit-log-detail__label">Время</span>
               <span className="audit-log-detail__value">
-                {format(new Date(selectedEntry.created_at), 'dd MMM yyyy HH:mm:ss')}
+                {format(new Date(selectedEntry.timestamp), 'dd MMM yyyy HH:mm:ss')}
               </span>
             </div>
             <div className="audit-log-detail__row">
               <span className="audit-log-detail__label">Пользователь</span>
               <span className="audit-log-detail__value">
-                {selectedEntry.actor_username}{' '}
-                <span className="audit-log-detail__sub">({selectedEntry.actor_id})</span>
+                {selectedEntry.actor_id}
               </span>
             </div>
             <div className="audit-log-detail__row">
