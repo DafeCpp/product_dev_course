@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.utils import ADMIN_HEADERS, make_headers
+from tests.config_service_test_utils import ADMIN_HEADERS, make_headers
 
 # Role → permission bundles (mirror of migration 003_config_rbac.sql).
 VIEWER = make_headers(user_id="viewer", system_permissions=["configs.view"])

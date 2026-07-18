@@ -79,6 +79,7 @@ done
 # --- 2. Копируем файлы на VM ---
 echo "==> Syncing files to VM..."
 scp docker-compose.prod.yml "${VM_USER}@${VM_HOST}:${APP_DIR}/"
+scp scripts/validate-production-env.sh "${VM_USER}@${VM_HOST}:${APP_DIR}/validate-production-env.sh"
 scp -r infrastructure/logging/ "${VM_USER}@${VM_HOST}:${APP_DIR}/infrastructure/"
 
 # --- 3. Деплоим на VM ---
@@ -90,6 +91,11 @@ cd ${APP_DIR}
 # Обновляем тег
 sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 sed -i "s|^CR_REGISTRY=.*|CR_REGISTRY=${CR_REGISTRY}|" .env
+
+# Проверяем runtime env и compose до pull/up.
+chmod 700 validate-production-env.sh
+./validate-production-env.sh .env docker-compose.prod.yml
+docker compose --env-file .env -f docker-compose.prod.yml config --quiet
 
 # Авторизуемся в CR
 yc container registry configure-docker

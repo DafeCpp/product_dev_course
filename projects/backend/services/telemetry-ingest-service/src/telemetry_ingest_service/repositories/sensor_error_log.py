@@ -7,6 +7,8 @@ from datetime import datetime
 
 import asyncpg
 
+from backend_common.repositories.base import BaseRepository
+
 
 @dataclass
 class SensorErrorEntry:
@@ -20,9 +22,9 @@ class SensorErrorEntry:
     meta: dict
 
 
-class SensorErrorLogRepository:
+class SensorErrorLogRepository(BaseRepository):
     def __init__(self, pool: asyncpg.Pool) -> None:
-        self._pool = pool
+        super().__init__(pool)
 
     async def insert(
         self,

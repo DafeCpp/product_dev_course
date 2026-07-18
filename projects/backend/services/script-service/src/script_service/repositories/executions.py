@@ -9,7 +9,7 @@ from uuid import UUID
 import asyncpg  # type: ignore[import-untyped]
 
 from script_service.domain.models import ExecutionStatus, ScriptExecution
-from script_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class ExecutionRepository(BaseRepository):

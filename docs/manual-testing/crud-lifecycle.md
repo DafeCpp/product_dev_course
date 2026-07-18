@@ -21,6 +21,8 @@
 
 **Факт (2026-06-10):** ✅ Проект `QA Idempotency Run` (создан через API) авто-выбран в селекторе; созданные через API эксперименты (`idem-exp-1`, `idem-race`) видны в UI с корректными статусами. Консистентность API↔UI подтверждена.
 
+**Факт (2026-07-16):** ✅ Полный цикл через UI: «Создать проект» `LOS-182 QA Run` → `POST /api/v1/projects` `201`, проект в списке и авто-выбран. Шаг 3 подтверждён на всех разделах (sensors/experiments/webhooks/configs) — `project_id` корректно прокидывается, `400 project_id is required` не наблюдался.
+
 ---
 
 ### TC-CRUD-02 — Эксперимент: lifecycle статусов
@@ -57,6 +59,8 @@
 
 **Факт (2026-06-10):** ✅ Прогнано через Playwright. Создание run → редирект на `/runs/{id}` (`draft`); «Запустить» → `running`; «Завершить» → `succeeded`. В БД `runs.status='succeeded'`. Консистентно.
 
+**Факт (2026-07-16):** ✅ Повторно подтверждено сквозным прогоном (project→experiment→run→sensor→telemetry, см. [`test-reports.md`](test-reports.md)): создание run `Run 1` → `draft`; «Запустить» → `PATCH .../runs/{id}` `200`, статус `running`.
+
 ---
 
 ### TC-CRUD-05 — Capture session: start/stop
@@ -70,6 +74,8 @@
 
 **Факт (2026-06-10):** ✅ Прогнано через Playwright. «Старт отсчёта» (заметка `manual QA capture`) → сессия `running`; «Стоп»+confirm → `succeeded`, длительность 13с. В БД `capture_sessions.status='succeeded'`, notes/длительность совпадают.
 > ⚠️ UX-наблюдение: старт capture session использует нативный `window.prompt` (заметка), стоп — `window.confirm`. Браузерные нативные диалоги ломаются при подавлении диалогов и плохо стилизуются — кандидат на замену на модалку (см. [`test-reports.md`](test-reports.md)).
+
+**Факт (2026-07-16):** ✅ Повторно подтверждено через Playwright MCP `browser_handle_dialog` (прогон native prompt/confirm без подавления): старт → сессия `running`; телеметрия отправлена внутрь сессии (3 reading'а, `202`); стоп+confirm → `succeeded`. Heartbeat датчика обновился («Только что»).
 
 ---
 
@@ -89,4 +95,4 @@
 - Конкурентные переходы статуса (race) — кандидат на интеграционный тест, не на ручной прогон.
 - Пагинация и фильтры в больших списках.
 
-> Статус: сценарии **описаны, ещё не прогонялись** вручную. Результаты заносить в [`test-reports.md`](test-reports.md).
+> Статус: TC-CRUD-01, 04, 05 прогнаны (см. Факт выше). TC-CRUD-02/03/06 — **описаны, ещё не прогонялись**. Результаты — в [`test-reports.md`](test-reports.md).

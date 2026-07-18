@@ -11,10 +11,10 @@ from backend_common.db.pool import init_pool_service
 from backend_common.logging_config import configure_logging
 from backend_common.metrics import metrics_handler, metrics_middleware
 from backend_common.middleware.error_handler import error_handling_middleware
+from backend_common.otel import setup_otel, shutdown_otel
 
 from config_service.api.router import setup_routes
 from config_service.api.routes.health import health_routes
-from config_service.otel import setup_otel, shutdown_otel
 from config_service.settings import settings
 from config_service.workers import start_background_worker, stop_background_worker
 
@@ -39,7 +39,11 @@ def create_app() -> web.Application:
     setup_routes(app)
     app.router.add_get("/metrics", metrics_handler)
 
-    setup_otel(app)
+    setup_otel(
+        app,
+        service_name=settings.app_name,
+        exporter_endpoint=settings.otel_exporter_endpoint,
+    )
 
     app.on_startup.append(init_pool)
     app.on_startup.append(start_background_worker)

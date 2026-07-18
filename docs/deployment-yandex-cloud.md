@@ -49,13 +49,14 @@
 
 | Сервис | Для чего | Примерная стоимость |
 |--------|----------|---------------------|
-| **Compute Cloud** | VM для Docker Compose (2 vCPU, 4 GB) | ~2500 руб/мес |
+| **Compute Cloud** | VM для Docker Compose (2 vCPU, 6 GB) | зависит от актуального тарифа |
 | **Managed PostgreSQL** | БД с TimescaleDB (s2.micro, 20 GB SSD) | ~4000 руб/мес |
 | **Container Registry** | Хранение Docker-образов | ~100 руб/мес |
 | **VPC + Static IP** | Сеть и статический адрес | ~300 руб/мес |
-| **Итого** | | **~7000 руб/мес** |
+| **Итого** | | зависит от актуальных тарифов |
 
-> Для экономии можно использовать прерываемую VM (`vm_preemptible = true`) — в 3 раза дешевле, но может быть остановлена.
+> Прерываемую VM (`vm_preemptible = true`) можно использовать только в dev/staging.
+> Production VM должна оставаться непрерываемой (`vm_preemptible = false`).
 
 ## Пререквизиты
 
@@ -63,8 +64,9 @@
 2. **Права в каталоге:** учётная запись, от которой выполняется `terraform apply` (OAuth через `yc init` или сервисный аккаунт), должна иметь в каталоге роль **Администратор** (или как минимум роли для создания ресурсов + **Управление доступом к ресурсам** / `resource-manager.admin`). Иначе создание IAM-привязок для VM и CI завершится ошибкой *Permission denied*.
 3. **Yandex Cloud CLI** (`yc`): [инструкция](https://cloud.yandex.ru/docs/cli/quickstart)
 4. **Terraform** >= 1.5: [установка](https://developer.hashicorp.com/terraform/install)
-5. **Docker** для локальной сборки образов (опционально)
-6. **SSH-ключ** для доступа к VM
+5. **jq** для проверки сохранённого Terraform plan
+6. **Docker** для локальной сборки образов (опционально)
+7. **SSH-ключ** для доступа к VM
 
 ## Установка пререквизитов (Linux)
 
@@ -132,6 +134,9 @@ provider_installation {
 Так Terraform будет ставить провайдер Yandex с [официального зеркала Yandex Cloud](https://yandex.cloud/en/docs/terraform/quickstart) без обращения к registry.terraform.io.
 
 ```bash
+(
+set -euo pipefail
+
 cd infrastructure/yandex-cloud
 
 # Копируем и заполняем переменные
@@ -144,19 +149,27 @@ terraform init
 # Если используется .terraform.lock.hcl и провайдер не подтянулся, привяжите lock к зеркалу:
 # terraform providers lock -net-mirror=https://terraform-mirror.yandexcloud.net -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_arm64 yandex-cloud/yandex
 
-# Предпросмотр
-terraform plan
+# Saved plan содержит sensitive values: закрываем права и храним в ignored .terraform/.
+umask 077
+TFPLAN=.terraform/tfplan
+trap 'rm -f "$TFPLAN"' EXIT
+terraform plan -out="$TFPLAN"
+terraform show "$TFPLAN"
 
 # Создание ресурсов (~10-15 минут)
-terraform apply
+terraform apply "$TFPLAN"
+rm -f "$TFPLAN"
+trap - EXIT
+)
 ```
 
 Terraform создаст:
 - VPC + подсеть + security groups
-- Managed PostgreSQL кластер с двумя БД
+- Managed PostgreSQL кластер с тремя БД
 - Container Registry
 - Compute VM с Docker
 - Service accounts для VM и CI/CD
+- Приватный Object Storage bucket и отдельный bucket-scoped service account для артефактов
 
 ### 3. Сохранение outputs
 
@@ -170,8 +183,24 @@ terraform output container_registry_url
 # PostgreSQL хост
 terraform output pg_cluster_host
 
+# Готовые sensitive DSN для production .env.
+# Команда -raw выводит пароль в терминал: не сохраняйте вывод в shell history или git.
+terraform output -raw auth_database_url
+terraform output -raw experiment_database_url
+terraform output -raw config_database_url
+terraform output -raw script_database_url
+
 # CI ключ (для GitHub Secrets)
-terraform output -json ci_sa_key_private
+terraform output -raw ci_sa_key_json
+
+# Object Storage: несекретные значения
+terraform output -raw artifacts_s3_endpoint_url
+terraform output -raw artifacts_bucket_name
+
+# Object Storage: static key. -raw выводит секреты в терминал;
+# переносите их сразу в production .env, не записывая в файлы внутри репозитория.
+terraform output -raw artifacts_s3_access_key
+terraform output -raw artifacts_s3_secret_key
 ```
 
 ### 4. Настройка VM
@@ -189,16 +218,32 @@ ssh deploy@<VM_IP> 'bash ~/setup-vm.sh'
 ```bash
 # Скопировать конфигурацию
 scp docker-compose.prod.yml deploy@<VM_IP>:/opt/experiment-tracking/
+scp scripts/validate-production-env.sh deploy@<VM_IP>:/opt/experiment-tracking/
 scp env.production.example deploy@<VM_IP>:/opt/experiment-tracking/.env
 scp -r infrastructure/logging/ deploy@<VM_IP>:/opt/experiment-tracking/infrastructure/
 
 # На VM — отредактировать .env
 ssh deploy@<VM_IP>
 nano /opt/experiment-tracking/.env
-# Заполнить: DATABASE_URL, JWT_SECRET, CR_REGISTRY, пароли
+# Заменить все PASSWORD / CHANGE_ME / GENERATE_* / YOUR_* и доменные заглушки.
+# Оставить внутренние runtime URL на Compose DNS:
+# REDIS_URL=redis://redis:6379/0
+# TELEMETRY_BROKER_URL=redis://redis:6379/0
+# CONFIG_CLIENT_URL=http://config-service:8005
+# script-service доступен только через auth-proxy: http://script-service:8004
+# S3_ENDPOINT_URL=https://storage.yandexcloud.net
+# S3_PUBLIC_ENDPOINT_URL=https://storage.yandexcloud.net
+# S3_BUCKET=<terraform output -raw artifacts_bucket_name>
+# S3_ACCESS_KEY и S3_SECRET_KEY — sensitive Terraform outputs
+# S3_PRESIGN_EXPIRE_SECONDS=3600
 
-# Запустить
+# Pre-flight выполняется до любых действий с работающим стеком.
 cd /opt/experiment-tracking
+chmod 700 validate-production-env.sh
+./validate-production-env.sh .env docker-compose.prod.yml
+docker compose --env-file .env -f docker-compose.prod.yml config --quiet
+
+# Запустить только после успешного pre-flight
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
@@ -213,6 +258,12 @@ docker compose -f docker-compose.prod.yml ps
 curl http://<VM_IP>/           # Portal
 curl http://<VM_IP>:8080/health  # Auth Proxy
 curl http://<VM_IP>:8003/health  # Telemetry Ingest
+curl http://127.0.0.1:8004/health # Script Service (internal)
+
+# Redis доступен только внутри app network и должен отвечать PONG.
+docker compose -f docker-compose.prod.yml exec -T redis redis-cli ping
+# В колонке PORTS у redis не должно быть опубликованного 6379.
+docker compose -f docker-compose.prod.yml ps redis
 ```
 
 ## CI/CD (GitHub Actions)
@@ -313,6 +364,7 @@ VM_HOST=84.201.xxx.xxx REGISTRY_ID=crp... ./scripts/deploy.sh [v1.0.0]
 |---|---|---|
 | `auth-migrate` | `auth_db` | `auth-service` |
 | `config-migrate` | `config_db` | `config-service` |
+| `script-migrate` | `script_db` | `script-service` |
 | `experiment-migrate` | `experiment_db` | `experiment-service` |
 | `telemetry-ingest-migrate` | `experiment_db` | `telemetry-ingest-service` |
 
@@ -333,6 +385,7 @@ cd /opt/experiment-tracking
 
 docker compose -f docker-compose.prod.yml logs experiment-migrate
 docker compose -f docker-compose.prod.yml logs telemetry-ingest-migrate
+docker compose -f docker-compose.prod.yml logs script-migrate
 ```
 
 Ручной прогон (например, если джоб упал и был пропущен):
@@ -340,31 +393,96 @@ docker compose -f docker-compose.prod.yml logs telemetry-ingest-migrate
 ```bash
 docker compose -f docker-compose.prod.yml run --rm experiment-migrate
 docker compose -f docker-compose.prod.yml run --rm telemetry-ingest-migrate
+docker compose -f docker-compose.prod.yml run --rm script-migrate
 ```
 
 Базы и пользователи (`experiment_db` / `experiment_user` и др.) создаются Terraform —
 см. `infrastructure/yandex-cloud/database.tf`. Миграции их не создают.
 
-Создание первого админа (требуется `ADMIN_PASSWORD`) — отдельный шаг, миграциями не
-покрывается:
+Создание первого администратора — отдельный одноразовый шаг после успешного
+deploy; миграции его не выполняют. Не сохраняйте bootstrap credentials в
+Terraform, production `.env` или GitHub Actions secrets. Используйте canonical
+процедуру с передачей пароля через stdin из
+[инструкции по инициализации администратора](admin-initialization.md#production-yandex-cloud).
+
+## Чеклист подключения нового сервиса к production
+
+Новый backend-сервис нельзя считать готовым к production только после добавления в
+`docker-compose.prod.yml`. Перед merge и первым релизом пройдите весь checklist:
+
+- **Test/build:** сервис присутствует в CI test matrix и release build/push matrix;
+  production Docker image действительно содержит runtime-код и миграции.
+- **Compose runtime:** runtime-сервис добавлен в `docker-compose.prod.yml`, имеет
+  healthcheck, restart/resource policy, внутреннюю сеть и только необходимые внешние порты.
+- **Миграции:** для сервиса с `migrations/` существует one-shot `*-migrate`;
+  runtime зависит от него через `service_completed_successfully`.
+- **Terraform DB:** добавлены DB/user, password variable с `sensitive = true`,
+  корректный owner/extensions и usable sensitive DSN output. Перед apply сохраните и
+  прочитайте plan: production VM не должна удаляться или заменяться.
+- **Применение инфраструктуры:** Terraform-ресурсы реально применены, а не только
+  описаны в коде; повторный `terraform plan` не показывает неожиданный drift.
+- **Runtime env:** каждый обязательный ключ используется в compose через
+  `${VAR:?message}`, добавлен в `env.production.example` и вручную доставлен в
+  `/opt/experiment-tracking/.env` без вывода секрета в логи.
+- **Pre-flight:** `validate-production-env.sh` и
+  `docker compose --env-file .env -f docker-compose.prod.yml config --quiet` проходят
+  на VM до первого `compose down`, `pull` или `up`.
+- **Маршрутизация:** proxy target, auth/RBAC, CORS и health-based dependencies обновлены.
+- **Диагностика:** сервис включён в deploy status/failure logs и централизованный сбор
+  логов; сообщение об ошибке не раскрывает значения env.
+- **Smoke:** migrate-job завершился, сервис healthy, запрос через публичный маршрут
+  проходит; негативный pre-flight с удалённым обязательным ключом падает без остановки
+  уже работающего стека.
+- **Документация:** runbook описывает получение инфраструктурных outputs, доставку env,
+  ручной deploy, rollback и восстановление после ошибки.
+
+Полный автоматический drift-check между manifest, dev/prod compose, build matrix,
+миграциями и Terraform остаётся предметом LOS-112.
+
+## Object Storage: smoke-тест и ротация ключа
+
+MinIO используется только в локальном `docker-compose.yml`. Production
+`experiment-service` обращается к приватному Yandex Object Storage bucket через
+`https://storage.yandexcloud.net`; браузер получает короткоживущие presigned URL.
+
+После `terraform apply` и deploy проверьте полный путь через UI или API:
+
+1. запросить presigned upload URL и выполнить `PUT` тестового файла с тем же
+   `Content-Type`, который был указан при создании URL;
+2. запросить presigned download URL и сверить содержимое файла;
+3. удалить artifact через API и убедиться, что последующий download возвращает 404;
+4. проверить логи `experiment-service`, не выводя значения ключей.
+
+Bucket приватный, `force_destroy = false`, а runtime service account получает
+`storage.editor` через bucket IAM binding — доступа к другим bucket каталога у него нет.
+CORS origins задаются переменной `artifacts_cors_allowed_origins`; wildcard origin в
+production не используйте.
+
+### Ротация static access key
+
+Секрет static key доступен Terraform только при создании. Для плановой ротации:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T auth-service \
-  python -m bin.seed \
-    --database-url "$AUTH_DATABASE_URL" \
-    --username admin \
-    --email admin@example.com \
-    --password "$ADMIN_PASSWORD"
+cd infrastructure/yandex-cloud
+umask 077
+terraform plan -replace=yandex_iam_service_account_static_access_key.artifacts_sa_key -out=.terraform/rotate-artifacts-key.tfplan
+terraform apply .terraform/rotate-artifacts-key.tfplan
+terraform output -raw artifacts_s3_access_key
+terraform output -raw artifacts_s3_secret_key
+rm -f .terraform/rotate-artifacts-key.tfplan
 ```
 
-### Инициализация админа при первом деплое
+Сразу замените оба значения в `/opt/experiment-tracking/.env`, выполните pre-flight и
+пересоздайте только `experiment-service`:
 
-При развёртывании в production необходимо:
-1. Установить переменную окружения `ADMIN_PASSWORD` перед запуском контейнеров (в `.env` или Terraform)
-2. Запустить `docker compose exec -T auth-service python -m bin.seed` (или просто запустить сервисы, если init-скрипты настроены)
-3. Первый админ будет создан с логином из `ADMIN_USERNAME` (по умолчанию: `admin`) и паролем из `ADMIN_PASSWORD`
+```bash
+./validate-production-env.sh .env docker-compose.prod.yml
+docker compose --env-file .env -f docker-compose.prod.yml up -d --no-deps --force-recreate experiment-service
+docker compose --env-file .env -f docker-compose.prod.yml ps experiment-service
+```
 
-**Совет:** используйте сильные пароли для production. Админ может позже создать других пользователей через API или CSV-импорт.
+Старый ключ удаляется самим Terraform replacement. Не помещайте ключи в shell scripts,
+GitHub Actions logs, task comments или файлы репозитория.
 
 ## Мониторинг
 
@@ -420,10 +538,58 @@ VM_HOST=<ip> REGISTRY_ID=<id> ./scripts/deploy.sh v1.0.0
 ### Обновление инфраструктуры
 
 ```bash
+(
+set -euo pipefail
+
 cd infrastructure/yandex-cloud
-terraform plan    # проверить изменения
-terraform apply   # применить
+terraform fmt -check
+terraform validate
+
+# Saved plan содержит sensitive values: закрываем права и храним в ignored .terraform/.
+umask 077
+TFPLAN=.terraform/tfplan
+trap 'rm -f "$TFPLAN"' EXIT
+terraform plan -out="$TFPLAN"
+terraform show "$TFPLAN"
+
+# Проверить, что план не удаляет и не заменяет ресурсы.
+terraform show -json "$TFPLAN" | jq -e \
+  '[.resource_changes[] | select(.change.actions | index("delete"))] | length == 0'
+
+# Production VM должна оставаться без изменений.
+terraform show -json "$TFPLAN" | jq -e \
+  '[.resource_changes[] | select(.address == "yandex_compute_instance.app") | .change.actions] == [["no-op"]]'
+
+# Применять только сохранённый и проверенный план.
+terraform apply "$TFPLAN"
+rm -f "$TFPLAN"
+trap - EXIT
+)
 ```
+
+Если любая из проверок завершилась ошибкой, `terraform apply` выполнять нельзя.
+Добавление новых ресурсов допустимо, но действия `delete` и `replace` должны быть
+разобраны и согласованы отдельно. Не используйте `-target`, удаление ресурса из
+state или `-replace`, чтобы обойти защиту production VM.
+
+Изменение актуального образа семейства COI игнорируется для уже созданной VM:
+новый `image_id` не должен превращать обычное обновление инфраструктуры в
+пересоздание машины.
+
+### Контролируемая замена production VM
+
+`yandex_compute_instance.app` защищена через `prevent_destroy`. Если VM
+действительно требуется заменить:
+
+1. Создайте отдельную задачу и PR с причиной замены и планом миграции.
+2. Сохраните `.env`, сертификаты и данные persistent Docker volumes в защищённое
+   хранилище и проверьте восстановление.
+3. Запланируйте maintenance window и способ отката на старую VM.
+4. В отдельном PR временно измените lifecycle-защиту и приложите проверенный
+   Terraform plan, в котором replacement является единственным ожидаемым
+   destructive action.
+5. После миграции верните `prevent_destroy = true` и убедитесь, что новый plan
+   не содержит изменений.
 
 ## Откат
 
@@ -439,12 +605,27 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## Удаление инфраструктуры
 
-```bash
-cd infrastructure/yandex-cloud
-terraform destroy
-```
+Обычный `terraform destroy` и `make infra-destroy` намеренно не могут удалить
+production VM: ресурс защищён через `prevent_destroy`. Полный teardown выполняйте
+только как отдельную контролируемую операцию:
 
-> ВНИМАНИЕ: удалит все ресурсы, включая базу данных. Сделайте бэкап перед удалением.
+1. Создайте задачу и reviewed PR, обосновывающие полное удаление окружения.
+2. Сделайте и проверьте бэкапы Managed PostgreSQL, `.env`, сертификатов и
+   persistent Docker volumes.
+3. В этом PR временно удалите `prevent_destroy` из
+   `yandex_compute_instance.app`, выполните `terraform plan -destroy` и
+   добавьте текстовое резюме результата. Saved plan не публикуйте: он может
+   содержать секреты. Не удаляйте VM из Terraform state для обхода защиты.
+4. После merge выполните teardown с явным подтверждением:
+
+   ```bash
+   make infra-destroy CONFIRM_PRODUCTION_DESTROY=destroy-production
+   ```
+
+5. Отдельным PR верните `prevent_destroy = true`, чтобы следующее окружение снова
+   создавалось с защитой.
+
+> ВНИМАНИЕ: teardown удалит все управляемые ресурсы, включая базу данных.
 
 ## Бэкапы
 
@@ -469,8 +650,10 @@ yc managed-postgresql cluster restore \
 | **terraform apply: "Failed to Update IAM Policy" / "Permission denied"** | Либо выдать учётной записи Terraform роль **Администратор** в каталоге (Права доступа). Либо отключить создание IAM-привязок: в `terraform.tfvars` задать `manage_folder_iam = false`, затем вручную в консоли выдать SA `container-registry.images.puller` (для VM) и `container-registry.images.pusher`/`puller` (для CI). |
 | **user name 'postgres' is not allowed** | В Yandex Managed PostgreSQL имя `postgres` зарезервировано. Используется переменная `pg_admin_username` (по умолчанию `cluster_admin`). Если в state уже был пользователь с именем postgres: `terraform state rm yandex_mdb_postgresql_user.admin`, затем снова `terraform apply`. |
 | Контейнер не стартует | `docker compose logs <service>` |
+| **redis unhealthy / consumers не стартуют** | Проверить `docker compose -f docker-compose.prod.yml logs redis` и `docker compose -f docker-compose.prod.yml exec -T redis redis-cli ping`. Убедиться, что `REDIS_URL` и `TELEMETRY_BROKER_URL` равны `redis://redis:6379/0`; Redis не должен публиковать порт на VM. |
 | **dependency failed: container auth-service is unhealthy** | На VM проверить: 1) `AUTH_DATABASE_URL` в `.env` и доступность БД (Security Group, сертификат `./certs/yandex-ca.pem`); 2) `JWT_SECRET` задан; 3) `docker compose -f docker-compose.prod.yml logs auth-service` — по логам увидеть ошибку (подключение к БД, SSL и т.д.). При падении деплоя в CI шаг «Show auth-service logs on deploy failure» выведет логи. |
-| **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db`, `experiment_db` и `config_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db / config_db). |
+| **permission denied to create extension "pgcrypto"** | Расширение pgcrypto должно создаваться при создании БД (Terraform или суперпользователем). В `database.tf` для `auth_db`, `experiment_db`, `config_db` и `script_db` добавлены блоки `extension { name = "pgcrypto" }`. Для **уже существующего** кластера: выполнить `terraform apply` — Terraform добавит расширение. Либо один раз от имени cluster_admin: `psql ... -d auth_db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"` (и то же для experiment_db / config_db / script_db). |
+| **script-service не стартует / proxy отдаёт 502** | Проверить `SCRIPT_DATABASE_URL` в `.env`, затем `docker compose -f docker-compose.prod.yml logs script-migrate script-service`. Убедиться, что `script-migrate` завершился успешно и порт `8004` не опубликован наружу. |
 | **config-роли не появились после релиза (RBAC config-service не работает)** | Миграция `auth-service/003_config_rbac.sql` применяется one-shot сервисом `auth-migrate` на деплое. Убедитесь, что `auth-migrate` отработал успешно (`docker compose -f docker-compose.prod.yml logs auth-migrate`). Для config-service миграции применяет `config-migrate`; база `config_db` и пользователь `config_user` должны быть созданы Terraform (`database.tf`). |
 | **experiment-service: functionality not supported under the current "apache" license** (TimescaleDB) | В Yandex MDB используется TimescaleDB с лицензией Apache 2.0: компрессия и continuous aggregates недоступны. Миграции 001/002 принудительно пропускают эти шаги (DO ... EXCEPTION). Сервис должен стартовать; экспорт телеметрии с агрегацией 1m на Yandex недоступен (нет материализованного представления `telemetry_1m`). |
 | Нет подключения к БД | Проверить Security Group, `sslmode=verify-full`, сертификат |

@@ -7,9 +7,11 @@ import structlog
 from aiohttp import web
 
 from backend_common.aiohttp_app import read_json
+from backend_common.core.exceptions import ServiceError as AuthError
 
-from auth_service.api.utils import extract_bearer_token, extract_client_ip, extract_user_agent
-from auth_service.core.exceptions import AuthError, handle_auth_error
+from auth_service.api.utils import extract_bearer_token, extract_user_agent
+from backend_common.api import extract_client_ip
+from auth_service.core.exceptions import handle_auth_error
 from auth_service.domain.dto import (
     AdminUserResetRequest,
     AdminUserUpdateRequest,

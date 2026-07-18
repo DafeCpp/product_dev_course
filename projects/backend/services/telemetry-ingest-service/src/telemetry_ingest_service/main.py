@@ -16,6 +16,7 @@ from backend_common.metrics import metrics_handler, metrics_middleware
 from backend_common.middleware.error_handler import error_handling_middleware
 from backend_common.db.pool import close_pool_service as close_pool, init_pool_service
 from backend_common.logging_config import configure_logging
+from backend_common.otel import setup_otel, shutdown_otel
 
 from telemetry_ingest_service.api.routes.health import health_routes
 from telemetry_ingest_service.api.routes.telemetry import routes as telemetry_routes
@@ -61,6 +62,12 @@ def create_app() -> web.Application:
     app.add_routes(ws_routes)
     app.router.add_get("/metrics", metrics_handler)
 
+    setup_otel(
+        app,
+        service_name=settings.app_name,
+        exporter_endpoint=settings.otel_exporter_endpoint,
+    )
+
     app.on_startup.append(init_pool)
     app.on_startup.append(_start_spool_worker)
     if settings.config_client_enabled:
@@ -71,6 +78,7 @@ def create_app() -> web.Application:
         app.on_startup.append(_cfg_client.start)
         app.on_cleanup.append(_cfg_client.stop)
     app.on_cleanup.append(_stop_spool_worker)
+    app.on_cleanup.append(shutdown_otel)
     app.on_cleanup.append(close_pool)
 
     add_cors_to_routes(app, cors)

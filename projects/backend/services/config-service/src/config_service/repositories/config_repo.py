@@ -276,13 +276,13 @@ class ConfigRepository(BaseRepository):
             """
             INSERT INTO config_history (
                 config_id, version, service_name, key, config_type,
-                value, metadata, is_active,
+                value, metadata, is_active, is_sensitive,
                 changed_by, change_reason, source_ip, user_agent, correlation_id
-            ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,$11,$12,$13)
+            ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,$11,$12,$13,$14)
             """,
             config.id, config.version, config.service_name, config.key,
             config.config_type.value,
             json.dumps(config.value), json.dumps(config.metadata),
-            config.is_active,
+            config.is_active, config.is_sensitive,
             changed_by, change_reason, source_ip, user_agent, correlation_id,
         )

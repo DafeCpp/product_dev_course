@@ -2,7 +2,7 @@
 
 Статус: accepted
 Дата: 2026-01-13
-Реализация: ✅ выполнена (см. `docs/experiment-tracking-status-and-roadmap.md`)
+Реализация: ✅ выполнена; детали хранения описаны в `docs/telemetry-storage-timescaledb.md`
 
 ## Контекст
 

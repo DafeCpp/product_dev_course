@@ -1,4 +1,5 @@
 """Unit tests for backend_common.middleware.trace module."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,6 +14,15 @@ from backend_common.middleware.trace import (
     get_safe_headers,
     is_valid_uuid,
 )
+
+
+def _mapping_request() -> MagicMock:
+    state: dict[str, str] = {}
+    request = MagicMock()
+    request.__setitem__.side_effect = state.__setitem__
+    request.__getitem__.side_effect = state.__getitem__
+    request.__contains__.side_effect = state.__contains__
+    return request
 
 
 class TestIsValidUuid:
@@ -115,6 +125,7 @@ class TestGetSafeHeaders:
 
     def test_handles_multidict(self):
         """Test handling of MultiDict-like objects."""
+
         # Simulate aiohttp MultiDictProxy
         class MockMultiDict:
             def items(self):
@@ -185,7 +196,7 @@ class TestTraceMiddlewareExecution:
         middleware = create_trace_middleware("test-service")
         handler = AsyncMock(return_value=web.Response(status=200))
 
-        request = MagicMock()
+        request = _mapping_request()
         request.headers = {}
         request.method = "GET"
         request.path = "/test"
@@ -205,7 +216,7 @@ class TestTraceMiddlewareExecution:
         middleware = create_trace_middleware("test-service")
         handler = AsyncMock(return_value=web.Response(status=200))
 
-        request = MagicMock()
+        request = _mapping_request()
         request.headers = {}
         request.method = "GET"
         request.path = "/test"
@@ -225,7 +236,7 @@ class TestTraceMiddlewareExecution:
         handler = AsyncMock(return_value=web.Response(status=200))
 
         existing_trace_id = "550e8400-e29b-41d4-a716-446655440000"
-        request = MagicMock()
+        request = _mapping_request()
         request.headers = {TRACE_ID_HEADER: existing_trace_id}
         request.method = "GET"
         request.path = "/test"
@@ -245,7 +256,7 @@ class TestTraceMiddlewareExecution:
         handler = AsyncMock(return_value=web.Response(status=200))
 
         existing_request_id = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-        request = MagicMock()
+        request = _mapping_request()
         request.headers = {REQUEST_ID_HEADER: existing_request_id}
         request.method = "GET"
         request.path = "/test"
@@ -264,7 +275,7 @@ class TestTraceMiddlewareExecution:
         middleware = create_trace_middleware("test-service")
         handler = AsyncMock(return_value=web.Response(status=200))
 
-        request = MagicMock()
+        request = _mapping_request()
         request.headers = {TRACE_ID_HEADER: "invalid-uuid"}
         request.method = "GET"
         request.path = "/test"

@@ -8,7 +8,7 @@ from uuid import UUID
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.domain.models import Artifact
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class ArtifactRepository(BaseRepository):

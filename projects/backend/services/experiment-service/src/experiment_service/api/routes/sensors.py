@@ -64,9 +64,10 @@ async def register_sensor(request: web.Request):
     body_for_hash = dto.model_dump(mode="json")
     idempotency_key = request.headers.get(IDEMPOTENCY_HEADER)
     serialized_body, body_hash = IdempotencyService.canonical_body(body_for_hash)
+    reservation = None
     if idempotency_key:
         try:
-            cached = await idempotency_service.reserve_or_get_cached(
+            reservation, cached = await idempotency_service.reserve_or_get_cached(
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
@@ -74,7 +75,7 @@ async def register_sensor(request: web.Request):
         if cached is not None:
             return IdempotencyService.build_response(cached)
     service = await get_sensor_service(request)
-    async with idempotency_service.guard_reservation(idempotency_key):
+    async with idempotency_service.guard_reservation(reservation):
         try:
             sensor, token = await service.register_sensor(
                 dto, created_by=user.user_id, initial_profile=profile_dto
@@ -82,8 +83,8 @@ async def register_sensor(request: web.Request):
         except InvalidStatusTransitionError as exc:
             raise web.HTTPBadRequest(text="Bad request") from exc
     payload = {"sensor": _sensor_response(sensor), "token": token}
-    if idempotency_key:
-        await idempotency_service.complete_response(idempotency_key, 201, payload)
+    if reservation is not None:
+        await idempotency_service.complete_response(reservation, 201, payload)
     return web.json_response(payload, status=201)
 
 

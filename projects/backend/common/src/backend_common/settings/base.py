@@ -1,7 +1,6 @@
 """Base settings class with common fields."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal, cast
 
 from pydantic import AnyHttpUrl, Field, PostgresDsn, model_validator
@@ -24,6 +23,7 @@ class BaseServiceSettings(BaseSettings):
         default=cast(PostgresDsn, "postgresql://postgres:postgres@localhost:5432/db")
     )
     db_pool_size: int = 20
+    otel_exporter_endpoint: AnyHttpUrl | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -73,4 +73,3 @@ class BaseServiceSettings(BaseSettings):
                 origin.strip() for origin in value.split(",") if origin.strip()
             ]
         return self
-

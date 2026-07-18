@@ -1,6 +1,8 @@
 """Unit tests for backend_common.aiohttp_app module."""
+
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -127,7 +129,6 @@ class TestAddHealthcheck:
         add_healthcheck(app, mock_settings)
 
         # Check route exists
-        routes = [str(route) for route in app.router.routes()]
         assert any("/health" in str(r) for r in app.router.routes())
 
     @pytest.mark.asyncio
@@ -150,7 +151,7 @@ class TestAddHealthcheck:
         response = await handler(request)
 
         assert response.status == 200
-        data = await response.json()
+        data = json.loads(response.text)
         assert data["status"] == "ok"
         assert data["service"] == "test-service"
         assert data["env"] == "development"
@@ -199,7 +200,8 @@ class TestAddOpenapiSpec:
 
         # Create a temporary file
         import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("openapi: 3.0.0\ninfo:\n  title: Test API\n")
             temp_path = Path(f.name)
 
@@ -293,8 +295,9 @@ class TestReadJson:
         request = AsyncMock()
         request.json = AsyncMock(side_effect=ValueError("Invalid JSON"))
 
-        with pytest.raises(web.HTTPBadRequest, match="Invalid JSON payload"):
+        with pytest.raises(web.HTTPBadRequest) as exc_info:
             await read_json(request)
+        assert exc_info.value.text == "Invalid JSON payload"
 
     @pytest.mark.asyncio
     async def test_raises_on_non_dict_json(self):
@@ -302,8 +305,9 @@ class TestReadJson:
         request = AsyncMock()
         request.json = AsyncMock(return_value=["array", "not", "object"])
 
-        with pytest.raises(web.HTTPBadRequest, match="JSON body must be an object"):
+        with pytest.raises(web.HTTPBadRequest) as exc_info:
             await read_json(request)
+        assert exc_info.value.text == "JSON body must be an object"
 
     @pytest.mark.asyncio
     async def test_raises_on_null_json(self):
@@ -311,8 +315,9 @@ class TestReadJson:
         request = AsyncMock()
         request.json = AsyncMock(return_value=None)
 
-        with pytest.raises(web.HTTPBadRequest, match="JSON body must be an object"):
+        with pytest.raises(web.HTTPBadRequest) as exc_info:
             await read_json(request)
+        assert exc_info.value.text == "JSON body must be an object"
 
     @pytest.mark.asyncio
     async def test_raises_on_string_json(self):
@@ -320,8 +325,9 @@ class TestReadJson:
         request = AsyncMock()
         request.json = AsyncMock(return_value="string value")
 
-        with pytest.raises(web.HTTPBadRequest, match="JSON body must be an object"):
+        with pytest.raises(web.HTTPBadRequest) as exc_info:
             await read_json(request)
+        assert exc_info.value.text == "JSON body must be an object"
 
     @pytest.mark.asyncio
     async def test_raises_on_number_json(self):
@@ -329,17 +335,20 @@ class TestReadJson:
         request = AsyncMock()
         request.json = AsyncMock(return_value=42)
 
-        with pytest.raises(web.HTTPBadRequest, match="JSON body must be an object"):
+        with pytest.raises(web.HTTPBadRequest) as exc_info:
             await read_json(request)
+        assert exc_info.value.text == "JSON body must be an object"
 
     @pytest.mark.asyncio
     async def test_parses_nested_object(self):
         """Test read_json parses nested objects."""
         request = AsyncMock()
-        request.json = AsyncMock(return_value={
-            "nested": {"key": "value"},
-            "array": [1, 2, 3],
-        })
+        request.json = AsyncMock(
+            return_value={
+                "nested": {"key": "value"},
+                "array": [1, 2, 3],
+            }
+        )
 
         result = await read_json(request)
 
@@ -442,17 +451,11 @@ class TestReadJsonIntegration:
         app = web.Application()
         app.router.add_post("/test", handler)
 
-        # Simulate request
-        from aiohttp.test_utils import make_mocked_request
-
-        request = make_mocked_request(
-            "POST",
-            "/test",
-            json={"key": "value"},
-        )
+        request = AsyncMock()
+        request.json = AsyncMock(return_value={"key": "value"})
 
         response = await handler(request)
-        data = await response.json()
+        data = json.loads(response.text)
 
         assert data["received"] == {"key": "value"}
 

@@ -13,10 +13,8 @@ class HistoryRepository(BaseRepository):
     async def get_by_version(self, config_id: UUID, version: int) -> ConfigHistory | None:
         row = await self._fetchrow(
             """
-            SELECT ch.*, c.is_sensitive
-            FROM config_history ch
-            JOIN configs c ON c.id = ch.config_id
-            WHERE ch.config_id = $1 AND ch.version = $2
+            SELECT * FROM config_history
+            WHERE config_id = $1 AND version = $2
             """,
             config_id, version,
         )
@@ -32,11 +30,9 @@ class HistoryRepository(BaseRepository):
     ) -> list[ConfigHistory]:
         rows = await self._fetch(
             """
-            SELECT ch.*, c.is_sensitive
-            FROM config_history ch
-            JOIN configs c ON c.id = ch.config_id
-            WHERE ch.config_id = $1
-            ORDER BY ch.version DESC
+            SELECT * FROM config_history
+            WHERE config_id = $1
+            ORDER BY version DESC
             LIMIT $2 OFFSET $3
             """,
             config_id, limit, offset,

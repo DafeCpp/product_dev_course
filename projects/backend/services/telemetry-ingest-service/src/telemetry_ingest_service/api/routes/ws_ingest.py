@@ -11,12 +11,14 @@ from pydantic import ValidationError
 
 from backend_common.db.pool import get_pool_service as get_pool
 
-from telemetry_ingest_service.api.routes.telemetry import _fire_and_forget_error_log, _normalize_bearer
 from telemetry_ingest_service.core.exceptions import (
     NotFoundError,
     ScopeMismatchError,
     UnauthorizedError,
 )
+from telemetry_ingest_service.services.auth import normalize_bearer
+from telemetry_ingest_service.services.dependencies import get_error_log_service
+from telemetry_ingest_service.services.error_log import SensorErrorLogService
 from telemetry_ingest_service.domain.dto import TelemetryIngestDTO, WsIngestMessageDTO
 from telemetry_ingest_service.middleware.rate_limit_config import RATE_LIMIT_CONFIG
 from telemetry_ingest_service.middleware.ws_rate_limit import WsRateLimiter
@@ -35,10 +37,10 @@ _ws_limiter = WsRateLimiter(RATE_LIMIT_CONFIG)
 
 
 def _extract_ws_token(request: web.Request) -> str | None:
-    token = _normalize_bearer(request.headers.get("Authorization"))
+    token = normalize_bearer(request.headers.get("Authorization"))
     if token:
         return token
-    return _normalize_bearer(
+    return normalize_bearer(
         request.rel_url.query.get("token") or request.rel_url.query.get("access_token")
     )
 
@@ -113,13 +115,14 @@ async def ws_ingest(request: web.Request) -> web.WebSocketResponse:
     await ws.prepare(request)
 
     service = TelemetryIngestService()
+    error_log = await get_error_log_service(request)
     log = logger.bind(sensor_id=str(sensor_id))
 
     WS_CONNECTIONS_ACTIVE.inc()
     try:
         async for msg in ws:
             if msg.type == aiohttp.WSMsgType.TEXT:
-                await _handle_message(ws, service, sensor_id, token, msg.data, log)
+                await _handle_message(ws, service, error_log, sensor_id, token, msg.data, log)
             elif msg.type == aiohttp.WSMsgType.BINARY:
                 await ws.send_json(
                     {"status": "error", "code": "unsupported", "message": "Binary frames are not supported; send JSON text frames"}
@@ -142,6 +145,7 @@ async def ws_ingest(request: web.Request) -> web.WebSocketResponse:
 async def _handle_message(
     ws: web.WebSocketResponse,
     service: TelemetryIngestService,
+    error_log: SensorErrorLogService,
     sensor_id: UUID,
     token: str,
     raw: str,
@@ -161,7 +165,7 @@ async def _handle_message(
     try:
         ws_msg = WsIngestMessageDTO.model_validate(data)
     except ValidationError as exc:
-        _fire_and_forget_error_log(
+        error_log.record_async(
             sensor_id_str,
             "validation_error",
             error_message=str(exc),
@@ -176,7 +180,7 @@ async def _handle_message(
     limit_hit = _ws_limiter.check(sensor_id, readings_count)
     if limit_hit is not None:
         INGEST_RATE_LIMITED.labels(transport="ws").inc()
-        _fire_and_forget_error_log(
+        error_log.record_async(
             sensor_id_str,
             "rate_limited",
             error_message=f"Rate limit exceeded ({limit_hit.reason}). Retry in {limit_hit.retry_after}s.",
@@ -204,7 +208,7 @@ async def _handle_message(
     try:
         accepted = await service.ingest(dto, token=token)
     except UnauthorizedError as exc:
-        _fire_and_forget_error_log(
+        error_log.record_async(
             sensor_id_str,
             "unauthorized",
             error_message=str(exc),
@@ -217,7 +221,7 @@ async def _handle_message(
         return
     except (ScopeMismatchError, NotFoundError) as exc:
         # Recoverable: bad scope or missing run/session — client can fix and retry.
-        _fire_and_forget_error_log(
+        error_log.record_async(
             sensor_id_str,
             "bad_request",
             error_message=str(exc),
@@ -228,7 +232,7 @@ async def _handle_message(
         return
     except Exception as exc:
         log.exception("ws_ingest_message_error", error=str(exc))
-        _fire_and_forget_error_log(
+        error_log.record_async(
             sensor_id_str,
             "internal_error",
             error_message="Internal error",

@@ -18,8 +18,10 @@ class AuditClient:
     """Fire-and-forget audit client that sends entries to auth-service."""
 
     def __init__(self, auth_service_url: str, session: ClientSession) -> None:
-        # Strip trailing slash; auth_service_url already includes /api/v1
+        # Accept both auth-service root URLs and API-versioned URLs.
         base = str(auth_service_url).rstrip("/")
+        if not base.endswith("/api/v1"):
+            base = f"{base}/api/v1"
         self._endpoint = f"{base}/internal/audit"
         self._session = session
 

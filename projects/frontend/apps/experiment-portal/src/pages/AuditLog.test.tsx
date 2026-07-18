@@ -67,15 +67,15 @@ const createWrapper = () => {
 const mockEntry = {
     id: 'entry-1',
     actor_id: 'user-1',
-    actor_username: 'alice',
     action: 'user.login',
     scope_type: 'system',
     scope_id: null,
     target_type: null,
     target_id: null,
     ip_address: '127.0.0.1',
+    user_agent: null,
     details: { extra: 'data' },
-    created_at: '2026-05-08T12:00:00Z',
+    timestamp: '2026-05-08T12:00:00Z',
 }
 
 describe('AuditLog', () => {
@@ -133,7 +133,7 @@ describe('AuditLog', () => {
         render(<AuditLog />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            expect(screen.getByText('alice')).toBeInTheDocument()
+            expect(screen.getByText('user-1')).toBeInTheDocument()
             expect(screen.getByText('user.login')).toBeInTheDocument()
             expect(screen.getByText('127.0.0.1')).toBeInTheDocument()
         })
@@ -173,7 +173,7 @@ describe('AuditLog', () => {
         render(<AuditLog />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            expect(screen.getByText('alice')).toBeInTheDocument()
+            expect(screen.getByText('user-1')).toBeInTheDocument()
         })
 
         await user.click(screen.getByText('user.login'))

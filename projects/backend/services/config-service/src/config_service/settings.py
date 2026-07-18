@@ -22,8 +22,6 @@ class Settings(BaseServiceSettings):
         default=cast(AnyHttpUrl, "http://localhost:8001/api/v1")
     )
 
-    otel_exporter_endpoint: AnyHttpUrl | None = None
-
     # Idempotency key TTL
     idempotency_ttl_minutes: int = 15
 

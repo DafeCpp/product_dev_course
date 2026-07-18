@@ -1,0 +1,43 @@
+# Root .dockerignore — the experiment-portal build context is the repo root
+# so it can reach the sibling npm workspace at projects/frontend/common.
+# Keep this narrowly scoped: only exclude what's safe/large/irrelevant to that build.
+
+.git
+.github
+
+node_modules
+**/node_modules
+dist
+**/dist
+dist-local
+**/dist-local
+dist-ssr
+coverage
+**/coverage
+.vite
+
+# Secrets / local env
+.env
+.env.*
+!env.*.example
+
+# Unrelated large/irrelevant trees
+docs
+course-materials
+graphify-out
+**/graphify-out
+scripts
+infrastructure
+docker-entrypoint-initdb.d
+*.csv
+*.log
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+
+# Other stacks not needed for the frontend build
+projects/backend
+projects/rc_vehicle
+projects/telemetry_cli

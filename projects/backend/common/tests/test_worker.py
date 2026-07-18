@@ -1,9 +1,10 @@
 """Unit tests for backend_common.worker module."""
+
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from aiohttp import web
@@ -16,6 +17,7 @@ class TestWorkerTask:
 
     def test_worker_task_creation(self):
         """Test creating a WorkerTask instance."""
+
         async def dummy_fn(now: datetime) -> str | None:
             return "done"
 
@@ -26,6 +28,7 @@ class TestWorkerTask:
     @pytest.mark.asyncio
     async def test_worker_task_execution(self):
         """Test executing a WorkerTask function."""
+
         async def task_fn(now: datetime) -> str | None:
             assert isinstance(now, datetime)
             return "result"
@@ -37,11 +40,12 @@ class TestWorkerTask:
     @pytest.mark.asyncio
     async def test_worker_task_returns_none(self):
         """Test task that returns None (no summary)."""
+
         async def task_fn(now: datetime) -> str | None:
             return None
 
         task = WorkerTask(name="test", fn=task_fn)
-        result = await task_fn(datetime.now(timezone.utc))
+        result = await task.fn(datetime.now(timezone.utc))
         assert result is None
 
 
@@ -61,6 +65,7 @@ class TestBackgroundWorkerCreation:
 
     def test_with_tasks(self):
         """Test worker with tasks."""
+
         async def task1(now: datetime) -> str | None:
             return None
 
@@ -89,8 +94,8 @@ class TestBackgroundWorkerStartStop:
         app = web.Application()
 
         await worker.start(app)
-        assert "_background_worker_task__" in app
-        task = app["_background_worker_task__"]
+        assert "__background_worker_task__" in app
+        task = app["__background_worker_task__"]
         assert isinstance(task, asyncio.Task)
         assert not task.done()
 
@@ -104,7 +109,7 @@ class TestBackgroundWorkerStartStop:
         app = web.Application()
 
         await worker.start(app)
-        task = app["_background_worker_task__"]
+        task = app["__background_worker_task__"]
         assert not task.done()
 
         await worker.stop(app)
@@ -159,6 +164,7 @@ class TestBackgroundWorkerExecution:
     @pytest.mark.asyncio
     async def test_task_returning_none(self):
         """Test tasks that return None don't cause issues."""
+
         async def task_fn(now: datetime) -> str | None:
             return None
 
@@ -275,6 +281,7 @@ class TestBackgroundWorkerLogging:
 
         with patch("backend_common.worker.logger") as mock_logger:
             await worker.start(app)
+            await asyncio.sleep(0)
             mock_logger.info.assert_called()
             call_args = mock_logger.info.call_args
             assert call_args is not None
@@ -287,6 +294,7 @@ class TestBackgroundWorkerLogging:
     @pytest.mark.asyncio
     async def test_task_completion_logging(self):
         """Test that task completion is logged."""
+
         async def task_fn(now: datetime) -> str | None:
             return "summary"
 
@@ -309,6 +317,7 @@ class TestBackgroundWorkerLogging:
     @pytest.mark.asyncio
     async def test_task_failure_logging(self):
         """Test that task failures are logged."""
+
         async def failing_task(now: datetime) -> str | None:
             raise ValueError("Test failure")
 
@@ -358,6 +367,7 @@ class TestBackgroundWorkerInterval:
     @pytest.mark.asyncio
     async def test_long_interval(self):
         """Test worker with long interval (doesn't execute during test)."""
+
         async def task_fn(now: datetime) -> str | None:
             return None
 
@@ -379,6 +389,7 @@ class TestBackgroundWorkerCancellation:
     @pytest.mark.asyncio
     async def test_cancel_during_task_execution(self):
         """Test cancellation during task execution."""
+
         async def slow_task(now: datetime) -> str | None:
             await asyncio.sleep(0.5)
             return "done"
@@ -401,7 +412,7 @@ class TestBackgroundWorkerCancellation:
         app = web.Application()
 
         await worker.start(app)
-        task = app["_background_worker_task__"]
+        task = app["__background_worker_task__"]
 
         # Manually cancel the task
         task.cancel()

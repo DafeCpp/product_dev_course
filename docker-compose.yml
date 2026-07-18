@@ -14,7 +14,7 @@ version: "3.9"
 services:
   # PostgreSQL Database
   postgres:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.28.2-pg16
     container_name: backend-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -46,7 +46,7 @@ services:
 
   # Redis — кэш для прав пользователей (auth-proxy) и брокер телеметрии
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.9-alpine
     container_name: redis
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -61,7 +61,7 @@ services:
 
   # Mailpit — SMTP-сервер для разработки (перехватывает исходящие письма)
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.30.4
     container_name: mailpit
     ports:
       - "${MAILPIT_PORT:-1025}:1025"
@@ -72,7 +72,7 @@ services:
 
   # MinIO — S3-совместимое хранилище для артефактов
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: minio
     command: server /data --console-address ":9001"
     environment:
@@ -375,7 +375,7 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
     command: ["python", "-m", "config_service.main"]
     ports:
-      - "${CONFIG_SERVICE_PORT:-8005}:8005"
+      - "127.0.0.1:${CONFIG_SERVICE_PORT:-8005}:8005"
     depends_on:
       config-migrate:
         condition: service_completed_successfully
@@ -446,8 +446,8 @@ services:
   # Experiment Portal - Frontend SPA
   experiment-portal:
     build:
-      context: ./projects/frontend/apps/experiment-portal
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/frontend/apps/experiment-portal/Dockerfile
       target: production
     container_name: experiment-portal
     environment:
@@ -469,8 +469,8 @@ services:
   # Sensor Simulator - separate frontend SPA for telemetry simulation
   sensor-simulator:
     build:
-      context: ./projects/frontend/apps/sensor-simulator
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
       target: production
     container_name: sensor-simulator
     environment:
@@ -492,7 +492,7 @@ services:
 
   # Loki - система хранения и агрегации логов
   loki:
-    image: grafana/loki:2.9.0
+    image: grafana/loki:3.5.8
     container_name: loki
     ports:
       - "${LOKI_PORT:-3100}:3100"
@@ -512,7 +512,7 @@ services:
 
   # Grafana Alloy - сборщик логов из Docker контейнеров
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.17.1
     container_name: alloy
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -527,10 +527,16 @@ services:
     restart: unless-stopped
     ports:
       - "12345:12345"  # HTTP сервер для метрик и UI
+    healthcheck:
+      test: ["CMD", "alloy", "fmt", "/etc/alloy/config.river"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Grafana - веб-интерфейс для визуализации логов
   grafana:
-    image: grafana/grafana:10.0.0
+    image: grafana/grafana:12.4.5
     container_name: grafana
     ports:
       - "${GRAFANA_PORT:-3001}:3000"
@@ -577,4 +583,3 @@ networks:
   experiment-tracking-network:
     name: ${DOCKER_NETWORK_NAME:-experiment-tracking-network}
     driver: bridge
-

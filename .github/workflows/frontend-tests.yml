@@ -7,6 +7,8 @@ on:
       - develop
     paths:
       - 'projects/frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/frontend-tests.yml'
       - '.github/workflows/reusable-frontend-tests.yml'
       - '.nvmrc'
@@ -16,6 +18,8 @@ on:
       - develop
     paths:
       - 'projects/frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/frontend-tests.yml'
       - '.github/workflows/reusable-frontend-tests.yml'
       - '.nvmrc'

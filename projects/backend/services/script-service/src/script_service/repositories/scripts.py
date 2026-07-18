@@ -8,7 +8,7 @@ from uuid import UUID
 import asyncpg  # type: ignore[import-untyped]
 
 from script_service.domain.models import Script, ScriptType
-from script_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class ScriptRepository(BaseRepository):

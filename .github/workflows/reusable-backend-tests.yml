@@ -20,6 +20,7 @@ jobs:
     name: Detect changed services
     runs-on: ubuntu-latest
     outputs:
+      backend-common: ${{ steps.detect.outputs.backend-common }}
       auth-service: ${{ steps.detect.outputs.auth-service }}
       script-service: ${{ steps.detect.outputs.script-service }}
       experiment-service: ${{ steps.detect.outputs.experiment-service }}
@@ -34,7 +35,7 @@ jobs:
         id: detect
         run: |
           if [ "${{ inputs.run-all }}" = "true" ]; then
-            for service in auth-service script-service experiment-service telemetry-ingest-service config-service; do
+            for service in backend-common auth-service script-service experiment-service telemetry-ingest-service config-service; do
               echo "$service=true" >> $GITHUB_OUTPUT
               echo "✓ $service forced by run-all"
             done
@@ -53,6 +54,14 @@ jobs:
           echo "$CHANGED_FILES"
           echo ""
 
+          if echo "$CHANGED_FILES" | grep -E "^projects/backend/common/|\.github/workflows/(backend-tests|reusable-backend-tests)\.yml" > /dev/null; then
+            echo "backend-common=true" >> $GITHUB_OUTPUT
+            echo "✓ backend-common changed"
+          else
+            echo "backend-common=false" >> $GITHUB_OUTPUT
+            echo "✗ backend-common not changed"
+          fi
+
           for service in auth-service script-service experiment-service telemetry-ingest-service config-service; do
             if echo "$CHANGED_FILES" | grep -E "^projects/backend/(services/$service|common)/|\.github/workflows/(backend-tests|reusable-backend-tests)\.yml" > /dev/null; then
               echo "$service=true" >> $GITHUB_OUTPUT
@@ -62,6 +71,37 @@ jobs:
               echo "✗ $service not changed"
             fi
           done
+
+  backend-common:
+    name: backend-common tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend-common == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/backend/common
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+          installer-parallel: true
+
+      - name: Set up Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: poetry
+          cache-dependency-path: projects/backend/common/poetry.lock
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Run pytest
+        run: poetry run pytest -q
 
   auth-service:
     name: auth-service tests (shard ${{ matrix.shard }}/2)

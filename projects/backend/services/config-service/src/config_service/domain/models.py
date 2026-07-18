@@ -119,30 +119,3 @@ class ConfigSchema:
             created_by=row["created_by"],
             created_at=row["created_at"],
         )
-
-
-@dataclass
-class IdempotencyRecord:
-    id: UUID
-    idempotency_key: str
-    user_id: str
-    request_path: str
-    request_hash: str
-    response_status: int
-    response_body: dict[str, Any]
-    expires_at: datetime
-    created_at: datetime
-
-    @classmethod
-    def from_row(cls, row: dict[str, Any]) -> IdempotencyRecord:
-        return cls(
-            id=row["id"],
-            idempotency_key=row["idempotency_key"],
-            user_id=row["user_id"],
-            request_path=row["request_path"],
-            request_hash=row["request_hash"],
-            response_status=row["response_status"],
-            response_body=_decode_jsonb(row["response_body"]),
-            expires_at=row["expires_at"],
-            created_at=row["created_at"],
-        )

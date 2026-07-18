@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from auth_service.domain.models import InviteToken
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class InviteRepository(BaseRepository):

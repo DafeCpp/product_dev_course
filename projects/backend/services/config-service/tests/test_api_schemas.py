@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.utils import ADMIN_HEADERS, VIEWER_HEADERS, make_headers
+from tests.config_service_test_utils import ADMIN_HEADERS, VIEWER_HEADERS, make_headers
 
 _SCHEMA_ADMIN_HEADERS = make_headers(
     user_id="schema-admin",

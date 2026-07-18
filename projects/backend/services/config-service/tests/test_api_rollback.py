@@ -1,9 +1,10 @@
 """Integration tests: rollback endpoint."""
+
 from __future__ import annotations
 
 import pytest
 
-from tests.utils import ADMIN_HEADERS
+from tests.config_service_test_utils import ADMIN_HEADERS, EDITOR_HEADERS
 
 
 async def _create_ff(client, key="ff_key"):
@@ -66,9 +67,7 @@ async def test_rollback_produces_history_entry(service_client):
         headers={**ADMIN_HEADERS, "If-Match": '"2"'},
     )
 
-    hist = await service_client.get(
-        f"/api/v1/config/{config_id}/history", headers=ADMIN_HEADERS
-    )
+    hist = await service_client.get(f"/api/v1/config/{config_id}/history", headers=ADMIN_HEADERS)
     items = (await hist.json())["items"]
     assert len(items) == 3
     # History is sorted newest-first (ORDER BY version DESC)
@@ -117,4 +116,69 @@ async def test_rollback_chain(service_client):
         headers={**ADMIN_HEADERS, "If-Match": '"2"'},
     )
     assert (await rb1.json())["version"] == 3
-    assert (await service_client.get(f"/api/v1/config/{config_id}", headers=ADMIN_HEADERS)).status == 200
+    assert (
+        await service_client.get(f"/api/v1/config/{config_id}", headers=ADMIN_HEADERS)
+    ).status == 200
+
+
+@pytest.mark.asyncio
+async def test_rollback_restores_sensitive_flag_and_redacts_for_unauthorized_user(service_client):
+    created = await service_client.post(
+        "/api/v1/config",
+        json={
+            "service_name": "exp-service",
+            "key": "rb_restore_sensitive",
+            "config_type": "feature_flag",
+            "value": {"enabled": True},
+            "is_sensitive": True,
+        },
+        headers=ADMIN_HEADERS,
+    )
+    config_id = (await created.json())["id"]
+    changed = await service_client.patch(
+        f"/api/v1/config/{config_id}",
+        json={"version": 1, "is_sensitive": False, "change_reason": "public"},
+        headers={**ADMIN_HEADERS, "If-Match": '"1"'},
+    )
+    assert changed.status == 200, await changed.text()
+
+    rollback = await service_client.post(
+        f"/api/v1/config/{config_id}/rollback",
+        json={"version": 2, "target_version": 1, "change_reason": "restore secret"},
+        headers={**EDITOR_HEADERS, "If-Match": '"2"'},
+    )
+    assert rollback.status == 200, await rollback.text()
+    body = await rollback.json()
+    assert body["is_sensitive"] is True
+    assert body["value"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_rollback_restores_public_flag_and_value(service_client):
+    created = await service_client.post(
+        "/api/v1/config",
+        json={
+            "service_name": "exp-service",
+            "key": "rb_restore_public",
+            "config_type": "feature_flag",
+            "value": {"enabled": True},
+        },
+        headers=ADMIN_HEADERS,
+    )
+    config_id = (await created.json())["id"]
+    changed = await service_client.patch(
+        f"/api/v1/config/{config_id}",
+        json={"version": 1, "is_sensitive": True, "change_reason": "secret"},
+        headers={**ADMIN_HEADERS, "If-Match": '"1"'},
+    )
+    assert changed.status == 200, await changed.text()
+
+    rollback = await service_client.post(
+        f"/api/v1/config/{config_id}/rollback",
+        json={"version": 2, "target_version": 1, "change_reason": "restore public"},
+        headers={**EDITOR_HEADERS, "If-Match": '"2"'},
+    )
+    assert rollback.status == 200, await rollback.text()
+    body = await rollback.json()
+    assert body["is_sensitive"] is False
+    assert body["value"] == {"enabled": True}

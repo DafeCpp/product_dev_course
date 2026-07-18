@@ -65,12 +65,12 @@
   - `GET /health` - health check
 
 ### 5. Metrics Service
-- **Упоминается в:** `docs/experiment-tracking-ts.md`, `docs/experiment-tracking-status-and-roadmap.md`
+- **Упоминается в:** `docs/experiment-tracking-ts.md`
 - **Статус:** ❌ Не реализован
 - **Примечание:** Не критично для базового запуска
 
 ### 6. Artifact Service
-- **Упоминается в:** `docs/experiment-tracking-ts.md`, `docs/experiment-tracking-status-and-roadmap.md`
+- **Упоминается в:** `docs/experiment-tracking-ts.md`
 - **Статус:** ❌ Не реализован
 - **Примечание:** Не критично для базового запуска
 
@@ -80,12 +80,12 @@
 - **Примечание:** Не критично для базового запуска
 
 ### 8. API Gateway
-- **Упоминается в:** `docs/experiment-tracking-ts.md`, `docs/experiment-tracking-status-and-roadmap.md`
+- **Упоминается в:** `docs/experiment-tracking-ts.md`
 - **Статус:** ❌ Не реализован
 - **Примечание:** Не критично для базового запуска, можно использовать прямые запросы к сервисам
 
 ### 9. Telemetry Ingest Service
-- **Упоминается в:** `docs/experiment-tracking-ts.md`, `docs/experiment-tracking-status-and-roadmap.md`
+- **Упоминается в:** `docs/experiment-tracking-ts.md`
 - **Статус:** ❌ Не реализован
 - **Примечание:** Не критично для базового запуска
 

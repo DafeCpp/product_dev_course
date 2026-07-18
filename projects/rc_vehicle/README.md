@@ -17,7 +17,7 @@ CLI/агент для отправки телеметрии в Experiment Servic
 - IMU чтение и выдача телеметрии в web‑пульт (и/или наружу в будущем)
 
 ## Документация
-- `docs/ts.md` — краткое ТЗ и критерии приёмки (MVP).
+- `firmware/README.md` — актуальная документация прошивки и критерии сборки.
 - `docs/interfaces_protocols.md` — протоколы: WebSocket (ESP32↔браузер) и UART кадры (ESP32↔RP2040).
 - `docs/wiring_diagram.md` — **схема подключения компонентов** (ESP32, RP2040, IMU, ESC, Servo, RC приёмник).
 - `docs/wiring_diagram.drawio` — визуальная схема для редактирования в draw.io.

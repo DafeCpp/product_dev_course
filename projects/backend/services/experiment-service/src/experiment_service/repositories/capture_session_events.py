@@ -8,7 +8,7 @@ from uuid import UUID
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
 
 from experiment_service.domain.models import CaptureSessionEvent
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class CaptureSessionEventRepository(BaseRepository):
@@ -96,4 +96,3 @@ class CaptureSessionEventRepository(BaseRepository):
             capture_session_id,
         )
         return int(record["total"]) if record else 0
-

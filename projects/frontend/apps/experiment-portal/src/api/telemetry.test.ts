@@ -274,6 +274,63 @@ describe('telemetryApi.query / aggregated', () => {
     })
 })
 
+describe('telemetryApi.stream', () => {
+    let fetchMock: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+        fetchMock = vi.fn()
+        vi.stubGlobal('fetch', fetchMock)
+        setActiveProjectId(PROJECT_ID)
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+    })
+
+    it('builds the stream URL with sensor_id/since_ts/since_id/idle_timeout_seconds', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }))
+
+        await telemetryApi.stream({
+            sensor_id: 's1',
+            since_ts: '2025-01-01T00:00:00Z',
+            since_id: 42,
+            idle_timeout_seconds: 15,
+        })
+
+        const calledUrl = String(fetchMock.mock.calls[0][0])
+        expect(calledUrl).toContain('/api/v1/telemetry/stream')
+        expect(calledUrl).toContain('sensor_id=s1')
+        expect(calledUrl).toContain('since_id=42')
+        expect(calledUrl).toContain('idle_timeout_seconds=15')
+    })
+
+    it('forwards the provided AbortSignal to fetch', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }))
+        const controller = new AbortController()
+
+        await telemetryApi.stream({ sensor_id: 's1', signal: controller.signal })
+
+        expect(fetchMock.mock.calls[0][1]).toEqual(
+            expect.objectContaining({ signal: controller.signal })
+        )
+    })
+
+    it('forwards the signal to the retry fetch after a 401 refresh', async () => {
+        fetchMock
+            .mockResolvedValueOnce(new Response(null, { status: 401 })) // initial
+            .mockResolvedValueOnce(new Response(null, { status: 200 })) // /auth/refresh
+            .mockResolvedValueOnce(new Response(null, { status: 200 })) // retry
+        const controller = new AbortController()
+
+        await telemetryApi.stream({ sensor_id: 's1', signal: controller.signal })
+
+        expect(fetchMock).toHaveBeenCalledTimes(3)
+        expect(fetchMock.mock.calls[2][1]).toEqual(
+            expect.objectContaining({ signal: controller.signal })
+        )
+    })
+})
+
 describe('runEventsApi', () => {
     beforeEach(() => {
         vi.clearAllMocks()

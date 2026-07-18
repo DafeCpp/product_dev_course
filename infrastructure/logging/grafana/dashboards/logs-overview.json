@@ -1,6 +1,5 @@
 {
-  "dashboard": {
-    "title": "Logs Overview",
+  "title": "Logs Overview",
     "tags": ["logs"],
     "timezone": "browser",
     "schemaVersion": 16,
@@ -62,6 +61,4 @@
         }
       }
     ]
-  }
 }
-
