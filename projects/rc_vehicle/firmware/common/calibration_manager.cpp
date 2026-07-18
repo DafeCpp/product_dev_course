@@ -90,6 +90,11 @@ float CalibrationManager::UpdateAutoForward(float current_accel_g,
 void CalibrationManager::StopAutoForward() {
   if (IsAutoForwardActive()) {
     driver_.Reset();
+    // Сбор семплов обязан прекратиться вместе с движением: иначе этап 2
+    // доберёт остаток уже без управляемого разгона (под RC или на стоящей
+    // машине) и запишет в NVS мусорную ось «вперёд» — ровно тот сценарий,
+    // который и привёл к LOS-214.
+    imu_calib_.CancelCalibration();
     platform_.Log(LogLevel::Info, "Auto-forward calibration stopped");
   }
 }

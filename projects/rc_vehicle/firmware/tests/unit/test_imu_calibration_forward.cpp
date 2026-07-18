@@ -138,6 +138,89 @@ TEST_F(ImuCalibrationForwardTest, SetForwardDirection_AlongGravity_Ignored) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Согласованность вертикали с Apply() (замечание code review к LOS-214)
+//
+// Full-калибровка кладёт в accel_bias ВСЮ статику осей X/Y, включая проекцию
+// гравитации при наклонном монтаже. Поэтому после Apply() покой равен
+// (0,0,±1), а gravity_vec остаётся сырым наклонённым вектором. Если вычитать
+// gravity_vec из bias-скорректированных данных, в покое появляется офсет
+// −gravity_vec[0] — до правки здесь было −0.139g при наклоне 8°.
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST_F(ImuCalibrationForwardTest,
+       FullCalibOnTiltedMount_RestForwardAccelIsZero) {
+  constexpr float kPitch = 8.0f * 3.14159265f / 180.0f;
+  const float rest_ax = std::sin(kPitch);
+  const float rest_az = std::cos(kPitch);
+
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(Accel(rest_ax, 0.f, rest_az));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  // Как в control loop: сначала Apply(), потом GetForwardAccel()
+  ImuData rest = Accel(rest_ax, 0.f, rest_az);
+  calib.Apply(rest);
+
+  EXPECT_NEAR(calib.GetForwardAccel(rest), 0.0f, 1e-4f)
+      << "статический офсет в покое после Full-калибровки на наклоне";
+}
+
+TEST_F(ImuCalibrationForwardTest, FullCalibOnTiltedMount_ForwardAccelMeasured) {
+  constexpr float kPitch = 8.0f * 3.14159265f / 180.0f;
+  const float rest_ax = std::sin(kPitch);
+  const float rest_az = std::cos(kPitch);
+
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(Accel(rest_ax, 0.f, rest_az));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  // Реальный разгон 0.2g вдоль оси X поверх наклона
+  ImuData moving = Accel(rest_ax + 0.2f, 0.f, rest_az);
+  calib.Apply(moving);
+
+  EXPECT_NEAR(calib.GetForwardAccel(moving), 0.2f, 1e-3f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Отмена сбора (замечание code review к LOS-214)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST_F(ImuCalibrationForwardTest, CancelCalibration_StopsCollecting) {
+  Load(1.f, 0.f, 0.f);
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Collecting);
+
+  calib.CancelCalibration();
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+
+  // Дальнейшие семплы не должны довести сбор до Done и перезаписать ось.
+  // Разгон вдоль +Y: если бы сбор продолжался, «вперёд» стало бы (0,1,0).
+  for (int i = 0; i < 50; ++i) {
+    calib.FeedSample(Accel(0.f, 0.3f, 1.f));
+  }
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+  EXPECT_NEAR(calib.GetData().accel_forward_vec[0], 1.0f, 1e-5f)
+      << "ось «вперёд» перезаписана отменённым сбором";
+  EXPECT_NEAR(calib.GetData().accel_forward_vec[1], 0.0f, 1e-5f);
+}
+
+TEST_F(ImuCalibrationForwardTest, CancelCalibration_DoesNotClobberDone) {
+  Load(1.f, 0.f, 0.f);
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(Accel(0.f, 0.3f, 1.f));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  calib.CancelCalibration();  // no-op: сбор уже завершён
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Done);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Forward-калибровка целиком
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -98,6 +98,15 @@ class ImuCalibration {
   void SetData(const ImuCalibData& data);
 
   /**
+   * Прервать идущий сбор семплов (Collecting → Failed).
+   *
+   * Нужно при досрочной остановке авто-движения: иначе сбор продолжится уже
+   * без управляемого разгона и завершится записью мусорной оси «вперёд».
+   * No-op, если сбор не идёт — не затирает Done.
+   */
+  void CancelCalibration();
+
+  /**
    * Коррекция акселерометра за смещение IMU от центра масс.
    *
    * Вычитает центростремительную и тангенциальную составляющие,
@@ -148,6 +157,16 @@ class ImuCalibration {
 
   static constexpr float kLinearAccelThreshold =
       0.05f;  // (g) порог для учёта семпла
+
+  /**
+   * Направление «вниз» в СК датчика ПОСЛЕ Apply().
+   *
+   * Accel bias поглощает компоненты наклона (ax, ay в покое), поэтому
+   * bias-corrected покой нормализуется в (0,0,±1) — см. control_components.cpp.
+   * Именно это, а не сырой gravity_vec, является вертикалью для
+   * откалиброванных данных; путать их — источник статического офсета.
+   */
+  void RestDownVec(float* out) const;
 
   void ResetAccumulators();
   bool Finalize();

@@ -106,6 +106,26 @@ TEST_F(CalibrationManagerTest, StopAutoForward_WhenNotActive_DoesNothing) {
   EXPECT_FALSE(mgr_->IsAutoForwardActive());
 }
 
+// Досрочная остановка авто-движения обязана прекратить и сбор семплов.
+// Иначе этап 2 доберёт остаток без управляемого разгона и запишет мусорную
+// ось «вперёд» (замечание code review к LOS-214).
+TEST_F(CalibrationManagerTest, StopAutoForward_CancelsSampleCollection) {
+  // Стадия 1 (Full) — предусловие для forward-калибровки
+  ImuCalibData d{};
+  d.valid = true;
+  imu_calib_.SetData(d);
+
+  ASSERT_TRUE(mgr_->StartAutoForwardCalibration(0.1f));
+  ASSERT_TRUE(mgr_->IsAutoForwardActive());
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Collecting);
+
+  mgr_->StopAutoForward();
+
+  EXPECT_FALSE(mgr_->IsAutoForwardActive());
+  EXPECT_EQ(imu_calib_.GetStatus(), CalibStatus::Failed)
+      << "сбор семплов продолжается после остановки движения";
+}
+
 TEST_F(CalibrationManagerTest, UpdateAutoForward_WhenNotActive_ReturnsZero) {
   float throttle = mgr_->UpdateAutoForward(0.0f, 1.0f, 0.0f, 0.002f);
   EXPECT_FLOAT_EQ(throttle, 0.0f);
