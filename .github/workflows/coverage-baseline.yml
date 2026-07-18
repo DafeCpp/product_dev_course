@@ -1,0 +1,25 @@
+name: Coverage Baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforce-ratchet:
+        description: Enforce configured ratchet thresholds (disable for the initial baseline run)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    uses: ./.github/workflows/reusable-backend-tests.yml
+    with:
+      run-all: true
+      enforce-ratchet: ${{ inputs.enforce-ratchet }}
+
+  frontend:
+    uses: ./.github/workflows/reusable-frontend-tests.yml
+    with:
+      run-all: true
+      enforce-ratchet: ${{ inputs.enforce-ratchet }}

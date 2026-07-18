@@ -11,6 +11,10 @@ on:
         description: Python runtime version used by backend Docker images
         type: string
         default: "3.14"
+      enforce-ratchet:
+        description: Fail coverage jobs when configured line or branch floors regress
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -100,8 +104,16 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
-      - name: Run pytest
-        run: poetry run pytest -q
+      - name: Run pytest with coverage
+        run: poetry run pytest -q --cov --cov-report=
+
+      - name: Create coverage reports
+        if: always()
+        run: |
+          poetry run coverage xml -o coverage.xml
+          poetry run coverage json -o coverage.json
+          poetry run coverage html -d htmlcov
+          poetry run coverage lcov -o coverage.lcov
 
   auth-service:
     name: auth-service tests (shard ${{ matrix.shard }}/2)

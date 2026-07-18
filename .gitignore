@@ -76,6 +76,8 @@ htmlcov/
 test-results/
 # Frontend coverage
 coverage/
+!scripts/coverage/
+!scripts/coverage/check_ratchet.py
 # Firmware coverage
 *.gcda
 *.gcno

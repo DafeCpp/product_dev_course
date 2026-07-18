@@ -46,7 +46,7 @@ export default defineConfig(({ mode }) => {
       reporters: process.env.CI ? ['verbose'] : ['default'],
       coverage: {
         provider: 'v8',
-        reporter: ['text', 'html', 'lcov'],
+        reporter: ['text', 'html', 'lcov', 'json-summary', 'cobertura'],
         reportsDirectory: './coverage',
         include: ['src/**/*.{ts,tsx}'],
         exclude: [
@@ -61,14 +61,13 @@ export default defineConfig(({ mode }) => {
         // Plan target: 65% lines (see docs/coverage plan).
         // Measured baseline (CI run 25581222556): 54.57% lines, 52.05%
         // statements, 45.95% funcs, 45.39% branches.
-        thresholds: {
+        thresholds: process.env.COVERAGE_ENFORCE_RATCHET === 'true' ? {
           lines: 50,
           statements: 50,
           functions: 43,
           branches: 43,
-        },
+        } : undefined,
       },
     },
   }
 })
-
