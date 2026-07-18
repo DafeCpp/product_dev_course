@@ -234,6 +234,19 @@ TEST_F(ControlLoopTest, ClearLog_EmptiesBuffer) {
   EXPECT_EQ(count, 0u);
 }
 
+// `/api/log.bin` отдаёт и кадры, и события, поэтому «Очистить лог» обязан
+// чистить обе секции. Иначе события прошлых прогонов переживают очистку и
+// всплывают в свежем CSV (LOS-226).
+TEST_F(ControlLoopTest, ClearLog_AlsoClearsEvents) {
+  RunLoop(20);
+
+  ASSERT_TRUE(vc_.StartTest(TestParams{}));
+  ASSERT_GT(vc_.GetEventCount(), 0u);
+
+  vc_.ClearLog();
+  EXPECT_EQ(vc_.GetEventCount(), 0u) << "события пережили очистку лога";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TestRunner (Task 6): взаимное исключение, старт/стоп
 // ─────────────────────────────────────────────────────────────────────────────

@@ -307,10 +307,18 @@ class VehicleControlUnified : public IVehicleControl {
   }
 
   /**
-   * @brief Очистить буфер телеметрии
+   * @brief Очистить буфер телеметрии — кадры и события
+   *
+   * `/api/log.bin` отдаёт обе секции, поэтому и чистить нужно обе: иначе
+   * «Очистить лог» оставляет события прошлых прогонов, и свежий CSV
+   * начинается с чужого TestStart (LOS-226). Отдельный ClearEventLog()
+   * остаётся для точечной очистки, но своих вызовов не имеет.
    */
   void ClearLog() override {
-    if (telem_mgr_) telem_mgr_->Clear();
+    if (telem_mgr_) {
+      telem_mgr_->Clear();
+      telem_mgr_->ClearEvents();
+    }
   }
 
   // ── Лог событий ───────────────────────────────────────────────────────────
