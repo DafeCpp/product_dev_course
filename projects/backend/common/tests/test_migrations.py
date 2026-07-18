@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
+from unittest.mock import AsyncMock, patch
 
 import asyncpg
 import pytest
@@ -88,6 +89,36 @@ class TestMigrationDiscovery:
             {"002_second.sql": "SELECT 2;", "001_first.sql": "SELECT 1;"},
         )
         assert list(_cli_load_migrations(migrations)) == ["001_first", "002_second"]
+
+
+class TestMigrationStartupFailures:
+    @pytest.mark.asyncio
+    async def test_startup_skips_missing_or_empty_directories(self, tmp_path: Path) -> None:
+        settings = SimpleNamespace(database_url="postgresql://unused")
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        for migrations_dir in (tmp_path / "missing", empty_dir):
+            runner = create_migration_runner(settings, [migrations_dir])
+            with patch("backend_common.db.migrations.asyncpg.connect") as connect:
+                await runner(None)  # type: ignore[arg-type]
+            connect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_startup_retries_database_connection_failures(self, tmp_path: Path) -> None:
+        migrations = _write_migrations(tmp_path / "migrations", {"001_initial.sql": "SELECT 1;"})
+        runner = create_migration_runner(SimpleNamespace(database_url="postgresql://unavailable"), [migrations])
+
+        with (
+            patch(
+                "backend_common.db.migrations.asyncpg.connect",
+                side_effect=OSError("database unavailable"),
+            ) as connect,
+            patch("backend_common.db.migrations.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        ):
+            await runner(None)  # type: ignore[arg-type]
+
+        assert connect.await_count == 5
+        assert sleep.await_count == 4
 
 
 class TestMigrationRunner:
