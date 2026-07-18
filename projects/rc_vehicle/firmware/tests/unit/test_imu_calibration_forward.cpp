@@ -209,9 +209,14 @@ TEST_F(ImuCalibrationForwardTest, FullCalibOnTiltedMount_ForwardAccelMeasured) {
 
 // Ортогонализация не должна срезать компоненту угла монтажа: при опоре на
 // (0,0,±1) вместо gravity_vec ось «вперёд» уплощается и продольное ускорение
-// занижается в cos(угла) — при 45° это 0.14g вместо 0.2g.
+// занижается в cos(угла).
+//
+// Угол взят близким к предельно поддерживаемому. Потолок задан
+// kMaxAccelBias = 0.5g: при наклоне монтажа θ в accel_bias попадает sin(θ),
+// поэтому монтаж круче asin(0.5) = 30° не переживает перезагрузку — см.
+// SteepMount_BeyondBiasLimit_DoesNotSurviveReload ниже.
 TEST_F(ImuCalibrationForwardTest, SteepMount_ForwardAccelNotUnderReported) {
-  constexpr float kPitch = 45.0f * 3.14159265f / 180.0f;
+  constexpr float kPitch = 25.0f * 3.14159265f / 180.0f;
 
   calib.StartCalibration(CalibMode::Full, 10);
   for (int i = 0; i < 10; ++i) {
@@ -238,6 +243,42 @@ TEST_F(ImuCalibrationForwardTest, SteepMount_ForwardAccelNotUnderReported) {
   ImuData rest = TiltedRest(kPitch);
   calib.Apply(rest);
   EXPECT_NEAR(calib.GetForwardAccel(rest), 0.0f, 1e-3f);
+
+  // Калибровка обязана пережить перезагрузку: сохранение в NVS и загрузка
+  // обратно идут через SetData(), которая валидирует accel_bias.
+  ImuCalibration reloaded;
+  reloaded.SetData(calib.GetData());
+  ASSERT_TRUE(reloaded.IsValid()) << "калибровка отброшена при перезагрузке";
+  EXPECT_TRUE(reloaded.GetData().forward_valid);
+
+  ImuData moving2 = TiltedForwardAccel(kPitch, 0.2f);
+  reloaded.Apply(moving2);
+  EXPECT_NEAR(reloaded.GetForwardAccel(moving2), 0.2f, 2e-3f)
+      << "после перезагрузки ось «вперёд» потеряна";
+}
+
+// Характеризует текущий предел: монтаж круче ~30° кладёт в accel_bias больше
+// kMaxAccelBias, и SetData() отбрасывает калибровку целиком. В памяти она
+// работает, но перезагрузку не переживает, и авто-манёвры молча уезжают на
+// дефолтную ось X. Тест фиксирует границу, чтобы она не была сюрпризом;
+// снятие ограничения — отдельная задача (guard не различает смещение датчика
+// и наклон монтажа).
+TEST_F(ImuCalibrationForwardTest,
+       SteepMount_BeyondBiasLimit_DoesNotSurviveReload) {
+  constexpr float kPitch = 45.0f * 3.14159265f / 180.0f;
+
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(TiltedRest(kPitch));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+  ASSERT_GT(std::abs(calib.GetData().accel_bias[0]),
+            ImuCalibration::kMaxAccelBias);
+
+  ImuCalibration reloaded;
+  reloaded.SetData(calib.GetData());
+  EXPECT_FALSE(reloaded.IsValid())
+      << "предел kMaxAccelBias изменился — обновить документацию границы";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
