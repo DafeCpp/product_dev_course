@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from aiohttp import web
-from aiohttp_cors import CorsConfig, ResourceOptions, setup as cors_setup
+# aiohttp-cors does not publish PEP 561 typing metadata.
+from aiohttp_cors import CorsConfig, ResourceOptions, setup as cors_setup  # type: ignore[import-untyped]
 
 from backend_common.middleware.trace import create_trace_middleware
 

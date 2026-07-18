@@ -92,7 +92,7 @@ class ScriptConsumer:
             routing_key=routing_key,
         )
 
-    async def _process_execute(self, message: aio_pika.IncomingMessage) -> None:
+    async def _process_execute(self, message: aio_pika.abc.AbstractIncomingMessage) -> None:
         """Handle an ExecuteCommand message."""
         async with message.process(requeue=False):
             try:
@@ -155,7 +155,7 @@ class ScriptConsumer:
 
             asyncio.create_task(_run())
 
-    async def _process_cancel(self, message: aio_pika.IncomingMessage) -> None:
+    async def _process_cancel(self, message: aio_pika.abc.AbstractIncomingMessage) -> None:
         """Handle a CancelCommand message."""
         async with message.process(requeue=False):
             try:

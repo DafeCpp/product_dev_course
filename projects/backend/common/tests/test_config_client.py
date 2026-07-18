@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 from backend_common.config_client import ConfigClient
@@ -284,10 +283,10 @@ async def test_fallback_not_saved_on_304(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_propagation_lag_recorded_on_200(tmp_path: Path):
-    import time
     from email.utils import formatdate
+    from time import time
 
-    last_modified = formatdate(time.time() - 5.0, usegmt=True)
+    last_modified = formatdate(time() - 5.0, usegmt=True)
     client = ConfigClient("svc-lag", "http://cfg:8005", fallback_dir=tmp_path)
     resp = _make_response(200, configs={}, last_modified=last_modified)
     client._session = _make_session(resp)
