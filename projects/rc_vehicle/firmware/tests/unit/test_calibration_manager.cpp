@@ -171,6 +171,32 @@ TEST_F(CalibrationManagerTest, StopAutoForward_LogsAbortEvent) {
   EXPECT_EQ(ev.ts_ms, 2500u);
 }
 
+// ProcessCompletion() выполняется РАНЬШЕ UpdateAutoDrive() в том же тике
+// (control_loop_processor.cpp:50 против :54), поэтому обрыв фиксируется здесь,
+// а на следующем тике ProcessCompletion() видит переход Collecting → Failed.
+// Без подавления получилось бы два ImuCalibFailed на один обрыв, причём второй
+// с param = 0: после отмены GetCalibStage() уже не возвращает стадию.
+TEST_F(CalibrationManagerTest, StopAutoForward_AbortLoggedOnce) {
+  PrepareStage1(imu_calib_);
+  TelemetryEventLog log;
+  mgr_->SetEventLog(&log);
+  ASSERT_TRUE(mgr_->StartAutoForwardCalibration(0.1f));
+
+  mgr_->StopAutoForward();
+  mgr_->ProcessCompletion(100);  // следующий тик control loop
+
+  int failed = 0;
+  for (size_t i = 0; i < log.Count(); ++i) {
+    TelemetryEvent ev{};
+    ASSERT_TRUE(log.GetEvent(i, ev));
+    if (ev.type == TelemetryEventType::ImuCalibFailed) {
+      ++failed;
+      EXPECT_EQ(ev.param, 2) << "стадия обрыва потеряна";
+    }
+  }
+  EXPECT_EQ(failed, 1) << "обрыв записан " << failed << " раз(а)";
+}
+
 // ProcessCompletion() зовёт StopAutoForward() и при УСПЕШНОМ завершении —
 // событие обрыва там было бы ложным.
 TEST_F(CalibrationManagerTest, StopAutoForward_AfterDone_NoFalseAbortEvent) {

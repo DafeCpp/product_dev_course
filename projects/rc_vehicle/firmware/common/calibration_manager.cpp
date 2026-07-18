@@ -110,6 +110,12 @@ void CalibrationManager::StopAutoForward() {
       // param: 2 = stage 2 (auto_forward), как у ImuCalibStart
       event_log_->Push(
           {platform_.GetTimeMs(), TelemetryEventType::ImuCalibFailed, 2});
+      // Об этом обрыве уже сообщили. ProcessCompletion() выполняется раньше
+      // UpdateAutoDrive() в тике, поэтому переход Collecting → Failed он
+      // увидит только на следующем и записал бы второе ImuCalibFailed — да
+      // ещё с param = 0, потому что после отмены GetCalibStage() не помнит
+      // стадию. Синхронизируем, чтобы дубля не было.
+      prev_calib_status_ = imu_calib_.GetStatus();
     }
     platform_.Log(LogLevel::Info, "Auto-forward calibration stopped");
   }
