@@ -340,11 +340,53 @@ def test_closed_loop_accepts_profile():
     assert math.isfinite(sim.model.state.v)
 
 
+def _tiny_log(tmp_path) -> str:
+    """Минимальный лог в формате прошивки — достаточно для CLI-прогона."""
+    path = tmp_path / "log.csv"
+    rows = ["ts_ms,throttle,steering,yaw_rate_dps,speed_ms,ax"]
+    rows += [f"{i * 10},0.3,0.1,5.0,1.5,0.05" for i in range(20)]
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def _run_cli(*args, cwd=None):
+    return subprocess.run([sys.executable, "validate_logs.py", *args],
+                          cwd=cwd or _SIM_DIR, capture_output=True, text=True)
+
+
+def test_cli_no_fit_save_keeps_source_provenance(tmp_path):
+    """--no-fit + --save-profile не должен метить чужие параметры как measured.
+
+    Подгонки не было — на диск идёт копия профиля, и синтетика обязана остаться
+    синтетикой, иначе провенанс, ради которого всё затевалось, ничего не значит.
+    """
+    out = tmp_path / "copy.json"
+    result = _run_cli(_tiny_log(tmp_path), "--profile", "heavy", "--no-fit",
+                      "--save-profile", str(out))
+    assert result.returncode == 0, result.stderr
+
+    info = load_profile_info(str(out))
+    assert info.provenance.category == "synthetic"
+    assert "heavy" in info.provenance.source
+    assert "fit_params" not in info.provenance.source
+    assert info.params.mass == get_profile("heavy").mass
+
+
+def test_cli_fit_save_marks_measured(tmp_path):
+    """Настоящая подгонка по логу — measured со ссылкой на fit_params."""
+    out = tmp_path / "fit.json"
+    result = _run_cli(_tiny_log(tmp_path), "--profile", "default",
+                      "--fit", "max_accel", "--save-profile", str(out))
+    assert result.returncode == 0, result.stderr
+
+    info = load_profile_info(str(out))
+    assert info.provenance.category == "measured"
+    assert "fit_params" in info.provenance.source
+
+
 def test_cli_list_profiles():
     """--list-profiles работает без пути к логу (positional стал опциональным)."""
-    result = subprocess.run(
-        [sys.executable, "validate_logs.py", "--list-profiles"],
-        cwd=_SIM_DIR, capture_output=True, text=True)
+    result = _run_cli("--list-profiles")
     assert result.returncode == 0, result.stderr
     for name in EXPECTED:
         assert name in result.stdout

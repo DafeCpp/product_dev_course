@@ -14,6 +14,7 @@ import argparse
 import datetime
 import os
 import sys
+from dataclasses import replace
 
 from simlib import (
     ProfileError,
@@ -83,16 +84,27 @@ def main() -> None:
 
     if args.save_profile:
         if args.no_fit:
-            print("warning: --no-fit — сохраняются исходные параметры профиля, не фит")
-        save_profile(
-            fitted, args.save_profile,
-            name=args.profile_name,
-            description=f"фит по {os.path.basename(args.log)}",
-            provenance=Provenance(
+            # Подгонки не было — на диск идут параметры исходного профиля. Метить
+            # их measured нельзя: так синтетика уехала бы в файл как измеренное,
+            # ровно та подмена, от которой профили и защищают.
+            print("warning: --no-fit — сохраняется копия профиля, не результат фита")
+            description = f"копия профиля '{prof.name}' без подгонки"
+            provenance = replace(
+                prof.provenance,
+                source=(f"копия профиля '{prof.name}' (--no-fit, подгонки не было); "
+                        f"исходный source: {prof.provenance.source}"))
+        else:
+            description = f"фит по {os.path.basename(args.log)}"
+            provenance = Provenance(
                 category="measured",
                 source=(f"fit_params({os.path.basename(args.log)}), "
                         f"free={free}, база={prof.name}"),
-                date=datetime.date.today().isoformat()),
+                date=datetime.date.today().isoformat())
+        save_profile(
+            fitted, args.save_profile,
+            name=args.profile_name,
+            description=description,
+            provenance=provenance,
             recommended_dynamic=dynamic)
         print(f"profile → {args.save_profile}")
 
