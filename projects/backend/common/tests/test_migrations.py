@@ -199,6 +199,30 @@ class TestMigrationRunner:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_marks_preexisting_object_as_applied_when_metadata_is_missing(
+        self, migrations_database: str, tmp_path: Path
+    ) -> None:
+        migrations = _write_migrations(
+            tmp_path / "migrations", {"001_existing.sql": "CREATE TABLE existing_table (id integer);"}
+        )
+        conn = await asyncpg.connect(migrations_database)
+        try:
+            await conn.execute("CREATE TABLE existing_table (id integer);")
+        finally:
+            await conn.close()
+
+        runner = create_migration_runner(SimpleNamespace(database_url=migrations_database), [migrations])
+        await runner(None)  # type: ignore[arg-type]
+
+        conn = await asyncpg.connect(migrations_database)
+        try:
+            assert await conn.fetchval("SELECT count(*) FROM schema_migrations") == 1
+            assert await conn.fetchval("SELECT version FROM schema_migrations") == "001_existing"
+        finally:
+            await conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_cli_dry_run_does_not_apply_and_real_run_does(
         self, migrations_database: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
