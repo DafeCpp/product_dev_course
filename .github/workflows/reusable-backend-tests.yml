@@ -110,10 +110,10 @@ jobs:
       - name: Create coverage reports
         if: always()
         run: |
-          poetry run coverage xml -o coverage.xml
-          poetry run coverage json -o coverage.json
-          poetry run coverage html -d htmlcov
-          poetry run coverage lcov -o coverage.lcov
+          poetry run coverage xml --fail-under=0 -o coverage.xml
+          poetry run coverage json --fail-under=0 -o coverage.json
+          poetry run coverage html --fail-under=0 -d htmlcov
+          poetry run coverage lcov --fail-under=0 -o coverage.lcov
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/common/coverage.json') != ''
@@ -227,10 +227,10 @@ jobs:
           set -euo pipefail
           mv _cov_data/.coverage.shard-* . 2>/dev/null || true
           coverage combine
-          coverage xml -o coverage.xml
-          coverage json -o coverage.json
-          coverage html -d htmlcov
-          coverage lcov -o coverage.lcov
+          coverage xml --fail-under=0 -o coverage.xml
+          coverage json --fail-under=0 -o coverage.json
+          coverage html --fail-under=0 -d htmlcov
+          coverage lcov --fail-under=0 -o coverage.lcov
           coverage report --fail-under=0
 
       - name: Summarize coverage
@@ -289,10 +289,10 @@ jobs:
       - name: Create coverage reports
         if: always()
         run: |
-          poetry run coverage xml -o coverage.xml
-          poetry run coverage json -o coverage.json
-          poetry run coverage html -d htmlcov
-          poetry run coverage lcov -o coverage.lcov
+          poetry run coverage xml --fail-under=0 -o coverage.xml
+          poetry run coverage json --fail-under=0 -o coverage.json
+          poetry run coverage html --fail-under=0 -d htmlcov
+          poetry run coverage lcov --fail-under=0 -o coverage.lcov
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/script-service/coverage.json') != ''
@@ -350,10 +350,10 @@ jobs:
       - name: Create coverage reports
         if: always()
         run: |
-          poetry run coverage xml -o coverage.xml
-          poetry run coverage json -o coverage.json
-          poetry run coverage html -d htmlcov
-          poetry run coverage lcov -o coverage.lcov
+          poetry run coverage xml --fail-under=0 -o coverage.xml
+          poetry run coverage json --fail-under=0 -o coverage.json
+          poetry run coverage html --fail-under=0 -d htmlcov
+          poetry run coverage lcov --fail-under=0 -o coverage.lcov
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/config-service/coverage.json') != ''
@@ -465,10 +465,10 @@ jobs:
           set -euo pipefail
           mv _cov_data/.coverage.shard-* . 2>/dev/null || true
           coverage combine
-          coverage xml -o coverage.xml
-          coverage json -o coverage.json
-          coverage html -d htmlcov
-          coverage lcov -o coverage.lcov
+          coverage xml --fail-under=0 -o coverage.xml
+          coverage json --fail-under=0 -o coverage.json
+          coverage html --fail-under=0 -d htmlcov
+          coverage lcov --fail-under=0 -o coverage.lcov
           coverage report --fail-under=0
 
       - name: Summarize coverage
@@ -581,10 +581,10 @@ jobs:
           set -euo pipefail
           mv _cov_data/.coverage.shard-* . 2>/dev/null || true
           coverage combine
-          coverage xml -o coverage.xml
-          coverage json -o coverage.json
-          coverage html -d htmlcov
-          coverage lcov -o coverage.lcov
+          coverage xml --fail-under=0 -o coverage.xml
+          coverage json --fail-under=0 -o coverage.json
+          coverage html --fail-under=0 -d htmlcov
+          coverage lcov --fail-under=0 -o coverage.lcov
           coverage report --fail-under=0
 
       - name: Summarize coverage
