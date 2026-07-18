@@ -15,5 +15,8 @@ dev = ["pytest>=8", "matplotlib>=3.7"]
 [tool.setuptools]
 packages = ["simlib"]
 
+[tool.setuptools.package-data]
+simlib = ["data/profiles/*.json", "data/profiles/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

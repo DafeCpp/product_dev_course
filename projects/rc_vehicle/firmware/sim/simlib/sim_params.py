@@ -43,14 +43,12 @@ class SimParams:
 def fitted_params_2026_07_18() -> SimParams:
     """SimParams, подогнанные под реальные заезды 2026-07-18 (FW-S2.6).
 
-    Joint-фит (Nelder-Mead, каналы yaw rate/скорость/прод. ускорение) по 4 логам
-    тест-запуска LOS-213: forward_back, snake, right_round, left_round
-    (прошивка v1.2.0-140-g45f9bb8). Отчёт: reports/validation-2026-07-18.md.
-    Единицы — как у полей SimParams (м/с², 1/с, град, с).
+    Тонкая обёртка над реестром профилей (FW-S2.9): числа лежат в
+    `simlib/data/profiles/fitted_2026_07_18.json`, отчёт —
+    `reports/validation-2026-07-18.md`.
     """
-    return SimParams(
-        max_accel=8.94,
-        drag_coeff=1.128,
-        servo_max_deg=20.4,
-        motor_tau=0.0376,
-    )
+    # Импорт локальный: profiles импортирует sim_params, модульный импорт здесь
+    # даст цикл и уронит `import simlib`. Не поднимать наверх файла.
+    from .profiles import get_profile
+
+    return get_profile("fitted_2026_07_18")

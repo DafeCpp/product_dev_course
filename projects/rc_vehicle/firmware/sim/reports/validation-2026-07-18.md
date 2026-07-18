@@ -48,6 +48,11 @@ Joint-фит: Nelder-Mead, свободные поля `max_accel`, `drag_coeff`
 
 Код: `simlib/sim_params.py::fitted_params_2026_07_18()`.
 
+*Дополнено FW-S2.9:* числа переехали в профиль `fitted_2026_07_18`
+(`simlib/data/profiles/fitted_2026_07_18.json`), функция выше — тонкая обёртка над
+ним. Использовать: `get_profile("fitted_2026_07_18")` или
+`validate_logs.py --profile fitted_2026_07_18`.
+
 | Параметр | Значение | Единицы | Дефолт был |
 |---|---|---|---|
 | `max_accel` | 8.94 | м/с² @ throttle=1 | 8.0 |

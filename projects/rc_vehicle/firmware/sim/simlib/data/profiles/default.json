@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "name": "default",
+  "description": "Дефолты SimParams (FW-S2.4): порядки величин для небольшой RC-машины.",
+  "provenance": {
+    "category": "baseline",
+    "source": "поля SimParams по умолчанию — прикидка на глаз, НЕ измерялось ни на одном шасси"
+  },
+  "recommended_dynamic": false,
+  "params": {
+    "mass": 3.0,
+    "wheelbase_L": 0.30,
+    "com_a": 0.15,
+    "com_b": 0.15,
+    "Iz": 0.05,
+    "Caf": 60.0,
+    "Car": 60.0,
+    "max_accel": 8.0,
+    "motor_tau": 0.15,
+    "motor_deadzone": 0.05,
+    "drag_coeff": 0.8,
+    "servo_max_deg": 25.0,
+    "servo_slew_dps": 600.0,
+    "imu_pitch_deg": 0.0,
+    "imu_roll_deg": 0.0,
+    "gravity_ms2": 9.80665,
+    "mag_field_mga": 500.0,
+    "gyro_bias_dps": 0.0
+  }
+}

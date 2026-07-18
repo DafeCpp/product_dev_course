@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "name": "heavy",
+  "description": "Шасси с полезной нагрузкой 6 кг (камера/большой аккумулятор): вялый разгон, top speed тот же (7.93 м/с).",
+  "provenance": {
+    "category": "synthetic",
+    "source": "выведено из fitted_2026_07_18: m=6.0 кг; сила мотора F=26.82 Н сохранена ⇒ max_accel=F/m; drag_coeff ∝ 1/m; Iz ∝ m; Caf/Car ∝ m. Нагрузка предполагается по центру (com_a=com_b без изменений). Масса — предположение, НЕ измерено",
+    "date": "2026-07-18"
+  },
+  "recommended_dynamic": false,
+  "params": {
+    "mass": 6.0,
+    "wheelbase_L": 0.30,
+    "com_a": 0.15,
+    "com_b": 0.15,
+    "Iz": 0.10,
+    "Caf": 120.0,
+    "Car": 120.0,
+    "max_accel": 4.47,
+    "motor_tau": 0.0376,
+    "motor_deadzone": 0.05,
+    "drag_coeff": 0.564,
+    "servo_max_deg": 20.4,
+    "servo_slew_dps": 600.0,
+    "imu_pitch_deg": 0.0,
+    "imu_roll_deg": 0.0,
+    "gravity_ms2": 9.80665,
+    "mag_field_mga": 500.0,
+    "gyro_bias_dps": 0.0
+  }
+}

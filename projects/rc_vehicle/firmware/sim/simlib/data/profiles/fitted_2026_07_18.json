@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "name": "fitted_2026_07_18",
+  "description": "Параметры, подогнанные под реальные заезды 2026-07-18 (FW-S2.6). Единственный измеренный профиль.",
+  "provenance": {
+    "category": "measured",
+    "source": "joint-фит (Nelder-Mead, каналы yaw rate/скорость/прод. ускорение) по 4 логам тест-запуска LOS-213: forward_back, snake, right_round, left_round",
+    "date": "2026-07-18",
+    "firmware": "v1.2.0-140-g45f9bb8",
+    "report": "reports/validation-2026-07-18.md"
+  },
+  "recommended_dynamic": false,
+  "params": {
+    "mass": 3.0,
+    "wheelbase_L": 0.30,
+    "com_a": 0.15,
+    "com_b": 0.15,
+    "Iz": 0.05,
+    "Caf": 60.0,
+    "Car": 60.0,
+    "max_accel": 8.94,
+    "motor_tau": 0.0376,
+    "motor_deadzone": 0.05,
+    "drag_coeff": 1.128,
+    "servo_max_deg": 20.4,
+    "servo_slew_dps": 600.0,
+    "imu_pitch_deg": 0.0,
+    "imu_roll_deg": 0.0,
+    "gravity_ms2": 9.80665,
+    "mag_field_mga": 500.0,
+    "gyro_bias_dps": 0.0
+  }
+}

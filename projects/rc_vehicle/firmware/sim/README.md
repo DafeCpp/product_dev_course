@@ -8,7 +8,9 @@
 
 - `simlib/sim_params.py` — `SimParams`: масса, база, ЦМ, жёсткость увода, мотор
   (τ, breakaway), серво (лимит, slew), ориентация IMU. Подгонка под реальные
-  логи — в FW-S2.6.
+  логи — FW-S2.6, готовые наборы параметров — FW-S2.9 (профили).
+- `simlib/profiles.py` + `simlib/data/profiles/*.json` — именованные профили
+  параметров (FW-S2.9).
 - `simlib/vehicle_model.py` — `VehicleModel`: кинематический велосипед
   (`ψ̇ = v·tan(δ)/L`) + опциональный динамический (боковой увод Caf/Car); мотор
   первого порядка, серво со slew.
@@ -63,6 +65,37 @@ python validate_logs.py path/to/telemetry_log.csv --plot out.png --dynamic
 Тесты (`tests/test_validation.py`) — round-trip: «запись» из модели с известными
 параметрами → подгонка восстанавливает их (детерминированно, без реальных логов).
 Реальный лог можно прогнать через `SIM_VALIDATION_LOG=path pytest -k real_log`.
+
+## Профили параметров (FW-S2.9)
+
+`simlib/profiles.py` — именованные наборы `SimParams`. Источник истины — JSON в
+`simlib/data/profiles/`; у каждого профиля есть категория происхождения
+(`measured` / `baseline` / `synthetic`), см. `data/profiles/PROVENANCE.md`.
+
+```bash
+python validate_logs.py --list-profiles
+python validate_logs.py log.csv --profile heavy --no-fit    # оценить профиль как есть
+python validate_logs.py log.csv --profile drift             # фит со старта профиля
+python validate_logs.py log.csv --save-profile my.json      # подогнать под своё шасси
+```
+```python
+from simlib import ClosedLoopSim, find_sim_host, get_profile
+with ClosedLoopSim(find_sim_host(), params=get_profile("heavy")) as sim:
+    sim.run(600, rc_throttle=0.4)
+```
+`--profile` принимает имя встроенного профиля **или** путь к JSON; при коллизии
+имён выигрывает встроенный. Загрузка допускает частичный `params` (недостающее —
+из дефолтов), `save_profile` всегда пишет полный дамп.
+
+Измерен только `fitted_2026_07_18` (FW-S2.6); `light`/`heavy`/`drift` — расчётные
+из него, ни одно шасси не взвешивалось. `light` — **не** «детский режим»: лёгкая
+машина с тем же мотором разгоняется резче; лимиты для детей живут в прошивке
+(`KidsMode`). `drift` требует `dynamic=True` (иначе `Caf`/`Car` не участвуют) и
+осмысленен ниже критической скорости 6.0 м/с — выше линейная модель шин расходится.
+
+**Дефолты не изменились:** `VehicleModel()`/`ClosedLoopSim()` без явных `params`
+по-прежнему берут `SimParams()`. Переключение дефолта на измеренный профиль —
+отдельная задача (LOS-224).
 
 ## Запуск тестов
 
