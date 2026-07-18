@@ -8,7 +8,7 @@ from aiohttp import web
 
 from auth_service.api.utils import get_requester_id
 from auth_service.core.exceptions import ForbiddenError, InvalidCredentialsError
-from auth_service.domain.dto import AuditLogEntry
+from auth_service.domain.dto import AuditLogEntry, AuditLogResponse
 from auth_service.repositories.audit import AuditRepository
 from auth_service.services.dependencies import get_permission_service
 from backend_common.aiohttp_app import read_json
@@ -70,9 +70,24 @@ async def list_audit_log(request: web.Request) -> web.Response:
             limit=limit,
             offset=offset,
         )
+        total = await audit_repo.count(
+            actor_id=actor_id,
+            action=action,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            target_type=target_type,
+            target_id=target_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
 
-        response = [AuditLogEntry.from_model(e).model_dump() for e in entries]
-        return web.json_response(response)
+        response = AuditLogResponse(
+            entries=[AuditLogEntry.from_model(entry) for entry in entries],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+        return web.json_response(response.model_dump())
 
     except web.HTTPBadRequest:
         raise

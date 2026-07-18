@@ -55,6 +55,72 @@ class AuditRepository(BaseRepository):
         offset: int = 0,
     ) -> list[AuditEntry]:
         """Query audit log with filters."""
+        where, params = self._build_filters(
+            actor_id=actor_id,
+            action=action,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            target_type=target_type,
+            target_id=target_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        limit_idx = len(params) + 1
+        params.append(limit)
+        offset_idx = len(params) + 1
+        params.append(offset)
+
+        query = (
+            "SELECT id, timestamp, actor_id, action, scope_type, scope_id, "
+            "target_type, target_id, details, ip_address, user_agent "
+            f"FROM audit_log {where} "
+            "ORDER BY timestamp DESC "
+            f"LIMIT ${limit_idx} OFFSET ${offset_idx}"
+        )
+
+        rows = await self._fetch(query, *params)
+        return [AuditEntry.from_row(dict(r)) for r in rows]
+
+    async def count(
+        self,
+        *,
+        actor_id: UUID | None = None,
+        action: str | None = None,
+        scope_type: str | None = None,
+        scope_id: UUID | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+    ) -> int:
+        """Count audit log entries matching the supplied filters."""
+        where, params = self._build_filters(
+            actor_id=actor_id,
+            action=action,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            target_type=target_type,
+            target_id=target_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        row = await self._fetchrow(f"SELECT COUNT(*) AS total FROM audit_log {where}", *params)
+        assert row is not None
+        return int(row["total"])
+
+    @staticmethod
+    def _build_filters(
+        *,
+        actor_id: UUID | None,
+        action: str | None,
+        scope_type: str | None,
+        scope_id: UUID | None,
+        target_type: str | None,
+        target_id: str | None,
+        from_date: datetime | None,
+        to_date: datetime | None,
+    ) -> tuple[str, list[object]]:
+        """Build a parameterized WHERE clause shared by list and count queries."""
         conditions: list[str] = []
         params: list[object] = []
         idx = 1
@@ -100,20 +166,4 @@ class AuditRepository(BaseRepository):
             idx += 1
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-        params.append(limit)
-        limit_idx = idx
-        idx += 1
-        params.append(offset)
-        offset_idx = idx
-
-        query = (
-            "SELECT id, timestamp, actor_id, action, scope_type, scope_id, "
-            "target_type, target_id, details, ip_address, user_agent "
-            f"FROM audit_log {where} "
-            f"ORDER BY timestamp DESC "
-            f"LIMIT ${limit_idx} OFFSET ${offset_idx}"
-        )
-
-        rows = await self._fetch(query, *params)
-        return [AuditEntry.from_row(dict(r)) for r in rows]
+        return where, params

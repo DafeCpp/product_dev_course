@@ -16,7 +16,6 @@ if TYPE_CHECKING:
         Project,
         Role,
         User,
-        UserProjectRole,
     )
 
 # Minimum password complexity: at least one uppercase, one lowercase, one digit.
@@ -454,6 +453,15 @@ class AuditLogEntry(BaseModel):
             ip_address=entry.ip_address,
             user_agent=entry.user_agent,
         )
+
+
+class AuditLogResponse(BaseModel):
+    """Paginated audit log response."""
+
+    entries: list[AuditLogEntry]
+    total: int
+    limit: int
+    offset: int
 
 
 class AuditLogQuery(BaseModel):
