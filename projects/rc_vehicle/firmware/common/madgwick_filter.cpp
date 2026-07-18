@@ -234,6 +234,15 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
 
 void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
                                      const float forward_vec[3], bool valid) {
+  // Курс, на который фильтр уже сошёлся, снимаем ДО смены опорной СК —
+  // переинициализация ниже обнуляет наклон, но курс должна сохранить (см.
+  // комментарий у присваивания кватерниона).
+  float prev_yaw_rad = 0.f;
+  {
+    float pitch_unused, roll_unused;
+    GetEulerRad(pitch_unused, roll_unused, prev_yaw_rad);
+  }
+
   use_vehicle_frame_ = false;
   if (!valid || forward_vec == nullptr || gravity_vec == nullptr) return;
 
@@ -310,15 +319,25 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   q_veh_to_ned_3_ *= qn;
   use_vehicle_frame_ = true;
 
-  // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame Euler = 0.
+  // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame pitch/roll = 0
+  // при СОХРАНЁННОМ курсе.
   // Мэджвик использует сопряжённую конвенцию: v_sensor = q* ⊗ v_ref ⊗ q,
   // т.е. q в стандартной конвенции = sensor→reference.
   // GetQuaternion: q_result = q_madgwick * q_sv (vehicle→reference в стандартной).
-  // Для identity: q_madgwick * q_sv = I  ⟹  q_madgwick = conj(q_sv).
-  q0_ = q_veh_to_ned_0_;
-  q1_ = -q_veh_to_ned_1_;
-  q2_ = -q_veh_to_ned_2_;
-  q3_ = -q_veh_to_ned_3_;
+  // Хотим q_result = Rz(ψ)  ⟹  q_madgwick = Rz(ψ) * conj(q_sv).
+  //
+  // Обнулять здесь ещё и yaw (ψ=0, т.е. q_madgwick = conj(q_sv)) нельзя: в 9DOF
+  // магнитометр держит абсолютный курс, и сброшенный в ноль yaw фильтр потом
+  // ~10 секунд догоняет градиентным спуском, выдавая всё это время фантомное
+  // вращение до 90° на стоящей машине (LOS-229). Наклон обнулять корректно —
+  // после калибровки машина стоит ровно, и акселерометр это подтверждает.
+  const float half_yaw = 0.5f * prev_yaw_rad;
+  const float cy = std::cos(half_yaw);
+  const float sy = std::sin(half_yaw);
+  QuatMul(cy, 0.f, 0.f, sy,                                          //
+          q_veh_to_ned_0_, -q_veh_to_ned_1_, -q_veh_to_ned_2_,
+          -q_veh_to_ned_3_,                                          //
+          q0_, q1_, q2_, q3_);
 }
 
 void MadgwickFilter::GetQuaternionInNed(float& qw, float& qx, float& qy,

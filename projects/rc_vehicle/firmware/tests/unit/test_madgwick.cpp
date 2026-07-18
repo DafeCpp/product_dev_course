@@ -858,6 +858,53 @@ TEST(MadgwickTest, SetVehicleFrame_InitializesQuaternion) {
   }
 }
 
+TEST(MadgwickTest, SetVehicleFrame_PreservesConvergedYaw) {
+  // Регрессия LOS-229: повторная калибровка на стоящей машине сбрасывала yaw в
+  // ноль, после чего 9DOF-фильтр ~10 с догонял магнитный курс градиентным
+  // спуском — в телеметрии это выглядело как фантомный поворот на 90° при
+  // неподвижных гироскопе, акселерометре и магнитометре.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // Машина стоит ровно, магнитное поле развёрнуто так, что курс ≠ 0.
+  // Даём фильтру сойтись.
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  for (int i = 0; i < 5000; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+
+  float pitch_before, roll_before, yaw_before;
+  filter.GetEulerDeg(pitch_before, roll_before, yaw_before);
+  ASSERT_GT(std::abs(yaw_before), 5.0f)
+      << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+
+  // Повторная калибровка на той же неподвижной машине.
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+
+  EXPECT_NEAR(yaw_after, yaw_before, 0.5f)
+      << "Курс должен пережить рекалибровку: машина не двигалась";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f) << "Наклон обнуляется — это штатно";
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f) << "Наклон обнуляется — это штатно";
+
+  // И главное: никакого транзиента после рекалибровки.
+  for (int i = 0; i < 500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+  float pitch_settled, roll_settled, yaw_settled;
+  filter.GetEulerDeg(pitch_settled, roll_settled, yaw_settled);
+  EXPECT_NEAR(yaw_settled, yaw_before, 1.0f)
+      << "Фильтр не должен никуда уезжать после рекалибровки";
+}
+
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
   // After SetVehicleFrame init + convergence, roll stays ~0
   MadgwickFilter filter;
