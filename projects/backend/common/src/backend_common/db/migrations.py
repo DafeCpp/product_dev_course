@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, Protocol
 
-import asyncpg
+# asyncpg does not publish PEP 561 typing metadata.
+import asyncpg  # type: ignore[import-untyped]
 from aiohttp import web
 
 

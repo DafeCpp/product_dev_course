@@ -20,10 +20,13 @@ from __future__ import annotations
 import structlog
 from aiohttp import web
 from aiohttp.web import middleware
+from collections.abc import Awaitable, Callable
 
 from backend_common.core.exceptions import ServiceError
 
 logger = structlog.get_logger(__name__)
+
+RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 # Extra (service-specific) exception → status_code mappings.
 _extra_mappings: dict[type[Exception], int] = {}
@@ -42,7 +45,7 @@ def register_error_mappings(mappings: dict[type[Exception], int]) -> None:
 @middleware
 async def error_handling_middleware(
     request: web.Request,
-    handler: web.RequestHandler,
+    handler: RequestHandler,
 ) -> web.StreamResponse:
     try:
         return await handler(request)
