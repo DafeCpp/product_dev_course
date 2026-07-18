@@ -230,8 +230,7 @@ void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g,
     return;
   }
 
-  const float accel_mag =
-      std::sqrt(ax_g * ax_g + ay_g * ay_g + az_g * az_g);
+  const float accel_mag = std::sqrt(ax_g * ax_g + ay_g * ay_g + az_g * az_g);
   constexpr float kZuptAccelThresh = 0.05f;
   if (std::abs(accel_mag - 1.0f) >= kZuptAccelThresh) {
     zupt_status_ = ZuptStatus::AccelRejected;
