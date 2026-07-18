@@ -12,6 +12,7 @@
 #include "mag_calibration.hpp"
 #include "mag_sensor.hpp"
 #include "vehicle_control_platform.hpp"
+#include "vehicle_ekf.hpp"
 
 namespace rc_vehicle {
 
@@ -351,6 +352,7 @@ struct TelemetrySnapshot {
   float ekf_yaw_rate{0.0f};
   float ekf_slip_deg{0.0f};
   float ekf_speed_ms{0.0f};
+  ZuptStatus ekf_zupt_status{ZuptStatus::NotEvaluated};
 
   // Oversteer (имеет смысл только при imu_enabled)
   bool oversteer_available{false};

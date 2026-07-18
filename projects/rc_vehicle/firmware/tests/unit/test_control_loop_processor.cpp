@@ -289,6 +289,10 @@ TEST_F(ProcessorTest, WithImu_TelemLogPopulated) {
   size_t count = 0, cap = 0;
   telem_mgr_->GetLogInfo(count, cap);
   EXPECT_GT(count, 0u);
+
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+  EXPECT_EQ(frame.zupt_status, static_cast<uint8_t>(ZuptStatus::Applied));
 }
 
 TEST_F(ProcessorTest, WithoutImu_TelemLogEmpty) {

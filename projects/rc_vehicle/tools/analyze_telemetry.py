@@ -25,7 +25,7 @@ EXPECTED_COLUMNS = [
     "ts_ms", "ax", "ay", "az", "gx", "gy", "gz",
     "vx", "vy", "slip_deg", "speed_ms", "throttle", "steering",
     "pitch_deg", "roll_deg", "yaw_deg", "yaw_rate_dps", "oversteer_active",
-    "rc_throttle", "rc_steering",
+    "rc_throttle", "rc_steering", "zupt_status",
 ]
 
 # Stationary detection: |throttle| < 0.05 for at least this many consecutive samples.
@@ -228,6 +228,32 @@ def check_ekf_drift(rows: list[Row], mask: list[bool]) -> CheckResult:
     return name, passed, f"max(|vx|)={m:.6f} m/s  (limit < {EKF_DRIFT_LIMIT} m/s)"
 
 
+def check_zupt_status(rows: list[Row], mask: list[bool]) -> CheckResult:
+    name = "ZUPT applied at rest"
+    if "zupt_status" not in rows[0]:
+        return name, False, "NO ZUPT STATUS COLUMN"
+
+    statuses = [int(v) for v in filter_by_mask(col(rows, "zupt_status"), mask)]
+    if not statuses:
+        return name, False, "NO STATIONARY DATA"
+
+    names = {
+        0: "not_evaluated",
+        1: "applied",
+        2: "throttle_rejected",
+        3: "accel_rejected",
+        4: "gyro_rejected",
+    }
+    counts = {status: statuses.count(status) for status in sorted(set(statuses))}
+    summary = ", ".join(
+        f"{names.get(status, 'unknown')}={count}"
+        for status, count in counts.items()
+    )
+    applied = counts.get(1, 0)
+    passed = applied > 0
+    return name, passed, f"applied={applied}/{len(statuses)}; {summary}"
+
+
 def check_madgwick_stable(rows: list[Row], mask: list[bool]) -> CheckResult:
     name = "Madgwick stable at rest (std pitch, std roll)"
     pitch_static = filter_by_mask(col(rows, "pitch_deg"), mask)
@@ -280,6 +306,7 @@ def run_all_checks(rows: list[Row], mask: list[bool]) -> list[CheckResult]:
         check_accel_magnitude(rows, mask),
         check_zupt(rows, mask),
         check_ekf_drift(rows, mask),
+        check_zupt_status(rows, mask),
         check_madgwick_stable(rows, mask),
         check_no_false_oversteer(rows, mask),
         check_slip_at_rest(rows),

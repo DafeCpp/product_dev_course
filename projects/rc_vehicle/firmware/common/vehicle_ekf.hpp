@@ -5,6 +5,15 @@
 
 namespace rc_vehicle {
 
+/** Последний результат проверки условий Zero Velocity Update. */
+enum class ZuptStatus : uint8_t {
+  NotEvaluated = 0,
+  Applied,
+  ThrottleRejected,
+  AccelRejected,
+  GyroRejected,
+};
+
 /**
  * @brief Параметры шума процесса и измерений для VehicleEkf.
  */
@@ -142,6 +151,11 @@ class VehicleEkf {
   void UpdateFromImu(float ax_g, float ay_g, float az_g, float gz_dps,
                      float dt_sec, float throttle_abs = 0.0f) noexcept;
 
+  /** Результат ZUPT gate на последнем обновлении IMU. */
+  [[nodiscard]] ZuptStatus GetZuptStatus() const noexcept {
+    return zupt_status_;
+  }
+
   // ─── Доступ к состоянию ───────────────────────────────────────────────
 
   /** Оценка продольной скорости [м/с]. */
@@ -196,6 +210,9 @@ class VehicleEkf {
 
   // Параметры шума
   NoiseParams params_;
+
+  // Диагностика ZUPT; обновляется вместе с каждым UpdateFromImu().
+  ZuptStatus zupt_status_{ZuptStatus::NotEvaluated};
 
   // Вспомогательные методы
   void InitP() noexcept;

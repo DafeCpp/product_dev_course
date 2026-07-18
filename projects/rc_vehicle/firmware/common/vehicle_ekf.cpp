@@ -28,6 +28,7 @@ void VehicleEkf::InitP() noexcept {
 
 void VehicleEkf::Reset() noexcept {
   x_[0] = x_[1] = x_[2] = x_[3] = 0.0f;
+  zupt_status_ = ZuptStatus::NotEvaluated;
   InitP();
 }
 
@@ -224,16 +225,27 @@ void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g,
   // ZUPT: применяем только если машина реально стоит (throttle ≈ 0).
   // При throttle > порога машина пытается ехать — ZUPT обнулит скорость.
   constexpr float kZuptThrottleThresh = 0.02f;  // 2% throttle
-  if (throttle_abs <= kZuptThrottleThresh) {
-    const float accel_mag =
-        std::sqrt(ax_g * ax_g + ay_g * ay_g + az_g * az_g);
-    constexpr float kZuptAccelThresh = 0.05f;
-    constexpr float kZuptGyroThresh = 3.0f;
-    if (std::abs(accel_mag - 1.0f) < kZuptAccelThresh &&
-        std::abs(gz_dps) < kZuptGyroThresh) {
-      UpdateZeroVelocity(0.1f);
-    }
+  if (throttle_abs > kZuptThrottleThresh) {
+    zupt_status_ = ZuptStatus::ThrottleRejected;
+    return;
   }
+
+  const float accel_mag =
+      std::sqrt(ax_g * ax_g + ay_g * ay_g + az_g * az_g);
+  constexpr float kZuptAccelThresh = 0.05f;
+  if (std::abs(accel_mag - 1.0f) >= kZuptAccelThresh) {
+    zupt_status_ = ZuptStatus::AccelRejected;
+    return;
+  }
+
+  constexpr float kZuptGyroThresh = 3.0f;
+  if (std::abs(gz_dps) >= kZuptGyroThresh) {
+    zupt_status_ = ZuptStatus::GyroRejected;
+    return;
+  }
+
+  UpdateZeroVelocity(0.1f);
+  zupt_status_ = ZuptStatus::Applied;
 }
 
 // ═════════════════════════════════════════════════════════════════════════

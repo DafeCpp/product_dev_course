@@ -14,6 +14,26 @@
 
 namespace rc_vehicle {
 
+namespace {
+
+const char* ZuptStatusToString(ZuptStatus status) {
+  switch (status) {
+    case ZuptStatus::NotEvaluated:
+      return "not_evaluated";
+    case ZuptStatus::Applied:
+      return "applied";
+    case ZuptStatus::ThrottleRejected:
+      return "throttle_rejected";
+    case ZuptStatus::AccelRejected:
+      return "accel_rejected";
+    case ZuptStatus::GyroRejected:
+      return "gyro_rejected";
+  }
+  return "unknown";
+}
+
+}  // namespace
+
 // ═════════════════════════════════════════════════════════════════════════
 // RcInputHandler
 // ═════════════════════════════════════════════════════════════════════════
@@ -350,6 +370,8 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
         cJSON_AddNumberToObject(ekf, "vx_var", snap.ekf_vx_var);
         cJSON_AddNumberToObject(ekf, "vy_var", snap.ekf_vy_var);
         cJSON_AddNumberToObject(ekf, "r_var", snap.ekf_r_var);
+        cJSON_AddStringToObject(ekf, "zupt_status",
+                                ZuptStatusToString(snap.ekf_zupt_status));
       }
     }
 
