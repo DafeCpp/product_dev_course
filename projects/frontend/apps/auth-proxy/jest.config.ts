@@ -8,7 +8,7 @@ const config: Config = {
     restoreMocks: true,
     verbose: false,
     coverageDirectory: 'coverage',
-    coverageReporters: ['text', 'html', 'lcov'],
+    coverageReporters: ['text', 'html', 'lcov', 'json-summary', 'cobertura'],
     collectCoverageFrom: [
         'src/**/*.ts',
         '!src/**/*.d.ts',
@@ -16,15 +16,14 @@ const config: Config = {
     ],
     // Ratchet floor — measured 60.6% lines / 51.2% branches at PR #100 baseline.
     // Plan target: 90% (aspirational); raise as wiring code in index.ts gets covered.
-    coverageThreshold: {
+    coverageThreshold: process.env.COVERAGE_ENFORCE_RATCHET === 'true' ? {
         global: {
             lines: 58,
             statements: 58,
             functions: 55,
             branches: 48,
         },
-    },
+    } : undefined,
 }
 
 export default config
-

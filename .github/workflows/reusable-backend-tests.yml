@@ -11,6 +11,10 @@ on:
         description: Python runtime version used by backend Docker images
         type: string
         default: "3.14"
+      enforce-ratchet:
+        description: Fail coverage jobs when configured line or branch floors regress
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -100,8 +104,33 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
-      - name: Run pytest
-        run: poetry run pytest -q
+      - name: Run pytest with coverage
+        run: poetry run pytest -q --cov --cov-report=
+
+      - name: Create coverage reports
+        if: always()
+        run: |
+          poetry run coverage xml --fail-under=0 -o coverage.xml
+          poetry run coverage json --fail-under=0 -o coverage.json
+          poetry run coverage html --fail-under=0 -d htmlcov
+          poetry run coverage lcov --fail-under=0 -o coverage.lcov
+
+      - name: Summarize coverage
+        if: always() && hashFiles('projects/backend/common/coverage.json') != ''
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component backend-common --report coverage.json --format python --min-lines 0 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend-common
+          path: |
+            projects/backend/common/htmlcov
+            projects/backend/common/coverage.xml
+            projects/backend/common/coverage.json
+            projects/backend/common/coverage.lcov
+          if-no-files-found: ignore
+          retention-days: 14
 
   auth-service:
     name: auth-service tests (shard ${{ matrix.shard }}/2)
@@ -198,9 +227,15 @@ jobs:
           set -euo pipefail
           mv _cov_data/.coverage.shard-* . 2>/dev/null || true
           coverage combine
-          coverage xml -o coverage.xml
-          coverage html -d htmlcov
-          coverage report
+          coverage xml --fail-under=0 -o coverage.xml
+          coverage json --fail-under=0 -o coverage.json
+          coverage html --fail-under=0 -d htmlcov
+          coverage lcov --fail-under=0 -o coverage.lcov
+          coverage report --fail-under=0
+
+      - name: Summarize coverage
+        if: always() && hashFiles('projects/backend/services/auth-service/coverage.json') != ''
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component auth-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload merged coverage report
         if: always()
@@ -210,6 +245,8 @@ jobs:
           path: |
             projects/backend/services/auth-service/htmlcov
             projects/backend/services/auth-service/coverage.xml
+            projects/backend/services/auth-service/coverage.json
+            projects/backend/services/auth-service/coverage.lcov
           if-no-files-found: ignore
           retention-days: 14
 
@@ -247,7 +284,19 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+        run: poetry run pytest -q --cov --cov-report= --cov-fail-under=0
+
+      - name: Create coverage reports
+        if: always()
+        run: |
+          poetry run coverage xml --fail-under=0 -o coverage.xml
+          poetry run coverage json --fail-under=0 -o coverage.json
+          poetry run coverage html --fail-under=0 -d htmlcov
+          poetry run coverage lcov --fail-under=0 -o coverage.lcov
+
+      - name: Summarize coverage
+        if: always() && hashFiles('projects/backend/services/script-service/coverage.json') != ''
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component script-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload coverage report
         if: always()
@@ -257,6 +306,8 @@ jobs:
           path: |
             ${{ github.workspace }}/projects/backend/services/${{ github.job }}/htmlcov
             ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.xml
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.json
+            ${{ github.workspace }}/projects/backend/services/${{ github.job }}/coverage.lcov
           if-no-files-found: ignore
           retention-days: 14
 
@@ -294,7 +345,19 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -q --cov --cov-report=xml --cov-report=html
+        run: poetry run pytest -q --cov --cov-report= --cov-fail-under=0
+
+      - name: Create coverage reports
+        if: always()
+        run: |
+          poetry run coverage xml --fail-under=0 -o coverage.xml
+          poetry run coverage json --fail-under=0 -o coverage.json
+          poetry run coverage html --fail-under=0 -d htmlcov
+          poetry run coverage lcov --fail-under=0 -o coverage.lcov
+
+      - name: Summarize coverage
+        if: always() && hashFiles('projects/backend/services/config-service/coverage.json') != ''
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component config-service --report coverage.json --format python --min-lines 0 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload coverage report
         if: always()
@@ -304,6 +367,8 @@ jobs:
           path: |
             projects/backend/services/config-service/htmlcov
             projects/backend/services/config-service/coverage.xml
+            projects/backend/services/config-service/coverage.json
+            projects/backend/services/config-service/coverage.lcov
           if-no-files-found: ignore
           retention-days: 14
 
@@ -400,9 +465,15 @@ jobs:
           set -euo pipefail
           mv _cov_data/.coverage.shard-* . 2>/dev/null || true
           coverage combine
-          coverage xml -o coverage.xml
-          coverage html -d htmlcov
-          coverage report
+          coverage xml --fail-under=0 -o coverage.xml
+          coverage json --fail-under=0 -o coverage.json
+          coverage html --fail-under=0 -d htmlcov
+          coverage lcov --fail-under=0 -o coverage.lcov
+          coverage report --fail-under=0
+
+      - name: Summarize coverage
+        if: always() && hashFiles('projects/backend/services/experiment-service/coverage.json') != ''
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component experiment-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload merged coverage report
         if: always()
@@ -412,6 +483,8 @@ jobs:
           path: |
             projects/backend/services/experiment-service/htmlcov
             projects/backend/services/experiment-service/coverage.xml
+            projects/backend/services/experiment-service/coverage.json
+            projects/backend/services/experiment-service/coverage.lcov
           if-no-files-found: ignore
           retention-days: 14
 
@@ -508,9 +581,15 @@ jobs:
           set -euo pipefail
           mv _cov_data/.coverage.shard-* . 2>/dev/null || true
           coverage combine
-          coverage xml -o coverage.xml
-          coverage html -d htmlcov
-          coverage report
+          coverage xml --fail-under=0 -o coverage.xml
+          coverage json --fail-under=0 -o coverage.json
+          coverage html --fail-under=0 -d htmlcov
+          coverage lcov --fail-under=0 -o coverage.lcov
+          coverage report --fail-under=0
+
+      - name: Summarize coverage
+        if: always() && hashFiles('projects/backend/services/telemetry-ingest-service/coverage.json') != ''
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component telemetry-ingest-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload merged coverage report
         if: always()
@@ -520,5 +599,7 @@ jobs:
           path: |
             projects/backend/services/telemetry-ingest-service/htmlcov
             projects/backend/services/telemetry-ingest-service/coverage.xml
+            projects/backend/services/telemetry-ingest-service/coverage.json
+            projects/backend/services/telemetry-ingest-service/coverage.lcov
           if-no-files-found: ignore
           retention-days: 14

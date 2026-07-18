@@ -11,6 +11,10 @@ on:
         description: File that pins the Node.js runtime version
         type: string
         default: .nvmrc
+      enforce-ratchet:
+        description: Fail coverage jobs when configured line or branch floors regress
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -96,6 +100,8 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
+        env:
+          COVERAGE_ENFORCE_RATCHET: ${{ inputs.enforce-ratchet && 'true' || 'false' }}
 
       - name: Upload coverage report
         if: always()
@@ -131,6 +137,8 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage --workspace=frontend-common
+        env:
+          COVERAGE_ENFORCE_RATCHET: ${{ inputs.enforce-ratchet && 'true' || 'false' }}
 
       - name: Upload coverage report
         if: always()
@@ -175,6 +183,8 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
+        env:
+          COVERAGE_ENFORCE_RATCHET: ${{ inputs.enforce-ratchet && 'true' || 'false' }}
 
       - name: Upload coverage report
         if: always()
@@ -211,8 +221,10 @@ jobs:
       - name: Run type check
         run: npm run type-check
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage
+        run: npm run test:coverage
+        env:
+          COVERAGE_ENFORCE_RATCHET: ${{ inputs.enforce-ratchet && 'true' || 'false' }}
 
       - name: Upload coverage report
         if: always()
