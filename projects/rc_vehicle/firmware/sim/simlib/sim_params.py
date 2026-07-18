@@ -38,3 +38,19 @@ class SimParams:
     gravity_ms2: float = 9.80665  # м/с²
     mag_field_mga: float = 500.0  # мГс, горизонтальная компонента поля Земли
     gyro_bias_dps: float = 0.0  # смещение гироскопа (опц.)
+
+
+def fitted_params_2026_07_18() -> SimParams:
+    """SimParams, подогнанные под реальные заезды 2026-07-18 (FW-S2.6).
+
+    Joint-фит (Nelder-Mead, каналы yaw rate/скорость/прод. ускорение) по 4 логам
+    тест-запуска LOS-213: forward_back, snake, right_round, left_round
+    (прошивка v1.2.0-140-g45f9bb8). Отчёт: reports/validation-2026-07-18.md.
+    Единицы — как у полей SimParams (м/с², 1/с, град, с).
+    """
+    return SimParams(
+        max_accel=8.94,
+        drag_coeff=1.128,
+        servo_max_deg=20.4,
+        motor_tau=0.0376,
+    )
