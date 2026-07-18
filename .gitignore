@@ -1,6 +1,9 @@
 # AI assistants
 .claude/
 .qwen/
+.mcp.json
+.mimocode/
+graphify-out/
 
 # Python
 __pycache__/
@@ -16,6 +19,7 @@ env/
 dist/
 build/
 *.egg
+
 
 # Backend
 backend-project/**/__pycache__/
@@ -77,6 +81,8 @@ coverage/
 *.gcno
 lcov.info
 lcov-report/
+# Firmware build artifacts
+**/build_rel/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -94,6 +100,8 @@ infrastructure/yandex-cloud/.terraform/
 infrastructure/yandex-cloud/.terraform.lock.hcl
 infrastructure/yandex-cloud/terraform.tfstate*
 infrastructure/yandex-cloud/terraform.tfvars
+# Saved plans contain input variables and may expose secrets.
+infrastructure/yandex-cloud/tfplan*
 
 # Temporary files
 *.tmp
@@ -104,3 +112,6 @@ infrastructure/yandex-cloud/terraform.tfvars
 
 # KiCad auto-backups / archives
 projects/rc_vehicle/stm32_espc3_schemas/*-backups/
+
+# Telemetry logs (local test data)
+telemetry_log_*.csv

@@ -95,7 +95,7 @@ class TelemetryLog {
    * @param out Выходной кадр
    * @return true если idx < Count()
    */
-  bool GetFrame(size_t idx, TelemetryLogFrame& out) const;
+  [[nodiscard]] bool GetFrame(size_t idx, TelemetryLogFrame& out) const;
 
   /**
    * @brief Очистить буфер (сбросить счётчики)

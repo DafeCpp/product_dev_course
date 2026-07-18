@@ -108,7 +108,7 @@ class ImuCalibration {
                            float alpha_rad_s2) const;
 
   /** Калибровка валидна и можно применять Apply(). */
-  bool IsValid() const { return data_.valid; }
+  [[nodiscard]] bool IsValid() const { return data_.valid; }
 
   // Пороги для детекции движения (variance по оси)
   static constexpr float kGyroVarianceThreshold = 0.5f;    // (dps)^2

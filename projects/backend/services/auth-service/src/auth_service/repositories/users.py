@@ -5,7 +5,7 @@ from typing import TypedDict
 from uuid import UUID
 
 from auth_service.domain.models import User
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class UserSearchRow(TypedDict):

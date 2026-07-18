@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTelemetryStream, type TelemetryStreamOpener } from 'frontend-common'
 import Modal from './Modal'
 import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
-import { createSSEParser } from '../utils/sse'
 import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
 import { IS_TEST } from '../utils/env'
@@ -17,7 +17,6 @@ type TelemetryStreamModalProps = {
     filterCaptureSessionId?: string
 }
 
-type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'error'
 type FilterMode = 'all' | 'run' | 'capture'
 
 function _clamp(n: number, min: number, max: number) {
@@ -119,26 +118,72 @@ export default function TelemetryStreamModal({
     }, [filterCaptureSessionId, filterRunId])
     const [filterMode, setFilterMode] = useState<FilterMode>('all')
 
-    const [status, setStatus] = useState<StreamStatus>('idle')
-    const [error, setError] = useState<string | null>(null)
-    const [records, setRecords] = useState<TelemetryStreamRecord[]>([])
-    const [lastId, setLastId] = useState<number>(0)
-    const [lastTs, setLastTs] = useState<string>('')
+    const open: TelemetryStreamOpener = useCallback(
+        async ({ sinceTs: ts, sinceId: since, idleTimeoutSeconds: idle, signal }) => {
+            try {
+                const { response: resp, debug } = await telemetryApi.stream({
+                    sensor_id: sensorId,
+                    since_ts: ts,
+                    since_id: since,
+                    idle_timeout_seconds: idle,
+                    signal,
+                })
+                if (!resp.ok) {
+                    const text = await resp.text().catch(() => '')
+                    const bodyText = truncateString(text || '')
+                    maybeEmitHttpErrorToast(
+                        buildHttpDebugInfoFromFetch({
+                            message: text || `Ошибка стрима: HTTP ${resp.status}`,
+                            request: { method: debug.method, url: debug.url, headers: debug.headers },
+                            response: {
+                                status: resp.status,
+                                statusText: resp.statusText,
+                                headers: Object.fromEntries(resp.headers.entries()),
+                                body: bodyText,
+                            },
+                        })
+                    )
+                    throw new Error(text || `Ошибка стрима: HTTP ${resp.status}`)
+                }
+                return { response: resp }
+            } catch (e: any) {
+                if (e?.name === 'AbortError') throw e
+                const debug = e?.debug as { url: string; headers: Record<string, string>; method: string } | undefined
+                if (debug) {
+                    maybeEmitHttpErrorToast(
+                        buildHttpDebugInfoFromFetch({
+                            message: e?.message || 'Ошибка подключения к стриму',
+                            request: { method: debug.method, url: debug.url, headers: debug.headers },
+                        })
+                    )
+                }
+                throw e
+            }
+        },
+        [sensorId],
+    )
 
-    const abortRef = useRef<AbortController | null>(null)
-    const runningRef = useRef(false)
+    const onStreamError = useCallback((err: Error, ctx: { willRetry: boolean }) => {
+        if (ctx.willRetry) return
+        const msg = err.message || 'Ошибка подключения к стриму'
+        notifyError(msg)
+    }, [])
+
+    const stream = useTelemetryStream(sensorId, {
+        open,
+        bufferSize: _clamp(Number(maxPoints || '200'), 10, 2000),
+        idleTimeoutSeconds: _clamp(Number(idleTimeoutSeconds || '30'), 1, 600),
+        onError: onStreamError,
+    })
+
+    const { status: streamStatus, points: records, error: streamError, cursor, start: startStream, stop: stopStream, clear: clearStream } = stream
 
     useEffect(() => {
         if (!isOpen) {
-            // ensure stopped when modal closes
-            abortRef.current?.abort()
-            abortRef.current = null
-            runningRef.current = false
-            setStatus('idle')
-            setError(null)
-            setRecords([])
-            setLastId(0)
-            setLastTs('')
+            // ensure stopped when modal closes, and wipe accumulated records/cursor
+            // so reopening (possibly for a different sensor) doesn't show stale data
+            stopStream()
+            clearStream()
             setSinceTs(new Date().toISOString())
             setSinceId('0')
             setIdleTimeoutSeconds('30')
@@ -153,10 +198,10 @@ export default function TelemetryStreamModal({
 
     const filteredRecords = useMemo(() => {
         if (filterMode === 'run' && filterRunId) {
-            return records.filter((r) => r.run_id === filterRunId)
+            return records.filter((r: TelemetryStreamRecord) => r.run_id === filterRunId)
         }
         if (filterMode === 'capture' && filterCaptureSessionId) {
-            return records.filter((r) => r.capture_session_id === filterCaptureSessionId)
+            return records.filter((r: TelemetryStreamRecord) => r.capture_session_id === filterCaptureSessionId)
         }
         return records
     }, [records, filterMode, filterRunId, filterCaptureSessionId])
@@ -174,108 +219,21 @@ export default function TelemetryStreamModal({
     const spark = useMemo(() => _buildSparkline(plottedValues, SPARK_W, SPARK_H), [plottedValues])
 
     const stop = () => {
-        abortRef.current?.abort()
-        abortRef.current = null
-        runningRef.current = false
-        setStatus('idle')
+        stopStream()
     }
 
-    const start = async () => {
-        setError(null)
-
+    const start = () => {
         const ts = sinceTs && Number.isFinite(Date.parse(sinceTs)) ? sinceTs : new Date().toISOString()
         const since = _clamp(Number(sinceId || '0'), 0, Number.MAX_SAFE_INTEGER)
-        const idle = _clamp(Number(idleTimeoutSeconds || '30'), 1, 600)
-        const max = _clamp(Number(maxPoints || '200'), 10, 2000)
-
-        setRecords([])
-        setLastId(since)
-        setLastTs(ts)
-        setStatus('connecting')
-
-        const abort = new AbortController()
-        abortRef.current = abort
-        runningRef.current = true
-
-        try {
-            const { response: resp, debug } = await telemetryApi.stream(
-                { sensor_id: sensorId, since_ts: ts, since_id: since, idle_timeout_seconds: idle }
-            )
-            if (!resp.ok) {
-                const text = await resp.text().catch(() => '')
-                const bodyText = truncateString(text || '')
-                maybeEmitHttpErrorToast(
-                    buildHttpDebugInfoFromFetch({
-                        message: text || `Ошибка стрима: HTTP ${resp.status}`,
-                        request: { method: debug.method, url: debug.url, headers: debug.headers },
-                        response: {
-                            status: resp.status,
-                            statusText: resp.statusText,
-                            headers: Object.fromEntries(resp.headers.entries()),
-                            body: bodyText,
-                        },
-                    })
-                )
-                throw new Error(text || `Ошибка стрима: HTTP ${resp.status}`)
-            }
-            if (!resp.body) throw new Error('Stream body is empty')
-
-            setStatus('streaming')
-
-            const reader = resp.body.getReader()
-            const decoder = new TextDecoder()
-            const parser = createSSEParser((evt) => {
-                if (evt.event === 'telemetry') {
-                    try {
-                        const parsed = JSON.parse(evt.data) as TelemetryStreamRecord
-                        setLastId(parsed.id)
-                        setLastTs(parsed.timestamp)
-                        setRecords((prev) => {
-                            const next = [...prev, parsed]
-                            return next.length > max ? next.slice(next.length - max) : next
-                        })
-                    } catch (e: any) {
-                        const msg = e?.message || 'Ошибка парсинга telemetry event'
-                        setError(msg)
-                        notifyError(msg)
-                        setStatus('error')
-                    }
-                }
-                if (evt.event === 'error') {
-                    const msg = evt.data || 'Ошибка стрима'
-                    setError(msg)
-                    notifyError(msg)
-                    setStatus('error')
-                }
-            })
-
-            while (runningRef.current && !abort.signal.aborted) {
-                const { value, done } = await reader.read()
-                if (done) break
-                if (value) parser.feed(decoder.decode(value, { stream: true }))
-            }
-        } catch (e: any) {
-            if (e?.name === 'AbortError') {
-                return
-            }
-            const debug = e?.debug as { url: string; headers: Record<string, string>; method: string } | undefined
-            if (debug) {
-                maybeEmitHttpErrorToast(
-                    buildHttpDebugInfoFromFetch({
-                        message: e?.message || 'Ошибка подключения к стриму',
-                        request: { method: debug.method, url: debug.url, headers: debug.headers },
-                    })
-                )
-            }
-            setError(e?.message || 'Ошибка подключения к стриму')
-            setStatus('error')
-        } finally {
-            runningRef.current = false
-        }
+        startStream({ sinceTs: ts, sinceId: since })
     }
 
-    const canClose = status !== 'connecting'
+    const isBusy = streamStatus === 'connecting' || streamStatus === 'streaming' || streamStatus === 'reconnecting'
+    const isStreaming = streamStatus === 'streaming' || streamStatus === 'reconnecting'
+    const canClose = streamStatus !== 'connecting'
     const hasFilterOptions = !!filterRunId || !!filterCaptureSessionId
+    const lastId = cursor.sinceId ?? 0
+    const lastTs = cursor.sinceTs ?? ''
 
     return (
         <Modal
@@ -290,7 +248,9 @@ export default function TelemetryStreamModal({
             className="telemetry-stream-modal"
         >
             <div className="telemetry-stream">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {IS_TEST && streamStatus === 'error' && streamError && (
+                    <div className="error">{streamError.message}</div>
+                )}
 
                 <div className="form-grid">
                     <div className="form-group">
@@ -300,7 +260,7 @@ export default function TelemetryStreamModal({
                             type="text"
                             value={sinceTs}
                             onChange={(e) => setSinceTs(e.target.value)}
-                            disabled={status === 'connecting' || status === 'streaming'}
+                            disabled={isBusy}
                         />
                     </div>
 
@@ -311,7 +271,7 @@ export default function TelemetryStreamModal({
                             type="number"
                             value={sinceId}
                             onChange={(e) => setSinceId(e.target.value)}
-                            disabled={status === 'connecting' || status === 'streaming'}
+                            disabled={isBusy}
                             min={0}
                         />
                     </div>
@@ -323,7 +283,7 @@ export default function TelemetryStreamModal({
                             type="number"
                             value={idleTimeoutSeconds}
                             onChange={(e) => setIdleTimeoutSeconds(e.target.value)}
-                            disabled={status === 'connecting' || status === 'streaming'}
+                            disabled={isBusy}
                             min={1}
                             max={600}
                         />
@@ -336,7 +296,7 @@ export default function TelemetryStreamModal({
                             type="number"
                             value={maxPoints}
                             onChange={(e) => setMaxPoints(e.target.value)}
-                            disabled={status === 'connecting' || status === 'streaming'}
+                            disabled={isBusy}
                             min={10}
                             max={2000}
                         />
@@ -348,7 +308,7 @@ export default function TelemetryStreamModal({
                                 id="telemetry_stream_filter"
                                 value={filterMode}
                                 onChange={(value) => setFilterMode(value as FilterMode)}
-                                disabled={status === 'connecting'}
+                                disabled={streamStatus === 'connecting'}
                             >
                                 <option value="all">all events</option>
                                 {filterRunId && <option value="run">this run</option>}
@@ -359,9 +319,9 @@ export default function TelemetryStreamModal({
                 </div>
 
                 <div className="stream-actions">
-                    {status !== 'streaming' ? (
-                        <button className="btn btn-primary" onClick={start} disabled={status === 'connecting'}>
-                            {status === 'connecting' ? 'Подключение…' : 'Старт'}
+                    {!isStreaming ? (
+                        <button className="btn btn-primary" onClick={start} disabled={streamStatus === 'connecting'}>
+                            {streamStatus === 'connecting' ? 'Подключение…' : 'Старт'}
                         </button>
                     ) : (
                         <button className="btn btn-secondary" onClick={stop}>
@@ -375,6 +335,7 @@ export default function TelemetryStreamModal({
                         <span className="mono">last_id: {lastId}</span>
                         {lastTs && <span className="mono">last_ts: {lastTs}</span>}
                         <span>events: {filteredRecords.length}{filterMode !== 'all' ? ` / ${records.length}` : ''}</span>
+                        {streamStatus === 'reconnecting' && <span className="dim">переподключение…</span>}
                     </div>
                 </div>
 
@@ -506,4 +467,3 @@ export default function TelemetryStreamModal({
         </Modal>
     )
 }
-

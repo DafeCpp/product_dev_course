@@ -24,6 +24,21 @@ import './AdminUsers.scss'
 
 type Tab = 'users' | 'invites' | 'system-roles'
 
+/**
+ * Generate a strong temporary password on the client.
+ *
+ * The backend no longer returns the plaintext password from admin-reset, so the
+ * admin supplies a known value here (displayed once locally) to communicate to
+ * the user. Uses the Web Crypto CSPRNG.
+ */
+function generateTempPassword(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+    const bytes = new Uint32Array(16)
+    crypto.getRandomValues(bytes)
+    // Prefix guarantees the mixed-character policy the API expects.
+    return 'Tmp1' + Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
+}
+
 function AdminUsers() {
     const [tab, setTab] = useState<Tab>('users')
 
@@ -63,12 +78,18 @@ function AdminUsers() {
         errorFallback: 'Ошибка удаления',
     })
 
-    const resetPasswordMutation = useApiMutation<any, string>({
-        mutationFn: (userId) => authApi.adminResetUserPassword(userId),
+    // The server no longer returns the plaintext password. Generate a strong
+    // temporary password client-side so the admin still has a value to hand to
+    // the user, without the secret ever travelling back in a response body.
+    const resetPasswordMutation = useApiMutation<
+        { user: AdminUser; password_change_required: boolean },
+        { userId: string; password: string }
+    >({
+        mutationFn: ({ userId, password }) => authApi.adminResetUserPassword(userId, password),
         invalidateKeys: [['admin', 'users']],
         successMessage: 'Пароль сброшен',
         errorFallback: 'Ошибка сброса пароля',
-        onSuccess: (data) => setResetResult({ userId: data.user.id, password: data.new_password }),
+        onSuccess: (data, vars) => setResetResult({ userId: data.user.id, password: vars.password }),
     })
 
     // --- Invites ---
@@ -339,7 +360,7 @@ function AdminUsers() {
                                                 <button
                                                     className="btn btn-secondary btn-xs"
                                                     title="Сбросить пароль"
-                                                    onClick={() => resetPasswordMutation.mutate(u.id)}
+                                                    onClick={() => resetPasswordMutation.mutate({ userId: u.id, password: generateTempPassword() })}
                                                     disabled={resetPasswordMutation.isPending}
                                                 >
                                                     Пароль↺

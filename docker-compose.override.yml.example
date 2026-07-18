@@ -60,21 +60,23 @@ services:
 
   # Experiment Portal - Frontend
   experiment-portal:
-    # Используем development stage из Dockerfile
+    # Используем development stage из Dockerfile; context — корень репозитория,
+    # т.к. Dockerfile подтягивает соседний npm-workspace projects/frontend/common
     build:
-      context: ./projects/frontend/apps/experiment-portal
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/frontend/apps/experiment-portal/Dockerfile
       target: development
     # Монтируем исходный код для hot-reload
     volumes:
-      - ./projects/frontend/apps/experiment-portal/src:/app/src
-      - ./projects/frontend/apps/experiment-portal/index.html:/app/index.html
-      - ./projects/frontend/apps/experiment-portal/vite.config.ts:/app/vite.config.ts
-      - ./projects/frontend/apps/experiment-portal/tsconfig.json:/app/tsconfig.json
-      - ./projects/frontend/apps/experiment-portal/tsconfig.node.json:/app/tsconfig.node.json
+      - ./projects/frontend/common:/app/projects/frontend/common
+      - ./projects/frontend/apps/experiment-portal/src:/app/projects/frontend/apps/experiment-portal/src
+      - ./projects/frontend/apps/experiment-portal/index.html:/app/projects/frontend/apps/experiment-portal/index.html
+      - ./projects/frontend/apps/experiment-portal/vite.config.ts:/app/projects/frontend/apps/experiment-portal/vite.config.ts
+      - ./projects/frontend/apps/experiment-portal/tsconfig.json:/app/projects/frontend/apps/experiment-portal/tsconfig.json
+      - ./projects/frontend/apps/experiment-portal/tsconfig.node.json:/app/projects/frontend/apps/experiment-portal/tsconfig.node.json
       # Исключаем node_modules и dist
       - /app/node_modules
-      - /app/dist
+      - /app/projects/frontend/apps/experiment-portal/dist
     # Используем Vite dev server с hot-reload
     command: npm run dev
     environment:

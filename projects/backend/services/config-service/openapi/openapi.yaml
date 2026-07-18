@@ -1,0 +1,812 @@
+openapi: 3.1.0
+info:
+  title: Config Service API
+  version: 1.0.0
+  description: |
+    Runtime platform configuration service (RFC-0001).
+
+    Manages versioned, schema-validated key/value configs for platform services.
+    Provides CRUD for configs and schemas, optimistic-lock concurrency control,
+    full history, rollback, and an internal bulk-polling endpoint for the consumer SDK.
+
+    **Auth (via auth-proxy):** All endpoints require a valid session cookie routed
+    through auth-proxy, which injects `X-User-Id` and RBAC headers
+    (`X-User-Is-Superadmin`, `X-User-System-Permissions`, `X-User-Permissions`).
+
+    **External access** (through auth-proxy): `/api/config-service/v1/...`
+    **Internal access** (service-to-service): `/api/v1/...`
+
+    **RBAC:** each operation declares the system permission it requires via the
+    `x-required-permission` extension. Permissions are bundled into built-in
+    roles (auth-service migration `003_config_rbac.sql`):
+
+    | Role | Permissions |
+    |------|-------------|
+    | `config_viewer` | `configs.view` |
+    | `config_editor` | `configs.view`, `configs.create`, `configs.update`, `configs.delete` |
+    | `config_operator` | `configs.view`, `configs.activate`, `configs.rollback` |
+    | `config_admin` | all of the above + `configs.schemas.manage` + `configs.sensitive.read` |
+
+    The «4-eyes» principle is enforced at the permission level: an editor writes
+    drafts but cannot activate them; an operator activates/rolls back but cannot
+    edit. `superadmin` bypasses all checks.
+
+    > **Note:** `GET /api/v1/configs/bulk` is an internal endpoint used only by the
+    > consumer SDK. It is blocked at the auth-proxy level and not part of this spec.
+
+servers:
+  - url: http://localhost:8005
+    description: Direct service (local development)
+  - url: http://localhost:8080/api/config-service
+    description: Via auth-proxy (local development)
+
+tags:
+  - name: configs
+    description: Config CRUD, activate/deactivate, rollback, history
+  - name: schemas
+    description: JSON Schema management per config type
+
+security:
+  - sessionCookie: []
+
+paths:
+  /api/v1/config:
+    post:
+      operationId: createConfig
+      x-required-permission: configs.create
+      summary: Create a config
+      tags: [configs]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: dry_run
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Validate and preview without writing to DB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigCreate'
+      responses:
+        '201':
+          description: Config created
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+        '200':
+          description: Dry-run preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DryRunResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Idempotency key reused with a different payload
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    get:
+      operationId: listConfigs
+      x-required-permission: configs.view
+      summary: List configs
+      tags: [configs]
+      parameters:
+        - name: service
+          in: query
+          schema:
+            type: string
+          description: Filter by service name
+        - name: project
+          in: query
+          schema:
+            type: string
+          description: Filter by project ID (null for platform-wide)
+        - name: config_type
+          in: query
+          schema:
+            $ref: '#/components/schemas/ConfigType'
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor from previous response
+      responses:
+        '200':
+          description: Paginated list of configs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConfigResponse'
+                  next_cursor:
+                    type: string
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/config/{config_id}:
+    parameters:
+      - $ref: '#/components/parameters/ConfigId'
+
+    get:
+      operationId: getConfig
+      x-required-permission: configs.view
+      summary: Get a config by ID
+      tags: [configs]
+      responses:
+        '200':
+          description: Config found
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: patchConfig
+      x-required-permission: configs.update
+      summary: Update a config (optimistic lock)
+      tags: [configs]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - name: dry_run
+          in: query
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigPatch'
+      responses:
+        '200':
+          description: Config updated
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+        '400':
+          description: If-Match / version mismatch
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          description: Optimistic-lock conflict — re-fetch and retry
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '428':
+          description: If-Match header or version field missing
+
+    delete:
+      operationId: deleteConfig
+      x-required-permission: configs.delete
+      summary: Soft-delete a config (optimistic lock)
+      tags: [configs]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Must match the If-Match header value
+        - name: change_reason
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Config deleted
+        '400':
+          description: Missing or mismatched version / change_reason
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          description: Optimistic-lock conflict — re-fetch and retry
+
+  /api/v1/config/{config_id}/activate:
+    parameters:
+      - $ref: '#/components/parameters/ConfigId'
+    post:
+      operationId: activateConfig
+      x-required-permission: configs.activate
+      summary: Activate a config
+      tags: [configs]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateDeactivateRequest'
+      responses:
+        '200':
+          description: Config activated
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          description: Optimistic-lock conflict
+
+  /api/v1/config/{config_id}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/ConfigId'
+    post:
+      operationId: deactivateConfig
+      x-required-permission: configs.activate
+      summary: Deactivate a config
+      tags: [configs]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateDeactivateRequest'
+      responses:
+        '200':
+          description: Config deactivated
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          description: Optimistic-lock conflict
+
+  /api/v1/config/{config_id}/rollback:
+    parameters:
+      - $ref: '#/components/parameters/ConfigId'
+    post:
+      operationId: rollbackConfig
+      x-required-permission: configs.rollback
+      summary: Roll back a config to a previous version
+      tags: [configs]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackRequest'
+      responses:
+        '200':
+          description: Config rolled back — new version created
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          description: Optimistic-lock conflict
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/config/{config_id}/history:
+    parameters:
+      - $ref: '#/components/parameters/ConfigId'
+    get:
+      operationId: getConfigHistory
+      x-required-permission: configs.view
+      summary: Get version history for a config
+      tags: [configs]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: History entries (newest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConfigHistoryEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/schemas:
+    get:
+      operationId: listSchemas
+      x-required-permission: configs.view
+      summary: List active schemas (one per config type)
+      tags: [schemas]
+      responses:
+        '200':
+          description: Active schemas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchemaResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/schemas/{config_type}:
+    parameters:
+      - $ref: '#/components/parameters/ConfigTypeParam'
+
+    get:
+      operationId: getSchema
+      x-required-permission: configs.view
+      summary: Get active schema for a config type
+      tags: [schemas]
+      responses:
+        '200':
+          description: Schema found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaResponse'
+        '400':
+          description: Invalid config_type value
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No active schema for this config type
+
+    put:
+      operationId: updateSchema
+      x-required-permission: configs.schemas.manage
+      summary: Update the JSON Schema for a config type
+      tags: [schemas]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchemaUpdateRequest'
+      responses:
+        '200':
+          description: Schema updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaResponse'
+        '400':
+          description: Invalid config_type
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: Breaking schema change or sanity check failure
+
+  /api/v1/schemas/{config_type}/history:
+    parameters:
+      - $ref: '#/components/parameters/ConfigTypeParam'
+    get:
+      operationId: getSchemaHistory
+      x-required-permission: configs.view
+      summary: Get schema version history for a config type
+      tags: [schemas]
+      responses:
+        '200':
+          description: Schema history (all versions)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchemaResponse'
+        '400':
+          description: Invalid config_type
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: |
+        Session cookie issued by auth-service and validated by auth-proxy. The
+        proxy strips any client-supplied `X-User-*` headers and re-injects
+        trusted identity/RBAC headers (`X-User-Id`, `X-User-Is-Superadmin`,
+        `X-User-System-Permissions`) from the authenticated session. Each
+        operation's required permission is declared via `x-required-permission`.
+  parameters:
+    ConfigId:
+      name: config_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConfigTypeParam:
+      name: config_type
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ConfigType'
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Current version as a quoted integer, e.g. `"3"`
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Client-supplied key for safe POST retry
+
+  headers:
+    ETag:
+      description: Current version as a quoted integer, e.g. `"4"`
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid X-User-Id header
+    Forbidden:
+      description: Insufficient permissions
+    NotFound:
+      description: Config not found
+    ValidationError:
+      description: Schema validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
+              details:
+                type: object
+
+  schemas:
+    ConfigType:
+      type: string
+      enum: [feature_flag, qos]
+      description: Type of configuration value
+
+    ConfigCreate:
+      type: object
+      required: [service_name, key, config_type, value]
+      properties:
+        service_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        project_id:
+          type: string
+          nullable: true
+          description: Null for platform-wide configs
+        key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        config_type:
+          $ref: '#/components/schemas/ConfigType'
+        description:
+          type: string
+          nullable: true
+        value:
+          type: object
+          description: Arbitrary JSON object validated against the active schema for config_type
+        metadata:
+          type: object
+          default: {}
+        is_critical:
+          type: boolean
+          default: false
+          description: Marks configs whose change triggers a prod alert
+        is_sensitive:
+          type: boolean
+          default: false
+          description: Value redacted in responses unless caller has configs.sensitive.read
+        change_reason:
+          type: string
+          nullable: true
+
+    ConfigPatch:
+      type: object
+      required: [version, change_reason]
+      properties:
+        version:
+          type: integer
+          description: Must match the current version (and the If-Match header)
+        change_reason:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        value:
+          type: object
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        is_active:
+          type: boolean
+          nullable: true
+        is_critical:
+          type: boolean
+          nullable: true
+        is_sensitive:
+          type: boolean
+          nullable: true
+
+    ActivateDeactivateRequest:
+      type: object
+      required: [version, change_reason]
+      properties:
+        version:
+          type: integer
+        change_reason:
+          type: string
+          minLength: 1
+
+    RollbackRequest:
+      type: object
+      required: [version, target_version, change_reason]
+      properties:
+        version:
+          type: integer
+          description: Current version (optimistic lock)
+        target_version:
+          type: integer
+          description: Historical version to restore (must differ from version)
+        change_reason:
+          type: string
+          minLength: 1
+
+    SchemaUpdateRequest:
+      type: object
+      required: [schema]
+      properties:
+        schema:
+          type: object
+          description: JSON Schema (draft-07) to validate config values of this type
+
+    ConfigResponse:
+      type: object
+      required:
+        - id
+        - service_name
+        - key
+        - config_type
+        - value
+        - metadata
+        - is_active
+        - is_critical
+        - is_sensitive
+        - version
+        - created_by
+        - updated_by
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        service_name:
+          type: string
+        project_id:
+          type: string
+          nullable: true
+        key:
+          type: string
+        config_type:
+          $ref: '#/components/schemas/ConfigType'
+        description:
+          type: string
+          nullable: true
+        value:
+          type: object
+          description: Redacted to `"***"` when is_sensitive and caller lacks configs.sensitive.read
+        metadata:
+          type: object
+        is_active:
+          type: boolean
+        is_critical:
+          type: boolean
+        is_sensitive:
+          type: boolean
+        version:
+          type: integer
+        created_by:
+          type: string
+        updated_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ConfigHistoryEntry:
+      type: object
+      required:
+        - id
+        - config_id
+        - version
+        - service_name
+        - key
+        - config_type
+        - value
+        - metadata
+        - is_active
+        - changed_by
+        - changed_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        config_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        service_name:
+          type: string
+        key:
+          type: string
+        config_type:
+          $ref: '#/components/schemas/ConfigType'
+        value:
+          type: object
+        metadata:
+          type: object
+        is_active:
+          type: boolean
+        changed_by:
+          type: string
+        change_reason:
+          type: string
+          nullable: true
+        correlation_id:
+          type: string
+          nullable: true
+        changed_at:
+          type: string
+          format: date-time
+
+    SchemaResponse:
+      type: object
+      required: [id, config_type, schema, version, is_active, created_by, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        config_type:
+          $ref: '#/components/schemas/ConfigType'
+        schema:
+          type: object
+          description: JSON Schema (draft-07)
+        version:
+          type: integer
+        is_active:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    DryRunResponse:
+      type: object
+      required: [preview, dry_run]
+      properties:
+        preview:
+          $ref: '#/components/schemas/ConfigResponse'
+        dry_run:
+          type: boolean
+          enum: [true]

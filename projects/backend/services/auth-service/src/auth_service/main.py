@@ -9,8 +9,10 @@ from backend_common.aiohttp_app import add_cors_to_routes, add_healthcheck, crea
 from backend_common.metrics import metrics_handler, metrics_middleware
 from backend_common.middleware.error_handler import error_handling_middleware
 from backend_common.logging_config import configure_logging
+from backend_common.otel import setup_otel, shutdown_otel
 
 from auth_service.api.middleware import password_change_required_middleware
+from auth_service.workers.qos_config_poller import build_qos_client
 from auth_service.services.email import EmailService
 from auth_service.api.routes.audit import setup_routes as setup_audit_routes
 from auth_service.api.routes.auth import setup_routes as setup_auth_routes
@@ -51,9 +53,23 @@ def create_app() -> web.Application:
     setup_audit_routes(app)
     setup_users_routes(app)
 
+    setup_otel(
+        app,
+        service_name=settings.app_name,
+        exporter_endpoint=settings.otel_exporter_endpoint,
+    )
+
     app.on_startup.append(init_pool)
     app.on_startup.append(start_background_worker)
+    if settings.config_client_enabled:
+        _qos_client = build_qos_client(
+            settings.config_client_url,
+            settings.config_client_poll_interval_seconds,
+        )
+        app.on_startup.append(_qos_client.start)
+        app.on_cleanup.append(_qos_client.stop)
     app.on_cleanup.append(stop_background_worker)
+    app.on_cleanup.append(shutdown_otel)
     app.on_cleanup.append(close_pool)
 
     # Add CORS to all routes
@@ -76,4 +92,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

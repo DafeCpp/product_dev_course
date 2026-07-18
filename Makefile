@@ -1,4 +1,4 @@
-.PHONY: test test-backend test-frontend test-telemetry-cli type-check backend-install frontend-install
+.PHONY: bench-firmware-test test test-backend test-deploy-contract test-frontend test-telemetry-cli type-check backend-install frontend-install
 .PHONY: test-coverage test-coverage-backend test-coverage-frontend test-coverage-firmware
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
@@ -8,11 +8,13 @@
 SHELL := /bin/bash
 
 BACKEND_SERVICES_DIR := projects/backend/services
+BACKEND_COMMON_DIR := projects/backend/common
 BACKEND_DIR := projects/backend/services/experiment-service
 FRONTEND_DIR := projects/frontend/apps/experiment-portal
 OPENAPI_SPEC := openapi/openapi.yaml
 # Find all backend services (directories with pyproject.toml)
 BACKEND_SERVICES := $(shell find $(BACKEND_SERVICES_DIR) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort)
+BACKEND_PROJECTS := $(BACKEND_COMMON_DIR) $(BACKEND_SERVICES)
 # Python interpreter to use for Poetry virtualenv.
 # Override examples:
 #   make PYTHON=/path/to/python backend-install
@@ -35,7 +37,7 @@ BACKEND_BASE_DOCKERFILE := projects/backend/Dockerfile.base
 BACKEND_BASE_HASH := $(shell sha256sum $(BACKEND_BASE_DOCKERFILE) 2>/dev/null | awk '{print $$1}')
 BACKEND_DEV_SERVICES := auth-service experiment-service telemetry-ingest-service
 # All services managed by `make dev-*` targets
-DEV_ALL_SERVICES := postgres redis auth-service experiment-service telemetry-ingest-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
+DEV_ALL_SERVICES := postgres redis auth-service experiment-service telemetry-ingest-service config-service auth-proxy experiment-portal sensor-simulator loki alloy grafana
 # Default dev credentials for `make dev-seed`
 DEV_ADMIN_USER     ?= admin
 DEV_ADMIN_EMAIL    ?= admin@example.com
@@ -51,12 +53,16 @@ TEST_POSTGRESQL_DSN ?=
 
 test: type-check test-backend test-telemetry-cli test-frontend
 
+test-deploy-contract:
+	@echo "🧪 Running production deploy contract tests..."
+	@python3 -m unittest discover -s scripts/tests -p "test_*.py" -v
+
 backend-install:
-	@if [ -z "$(BACKEND_SERVICES)" ]; then \
-		echo "⚠️  Не найдено ни одного backend сервиса в $(BACKEND_SERVICES_DIR)"; \
+	@if [ -z "$(BACKEND_PROJECTS)" ]; then \
+		echo "⚠️  Не найдено ни одного backend проекта"; \
 		exit 1; \
 	fi; \
-	for service in $(BACKEND_SERVICES); do \
+	for service in $(BACKEND_PROJECTS); do \
 		echo "📦 Installing dependencies for $$(basename $$service)..."; \
 		cd $$service && \
 			PY=""; \
@@ -158,6 +164,9 @@ test-backend: backend-install
 	failed=0; \
 	out_file="$$(mktemp -t backend-pytest.XXXXXX.log)"; \
 	trap 'rm -f "$$out_file"' EXIT; \
+	echo "🧪 Running tests for backend-common..."; \
+	set -o pipefail; \
+	(cd $(BACKEND_COMMON_DIR) && poetry run pytest) 2>&1 | tee -a "$$out_file" || failed=1; \
 	for service in $(BACKEND_SERVICES); do \
 		echo "🧪 Running tests for $$(basename $$service)..."; \
 		set -o pipefail; \
@@ -165,6 +174,11 @@ test-backend: backend-install
 	done; \
 	"$(PYTHON)" scripts/pytest_totals.py "$$out_file" || true; \
 	exit $$failed
+
+# Host-тесты прошивки контроллера стенда (GTest); не входят в make test —
+# запускаются явно (как test-coverage-firmware у rc_vehicle)
+bench-firmware-test:
+	$(MAKE) -C projects/bench_controller/firmware test
 
 test-telemetry-cli:
 	@echo "🧪 Running tests for telemetry-cli..."
@@ -448,18 +462,7 @@ dev-seed:
 # Используй когда пароль неизвестен после make dev-seed.
 dev-reset-admin:
 	@echo "Сброс пароля $(DEV_ADMIN_USER) на $(DEV_ADMIN_PASSWORD)..."
-	@$(DOCKER_COMPOSE) exec -T auth-service python -c "\
-import asyncio, asyncpg, os; \
-from auth_service.services.password import hash_password; \
-async def reset(): \
-    url = os.environ.get('DATABASE_URL', ''); \
-    conn = await asyncpg.connect(url); \
-    h = hash_password('$(DEV_ADMIN_PASSWORD)'); \
-    r = await conn.fetchrow(\"UPDATE users SET hashed_password=\$$1, password_change_required=false WHERE username=\$$2 RETURNING id\", h, '$(DEV_ADMIN_USER)'); \
-    await conn.close(); \
-    return r; \
-r = asyncio.run(reset()); \
-print('✅ Пароль сброшен' if r else '❌ Пользователь не найден')"
+	@$(DOCKER_COMPOSE) exec -T auth-service sh -c 'printf "%s\n" "import asyncio, asyncpg, os" "from auth_service.services.password import hash_password" "async def reset():" "    url = os.environ.get(\"DATABASE_URL\", \"\")" "    conn = await asyncpg.connect(url)" "    h = hash_password(\"$(DEV_ADMIN_PASSWORD)\")" "    r = await conn.fetchrow(\"UPDATE users SET hashed_password=\$$1, password_change_required=false WHERE username=\$$2 RETURNING id\", h, \"$(DEV_ADMIN_USER)\")" "    await conn.close()" "    return r" "r = asyncio.run(reset())" "print(\"✅ Пароль сброшен\" if r else \"❌ Пользователь не найден\")" | python3'
 
 # Остановка фронтенда, бэкенда, auth-service, auth-proxy и Grafana
 dev-down:
@@ -725,8 +728,18 @@ auth-create-db:
 		($(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE auth_db;" && \
 		echo "✅ База данных auth_db создана")
 
-# Инициализация auth-service (создание БД + миграции)
-auth-init: auth-create-db auth-migrate
+# Seed initial admin user (if not exists)
+auth-seed:
+	@echo "Создание первого админа (если не существует)..."
+	@$(DOCKER_COMPOSE) exec -T auth-service python -m bin.seed \
+		--database-url "$${AUTH_DATABASE_URL:-postgresql://auth_user:auth_password@postgres:5432/auth_db}" \
+		--username "$${ADMIN_USERNAME:-admin}" \
+		--email "$${ADMIN_EMAIL:-admin@example.com}" \
+		--password "$${ADMIN_PASSWORD}" || true
+	@echo "✅ Seed completed"
+
+# Инициализация auth-service (создание БД + миграции + первый админ)
+auth-init: auth-create-db auth-migrate auth-seed
 	@echo "✅ Auth-service инициализирован"
 # Применение миграций experiment-service
 experiment-migrate:
@@ -761,6 +774,25 @@ script-migrate:
 script-init: script-create-db script-migrate
 	@echo "✅ Script-service инициализирован"
 
+# Создание базы данных config_db (если не существует)
+config-create-db:
+	@echo "Создание базы данных config_db..."
+	@$(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'config_db'" | grep -q 1 && \
+		echo "✅ База данных config_db уже существует" || \
+		($(DOCKER_COMPOSE) exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE config_db;" && \
+		echo "✅ База данных config_db создана")
+
+# Применение миграций config-service
+config-migrate:
+	@echo "Применение миграций config-service..."
+	@$(DOCKER_COMPOSE) exec -T config-service python -m bin.migrate --database-url "$${CONFIG_DATABASE_URL:-postgresql://config_user:config_password@postgres:5432/config_db}" || \
+		$(DOCKER_COMPOSE) exec config-service python -m bin.migrate --database-url "$${CONFIG_DATABASE_URL:-postgresql://config_user:config_password@postgres:5432/config_db}"
+	@echo "✅ Миграции config-service применены"
+
+# Инициализация config-service (создание БД + миграции)
+config-init: config-create-db config-migrate
+	@echo "✅ Config-service инициализирован"
+
 # ============================================
 # Production Deploy (Yandex Cloud)
 # ============================================
@@ -777,7 +809,12 @@ infra-apply:
 	@cd infrastructure/yandex-cloud && terraform apply
 
 infra-destroy:
-	@echo "ВНИМАНИЕ: удалит ВСЮ инфраструктуру в Yandex Cloud!"
+	@if [ "$(CONFIRM_PRODUCTION_DESTROY)" != "destroy-production" ]; then \
+		echo "ОТКАЗ: production teardown требует CONFIRM_PRODUCTION_DESTROY=destroy-production"; \
+		echo "Сначала выполните процедуру снятия prevent_destroy из docs/deployment-yandex-cloud.md"; \
+		exit 1; \
+	fi
+	@echo "ВНИМАНИЕ: удаляется ВСЯ инфраструктура в Yandex Cloud!"
 	@cd infrastructure/yandex-cloud && terraform destroy
 
 .PHONY: mvp-demo-check

@@ -17,18 +17,18 @@ PlatformError VehicleControlUnified::Init() {
   if (!platform_) return PlatformError::TaskCreateFailed;
 
   auto pwm_result = platform_->InitPwm();
-  if (IsError(pwm_result)) {
+  if (!pwm_result.has_value()) {
     platform_->Log(LogLevel::Error, "Failed to initialize PWM");
-    return GetError(pwm_result);
+    return pwm_result.error();
   }
 
   auto failsafe_result = platform_->InitFailsafe();
-  if (IsError(failsafe_result)) {
+  if (!failsafe_result.has_value()) {
     platform_->Log(LogLevel::Error, "Failed to initialize failsafe");
-    return GetError(failsafe_result);
+    return failsafe_result.error();
   }
 
-  rc_enabled_ = IsOk(platform_->InitRc());
+  rc_enabled_ = platform_->InitRc().has_value();
   if (!rc_enabled_) {
     platform_->Log(LogLevel::Warning,
                    "RC input init failed — continuing without RC-in");
@@ -46,9 +46,9 @@ PlatformError VehicleControlUnified::Init() {
   if (!InitializeComponents()) return PlatformError::TaskCreateFailed;
 
   auto task_result = platform_->CreateTask(ControlTaskEntry, this);
-  if (IsError(task_result)) {
+  if (!task_result.has_value()) {
     platform_->Log(LogLevel::Error, "Failed to create vehicle control task");
-    return GetError(task_result);
+    return task_result.error();
   }
 
   inited_ = true;
@@ -58,7 +58,7 @@ PlatformError VehicleControlUnified::Init() {
 }
 
 void VehicleControlUnified::InitImuSubsystem() {
-  if (!IsOk(platform_->InitImu())) {
+  if (!platform_->InitImu().has_value()) {
     imu_enabled_ = false;
     const int who = platform_->GetImuLastWhoAmI();
     platform_->Log(LogLevel::Warning,
@@ -152,13 +152,17 @@ bool VehicleControlUnified::InitializeComponents() {
 
   // Без IMU stab_mgr_ не создаётся (InitImuSubsystem выходит раньше) —
   // контроллеры инициализируются дефолтным конфигом, стабилизация неактивна.
+  //
+  // FW-R23: контроллеры конфиг НЕ хранят — получают живой снимок в Process()
+  // каждый тик. `cfg` ниже нужен лишь для начальных PID-коэффициентов
+  // (yaw/slip SetGains в Init); указатель на него нигде не сохраняется.
   const StabilizationConfig cfg =
       stab_mgr_ ? stab_mgr_->GetConfig() : StabilizationConfig{};
   yaw_ctrl_.Init(cfg, ekf_, imu_handler_.get());
-  pitch_ctrl_.Init(cfg, madgwick_, imu_handler_.get());
+  pitch_ctrl_.Init(madgwick_, imu_handler_.get());
   slip_ctrl_.Init(cfg, ekf_, imu_handler_.get());
-  oversteer_guard_.Init(cfg, ekf_, imu_handler_.get());
-  kids_processor_.Init(cfg, ekf_, imu_handler_.get());
+  oversteer_guard_.Init(ekf_, imu_handler_.get());
+  kids_processor_.Init(ekf_, imu_handler_.get());
 
   telem_handler_.reset(new TelemetryHandler(
       *platform_, config::TelemetryConfig::kSendIntervalMs));

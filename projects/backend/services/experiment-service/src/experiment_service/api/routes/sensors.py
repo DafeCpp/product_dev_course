@@ -27,6 +27,7 @@ from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
 from experiment_service.services.dependencies import (
     ensure_permission,
+    ensure_project_context,
     get_idempotency_service,
     get_sensor_service,
     require_current_user,
@@ -63,32 +64,27 @@ async def register_sensor(request: web.Request):
     body_for_hash = dto.model_dump(mode="json")
     idempotency_key = request.headers.get(IDEMPOTENCY_HEADER)
     serialized_body, body_hash = IdempotencyService.canonical_body(body_for_hash)
+    reservation = None
     if idempotency_key:
         try:
-            cached = await idempotency_service.get_cached_response(
+            reservation, cached = await idempotency_service.reserve_or_get_cached(
                 idempotency_key, user.user_id, request.rel_url.path, body_hash
             )
         except IdempotencyConflictError as exc:
             raise web.HTTPConflict(text="Conflict") from exc
-        if cached:
+        if cached is not None:
             return IdempotencyService.build_response(cached)
     service = await get_sensor_service(request)
-    try:
-        sensor, token = await service.register_sensor(
-            dto, created_by=user.user_id, initial_profile=profile_dto
-        )
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+    async with idempotency_service.guard_reservation(reservation):
+        try:
+            sensor, token = await service.register_sensor(
+                dto, created_by=user.user_id, initial_profile=profile_dto
+            )
+        except InvalidStatusTransitionError as exc:
+            raise web.HTTPBadRequest(text="Bad request") from exc
     payload = {"sensor": _sensor_response(sensor), "token": token}
-    if idempotency_key:
-        await idempotency_service.store_response(
-            idempotency_key,
-            user.user_id,
-            request.rel_url.path,
-            body_hash,
-            201,
-            payload,
-        )
+    if reservation is not None:
+        await idempotency_service.complete_response(reservation, 201, payload)
     return web.json_response(payload, status=201)
 
 
@@ -318,13 +314,22 @@ async def get_sensor_heartbeat_history(request: web.Request):
 
 @routes.get("/api/v1/sensors/{sensor_id}/projects")
 async def get_sensor_projects(request: web.Request):
-    """Get all projects associated with a sensor."""
+    """Get all projects associated with a sensor.
+
+    Scoped: the caller must have access to a project the sensor belongs to.
+    We verify the sensor is attached to the resolved ``project_id`` before
+    disclosing the full list, otherwise a user could enumerate the project
+    membership of arbitrary sensors.
+    """
     user = await require_current_user(request)
+    project_id = ensure_project_context(user)
+    ensure_permission(user, "experiments.view")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
 
-    ensure_permission(user, "experiments.view")
     service = await get_sensor_service(request)
     try:
+        # 404 if the sensor is not attached to the caller's project.
+        await service.get_sensor(project_id, sensor_id)
         project_ids = await service.get_sensor_projects(sensor_id)
         if not project_ids:
             raise web.HTTPNotFound(text="Sensor not found")

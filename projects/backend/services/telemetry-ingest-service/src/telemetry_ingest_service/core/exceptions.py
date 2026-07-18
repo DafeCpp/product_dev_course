@@ -1,23 +1,16 @@
 """Domain/service exceptions."""
 from __future__ import annotations
 
-from backend_common.core.exceptions import ServiceError
+from backend_common.core.exceptions import ForbiddenError, NotFoundError, ServiceError, UnauthorizedError
+
+__all__ = ["AuthServiceError", "NotFoundError", "ScopeMismatchError", "UnauthorizedError"]
 
 
-class UnauthorizedError(ServiceError):
-    """Raised when sensor token authentication fails."""
-
-    status_code: int = 401
-
-
-class NotFoundError(ServiceError):
-    """Raised when a referenced entity does not exist in expected scope."""
-
-    status_code: int = 404
-
-
-class ScopeMismatchError(ServiceError):
+class ScopeMismatchError(ForbiddenError):
     """Raised when run/capture session scope does not match."""
 
-    status_code: int = 403
 
+class AuthServiceError(ServiceError):
+    """Raised when the auth-service cannot validate a user token."""
+
+    status_code = 502

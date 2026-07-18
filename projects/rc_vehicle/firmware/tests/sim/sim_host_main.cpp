@@ -15,6 +15,7 @@
 //
 // Время логическое: реальных пауз нет, dt берётся из кадра.
 
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -53,9 +54,20 @@ std::string StepAndFormat(VehicleControlUnified& u, StdioPlatform& p,
 
 }  // namespace
 
+rc_vehicle::DriveMode ParseDriveMode(std::string_view s) {
+  if (s == "kids") return rc_vehicle::DriveMode::Kids;
+  if (s == "sport") return rc_vehicle::DriveMode::Sport;
+  if (s == "drift") return rc_vehicle::DriveMode::Drift;
+  if (s == "directlaw") return rc_vehicle::DriveMode::DirectLaw;
+  return rc_vehicle::DriveMode::Normal;
+}
+
 int main(int argc, char** argv) {
   bool batch = false;
   bool identity_calib = false;
+  rc_vehicle::DriveMode drive_mode = rc_vehicle::DriveMode::Normal;
+  float speed_limit = 0.0f;
+  bool stabilize = false;
   for (int i = 1; i < argc; ++i) {
     const std::string_view a = argv[i];
     if (a == "--batch")
@@ -64,11 +76,20 @@ int main(int argc, char** argv) {
       batch = false;
     else if (a == "--identity-calib")
       identity_calib = true;
+    else if (a == "--drive-mode" && i + 1 < argc)
+      drive_mode = ParseDriveMode(argv[++i]);
+    else if (a == "--speed-limit" && i + 1 < argc)
+      speed_limit = std::strtof(argv[++i], nullptr);
+    else if (a == "--stabilize")
+      stabilize = true;
   }
 
   auto platform = std::make_unique<StdioPlatform>();
   StdioPlatform* p = platform.get();
   p->SetIdentityCalib(identity_calib);
+  p->SetDriveMode(drive_mode);
+  p->SetSpeedLimit(speed_limit);
+  p->SetStabilize(stabilize);
 
   VehicleControlUnified unified;
   unified.SetPlatform(std::move(platform));

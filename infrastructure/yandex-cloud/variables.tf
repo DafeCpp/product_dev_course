@@ -70,7 +70,7 @@ variable "vm_cores" {
 variable "vm_memory_gb" {
   description = "RAM in GB"
   type        = number
-  default     = 4
+  default     = 6
 }
 
 variable "vm_core_fraction" {
@@ -104,7 +104,7 @@ variable "vm_ssh_public_key_path" {
 }
 
 variable "vm_preemptible" {
-  description = "Use preemptible (spot) VM for cost savings. Will be stopped after 24h."
+  description = "Use a preemptible VM. Must remain false for production."
   type        = bool
   default     = false
 }
@@ -165,12 +165,46 @@ variable "pg_experiment_db_password" {
   sensitive   = true
 }
 
+variable "pg_config_db_password" {
+  description = "Password for config_user (config_db)"
+  type        = string
+  sensitive   = true
+}
+
+variable "pg_script_db_password" {
+  description = "Password for script_user (script_db)"
+  type        = string
+  sensitive   = true
+}
+
 # --- Container Registry ---
 
 variable "cr_name" {
   description = "Name of the Container Registry"
   type        = string
   default     = "experiment-tracking-cr"
+}
+
+# --- Object Storage ---
+
+variable "artifacts_bucket_name" {
+  description = "Globally unique private Object Storage bucket for experiment-service artifacts"
+  type        = string
+
+  validation {
+    condition     = length(var.artifacts_bucket_name) >= 3 && length(var.artifacts_bucket_name) <= 63
+    error_message = "artifacts_bucket_name must contain between 3 and 63 characters."
+  }
+}
+
+variable "artifacts_cors_allowed_origins" {
+  description = "Browser origins allowed to upload/download artifacts through presigned URLs"
+  type        = list(string)
+
+  validation {
+    condition     = length(var.artifacts_cors_allowed_origins) > 0 && alltrue([for origin in var.artifacts_cors_allowed_origins : startswith(origin, "https://")])
+    error_message = "artifacts_cors_allowed_origins must contain at least one HTTPS origin."
+  }
 }
 
 # --- Application ---

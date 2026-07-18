@@ -1,6 +1,6 @@
 # Frontend: Требования и задачи — RBAC v2 + Скрипты
 
-Ссылки: [rbac-v2-design.md](rbac-v2-design.md), [script-execution-design.md](script-execution-design.md), [tasks-rbac-scripts.md](tasks-rbac-scripts.md)
+Ссылки: [rbac-v2-design.md](rbac-v2-design.md), [script-execution-design.md](script-execution-design.md), [EPIC LOS-142 — Frontend RBAC + Scripts](https://linear.app/lostpointer/issue/LOS-142)
 
 ---
 
@@ -442,7 +442,7 @@ backend 4.3 ───────────┼──►3.7 ──┘
 
 ## 6. Нумерация в общем плане
 
-Задачи frontend нумеруются как **фаза 6** в [tasks-rbac-scripts.md](tasks-rbac-scripts.md) (бывшая «Frontend (опционально)»), но теперь с детализацией:
+Задачи frontend нумеруются как **фаза 6** в [EPIC LOS-142 — Frontend RBAC + Scripts](https://linear.app/lostpointer/issue/LOS-142) (бывшая «Frontend (опционально)»), но теперь с детализацией:
 
 | Общий # | Задача |
 |---------|--------|

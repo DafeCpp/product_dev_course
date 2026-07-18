@@ -5,6 +5,7 @@ import { authApi } from '../api/auth'
 import { usePermissions } from '../hooks/usePermissions'
 import UserProfileModal from './UserProfileModal'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { clearWorkspaceStorage } from '../utils/activeProject'
 import './Layout.scss'
 
 interface LayoutProps {
@@ -87,6 +88,22 @@ const navItems: NavItem[] = [
     shortLabel: 'SC',
     requiredPermissions: ['scripts.manage', 'scripts.execute'],
   },
+  {
+    to: '/admin/configs',
+    label: 'Конфиги',
+    description: 'Runtime-конфигурация платформы: флаги, QoS, kill-switches',
+    eyebrow: 'Config Plane',
+    shortLabel: 'CF',
+    requiredPermissions: ['configs.view'],
+  },
+  {
+    to: '/admin/rate-limits',
+    label: 'Rate Limits & QoS',
+    description: 'Ограничения и конфигурация качества сервиса',
+    eyebrow: 'Config Plane',
+    shortLabel: 'RL',
+    requiredPermissions: ['configs.view'],
+  },
 ]
 
 const pageMeta = [
@@ -145,6 +162,18 @@ const pageMeta = [
     eyebrow: 'Script Runner',
   },
   {
+    match: (pathname: string) => pathname.startsWith('/admin/configs'),
+    title: 'Конфиги',
+    description: 'Управление runtime-конфигами: версии, активация, откат, история.',
+    eyebrow: 'Config Plane',
+  },
+  {
+    match: (pathname: string) => pathname.startsWith('/admin/rate-limits'),
+    title: 'Rate Limits & QoS',
+    description: 'Конфигурация ограничений и качества сервиса для всех сервисов.',
+    eyebrow: 'Config Plane',
+  },
+  {
     match: (pathname: string) => pathname.startsWith('/admin'),
     title: 'Администрирование',
     description: 'Управление доступом, пользователями и системными ролями.',
@@ -174,7 +203,11 @@ function Layout({ children }: LayoutProps) {
     mutationFn: () => authApi.logout(),
     successMessage: 'Выход выполнен',
     errorFallback: 'Ошибка выхода',
-    onSuccess: () => { queryClient.clear(); navigate('/login') },
+    onSuccess: () => {
+      clearWorkspaceStorage()
+      queryClient.clear()
+      navigate('/login')
+    },
   })
 
   const { hasAnyPermission, isSuperadmin } = usePermissions()

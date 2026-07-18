@@ -11,6 +11,10 @@ Two independent counters share the same window:
 When either counter is exceeded ``check()`` returns ``(False, retry_after)``
 so the caller can respond with HTTP 429 and a ``Retry-After`` header.
 
+Limits are read from a shared :class:`RateLimitConfig` on every ``check()``,
+so runtime updates take effect immediately.  A limit of ``0`` means *unlimited*
+for that counter.
+
 Thread safety: asyncio is single-threaded; no locking needed.
 """
 from __future__ import annotations
@@ -20,6 +24,8 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
+
+from telemetry_ingest_service.middleware.rate_limit_config import RateLimitConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +41,20 @@ class IngestRateLimiter:
     """Fixed-window per-sensor rate limiter for REST ingest.
 
     Args:
-        max_requests_per_window: maximum POST requests allowed per window.
-        max_readings_per_window: maximum telemetry readings allowed per window.
-        window_seconds: window duration in seconds.
+        config: shared, mutable rate-limit configuration.  Limits are read
+            live on every ``check()`` so runtime changes apply at once.
     """
 
-    def __init__(
-        self,
-        max_requests_per_window: int,
-        max_readings_per_window: int,
-        window_seconds: float,
-    ) -> None:
-        self._max_requests = max_requests_per_window
-        self._max_readings = max_readings_per_window
-        self._window = window_seconds
+    def __init__(self, config: RateLimitConfig) -> None:
+        self._config = config
         self._buckets: dict[UUID, _Window] = defaultdict(
-            lambda: _Window(reset_at=time.monotonic() + window_seconds)
+            lambda: _Window(reset_at=time.monotonic() + self._config.rest_window_seconds)
         )
+
+    @property
+    def max_requests(self) -> int:
+        """Current per-window request limit (``0`` = unlimited)."""
+        return self._config.rest_max_requests
 
     def check(self, sensor_id: UUID, readings_count: int) -> tuple[bool, int]:
         """Check and increment rate limit counters for *sensor_id*.
@@ -68,35 +71,39 @@ class IngestRateLimiter:
         Returns:
             Tuple of (allowed, retry_after_seconds).
         """
+        max_requests = self._config.rest_max_requests
+        max_readings = self._config.rest_max_readings
+
         now = time.monotonic()
         bucket = self._buckets[sensor_id]
 
         if now >= bucket.reset_at:
-            bucket.reset_at = now + self._window
+            bucket.reset_at = now + self._config.rest_window_seconds
             bucket.requests = 0
             bucket.readings = 0
 
         retry_after = max(0, int(bucket.reset_at - now))
 
-        if bucket.requests >= self._max_requests:
+        # A limit of 0 means "unlimited" for that counter.
+        if max_requests and bucket.requests >= max_requests:
             logger.warning(
                 "REST ingest rate limit exceeded (requests): sensor_id=%s "
                 "requests=%d limit=%d retry_after=%ds",
                 sensor_id,
                 bucket.requests,
-                self._max_requests,
+                max_requests,
                 retry_after,
             )
             return False, retry_after
 
-        if bucket.readings + readings_count > self._max_readings:
+        if max_readings and bucket.readings + readings_count > max_readings:
             logger.warning(
                 "REST ingest rate limit exceeded (readings): sensor_id=%s "
                 "readings=%d incoming=%d limit=%d retry_after=%ds",
                 sensor_id,
                 bucket.readings,
                 readings_count,
-                self._max_readings,
+                max_readings,
                 retry_after,
             )
             return False, retry_after

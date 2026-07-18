@@ -9,7 +9,7 @@ import pytest
 
 from auth_service.core.exceptions import NotFoundError
 from auth_service.domain.models import Project, User, UserProjectRole
-from auth_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 from auth_service.repositories.projects import ProjectRepository
 from auth_service.repositories.users import UserRepository
 

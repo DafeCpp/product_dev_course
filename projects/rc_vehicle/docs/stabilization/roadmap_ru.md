@@ -333,7 +333,7 @@ IMU (MPU-6500, SPI, 500 Гц)
 
 ## Ссылки на документацию
 
-- Основное ТЗ: `docs/ts.md`
+- Архитектура и реализация прошивки: `firmware/README.md`
 - Протоколы: `docs/interfaces_protocols.md`
 - Тайминги: `docs/firmware_timing.md`
 - Стиль кода: `docs/cpp_coding_style.md`

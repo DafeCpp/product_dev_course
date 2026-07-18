@@ -3,13 +3,13 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <firmware_common/slew_rate.hpp>
 
 #include "auto_drive_coordinator.hpp"
 #include "config.hpp"
 #include "control_components.hpp"
 #include "imu_calibration.hpp"
 #include "self_test.hpp"
-#include "slew_rate.hpp"
 #include "stabilization_manager.hpp"
 #include "telemetry_manager.hpp"
 #include "vehicle_control_platform.hpp"
@@ -43,23 +43,21 @@ inline bool SelectControlSource(const SensorSnapshot& sensors,
 // ═════════════════════════════════════════════════════════════════════════
 
 /** Обновление PWM с ограничением скорости изменения (slew rate). */
-inline void UpdatePwmWithSlewRate(VehicleControlPlatform& platform,
-                                  uint32_t now_ms, float commanded_throttle,
-                                  float commanded_steering,
-                                  float& applied_throttle,
-                                  float& applied_steering,
-                                  uint32_t& last_pwm_update,
-                                  float throttle_trim, float steering_trim,
-                                  float slew_throttle_per_sec,
-                                  float slew_steering_per_sec) {
+inline void UpdatePwmWithSlewRate(
+    VehicleControlPlatform& platform, uint32_t now_ms, float commanded_throttle,
+    float commanded_steering, float& applied_throttle, float& applied_steering,
+    uint32_t& last_pwm_update, float throttle_trim, float steering_trim,
+    float slew_throttle_per_sec, float slew_steering_per_sec) {
   if (now_ms - last_pwm_update >= config::PwmConfig::kUpdateIntervalMs) {
     const uint32_t pwm_dt_ms = now_ms - last_pwm_update;
     last_pwm_update = now_ms;
 
-    applied_throttle = ApplySlewRate(commanded_throttle, applied_throttle,
-                                     slew_throttle_per_sec, pwm_dt_ms);
-    applied_steering = ApplySlewRate(commanded_steering, applied_steering,
-                                     slew_steering_per_sec, pwm_dt_ms);
+    applied_throttle = firmware_common::ApplySlewRate(
+        commanded_throttle, applied_throttle, slew_throttle_per_sec,
+        pwm_dt_ms / 1000.0f);
+    applied_steering = firmware_common::ApplySlewRate(
+        commanded_steering, applied_steering, slew_steering_per_sec,
+        pwm_dt_ms / 1000.0f);
 
     platform.SetPwm(applied_throttle + throttle_trim,
                     applied_steering + steering_trim);
@@ -102,9 +100,9 @@ SelfTestInput BuildSelfTestInput(const SelfTestContext& ctx);
 // ═════════════════════════════════════════════════════════════════════════
 
 /** Построить атомарный снимок состояния датчиков. */
-inline SensorSnapshot BuildSensorSnapshot(const RcInputHandler* rc_handler,
-                                          const WifiCommandHandler* wifi_handler,
-                                          const ImuHandler* imu_handler) {
+inline SensorSnapshot BuildSensorSnapshot(
+    const RcInputHandler* rc_handler, const WifiCommandHandler* wifi_handler,
+    const ImuHandler* imu_handler) {
   SensorSnapshot s;
   s.rc_active = rc_handler && rc_handler->IsActive();
   if (s.rc_active) {
@@ -135,8 +133,7 @@ inline SensorSnapshot BuildSensorSnapshot(const RcInputHandler* rc_handler,
 /** Построить входные данные для авто-процедур из снимка датчиков. */
 inline AutoDriveInput BuildAutoDriveInput(const SensorSnapshot& sensors,
                                           const ImuCalibration& imu_calib,
-                                          uint32_t dt_ms,
-                                          uint32_t now_ms = 0) {
+                                          uint32_t dt_ms, uint32_t now_ms = 0) {
   AutoDriveInput ad;
   ad.rc_active = sensors.rc_active;
   ad.imu_enabled = sensors.imu_enabled;

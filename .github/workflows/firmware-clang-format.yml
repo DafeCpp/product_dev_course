@@ -7,6 +7,8 @@ on:
       - develop
     paths:
       - projects/rc_vehicle/firmware/**
+      - projects/bench_controller/firmware/**
+      - projects/firmware_common/**
       - .github/workflows/firmware-clang-format.yml
 
 permissions:
@@ -41,10 +43,13 @@ jobs:
           CF_EXT: c,cc,cpp,cxx,h,hh,hpp,hxx
         run: |
           base="$(git merge-base "origin/${GITHUB_BASE_REF}" HEAD)"
-          if git clang-format --extensions "$CF_EXT" --diff "$base" -- projects/rc_vehicle/firmware/ > cf.diff; then
+          if git clang-format --extensions "$CF_EXT" --diff "$base" \
+              -- projects/rc_vehicle/firmware/ \
+                 projects/bench_controller/firmware/ \
+                 projects/firmware_common/ > cf.diff; then
             echo "clang-format: OK"
           else
-            echo "::error::Изменённые строки не соответствуют .clang-format. Исправить: git clang-format --extensions $CF_EXT $(git merge-base origin/develop HEAD) -- projects/rc_vehicle/firmware/"
+            echo "::error::Изменённые строки не соответствуют .clang-format. Запустите git clang-format для изменённых firmware-файлов."
             cat cf.diff
             exit 1
           fi

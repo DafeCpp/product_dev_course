@@ -13,7 +13,7 @@ export interface Role {
   scope: 'system' | 'project'
   is_builtin: boolean
   project_id: string | null
-  permissions: Permission[]
+  permissions: string[]
   created_at: string
   updated_at: string
 }
@@ -58,7 +58,6 @@ export interface AuditLogResponse {
 export interface AuditEntry {
   id: string
   actor_id: string
-  actor_username: string
   action: string
   scope_type: string | null
   scope_id: string | null
@@ -66,5 +65,6 @@ export interface AuditEntry {
   target_id: string | null
   details: Record<string, unknown>
   ip_address: string | null
-  created_at: string
+  user_agent: string | null
+  timestamp: string
 }

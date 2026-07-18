@@ -7,9 +7,11 @@ import structlog
 from aiohttp import web
 
 from backend_common.aiohttp_app import read_json
+from backend_common.core.exceptions import ServiceError as AuthError
 
-from auth_service.api.utils import extract_bearer_token, extract_client_ip, extract_user_agent
-from auth_service.core.exceptions import AuthError, handle_auth_error
+from auth_service.api.utils import extract_bearer_token, extract_user_agent
+from backend_common.api import extract_client_ip
+from auth_service.core.exceptions import handle_auth_error
 from auth_service.domain.dto import (
     AdminUserResetRequest,
     AdminUserUpdateRequest,
@@ -308,12 +310,15 @@ async def admin_reset_user(request: web.Request) -> web.Response:
     try:
         auth_service = await get_auth_service(request)
         requester_id = await _get_requester_id(request, auth_service)
-        updated_user, new_password = await auth_service.admin_reset_user(
+        # The plaintext password is not echoed back: the admin chose it and
+        # already knows it. The account is flagged password_change_required so
+        # the user must change it on next login.
+        updated_user, _new_password = await auth_service.admin_reset_user(
             requester_id, target_user_id, req.new_password,
         )
         user_resp = await auth_service.get_user_response(updated_user)
         return web.json_response(
-            {"user": user_resp.model_dump(), "new_password": new_password},
+            {"user": user_resp.model_dump(), "password_change_required": True},
             status=200,
         )
     except AuthError as e:

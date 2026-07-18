@@ -6,12 +6,13 @@ from typing import Any, List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
+from asyncpg.exceptions import UniqueViolationError  # type: ignore[import-untyped]
 
-from experiment_service.core.exceptions import NotFoundError
+from experiment_service.core.exceptions import DuplicateResourceError, NotFoundError
 from experiment_service.domain.dto import SensorCreateDTO, SensorUpdateDTO
 from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 from experiment_service.settings import settings
 
 _CONNECTION_STATUS_EXPR = f"""
@@ -42,48 +43,54 @@ class SensorRepository(BaseRepository):
         token_hash: bytes | None = None,
         token_preview: str | None = None,
     ) -> Sensor:
-        async with self._pool.acquire() as conn:
-            async with conn.transaction():
-                record = await conn.fetchrow(
-                    """
-                    INSERT INTO sensors (
-                        project_id,
-                        name,
-                        type,
-                        input_unit,
-                        display_unit,
-                        status,
+        try:
+            async with self._pool.acquire() as conn:
+                async with conn.transaction():
+                    record = await conn.fetchrow(
+                        """
+                        INSERT INTO sensors (
+                            project_id,
+                            name,
+                            type,
+                            input_unit,
+                            display_unit,
+                            status,
+                            token_hash,
+                            token_preview,
+                            calibration_notes
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        RETURNING *
+                        """,
+                        data.project_id,
+                        data.name,
+                        data.type,
+                        data.input_unit,
+                        data.display_unit,
+                        data.status.value,
                         token_hash,
                         token_preview,
-                        calibration_notes
+                        data.calibration_notes,
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    RETURNING *
-                    """,
-                    data.project_id,
-                    data.name,
-                    data.type,
-                    data.input_unit,
-                    data.display_unit,
-                    data.status.value,
-                    token_hash,
-                    token_preview,
-                    data.calibration_notes,
-                )
-                assert record is not None
-                sensor = self._to_model(record)
-                # Add sensor to sensor_projects table
-                await conn.execute(
-                    """
-                    INSERT INTO sensor_projects (sensor_id, project_id, created_at)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (sensor_id, project_id) DO NOTHING
-                    """,
-                    sensor.id,
-                    data.project_id,
-                    sensor.created_at,
-                )
-                return sensor
+                    assert record is not None
+                    sensor = self._to_model(record)
+                    # Add sensor to sensor_projects table
+                    await conn.execute(
+                        """
+                        INSERT INTO sensor_projects (sensor_id, project_id, created_at)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (sensor_id, project_id) DO NOTHING
+                        """,
+                        sensor.id,
+                        data.project_id,
+                        sensor.created_at,
+                    )
+                    return sensor
+        except UniqueViolationError as exc:
+            # Concurrent create racing on sensors_project_name_uindex.
+            raise DuplicateResourceError(
+                f"Sensor with name '{data.name}' already exists in this project"
+            ) from exc
 
     async def get(self, project_id: UUID, sensor_id: UUID) -> Sensor:
         # Check if sensor exists and is associated with the project.

@@ -9,7 +9,6 @@
 #include "imu_calibration.hpp"     // ImuCalibData
 #include "imu_sensor.hpp"          // ImuData
 #include "mag_sensor.hpp"          // MagData
-#include "result.hpp"
 #include "stabilization_config.hpp"
 #include "vehicle_control_platform.hpp"
 
@@ -42,6 +41,14 @@ class StdioPlatform : public VehicleControlPlatform {
   /** Замена реальной калибровки на identity (replay «со средней точки»). */
   void SetIdentityCalib(bool on) { identity_calib_ = on; }
 
+  /** Режим вождения (по умолчанию Normal). */
+  void SetDriveMode(DriveMode m) { drive_mode_ = m; }
+  /** Лимит скорости детского режима [м/с]; >0 включает speed_limit_enabled. */
+  void SetSpeedLimit(float ms) { speed_limit_ms_ = ms; }
+  /** Включить стабилизацию (cfg.enabled=true) — иначе stab_weight=0 и
+   *  yaw/pitch/slip/oversteer не работают. */
+  void SetStabilize(bool on) { stabilize_ = on; }
+
   // ── Выход: читается циклом после HostStep ────────────────────────────────
   [[nodiscard]] float GetLastThrottle() const { return last_throttle_; }
   [[nodiscard]] float GetLastSteering() const { return last_steering_; }
@@ -63,10 +70,18 @@ class StdioPlatform : public VehicleControlPlatform {
   void DelayUntilNextTick(uint32_t) override {}
 
   // ── Инициализация: всё успешно, чтобы Init() поднял полный тракт ──────────
-  Result<Unit, PlatformError> InitPwm() override { return Unit{}; }
-  Result<Unit, PlatformError> InitRc() override { return Unit{}; }
-  Result<Unit, PlatformError> InitImu() override { return Unit{}; }
-  Result<Unit, PlatformError> InitFailsafe() override { return Unit{}; }
+  std::expected<void, PlatformError> InitPwm() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitRc() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitImu() override {
+    return std::expected<void, PlatformError>{};
+  }
+  std::expected<void, PlatformError> InitFailsafe() override {
+    return std::expected<void, PlatformError>{};
+  }
 
   // ── IMU / магнитометр ────────────────────────────────────────────────────
   std::optional<ImuData> ReadImu() override { return imu_data_; }
@@ -82,25 +97,28 @@ class StdioPlatform : public VehicleControlPlatform {
     id.valid = true;
     return id;
   }
-  Result<Unit, PlatformError> SaveCalib(const ImuCalibData&) override {
-    return Unit{};
+  std::expected<void, PlatformError> SaveCalib(const ImuCalibData&) override {
+    return std::expected<void, PlatformError>{};
   }
-  Result<Unit, PlatformError> SaveComOffset(const float[2]) override {
-    return Unit{};
+  std::expected<void, PlatformError> SaveComOffset(const float[2]) override {
+    return std::expected<void, PlatformError>{};
   }
   bool LoadComOffset(float[2]) override { return false; }
 
-  // ── Stabilization config (дефолты) ───────────────────────────────────────
+  // ── Stabilization config ─────────────────────────────────────────────────
+  // Normal без лимита/стабилизации → nullopt (дефолты прошивки). Иначе строим
+  // конфиг с заданным режимом + (для Kids) лимитом скорости + (с --stabilize)
+  // enabled=true, чтобы yaw/pitch/slip/oversteer реально работали.
   std::optional<StabilizationConfig> LoadStabilizationConfig() override {
-    return std::nullopt;
+    return MakeConfig(drive_mode_);
   }
   std::optional<StabilizationConfig> LoadStabilizationConfig(
-      DriveMode) override {
-    return std::nullopt;
+      DriveMode mode) override {
+    return MakeConfig(mode);
   }
-  Result<Unit, PlatformError> SaveStabilizationConfig(
+  std::expected<void, PlatformError> SaveStabilizationConfig(
       const StabilizationConfig&) override {
-    return Unit{};
+    return std::expected<void, PlatformError>{};
   }
 
   // ── RC / Wi-Fi ───────────────────────────────────────────────────────────
@@ -138,13 +156,34 @@ class StdioPlatform : public VehicleControlPlatform {
   }
 
   // ── Задачи (поток не плодим) ─────────────────────────────────────────────
-  Result<Unit, PlatformError> CreateTask(void (*)(void*), void*) override {
-    return Unit{};
+  std::expected<void, PlatformError> CreateTask(void (*)(void*),
+                                                void*) override {
+    return std::expected<void, PlatformError>{};
   }
 
   void Log(LogLevel, std::string_view) const override {}
 
  private:
+  // Конфиг режима. Normal без лимита и без --stabilize → nullopt (дефолты
+  // прошивки). Иначе строим конфиг режима (ApplyModeDefaults) + опц. лимит
+  // скорости (Kids) + опц. enabled (--stabilize).
+  std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
+    if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_) {
+      return std::nullopt;
+    }
+    StabilizationConfig cfg{};
+    cfg.mode = mode;
+    cfg.ApplyModeDefaults();  // тюнинг выбранного режима (gains/slew/лимиты)
+    if (speed_limit_ms_ > 0.0f) {
+      cfg.kids_mode.speed_limit_enabled = true;
+      cfg.kids_mode.max_speed_ms = speed_limit_ms_;
+    }
+    if (stabilize_) {
+      cfg.enabled = true;  // иначе stab_weight=0 → контроллеры не работают
+    }
+    return cfg;
+  }
+
   uint32_t time_ms_{0};
   std::optional<ImuData> imu_data_;
   std::optional<MagData> mag_data_;
@@ -152,6 +191,9 @@ class StdioPlatform : public VehicleControlPlatform {
   std::optional<RcCommand> wifi_command_;
   bool identity_calib_{false};
   bool failsafe_active_{false};
+  DriveMode drive_mode_{DriveMode::Normal};
+  float speed_limit_ms_{0.0f};
+  bool stabilize_{false};
 
   float last_throttle_{0.0f};
   float last_steering_{0.0f};

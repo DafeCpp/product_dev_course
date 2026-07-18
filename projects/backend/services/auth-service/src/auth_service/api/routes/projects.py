@@ -6,8 +6,11 @@ from uuid import UUID
 
 from aiohttp import web
 
-from auth_service.api.utils import extract_client_ip, extract_user_agent, get_requester_id
-from auth_service.core.exceptions import AuthError, ForbiddenError, NotFoundError, handle_auth_error
+from backend_common.core.exceptions import ServiceError as AuthError
+
+from auth_service.api.utils import extract_user_agent, get_requester_id
+from backend_common.api import extract_client_ip
+from auth_service.core.exceptions import ForbiddenError, NotFoundError, handle_auth_error
 from auth_service.domain.dto import (
     ProjectCreateRequest,
     ProjectListResponse,
@@ -431,3 +434,14 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_post("/projects/{project_id}/members", add_member)
     app.router.add_delete("/projects/{project_id}/members/{user_id}", remove_member)
     app.router.add_put("/projects/{project_id}/members/{user_id}/role", update_member_role)
+
+    # /api/v1/projects/* — canonical REST prefix used by the frontend (same handlers)
+    app.router.add_post("/api/v1/projects", create_project)
+    app.router.add_get("/api/v1/projects", list_projects)
+    app.router.add_get("/api/v1/projects/{project_id}", get_project)
+    app.router.add_put("/api/v1/projects/{project_id}", update_project)
+    app.router.add_delete("/api/v1/projects/{project_id}", delete_project)
+    app.router.add_get("/api/v1/projects/{project_id}/members", list_members)
+    app.router.add_post("/api/v1/projects/{project_id}/members", add_member)
+    app.router.add_delete("/api/v1/projects/{project_id}/members/{user_id}", remove_member)
+    app.router.add_put("/api/v1/projects/{project_id}/members/{user_id}/role", update_member_role)

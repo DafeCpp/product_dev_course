@@ -17,86 +17,56 @@ jobs:
   # ==========================================
   # 1. Запуск тестов (параллельно)
   # ==========================================
-  test-auth-service:
-    name: Auth Service Tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: projects/backend/services/auth-service
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install PostgreSQL
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql
-      - uses: snok/install-poetry@v1
-        with:
-          version: 1.8.3
-      - run: poetry install --no-interaction --no-root
-      - run: poetry run pytest -q
+  backend-tests:
+    name: Backend Tests
+    uses: ./.github/workflows/reusable-backend-tests.yml
+    with:
+      run-all: true
 
-  test-experiment-service:
-    name: Experiment Service Tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: projects/backend/services/experiment-service
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install PostgreSQL + TimescaleDB
-        run: |
-          UBUNTU_CODENAME=$(lsb_release -cs)
-          # Use PGDG for postgresql-16 >= 16.13 (TimescaleDB loader requires it; Ubuntu has 16.12).
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
-            sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
-          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${UBUNTU_CODENAME}-pgdg main" \
-            | sudo tee /etc/apt/sources.list.d/pgdg.list
-          echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ ${UBUNTU_CODENAME} main" \
-            | sudo tee /etc/apt/sources.list.d/timescaledb.list
-          curl -sL https://packagecloud.io/timescale/timescaledb/gpgkey | \
-            gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/timescaledb.gpg >/dev/null
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-16
-          sudo apt-get install -y --no-install-recommends timescaledb-2-postgresql-16
-      - uses: snok/install-poetry@v1
-        with:
-          version: 1.8.3
-      - run: poetry install --no-interaction --no-root
-      - name: Configure TimescaleDB for testsuite
-        run: |
-          PG_CONF=$(poetry run python -c "
-          import testsuite.databases.pgsql.service as s
-          print(s.CONFIGS_DIR / 'postgresql.conf')
-          ")
-          echo "shared_preload_libraries = 'timescaledb'" >> "$PG_CONF"
-      - run: poetry run pytest -q
-
-  test-frontend:
+  frontend-tests:
     name: Frontend Tests
+    uses: ./.github/workflows/reusable-frontend-tests.yml
+    with:
+      run-all: true
+
+  production-contract-tests:
+    name: Production Contract Tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: projects/frontend/apps/experiment-portal
+    env:
+      CR_REGISTRY: cr.yandex/ci-test-registry
+      AUTH_DATABASE_URL: postgresql://auth_user:ci-secret@db.example.net:6432/auth_db?sslmode=verify-full
+      EXPERIMENT_DATABASE_URL: postgresql://experiment_user:ci-secret@db.example.net:6432/experiment_db?sslmode=verify-full
+      CONFIG_DATABASE_URL: postgresql://config_user:ci-secret@db.example.net:6432/config_db?sslmode=verify-full
+      SCRIPT_DATABASE_URL: postgresql://script_user:ci-secret@db.example.net:6432/script_db?sslmode=verify-full
+      JWT_SECRET: ci-test-secret-longer-than-thirty-two-characters
+      COOKIE_DOMAIN: prod.example.net
+      CORS_ORIGINS: https://prod.example.net
+      CORS_ALLOWED_ORIGINS: https://prod.example.net
+      GRAFANA_ADMIN_PASSWORD: ci-test-grafana-secret
+      REDIS_URL: redis://redis:6379/0
+      TELEMETRY_BROKER_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: https://storage.yandexcloud.net
+      S3_PUBLIC_ENDPOINT_URL: https://storage.yandexcloud.net
+      S3_ACCESS_KEY: ci-test-access-key
+      S3_SECRET_KEY: ci-test-secret-key
+      S3_BUCKET: ci-test-artifacts
+      S3_PRESIGN_EXPIRE_SECONDS: "3600"
+      CONFIG_CLIENT_ENABLED: "true"
+      CONFIG_CLIENT_URL: http://config-service:8005
+      CONFIG_CLIENT_POLL_INTERVAL_SECONDS: "5.0"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm ci
-      - run: npm test -- --run
+      - name: Run deploy contract tests
+        run: make test-deploy-contract
+      - name: Render production compose
+        run: docker compose -f docker-compose.prod.yml config --quiet
 
   # ==========================================
   # 2a. Базовый образ бэкенда (нужен для auth/experiment/telemetry-ingest)
   # ==========================================
   build-backend-base:
     name: Build Backend Base
-    needs: [test-auth-service, test-experiment-service, test-frontend]
+    needs: [backend-tests, frontend-tests, production-contract-tests]
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -106,7 +76,6 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo docker image prune -af 2>/dev/null || true
           df -h
       - name: Normalize YC_SA_JSON_KEY
@@ -156,15 +125,21 @@ jobs:
           - service: telemetry-ingest-service
             context: ./projects/backend
             dockerfile: services/telemetry-ingest-service/Dockerfile
+          - service: config-service
+            context: ./projects/backend
+            dockerfile: services/config-service/Dockerfile
+          - service: script-service
+            context: ./projects/backend
+            dockerfile: services/script-service/Dockerfile
           - service: auth-proxy
             context: ./projects/frontend/apps/auth-proxy
             dockerfile: Dockerfile
           - service: experiment-portal
-            context: ./projects/frontend/apps/experiment-portal
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: projects/frontend/apps/experiment-portal/Dockerfile
           - service: sensor-simulator
-            context: ./projects/frontend/apps/sensor-simulator
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space (runner)
@@ -172,7 +147,6 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo docker image prune -af 2>/dev/null || true
           df -h
       - name: Check Yandex Registry secrets
@@ -263,6 +237,8 @@ jobs:
           fi
 
           scp $O docker-compose.prod.yml "$D:/opt/experiment-tracking/docker-compose.prod.yml"
+          scp $O scripts/validate-production-env.sh "$D:/opt/experiment-tracking/validate-production-env.sh"
+          ssh $O "$D" "chmod 700 /opt/experiment-tracking/validate-production-env.sh"
 
           # Remove Docker-auto-created stub dirs (owned by root) and ensure deploy user owns the dir
           ssh $O "$D" "sudo rm -rf /opt/experiment-tracking/infrastructure/logging" || true
@@ -271,7 +247,7 @@ jobs:
 
           # Yandex Cloud CA certificate for managed PostgreSQL (SSL verify-full)
           ssh $O "$D" "sudo rm -rf /opt/experiment-tracking/certs && mkdir -p /opt/experiment-tracking/certs && curl -sL https://storage.yandexcloud.net/cloud-certs/CA.pem -o /opt/experiment-tracking/certs/yandex-ca.pem"
-          echo "Copied docker-compose.prod.yml, infrastructure/logging, and Yandex CA cert to VM"
+          echo "Copied production compose, env validator, logging config, and Yandex CA cert to VM"
 
       - name: Deploy via SSH
         id: deploy
@@ -293,6 +269,11 @@ jobs:
             # Обновляем тег образа ( .env уже есть — создан выше при отсутствии)
             sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 
+            # Проверяем runtime env и итоговый compose до остановки работающего стека.
+            # Validator выводит только имена проблемных ключей, не значения секретов.
+            ./validate-production-env.sh .env docker-compose.prod.yml
+            docker compose --env-file .env -f docker-compose.prod.yml config --quiet
+
             # Логинимся в Container Registry через ключ SA.
             # Используем временный DOCKER_CONFIG, чтобы обойти docker-credential-ycr,
             # который может быть настроен на VM и блокирует docker login.
@@ -307,9 +288,12 @@ jobs:
             docker compose -p experiment-tracking -f docker-compose.prod.yml down --remove-orphans || true
             docker compose -f docker-compose.prod.yml down --remove-orphans || true
             # На случай если контейнеры остались с конфликтующими именами — удаляем принудительно
-            docker rm -f auth-service experiment-service telemetry-ingest-service \
+            docker rm -f auth-migrate config-migrate experiment-migrate telemetry-ingest-migrate script-migrate \
+              auth-service experiment-service telemetry-ingest-service config-service script-service \
               auth-proxy experiment-portal sensor-simulator loki alloy grafana 2>/dev/null || true
-            docker system prune -af --volumes || true
+            # Чистим только неиспользуемые образы и build cache, не трогая volumes с данными Loki/Grafana.
+            docker image prune -af || true
+            docker builder prune -f || true
 
             # Пуллим новые образы
             docker compose -f docker-compose.prod.yml pull
@@ -348,6 +332,10 @@ jobs:
             docker compose -f docker-compose.prod.yml logs --tail=100 auth-service || true
             echo "=== experiment-service logs (last 100 lines) ==="
             docker compose -f docker-compose.prod.yml logs --tail=100 experiment-service || true
+            echo "=== script-migrate logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 script-migrate || true
+            echo "=== script-service logs (last 100 lines) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=100 script-service || true
 
       - name: Health check (via SSH on VM — avoids dependency on public reachability from GitHub)
         uses: appleboy/ssh-action@v1

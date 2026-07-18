@@ -33,6 +33,7 @@ include(GoogleTest)
 
 # Common source files from the firmware
 set(COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../common)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware_common/sources.cmake)
 
 # Common sources that don't depend on platform
 set(COMMON_SOURCES
@@ -43,7 +44,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/imu_calibration.cpp
     ${COMMON_DIR}/control_components.cpp
     ${COMMON_DIR}/uart_bridge_base.cpp
-    ${COMMON_DIR}/pid_controller.cpp
+    ${FIRMWARE_COMMON_SOURCES}
     ${COMMON_DIR}/vehicle_ekf.cpp
     ${COMMON_DIR}/telemetry_log.cpp
     ${COMMON_DIR}/telemetry_event_log.cpp
@@ -75,6 +76,7 @@ set(COMMON_SOURCES
 # Include directories
 include_directories(
     ${COMMON_DIR}
+    ${FIRMWARE_COMMON_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/mocks
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     ${CMAKE_CURRENT_SOURCE_DIR}/sim

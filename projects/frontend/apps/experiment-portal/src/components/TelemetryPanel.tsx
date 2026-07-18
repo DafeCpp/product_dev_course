@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Plotly from 'plotly.js-dist-min'
+import { useTelemetryStream, type TelemetryStreamOpener, type TelemetryStreamStatus } from 'frontend-common'
 import type { Sensor, TelemetryStreamRecord } from '../types'
 import { telemetryApi } from '../api/client'
-import { createSSEParser } from '../utils/sse'
 import { MaterialSelect, PlayCircleIcon, StopCircleIcon, SettingsIcon, XIcon } from './common'
 import './TelemetryPanel.scss'
 
@@ -59,6 +59,95 @@ function parseTimestampMs(value: string) {
     return Number.isFinite(parsed) ? parsed : null
 }
 
+type SensorStreamInitialCursor = { sinceTs?: string; sinceId?: number }
+
+/**
+ * Owns one useTelemetryStream instance for a single sensor. Mounted only
+ * while the panel is running (see runningSensorIds) — hooks can't be called
+ * in a loop, so each running sensor gets its own instance via this seam.
+ */
+function SensorStream({
+    sensorId,
+    initialCursor,
+    valueMode,
+    onRecords,
+    onStatusChange,
+    onRecordReceived,
+    onStreamError,
+}: {
+    sensorId: string
+    initialCursor: SensorStreamInitialCursor
+    valueMode: ValueMode
+    onRecords: (sensorId: string, points: TelemetryStreamRecord[]) => void
+    onStatusChange: (sensorId: string, status: TelemetryStreamStatus) => void
+    onRecordReceived?: (sensorId: string, value: number) => void
+    onStreamError: (sensorId: string, error: Error) => void
+}) {
+    const open: TelemetryStreamOpener = useCallback(
+        async ({ sinceTs, sinceId, idleTimeoutSeconds, signal }) => {
+            const { response } = await telemetryApi.stream({
+                sensor_id: sensorId,
+                since_ts: sinceTs,
+                since_id: sinceId,
+                idle_timeout_seconds: idleTimeoutSeconds,
+                signal,
+            })
+            if (!response.ok) {
+                const text = await response.text().catch(() => '')
+                throw new Error(text || `Ошибка стрима: HTTP ${response.status}`)
+            }
+            if (!response.body) throw new Error('Stream body is empty')
+            return { response }
+        },
+        [sensorId],
+    )
+
+    const onError = useCallback(
+        (err: Error, ctx: { willRetry: boolean }) => {
+            if (!ctx.willRetry) onStreamError(sensorId, err)
+        },
+        [sensorId, onStreamError],
+    )
+
+    const stream = useTelemetryStream(sensorId, {
+        open,
+        bufferSize: MAX_POINTS_CAP,
+        idleTimeoutSeconds: 30,
+        initialSinceTs: initialCursor.sinceTs,
+        initialSinceId: initialCursor.sinceId,
+        onError,
+    })
+
+    useEffect(() => {
+        stream.start()
+        // Mount-only: this component is mounted exactly while it should be running.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    useEffect(() => {
+        onStatusChange(sensorId, stream.status)
+    }, [sensorId, stream.status, onStatusChange])
+
+    useEffect(() => {
+        onRecords(sensorId, stream.points)
+    }, [sensorId, stream.points, onRecords])
+
+    const valueModeRef = useRef(valueMode)
+    valueModeRef.current = valueMode
+
+    const lastRecord = stream.lastRecord
+    useEffect(() => {
+        // Deliberately excludes valueMode from deps: this must fire only when a
+        // new record actually arrives, not on every physical/raw toggle (which
+        // would re-emit the same record and duplicate points downstream).
+        if (!lastRecord) return
+        const val = valueModeRef.current === 'physical' ? lastRecord.physical_value : lastRecord.raw_value
+        if (typeof val === 'number' && Number.isFinite(val)) onRecordReceived?.(sensorId, val)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sensorId, lastRecord, onRecordReceived])
+
+    return null
+}
 
 export default function TelemetryPanel({
     panelId,
@@ -73,12 +162,13 @@ export default function TelemetryPanel({
 }: TelemetryPanelProps) {
     const [panelTitle, setPanelTitle] = useState(title)
     const [selectedSensorIds, setSelectedSensorIds] = useState<string[]>([])
-    const [status, setStatus] = useState<StreamStatus>('idle')
     const [valueMode, setValueMode] = useState<ValueMode>('physical')
     const [timeWindowSeconds, setTimeWindowSeconds] = useState<TimeWindowSeconds>(300)
     const [useLatestAnchor, setUseLatestAnchor] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [recordsBySensor, setRecordsBySensor] = useState<Record<string, TelemetryStreamRecord[]>>({})
+    const [runningSensorIds, setRunningSensorIds] = useState<string[]>([])
+    const [statusBySensor, setStatusBySensor] = useState<Record<string, TelemetryStreamStatus>>({})
     const [showSettings, setShowSettings] = useState(false)
     const settingsPopoverRef = useRef<HTMLDivElement | null>(null)
     const [panelSize, setPanelSize] = useState<{ width: number; height: number } | null>(null)
@@ -87,8 +177,7 @@ export default function TelemetryPanel({
         null
     )
 
-    const abortControllers = useRef<Record<string, AbortController>>({})
-    const runningRef = useRef<Record<string, boolean>>({})
+    const initialCursorsRef = useRef<Record<string, SensorStreamInitialCursor>>({})
     const plotRef = useRef<HTMLDivElement | null>(null)
     const scrollAnimRef = useRef<number | null>(null)
     const panelRef = useRef<HTMLDivElement | null>(null)
@@ -250,14 +339,6 @@ export default function TelemetryPanel({
     }, [selectedSensorIds])
 
     useEffect(() => {
-        return () => {
-            Object.values(abortControllers.current).forEach((controller) => controller.abort())
-            abortControllers.current = {}
-            runningRef.current = {}
-        }
-    }, [])
-
-    useEffect(() => {
         const element = panelRef.current
         if (!element || typeof ResizeObserver === 'undefined') return
 
@@ -295,84 +376,54 @@ export default function TelemetryPanel({
     }
 
     const stopStreams = () => {
-        Object.values(abortControllers.current).forEach((controller) => controller.abort())
-        abortControllers.current = {}
-        runningRef.current = {}
-        setStatus('idle')
+        setRunningSensorIds([])
+        setStatusBySensor({})
     }
 
-    const startStreamForSensor = async (sensorId: string, sinceTs: string, sinceId: number) => {
-        const abort = new AbortController()
-        abortControllers.current[sensorId] = abort
-        runningRef.current[sensorId] = true
+    const onSensorRecords = useCallback((sensorId: string, points: TelemetryStreamRecord[]) => {
+        setRecordsBySensor((prev) => ({ ...prev, [sensorId]: points }))
+    }, [])
 
-        try {
-            const { response: resp } = await telemetryApi.stream({
-                sensor_id: sensorId,
-                since_ts: sinceTs,
-                since_id: sinceId,
-                idle_timeout_seconds: 30,
-            })
-            if (!resp.ok) {
-                const text = await resp.text().catch(() => '')
-                throw new Error(text || `Ошибка стрима: HTTP ${resp.status}`)
-            }
-            if (!resp.body) throw new Error('Stream body is empty')
+    const onSensorStatusChange = useCallback((sensorId: string, sensorStatus: TelemetryStreamStatus) => {
+        setStatusBySensor((prev) => (prev[sensorId] === sensorStatus ? prev : { ...prev, [sensorId]: sensorStatus }))
+    }, [])
 
-            const reader = resp.body.getReader()
-            const decoder = new TextDecoder()
-            const parser = createSSEParser((evt) => {
-                if (evt.event !== 'telemetry') return
-                try {
-                    const parsed = JSON.parse(evt.data) as TelemetryStreamRecord
-                    setRecordsBySensor((prev) => {
-                        const next = { ...prev }
-                        const existing = next[sensorId] || []
-                        const updated = [...existing, parsed]
-                        next[sensorId] = updated.length > MAX_POINTS_CAP ? updated.slice(updated.length - MAX_POINTS_CAP) : updated
-                        return next
-                    })
-                    const val = valueMode === 'physical' ? parsed.physical_value : parsed.raw_value
-                    if (typeof val === 'number' && Number.isFinite(val)) {
-                        onRecordReceived?.(sensorId, val)
-                    }
-                } catch (e: any) {
-                    setError(e?.message || 'Ошибка парсинга telemetry event')
-                    setStatus('error')
-                }
-            })
-
-            while (runningRef.current[sensorId] && !abort.signal.aborted) {
-                const { value, done } = await reader.read()
-                if (done) break
-                if (value) parser.feed(decoder.decode(value, { stream: true }))
-            }
-        } catch (e: any) {
-            if (e?.name === 'AbortError') return
-            setError(e?.message || 'Ошибка подключения к стриму')
-            setStatus('error')
-        } finally {
-            runningRef.current[sensorId] = false
-        }
-    }
+    const onSensorStreamError = useCallback((_sensorId: string, err: Error) => {
+        setError(err.message || 'Ошибка подключения к стриму')
+    }, [])
 
     const startStreams = () => {
         setError(null)
         setRecordsBySensor({})
-        setStatus('connecting')
+        setStatusBySensor({})
         const defaultSinceTs = startFromTimestamp ?? new Date().toISOString()
 
+        const cursors: Record<string, SensorStreamInitialCursor> = {}
         selectedSensorIds.forEach((sensorId) => {
             const cursor = startFromCursorBySensor?.[sensorId]
-            const sinceTs = cursor?.timestamp ?? defaultSinceTs
-            const sinceId = cursor?.id ?? 0
-            startStreamForSensor(sensorId, sinceTs, sinceId)
+            cursors[sensorId] = {
+                sinceTs: cursor?.timestamp ?? defaultSinceTs,
+                sinceId: cursor?.id ?? 0,
+            }
         })
+        initialCursorsRef.current = cursors
+        // Snapshot which sensors are running for this start; sensors added to
+        // selectedSensorIds afterwards only join on the next explicit Старт click.
+        setRunningSensorIds([...selectedSensorIds])
 
-        setStatus('streaming')
         if (startFromTimestamp) setStartFromTimestamp(null)
         if (startFromCursorBySensor) setStartFromCursorBySensor(null)
     }
+
+    const status: StreamStatus = useMemo(() => {
+        if (runningSensorIds.length === 0) return 'idle'
+        const statuses = runningSensorIds.map((id) => statusBySensor[id])
+        if (statuses.some((s) => s === 'streaming' || s === 'reconnecting')) return 'streaming'
+        if (statuses.some((s) => s === 'error') && statuses.every((s) => s === 'error' || s === 'stopped')) {
+            return 'error'
+        }
+        return 'connecting'
+    }, [runningSensorIds, statusBySensor])
 
     const filteredSensors = useMemo(() => {
         const byId = new Map(sensors.map((s) => [s.id, s]))
@@ -564,8 +615,11 @@ export default function TelemetryPanel({
                 setShowSettings(false)
             }
         }
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
+        // Use 'click' (not 'mousedown') so that clicks on the portaled MaterialSelect
+        // dropdown (rendered in document.body) fire the option's onClick before closing
+        // this popover. With 'mousedown' the popover unmounts before 'click' fires.
+        document.addEventListener('click', handleClickOutside)
+        return () => document.removeEventListener('click', handleClickOutside)
     }, [showSettings])
 
     const canStart = selectedSensorIds.length > 0 && status !== 'connecting'
@@ -583,6 +637,18 @@ export default function TelemetryPanel({
             data-panel-id={panelId}
             style={panelSize ? { width: panelSize.width, height: panelSize.height } : undefined}
         >
+            {runningSensorIds.map((sensorId) => (
+                <SensorStream
+                    key={sensorId}
+                    sensorId={sensorId}
+                    initialCursor={initialCursorsRef.current[sensorId] ?? {}}
+                    valueMode={valueMode}
+                    onRecords={onSensorRecords}
+                    onStatusChange={onSensorStatusChange}
+                    onRecordReceived={onRecordReceived}
+                    onStreamError={onSensorStreamError}
+                />
+            ))}
             <div className="telemetry-panel__header">
                 <button
                     type="button"

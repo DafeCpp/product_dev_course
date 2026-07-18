@@ -6,14 +6,15 @@ from typing import List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
+from asyncpg.exceptions import UniqueViolationError  # type: ignore[import-untyped]
 
-from experiment_service.core.exceptions import NotFoundError
+from experiment_service.core.exceptions import DuplicateResourceError, NotFoundError
 from experiment_service.domain.dto import (
     CaptureSessionCreateDTO,
     CaptureSessionUpdateDTO,
 )
 from experiment_service.domain.models import CaptureSession
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class CaptureSessionRepository(BaseRepository):
@@ -42,18 +43,24 @@ class CaptureSessionRepository(BaseRepository):
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
         """
-        record = await self._fetchrow(
-            query,
-            data.run_id,
-            data.project_id,
-            data.ordinal_number,
-            data.status.value,
-            data.initiated_by,
-            data.notes,
-            data.started_at,
-            data.stopped_at,
-            data.archived,
-        )
+        try:
+            record = await self._fetchrow(
+                query,
+                data.run_id,
+                data.project_id,
+                data.ordinal_number,
+                data.status.value,
+                data.initiated_by,
+                data.notes,
+                data.started_at,
+                data.stopped_at,
+                data.archived,
+            )
+        except UniqueViolationError as exc:
+            # Concurrent create racing on the (run_id, ordinal_number) unique index.
+            raise DuplicateResourceError(
+                f"Capture session #{data.ordinal_number} already exists for this run"
+            ) from exc
         assert record is not None
         return self._to_model(record)
 
@@ -231,4 +238,3 @@ class CaptureSessionRepository(BaseRepository):
         )
         if record is None:
             raise NotFoundError("Capture session not found")
-

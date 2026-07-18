@@ -11,7 +11,7 @@ from experiment_service.core.exceptions import InvalidStatusTransitionError, Not
 from experiment_service.domain.dto import ConversionProfileCreateDTO
 from experiment_service.domain.enums import ConversionProfileStatus
 from experiment_service.domain.models import ConversionProfile
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class ConversionProfileRepository(BaseRepository):
@@ -237,4 +237,3 @@ class ConversionProfileRepository(BaseRepository):
                 )
                 assert updated is not None
                 return self._to_model(updated)
-

@@ -87,12 +87,14 @@ class IVehicleControl {
 
   // Телеметрия лог (кадры)
   virtual void GetLogInfo(size_t& count_out, size_t& cap_out) const = 0;
-  virtual bool GetLogFrame(size_t idx, TelemetryLogFrame& out) const = 0;
+  [[nodiscard]] virtual bool GetLogFrame(size_t idx,
+                                         TelemetryLogFrame& out) const = 0;
   virtual void ClearLog() = 0;
 
   // Лог событий (старт/стоп режимов и калибровок)
   [[nodiscard]] virtual size_t GetEventCount() const = 0;
-  virtual bool GetEvent(size_t idx, TelemetryEvent& out) const = 0;
+  [[nodiscard]] virtual bool GetEvent(size_t idx,
+                                      TelemetryEvent& out) const = 0;
   virtual void ClearEventLog() = 0;
 
   // Диагностика

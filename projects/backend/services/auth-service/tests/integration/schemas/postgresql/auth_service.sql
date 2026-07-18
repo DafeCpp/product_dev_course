@@ -248,10 +248,15 @@ INSERT INTO permissions (id, scope_type, category, description) VALUES
     ('scripts.manage',       'system', 'scripts', 'Создание/редактирование/удаление скриптов'),
     ('scripts.execute',      'system', 'scripts', 'Запуск скриптов на сервисах'),
     ('scripts.view_logs',    'system', 'scripts', 'Просмотр логов выполнения скриптов'),
-    -- configs
-    ('configs.read',         'system', 'configs', 'Просмотр динамических конфигов'),
-    ('configs.write',        'system', 'configs', 'Изменение динамических конфигов'),
-    ('configs.publish',      'system', 'configs', 'Публикация конфигов на сервисы'),
+    -- configs (fine-grained, см. migration 003_config_rbac.sql)
+    ('configs.view',           'system', 'configs', 'Просмотр конфигов, истории и схем'),
+    ('configs.create',         'system', 'configs', 'Создание конфигов (вкл. dry-run)'),
+    ('configs.update',         'system', 'configs', 'Редактирование конфигов (вкл. dry-run)'),
+    ('configs.delete',         'system', 'configs', 'Удаление конфигов'),
+    ('configs.activate',       'system', 'configs', 'Активация/деактивация конфигов'),
+    ('configs.rollback',       'system', 'configs', 'Откат конфигов к предыдущей версии'),
+    ('configs.schemas.manage', 'system', 'configs', 'Управление JSON-схемами конфигов'),
+    ('configs.sensitive.read', 'system', 'configs', 'Просмотр незаредактированных sensitive-значений'),
     -- audit
     ('audit.read',           'system', 'audit',   'Просмотр аудит-лога'),
     -- projects
@@ -305,7 +310,15 @@ INSERT INTO roles (id, name, scope_type, project_id, is_builtin, description) VA
     ('00000000-0000-0000-0000-000000000003', 'operator', 'system', NULL, true,
      'Оператор: скрипты, конфиги, мониторинг.'),
     ('00000000-0000-0000-0000-000000000004', 'auditor', 'system', NULL, true,
-     'Только чтение: аудит и список пользователей.');
+     'Только чтение: аудит и список пользователей.'),
+    ('00000000-0000-0000-0000-000000000005', 'config_viewer', 'system', NULL, true,
+     'Config-service: только чтение конфигов, истории и схем.'),
+    ('00000000-0000-0000-0000-000000000006', 'config_editor', 'system', NULL, true,
+     'Config-service: создание/редактирование/удаление черновиков (без активации).'),
+    ('00000000-0000-0000-0000-000000000007', 'config_operator', 'system', NULL, true,
+     'Config-service: активация/деактивация/откат (без права редактировать) — вторая пара глаз.'),
+    ('00000000-0000-0000-0000-000000000008', 'config_admin', 'system', NULL, true,
+     'Config-service: полный доступ, включая управление схемами и чтение sensitive.');
 
 -- admin: users.*, roles.*, audit.read, projects.create
 INSERT INTO role_permissions (role_id, permission_id) VALUES
@@ -320,20 +333,51 @@ INSERT INTO role_permissions (role_id, permission_id) VALUES
     ('00000000-0000-0000-0000-000000000002', 'audit.read'),
     ('00000000-0000-0000-0000-000000000002', 'projects.create');
 
--- operator: scripts.*, configs.*, audit.read
+-- operator: scripts.*, configs.* (fine-grained lifecycle), audit.read
 INSERT INTO role_permissions (role_id, permission_id) VALUES
     ('00000000-0000-0000-0000-000000000003', 'scripts.manage'),
     ('00000000-0000-0000-0000-000000000003', 'scripts.execute'),
     ('00000000-0000-0000-0000-000000000003', 'scripts.view_logs'),
-    ('00000000-0000-0000-0000-000000000003', 'configs.read'),
-    ('00000000-0000-0000-0000-000000000003', 'configs.write'),
-    ('00000000-0000-0000-0000-000000000003', 'configs.publish'),
+    ('00000000-0000-0000-0000-000000000003', 'configs.view'),
+    ('00000000-0000-0000-0000-000000000003', 'configs.create'),
+    ('00000000-0000-0000-0000-000000000003', 'configs.update'),
+    ('00000000-0000-0000-0000-000000000003', 'configs.delete'),
+    ('00000000-0000-0000-0000-000000000003', 'configs.activate'),
+    ('00000000-0000-0000-0000-000000000003', 'configs.rollback'),
     ('00000000-0000-0000-0000-000000000003', 'audit.read');
 
 -- auditor: audit.read, users.list
 INSERT INTO role_permissions (role_id, permission_id) VALUES
     ('00000000-0000-0000-0000-000000000004', 'audit.read'),
     ('00000000-0000-0000-0000-000000000004', 'users.list');
+
+-- config_viewer: configs.view
+INSERT INTO role_permissions (role_id, permission_id) VALUES
+    ('00000000-0000-0000-0000-000000000005', 'configs.view');
+
+-- config_editor: view + create/update/delete
+INSERT INTO role_permissions (role_id, permission_id) VALUES
+    ('00000000-0000-0000-0000-000000000006', 'configs.view'),
+    ('00000000-0000-0000-0000-000000000006', 'configs.create'),
+    ('00000000-0000-0000-0000-000000000006', 'configs.update'),
+    ('00000000-0000-0000-0000-000000000006', 'configs.delete');
+
+-- config_operator: view + activate/rollback
+INSERT INTO role_permissions (role_id, permission_id) VALUES
+    ('00000000-0000-0000-0000-000000000007', 'configs.view'),
+    ('00000000-0000-0000-0000-000000000007', 'configs.activate'),
+    ('00000000-0000-0000-0000-000000000007', 'configs.rollback');
+
+-- config_admin: всё
+INSERT INTO role_permissions (role_id, permission_id) VALUES
+    ('00000000-0000-0000-0000-000000000008', 'configs.view'),
+    ('00000000-0000-0000-0000-000000000008', 'configs.create'),
+    ('00000000-0000-0000-0000-000000000008', 'configs.update'),
+    ('00000000-0000-0000-0000-000000000008', 'configs.delete'),
+    ('00000000-0000-0000-0000-000000000008', 'configs.activate'),
+    ('00000000-0000-0000-0000-000000000008', 'configs.rollback'),
+    ('00000000-0000-0000-0000-000000000008', 'configs.schemas.manage'),
+    ('00000000-0000-0000-0000-000000000008', 'configs.sensitive.read');
 
 -- superadmin НЕ имеет записей в role_permissions — все permissions неявно (проверяется в коде)
 

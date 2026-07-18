@@ -1,0 +1,47 @@
+name: Firmware Common Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/firmware_common/**
+      - .github/workflows/firmware-common-tests.yml
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/firmware_common/**
+      - .github/workflows/firmware-common-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  firmware-common-tests:
+    name: GTest (shared primitives)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/firmware_common/tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run unit tests
+        run: ./build/firmware_common_tests --gtest_output=xml:test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-common-test-results
+          path: projects/firmware_common/tests/test-results.xml
+          if-no-files-found: ignore

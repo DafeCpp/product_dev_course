@@ -52,13 +52,14 @@ vi.mock('../components/PermissionGate', () => ({
 vi.mock('../components/PermissionPicker', () => ({
     default: ({
         onChange,
+        selected,
     }: {
         scope: string
         selected: string[]
         onChange: (s: string[]) => void
         disabled?: boolean
     }) => (
-        <div data-testid="permission-picker-stub">
+        <div data-testid="permission-picker-stub" data-selected={selected.join(',')}>
             <button
                 type="button"
                 onClick={() => onChange(['roles.manage'])}
@@ -99,9 +100,7 @@ const mockRoleCustom = {
     scope: 'system' as const,
     is_builtin: false,
     project_id: null,
-    permissions: [
-        { id: 'perm-1', name: 'roles.manage', description: '', category: 'roles', scope: 'system' as const },
-    ],
+    permissions: ['roles.manage'],
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
 }
@@ -151,6 +150,7 @@ describe('SystemRoles', () => {
         expect(await screen.findByText('Custom Role')).toBeInTheDocument()
         expect(screen.getByText('Admin')).toBeInTheDocument()
         expect(screen.getByText('Системные роли')).toBeInTheDocument()
+        expect(screen.getByText('roles.manage')).toBeInTheDocument()
     })
 
     // -----------------------------------------------------------------------
@@ -249,6 +249,10 @@ describe('SystemRoles', () => {
         // Form should be pre-populated
         const nameInput = await screen.findByLabelText(/название \*/i)
         expect((nameInput as HTMLInputElement).value).toBe('Custom Role')
+        expect(screen.getByTestId('permission-picker-stub')).toHaveAttribute(
+            'data-selected',
+            'roles.manage'
+        )
 
         // Use fireEvent.change to avoid jsdom cssstyle bug with
         // border: 1px solid var(--outline) in form-group inputs on focus.

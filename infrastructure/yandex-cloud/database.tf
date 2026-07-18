@@ -2,9 +2,11 @@
 # Managed PostgreSQL Cluster
 # ============================================
 #
-# Один кластер с двумя базами данных:
+# Один кластер с четырьмя базами данных:
 #   - auth_db       (пользователь auth_user)
 #   - experiment_db (пользователь experiment_user) + расширение timescaledb
+#   - config_db     (пользователь config_user) — config-service
+#   - script_db     (пользователь script_user) — script-service
 
 resource "yandex_mdb_postgresql_cluster" "main" {
   name        = var.pg_cluster_name
@@ -58,6 +60,20 @@ resource "yandex_mdb_postgresql_user" "experiment_user" {
   grants     = []
 }
 
+resource "yandex_mdb_postgresql_user" "config_user" {
+  cluster_id = yandex_mdb_postgresql_cluster.main.id
+  name       = "config_user"
+  password   = var.pg_config_db_password
+  grants     = []
+}
+
+resource "yandex_mdb_postgresql_user" "script_user" {
+  cluster_id = yandex_mdb_postgresql_cluster.main.id
+  name       = "script_user"
+  password   = var.pg_script_db_password
+  grants     = []
+}
+
 # --- Databases ---
 
 resource "yandex_mdb_postgresql_database" "auth_db" {
@@ -85,4 +101,28 @@ resource "yandex_mdb_postgresql_database" "experiment_db" {
   }
 
   depends_on = [yandex_mdb_postgresql_user.experiment_user]
+}
+
+resource "yandex_mdb_postgresql_database" "config_db" {
+  cluster_id = yandex_mdb_postgresql_cluster.main.id
+  name       = "config_db"
+  owner      = yandex_mdb_postgresql_user.config_user.name
+
+  extension {
+    name = "pgcrypto"
+  }
+
+  depends_on = [yandex_mdb_postgresql_user.config_user]
+}
+
+resource "yandex_mdb_postgresql_database" "script_db" {
+  cluster_id = yandex_mdb_postgresql_cluster.main.id
+  name       = "script_db"
+  owner      = yandex_mdb_postgresql_user.script_user.name
+
+  extension {
+    name = "pgcrypto"
+  }
+
+  depends_on = [yandex_mdb_postgresql_user.script_user]
 }

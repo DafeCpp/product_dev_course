@@ -142,6 +142,23 @@ describe('sensor-simulator <App>', () => {
     expect(scenarioSelect.value).toBe('bursts')
   })
 
+  it.each([
+    ['bursts', 'burst every (sec)'],
+    ['dropout', 'dropout every (sec)'],
+    ['late_data', 'late seconds (timestamp - N)'],
+    ['out_of_order', 'out-of-order fraction (0..1)'],
+  ])('shows settings controls for the %s scenario', async (scenario, label) => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.selectOptions(
+      screen.getByDisplayValue('steady stream'),
+      scenario,
+    )
+
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+
   it('Reset button clears the log/counters and emits a reset entry', async () => {
     const user = userEvent.setup()
     render(<App />)

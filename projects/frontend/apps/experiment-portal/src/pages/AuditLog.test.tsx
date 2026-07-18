@@ -67,15 +67,15 @@ const createWrapper = () => {
 const mockEntry = {
     id: 'entry-1',
     actor_id: 'user-1',
-    actor_username: 'alice',
     action: 'user.login',
     scope_type: 'system',
     scope_id: null,
     target_type: null,
     target_id: null,
     ip_address: '127.0.0.1',
+    user_agent: null,
     details: { extra: 'data' },
-    created_at: '2026-05-08T12:00:00Z',
+    timestamp: '2026-05-08T12:00:00Z',
 }
 
 describe('AuditLog', () => {
@@ -100,7 +100,7 @@ describe('AuditLog', () => {
     })
 
     it('renders title and filter controls when access is granted', async () => {
-        vi.mocked(auditApi.queryAuditLog).mockResolvedValueOnce({ entries: [], total: 0 })
+        vi.mocked(auditApi.queryAuditLog).mockResolvedValueOnce({ entries: [], total: 0, limit: 50, offset: 0 })
         render(<AuditLog />, { wrapper: createWrapper() })
 
         expect(screen.getByRole('heading', { name: /аудит-лог/i })).toBeInTheDocument()
@@ -115,7 +115,7 @@ describe('AuditLog', () => {
     })
 
     it('renders empty state when no entries returned', async () => {
-        vi.mocked(auditApi.queryAuditLog).mockResolvedValueOnce({ entries: [], total: 0 })
+        vi.mocked(auditApi.queryAuditLog).mockResolvedValueOnce({ entries: [], total: 0, limit: 50, offset: 0 })
         render(<AuditLog />, { wrapper: createWrapper() })
 
         await waitFor(() => {
@@ -127,18 +127,20 @@ describe('AuditLog', () => {
         vi.mocked(auditApi.queryAuditLog).mockResolvedValueOnce({
             entries: [mockEntry],
             total: 1,
+            limit: 50,
+            offset: 0,
         })
         render(<AuditLog />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            expect(screen.getByText('alice')).toBeInTheDocument()
+            expect(screen.getByText('user-1')).toBeInTheDocument()
             expect(screen.getByText('user.login')).toBeInTheDocument()
             expect(screen.getByText('127.0.0.1')).toBeInTheDocument()
         })
     })
 
     it('applies filters via setSearchParams when "Применить" is clicked', async () => {
-        vi.mocked(auditApi.queryAuditLog).mockResolvedValue({ entries: [], total: 0 })
+        vi.mocked(auditApi.queryAuditLog).mockResolvedValue({ entries: [], total: 0, limit: 50, offset: 0 })
         const user = userEvent.setup()
         render(<AuditLog />, { wrapper: createWrapper() })
 
@@ -151,7 +153,7 @@ describe('AuditLog', () => {
 
     it('resets filters when "Сбросить" is clicked', async () => {
         searchParamsString = 'action=user.login&actor_id=u1'
-        vi.mocked(auditApi.queryAuditLog).mockResolvedValue({ entries: [], total: 0 })
+        vi.mocked(auditApi.queryAuditLog).mockResolvedValue({ entries: [], total: 0, limit: 50, offset: 0 })
         const user = userEvent.setup()
         render(<AuditLog />, { wrapper: createWrapper() })
 
@@ -164,12 +166,14 @@ describe('AuditLog', () => {
         vi.mocked(auditApi.queryAuditLog).mockResolvedValueOnce({
             entries: [mockEntry],
             total: 1,
+            limit: 50,
+            offset: 0,
         })
         const user = userEvent.setup()
         render(<AuditLog />, { wrapper: createWrapper() })
 
         await waitFor(() => {
-            expect(screen.getByText('alice')).toBeInTheDocument()
+            expect(screen.getByText('user-1')).toBeInTheDocument()
         })
 
         await user.click(screen.getByText('user.login'))

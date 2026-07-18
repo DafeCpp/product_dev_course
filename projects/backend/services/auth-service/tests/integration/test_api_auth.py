@@ -694,7 +694,7 @@ async def test_password_reset_confirm_invalid_token(service_client):
 
 @pytest.mark.asyncio
 async def test_admin_reset_success(service_client, admin_token):
-    """Admin сбрасывает пароль другому юзеру → 200, поле new_password; можно залогиниться."""
+    """Admin сбрасывает пароль другому юзеру → 200, пароль НЕ возвращается в теле."""
     # Регистрируем целевого пользователя
     reg = await service_client.post(
         "/auth/register",
@@ -707,22 +707,23 @@ async def test_admin_reset_success(service_client, admin_token):
     assert reg.status == 201
     target_id = (await reg.json())["user"]["id"]
 
-    # Admin сбрасывает пароль
+    # Admin задаёт известный ему пароль (не полагаемся на эхо в ответе)
     response = await service_client.post(
         f"/auth/admin/users/{target_id}/reset",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={},
+        json={"new_password": "AdminSet123"},
     )
     assert response.status == 200
     payload = await response.json()
-    assert "new_password" in payload
+    # Регрессия: открытый пароль не должен утекать в тело ответа (и логи).
+    assert "new_password" not in payload
     assert "user" in payload
+    assert payload.get("password_change_required") is True
 
-    # Проверяем, что новый пароль работает
-    new_password = payload["new_password"]
+    # Пароль, заданный администратором, работает для входа.
     login_with_new = await service_client.post(
         "/auth/login",
-        json={"username": "targetuser", "password": new_password},
+        json={"username": "targetuser", "password": "AdminSet123"},
     )
     assert login_with_new.status == 200
 
@@ -747,7 +748,7 @@ async def test_admin_reset_forbidden(service_client):
     response = await service_client.post(
         f"/auth/admin/users/{victim_id}/reset",
         headers={"Authorization": f"Bearer {token}"},
-        json={},
+        json={"new_password": "AdminSet123"},
     )
     assert response.status == 403
     payload = await response.json()
@@ -761,7 +762,7 @@ async def test_admin_reset_user_not_found(service_client, admin_token):
     response = await service_client.post(
         f"/auth/admin/users/{fake_id}/reset",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={},
+        json={"new_password": "AdminSet123"},
     )
     assert response.status == 404
     payload = await response.json()

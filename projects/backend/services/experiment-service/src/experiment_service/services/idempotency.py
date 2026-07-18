@@ -1,84 +1,23 @@
-"""Idempotency service."""
+"""Experiment-service adapter for the shared idempotency service."""
 from __future__ import annotations
 
-import hashlib
-import json
-from dataclasses import dataclass
-from typing import Any, Tuple
-from uuid import UUID
+from datetime import timedelta
 
-from aiohttp import web
+from backend_common.idempotency import IDEMPOTENCY_HEADER, IdempotencyPayload
+from backend_common.idempotency import IdempotencyService as CommonIdempotencyService
 
 from experiment_service.core.exceptions import IdempotencyConflictError
-from experiment_service.repositories.idempotency import IdempotencyRecord, IdempotencyRepository
-
-IDEMPOTENCY_HEADER = "Idempotency-Key"
-
-
-@dataclass
-class IdempotencyPayload:
-    status: int
-    body: dict[str, Any]
+from experiment_service.repositories.idempotency import IdempotencyRepository
+from experiment_service.settings import settings
 
 
-class IdempotencyService:
-    """High-level helper for handling idempotent requests."""
-
-    def __init__(self, repository: IdempotencyRepository):
-        self._repository = repository
-
-    @staticmethod
-    def canonical_body(body: dict[str, Any]) -> Tuple[str, bytes]:
-        serialized = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
-        digest = hashlib.sha256(serialized.encode("utf-8")).digest()
-        return serialized, digest
-
-    async def get_cached_response(
-        self,
-        key: str,
-        user_id: UUID,
-        request_path: str,
-        body_hash: bytes,
-    ) -> IdempotencyPayload | None:
-        record = await self._repository.get(key)
-        if record is None:
-            return None
-        self._assert_record(record, user_id, request_path, body_hash)
-        return IdempotencyPayload(status=record.response_status, body=record.response_body)
-
-    async def store_response(
-        self,
-        key: str,
-        user_id: UUID,
-        request_path: str,
-        body_hash: bytes,
-        response_status: int,
-        response_body: dict[str, Any],
-    ) -> None:
-        await self._repository.save(
-            key,
-            user_id,
-            request_path,
-            body_hash,
-            response_status,
-            response_body,
+class IdempotencyService(CommonIdempotencyService):
+    def __init__(self, repository: IdempotencyRepository) -> None:
+        super().__init__(
+            repository,
+            ttl=timedelta(hours=settings.idempotency_ttl_hours),
+            conflict_error_factory=lambda _key, reason: IdempotencyConflictError(reason),
         )
 
-    @staticmethod
-    def build_response(payload: IdempotencyPayload) -> web.Response:
-        return web.json_response(payload.body, status=payload.status)
 
-    @staticmethod
-    def _assert_record(
-        record: IdempotencyRecord,
-        user_id: UUID,
-        request_path: str,
-        body_hash: bytes,
-    ) -> None:
-        if record.user_id != user_id or record.request_path != request_path:
-            raise IdempotencyConflictError("Idempotency key belongs to another request")
-        if record.request_body_hash != body_hash:
-            raise IdempotencyConflictError("Idempotency key reused with different payload")
-
-
-
+__all__ = ["IDEMPOTENCY_HEADER", "IdempotencyPayload", "IdempotencyService"]

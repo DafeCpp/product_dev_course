@@ -23,6 +23,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: 'http://example.invalid',
             targetTelemetryUrl: 'http://example.invalid',
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],
@@ -46,6 +47,42 @@ describe('auth-proxy server', () => {
         await app.close()
     })
 
+    test('allows config mutation preflight headers', async () => {
+        const app = await buildServer({
+            port: 0,
+            targetExperimentUrl: 'http://example.invalid',
+            targetTelemetryUrl: 'http://example.invalid',
+            targetConfigServiceUrl: 'http://example.invalid',
+            targetScriptUrl: 'http://example.invalid',
+            authUrl: 'http://example.invalid',
+            corsOrigins: ['http://localhost:3000'],
+            cookieSecure: false,
+            cookieSameSite: 'lax',
+            accessCookieName: 'access_token',
+            refreshCookieName: 'refresh_token',
+            accessTtlSec: 900,
+            refreshTtlSec: 1209600,
+            rateLimitWindowMs: 60000,
+            rateLimitMax: 60,
+            logLevel: 'silent',
+        })
+
+        const res = await app.inject({
+            method: 'OPTIONS',
+            url: '/api/config-service/v1/config/example',
+            headers: {
+                origin: 'http://localhost:3000',
+                'access-control-request-method': 'PATCH',
+                'access-control-request-headers': 'if-match, idempotency-key',
+            },
+        })
+
+        expect(res.statusCode).toBe(204)
+        expect(res.headers['access-control-allow-headers']).toContain('If-Match')
+        expect(res.headers['access-control-allow-headers']).toContain('Idempotency-Key')
+        await app.close()
+    })
+
     test('proxies telemetry SSE stream via /api/v1/telemetry/stream', async () => {
         const upstream = (await import('fastify')).default({ logger: false })
         upstream.get('/api/v1/telemetry/stream', async (_req, reply) => {
@@ -60,6 +97,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: 'http://example.invalid',
             targetTelemetryUrl: `http://127.0.0.1:${port}`,
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],
@@ -132,6 +170,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${experimentPort}`,
             targetTelemetryUrl: `http://127.0.0.1:${telemetryPort}`,
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],
@@ -185,6 +224,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${port}`,
             targetTelemetryUrl: 'http://example.invalid',
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],
@@ -231,6 +271,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${port}`,
             targetTelemetryUrl: 'http://example.invalid',
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],
@@ -277,6 +318,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${port}`,
             targetTelemetryUrl: 'http://example.invalid',
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],
@@ -323,6 +365,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${port}`,
             targetTelemetryUrl: 'http://example.invalid',
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],
@@ -369,6 +412,7 @@ describe('auth-proxy server', () => {
             port: 0,
             targetExperimentUrl: `http://127.0.0.1:${port}`,
             targetTelemetryUrl: 'http://example.invalid',
+            targetConfigServiceUrl: 'http://example.invalid',
             targetScriptUrl: 'http://example.invalid',
             authUrl: 'http://example.invalid',
             corsOrigins: ['http://localhost:3000'],

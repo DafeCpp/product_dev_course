@@ -34,13 +34,47 @@ output "pg_cluster_host" {
 
 output "auth_database_url" {
   description = "AUTH_DATABASE_URL for auth-service"
-  value       = "postgresql://auth_user:***@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/auth_db?sslmode=verify-full"
+  value       = "postgresql://auth_user:${replace(urlencode(var.pg_auth_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/auth_db?sslmode=verify-full"
   sensitive   = true
 }
 
 output "experiment_database_url" {
   description = "EXPERIMENT_DATABASE_URL for experiment-service"
-  value       = "postgresql://experiment_user:***@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/experiment_db?sslmode=verify-full"
+  value       = "postgresql://experiment_user:${replace(urlencode(var.pg_experiment_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/experiment_db?sslmode=verify-full"
+  sensitive   = true
+}
+
+output "config_database_url" {
+  description = "CONFIG_DATABASE_URL for config-service"
+  value       = "postgresql://config_user:${replace(urlencode(var.pg_config_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/config_db?sslmode=verify-full"
+  sensitive   = true
+}
+
+output "script_database_url" {
+  description = "SCRIPT_DATABASE_URL for script-service"
+  value       = "postgresql://script_user:${replace(urlencode(var.pg_script_db_password), "+", "%20")}@${yandex_mdb_postgresql_cluster.main.host[0].fqdn}:6432/script_db?sslmode=verify-full"
+  sensitive   = true
+}
+
+output "artifacts_bucket_name" {
+  description = "S3_BUCKET for experiment-service"
+  value       = yandex_storage_bucket.artifacts.bucket
+}
+
+output "artifacts_s3_endpoint_url" {
+  description = "S3_ENDPOINT_URL and S3_PUBLIC_ENDPOINT_URL for Yandex Object Storage"
+  value       = "https://storage.yandexcloud.net"
+}
+
+output "artifacts_s3_access_key" {
+  description = "S3_ACCESS_KEY for experiment-service"
+  value       = yandex_iam_service_account_static_access_key.artifacts_sa_key.access_key
+  sensitive   = true
+}
+
+output "artifacts_s3_secret_key" {
+  description = "S3_SECRET_KEY for experiment-service; available only when the key is created"
+  value       = yandex_iam_service_account_static_access_key.artifacts_sa_key.secret_key
   sensitive   = true
 }
 

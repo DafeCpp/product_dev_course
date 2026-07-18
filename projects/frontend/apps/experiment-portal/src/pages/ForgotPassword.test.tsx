@@ -47,7 +47,7 @@ describe('ForgotPassword', () => {
     })
 
     it('submits trimmed email and shows success message on success', async () => {
-        vi.mocked(authApi.requestPasswordReset).mockResolvedValueOnce(undefined)
+        vi.mocked(authApi.requestPasswordReset).mockResolvedValueOnce({ message: 'ok' })
         const user = userEvent.setup()
         renderWithRouter()
 

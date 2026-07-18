@@ -6,7 +6,6 @@ import pytest
 
 import simlib.validation as val
 from simlib import SimParams, channel_metrics, fit_params, fit_params_multi, simulate
-from simlib.validation import CHANNELS, load_drive_log
 
 
 def _synthetic_drive(params: SimParams, n: int = 400, dt: float = 0.01) -> dict:
@@ -24,7 +23,7 @@ def test_metrics_identical_data_zero_rmse():
     d = _synthetic_drive(p)
     pred = simulate(p, d["throttle"], d["steering"], d["dt"])
     m = channel_metrics(pred, d["rec"])
-    for ch in CHANNELS:
+    for ch in val.CHANNELS:
         assert m[ch]["rmse"] < 1e-9
 
 
@@ -33,10 +32,10 @@ def test_fit_reduces_cost():
     d = _synthetic_drive(true)
     base = SimParams(max_accel=4.0)
     pred0 = simulate(base, d["throttle"], d["steering"], d["dt"])
-    c0 = val._cost(pred0, d["rec"], CHANNELS)
+    c0 = val._cost(pred0, d["rec"], val.CHANNELS)
     fitted, _ = fit_params(d, base, ["max_accel"])
     pred1 = simulate(fitted, d["throttle"], d["steering"], d["dt"])
-    c1 = val._cost(pred1, d["rec"], CHANNELS)
+    c1 = val._cost(pred1, d["rec"], val.CHANNELS)
     assert c1 < 0.1 * c0
 
 
@@ -81,10 +80,10 @@ def test_plot_channels_writes_file(tmp_path):
 @pytest.mark.skipif(not os.environ.get("SIM_VALIDATION_LOG"),
                     reason="SIM_VALIDATION_LOG не задан (реальный лог)")
 def test_real_log_metrics_finite():
-    drive = load_drive_log(os.environ["SIM_VALIDATION_LOG"])
+    drive = val.load_drive_log(os.environ["SIM_VALIDATION_LOG"])
     fitted, _ = fit_params(drive, SimParams(),
                            ["max_accel", "servo_max_deg", "drag_coeff"])
     pred = simulate(fitted, drive["throttle"], drive["steering"], drive["dt"])
     m = channel_metrics(pred, drive["rec"])
-    for ch in CHANNELS:
+    for ch in val.CHANNELS:
         assert math.isfinite(m[ch]["rmse"])

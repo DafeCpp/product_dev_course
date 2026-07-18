@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import Webhooks from './Webhooks'
-import { webhooksApi } from '../api/client'
+import { projectsApi, webhooksApi } from '../api/client'
 
 // Webhooks page imports webhooksApi from '../api/client' (re-exported from './webhooks')
 vi.mock('../api/client', () => ({
@@ -32,6 +32,14 @@ vi.mock('../utils/notify', () => ({
 
 const emptyDeliveries = { deliveries: [], total: 0, page: 1, page_size: 20 }
 const emptySubscriptions = { webhooks: [], total: 0, page: 1, page_size: 100 }
+const mockProject = {
+    id: 'proj-1',
+    name: 'Project 1',
+    description: null,
+    owner_id: 'user-1',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+}
 
 function createWrapper() {
     const queryClient = new QueryClient({
@@ -76,6 +84,8 @@ const mockDelivery = {
 describe('Webhooks', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        window.localStorage.clear()
+        vi.mocked(projectsApi.list).mockResolvedValue({ projects: [mockProject], total: 1 })
         vi.mocked(webhooksApi.listDeliveries).mockResolvedValue(emptyDeliveries)
     })
 
@@ -88,9 +98,30 @@ describe('Webhooks', () => {
         render(<Webhooks />, { wrapper: createWrapper() })
 
         expect(await screen.findByText('Webhook-подписки')).toBeInTheDocument()
-        expect(await screen.findByText('Webhook-подписок пока нет')).toBeInTheDocument()
+        await waitFor(() => {
+            expect(vi.mocked(webhooksApi.list)).toHaveBeenCalledWith({
+                project_id: 'proj-1',
+                page_size: 100,
+            })
+        })
+        expect(screen.getByText('Webhook-подписок пока нет')).toBeInTheDocument()
         // button to create first webhook should appear in empty state
         expect(screen.getByRole('button', { name: /создать первый webhook/i })).toBeInTheDocument()
+    })
+
+
+    it('does not call webhook APIs when there are no projects', async () => {
+        vi.mocked(projectsApi.list).mockResolvedValue({ projects: [], total: 0 })
+        vi.mocked(webhooksApi.list).mockResolvedValue(emptySubscriptions)
+
+        render(<Webhooks />, { wrapper: createWrapper() })
+
+        expect(await screen.findByText(/нет проектов/i)).toBeInTheDocument()
+        await waitFor(() => {
+            expect(vi.mocked(projectsApi.list)).toHaveBeenCalled()
+        })
+        expect(vi.mocked(webhooksApi.list)).not.toHaveBeenCalled()
+        expect(vi.mocked(webhooksApi.listDeliveries)).not.toHaveBeenCalled()
     })
 
     // -----------------------------------------------------------------------
@@ -122,8 +153,12 @@ describe('Webhooks', () => {
 
         render(<Webhooks />, { wrapper: createWrapper() })
 
-        // Open form
-        await user.click(screen.getByRole('button', { name: /создать$/i }))
+        // Open form after the default project has been selected.
+        const createButton = screen.getByRole('button', { name: /создать$/i })
+        await waitFor(() => {
+            expect(createButton).not.toBeDisabled()
+        })
+        await user.click(createButton)
 
         expect(await screen.findByLabelText(/target url/i)).toBeInTheDocument()
 
@@ -142,7 +177,8 @@ describe('Webhooks', () => {
                 expect.objectContaining({
                     target_url: 'https://example.com/hook',
                     event_types: ['run.started', 'run.finished'],
-                })
+                }),
+                { project_id: 'proj-1' }
             )
         })
     })
@@ -196,7 +232,7 @@ describe('Webhooks', () => {
         await user.click(deleteBtn)
 
         await waitFor(() => {
-            expect(vi.mocked(webhooksApi.delete)).toHaveBeenCalledWith('wh-1')
+            expect(vi.mocked(webhooksApi.delete)).toHaveBeenCalledWith('wh-1', { project_id: 'proj-1' })
         })
     })
 
@@ -226,7 +262,7 @@ describe('Webhooks', () => {
         await waitFor(() => {
             const calls = vi.mocked(webhooksApi.listDeliveries).mock.calls
             const callWithFilter = calls.find(
-                (c) => c[0]?.status === 'failed'
+                (c) => c[0]?.project_id === 'proj-1' && c[0]?.status === 'failed'
             )
             expect(callWithFilter).toBeDefined()
         })
@@ -258,7 +294,7 @@ describe('Webhooks', () => {
         await user.click(retryBtn)
 
         await waitFor(() => {
-            expect(vi.mocked(webhooksApi.retryDelivery)).toHaveBeenCalledWith('del-2')
+            expect(vi.mocked(webhooksApi.retryDelivery)).toHaveBeenCalledWith('del-2', { project_id: 'proj-1' })
         })
     })
 })

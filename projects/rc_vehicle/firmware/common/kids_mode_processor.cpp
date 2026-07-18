@@ -2,27 +2,24 @@
 
 #include <algorithm>
 #include <cmath>
-
-#include "slew_rate.hpp"
+#include <firmware_common/slew_rate.hpp>
 
 namespace rc_vehicle {
 
-void KidsModeProcessor::Init(const StabilizationConfig& cfg,
-                             const VehicleEkf& ekf, const ImuHandler* imu) {
-  cfg_ = &cfg;
+void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
   ekf_ = &ekf;
   imu_ = imu;
   Reset();
 }
 
-void KidsModeProcessor::Process(float& throttle, float& steering,
-                                uint32_t dt_ms,
+void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
+                                float& steering, uint32_t dt_ms,
                                 float forward_accel) noexcept {
-  if (!cfg_ || !IsActive()) {
+  if (!IsActive(cfg)) {
     return;  // Kids Mode не активен
   }
 
-  const auto& km = cfg_->kids_mode;
+  const auto& km = cfg.kids_mode;
 
   // ─────────────────────────────────────────────────────────────────────────
   // 1. Применить ограничения throttle/steering
@@ -43,10 +40,10 @@ void KidsModeProcessor::Process(float& throttle, float& steering,
   // ─────────────────────────────────────────────────────────────────────────
 
   if (dt_ms > 0) {
-    smoothed_throttle_ =
-        ApplySlewRate(throttle, smoothed_throttle_, km.slew_throttle, dt_ms);
-    smoothed_steering_ =
-        ApplySlewRate(steering, smoothed_steering_, km.slew_steering, dt_ms);
+    smoothed_throttle_ = firmware_common::ApplySlewRate(
+        throttle, smoothed_throttle_, km.slew_throttle, dt_ms / 1000.0f);
+    smoothed_steering_ = firmware_common::ApplySlewRate(
+        steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
 
     throttle = smoothed_throttle_;
     steering = smoothed_steering_;

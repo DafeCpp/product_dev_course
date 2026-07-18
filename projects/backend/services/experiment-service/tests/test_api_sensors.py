@@ -474,6 +474,41 @@ async def test_get_sensor_projects_filters_by_access(service_client):
 
 
 @pytest.mark.asyncio
+async def test_get_sensor_projects_foreign_project_returns_404(service_client):
+    """Regression: cannot enumerate the projects of a sensor you don't share.
+
+    A caller whose active project does not contain the sensor must get 404
+    instead of the sensor's full project list (cross-project info disclosure).
+    """
+    project1_id = uuid.uuid4()
+    other_project_id = uuid.uuid4()
+    headers1 = make_headers(project1_id)
+    other_headers = make_headers(other_project_id)
+
+    # Create sensor in project1.
+    resp = await service_client.post(
+        "/api/v1/sensors",
+        json={
+            "project_id": str(project1_id),
+            "name": "scoped-projects-sensor",
+            "type": "thermocouple",
+            "input_unit": "mV",
+            "display_unit": "C",
+        },
+        headers=headers1,
+    )
+    assert resp.status == 201
+    sensor_id = (await resp.json())["sensor"]["id"]
+
+    # A user acting in a project the sensor is not attached to must not see it.
+    resp = await service_client.get(
+        f"/api/v1/sensors/{sensor_id}/projects",
+        headers=other_headers,
+    )
+    assert resp.status == 404
+
+
+@pytest.mark.asyncio
 async def test_add_sensor_project_unknown_sensor_returns_404(service_client):
     """Test adding unknown sensor to project returns 404."""
     project_id = uuid.uuid4()

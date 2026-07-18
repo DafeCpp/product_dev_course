@@ -7,12 +7,13 @@ from typing import Any, List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
+from asyncpg.exceptions import UniqueViolationError  # type: ignore[import-untyped]
 
-from experiment_service.core.exceptions import NotFoundError
+from experiment_service.core.exceptions import DuplicateResourceError, NotFoundError
 from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateDTO
 from experiment_service.domain.enums import ExperimentStatus
 from experiment_service.domain.models import Experiment
-from experiment_service.repositories.base import BaseRepository
+from backend_common.repositories.base import BaseRepository
 
 
 class ExperimentRepository(BaseRepository):
@@ -47,17 +48,23 @@ class ExperimentRepository(BaseRepository):
             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
             RETURNING *
         """
-        record = await self._fetchrow(
-            query,
-            data.project_id,
-            data.owner_id,
-            data.name,
-            data.description,
-            data.experiment_type,
-            data.tags,
-            json.dumps(data.metadata),
-            data.status.value,
-        )
+        try:
+            record = await self._fetchrow(
+                query,
+                data.project_id,
+                data.owner_id,
+                data.name,
+                data.description,
+                data.experiment_type,
+                data.tags,
+                json.dumps(data.metadata),
+                data.status.value,
+            )
+        except UniqueViolationError as exc:
+            # Concurrent create racing on experiments_project_name_uindex.
+            raise DuplicateResourceError(
+                f"Experiment with name '{data.name}' already exists in this project"
+            ) from exc
         assert record is not None
         return self._to_model(record)
 
@@ -234,4 +241,3 @@ class ExperimentRepository(BaseRepository):
         )
         if record is None:
             raise NotFoundError("Experiment not found")
-

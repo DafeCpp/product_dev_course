@@ -1,3 +1,5 @@
+include(${CMAKE_CURRENT_LIST_DIR}/../../../../firmware_common/sources.cmake)
+
 idf_component_register(
     SRCS
         "main.cpp"
@@ -45,7 +47,7 @@ idf_component_register(
         "../../common/mag_calibration.cpp"
         "../../common/failsafe.cpp"
         "../../common/control_components.cpp"
-        "../../common/pid_controller.cpp"
+        ${FIRMWARE_COMMON_SOURCES}
         "../../common/imu_calibration.cpp"
         "../../common/madgwick_filter.cpp"
         "../../common/lpf_butterworth.cpp"
@@ -57,6 +59,7 @@ idf_component_register(
     INCLUDE_DIRS
         "."
         "../../common"
+        ${FIRMWARE_COMMON_INCLUDE_DIRS}
         "../../esp32_common"
     PRIV_REQUIRES
         esp_wifi
