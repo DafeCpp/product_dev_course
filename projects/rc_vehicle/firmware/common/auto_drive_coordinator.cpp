@@ -109,6 +109,13 @@ AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
   return out;
 }
 
+bool AutoDriveCoordinator::StartAutoForwardCalib(float target_accel_g) {
+  if (IsAnyActive() || last_rc_active_) return false;
+  if (!calib_mgr_) return false;
+  // Событие старта пишет сам CalibrationManager
+  return calib_mgr_->StartAutoForwardCalibration(target_accel_g);
+}
+
 bool AutoDriveCoordinator::StartTrimCalib(float target_accel_g,
                                            float current_trim,
                                            float steer_to_yaw_rate_dps) {

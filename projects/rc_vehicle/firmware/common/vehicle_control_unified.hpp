@@ -83,8 +83,9 @@ class VehicleControlUnified : public IVehicleControl {
    * @return true при успешном запуске
    */
   bool StartAutoForwardCalibration(float target_accel_g = 0.1f) override {
-    return calib_mgr_ &&
-           calib_mgr_->StartAutoForwardCalibration(target_accel_g);
+    // Через координатор, а не напрямую в CalibrationManager: там общий гейт
+    // (взаимное исключение процедур + проверка активного пульта).
+    return auto_drive_.StartAutoForwardCalib(target_accel_g);
   }
 
   /**

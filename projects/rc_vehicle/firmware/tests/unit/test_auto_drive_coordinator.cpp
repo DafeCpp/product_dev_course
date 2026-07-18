@@ -382,6 +382,20 @@ TEST(AutoDriveCoordinatorTest, StartCalibs_RcActive_Rejected) {
   EXPECT_FALSE(adc.IsAnyActive());
 }
 
+// Auto-forward живёт в CalibrationManager, но стартовать обязан через тот же
+// гейт: иначе ACK рапортует ok:true, а первый же тик Update() прибивает
+// процедуру абортом по пульту (замечание code review к LOS-214).
+TEST(AutoDriveCoordinatorTest, StartAutoForwardCalib_RcActive_Rejected) {
+  AutoDriveCoordinator adc;
+  adc.Update(RcActiveInput());
+  EXPECT_FALSE(adc.StartAutoForwardCalib(0.1f));
+}
+
+TEST(AutoDriveCoordinatorTest, StartAutoForwardCalib_NoCalibManager_Rejected) {
+  AutoDriveCoordinator adc;  // SetCalibrationManager не вызывался
+  EXPECT_FALSE(adc.StartAutoForwardCalib(0.1f));
+}
+
 TEST(AutoDriveCoordinatorTest, Update_RcActive_AbortsSpeedCalib) {
   AutoDriveCoordinator adc;
   ASSERT_TRUE(adc.StartSpeedCalib(0.3f, 3.0f));
