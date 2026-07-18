@@ -7,6 +7,19 @@
 
 from .closed_loop import ClosedLoopSim
 from .frame import SensorFrame
+from .profiles import (
+    Profile,
+    ProfileError,
+    Provenance,
+    get_profile,
+    get_profile_info,
+    list_profile_infos,
+    list_profiles,
+    load_profile,
+    load_profile_info,
+    resolve_profile,
+    save_profile,
+)
 from .replay import find_invariant_violations, load_telemetry_csv
 from .sensors import synth_accel, synth_gyro, synth_mag, make_frame
 from .sim_host_runner import find_sim_host, run_batch
@@ -23,6 +36,9 @@ from .vehicle_model import StepOutput, VehicleModel, VehicleState
 
 __all__ = [
     "ClosedLoopSim",
+    "Profile",
+    "ProfileError",
+    "Provenance",
     "SensorFrame",
     "SimParams",
     "StepOutput",
@@ -34,7 +50,15 @@ __all__ = [
     "fit_params_multi",
     "fitted_params_2026_07_18",
     "format_report",
+    "get_profile",
+    "get_profile_info",
+    "list_profile_infos",
+    "list_profiles",
     "load_drive_log",
+    "load_profile",
+    "load_profile_info",
+    "resolve_profile",
+    "save_profile",
     "simulate",
     "find_sim_host",
     "load_telemetry_csv",
