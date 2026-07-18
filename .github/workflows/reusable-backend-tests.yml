@@ -133,7 +133,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/common/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component backend-common --report coverage.json --format python --min-lines 71.54 --min-branches 62.79 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component backend-common --report coverage.json --format python --min-lines 93.22 --min-branches 90.69 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload coverage report
         if: always()
