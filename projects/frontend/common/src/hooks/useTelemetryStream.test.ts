@@ -264,6 +264,53 @@ describe('useTelemetryStream', () => {
     expect(result.current.points[0].id).toBe(1)
   })
 
+  it('accepts default message events and notifies the record callback', async () => {
+    const { open, streams } = makeOpenMock()
+    const onRecord = vi.fn()
+    const record = makeRecord({ id: 7 })
+    const { result } = renderHook(() => useTelemetryStream('s1', { open, onRecord }))
+
+    act(() => result.current.start())
+    await waitFor(() => expect(streams).toHaveLength(1))
+
+    act(() => streams[0].pushRaw(`data: ${JSON.stringify(record)}\n\n`))
+
+    await waitFor(() => expect(result.current.lastRecord?.id).toBe(7))
+    expect(onRecord).toHaveBeenCalledWith(record)
+  })
+
+  it('surfaces a response without a body as a terminal error when retries are disabled', async () => {
+    const open = vi.fn(async () => ({ response: { body: null } as unknown as Response }))
+    const { result } = renderHook(() => useTelemetryStream('s1', { open, autoReconnect: false }))
+
+    act(() => result.current.start())
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.error?.message).toBe('Telemetry stream response has no body')
+  })
+
+  it('normalizes non-Error connection failures before surfacing them', async () => {
+    const open = vi.fn(async () => {
+      throw 'network unavailable'
+    })
+    const { result } = renderHook(() => useTelemetryStream('s1', { open, autoReconnect: false }))
+
+    act(() => result.current.start())
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.error?.message).toBe('network unavailable')
+  })
+
+  it('can be stopped before it has started', () => {
+    const { open } = makeOpenMock()
+    const { result } = renderHook(() => useTelemetryStream('s1', { open }))
+
+    act(() => result.current.stop())
+
+    expect(result.current.status).toBe('stopped')
+    expect(open).not.toHaveBeenCalled()
+  })
+
   it('cancels the in-flight request and any pending reconnect timer on unmount', async () => {
     const { open, streams } = makeOpenMock()
     const { result, unmount } = renderHook(() =>
@@ -301,6 +348,19 @@ describe('useTelemetryStream', () => {
       { willRetry: true, attempt: 1 },
     )
     await waitFor(() => expect(streams).toHaveLength(2))
+  })
+
+  it('uses the fallback message for an empty server-sent error event', async () => {
+    const { open, streams } = makeOpenMock()
+    const { result } = renderHook(() => useTelemetryStream('s1', { open, autoReconnect: false }))
+
+    act(() => result.current.start())
+    await waitFor(() => expect(streams).toHaveLength(1))
+
+    act(() => streams[0].pushRaw('event: error\ndata:\n\n'))
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.error?.message).toBe('Telemetry stream reported an error')
   })
 
   it('clear() resets points, lastRecord, and cursor back to the initial values', async () => {
