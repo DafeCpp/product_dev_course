@@ -57,15 +57,12 @@ export default defineConfig(({ mode }) => {
           'src/vite-env.d.ts',
           'src/**/__mocks__/**',
         ],
-        // Ratchet floor — start conservative, raise as more tests land.
-        // Plan target: 65% lines (see docs/coverage plan).
-        // Measured baseline (CI run 25581222556): 54.57% lines, 52.05%
-        // statements, 45.95% funcs, 45.39% branches.
+        // Initial ratchet from Coverage Baseline run 29654381568.
         thresholds: process.env.COVERAGE_ENFORCE_RATCHET === 'true' ? {
-          lines: 50,
+          lines: 59.76,
           statements: 50,
           functions: 43,
-          branches: 43,
+          branches: 50.18,
         } : undefined,
       },
     },

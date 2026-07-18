@@ -45,15 +45,12 @@ export default defineConfig({
       reporter: ["text", "html", "lcov", "json-summary", "cobertura"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/main.tsx", "src/setupTests.ts", "**/*.test.{ts,tsx}"],
-      // Ratchet floor — sensor-simulator is smoke-only.
-      // Plan target: 50% lines.
-      // Measured baseline (CI run 25581222556): 52.2% lines, 49.68%
-      // statements, 58.33% funcs, 46.02% branches.
+      // Initial ratchet from Coverage Baseline run 29654381568.
       thresholds: process.env.COVERAGE_ENFORCE_RATCHET === "true" ? {
-        lines: 50,
+        lines: 81.73,
         statements: 47,
         functions: 50,
-        branches: 44,
+        branches: 78.28,
       } : undefined,
     },
   },
