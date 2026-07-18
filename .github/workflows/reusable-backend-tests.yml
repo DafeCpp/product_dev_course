@@ -117,7 +117,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/common/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component backend-common --report coverage.json --format python --min-lines 0 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component backend-common --report coverage.json --format python --min-lines 71.54 --min-branches 62.79 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload coverage report
         if: always()
@@ -235,7 +235,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/auth-service/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component auth-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component auth-service --report coverage.json --format python --min-lines 86.28 --min-branches 73.91 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload merged coverage report
         if: always()
@@ -296,7 +296,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/script-service/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component script-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component script-service --report coverage.json --format python --min-lines 94.36 --min-branches 80.18 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload coverage report
         if: always()
@@ -357,7 +357,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/config-service/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component config-service --report coverage.json --format python --min-lines 0 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component config-service --report coverage.json --format python --min-lines 91.06 --min-branches 79.48 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload coverage report
         if: always()
@@ -473,7 +473,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/experiment-service/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component experiment-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component experiment-service --report coverage.json --format python --min-lines 77.39 --min-branches 56.82 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload merged coverage report
         if: always()
@@ -589,7 +589,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/telemetry-ingest-service/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component telemetry-ingest-service --report coverage.json --format python --min-lines 50 --min-branches 0 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component telemetry-ingest-service --report coverage.json --format python --min-lines 88.81 --min-branches 77.27 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload merged coverage report
         if: always()
