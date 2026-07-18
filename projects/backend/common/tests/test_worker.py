@@ -349,9 +349,12 @@ class TestBackgroundWorkerInterval:
     async def test_short_interval(self):
         """Test worker with very short interval."""
         count = [0]
+        third_execution = asyncio.Event()
 
         async def task_fn(now: datetime) -> str | None:
             count[0] += 1
+            if count[0] == 3:
+                third_execution.set()
             return None
 
         worker = BackgroundWorker(
@@ -361,7 +364,7 @@ class TestBackgroundWorkerInterval:
         app = web.Application()
 
         await worker.start(app)
-        await asyncio.sleep(0.1)
+        await asyncio.wait_for(third_execution.wait(), timeout=1.0)
         await worker.stop(app)
 
         # Should have executed multiple times
