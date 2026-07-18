@@ -17,6 +17,7 @@ AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
   AutoDriveOutput out;
 
   last_rc_active_ = input.rc_active;
+  last_ts_ms_ = input.ts_ms;
 
   // Перехват управления пультом прерывает процедуру. Раньше она молча
   // замирала до отпускания пульта и продолжала прогон с середины —
@@ -124,8 +125,12 @@ bool AutoDriveCoordinator::StartTrimCalib(float target_accel_g,
     return false;
   }
   if (event_log_) {
-    event_log_->Push({0, TelemetryEventType::TrimCalibStart, 0, {},
-                      target_accel_g, 0.0f});
+    event_log_->Push({last_ts_ms_,
+                      TelemetryEventType::TrimCalibStart,
+                      0,
+                      {},
+                      target_accel_g,
+                      0.0f});
   }
   return true;
 }
@@ -140,8 +145,12 @@ bool AutoDriveCoordinator::StartComCalib(float target_accel_g,
     return false;
   }
   if (event_log_) {
-    event_log_->Push({0, TelemetryEventType::ComCalibStart, 0, {},
-                      target_accel_g, steering_magnitude});
+    event_log_->Push({last_ts_ms_,
+                      TelemetryEventType::ComCalibStart,
+                      0,
+                      {},
+                      target_accel_g,
+                      steering_magnitude});
   }
   return true;
 }
@@ -150,9 +159,12 @@ bool AutoDriveCoordinator::StartTest(const TestParams& params) {
   if (IsAnyActive() || last_rc_active_) return false;
   if (!test_runner_.Start(params)) return false;
   if (event_log_) {
-    event_log_->Push({0, TelemetryEventType::TestStart,
-                      static_cast<uint8_t>(params.type), {},
-                      params.duration_sec, params.steering});
+    event_log_->Push({last_ts_ms_,
+                      TelemetryEventType::TestStart,
+                      static_cast<uint8_t>(params.type),
+                      {},
+                      params.duration_sec,
+                      params.steering});
   }
   return true;
 }
@@ -162,8 +174,12 @@ bool AutoDriveCoordinator::StartSpeedCalib(float target_throttle,
   if (IsAnyActive() || last_rc_active_) return false;
   if (!speed_calib_.Start(target_throttle, cruise_duration_sec)) return false;
   if (event_log_) {
-    event_log_->Push({0, TelemetryEventType::SpeedCalibStart, 0, {},
-                      target_throttle, cruise_duration_sec});
+    event_log_->Push({last_ts_ms_,
+                      TelemetryEventType::SpeedCalibStart,
+                      0,
+                      {},
+                      target_throttle,
+                      cruise_duration_sec});
   }
   return true;
 }
@@ -172,18 +188,18 @@ void AutoDriveCoordinator::StopAll() {
   // Остановка из failsafe: логируем только активные процедуры
   if (event_log_) {
     if (trim_calib_.IsActive()) {
-      event_log_->Push({0, TelemetryEventType::TrimCalibFailed, 0});
+      event_log_->Push({last_ts_ms_, TelemetryEventType::TrimCalibFailed, 0});
     }
     if (com_calib_.IsActive()) {
-      event_log_->Push({0, TelemetryEventType::ComCalibFailed, 0});
+      event_log_->Push({last_ts_ms_, TelemetryEventType::ComCalibFailed, 0});
     }
     if (test_runner_.IsActive()) {
       auto status = test_runner_.GetStatus();
-      event_log_->Push({0, TelemetryEventType::TestStopped,
+      event_log_->Push({last_ts_ms_, TelemetryEventType::TestStopped,
                         static_cast<uint8_t>(status.type)});
     }
     if (speed_calib_.IsActive()) {
-      event_log_->Push({0, TelemetryEventType::SpeedCalibFailed, 0});
+      event_log_->Push({last_ts_ms_, TelemetryEventType::SpeedCalibFailed, 0});
     }
   }
   if (calib_mgr_) calib_mgr_->StopAutoForward();

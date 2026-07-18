@@ -1144,6 +1144,51 @@ function eventParamDesc(typeId, param) {
     return param ? String(param) : '';
 }
 
+/**
+ * Разложить события по кадрам телеметрии.
+ *
+ * Кадр пишется раз в kLogIntervalMs (10 мс), а события ставят метку времени
+ * тика (2 мс), поэтому точное совпадение меток случается примерно в одном
+ * случае из пяти — раньше остальные события просто терялись при экспорте
+ * (LOS-226). Каждому кадру достаются события из интервала
+ * (метка предыдущего кадра, метка текущего]; всё, что раньше первого кадра
+ * или позже последнего, прижимается к краю, чтобы ничего не пропало.
+ *
+ * @param {Array<{ts:number,name:string,desc:string,v1:string,v2:string}>} events
+ * @param {Array<number>} frameTs метки кадров, по возрастанию
+ * @returns {Map<number, {name:string,desc:string,v1:string,v2:string}>}
+ *          индекс кадра → склеенное событие ('|' между несколькими)
+ */
+function assignEventsToFrames(events, frameTs) {
+    const byFrame = new Map();
+    if (frameTs.length === 0 || events.length === 0) return byFrame;
+
+    const sorted = events.slice().sort((a, b) => a.ts - b.ts);
+    let frameIdx = 0;
+
+    for (const ev of sorted) {
+        // Первый кадр с меткой >= метки события; иначе — последний кадр
+        while (frameIdx < frameTs.length - 1 && frameTs[frameIdx] < ev.ts) {
+            frameIdx++;
+        }
+        const target = frameTs[frameIdx] < ev.ts ? frameTs.length - 1 : frameIdx;
+
+        const prev = byFrame.get(target);
+        if (prev) {
+            byFrame.set(target, {
+                name: prev.name + '|' + ev.name,
+                desc: prev.desc + '|' + ev.desc,
+                v1:   prev.v1   + '|' + ev.v1,
+                v2:   prev.v2   + '|' + ev.v2,
+            });
+        } else {
+            byFrame.set(target, { name: ev.name, desc: ev.desc,
+                                  v1: ev.v1, v2: ev.v2 });
+        }
+    }
+    return byFrame;
+}
+
 function triggerDownload(content, filename, mime) {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -1229,10 +1274,11 @@ async function downloadBinaryLog() {
             return;
         }
 
-        // ── Section 2: parse events into a map keyed by ts_ms ─────────────
-        // Events are sparse — join them into frame rows by closest timestamp.
-        // Map: ts_ms → { name, param_desc, value1, value2 }
-        const eventByTs = new Map();
+        // ── Section 2: parse events ───────────────────────────────────────
+        // Метки событий (тик, 2 мс) почти никогда не совпадают с метками
+        // кадров (10 мс), поэтому раскладываем их по кадрам интервалом —
+        // см. assignEventsToFrames() (LOS-226).
+        const events = [];
         if (framesEnd + 8 <= buf.byteLength) {
             const eventCount = view.getUint32(framesEnd,     true);
             const eventSize  = view.getUint32(framesEnd + 4, true);
@@ -1252,16 +1298,7 @@ async function downloadBinaryLog() {
                     const desc   = eventParamDesc(typeId, param);
                     const v1str  = isNaN(value1) || value1 === 0 ? '' : value1.toFixed(4);
                     const v2str  = isNaN(value2) || value2 === 0 ? '' : value2.toFixed(4);
-                    // Multiple events at same ts: concatenate with '|'
-                    if (eventByTs.has(ts)) {
-                        const prev = eventByTs.get(ts);
-                        eventByTs.set(ts, { name: prev.name + '|' + name,
-                                            desc: prev.desc + '|' + desc,
-                                            v1:   prev.v1   + '|' + v1str,
-                                            v2:   prev.v2   + '|' + v2str });
-                    } else {
-                        eventByTs.set(ts, { name, desc, v1: v1str, v2: v2str });
-                    }
+                    events.push({ ts, name, desc, v1: v1str, v2: v2str });
                 }
             }
         }
@@ -1269,22 +1306,28 @@ async function downloadBinaryLog() {
         // ── Build single combined CSV ──────────────────────────────────────
         const header = FIELD_OFFSETS.map(f => f.name).join(',') +
                        ',event_type,event_param,event_value1,event_value2';
-        const frameLines = [];
+        // Первый проход: разобрать кадры (события раскладываются по ним ниже,
+        // поэтому нужны все метки сразу)
+        const frames = [];
         for (let i = 0; i < frameCount; i++) {
             const base = 8 + i * frameSize;
             if (base + frameSize > framesEnd) break;
-            const vals = FIELD_OFFSETS.map(f => {
+            frames.push(FIELD_OFFSETS.map(f => {
                 const o = base + f.off;
                 if (f.type === 'u32') return view.getUint32(o, true);
                 if (f.type === 'u8')  return view.getUint8(o);
                 return view.getFloat32(o, true);
-            });
-            const ts = vals[0]; // ts_ms is first field
-            const ev = eventByTs.get(ts);
-            vals.push(ev ? ev.name : '', ev ? ev.desc : '',
-                      ev ? ev.v1   : '', ev ? ev.v2   : '');
-            frameLines.push(vals.join(','));
+            }));
         }
+
+        const eventByFrame = assignEventsToFrames(
+            events, frames.map(vals => vals[0]));  // ts_ms — первое поле
+
+        const frameLines = frames.map((vals, i) => {
+            const ev = eventByFrame.get(i);
+            return vals.concat([ev ? ev.name : '', ev ? ev.desc : '',
+                                ev ? ev.v1   : '', ev ? ev.v2   : '']).join(',');
+        });
         const csv = header + '\n' + frameLines.join('\n');
         triggerDownload(csv, 'telemetry_log.csv', 'text/csv');
 

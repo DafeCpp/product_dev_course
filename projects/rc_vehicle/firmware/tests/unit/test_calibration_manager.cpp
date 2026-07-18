@@ -126,6 +126,80 @@ TEST_F(CalibrationManagerTest, StopAutoForward_CancelsSampleCollection) {
       << "сбор семплов продолжается после остановки движения";
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// События auto-forward калибровки (LOS-226)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Подготовить стадию 1 и подключить лог событий. */
+static void PrepareStage1(ImuCalibration& calib) {
+  ImuCalibData d{};
+  d.valid = true;
+  calib.SetData(d);
+}
+
+TEST_F(CalibrationManagerTest, AutoForwardStart_EventHasPlatformTimestamp) {
+  PrepareStage1(imu_calib_);
+  TelemetryEventLog log;
+  mgr_->SetEventLog(&log);
+  platform_.SetTimeMs(54321);
+
+  ASSERT_TRUE(mgr_->StartAutoForwardCalibration(0.1f));
+
+  TelemetryEvent ev{};
+  ASSERT_TRUE(log.GetEvent(log.Count() - 1, ev));
+  EXPECT_EQ(ev.type, TelemetryEventType::ImuCalibStart);
+  EXPECT_EQ(ev.param, 2);  // stage 2 = auto_forward
+  EXPECT_EQ(ev.ts_ms, 54321u) << "событие старта без метки времени";
+}
+
+// До LOS-226 обрыв auto-forward не оставлял в логе никакого следа, хотя после
+// LOS-214 это штатный путь (аборт по перехвату пультом).
+TEST_F(CalibrationManagerTest, StopAutoForward_LogsAbortEvent) {
+  PrepareStage1(imu_calib_);
+  TelemetryEventLog log;
+  mgr_->SetEventLog(&log);
+  platform_.SetTimeMs(1000);
+  ASSERT_TRUE(mgr_->StartAutoForwardCalibration(0.1f));
+
+  platform_.SetTimeMs(2500);
+  mgr_->StopAutoForward();
+
+  TelemetryEvent ev{};
+  ASSERT_TRUE(log.GetEvent(log.Count() - 1, ev));
+  EXPECT_EQ(ev.type, TelemetryEventType::ImuCalibFailed);
+  EXPECT_EQ(ev.param, 2);
+  EXPECT_EQ(ev.ts_ms, 2500u);
+}
+
+// ProcessCompletion() зовёт StopAutoForward() и при УСПЕШНОМ завершении —
+// событие обрыва там было бы ложным.
+TEST_F(CalibrationManagerTest, StopAutoForward_AfterDone_NoFalseAbortEvent) {
+  PrepareStage1(imu_calib_);
+  TelemetryEventLog log;
+  mgr_->SetEventLog(&log);
+  ASSERT_TRUE(mgr_->StartAutoForwardCalibration(0.1f));
+
+  // Сбор завершился штатно
+  imu_calib_.StartForwardCalibration(1);
+  imu_calib_.FeedSample([] {
+    ImuData d{};
+    d.ay = 0.3f;
+    d.az = 1.0f;
+    return d;
+  }());
+  ASSERT_NE(imu_calib_.GetStatus(), CalibStatus::Collecting);
+
+  const size_t before = log.Count();
+  mgr_->StopAutoForward();
+
+  for (size_t i = before; i < log.Count(); ++i) {
+    TelemetryEvent ev{};
+    ASSERT_TRUE(log.GetEvent(i, ev));
+    EXPECT_NE(ev.type, TelemetryEventType::ImuCalibFailed)
+        << "ложное событие обрыва после успешной калибровки";
+  }
+}
+
 TEST_F(CalibrationManagerTest, UpdateAutoForward_WhenNotActive_ReturnsZero) {
   float throttle = mgr_->UpdateAutoForward(0.0f, 1.0f, 0.0f, 0.002f);
   EXPECT_FLOAT_EQ(throttle, 0.0f);

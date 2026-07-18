@@ -527,6 +527,72 @@ TEST(AutoDriveCoordinatorTest, EventLog_StopAll_LogsActiveFailedEvent) {
   EXPECT_EQ(ev.type, TelemetryEventType::TrimCalibFailed);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Метки времени событий (LOS-226)
+//
+// Старт и остановка приходят из WS-потока, где времени нет, и раньше писались
+// с ts_ms = 0. Такие события теряются при сшивке с кадрами телеметрии.
+// Координатор берёт метку из последнего тика Update().
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Тик с заданной меткой времени. */
+static AutoDriveInput InputAtTs(uint32_t ts_ms) {
+  AutoDriveInput in = IdleInput();
+  in.ts_ms = ts_ms;
+  return in;
+}
+
+TEST(AutoDriveCoordinatorTest, EventLog_TestStart_UsesLastTickTimestamp) {
+  AutoDriveCoordinator adc;
+  TelemetryEventLog log;
+  adc.SetEventLog(&log);
+
+  adc.Update(InputAtTs(12345));
+  ASSERT_TRUE(adc.StartTest(DefaultTestParams()));
+
+  TelemetryEvent ev{};
+  ASSERT_TRUE(log.GetEvent(log.Count() - 1, ev));
+  EXPECT_EQ(ev.type, TelemetryEventType::TestStart);
+  EXPECT_EQ(ev.ts_ms, 12345u) << "событие старта без метки времени";
+}
+
+TEST(AutoDriveCoordinatorTest, EventLog_StopAll_UsesLastTickTimestamp) {
+  AutoDriveCoordinator adc;
+  TelemetryEventLog log;
+  adc.SetEventLog(&log);
+
+  adc.Update(InputAtTs(1000));
+  ASSERT_TRUE(adc.StartTrimCalib(0.1f, 0.0f, 180.0f));
+  adc.Update(InputAtTs(2000));
+  adc.StopAll();
+
+  TelemetryEvent ev{};
+  ASSERT_TRUE(log.GetEvent(log.Count() - 1, ev));
+  EXPECT_EQ(ev.type, TelemetryEventType::TrimCalibFailed);
+  EXPECT_EQ(ev.ts_ms, 2000u) << "остановка должна брать метку последнего тика";
+}
+
+TEST(AutoDriveCoordinatorTest, EventLog_AllStarts_HaveNonZeroTimestamp) {
+  AutoDriveCoordinator adc;
+  TelemetryEventLog log;
+  adc.SetEventLog(&log);
+  adc.Update(InputAtTs(777));
+
+  ASSERT_TRUE(adc.StartSpeedCalib(0.3f, 3.0f));
+  adc.StopAll();
+  ASSERT_TRUE(adc.StartComCalib(0.1f, 0.5f, 5.0f, nullptr));
+  adc.StopAll();
+
+  ASSERT_GT(log.Count(), 0u);
+  for (size_t i = 0; i < log.Count(); ++i) {
+    TelemetryEvent ev{};
+    ASSERT_TRUE(log.GetEvent(i, ev));
+    EXPECT_EQ(ev.ts_ms, 777u)
+        << "событие " << i << " типа " << static_cast<int>(ev.type)
+        << " потеряло метку времени";
+  }
+}
+
 TEST(AutoDriveCoordinatorTest, EventLog_StopAll_WhenNothingActive_NoExtraEvent) {
   AutoDriveCoordinator adc;
   TelemetryEventLog log;
