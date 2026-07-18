@@ -78,6 +78,11 @@ class MadgwickFilter : public IOrientationFilter {
   bool adaptive_enabled_{false};
   float adaptive_threshold_g_{0.2f};
 
+  // Есть ли у курса абсолютная опора: true после 9DOF-обновления с
+  // магнитометром, false после 6DOF (там yaw — только дрейф гироскопа).
+  // От этого зависит, сохранять ли курс в SetVehicleFrame().
+  bool yaw_has_absolute_ref_{false};
+
   // Опорная СК машины: q_veh_to_ned (поворот из СК машины в NED), только если
   // use_vehicle_frame_
   bool use_vehicle_frame_{false};

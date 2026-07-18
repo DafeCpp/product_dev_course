@@ -905,6 +905,35 @@ TEST(MadgwickTest, SetVehicleFrame_PreservesConvergedYaw) {
       << "Фильтр не должен никуда уезжать после рекалибровки";
 }
 
+TEST(MadgwickTest, SetVehicleFrame_ResetsYawWithoutMagnetometer) {
+  // Обратная сторона LOS-229: без магнитометра (6DOF) yaw — это накопленный
+  // дрейф гироскопа без абсолютной опоры. Сохранять его нечего, и контракт
+  // vehicle-frame («после калибровки Euler ≈ 0») должен продолжать работать.
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // Крутим машину вокруг вертикали — в 6DOF это уводит yaw и он там и остаётся.
+  for (int i = 0; i < 1000; ++i) {
+    filter.Update(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.002f);
+  }
+  float pitch, roll, yaw_drifted;
+  filter.GetEulerDeg(pitch, roll, yaw_drifted);
+  ASSERT_GT(std::abs(yaw_drifted), 10.0f) << "Тест бессмысленен без дрейфа yaw";
+
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "Без магнитометра курс не подкреплён ничем — калибровка его обнуляет";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
   // After SetVehicleFrame init + convergence, roll stays ~0
   MadgwickFilter filter;

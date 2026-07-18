@@ -21,11 +21,16 @@ void MadgwickFilter::Reset() {
   q1_ = 0.f;
   q2_ = 0.f;
   q3_ = 0.f;
+  yaw_has_absolute_ref_ = false;
 }
 
 void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
                             float gz, float dt_sec) {
   if (dt_sec <= 0.f) return;
+
+  // 6DOF: акселерометр задаёт только наклон, курс держится на одном гироскопе
+  // и свободно дрейфует — абсолютной опоры у yaw нет.
+  yaw_has_absolute_ref_ = false;
 
   // Гироскоп: град/с → рад/с
   const float gx_rad = gx * kDegToRad;
@@ -211,6 +216,9 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
       qDot3 -= effective_beta * s2;
       qDot4 -= effective_beta * s3;
     }
+
+    // Курс притянут к магнитному полю — у него появилась абсолютная опора.
+    yaw_has_absolute_ref_ = true;
   } else if (anorm2 > 1e-12f) {
     // Нет mag — деградируем до 6DOF
     Update(ax, ay, az, gx, gy, gz, dt_sec);
@@ -237,8 +245,12 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   // Курс, на который фильтр уже сошёлся, снимаем ДО смены опорной СК —
   // переинициализация ниже обнуляет наклон, но курс должна сохранить (см.
   // комментарий у присваивания кватерниона).
+  //
+  // Только если курс подкреплён магнитометром. В 6DOF yaw — накопленный дрейф
+  // гироскопа без абсолютной опоры: сохранять его нечего, и контракт
+  // vehicle-frame («после калибровки Euler ≈ 0») важнее.
   float prev_yaw_rad = 0.f;
-  {
+  if (yaw_has_absolute_ref_) {
     float pitch_unused, roll_unused;
     GetEulerRad(pitch_unused, roll_unused, prev_yaw_rad);
   }
@@ -319,24 +331,24 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   q_veh_to_ned_3_ *= qn;
   use_vehicle_frame_ = true;
 
-  // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame pitch/roll = 0
-  // при СОХРАНЁННОМ курсе.
-  // Мэджвик использует сопряжённую конвенцию: v_sensor = q* ⊗ v_ref ⊗ q,
-  // т.е. q в стандартной конвенции = sensor→reference.
-  // GetQuaternion: q_result = q_madgwick * q_sv (vehicle→reference в стандартной).
-  // Хотим q_result = Rz(ψ)  ⟹  q_madgwick = Rz(ψ) * conj(q_sv).
+  // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame pitch/roll =
+  // 0 при курсе ψ (prev_yaw_rad). Мэджвик использует сопряжённую конвенцию:
+  // v_sensor = q* ⊗ v_ref ⊗ q, т.е. q в стандартной конвенции =
+  // sensor→reference. GetQuaternion: q_result = q_madgwick * q_sv
+  // (vehicle→reference в стандартной). Хотим q_result = Rz(ψ)  ⟹
+  // q_madgwick = Rz(ψ) * conj(q_sv). При ψ=0 сводится к прежнему conj(q_sv).
   //
-  // Обнулять здесь ещё и yaw (ψ=0, т.е. q_madgwick = conj(q_sv)) нельзя: в 9DOF
-  // магнитометр держит абсолютный курс, и сброшенный в ноль yaw фильтр потом
-  // ~10 секунд догоняет градиентным спуском, выдавая всё это время фантомное
-  // вращение до 90° на стоящей машине (LOS-229). Наклон обнулять корректно —
-  // после калибровки машина стоит ровно, и акселерометр это подтверждает.
+  // В 9DOF обнулять здесь ещё и yaw нельзя: магнитометр держит абсолютный курс,
+  // и сброшенный в ноль yaw фильтр потом ~10 секунд догоняет градиентным
+  // спуском, выдавая всё это время фантомное вращение до 90° на стоящей машине
+  // (LOS-229). Наклон обнулять корректно — после калибровки машина стоит ровно,
+  // и акселерометр это подтверждает.
   const float half_yaw = 0.5f * prev_yaw_rad;
   const float cy = std::cos(half_yaw);
   const float sy = std::sin(half_yaw);
-  QuatMul(cy, 0.f, 0.f, sy,                                          //
+  QuatMul(cy, 0.f, 0.f, sy,  //
           q_veh_to_ned_0_, -q_veh_to_ned_1_, -q_veh_to_ned_2_,
-          -q_veh_to_ned_3_,                                          //
+          -q_veh_to_ned_3_,  //
           q0_, q1_, q2_, q3_);
 }
 
