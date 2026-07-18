@@ -99,11 +99,25 @@ def test_shipped_profiles_are_complete():
         assert set(raw["params"]) == expected, f"{name}: неполный набор полей"
 
 
-def test_get_profile_returns_independent_copy():
-    """SimParams мутабелен — реестр обязан отдавать копию, иначе отравится кэш."""
-    first = get_profile("heavy")
-    first.mass = 99.0
+def test_registry_returns_independent_copies():
+    """Любой путь наружу обязан отдавать копию, иначе мутация отравит кэш.
+
+    `Profile` заморожен, но неглубоко: `params` — мутабельный `SimParams`, так что
+    метаданные текут так же, как и сами параметры.
+    """
+    get_profile("heavy").mass = 99.0
     assert get_profile("heavy").mass == 6.0
+
+    get_profile_info("heavy").params.mass = 98.0
+    assert get_profile("heavy").mass == 6.0
+
+    resolve_profile("heavy").params.mass = 97.0
+    assert get_profile("heavy").mass == 6.0
+
+    first = list_profiles()[0]
+    original = get_profile(first).mass
+    list_profile_infos()[0].params.mass = 96.0
+    assert get_profile(first).mass == original
 
 
 def test_default_profile_matches_simparams_defaults():

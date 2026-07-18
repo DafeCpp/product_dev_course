@@ -167,6 +167,16 @@ def _load_builtin(name: str) -> Profile:
     return _cache[name]
 
 
+def _detached(profile: Profile) -> Profile:
+    """Копия профиля, не связанная с кэшем.
+
+    `Profile` заморожен, но заморозка неглубокая: поле `params` — мутабельный
+    `SimParams`. Без копии `get_profile_info('heavy').params.mass = 99` отравил бы
+    кэш на весь процесс.
+    """
+    return replace(profile, params=replace(profile.params))
+
+
 def list_profiles() -> list[str]:
     """Имена встроенных профилей (по алфавиту)."""
     return sorted(p.name[:-len(".json")] for p in _builtin_dir().iterdir()
@@ -185,12 +195,12 @@ def get_profile_info(name: str) -> Profile:
         raise ProfileError(
             f"неизвестный профиль '{name}' — доступны: {', '.join(available)}; "
             f"либо путь к JSON-файлу{_suggest(name, available)}")
-    return _load_builtin(name)
+    return _detached(_load_builtin(name))
 
 
 def get_profile(name: str) -> SimParams:
     """Параметры встроенного профиля (свежая копия — `SimParams` мутабелен)."""
-    return replace(get_profile_info(name).params)
+    return get_profile_info(name).params
 
 
 def load_profile_info(path: str | os.PathLike[str]) -> Profile:
@@ -212,7 +222,7 @@ def resolve_profile(spec: str | None) -> Profile:
     if spec is None:
         return get_profile_info("default")
     if spec in list_profiles():
-        return _load_builtin(spec)
+        return get_profile_info(spec)  # не _load_builtin: нужна копия, не кэш
     # os.altsep может быть None, а "" in spec истинно всегда — проверять явно,
     # иначе любое имя считается путём и ошибка теряет список доступных профилей.
     looks_like_path = (spec.endswith(".json")
