@@ -387,7 +387,8 @@ void HandleStartTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     cJSON_AddStringToObject(reply, "test_type", type_str);
     if (!ok) {
       cJSON_AddStringToObject(reply, "error",
-          "IMU not ready, another procedure active, or test already running");
+          "RC transmitter active, IMU not ready, another procedure active, "
+          "or test already running");
     }
   });
 

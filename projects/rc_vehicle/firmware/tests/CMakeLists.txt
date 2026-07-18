@@ -125,6 +125,7 @@ add_executable(unit_tests
     unit/test_com_offset_calibration.cpp
     unit/test_speed_calibration.cpp
     unit/test_com_offset_correction.cpp
+    unit/test_imu_calibration_forward.cpp
     unit/test_control_loop_helpers.cpp
     unit/test_control_loop_processor.cpp
     unit/test_mmc5983.cpp

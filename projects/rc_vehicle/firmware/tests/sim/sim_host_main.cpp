@@ -12,6 +12,10 @@
 //   replay).
 //   --identity-calib — заменить калибровку на identity (replay «со средней
 //   точки»).
+//   --start-test <straight|circle|step> [--target-accel g]
+//       [--test-duration s] [--test-steering v] — запустить авто-манёвр
+//       (аналог start_test по WebSocket) до первого кадра; машина едет сама,
+//       RC-команды в сценарии не нужны.
 //
 // Время логическое: реальных пауз нет, dt берётся из кадра.
 
@@ -49,10 +53,17 @@ std::string StepAndFormat(VehicleControlUnified& u, StdioPlatform& p,
   ApplyFrame(p, f);
   u.HostStep(f.dt_ms);
   return FormatOutputLine(p.GetLastSnap(), p.GetLastThrottle(),
-                          p.GetLastSteering(), p.WasNeutral());
+                          p.GetLastSteering(), p.WasNeutral(),
+                          u.IsTestActive());
 }
 
 }  // namespace
+
+rc_vehicle::TestType ParseTestType(std::string_view s) {
+  if (s == "circle") return rc_vehicle::TestType::Circle;
+  if (s == "step") return rc_vehicle::TestType::Step;
+  return rc_vehicle::TestType::Straight;
+}
 
 rc_vehicle::DriveMode ParseDriveMode(std::string_view s) {
   if (s == "kids") return rc_vehicle::DriveMode::Kids;
@@ -68,6 +79,8 @@ int main(int argc, char** argv) {
   rc_vehicle::DriveMode drive_mode = rc_vehicle::DriveMode::Normal;
   float speed_limit = 0.0f;
   bool stabilize = false;
+  bool start_test = false;
+  rc_vehicle::TestParams test_params;
   for (int i = 1; i < argc; ++i) {
     const std::string_view a = argv[i];
     if (a == "--batch")
@@ -82,6 +95,15 @@ int main(int argc, char** argv) {
       speed_limit = std::strtof(argv[++i], nullptr);
     else if (a == "--stabilize")
       stabilize = true;
+    else if (a == "--start-test" && i + 1 < argc) {
+      start_test = true;
+      test_params.type = ParseTestType(argv[++i]);
+    } else if (a == "--target-accel" && i + 1 < argc)
+      test_params.target_accel_g = std::strtof(argv[++i], nullptr);
+    else if (a == "--test-duration" && i + 1 < argc)
+      test_params.duration_sec = std::strtof(argv[++i], nullptr);
+    else if (a == "--test-steering" && i + 1 < argc)
+      test_params.steering = std::strtof(argv[++i], nullptr);
   }
 
   auto platform = std::make_unique<StdioPlatform>();
@@ -95,6 +117,13 @@ int main(int argc, char** argv) {
   unified.SetPlatform(std::move(platform));
   if (unified.Init() != rc_vehicle::PlatformError::Ok) {
     std::cerr << "sim_host: Init() failed\n";
+    return 1;
+  }
+
+  // Авто-тест стартует до первого кадра: пульт в SIL неактивен, поэтому
+  // процедура получает тики сразу (аналог start_test по WebSocket).
+  if (start_test && !unified.StartTest(test_params)) {
+    std::cerr << "sim_host: StartTest() rejected\n";
     return 1;
   }
 

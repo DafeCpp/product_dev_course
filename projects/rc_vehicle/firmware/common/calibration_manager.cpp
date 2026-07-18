@@ -181,6 +181,13 @@ bool CalibrationManager::LoadFromNvs() {
     if (imu_calib_.IsValid()) {
       const auto& d = imu_calib_.GetData();
       madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+      if (!d.forward_valid) {
+        // Сохранённая ось «вперёд» не горизонтальна — отброшена в пользу оси X.
+        // Авто-манёвры и калибровки поедут по неверной оси (LOS-214).
+        platform_.Log(LogLevel::Warning,
+                      "Saved forward axis rejected (not horizontal) — "
+                      "run Full + Forward calibration");
+      }
     }
     platform_.Log(LogLevel::Info, "IMU calibration loaded from NVS");
     return true;

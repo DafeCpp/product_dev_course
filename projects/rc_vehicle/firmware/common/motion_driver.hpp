@@ -10,6 +10,7 @@ namespace rc_vehicle {
  */
 enum class MotionPhase : uint8_t {
   Idle,        ///< Не запущен
+  Settle,      ///< Замер baseline ускорения перед разгоном (throttle = 0)
   Accelerate,  ///< PID- или ramp-разгон
   Cruise,      ///< Постоянный газ; логика круиза у вызывающего
   Brake,       ///< Торможение (ZUPT-детекция остановки)
@@ -61,6 +62,9 @@ class MotionDriver {
         0.0f};                   ///< Только для LinearRamp; 0 → отключено
     float brake_throttle{0.0f};  ///< 0 = coast, <0 = reverse
     float brake_timeout_sec{3.0f};
+    /// Тиков замера baseline перед разгоном (~100мс при 500Hz); 0 → без замера.
+    /// Только для AccelMode::Pid — LinearRamp ускорение не использует.
+    int settle_ticks{50};
     ZuptConfig zupt{};
     BreakawayConfig breakaway{};  ///< Только для AccelMode::Pid
   };
@@ -70,9 +74,10 @@ class MotionDriver {
   /**
    * @brief Запустить прогон с заданной конфигурацией.
    *
-   * Переходит в Accelerate. Полностью сбрасывает внутреннее состояние
-   * (включая PID-интегратор), поэтому безопасно вызывать повторно
-   * (например, для второго прохода ComOffsetCalibration).
+   * Переходит в Settle (замер baseline ускорения), затем в Accelerate.
+   * Полностью сбрасывает внутреннее состояние (включая PID-интегратор),
+   * поэтому безопасно вызывать повторно (например, для второго прохода
+   * ComOffsetCalibration).
    */
   void Start(const Config& config);
 
@@ -85,7 +90,7 @@ class MotionDriver {
    * В фазах Accelerate и Brake возвращает рассчитанный throttle.
    * В фазе Cruise возвращает cruise_throttle_ (зафиксированный
    * в конце разгона).
-   * В Idle/Stopped возвращает 0.
+   * В Idle/Settle/Stopped возвращает 0.
    *
    * @param current_accel_g Продольное ускорение (g) — для PID
    * @param accel_magnitude Модуль полного ускорения (g) — для ZUPT
@@ -108,6 +113,9 @@ class MotionDriver {
   [[nodiscard]] float GetCruiseThrottle() const { return cruise_throttle_; }
   [[nodiscard]] float GetPhaseElapsed() const { return phase_elapsed_sec_; }
 
+  /** Baseline ускорения, замеренный в фазе Settle (g). */
+  [[nodiscard]] float GetAccelBaseline() const { return baseline_accel_g_; }
+
  private:
   Config config_{};
   MotionPhase phase_{MotionPhase::Idle};
@@ -115,11 +123,19 @@ class MotionDriver {
   float phase_elapsed_sec_{0.0f};
   float cruise_throttle_{0.0f};
 
+  // Baseline ускорения покоя (фаза Settle). Вычитается из current_accel_g,
+  // чтобы статический офсет сигнала (наклон площадки, погрешность
+  // accel_forward_vec) не давал ложный отрыв и не смещал уставку PI.
+  float baseline_accel_g_{0.0f};
+  double settle_sum_{0.0};
+  int settle_count_{0};
+
   // Breakaway state (PID mode only)
   bool breakaway_detected_{false};
   float base_throttle_{0.0f};
   int breakaway_confirm_count_{0};
 
+  float UpdateSettle(float current_accel_g);
   float UpdateAccelerate(float current_accel_g, float dt_sec);
   float UpdateBrake(float accel_magnitude, float gyro_z_dps);
 

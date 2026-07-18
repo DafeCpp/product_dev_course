@@ -117,6 +117,15 @@ class AutoDriveCoordinator {
   /** Остановить все процедуры (вызывается из failsafe). */
   void StopAll();
 
+  /**
+   * @brief Активен ли пульт (по последнему Update).
+   *
+   * Авто-процедуры не выполняются при активном RC, поэтому старт при
+   * включённом пульте отклоняется — иначе процедура «стартует» и молча
+   * простаивает (LOS-214).
+   */
+  [[nodiscard]] bool IsRcActive() const { return last_rc_active_; }
+
  private:
   CalibrationManager* calib_mgr_{nullptr};
   SteeringTrimCalibration trim_calib_;
@@ -125,6 +134,7 @@ class AutoDriveCoordinator {
   SpeedCalibration speed_calib_;
 
   TelemetryEventLog* event_log_{nullptr};
+  bool last_rc_active_{false};
 };
 
 }  // namespace rc_vehicle

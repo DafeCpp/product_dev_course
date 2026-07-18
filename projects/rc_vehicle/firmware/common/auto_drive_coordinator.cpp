@@ -16,6 +16,16 @@ bool AutoDriveCoordinator::IsAnyActive() const {
 AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
   AutoDriveOutput out;
 
+  last_rc_active_ = input.rc_active;
+
+  // Перехват управления пультом прерывает процедуру. Раньше она молча
+  // замирала до отпускания пульта и продолжала прогон с середины —
+  // результат такого прогона недостоверен (LOS-214).
+  if (input.rc_active && IsAnyActive()) {
+    StopAll();
+    return out;
+  }
+
   // Auto-forward calibration (управляется CalibrationManager)
   if (calib_mgr_ && calib_mgr_->IsAutoForwardActive() && !input.rc_active) {
     out.active = true;
@@ -102,7 +112,7 @@ AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
 bool AutoDriveCoordinator::StartTrimCalib(float target_accel_g,
                                            float current_trim,
                                            float steer_to_yaw_rate_dps) {
-  if (IsAnyActive()) return false;
+  if (IsAnyActive() || last_rc_active_) return false;
   if (!trim_calib_.Start(target_accel_g, current_trim, steer_to_yaw_rate_dps)) {
     return false;
   }
@@ -117,7 +127,7 @@ bool AutoDriveCoordinator::StartComCalib(float target_accel_g,
                                           float steering_magnitude,
                                           float cruise_duration_sec,
                                           const float* gravity_vec) {
-  if (IsAnyActive()) return false;
+  if (IsAnyActive() || last_rc_active_) return false;
   if (!com_calib_.Start(target_accel_g, steering_magnitude,
                         cruise_duration_sec, gravity_vec)) {
     return false;
@@ -130,7 +140,7 @@ bool AutoDriveCoordinator::StartComCalib(float target_accel_g,
 }
 
 bool AutoDriveCoordinator::StartTest(const TestParams& params) {
-  if (IsAnyActive()) return false;
+  if (IsAnyActive() || last_rc_active_) return false;
   if (!test_runner_.Start(params)) return false;
   if (event_log_) {
     event_log_->Push({0, TelemetryEventType::TestStart,
@@ -142,7 +152,7 @@ bool AutoDriveCoordinator::StartTest(const TestParams& params) {
 
 bool AutoDriveCoordinator::StartSpeedCalib(float target_throttle,
                                             float cruise_duration_sec) {
-  if (IsAnyActive()) return false;
+  if (IsAnyActive() || last_rc_active_) return false;
   if (!speed_calib_.Start(target_throttle, cruise_duration_sec)) return false;
   if (event_log_) {
     event_log_->Push({0, TelemetryEventType::SpeedCalibStart, 0, {},

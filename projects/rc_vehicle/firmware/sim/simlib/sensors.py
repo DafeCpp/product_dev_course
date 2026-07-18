@@ -61,8 +61,14 @@ def synth_mag(psi_rad: float, p: SimParams) -> tuple[float, float, float]:
 def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
                rc_throttle: float | None = None,
                rc_steering: float | None = None,
-               with_mag: bool = True) -> SensorFrame:
-    """Собрать SensorFrame из выхода модели (для подачи в sim_host, FW-S2.5)."""
+               with_mag: bool = True,
+               wifi_keepalive: bool = False) -> SensorFrame:
+    """Собрать SensorFrame из выхода модели (для подачи в sim_host, FW-S2.5).
+
+    wifi_keepalive=True — нулевая WiFi-команда каждый кадр. Нужна авто-режимам
+    (start_test и калибровки): они требуют неактивного пульта, но без единого
+    источника команд сработал бы failsafe и PWM не выдавался бы вовсе.
+    """
     ax, ay, az = synth_accel(out.long_accel, out.lat_accel, p)
     gx, gy, gz = synth_gyro(out.yaw_rate, p)
     f = SensorFrame(dt_ms=dt_ms, ax=ax, ay=ay, az=az, gx=gx, gy=gy, gz=gz)
@@ -73,4 +79,8 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
         f.rc_present = True
         f.rc_throttle = rc_throttle or 0.0
         f.rc_steering = rc_steering or 0.0
+    if wifi_keepalive:
+        f.wifi_present = True
+        f.wifi_throttle = 0.0
+        f.wifi_steering = 0.0
     return f
