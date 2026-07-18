@@ -6,6 +6,101 @@
 
 ---
 
+## 2026-07-18 — LOS-182: повторный прогон после фиксов LOS-190/191/192/193/195
+
+| | |
+|---|---|
+| **Тестировщик** | Claude Code (агент) |
+| **Инструмент** | Playwright MCP (headless Chrome) + curl (прямые запросы к auth-service) + pytest/vitest (юнит/интеграционные тесты фиксов) |
+| **Ветка** | `develop` (все 4 бага смержены: #265, #267, #268, #269) + отдельно `agent/fix-audit-log-response-contract` (#270, LOS-195) |
+| **Окружение** | Локальный dev-стек, полный ребилд образов `experiment-service`, `experiment-portal`, `auth-proxy`, `auth-service` на актуальном `develop` |
+| **Объём** | Повторная проверка всех 4 багов первого прогона + сквозной цикл аудит-лога (запись → БД → UI) после обнаруженного по ходу LOS-195 |
+
+### Результаты
+
+| Сценарий | Итог |
+|----------|------|
+| LOS-191 `/admin/system-roles` Permissions | ✅ Колонка заполнена для всех ролей, React key-warning в консоли пропал |
+| LOS-192 stale `active_project_id` после logout | ✅ Ни одного спурьезного запроса/тоста для следующего пользователя с 0 проектов |
+| LOS-190 audit-write 404 | ✅ Запись подтверждена напрямую в БД (`audit_log`) и через API — `experiment.create` пишется без ошибок |
+| TC-AUDIT-01/02 Журнал + запись событий (повтор) | ⚠️→✅ Запись пишется (LOS-190 fixed), но UI всё ещё пустой — новый баг **LOS-195** (контракт `entries[]` vs объект `{entries,total,...}`), заведён как подзадача LOS-182 |
+| LOS-193 смена пароля | ✅ Полный цикл: admin-reset → temp-логин → `POST /auth/change-password` `200` → редирект → старый пароль `401` → новый работает |
+| LOS-195 audit-log response contract (после фикса #270) | ✅ `GET /api/v1/audit-log` отдаёт `{entries,total,limit,offset}`; `/admin/audit` рендерит все записи; фильтр по `action` работает; `pytest test_api_audit.py` 13/13, `vitest AuditLog.test.tsx` 8/8 |
+
+**Итого:** все 5 багов этого workstream (LOS-190/191/192/193/195) подтверждены исправленными живым прогоном, не только по статусу задачи/код-диффу.
+
+### Замечания / инфраструктура (не баги продукта)
+
+Ребилд `auth-service` дважды давал ложноотрицательный результат: `docker compose build` был прерван по таймауту команды (сборка `poetry install` в этом образе занимает ~5 мин), контейнер после этого пересоздавался со **старым** образом без ошибок при старте — внешне выглядело так, будто фикс LOS-195 не подтверждается. Обнаружено сверкой напрямую через `curl http://localhost:8001/...` и `docker images` (timestamp образа не менялся). Для этого сервиса нужен ребилд с запасом времени (`timeout` заведомо больше ~6 мин) либо `run_in_background`.
+
+### Не покрыто повторно
+
+- Юнит/Cypress-тесты, добавленные вместе с фиксами (`system_roles.cy.ts`, `activeProject.test.ts`, `change-password.test.ts`, `test_audit_client.py`) — не запускались в этом прогоне (кроме тестов LOS-195, см. выше).
+- Другие страницы с тем же паттерном `useState(() => getActiveProjectId() ?? '')`, упомянутые в исходном отчёте по LOS-192 (`ExperimentsList.tsx`, `SensorsList.tsx`, `TelemetryViewer.tsx`) — повторно не проверялись индивидуально, только логаут-механизм (общий для всех).
+- TC-AUDIT-03 пп. 2-3 (`scope_type`/`scope_id`, `from`/`to`) — проверен только п.1 (`action`).
+
+---
+
+## 2026-07-16 — LOS-182: расширение каталога + сквозной прогон (happy path, RBAC, Configs, auth-циклы)
+
+| | |
+|---|---|
+| **Тестировщик** | Claude Code (агент) |
+| **Инструмент** | Playwright MCP (headless Chrome) + curl (auth-proxy сессия, telemetry ingest, config-service optimistic locking) + psql (проверка в БД) |
+| **Ветка** | `lostpointmeister/los-182-teste2e-portal` |
+| **Окружение** | Локальный dev-стек (`make dev-up`); по ходу пересобраны образы `experiment-service` и `experiment-portal` (устарели после LOS-86/90/96/97 — см. «Замечания») |
+| **Учётка** | `admin`/`Admin123` (superadmin) + 2 новых тестовых пользователя (`qa_editor` — открытая регистрация, `qa_viewer` — по инвайту, роль `config_viewer`) |
+| **Объём** | Happy path project→experiment→run→capture session→sensor→telemetry; smoke по всем разделам; TC-AUTH-02/07/08/09; TC-USERS-01/02/03; TC-ROLES-02/03; TC-CONFIG-01/02/05/06; TC-WHK-01; TC-CMP-01/04; TC-SCRIPT-01; TC-QOS-01; TC-AUDIT-01/02; TC-SENSOR-01/02 |
+
+### Результаты
+
+| Сценарий | Итог |
+|----------|------|
+| Happy path: project→experiment→run→capture session→sensor→telemetry | ✅ Весь цикл через UI, включая нативные `window.prompt`/`window.confirm`; heartbeat датчика обновился |
+| TC-AUTH-02 Валидный логин | ✅ |
+| TC-AUTH-07 Смена пароля (`password_change_required`) | ❌ `POST /auth/change-password` → `404`; пользователь застревает → [LOS-193](https://linear.app/lostpointer/issue/LOS-193) |
+| TC-AUTH-08 Регистрация (открытая + по инвайту) | ✅ Оба режима работают; single-use инвайта подтверждён (`401` на повтор) |
+| TC-AUTH-09 Сброс пароля по ссылке | ✅ Полный цикл request→confirm→login; повторное использование токена → `401` |
+| TC-USERS-01/02 Список + инвайты/регистрация | ✅ |
+| TC-USERS-03 Admin-reset (шаги 1-2) | ✅ (шаг 2 зависит от TC-AUTH-07, который сломан — см. выше); шаг 3 (деактивация) **не прогонялся** |
+| TC-ROLES-02 Назначение системной роли | ✅ `config_viewer` назначена, эффективное разрешение подтверждено функционально |
+| TC-ROLES-03 RBAC-запреты (негатив) | ✅ Nav скрывает админ-пункты; прямой заход → `403` |
+| TC-CONFIG-01/02 Список + создание | ✅ |
+| TC-CONFIG-05 Optimistic locking | ✅ Устаревший `If-Match`/version → `412` |
+| TC-CONFIG-06 Sensitive-масскирование | ✅ `config_viewer` (без `configs.sensitive.read`) видит `"value":"***"` и в list, и в history |
+| TC-WHK-01 Webhooks (с проектом / без проектов) | ✅ / ⚠️ на пустом воркспейсе — спурьезные `403` от stale `project_id` → [LOS-192](https://linear.app/lostpointer/issue/LOS-192) |
+| TC-CMP-01/04 Comparison page | ✅ |
+| TC-SCRIPT-01, TC-QOS-01 Smoke | ✅ |
+| TC-AUDIT-01/02 Журнал + запись событий | ❌ Журнал пустой после успешных create-действий → [LOS-190](https://linear.app/lostpointer/issue/LOS-190) |
+| TC-SENSOR-01/02 Список + регистрация + токен | ✅ |
+| `/projects` прямой заход (BUG-F-013) | ✅ Не воспроизводится |
+| `/admin/system-roles` консоль | ❌ Пустая колонка Permissions + key-prop warning → [LOS-191](https://linear.app/lostpointer/issue/LOS-191) |
+
+**Итого:** happy path и большинство smoke-проверок — зелёные. Найдено **4 новых бага**, один из них (LOS-193, смена пароля) — блокирующий для полноценного onboarding пользователей.
+
+### Найденные баги
+
+| ID | Severity | Кратко |
+|----|----------|--------|
+| [LOS-193](https://linear.app/lostpointer/issue/LOS-193) | High | `POST /auth/change-password` не проксируется auth-proxy (`404`) — смена пароля полностью нерабочая, пользователь после admin-reset застревает без выхода. |
+| [LOS-190](https://linear.app/lostpointer/issue/LOS-190) | High | Audit-записи от experiment-service (`experiment.create`, `run.create`, ...) получают `404` при отправке в auth-service — аудит-лог тихо остаётся пустым. Причина: `.env` `AUTH_SERVICE_URL` без `/api/v1`. |
+| [LOS-191](https://linear.app/lostpointer/issue/LOS-191) | Medium | `/admin/system-roles`: колонка Permissions пустая для всех ролей — API отдаёт `permissions` как `string[]`, компонент ждёт `{id,name}[]`. |
+| [LOS-192](https://linear.app/lostpointer/issue/LOS-192) | Low | `active_project_id` в localStorage не чистится при logout — у следующего пользователя на том же браузере уходят спурьезные запросы со старым `project_id` (`403` + шумные тосты). |
+
+### Замечания / инфраструктура (не баги продукта)
+
+При первом заходе `/runs/:id`, `/sensors`, `/telemetry` падали с `500` (`Failed to resolve import "frontend-common"`) — образ `experiment-portal` и anonymous-volume `/app/node_modules` были собраны до появления пакета `frontend-common` (LOS-96/97); аналогично `experiment-service` падал на старте (`ModuleNotFoundError: backend_common.otel`, до консолидации LOS-86/90). Оба пересобраны (`docker compose build`; для portal ещё и `--force-recreate --renew-anon-volumes`, т.к. простого rebuild оказалось недостаточно — старый `node_modules` жил в anonymous volume) — после этого все страницы отрисовались штатно. Локальный дев-стек может расходиться с `develop` после подобных рефакторов backend-common/frontend-common; обновление образов не тривиально из-за anonymous volumes в `docker-compose.yml`.
+
+### Замечания / не покрыто
+
+- Webhooks CRUD (создание/удаление подписки, retry доставки) — тестировался только список/фильтрация, не сама мутация.
+- Configs: activate/deactivate (TC-CONFIG-03), rollback (TC-CONFIG-04), RBAC-негативы на мутации (TC-CONFIG-07) — не прогонялись.
+- Admin Scripts/Rate Limits — только smoke открытия раздела, без CRUD/сохранения значений.
+- Полный сквозной happy-path с телеметрией через Live SSE/history/export (`telemetry-viewer.md` TC-TELE-08…11) — не прогонялся отдельно от ingest-проверки.
+- RBAC-негативы для Configs/Webhooks с ролью `config_editor`/`config_operator` (частичные права) — проверялась только `config_viewer` (read-only).
+
+---
+
 ## 2026-06-10 — RBAC / роли доступа (TC-RBAC)
 
 | | |
