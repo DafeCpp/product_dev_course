@@ -252,6 +252,52 @@ TEST_F(ControlLoopTest, TestRunner_StartStop) {
   EXPECT_FALSE(vc_.IsTestActive());
 }
 
+// Auto-forward стартует не через AutoDriveCoordinator::Start*, а напрямую в
+// CalibrationManager. Точка входа обязана проходить тот же гейт по пульту:
+// иначе ACK рапортует ok:true, а первый же тик Update() прибивает процедуру
+// абортом по RC — то есть «стартовали и молча ничего» (замечание code review
+// к LOS-214).
+TEST_F(ControlLoopTest, AutoForwardCalib_RejectedWhileRcActive) {
+  auto platform = std::make_unique<SimPlatform>(20);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+  // Стадия 1 пройдена — иначе старт отклонялся бы по другой причине
+  // и тест проходил бы вхолостую.
+  ImuCalibData calib{};
+  calib.valid = true;
+  platform_->SetCalibData(calib);
+  platform_->SetRcCommand(RcCommand{0.0f, 0.0f});  // пульт включён
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();
+
+  EXPECT_FALSE(vc_.StartAutoForwardCalibration(0.1f))
+      << "auto-forward стартовал при активном пульте";
+}
+
+// Положительный контроль к тесту выше: без пульта тот же вызов проходит.
+// Без него первый тест зелёный и на сломанном коде.
+TEST_F(ControlLoopTest, AutoForwardCalib_AcceptedWithoutRc) {
+  auto platform = std::make_unique<SimPlatform>(20);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+  ImuCalibData calib{};
+  calib.valid = true;
+  platform_->SetCalibData(calib);
+  // RC-команду не задаём: пульт неактивен
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();
+
+  EXPECT_TRUE(vc_.StartAutoForwardCalibration(0.1f));
+}
+
 TEST_F(ControlLoopTest, TestRunner_MutualExclusion_WithTrimCalib) {
   RunLoop(5);
 

@@ -19,7 +19,12 @@ class ClosedLoopSim:
                  dynamic: bool = False, identity_calib: bool = False,
                  drive_mode: str | None = None,
                  speed_limit: float | None = None,
-                 stabilize: bool = False):
+                 stabilize: bool = False,
+                 start_test: str | None = None,
+                 target_accel: float | None = None,
+                 test_duration: float | None = None,
+                 test_steering: float | None = None,
+                 wifi_keepalive: bool = False):
         self.p = params or SimParams()
         self.model = VehicleModel(self.p, dynamic=dynamic)
         # StepOutput предыдущего тика → сенсоры текущего кадра (на старте — покой).
@@ -34,6 +39,17 @@ class ClosedLoopSim:
             args += ["--speed-limit", repr(float(speed_limit))]
         if stabilize:
             args.append("--stabilize")
+        if start_test:
+            args += ["--start-test", start_test]
+            if target_accel is not None:
+                args += ["--target-accel", repr(float(target_accel))]
+            if test_duration is not None:
+                args += ["--test-duration", repr(float(test_duration))]
+            if test_steering is not None:
+                args += ["--test-steering", repr(float(test_steering))]
+        # Авто-манёвр ведёт машину сам, RC-команд нет → без keepalive сработал
+        # бы failsafe и PWM не выдавался бы.
+        self.wifi_keepalive = wifi_keepalive or start_test is not None
         self.proc = subprocess.Popen(
             args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             text=True, bufsize=1)
@@ -50,7 +66,8 @@ class ClosedLoopSim:
         """
         frame = make_frame(self.last_out, self.model.state.psi, self.p,
                            dt_ms=dt_ms, rc_throttle=rc_throttle,
-                           rc_steering=rc_steering, with_mag=with_mag)
+                           rc_steering=rc_steering, with_mag=with_mag,
+                           wifi_keepalive=self.wifi_keepalive)
         self.proc.stdin.write(frame.to_csv() + "\n")
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()

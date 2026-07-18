@@ -72,6 +72,17 @@ class AutoDriveCoordinator {
   /** true если любая авто-процедура активна. */
   [[nodiscard]] bool IsAnyActive() const;
 
+  // ── Auto-forward Calibration (владелец — CalibrationManager) ─────────
+  /**
+   * @brief Запустить auto-forward калибровку через общий гейт координатора.
+   *
+   * Сама процедура живёт в CalibrationManager, но взаимное исключение и
+   * проверка пульта — здесь, как у остальных авто-процедур. Точка входа
+   * обязана быть одна: старт напрямую через CalibrationManager обходит
+   * гейт, и процедуру убивает первый же тик Update() (LOS-214).
+   */
+  bool StartAutoForwardCalib(float target_accel_g);
+
   // ── Steering Trim Calibration ────────────────────────────────────────
   bool StartTrimCalib(float target_accel_g, float current_trim,
                       float steer_to_yaw_rate_dps);
@@ -117,6 +128,15 @@ class AutoDriveCoordinator {
   /** Остановить все процедуры (вызывается из failsafe). */
   void StopAll();
 
+  /**
+   * @brief Активен ли пульт (по последнему Update).
+   *
+   * Авто-процедуры не выполняются при активном RC, поэтому старт при
+   * включённом пульте отклоняется — иначе процедура «стартует» и молча
+   * простаивает (LOS-214).
+   */
+  [[nodiscard]] bool IsRcActive() const { return last_rc_active_; }
+
  private:
   CalibrationManager* calib_mgr_{nullptr};
   SteeringTrimCalibration trim_calib_;
@@ -125,6 +145,7 @@ class AutoDriveCoordinator {
   SpeedCalibration speed_calib_;
 
   TelemetryEventLog* event_log_{nullptr};
+  bool last_rc_active_{false};
 };
 
 }  // namespace rc_vehicle

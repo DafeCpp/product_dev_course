@@ -233,10 +233,15 @@ struct InputFrame {
 /** Заголовок колонок выходного CSV (первая строка stdout). */
 [[nodiscard]] std::string OutputHeader();
 
-/** Сформировать строку выхода: applied PWM + ключевые поля снапшота. */
+/** Сформировать строку выхода: applied PWM + ключевые поля снапшота.
+ *
+ * @param test_active Активна ли авто-процедура теста (для SIL-сценариев
+ *                    start_test; см. --start-test у sim_host).
+ */
 [[nodiscard]] std::string FormatOutputLine(const TelemetrySnapshot& snap,
                                            float throttle, float steering,
-                                           bool neutral);
+                                           bool neutral,
+                                           bool test_active = false);
 
 }  // namespace sim
 }  // namespace rc_vehicle

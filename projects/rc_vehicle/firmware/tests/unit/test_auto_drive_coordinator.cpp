@@ -336,10 +336,13 @@ TEST(AutoDriveCoordinatorTest, StopAll_TerminatesTestRunner) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// RC override suppresses auto-drive output
+// RC override прерывает авто-процедуру
+//
+// Раньше процедура при активном пульте молча замирала и продолжала прогон с
+// середины после отпускания — результат такого прогона недостоверен (LOS-214).
 // ══════════════════════════════════════════════════════════════════════════════
 
-TEST(AutoDriveCoordinatorTest, Update_RcActive_SuppressesOutputEvenIfTrimRunning) {
+TEST(AutoDriveCoordinatorTest, Update_RcActive_AbortsRunningTrim) {
   AutoDriveCoordinator adc;
   ASSERT_TRUE(adc.StartTrimCalib(0.1f, 0.0f, 180.0f));
   // Procedure is active internally, but RC has control — output must be idle
@@ -347,24 +350,66 @@ TEST(AutoDriveCoordinatorTest, Update_RcActive_SuppressesOutputEvenIfTrimRunning
   EXPECT_FALSE(out.active);
   EXPECT_FLOAT_EQ(out.throttle, 0.0f);
   EXPECT_FLOAT_EQ(out.steering, 0.0f);
-  // Procedure is still logically active (not stopped by RC input alone)
-  EXPECT_TRUE(adc.IsTrimCalibActive());
+  // Перехват пультом прерывает процедуру
+  EXPECT_FALSE(adc.IsTrimCalibActive());
 }
 
-TEST(AutoDriveCoordinatorTest, Update_RcActive_SuppressesSpeedCalibOutput) {
+// Старт при включённом пульте должен явно отказывать: иначе процедура
+// «стартует», не получает ни одного тика и молча простаивает (LOS-214).
+TEST(AutoDriveCoordinatorTest, StartTest_RcActive_Rejected) {
+  AutoDriveCoordinator adc;
+  adc.Update(RcActiveInput());  // координатор узнаёт о пульте из тика
+  EXPECT_TRUE(adc.IsRcActive());
+  EXPECT_FALSE(adc.StartTest(DefaultTestParams()));
+  EXPECT_FALSE(adc.IsTestActive());
+}
+
+TEST(AutoDriveCoordinatorTest, StartTest_AfterRcReleased_Accepted) {
+  AutoDriveCoordinator adc;
+  adc.Update(RcActiveInput());
+  ASSERT_FALSE(adc.StartTest(DefaultTestParams()));
+
+  adc.Update(IdleInput());  // пульт отпущен
+  EXPECT_FALSE(adc.IsRcActive());
+  EXPECT_TRUE(adc.StartTest(DefaultTestParams()));
+}
+
+TEST(AutoDriveCoordinatorTest, StartCalibs_RcActive_Rejected) {
+  AutoDriveCoordinator adc;
+  adc.Update(RcActiveInput());
+  EXPECT_FALSE(adc.StartTrimCalib(0.1f, 0.0f, 180.0f));
+  EXPECT_FALSE(adc.StartSpeedCalib(0.3f, 3.0f));
+  EXPECT_FALSE(adc.IsAnyActive());
+}
+
+// Auto-forward живёт в CalibrationManager, но стартовать обязан через тот же
+// гейт: иначе ACK рапортует ok:true, а первый же тик Update() прибивает
+// процедуру абортом по пульту (замечание code review к LOS-214).
+TEST(AutoDriveCoordinatorTest, StartAutoForwardCalib_RcActive_Rejected) {
+  AutoDriveCoordinator adc;
+  adc.Update(RcActiveInput());
+  EXPECT_FALSE(adc.StartAutoForwardCalib(0.1f));
+}
+
+TEST(AutoDriveCoordinatorTest, StartAutoForwardCalib_NoCalibManager_Rejected) {
+  AutoDriveCoordinator adc;  // SetCalibrationManager не вызывался
+  EXPECT_FALSE(adc.StartAutoForwardCalib(0.1f));
+}
+
+TEST(AutoDriveCoordinatorTest, Update_RcActive_AbortsSpeedCalib) {
   AutoDriveCoordinator adc;
   ASSERT_TRUE(adc.StartSpeedCalib(0.3f, 3.0f));
   AutoDriveOutput out = adc.Update(RcActiveInput());
   EXPECT_FALSE(out.active);
-  EXPECT_TRUE(adc.IsSpeedCalibActive());
+  EXPECT_FALSE(adc.IsSpeedCalibActive());
 }
 
-TEST(AutoDriveCoordinatorTest, Update_RcActive_SuppressesTestOutput) {
+TEST(AutoDriveCoordinatorTest, Update_RcActive_AbortsTest) {
   AutoDriveCoordinator adc;
   ASSERT_TRUE(adc.StartTest(DefaultTestParams()));
   AutoDriveOutput out = adc.Update(RcActiveInput());
   EXPECT_FALSE(out.active);
-  EXPECT_TRUE(adc.IsTestActive());
+  EXPECT_FALSE(adc.IsTestActive());
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

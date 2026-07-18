@@ -24,9 +24,19 @@ class TestRunnerTest : public ::testing::Test {
     runner.Update(fwd_accel, accel_mag, gyro_z, kDt, throttle, steering);
   }
 
-  // 750 steps = exactly 1.5 s, +1 to cross the phase boundary into Cruise
+  // Settle (50 ticks, baseline замер) + 750 steps = 1.5 s разгона,
+  // +1 чтобы пересечь границу фазы и уйти в Cruise
+  static constexpr int kSettleTicks = 50;
+
+  // Прокрутить только замер baseline: газ в этой фазе нулевой
+  void RunSettlePhase(float& throttle, float& steering) {
+    for (int i = 0; i < kSettleTicks; ++i) {
+      Step(throttle, steering);
+    }
+  }
+
   void RunAccelPhase(float& throttle, float& steering) {
-    for (int i = 0; i < 751; ++i) {
+    for (int i = 0; i < kSettleTicks + 751; ++i) {
       Step(throttle, steering);
     }
   }
@@ -263,6 +273,7 @@ TEST_F(TestRunnerTest, ThrottlePositiveDuringAccel_WhenFwdAccelIsZero) {
   ASSERT_EQ(runner.GetPhase(), TestRunner::Phase::Accelerate);
 
   float throttle = 0.0f, steering = 0.0f;
+  RunSettlePhase(throttle, steering);  // baseline замер: газ ещё нулевой
 
   // Feed zero forward accel → PID error is positive → throttle positive
   Step(throttle, steering, 0.0f);
@@ -487,6 +498,7 @@ TEST_F(TestRunnerTest, ParamsClamping_BelowMin_TargetAccelClamped) {
 
   // PID should still produce positive throttle (error = 0.02 - 0.0 > 0)
   float throttle = 0.0f, steering = 0.0f;
+  RunSettlePhase(throttle, steering);
   Step(throttle, steering, 0.0f);
   EXPECT_GT(throttle, 0.0f);
 }

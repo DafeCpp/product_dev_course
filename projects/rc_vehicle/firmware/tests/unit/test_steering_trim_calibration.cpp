@@ -19,8 +19,11 @@ class SteeringTrimCalibrationTest : public ::testing::Test {
   }
 
   // Run through accelerate phase (fwd_accel=0 → PID produces throttle)
+  static constexpr int kSettleTicks = 50;  // baseline замер перед разгоном
+
   void RunAccelPhase(float& throttle, float& steering) {
-    for (int i = 0; i < 751; ++i) {  // 1.5s / 0.002s = 750, +1 to cross boundary
+    // 1.5s / 0.002s = 750, +1 to cross boundary, +settle
+    for (int i = 0; i < kSettleTicks + 751; ++i) {
       Step(0.0f, throttle, steering, 0.0f, 1.0f);
     }
   }

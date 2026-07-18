@@ -14,7 +14,13 @@ void MotionDriver::Start(const Config& config) {
   breakaway_detected_ = false;
   base_throttle_ = 0.0f;
   breakaway_confirm_count_ = 0;
-  phase_ = MotionPhase::Accelerate;
+  baseline_accel_g_ = 0.0f;
+  settle_sum_ = 0.0;
+  settle_count_ = 0;
+  // Baseline нужен только PID-режиму: LinearRamp ускорение не читает.
+  const bool needs_settle =
+      config_.settle_ticks > 0 && config_.accel_mode == AccelMode::Pid;
+  phase_ = needs_settle ? MotionPhase::Settle : MotionPhase::Accelerate;
 }
 
 void MotionDriver::Reset() {
@@ -24,6 +30,9 @@ void MotionDriver::Reset() {
   breakaway_detected_ = false;
   base_throttle_ = 0.0f;
   breakaway_confirm_count_ = 0;
+  baseline_accel_g_ = 0.0f;
+  settle_sum_ = 0.0;
+  settle_count_ = 0;
   pid_.Reset();
 }
 
@@ -34,6 +43,10 @@ float MotionDriver::Update(float current_accel_g, float accel_magnitude,
   }
 
   switch (phase_) {
+    case MotionPhase::Settle:
+      phase_elapsed_sec_ += dt_sec;
+      return UpdateSettle(current_accel_g);
+
     case MotionPhase::Accelerate:
       phase_elapsed_sec_ += dt_sec;
       return UpdateAccelerate(current_accel_g, dt_sec);
@@ -63,8 +76,28 @@ void MotionDriver::EndCruise() {
 // Private
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Замер ускорения покоя перед разгоном. Газ не подаём: всё, что видит
+// акселерометр в этой фазе, — статический офсет, который дальше вычитается.
+float MotionDriver::UpdateSettle(float current_accel_g) {
+  settle_sum_ += current_accel_g;
+  ++settle_count_;
+
+  if (settle_count_ >= config_.settle_ticks) {
+    baseline_accel_g_ =
+        static_cast<float>(settle_sum_ / static_cast<double>(settle_count_));
+    TransitionTo(MotionPhase::Accelerate);
+  }
+
+  return 0.0f;
+}
+
 float MotionDriver::UpdateAccelerate(float current_accel_g, float dt_sec) {
   float throttle = 0.0f;
+
+  // Ускорение относительно покоя: убирает статический офсет сигнала
+  // (наклон площадки, погрешность accel_forward_vec), который иначе даёт
+  // ложный отрыв на первом же тике и ломает уставку PI (LOS-214).
+  const float accel_rel = current_accel_g - baseline_accel_g_;
 
   if (config_.accel_mode == AccelMode::Pid) {
     const auto& bk = config_.breakaway;
@@ -75,7 +108,7 @@ float MotionDriver::UpdateAccelerate(float current_accel_g, float dt_sec) {
       throttle = std::min(throttle, bk.max_throttle);
 
       // Детекция отрыва: accel выше порога N тиков подряд
-      if (current_accel_g > bk.accel_thresh_g) {
+      if (accel_rel > bk.accel_thresh_g) {
         ++breakaway_confirm_count_;
       } else {
         breakaway_confirm_count_ = 0;
@@ -90,7 +123,7 @@ float MotionDriver::UpdateAccelerate(float current_accel_g, float dt_sec) {
       }
     } else {
       // ── Фаза B: base_throttle + PI-коррекция ──
-      float error = config_.target_value - current_accel_g;
+      float error = config_.target_value - accel_rel;
       float correction = pid_.Step(error, dt_sec);
       throttle = base_throttle_ + correction;
       throttle = std::clamp(throttle, 0.0f, config_.pid_gains.max_output);

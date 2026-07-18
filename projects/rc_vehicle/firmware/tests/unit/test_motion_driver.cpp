@@ -8,6 +8,7 @@ using namespace rc_vehicle;
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** PID-конфиг без фазы Settle — проверка механики рампы/PI/торможения. */
 static MotionDriver::Config DefaultPidConfig(float target_accel_g = 0.1f) {
   return {
       .accel_mode = MotionDriver::AccelMode::Pid,
@@ -17,9 +18,17 @@ static MotionDriver::Config DefaultPidConfig(float target_accel_g = 0.1f) {
       .min_effective_throttle = 0.0f,
       .brake_throttle = 0.0f,
       .brake_timeout_sec = 3.0f,
+      .settle_ticks = 0,
       .zupt = {0.05f, 3.0f},
       .breakaway = {0.5f, 0.25f, 0.03f, 25},
   };
+}
+
+/** Продакшн-конфиг: с замером baseline перед разгоном (как у TestRunner). */
+static MotionDriver::Config SettlingPidConfig(float target_accel_g = 0.1f) {
+  auto cfg = DefaultPidConfig(target_accel_g);
+  cfg.settle_ticks = 50;
+  return cfg;
 }
 
 static MotionDriver::Config LinearRampConfig(float target_throttle = 0.3f) {
@@ -220,6 +229,85 @@ TEST(MotionDriverTest, PidAccel_PhaseElapsedResets) {
   RunTicks(d, 760, 0.002f, 0.0f);
   EXPECT_EQ(d.GetPhase(), MotionPhase::Cruise);
   EXPECT_LT(d.GetPhaseElapsed(), 0.05f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Settle phase / baseline ускорения (регресс LOS-214)
+//
+// Продольный сигнал приходит с постоянным офсетом, если ось «вперёд»
+// откалибрована с завалом или машина стоит на уклоне. Без вычитания baseline
+// такой офсет: (а) даёт «отрыв» на 25-м тике на стоящей машине, замораживая
+// газ на ~0.03; (б) смещает уставку PI, из-за чего target_accel ни на что не
+// влияет. Это и наблюдалось в test_runs/telemetry_log_auto_forward_2.csv.
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(MotionDriverTest, Settle_StartTransitionsToSettle) {
+  MotionDriver d;
+  d.Start(SettlingPidConfig());
+  EXPECT_EQ(d.GetPhase(), MotionPhase::Settle);
+}
+
+TEST(MotionDriverTest, Settle_HoldsZeroThrottle_ThenEntersAccelerate) {
+  MotionDriver d;
+  d.Start(SettlingPidConfig());
+
+  for (int i = 0; i < 50; ++i) {
+    EXPECT_FLOAT_EQ(d.Update(0.08f, 1.0f, 0.0f, 0.002f), 0.0f)
+        << "газ на тике " << i << " фазы Settle";
+  }
+  EXPECT_EQ(d.GetPhase(), MotionPhase::Accelerate);
+}
+
+TEST(MotionDriverTest, Settle_MeasuresBaseline_FromRestingAccel) {
+  MotionDriver d;
+  d.Start(SettlingPidConfig());
+  RunTicks(d, 50, 0.002f, 0.08f);
+  EXPECT_NEAR(d.GetAccelBaseline(), 0.08f, 1e-4f);
+}
+
+TEST(MotionDriverTest, Settle_LinearRampSkipsSettle) {
+  MotionDriver d;
+  auto cfg = LinearRampConfig();
+  cfg.settle_ticks = 50;  // игнорируется: ускорение в этом режиме не читается
+  d.Start(cfg);
+  EXPECT_EQ(d.GetPhase(), MotionPhase::Accelerate);
+}
+
+// Ключевой регресс: статический офсет выше порога отрыва не должен
+// останавливать рампу — иначе газ замерзает на ~0.03 и машина не трогается.
+TEST(MotionDriverTest, Settle_StaticAccelOffset_DoesNotTriggerFalseBreakaway) {
+  constexpr float kOffset = 0.05f;  // выше breakaway.accel_thresh_g = 0.03
+  MotionDriver d;
+  d.Start(SettlingPidConfig(0.2f));
+
+  RunTicks(d, 50, 0.002f, kOffset);  // Settle: замер baseline
+
+  // Машина стоит: реального ускорения нет, акселерометр отдаёт только офсет.
+  // Рампа обязана дойти до max_throttle (0.25), а не замереть на ~0.03.
+  float thr = 0.0f;
+  for (int i = 0; i < 300; ++i) {
+    thr = d.Update(kOffset, 1.0f, 0.0f, 0.002f);
+  }
+  EXPECT_GT(thr, 0.2f) << "рампа оборвалась ложным отрывом, газ застрял";
+}
+
+// Без вычитания baseline PI видит error = target − offset и при достаточно
+// большом офсете вообще перестаёт добавлять газ.
+TEST(MotionDriverTest, Settle_TargetAccel_StillDrivesThrottle_WithOffset) {
+  constexpr float kOffset = 0.25f;  // сопоставим с максимальным target
+  auto run_to_cruise = [](float target) {
+    MotionDriver d;
+    d.Start(SettlingPidConfig(target));
+    RunTicks(d, 50, 0.002f, kOffset);
+    RunTicks(d, 760, 0.002f, kOffset);  // стоим: реального ускорения нет
+    return d.GetCruiseThrottle();
+  };
+
+  const float low = run_to_cruise(0.1f);
+  const float high = run_to_cruise(0.3f);
+
+  EXPECT_GT(low, 0.0f);
+  EXPECT_GT(high, low) << "target_accel не влияет на газ (симптом LOS-214)";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -13,8 +13,12 @@ struct ImuCalibData {
   /** Единичный вектор g в СК датчика (этап 1: стояние на месте). */
   float gravity_vec[3]{0.f, 0.f, 1.f};
   /** Единичный вектор «вперёд» в СК датчика (этап 2: движение вперёд/назад).
-   * Продольное ускорение = dot(accel, vec). */
+   * Продольное ускорение = dot(accel − gravity_vec, vec). */
   float accel_forward_vec[3]{1.f, 0.f, 0.f};
+  /** accel_forward_vec получен реальной Forward-калибровкой и прошёл проверку
+   * на горизонтальность. false → используется дефолтная ось X. Не хранится в
+   * NVS: пересчитывается при загрузке в SetData(). */
+  bool forward_valid{false};
   /** Смещение IMU от центра масс [м]: (rx, ry) в СК датчика.
    * Определяется круговой калибровкой (CW+CCW). */
   float com_offset[2]{0.f, 0.f};
@@ -70,15 +74,18 @@ class ImuCalibration {
   void Apply(ImuData& data) const;
 
   /**
-   * Продольное ускорение (вперёд/назад) в g.
+   * Продольное ЛИНЕЙНОЕ ускорение (вперёд/назад) в g.
    * Вызывать после Apply(data). Положительное = ускорение вперёд.
-   * Считается как скалярное произведение (ax,ay,az) на единичный вектор
-   * направления.
+   *
+   * Считается как скалярное произведение (accel − gravity_vec) на единичный
+   * вектор направления: гравитацию обязательно вычитаем, иначе остаточный
+   * наклон оси «вперёд» даёт постоянный офсет (LOS-214). В покое на ровной
+   * площадке возвращает ~0.
    */
   float GetForwardAccel(const ImuData& data) const;
 
   /** Задать направление «вперёд» единичным вектором в СК датчика (fx,fy,fz).
-   * Нормализуется. */
+   * Нормализуется и приводится к горизонтали (⊥ gravity_vec). */
   void SetForwardDirection(float fx, float fy, float fz);
 
   /** Текущий статус калибровки. */
@@ -89,6 +96,15 @@ class ImuCalibration {
 
   /** Загрузить калибровочные данные (из NVS или внешнего источника). */
   void SetData(const ImuCalibData& data);
+
+  /**
+   * Прервать идущий сбор семплов (Collecting → Failed).
+   *
+   * Нужно при досрочной остановке авто-движения: иначе сбор продолжится уже
+   * без управляемого разгона и завершится записью мусорной оси «вперёд».
+   * No-op, если сбор не идёт — не затирает Done.
+   */
+  void CancelCalibration();
 
   /**
    * Коррекция акселерометра за смещение IMU от центра масс.
@@ -118,6 +134,11 @@ class ImuCalibration {
   static constexpr float kMaxGyroBias = 20.0f;  // dps
   static constexpr float kMaxAccelBias = 0.5f;  // g
 
+  // Максимальный |forward · gravity| для наземной машины. Ось «вперёд»
+  // горизонтальна, поэтому заметная проекция на гравитацию означает
+  // испорченную калибровку (LOS-214).
+  static constexpr float kMaxForwardTilt = 0.5f;
+
  private:
   ImuCalibData data_{};
   CalibStatus status_{CalibStatus::Idle};
@@ -136,6 +157,19 @@ class ImuCalibration {
 
   static constexpr float kLinearAccelThreshold =
       0.05f;  // (g) порог для учёта семпла
+
+  /**
+   * Показание акселерометра в ПОКОЕ после Apply().
+   *
+   * Accel bias поглощает компоненты наклона (ax, ay в покое), поэтому
+   * bias-corrected покой нормализуется в (0,0,±1) — см. control_components.cpp.
+   * Вычитание этого вектора даёт динамическую (линейную) часть ускорения.
+   *
+   * @note Это НЕ замена gravity_vec как направления гравитации: Apply()
+   *       сдвигает начало отсчёта, но не поворачивает СК. Для ориентации осей
+   *       (ортогонализация «вперёд») опорой остаётся сырой gravity_vec.
+   */
+  void RestDownVec(float* out) const;
 
   void ResetAccumulators();
   bool Finalize();

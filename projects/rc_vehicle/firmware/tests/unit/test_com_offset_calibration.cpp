@@ -23,9 +23,12 @@ class ComOffsetCalibrationTest : public ::testing::Test {
                  steering);
   }
 
-  // Run accelerate phase (1.5s / 0.002s = 750, +1 to cross boundary)
+  // Settle (50 тиков baseline) + accelerate (1.5s / 0.002s = 750,
+  // +1 чтобы пересечь границу фазы)
+  static constexpr int kSettleTicks = 50;
+
   void RunAccelPhase(float& throttle, float& steering) {
-    for (int i = 0; i < 751; ++i) {
+    for (int i = 0; i < kSettleTicks + 751; ++i) {
       Step(0.0f, 1.0f, 0.0f, 0.0f, 0.0f, throttle, steering);
     }
   }
