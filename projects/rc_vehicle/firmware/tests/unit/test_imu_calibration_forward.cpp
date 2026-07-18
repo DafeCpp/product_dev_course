@@ -167,22 +167,77 @@ TEST_F(ImuCalibrationForwardTest,
       << "статический офсет в покое после Full-калибровки на наклоне";
 }
 
+// Разгон машины ВПЕРЁД глазами наклонённого датчика: вектор ускорения
+// повёрнут вместе с монтажом, а не направлен вдоль оси X датчика.
+// Именно эта деталь была упущена в первой версии теста, из-за чего занижение
+// продольного ускорения прошло незамеченным.
+static ImuData TiltedRest(float pitch_rad) {
+  ImuData d{};
+  d.ax = std::sin(pitch_rad);
+  d.az = std::cos(pitch_rad);
+  return d;
+}
+
+static ImuData TiltedForwardAccel(float pitch_rad, float accel_g) {
+  // Корпус: (accel_g, 0, 1) → СК датчика поворотом на pitch вокруг Y
+  ImuData d{};
+  d.ax = std::cos(pitch_rad) * accel_g + std::sin(pitch_rad);
+  d.az = -std::sin(pitch_rad) * accel_g + std::cos(pitch_rad);
+  return d;
+}
+
 TEST_F(ImuCalibrationForwardTest, FullCalibOnTiltedMount_ForwardAccelMeasured) {
   constexpr float kPitch = 8.0f * 3.14159265f / 180.0f;
-  const float rest_ax = std::sin(kPitch);
-  const float rest_az = std::cos(kPitch);
 
   calib.StartCalibration(CalibMode::Full, 10);
   for (int i = 0; i < 10; ++i) {
-    calib.FeedSample(Accel(rest_ax, 0.f, rest_az));
+    calib.FeedSample(TiltedRest(kPitch));
   }
   ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
 
-  // Реальный разгон 0.2g вдоль оси X поверх наклона
-  ImuData moving = Accel(rest_ax + 0.2f, 0.f, rest_az);
-  calib.Apply(moving);
+  // Стадия 2: учим ось «вперёд» на реальном разгоне
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(TiltedForwardAccel(kPitch, 0.3f));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
 
+  ImuData moving = TiltedForwardAccel(kPitch, 0.2f);
+  calib.Apply(moving);
   EXPECT_NEAR(calib.GetForwardAccel(moving), 0.2f, 1e-3f);
+}
+
+// Ортогонализация не должна срезать компоненту угла монтажа: при опоре на
+// (0,0,±1) вместо gravity_vec ось «вперёд» уплощается и продольное ускорение
+// занижается в cos(угла) — при 45° это 0.14g вместо 0.2g.
+TEST_F(ImuCalibrationForwardTest, SteepMount_ForwardAccelNotUnderReported) {
+  constexpr float kPitch = 45.0f * 3.14159265f / 180.0f;
+
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(TiltedRest(kPitch));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(TiltedForwardAccel(kPitch, 0.3f));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  // Выученная ось обязана сохранить наклон монтажа
+  const auto& d = calib.GetData();
+  EXPECT_NEAR(std::abs(d.accel_forward_vec[2]), std::sin(kPitch), 1e-3f)
+      << "компонента угла монтажа срезана ортогонализацией";
+
+  ImuData moving = TiltedForwardAccel(kPitch, 0.2f);
+  calib.Apply(moving);
+  EXPECT_NEAR(calib.GetForwardAccel(moving), 0.2f, 2e-3f);
+
+  // И покой по-прежнему ноль
+  ImuData rest = TiltedRest(kPitch);
+  calib.Apply(rest);
+  EXPECT_NEAR(calib.GetForwardAccel(rest), 0.0f, 1e-3f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

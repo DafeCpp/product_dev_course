@@ -8,12 +8,19 @@ namespace rc_vehicle {
 namespace {
 
 /**
- * @brief Спроецировать вектор «вперёд» на горизонтальную плоскость.
+ * @brief Спроецировать вектор «вперёд» на плоскость, перпендикулярную g.
  *
  * Ось «вперёд» наземной машины перпендикулярна гравитации. Составляющая
  * вдоль g — это погрешность калибровки, и она напрямую утекает в
- * GetForwardAccel как постоянный офсет (LOS-214). Убираем её и
- * перенормируем.
+ * GetForwardAccel как постоянный офсет (LOS-214). Убираем её и перенормируем.
+ *
+ * ВАЖНО: опорой здесь обязан быть СЫРОЙ gravity_vec, а не RestDownVec().
+ * Apply() вычитает bias, то есть сдвигает начало отсчёта, но не поворачивает
+ * измерение — направления в СК датчика остаются прежними. При наклонном
+ * монтаже истинная ось «вперёд» имеет ненулевую компоненту по оси Z датчика
+ * и перпендикулярна именно gravity_vec. Проекция на плоскость ⊥ (0,0,±1)
+ * срезала бы эту компоненту, и GetForwardAccel занижал бы продольное
+ * ускорение в cos(угла монтажа) — при 45° это 0.14g вместо 0.2g.
  *
  * @return false, если после проекции почти ничего не осталось (вектор был
  *         направлен вдоль гравитации) — такую калибровку принимать нельзя.
@@ -207,9 +214,7 @@ bool ImuCalibration::FinalizeForward() {
   // Убрать составляющую вдоль гравитации: она физически невозможна для оси
   // «вперёд» и иначе стала бы постоянным офсетом в GetForwardAccel.
   float f[3] = {fx, fy, fz};
-  float down[3];
-  RestDownVec(down);
-  if (!OrthogonalizeForward(f, down)) return false;
+  if (!OrthogonalizeForward(f, data_.gravity_vec)) return false;
 
   data_.accel_forward_vec[0] = f[0];
   data_.accel_forward_vec[1] = f[1];
@@ -278,9 +283,7 @@ void ImuCalibration::SetForwardDirection(float fx, float fy, float fz) {
   float f[3] = {static_cast<float>(fx / n), static_cast<float>(fy / n),
                 static_cast<float>(fz / n)};
   // Как и на пути калибровки: ось «вперёд» приводим к горизонтали.
-  float down[3];
-  RestDownVec(down);
-  if (!OrthogonalizeForward(f, down)) {
+  if (!OrthogonalizeForward(f, data_.gravity_vec)) {
     data_.forward_valid = false;
     return;  // Вектор вдоль гравитации — оставляем прежний
   }
@@ -341,9 +344,7 @@ void ImuCalibration::SetData(const ImuCalibData& data) {
   // испорченную калибровку (типичный случай — Forward-калибровка прошла до
   // Full, с дефолтным gravity_vec, и «вперёд» ушло вертикально вниз).
   // Такой вектор молча даёт офсет до 1g в GetForwardAccel — LOS-214.
-  float down[3];
-  RestDownVec(down);
-  const float* g = down;
+  const float* g = data_.gravity_vec;
   float* f = data_.accel_forward_vec;
   const float tilt = std::fabs(f[0] * g[0] + f[1] * g[1] + f[2] * g[2]);
   if (tilt > kMaxForwardTilt || !OrthogonalizeForward(f, g)) {
