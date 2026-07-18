@@ -17,7 +17,7 @@ export default defineConfig({
       thresholds: enforceCoverageRatchet
         ? {
             lines: 94.65,
-            branches: 82.6,
+            branches: 90,
           }
         : undefined,
       include: ['src/**/*.{ts,tsx}'],
