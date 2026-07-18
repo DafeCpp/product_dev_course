@@ -1,6 +1,10 @@
 """Unit tests for backend_common.script_runner.executor."""
 from __future__ import annotations
 
+import asyncio
+import inspect
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from backend_common.script_runner.executor import ExecutionResult, execute_script
@@ -98,3 +102,31 @@ class TestExecuteScript:
         assert isinstance(result.exit_code, int)
         assert isinstance(result.stdout, str)
         assert isinstance(result.stderr, str)
+
+    @pytest.mark.asyncio
+    async def test_timeout_handles_already_gone_process_and_kill_path(self) -> None:
+        process = MagicMock()
+        process.terminate.side_effect = ProcessLookupError
+        process.wait = AsyncMock()
+        process.kill.side_effect = ProcessLookupError
+        process.stdout = MagicMock(read=AsyncMock(return_value=b"partial output"))
+        process.stderr = MagicMock(read=AsyncMock(return_value=b"partial error"))
+
+        async def wait_for(awaitable, timeout):
+            if inspect.iscoroutine(awaitable):
+                awaitable.close()
+            if timeout == 30:
+                raise asyncio.TimeoutError
+            if timeout == 2.0:
+                raise asyncio.TimeoutError
+            return b""
+
+        with (
+            patch("backend_common.script_runner.executor.asyncio.create_subprocess_exec", return_value=process),
+            patch("backend_common.script_runner.executor.asyncio.wait_for", side_effect=wait_for),
+        ):
+            result = await execute_script("print('slow')", "python", {}, timeout_sec=30)
+
+        assert result.exit_code == -1
+        assert result.stdout == ""
+        assert result.stderr == ""

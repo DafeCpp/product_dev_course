@@ -20,6 +20,7 @@ def test_uuid_parsers_accept_values_and_reject_invalid_input() -> None:
     value = uuid4()
     assert parse_uuid(str(value), "id") == value
     assert parse_optional_uuid(None) is None
+    assert parse_optional_uuid(str(value)) == value
     with pytest.raises(web.HTTPBadRequest) as error:
         parse_uuid("not-a-uuid", "id")
     assert error.value.text == "Invalid id"
@@ -28,7 +29,14 @@ def test_uuid_parsers_accept_values_and_reject_invalid_input() -> None:
 def test_datetime_parsers_normalize_and_validate() -> None:
     assert parse_datetime(None, "created") is None
     assert parse_datetime("2026-01-01T12:00:00", "created").tzinfo == timezone.utc
+    assert parse_datetime("2026-01-01T12:00:00+03:00", "created").utcoffset().total_seconds() == 10800
     assert parse_rfc3339("2026-01-01T12:00:00Z") == datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    assert parse_rfc3339("   ", default=datetime(2026, 1, 1, tzinfo=timezone.utc)) == datetime(
+        2026, 1, 1, tzinfo=timezone.utc
+    )
+    assert parse_rfc3339("2026-01-01T12:00:00+03:00") == datetime(
+        2026, 1, 1, 9, tzinfo=timezone.utc
+    )
     with pytest.raises(web.HTTPBadRequest):
         parse_datetime("yesterday", "created")
     with pytest.raises(web.HTTPBadRequest):
@@ -37,6 +45,7 @@ def test_datetime_parsers_normalize_and_validate() -> None:
 
 def test_query_parsers_cover_defaults_validation_and_bounds() -> None:
     assert parse_int(None, default=4) == 4
+    assert parse_bool(None, default=True) is True
     assert parse_bool("YES", default=False) is True
     assert parse_bool("off", default=True) is False
     with pytest.raises(web.HTTPBadRequest):
@@ -46,5 +55,6 @@ def test_query_parsers_cover_defaults_validation_and_bounds() -> None:
 
     request = make_mocked_request("GET", "/?limit=500&offset=-2")
     assert pagination_params(request, max_limit=100) == (100, 0)
+    assert pagination_params(make_mocked_request("GET", "/?limit=0&offset=3"), default_limit=25) == (25, 3)
     with pytest.raises(web.HTTPBadRequest):
         pagination_params(make_mocked_request("GET", "/?limit=one"))

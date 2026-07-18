@@ -37,3 +37,11 @@ def test_settings_parse_cors_origins_and_ignore_non_mapping_validator_input() ->
 
     assert settings.cors_allowed_origins == ["https://one.example", "https://two.example"]
     assert BaseServiceSettings.load_from_yaml("not-a-mapping") == {}
+
+
+def test_settings_keep_defaults_for_empty_yaml_database_and_cors() -> None:
+    with patch("backend_common.settings.base.load_service_yaml", return_value={"database": {}}):
+        settings = ExampleSettings(CORS_ALLOWED_ORIGINS="")
+
+    assert str(settings.database_url) == "postgresql://postgres:postgres@localhost:5432/db"
+    assert settings.cors_allowed_origins == ["http://localhost:3000", "http://localhost:8080"]

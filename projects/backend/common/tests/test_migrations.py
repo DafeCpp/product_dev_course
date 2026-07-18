@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import asyncpg
 import pytest
+from asyncpg.exceptions import InvalidCatalogNameError
 
 from backend_common.db.migrations import (
     _apply_migrations_cli,
@@ -112,6 +113,27 @@ class TestMigrationStartupFailures:
             patch(
                 "backend_common.db.migrations.asyncpg.connect",
                 side_effect=OSError("database unavailable"),
+            ) as connect,
+            patch("backend_common.db.migrations.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        ):
+            await runner(None)  # type: ignore[arg-type]
+
+        assert connect.await_count == 5
+        assert sleep.await_count == 4
+
+    @pytest.mark.asyncio
+    async def test_startup_reports_missing_database_with_creation_hint(self, tmp_path: Path) -> None:
+        migrations = _write_migrations(tmp_path / "migrations", {"001_initial.sql": "SELECT 1;"})
+        runner = create_migration_runner(
+            SimpleNamespace(database_url="postgresql://missing"),
+            [migrations],
+            create_db_hint="createdb service_db",
+        )
+
+        with (
+            patch(
+                "backend_common.db.migrations.asyncpg.connect",
+                side_effect=InvalidCatalogNameError('database "service_db" does not exist'),
             ) as connect,
             patch("backend_common.db.migrations.asyncio.sleep", new_callable=AsyncMock) as sleep,
         ):

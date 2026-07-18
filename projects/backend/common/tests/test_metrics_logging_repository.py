@@ -34,6 +34,11 @@ async def test_metrics_middleware_records_success_and_http_error() -> None:
     assert metrics_response.status == 200
     assert b"http_requests_total" in metrics_response.body
 
+    metrics_request = make_mocked_request("GET", "/metrics")
+    handler = AsyncMock(return_value=web.Response(status=200))
+    assert (await middleware(metrics_request, handler)).status == 200
+    handler.assert_awaited_once_with(metrics_request)
+
 
 @pytest.mark.asyncio
 async def test_base_repository_delegates_to_acquired_connection() -> None:

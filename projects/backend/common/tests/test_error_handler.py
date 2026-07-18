@@ -12,6 +12,7 @@ from backend_common.core.exceptions import (
     NotFoundError,
     UnauthorizedError,
     ValidationError,
+    ServiceError,
 )
 from backend_common.middleware.error_handler import error_handling_middleware, register_error_mappings
 
@@ -73,3 +74,16 @@ async def test_hides_unexpected_error_details(monkeypatch: pytest.MonkeyPatch) -
 
     assert response.status == 500
     assert response.text == '{"error": "Internal server error"}'
+
+
+@pytest.mark.asyncio
+async def test_uses_exception_class_name_for_empty_server_error() -> None:
+    class EmptyServerError(ServiceError):
+        status_code = 503
+
+    response = await error_handling_middleware(
+        MagicMock(spec=web.Request), AsyncMock(side_effect=EmptyServerError())
+    )
+
+    assert response.status == 503
+    assert response.text == '{"error": "EmptyServerError"}'
