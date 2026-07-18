@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 import simlib.validation as val
-from simlib import SimParams, channel_metrics, fit_params, simulate
+from simlib import SimParams, channel_metrics, fit_params, fit_params_multi, simulate
 from simlib.validation import CHANNELS, load_drive_log
 
 
@@ -47,6 +47,16 @@ def test_fit_recovers_known_params():
     fitted, _ = fit_params(d, base, ["max_accel", "servo_max_deg"])
     assert math.isclose(fitted.max_accel, 8.0, rel_tol=0.05)
     assert math.isclose(fitted.servo_max_deg, 25.0, rel_tol=0.05)
+
+
+def test_fit_multi_recovers_known_params():
+    true = SimParams(max_accel=8.0, drag_coeff=0.8)
+    d1 = _synthetic_drive(true)
+    d2 = _synthetic_drive(true, n=250, dt=0.02)
+    base = SimParams(max_accel=5.0, drag_coeff=0.4)
+    fitted, _ = fit_params_multi([d1, d2], base, ["max_accel", "drag_coeff"])
+    assert math.isclose(fitted.max_accel, 8.0, rel_tol=0.05)
+    assert math.isclose(fitted.drag_coeff, 0.8, rel_tol=0.05)
 
 
 def test_fit_keeps_params_positive():

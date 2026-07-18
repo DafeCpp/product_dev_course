@@ -10,10 +10,11 @@ from .frame import SensorFrame
 from .replay import find_invariant_violations, load_telemetry_csv
 from .sensors import synth_accel, synth_gyro, synth_mag, make_frame
 from .sim_host_runner import find_sim_host, run_batch
-from .sim_params import SimParams
+from .sim_params import SimParams, fitted_params_2026_07_18
 from .validation import (
     channel_metrics,
     fit_params,
+    fit_params_multi,
     format_report,
     load_drive_log,
     simulate,
@@ -30,6 +31,8 @@ __all__ = [
     "channel_metrics",
     "find_invariant_violations",
     "fit_params",
+    "fit_params_multi",
+    "fitted_params_2026_07_18",
     "format_report",
     "load_drive_log",
     "simulate",

@@ -70,8 +70,9 @@ class VehicleModel:
         s = self.state
 
         # Мотор: ускорение первого порядка + линейное сопротивление.
+        # Точная дискретизация лага (устойчива при любом dt/τ, важно для fitting).
         a_cmd = self._motor_accel_cmd(throttle)
-        s.accel += (a_cmd - s.accel) * (dt / p.motor_tau)
+        s.accel += (a_cmd - s.accel) * (1.0 - math.exp(-dt / p.motor_tau))
         long_accel = s.accel - p.drag_coeff * s.v  # фактическое dv/dt
         s.v += long_accel * dt
 

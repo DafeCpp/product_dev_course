@@ -40,9 +40,15 @@ def load_drive_log(path: str, use_applied: bool = True) -> dict:
             ts.append(f("ts_ms"))
             thr.append(f("throttle") if use_applied else f("rc_throttle"))
             steer.append(f("steering") if use_applied else f("rc_steering"))
-            yaw.append(f("yaw_rate_dps"))
+            # Знак гироскопа в логах прошивки инвертирован относительно yaw_deg
+            # (corr(d yaw_deg/dt, yaw_rate_dps) ≈ −0.94…−0.99 на реальных логах);
+            # модель использует конвенцию yaw_deg (левый поворот → r > 0).
+            yaw.append(-f("yaw_rate_dps"))
             spd.append(f("speed_ms"))
-            lon.append(f("ax") * _G)  # ax в g → м/с²
+            # Ось X акселерометра в логах направлена назад по ходу движения
+            # (corr(ax, dV/dt) ≈ −0.9 на устойчивых кругах) — инвертируем в
+            # конвенцию модели (вперёд > 0). ax в g → м/с².
+            lon.append(-f("ax") * _G)
 
     ts = np.asarray(ts, float)
     dt = np.diff(ts, prepend=ts[0] - 2.0) / 1000.0
@@ -70,7 +76,9 @@ def simulate(params: SimParams, throttle, steering, dt,
     for i in range(n):
         o = m.step(float(dt[i]), float(throttle[i]), float(steering[i]))
         yaw[i] = math.degrees(o.yaw_rate)
-        spd[i] = o.speed
+        # Записанный speed_ms — модуль (EKF √(vx²+vy²)); модель даёт знаковую
+        # скорость, на реверсе сравниваем магнитуды.
+        spd[i] = abs(o.speed)
         lon[i] = o.long_accel
     return {"yaw_rate_dps": yaw, "speed_ms": spd, "long_accel_ms2": lon}
 
@@ -97,7 +105,7 @@ def _cost(pred: dict, rec: dict, channels) -> float:
     for ch in channels:
         sd = float(np.std(rec[ch])) + 1e-6
         total += rmse(pred[ch], rec[ch]) / sd
-    return total
+    return total if math.isfinite(total) else 1.0e9
 
 
 def fit_params(drive: dict, base_params: SimParams, free_fields: list[str],
@@ -123,6 +131,41 @@ def fit_params(drive: dict, base_params: SimParams, free_fields: list[str],
         pred = simulate(make(xs), drive["throttle"], drive["steering"],
                         drive["dt"], dynamic)
         return _cost(pred, drive["rec"], channels)
+
+    res = minimize(cost, x0 / scale, method="Nelder-Mead",
+                   options={"xatol": 1e-4, "fatol": 1e-5, "maxiter": 4000})
+    return make(res.x), res
+
+
+def fit_params_multi(drives: list[dict], base_params: SimParams,
+                     free_fields: list[str], channels=CHANNELS,
+                     dynamic: bool = False):
+    """Один набор `SimParams` под минимум суммарной ошибки по нескольким логам.
+
+    Каждый лог входит в стоимость с равным весом (сумма нормированных RMSE),
+    чтобы короткие заезды не тонули в длинных. Возвращает
+    (fitted_params, scipy OptimizeResult).
+    """
+    from scipy.optimize import minimize
+
+    x0 = np.array([getattr(base_params, f) for f in free_fields], float)
+    scale = np.where(np.abs(x0) > 1e-9, np.abs(x0), 1.0)
+
+    def make(xs):
+        return replace(base_params,
+                       **{f: float(xs[i] * scale[i])
+                          for i, f in enumerate(free_fields)})
+
+    def cost(xs):
+        vals = xs * scale
+        if np.any(vals <= 0.0):
+            return 1.0e9
+        p = make(xs)
+        total = 0.0
+        for d in drives:
+            pred = simulate(p, d["throttle"], d["steering"], d["dt"], dynamic)
+            total += _cost(pred, d["rec"], channels)
+        return total
 
     res = minimize(cost, x0 / scale, method="Nelder-Mead",
                    options={"xatol": 1e-4, "fatol": 1e-5, "maxiter": 4000})
