@@ -214,11 +214,20 @@ void VehicleEkf::UpdateZeroVelocity(float r_zupt) noexcept {
 
 void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g,
                                float gz_dps, float dt_sec,
-                               float throttle_abs) noexcept {
+                               float throttle_abs, float pitch_rad,
+                               float roll_rad) noexcept {
   constexpr float kG = 9.80665f;
   constexpr float kDegToRad = kPi / 180.0f;
 
-  Predict(ax_g * kG, ay_g * kG, dt_sec);
+  // Снимаем проекцию гравитации по live-ориентации, чтобы в Predict уходило
+  // линейное ускорение «без g». Без этого при наклоне (неровная дорога)
+  // компонента g·sin(pitch) интегрируется в скорость и vx уходит в разнос.
+  // Вектор реакции гравитации в СК кузова (в g), ZYX: roll↔X, pitch↔Y.
+  const float cos_pitch = std::cos(pitch_rad);
+  const float grav_x = -std::sin(pitch_rad);
+  const float grav_y = cos_pitch * std::sin(roll_rad);
+
+  Predict((ax_g - grav_x) * kG, (ay_g - grav_y) * kG, dt_sec);
   UpdateGyroZ(gz_dps * kDegToRad);
 
   // ZUPT: применяем только если машина реально стоит (throttle ≈ 0).

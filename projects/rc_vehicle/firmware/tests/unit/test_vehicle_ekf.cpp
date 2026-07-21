@@ -483,3 +483,78 @@ TEST(VehicleEkfTest, Reset_ResetsYaw) {
   ekf.Reset();
   EXPECT_FLOAT_EQ(ekf.GetYawRad(), 0.0f);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UpdateFromImu: компенсация гравитации по ориентации (LOS-232)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Конвенция наклона (как в test_pitch_compensator.cpp): нос вверх на θ →
+// ax = -sin(θ), az = cos(θ) [в g]. Вектор реакции гравитации в СК кузова:
+// grav_x = -sin(pitch), grav_y = cos(pitch)·sin(roll). UpdateFromImu снимает
+// его из измеренного ускорения перед интеграцией. Во всех тестах throttle=0.5
+// (> порога ZUPT) → ZUPT выключен, проверяется именно компенсация, а не
+// маскировка нулевой скоростью.
+
+namespace {
+constexpr float kPiF = std::numbers::pi_v<float>;
+constexpr float kG = 9.80665f;
+constexpr float DegToRad(float deg) { return deg * kPiF / 180.0f; }
+}  // namespace
+
+TEST(VehicleEkfTest, UpdateFromImu_PitchedStationary_NoVelocityGrowth) {
+  // Машина неподвижна, но стоит под тангажом 20°. Без компенсации гравитации
+  // g·sin(20°) ≈ 3.35 м/с² интегрировался бы в vx → разгон до десятков м/с.
+  VehicleEkf ekf;
+  const float pitch = DegToRad(20.0f);
+  const float ax_g = -std::sin(pitch);  // проекция g на ось X кузова
+  const float az_g = std::cos(pitch);
+  for (int i = 0; i < 1000; ++i) {
+    ekf.UpdateFromImu(ax_g, 0.0f, az_g, /*gz_dps=*/0.0f, /*dt=*/0.002f,
+                      /*throttle_abs=*/0.5f, pitch, /*roll=*/0.0f);
+  }
+  EXPECT_NEAR(ekf.GetVx(), 0.0f, 0.05f);
+  EXPECT_NEAR(ekf.GetSpeedMs(), 0.0f, 0.05f);
+}
+
+TEST(VehicleEkfTest, UpdateFromImu_RolledStationary_NoLateralGrowth) {
+  // Машина неподвижна под креном 15°. Боковая проекция g не должна утекать в vy.
+  VehicleEkf ekf;
+  const float roll = DegToRad(15.0f);
+  const float ay_g = std::sin(roll);  // grav_y при pitch=0
+  const float az_g = std::cos(roll);
+  for (int i = 0; i < 1000; ++i) {
+    ekf.UpdateFromImu(0.0f, ay_g, az_g, /*gz_dps=*/0.0f, /*dt=*/0.002f,
+                      /*throttle_abs=*/0.5f, /*pitch=*/0.0f, roll);
+  }
+  EXPECT_NEAR(ekf.GetVy(), 0.0f, 0.05f);
+  EXPECT_NEAR(ekf.GetSpeedMs(), 0.0f, 0.05f);
+}
+
+TEST(VehicleEkfTest, UpdateFromImu_PitchedForwardAccel_MeasuresLinearOnly) {
+  // Наклон 20° + реальное продольное ускорение 0.2g. Компенсация снимает g,
+  // остаётся только линейная часть → vx ≈ a_lin·g·t.
+  VehicleEkf ekf;
+  const float pitch = DegToRad(20.0f);
+  constexpr float a_lin_g = 0.2f;
+  const float ax_g = -std::sin(pitch) + a_lin_g;
+  const float az_g = std::cos(pitch);
+  constexpr int kSteps = 250;
+  constexpr float kDt = 0.002f;
+  for (int i = 0; i < kSteps; ++i) {
+    ekf.UpdateFromImu(ax_g, 0.0f, az_g, /*gz_dps=*/0.0f, kDt,
+                      /*throttle_abs=*/0.5f, pitch, /*roll=*/0.0f);
+  }
+  const float expected_vx = a_lin_g * kG * (kSteps * kDt);  // ≈ 0.98 м/с
+  EXPECT_NEAR(ekf.GetVx(), expected_vx, 0.05f);
+}
+
+TEST(VehicleEkfTest, UpdateFromImu_LevelStationary_NoDrift) {
+  // Регрессия дефолтного пути (pitch=roll=0): ровная неподвижная машина
+  // не должна накапливать скорость даже с выключенным ZUPT.
+  VehicleEkf ekf;
+  for (int i = 0; i < 1000; ++i) {
+    ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, /*gz_dps=*/0.0f, /*dt=*/0.002f,
+                      /*throttle_abs=*/0.5f);
+  }
+  EXPECT_NEAR(ekf.GetSpeedMs(), 0.0f, 0.01f);
+}
