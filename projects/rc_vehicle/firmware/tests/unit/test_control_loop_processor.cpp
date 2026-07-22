@@ -426,6 +426,48 @@ TEST_F(ProcessorTest, TiltComp_StaticTilt_NoDivergence) {
   EXPECT_LT(ekf_.GetVx(), 5.0f);
 }
 
+TEST_F(ProcessorTest, TiltComp_YawedMount_VxTracksTrueSpeedNotVy) {
+  // Код-ревью PR #290 (3-й раунд): EKF получал сенсорные ax/ay напрямую,
+  // тогда как grav_x/grav_y (из pitch_rad/roll_rad) уже в СК машины —
+  // рассинхронизация СК. При IMU, повёрнутом на 90° по yaw (Forward-
+  // калибровка существует именно для произвольного разворота IMU на плате —
+  // не гипотетический случай), истинное продольное ускорение приходит в
+  // сенсорную ay. Без поворота ax/ay перед UpdateFromImu оно ушло бы в vy
+  // вместо vx.
+  ImuCalibData calib_data{};
+  calib_data.valid = true;
+  calib_data.gravity_vec[2] = 1.f;
+  calib_data.accel_forward_vec[1] = 1.f;  // «вперёд» машины = сенсорная Y
+  imu_calib_.SetData(calib_data);
+
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  ImuData imu{};
+  imu.ay = 0.2f;  // истинное продольное 0.2g читается сенсором как ay
+  imu.az = 1.0f;
+  platform_.SetImuData(imu);
+
+  RunSteps(2500);  // 5 секунд
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  // Допуск учитывает переходный процесс комплементарного фильтра на старте
+  // (как в TiltComp_LevelAccel_VxTracksTrueSpeed выше); реальный критерий —
+  // GT ниже: без фикса ускорение уходит в vy и vx остаётся ≈0.
+  EXPECT_NEAR(ekf_.GetVx(), 9.8f, 3.5f);
+  EXPECT_GT(ekf_.GetVx(), 6.0f)
+      << "продольное ускорение не должно уходить в vy на yaw-развёрнутом "
+         "монтаже";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CalibrationManager
 // ═══════════════════════════════════════════════════════════════════════════

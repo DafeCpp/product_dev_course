@@ -99,6 +99,24 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
     constexpr float kG = 9.80665f;
 
+    // Ротация в СК машины (код-ревью PR #290, 3-й раунд): и EKF (grav_x/
+    // grav_y от pitch_rad/roll_rad — СК машины), и TiltEstimator ожидают
+    // vehicle-frame accel/gyro, а sensors_.imu_data — bias-corrected, но НЕ
+    // повёрнутые данные в СК ДАТЧИКА. При наклонном и/или yaw-смещённом
+    // монтаже (Forward-калибровка существует именно для произвольного
+    // разворота IMU на плате) без поворота реальное продольное ускорение
+    // могло бы частично или полностью уйти в «боковую» ось EKF — machine
+    // считала бы, что не разгоняется, а сносит вбок. gz НЕ поворачиваем:
+    // sensors_.filtered_gz — общий LPF-сигнал yaw rate для yaw-rate control/
+    // auto-drive/калибровок (stabilization_pipeline.cpp,
+    // control_loop_helpers.hpp), и его поворот только для EKF завёл бы два
+    // рассинхронизированных «yaw rate» в системе; для чистого yaw-монтажа gz
+    // инвариантен (вращение вокруг Z не меняет Z-компоненту), полный фикс —
+    // перенос ротации перед LPF для всех потребителей разом, отдельная
+    // задача.
+    ImuData veh_imu = sensors_.imu_data;
+    ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
+
     // Ориентация для снятия проекции гравитации из ускорения перед
     // интеграцией в EKF. Источник по умолчанию — TiltEstimator (LOS-240):
     // комплементарный фильтр, не загрязняемый линейным ускорением (в
@@ -112,12 +130,6 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     if (stab_cfg_.filter.tilt_comp_enabled) {
       tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
                            stab_cfg_.filter.tilt_accel_gate_band_g});
-      // Ротация в СК машины (LOS-240, код-ревью PR #290): при наклонном
-      // монтаже IMU bias-corrected ax/ay/gx/gy остаются в осях датчика.
-      // Madgwick корректирует это на выходе через SetVehicleFrame(); тут —
-      // на входе, поскольку TiltEstimator сам не работает с кватернионами.
-      ImuData veh_imu = sensors_.imu_data;
-      ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
       tilt_est_.Update(veh_imu, a_lin_prev_g_, dt_sec);
       pitch_rad = tilt_est_.GetPitchRad();
       roll_rad = tilt_est_.GetRollRad();
@@ -127,8 +139,8 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     }
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
-    ctx_.ekf.UpdateFromImu(sensors_.imu_data.ax, sensors_.imu_data.ay,
-                           sensors_.imu_data.az, sensors_.filtered_gz, dt_sec,
+    ctx_.ekf.UpdateFromImu(veh_imu.ax, veh_imu.ay, veh_imu.az,
+                           sensors_.filtered_gz, dt_sec,
                            std::abs(commanded_throttle_), pitch_rad, roll_rad);
 
     // Якорь продольной скорости через мотор-модель (LOS-233): без датчика
