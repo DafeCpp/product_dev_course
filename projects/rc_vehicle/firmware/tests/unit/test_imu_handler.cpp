@@ -31,6 +31,33 @@ ImuData LevelImu() {
 
 MagData SomeMag() { return MagData{0.0f, 0.6f, -0.8f}; }
 
+
+TEST(ImuHandlerTest, PublishesVehicleFrameConventionsForAxAndYawRate) {
+  // LOS-222: железная ось X IMU направлена назад, а gyro Z имеет знак,
+  // противоположный yaw_deg. После чтения ImuHandler должен отдавать остальной
+  // прошивке и телеметрии СК автомобиля: X вперёд, левый поворот -> yaw_rate > 0.
+  FakePlatform platform;
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  ImuHandler imu(platform, calib, filter, /*read_interval_ms=*/2);
+  imu.SetEnabled(true);
+
+  ImuData sensor_frame{};
+  sensor_frame.ax = -0.2f;  // физическое ускорение вперёд на установленном IMU
+  sensor_frame.ay = 0.0f;
+  sensor_frame.az = -1.0f;
+  sensor_frame.gx = 0.0f;
+  sensor_frame.gy = 0.0f;
+  sensor_frame.gz = -30.0f;  // левый поворот по установленному IMU
+  platform.SetImuData(sensor_frame);
+
+  imu.Update(2, 2);
+
+  EXPECT_NEAR(imu.GetData().ax, 0.2f, 1e-6f);
+  EXPECT_NEAR(imu.GetData().gz, 30.0f, 1e-6f);
+  EXPECT_GT(imu.GetFilteredGyroZ(), 0.0f);
+}
+
 TEST(ImuHandlerTest, MagEnabledStaysTrueThroughBriefReadBlip) {
   // Кратковременный сбой (один пропуск) — не должен считаться поломкой
   // датчика: mag_enabled_ остаётся true.

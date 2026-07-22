@@ -40,15 +40,9 @@ def load_drive_log(path: str, use_applied: bool = True) -> dict:
             ts.append(f("ts_ms"))
             thr.append(f("throttle") if use_applied else f("rc_throttle"))
             steer.append(f("steering") if use_applied else f("rc_steering"))
-            # Знак гироскопа в логах прошивки инвертирован относительно yaw_deg
-            # (corr(d yaw_deg/dt, yaw_rate_dps) ≈ −0.94…−0.99 на реальных логах);
-            # модель использует конвенцию yaw_deg (левый поворот → r > 0).
-            yaw.append(-f("yaw_rate_dps"))
+            yaw.append(f("yaw_rate_dps"))
             spd.append(f("speed_ms"))
-            # Ось X акселерометра в логах направлена назад по ходу движения
-            # (corr(ax, dV/dt) ≈ −0.9 на устойчивых кругах) — инвертируем в
-            # конвенцию модели (вперёд > 0). ax в g → м/с².
-            lon.append(-f("ax") * _G)
+            lon.append(f("ax") * _G)
 
     ts = np.asarray(ts, float)
     dt = np.diff(ts, prepend=ts[0] - 2.0) / 1000.0
