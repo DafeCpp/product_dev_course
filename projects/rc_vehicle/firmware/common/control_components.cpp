@@ -87,15 +87,23 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // LPF инициализирован в конструкторе — горячий путь без проверок
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
-  UpdateVehicleFrame();
-
   const float dt_sec =
       first_read_ ? (read_interval_ms_ / 1000.0f)
                   : (static_cast<float>(now_ms - prev_read_ms) / 1000.0f);
   first_read_ = false;
 
+  // UpdateMagAndHeading + FeedMadgwick — ДО UpdateVehicleFrame(): иначе на
+  // тике, где калибровка становится валидной ровно в момент истечения
+  // таймаута устаревшего магнетометра, SetVehicleFrame() прочитал бы
+  // filter_.yaw_has_absolute_ref_ ещё с ПРЕДЫДУЩЕГО тика (mag_enabled_ тогда
+  // ещё не был инвалидирован) и мог бы закрепить курс, посчитанный по уже
+  // замороженному mag-семплу (review r3629768456, LOS-229). В этом порядке
+  // к моменту UpdateVehicleFrame() флаг уже отражает состояние текущего
+  // тика.
   UpdateMagAndHeading(now_ms);
   FeedMadgwick(raw_ax, raw_ay, raw_az, dt_sec);
+
+  UpdateVehicleFrame();
 }
 
 void ImuHandler::UpdateVehicleFrame() {

@@ -160,5 +160,75 @@ TEST(ImuHandlerTest,
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(ImuHandlerTest, CalibrationOnExactStaleTimeoutTickDoesNotPreserveYaw) {
+  // Ревью PR #283 (r3629768456): UpdateVehicleFrame() вызывался ДО
+  // UpdateMagAndHeading()/FeedMadgwick(), поэтому на тике, где калибровка
+  // становится валидной РОВНО в момент истечения таймаута устаревшего
+  // магнетометра, SetVehicleFrame() читал filter_.yaw_has_absolute_ref_ ещё
+  // с предыдущего тика — mag_enabled_ на тот момент ещё не был
+  // инвалидирован, и курс, посчитанный по уже замороженному mag-семплу, мог
+  // закрепиться вместо честного обнуления.
+  FakePlatform platform;
+  ImuCalibration calib;  // остаётся невалидной до точного момента ниже
+  MadgwickFilter filter;
+  ImuHandler imu(platform, calib, filter, /*read_interval_ms=*/2);
+  imu.SetEnabled(true);
+  platform.SetImuData(LevelImu());
+  platform.SetMagData(SomeMag());
+
+  uint32_t now_ms = 0;
+  // Сходимся по магнитометру, пока калибровка невалидна (vehicle frame не
+  // трогаем, чтобы не создавать лишних побочных вызовов SetVehicleFrame).
+  for (int i = 0; i < 7000; ++i) {  // 7000 * 2 мс = 14 с
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+  ASSERT_EQ(now_ms, 14000u);
+  ASSERT_TRUE(imu.IsMagEnabled());
+  float pitch, roll, yaw_converged;
+  filter.GetEulerDeg(pitch, roll, yaw_converged);
+  ASSERT_GT(std::abs(yaw_converged), 5.0f)
+      << "Тест бессмысленен, если курс не сошёлся к ненулевому значению";
+
+  // Последнее успешное чтение mag было на границе 14000 мс (опрос на 100 Гц).
+  // Магнетометр перестаёт отвечать; шагаем ДО, но не ВКЛЮЧАЯ тик, на котором
+  // истекает kMagStaleTimeoutMs (250 мс от 14000 = 14250 — ещё не > порога,
+  // следующий опрос на 14260 — первый, где 260 > 250).
+  platform.SetMagReadShouldFail(true);
+  while (now_ms < 14258) {
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+  ASSERT_EQ(now_ms, 14258u);
+  ASSERT_TRUE(imu.IsMagEnabled())
+      << "На этом тике таймаут ещё не должен был сработать (250, не > 250)";
+
+  // Критический тик: калибровка становится валидной РОВНО на том же тике,
+  // где магнетометр впервые признаётся устаревшим (260 мс > 250).
+  ImuCalibData valid_calib{};
+  valid_calib.valid = true;
+  valid_calib.gravity_vec[0] = 0.f;
+  valid_calib.gravity_vec[1] = 0.f;
+  valid_calib.gravity_vec[2] = -1.f;
+  valid_calib.accel_forward_vec[0] = 1.f;
+  valid_calib.accel_forward_vec[1] = 0.f;
+  valid_calib.accel_forward_vec[2] = 0.f;
+  calib.SetData(valid_calib);
+  now_ms += 2;
+  ASSERT_EQ(now_ms, 14260u);
+  imu.Update(now_ms, 2);
+
+  EXPECT_FALSE(imu.IsMagEnabled())
+      << "На этом тике магнетометр должен был уже признаться устаревшим";
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "Калибровка на том же тике, где магнетометр признан устаревшим, "
+         "не должна закрепить курс, посчитанный по замороженному семплу";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
 }  // namespace
 }  // namespace rc_vehicle
