@@ -986,6 +986,51 @@ TEST(MadgwickTest, SetVehicleFrame_ForcedZeroYawResetsTrustForNextCalibration) {
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(MadgwickTest, UpdateWithMag_InvalidAccelResetsYawTrust) {
+  // Ревью PR #283 (r3630788995): если акселерометр невалиден (мёртвый/
+  // нулевой семпл), UpdateWithMag() не попадает ни в MARG-ветку (нужен
+  // валидный accel), ни в явный 6DOF-фолбэк (там ТОЖЕ требуется валидный
+  // accel — деградация до Update() возможна только если акселерометр
+  // рабочий, а магнитометра нет) — тик сводится к чистому интегрированию
+  // гироскопа, но раньше флаги доверия (yaw_has_absolute_ref_/
+  // marg_correction_progress_) при этом не трогались. Если такое проседание
+  // акселерометра затянется или совпадёт с калибровкой, SetVehicleFrame()
+  // мог бы сохранить курс, не подкреплённый магнитометром во время
+  // проседания.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  for (int i = 0; i < 7500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+  float pitch_before, roll_before, yaw_before;
+  filter.GetEulerDeg(pitch_before, roll_before, yaw_before);
+  ASSERT_GT(std::abs(yaw_before), 5.0f)
+      << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+
+  // Акселерометр отваливается (нулевой семпл), магнитометр по-прежнему
+  // валиден — ни MARG-ветка, ни явный 6DOF-фолбэк не применимы.
+  for (int i = 0; i < 100; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+
+  filter.SetVehicleFrame(gravity, forward, true);
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "После проседания акселерометра опора должна быть сброшена — "
+         "калибровка обнуляет курс, а не сохраняет неподкреплённый";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
 TEST(MadgwickTest, InvalidateYawTrust_ResetsProgressNotQuaternion) {
   // Ревью PR #283 (r3630102909): смена калибровки магнитометра
   // (MagCalibration::Finish()) заставляет mag_calib_->Apply() выдавать
