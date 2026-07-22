@@ -51,6 +51,7 @@ TelemetrySnapshot BuildTelemetrySnapshot(
     snap.ekf_yaw_rate = ctx.ekf.GetYawRate();
     snap.ekf_slip_deg = ctx.ekf.GetSlipAngleDeg();
     snap.ekf_speed_ms = ctx.ekf.GetSpeedMs();
+    snap.ekf_zupt_status = ctx.ekf.GetZuptStatus();
     snap.ekf_vx_var = ctx.ekf.GetVxVariance();
     snap.ekf_vy_var = ctx.ekf.GetVyVariance();
     snap.ekf_r_var = ctx.ekf.GetRVariance();
@@ -92,6 +93,7 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
   frame.ekf_vy_var = ctx.ekf.GetVyVariance();
   frame.ekf_r_var = ctx.ekf.GetRVariance();
   frame.ekf_yaw_deg = ctx.ekf.GetYawDeg();
+  frame.zupt_status = static_cast<uint8_t>(ctx.ekf.GetZuptStatus());
   if (sensors.mag_enabled) {
     frame.mx = sensors.mag_data.mx;
     frame.my = sensors.mag_data.my;

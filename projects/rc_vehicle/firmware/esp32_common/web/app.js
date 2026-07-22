@@ -847,6 +847,7 @@ function updateTelem(data) {
         html += row('EKF Speed', (data.ekf.speed_ms?.toFixed(2) ?? 'N/A') + ' m/s');
         html += row('EKF Vx/Vy', `${data.ekf.vx?.toFixed(2) ?? '?'} / ${data.ekf.vy?.toFixed(2) ?? '?'} m/s`);
         html += row('EKF σ²(vx/vy/r)', `${data.ekf.vx_var?.toExponential(1) ?? '?'} / ${data.ekf.vy_var?.toExponential(1) ?? '?'} / ${data.ekf.r_var?.toExponential(1) ?? '?'}`);
+        html += row('EKF ZUPT', data.ekf.zupt_status ?? 'N/A');
     }
     if (data.imu?.orientation) {
         const o = data.imu.orientation;
@@ -1102,9 +1103,9 @@ function handleLogData(frames) {
 
 function exportLogCsv(frames) {
     if (!frames || !frames.length) { alert('Нет данных'); return; }
-    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_yaw_deg,mx,my,mz,heading_deg,heading_rel_deg,test_marker\n';
+    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_yaw_deg,mx,my,mz,heading_deg,heading_rel_deg,test_marker,zupt_status\n';
     const rows = frames.map(f =>
-        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.ekf_yaw_deg??0},${f.mx??0},${f.my??0},${f.mz??0},${f.heading_deg??0},${f.heading_rel_deg??0},${f.test_marker??0}`
+        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.ekf_yaw_deg??0},${f.mx??0},${f.my??0},${f.mz??0},${f.heading_deg??0},${f.heading_rel_deg??0},${f.test_marker??0},${f.zupt_status??0}`
     ).join('\n');
     triggerDownload(hdr + rows, 'telemetry_log.csv', 'text/csv');
 }
@@ -1282,6 +1283,7 @@ async function downloadBinaryLog() {
             { name: 'heading_deg',    off: 116, type: 'f32' },
             { name: 'heading_rel_deg',off: 120, type: 'f32' },
             { name: 'test_marker',    off: 124, type: 'u8'  },
+            { name: 'zupt_status',    off: 125, type: 'u8'  },
         ];
 
         const maxFieldEnd = FIELD_OFFSETS.reduce((maxEnd, f) => {

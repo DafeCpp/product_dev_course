@@ -258,3 +258,22 @@ TEST(BuildTelemJsonTest, PureFunctionReflectsSnapshot) {
 
   cJSON_Delete(root);
 }
+
+TEST(BuildTelemJsonTest, IncludesZuptStatus) {
+  TelemetrySnapshot snap{};
+  snap.imu_enabled = true;
+  snap.ekf_available = true;
+  snap.ekf_zupt_status = ZuptStatus::ThrottleRejected;
+
+  std::string json = BuildTelemJson(snap);
+  cJSON* root = cJSON_Parse(json.c_str());
+  ASSERT_NE(root, nullptr);
+
+  cJSON* ekf = cJSON_GetObjectItem(root, "ekf");
+  ASSERT_NE(ekf, nullptr);
+  cJSON* status = cJSON_GetObjectItem(ekf, "zupt_status");
+  ASSERT_NE(status, nullptr);
+  EXPECT_STREQ(status->valuestring, "throttle_rejected");
+
+  cJSON_Delete(root);
+}

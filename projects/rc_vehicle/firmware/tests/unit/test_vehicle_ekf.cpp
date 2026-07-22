@@ -391,6 +391,22 @@ TEST(VehicleEkfTest, ZUPT_PreventsStationaryDrift) {
   EXPECT_NEAR(ekf.GetSlipAngleDeg(), 0.0f, 0.1f);
 }
 
+TEST(VehicleEkfTest, ZuptStatus_ReportsAllGateOutcomes) {
+  VehicleEkf ekf;
+
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f, 0.03f);
+  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::ThrottleRejected);
+
+  ekf.UpdateFromImu(0.0f, 0.0f, 0.8f, 0.0f, 0.002f);
+  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::AccelRejected);
+
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 3.0f, 0.002f);
+  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::GyroRejected);
+
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f);
+  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::Applied);
+}
+
 TEST(VehicleEkfTest, SetNoiseParams_AffectsConvergence) {
   VehicleEkf ekf;
   // Установить очень маленький шум измерения → быстрая сходимость
