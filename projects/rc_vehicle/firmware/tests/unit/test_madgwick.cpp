@@ -1016,6 +1016,66 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotPreserveYawAfterOnlyBriefMargWindow) {
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(MadgwickTest, SetVehicleFrame_ScalesMargWindowWithBeta) {
+  // Ревью PR #283 (r3629255508): фиксированный порог 12 с был откалиброван
+  // только под дефолтный beta=0.1, а конфиг допускает madgwick_beta от 0.01
+  // до 1.0 (FilterConfig::Clamp, stabilization_config.cpp). При вдвое
+  // меньшем beta градиентный спуск сходится вдвое медленнее — фиксированный
+  // порог открыл бы опору курса задолго до реальной сходимости. Требуемое
+  // время должно масштабироваться как kReferenceSecondsForYawRef *
+  // kReferenceBeta / beta_, то есть при beta=0.05 требуется ~24 с, а не 12.
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  constexpr float kBetaHalf = 0.05f;  // вдвое меньше дефолтного 0.1
+
+  // 12.5 с коррекции — больше старого фиксированного порога (12 с), но
+  // меньше требуемых при beta=0.05 (~24 с). Опора ещё не должна открыться.
+  {
+    MadgwickFilter filter;
+    filter.SetBeta(kBetaHalf);
+    filter.SetVehicleFrame(gravity, forward, true);
+    for (int i = 0; i < 6250; ++i) {  // 6250 * 2 мс = 12.5 с
+      filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                           0.002f);
+    }
+    float pitch_before, roll_before, yaw_before;
+    filter.GetEulerDeg(pitch_before, roll_before, yaw_before);
+    ASSERT_GT(std::abs(yaw_before), 5.0f)
+        << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+
+    filter.SetVehicleFrame(gravity, forward, true);
+    float pitch_after, roll_after, yaw_after;
+    filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+    EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+        << "12.5 с при beta=0.05 недостаточно (нужно ~24 с) — курс должен "
+           "обнулиться, а не сохраниться по старому фиксированному порогу";
+  }
+
+  // 25 с коррекции — больше требуемых при beta=0.05. Опора должна открыться,
+  // курс сохраняется.
+  {
+    MadgwickFilter filter;
+    filter.SetBeta(kBetaHalf);
+    filter.SetVehicleFrame(gravity, forward, true);
+    for (int i = 0; i < 12500; ++i) {  // 12500 * 2 мс = 25 с
+      filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                           0.002f);
+    }
+    float pitch_before, roll_before, yaw_before;
+    filter.GetEulerDeg(pitch_before, roll_before, yaw_before);
+    ASSERT_GT(std::abs(yaw_before), 5.0f)
+        << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+
+    filter.SetVehicleFrame(gravity, forward, true);
+    float pitch_after, roll_after, yaw_after;
+    filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+    EXPECT_NEAR(yaw_after, yaw_before, 0.5f)
+        << "25 с при beta=0.05 достаточно (нужно ~24 с) — курс должен "
+           "пережить рекалибровку";
+  }
+}
+
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
   // After SetVehicleFrame init + convergence, roll stays ~0
   MadgwickFilter filter;

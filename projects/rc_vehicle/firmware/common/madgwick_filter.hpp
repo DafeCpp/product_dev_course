@@ -94,7 +94,18 @@ class MadgwickFilter : public IOrientationFilter {
   // такие тики курс к магнитному полю не приближают. Любой провал в 6DOF
   // обнуляет счётчик.
   float marg_correction_time_sec_{0.f};
-  static constexpr float kMinMargSecondsForYawRef = 12.0f;
+
+  // Требуемое время — не константа: скорость градиентного спуска обратно
+  // пропорциональна beta_, а конфиг допускает madgwick_beta от 0.01 до 1.0
+  // (FilterConfig::Clamp, stabilization_config.cpp). При меньшем, чем
+  // дефолтные 0.1, beta курс сходится пропорционально дольше — фиксированный
+  // порог, откалиброванный только под дефолт, открыл бы опору раньше
+  // реальной сходимости (review r3629255508, LOS-229). kReferenceBeta /
+  // kReferenceSecondsForYawRef — калибровочная точка (0.1 → ~12 с, с запасом
+  // над наблюдаемыми ~10-11 с), требуемое время масштабируется как
+  // kReferenceSecondsForYawRef * kReferenceBeta / beta_.
+  static constexpr float kReferenceBeta = 0.1f;
+  static constexpr float kReferenceSecondsForYawRef = 12.0f;
 
   // Опорная СК машины: q_veh_to_ned (поворот из СК машины в NED), только если
   // use_vehicle_frame_

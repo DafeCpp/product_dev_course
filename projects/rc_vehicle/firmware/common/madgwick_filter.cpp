@@ -228,8 +228,17 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
     if (effective_beta > 0.f) {
       marg_correction_time_sec_ += dt_sec;
     }
-    yaw_has_absolute_ref_ =
-        marg_correction_time_sec_ >= kMinMargSecondsForYawRef;
+    // Требуемое время масштабируем по сконфигурированному beta_ (не по
+    // мгновенному effective_beta — адаптивные провалы уже учтены накоплением
+    // выше): при beta_ <= 0 коррекции нет вообще, опора не должна открыться
+    // никогда.
+    bool marg_converged = false;
+    if (beta_ > 0.f) {
+      const float required_marg_sec =
+          kReferenceSecondsForYawRef * kReferenceBeta / beta_;
+      marg_converged = marg_correction_time_sec_ >= required_marg_sec;
+    }
+    yaw_has_absolute_ref_ = marg_converged;
   } else if (anorm2 > 1e-12f) {
     // Нет mag — деградируем до 6DOF
     Update(ax, ay, az, gx, gy, gz, dt_sec);
