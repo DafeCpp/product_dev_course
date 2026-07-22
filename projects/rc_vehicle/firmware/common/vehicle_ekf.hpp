@@ -138,6 +138,29 @@ class VehicleEkf {
   void UpdateZeroVelocity(float r_zupt = 0.1f) noexcept;
 
   /**
+   * @brief Измерение продольной скорости (мотор-модель): H = [1, 0, 0, 0].
+   *
+   * Якорь против дрейфа/разгона vx без датчика колёс. Ожидаемая скорость
+   * оценивается из газа (v ≈ gain·throttle) и подаётся как СЛАБОЕ измерение
+   * (большая r_speed): анкер удерживает vx в физических пределах, но не мешает
+   * реальной динамике IMU. Реализация — скалярный Kalman-update по столбцу 0.
+   * @param v_meas   Ожидаемая продольная скорость [м/с] (знаковая).
+   * @param r_speed  Шум измерения [м²/с²]. Больше → слабее коррекция.
+   */
+  void UpdateSpeed(float v_meas, float r_speed) noexcept;
+
+  /**
+   * @brief Неголономное ограничение (NHC): псевдо-измерение vy = 0.
+   *
+   * Машина «не ездит боком» (кроме заноса): боковая скорость в СК кузова ≈ 0.
+   * Честное измерение (в отличие от мягкого vy_decay в Predict) подавляет
+   * накопление ошибки боковой скорости и стабилизирует slip angle. При заносе
+   * ограничение ослабляют увеличением r_nhc (см. вызывающий код).
+   * @param r_nhc  Шум псевдо-измерения [м²/с²].
+   */
+  void UpdateNonHolonomic(float r_nhc) noexcept;
+
+  /**
    * @brief Высокоуровневое обновление из IMU (Predict + GyroZ + ZUPT).
    * @param ax_g Ускорение по X в g
    * @param ay_g Ускорение по Y в g
@@ -201,6 +224,25 @@ class VehicleEkf {
   /** Установить параметры шума. */
   void SetNoiseParams(NoiseParams params) noexcept { params_ = params; }
 
+  /**
+   * @brief Сработал ли guard на расходимость в последнем цикле Predict.
+   * true → оценка скорости/рыскания была ограничена физическим максимумом или
+   * сброшена по NaN; потребителям (drive modes) отдаётся уже безопасное
+   * значение, но факт расходимости виден в телеметрии.
+   */
+  [[nodiscard]] bool IsDiverged() const noexcept { return diverged_; }
+
+  /** Последнее измерение скорости мотор-модели [м/с] (для телеметрии/тюнинга).
+   */
+  [[nodiscard]] float GetLastSpeedMeas() const noexcept {
+    return last_speed_meas_;
+  }
+
+  /** Физический максимум |скорости| для guard [м/с]. */
+  static constexpr float kMaxSpeedMs = 15.0f;
+  /** Физический максимум |угловой скорости рыскания| для guard [рад/с]. */
+  static constexpr float kMaxYawRateRps = 20.0f;
+
  private:
   // Вектор состояния: [vx, vy, r, ψ]
   float x_[4]{0.0f, 0.0f, 0.0f, 0.0f};
@@ -214,8 +256,30 @@ class VehicleEkf {
   // Диагностика ZUPT; обновляется вместе с каждым UpdateFromImu().
   ZuptStatus zupt_status_{ZuptStatus::NotEvaluated};
 
+  // Флаг срабатывания guard на расходимость в текущем тике
+  // (сбрасывается в начале Predict, выставляется в GuardState).
+  bool diverged_{false};
+
+  // Последнее измерение скорости мотор-модели (для телеметрии).
+  float last_speed_meas_{0.0f};
+
   // Вспомогательные методы
   void InitP() noexcept;
+
+  /**
+   * Guard на расходимость состояния x_: сброс к нулю при NaN/Inf и ограничение
+   * |vx|,|vy| ≤ kMaxSpeedMs, |r| ≤ kMaxYawRateRps. Выставляет diverged_
+   * (OR-семантика; пер-тиковый сброс флага — в начале Predict). Вызывается в
+   * конце Predict и после измерительных апдейтов
+   * (UpdateGyroZ/UpdateHeading/UpdateSpeed/UpdateNonHolonomic).
+   */
+  void GuardState() noexcept;
+
+  /**
+   * Обобщённое скалярное Kalman-обновление: измерение z по столбцу col,
+   * H = e_col^T, инновация (z − x_[col]). Joseph form (PSD-гарантия).
+   */
+  void ScalarMeasUpdate(int col, float z, float r) noexcept;
 
   /**
    * Проверяет P на NaN/Inf (→ сброс к InitP) и ограничивает диагональные

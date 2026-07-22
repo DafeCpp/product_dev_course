@@ -142,14 +142,54 @@ struct FilterConfig {
   float adaptive_accel_threshold_g{0.2f};
 
   /**
+   * Мотор-модель как якорь скорости EKF (LOS-233).
+   * Ожидаемая скорость v ≈ motor_speed_gain·throttle подаётся слабым
+   * измерением, чтобы vx не уходил в разнос без датчика колёс.
+   * По умолчанию включено.
+   */
+  bool motor_model_enabled{true};
+
+  /**
+   * Коэффициент мотор-модели [м/с на единицу throttle].
+   * Оценивается автокалибровкой (SpeedCalibration.speed_gain) или тюнится
+   * вручную. Диапазон: 0.5–30, по умолчанию 8.0.
+   */
+  float motor_speed_gain{8.0f};
+
+  /**
+   * Мёртвая зона газа для мотор-модели [0..1].
+   * Ниже неё ожидаемая скорость = 0. По умолчанию 0.05.
+   */
+  float motor_deadzone{0.05f};
+
+  /**
+   * Шум измерения скорости мотор-модели [м²/с²].
+   * Больше → слабее якорь (не мешает динамике IMU). По умолчанию 4.0.
+   */
+  float speed_meas_noise{4.0f};
+
+  /**
+   * Неголономное ограничение (NHC): измерение vy ≈ 0 (машина не едет боком).
+   * Подавляет накопление ошибки боковой скорости. По умолчанию включено.
+   */
+  bool nhc_enabled{true};
+
+  /**
+   * Шум NHC-измерения vy=0 [м²/с²]. Слабое, чтобы не «убить» реальный занос.
+   * По умолчанию 2.0.
+   */
+  float nhc_noise{2.0f};
+
+  /**
    * @brief Проверить валидность конфигурации фильтров
    */
   [[nodiscard]] bool IsValid() const noexcept {
     return madgwick_beta > 0.0f && madgwick_beta <= 1.0f &&
            lpf_cutoff_hz >= 5.0f && lpf_cutoff_hz <= 100.0f &&
-           imu_sample_rate_hz > 0.0f &&
-           adaptive_accel_threshold_g >= 0.05f &&
-           adaptive_accel_threshold_g <= 0.5f;
+           imu_sample_rate_hz > 0.0f && adaptive_accel_threshold_g >= 0.05f &&
+           adaptive_accel_threshold_g <= 0.5f && motor_speed_gain >= 0.5f &&
+           motor_speed_gain <= 30.0f && motor_deadzone >= 0.0f &&
+           motor_deadzone < 1.0f && speed_meas_noise > 0.0f && nhc_noise > 0.0f;
   }
 
   /**

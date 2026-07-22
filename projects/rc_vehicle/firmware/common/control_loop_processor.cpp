@@ -102,6 +102,34 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
                            sensors_.imu_data.az, sensors_.filtered_gz,
                            static_cast<float>(dt_ms) * 0.001f,
                            std::abs(commanded_throttle_));
+
+    // Якорь продольной скорости через мотор-модель (LOS-233): без датчика
+    // колёс единственный способ не дать vx уйти в разнос при интеграции IMU.
+    // v ≈ gain·throttle (с мёртвой зоной) подаётся слабым измерением.
+    // Во время калибровки скорости якорь отключён: иначе калибровка мерила бы
+    // EKF-скорость, заякоренную текущим gain, и подтверждала бы сама себя.
+    // Вход модели — applied_throttle_ (значение прошлого тика, после slew и
+    // trim): это то, что реально ушло в PWM. Команда при slew-рампе прыгает
+    // мгновенно и завышала бы ожидаемую скорость на всё время рампы.
+    const auto& f = stab_cfg_.filter;
+    if (f.motor_model_enabled && !ctx_.auto_drive.IsSpeedCalibActive()) {
+      const float thr = applied_throttle_;
+      const float thr_abs = std::abs(thr);
+      float v_expected = 0.0f;
+      if (thr_abs > f.motor_deadzone && f.motor_deadzone < 1.0f) {
+        const float sign = thr < 0.0f ? -1.0f : 1.0f;
+        v_expected = sign * f.motor_speed_gain * (thr_abs - f.motor_deadzone) /
+                     (1.0f - f.motor_deadzone);
+      }
+      ctx_.ekf.UpdateSpeed(v_expected, f.speed_meas_noise);
+    }
+
+    // Неголономное ограничение vy≈0 (LOS-233): гейтим по yaw rate — при
+    // явном заносе/вращении боковая скорость реальна, ограничение ослабляем.
+    constexpr float kNhcMaxYawRateRps = 1.0f;  // ~57°/с
+    if (f.nhc_enabled && std::abs(ctx_.ekf.GetYawRate()) < kNhcMaxYawRateRps) {
+      ctx_.ekf.UpdateNonHolonomic(f.nhc_noise);
+    }
   }
   if (ekf_active && sensors_.imu_enabled && sensors_.mag_enabled) {
     constexpr float kDegToRad = 3.14159265358979f / 180.0f;

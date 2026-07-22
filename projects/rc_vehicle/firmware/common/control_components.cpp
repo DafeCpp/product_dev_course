@@ -372,6 +372,8 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
         cJSON_AddNumberToObject(ekf, "r_var", snap.ekf_r_var);
         cJSON_AddStringToObject(ekf, "zupt_status",
                                 ZuptStatusToString(snap.ekf_zupt_status));
+        cJSON_AddNumberToObject(ekf, "speed_meas", snap.ekf_speed_meas);
+        cJSON_AddBoolToObject(ekf, "diverged", snap.ekf_diverged);
       }
     }
 

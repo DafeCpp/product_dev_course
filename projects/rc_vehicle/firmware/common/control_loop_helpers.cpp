@@ -31,9 +31,26 @@ void HandleAutoDriveCompletion(const AutoDriveOutput& ad_out,
   }
 
   if (ad_out.speed_cal_completed) {
-    if (ad_out.speed_cal_result.valid) {
-      platform.Log(LogLevel::Info, "Speed calibration done");
-    } else {
+    if (ad_out.speed_cal_result.valid && stab_mgr) {
+      // Провод результата калибровки в мотор-модель EKF (LOS-233).
+      // Калибровка даёт v = speed_gain·thr, а модель применяет gain к
+      // деадзон-нормализованному газу (thr−dz)/(1−dz), поэтому пересчитываем
+      // gain так, чтобы модель воспроизводила измеренный круиз на
+      // target_throttle: gain = mean_speed·(1−dz)/(target−dz).
+      auto cfg = stab_mgr->GetConfig();
+      const float dz = cfg.filter.motor_deadzone;
+      const float target = ad_out.speed_cal_result.target_throttle;
+      if (target > dz + 0.01f && dz < 1.0f) {
+        cfg.filter.motor_speed_gain =
+            ad_out.speed_cal_result.mean_speed_ms * (1.0f - dz) / (target - dz);
+        cfg.filter.Clamp();
+        stab_mgr->SetConfig(cfg, true);
+        platform.Log(LogLevel::Info, "Speed calibration done");
+      } else {
+        platform.Log(LogLevel::Warning,
+                     "Speed calibration: target inside deadzone, gain kept");
+      }
+    } else if (!ad_out.speed_cal_result.valid) {
       platform.Log(LogLevel::Warning, "Speed calibration failed");
     }
   }

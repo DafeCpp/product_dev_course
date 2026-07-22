@@ -43,8 +43,9 @@ struct TelemetryLogFrame {
   float heading_rel_deg{0};      // Относительный курс [°, -180..180]
   uint8_t test_marker{0};       // Маркер теста (0 = нет, >0 = ID теста)
   uint8_t zupt_status{0};       // ZuptStatus на последнем IMU-тике
-  uint8_t _pad[2]{};            // Выравнивание до 4 байт
-};  // sizeof == 128 bytes (30 × float + uint32_t + uint8_t + 3 pad)
+  uint8_t ekf_diverged{0};  // EKF: 1 = сработал guard расходимости (LOS-233)
+  uint8_t _pad[1]{};        // Выравнивание до 4 байт
+};  // sizeof == 128 bytes (30 × float + uint32_t + 3 × uint8_t + 1 pad)
 
 // Compile-time проверка размера структуры
 static_assert(sizeof(TelemetryLogFrame) == 128,

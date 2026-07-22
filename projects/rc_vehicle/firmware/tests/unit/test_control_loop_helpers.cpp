@@ -226,6 +226,41 @@ TEST_F(HandleAutoDriveTest, ComCompleted_Invalid_LogsWarning) {
   HandleAutoDriveCompletion(ad, &stab_mgr_, imu_calib_, platform_);
 }
 
+TEST_F(HandleAutoDriveTest, SpeedCalCompleted_Valid_ConvertsGainForDeadzone) {
+  // Калибровка: v = gain·thr; модель: v = gain·(thr−dz)/(1−dz).
+  // gain_model = mean_speed·(1−dz)/(target−dz) = 2.4·0.95/0.25 = 9.12.
+  AutoDriveOutput ad;
+  ad.speed_cal_completed = true;
+  ad.speed_cal_result.valid = true;
+  ad.speed_cal_result.target_throttle = 0.3f;
+  ad.speed_cal_result.mean_speed_ms = 2.4f;
+  ad.speed_cal_result.speed_gain =
+      8.0f;  // сырое v/thr — не должно попасть в cfg
+  auto cfg = stab_mgr_.GetConfig();
+  cfg.filter.motor_deadzone = 0.05f;
+  stab_mgr_.SetConfig(cfg, false);
+  EXPECT_CALL(platform_, Log(LogLevel::Info, _)).Times(AtLeast(1));
+  EXPECT_CALL(platform_, SaveStabilizationConfig(_))
+      .Times(::testing::AnyNumber());
+  HandleAutoDriveCompletion(ad, &stab_mgr_, imu_calib_, platform_);
+  EXPECT_NEAR(stab_mgr_.GetConfig().filter.motor_speed_gain, 9.12f, 1e-3f);
+}
+
+TEST_F(HandleAutoDriveTest, SpeedCalCompleted_TargetInsideDeadzone_KeepsGain) {
+  AutoDriveOutput ad;
+  ad.speed_cal_completed = true;
+  ad.speed_cal_result.valid = true;
+  ad.speed_cal_result.target_throttle = 0.05f;  // внутри деадзоны
+  ad.speed_cal_result.mean_speed_ms = 1.0f;
+  auto cfg = stab_mgr_.GetConfig();
+  cfg.filter.motor_deadzone = 0.05f;
+  const float prev_gain = cfg.filter.motor_speed_gain;
+  stab_mgr_.SetConfig(cfg, false);
+  EXPECT_CALL(platform_, Log(LogLevel::Warning, _)).Times(1);
+  HandleAutoDriveCompletion(ad, &stab_mgr_, imu_calib_, platform_);
+  EXPECT_FLOAT_EQ(stab_mgr_.GetConfig().filter.motor_speed_gain, prev_gain);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // BuildSelfTestInput
 // ═══════════════════════════════════════════════════════════════════════════

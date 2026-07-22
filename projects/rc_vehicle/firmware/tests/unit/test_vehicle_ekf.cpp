@@ -499,3 +499,126 @@ TEST(VehicleEkfTest, Reset_ResetsYaw) {
   ekf.Reset();
   EXPECT_FLOAT_EQ(ekf.GetYawRad(), 0.0f);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Мотор-модель: измерение продольной скорости (LOS-233)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(VehicleEkfTest, UpdateSpeed_PullsVxTowardMeasurement) {
+  // vx=0, измерение 3 м/с → vx двигается к 3, не превышая
+  VehicleEkf ekf;
+  ekf.UpdateSpeed(3.0f, 1.0f);
+  EXPECT_GT(ekf.GetVx(), 0.0f);
+  EXPECT_LE(ekf.GetVx(), 3.0f);
+}
+
+TEST(VehicleEkfTest, UpdateSpeed_Converges) {
+  // Повторное измерение 4 м/с при разгоне → vx → 4
+  VehicleEkf ekf;
+  for (int i = 0; i < 300; ++i) {
+    ekf.Predict(0.0f, 0.0f, 0.002f);
+    ekf.UpdateSpeed(4.0f, 0.5f);
+  }
+  EXPECT_NEAR(ekf.GetVx(), 4.0f, 0.1f);
+}
+
+TEST(VehicleEkfTest, UpdateSpeed_NegativeForReverse) {
+  VehicleEkf ekf;
+  for (int i = 0; i < 300; ++i) {
+    ekf.Predict(0.0f, 0.0f, 0.002f);
+    ekf.UpdateSpeed(-2.0f, 0.5f);
+  }
+  EXPECT_NEAR(ekf.GetVx(), -2.0f, 0.1f);
+}
+
+TEST(VehicleEkfTest, UpdateSpeed_AnchorsAgainstDrift) {
+  // Ложное ускорение (утечка гравитации) разгоняет vx, но слабый якорь
+  // удерживает оценку у ожидаемой скорости мотор-модели (2 м/с).
+  VehicleEkf ekf;
+  for (int i = 0; i < 2000; ++i) {
+    ekf.Predict(3.0f, 0.0f, 0.002f);  // фантомные +3 м/с² (без якоря → разнос)
+    ekf.UpdateSpeed(2.0f, 1.0f);
+  }
+  EXPECT_LT(ekf.GetVx(), VehicleEkf::kMaxSpeedMs);  // не улетел за физ. предел
+  EXPECT_NEAR(ekf.GetVx(), 2.0f, 1.5f);             // держится у якоря
+}
+
+TEST(VehicleEkfTest, UpdateSpeed_ReducesVxVariance) {
+  VehicleEkf ekf;
+  for (int i = 0; i < 100; ++i) ekf.Predict(1.0f, 0.0f, 0.002f);
+  const float var_before = ekf.GetVxVariance();
+  ekf.UpdateSpeed(1.0f, 0.1f);
+  EXPECT_LT(ekf.GetVxVariance(), var_before);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NHC: неголономное ограничение vy ≈ 0 (LOS-233)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(VehicleEkfTest, UpdateNonHolonomic_PullsVyToZero) {
+  VehicleEkf ekf;
+  ekf.SetState(5.0f, 2.0f, 0.0f);  // боковая скорость 2 м/с
+  for (int i = 0; i < 100; ++i) {
+    ekf.Predict(0.0f, 0.0f, 0.002f);
+    ekf.UpdateNonHolonomic(0.1f);
+  }
+  EXPECT_NEAR(ekf.GetVy(), 0.0f, 0.05f);
+}
+
+TEST(VehicleEkfTest, UpdateNonHolonomic_DoesNotZeroVx) {
+  // NHC трогает только боковую скорость, продольная сохраняется
+  VehicleEkf ekf;
+  ekf.SetState(5.0f, 2.0f, 0.0f);
+  ekf.UpdateNonHolonomic(0.1f);
+  EXPECT_GT(ekf.GetVx(), 4.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Divergence guard (LOS-233)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(VehicleEkfTest, Guard_ClampsRunawaySpeed) {
+  // Устойчивое фантомное ускорение без якоря → без guard vx улетел бы за 100
+  // м/с; guard ограничивает физическим максимумом и поднимает флаг.
+  VehicleEkf ekf;
+  for (int i = 0; i < 3000; ++i) {
+    ekf.Predict(5.0f, 0.0f, 0.002f);  // +5 м/с² постоянно
+  }
+  EXPECT_LE(ekf.GetVx(), VehicleEkf::kMaxSpeedMs + 1e-3f);
+  EXPECT_TRUE(ekf.IsDiverged());
+}
+
+TEST(VehicleEkfTest, Guard_NotFlaggedInNormalRange) {
+  VehicleEkf ekf;
+  for (int i = 0; i < 100; ++i) {
+    ekf.Predict(1.0f, 0.0f, 0.002f);  // разгон до ~0.2 м/с
+  }
+  EXPECT_FALSE(ekf.IsDiverged());
+}
+
+TEST(VehicleEkfTest, UpdateSpeed_ClampsAboveMax) {
+  // Абсурдное измерение (100 м/с) не должно утянуть vx выше физмаксимума
+  // между тиками Predict: guard срабатывает и в measurement-пути.
+  VehicleEkf ekf;
+  ekf.SetState(14.0f, 0.0f, 0.0f);
+  ekf.UpdateSpeed(100.0f, 0.001f);  // малый R → сильная коррекция к 100
+  EXPECT_LE(ekf.GetVx(), VehicleEkf::kMaxSpeedMs + 1e-3f);
+  EXPECT_TRUE(ekf.IsDiverged());
+}
+
+TEST(VehicleEkfTest, UpdateGyroZ_GuardsYawRateSpike) {
+  // Выброс гироскопа (5000 dps ≈ 87 рад/с) через measurement update не должен
+  // оставить r за физпределом до следующего Predict.
+  VehicleEkf ekf;
+  ekf.UpdateGyroZ(87.0f);
+  EXPECT_LE(std::abs(ekf.GetYawRate()), VehicleEkf::kMaxYawRateRps + 1e-3f);
+  EXPECT_TRUE(ekf.IsDiverged());
+}
+
+TEST(VehicleEkfTest, Guard_ClampsYawRate) {
+  VehicleEkf ekf;
+  ekf.SetState(0.0f, 0.0f, 100.0f);  // абсурдная угловая скорость
+  ekf.Predict(0.0f, 0.0f, 0.002f);
+  EXPECT_LE(std::abs(ekf.GetYawRate()), VehicleEkf::kMaxYawRateRps + 1e-3f);
+  EXPECT_TRUE(ekf.IsDiverged());
+}

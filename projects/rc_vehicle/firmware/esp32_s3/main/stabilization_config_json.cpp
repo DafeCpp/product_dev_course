@@ -28,6 +28,16 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
                           cfg.filter.adaptive_beta_enabled);
     cJSON_AddNumberToObject(filter, "adaptive_accel_threshold_g",
                             cfg.filter.adaptive_accel_threshold_g);
+    cJSON_AddBoolToObject(filter, "motor_model_enabled",
+                          cfg.filter.motor_model_enabled);
+    cJSON_AddNumberToObject(filter, "motor_speed_gain",
+                            cfg.filter.motor_speed_gain);
+    cJSON_AddNumberToObject(filter, "motor_deadzone",
+                            cfg.filter.motor_deadzone);
+    cJSON_AddNumberToObject(filter, "speed_meas_noise",
+                            cfg.filter.speed_meas_noise);
+    cJSON_AddBoolToObject(filter, "nhc_enabled", cfg.filter.nhc_enabled);
+    cJSON_AddNumberToObject(filter, "nhc_noise", cfg.filter.nhc_noise);
   }
 
   // Yaw rate config
@@ -186,6 +196,12 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_bool(filter, "adaptive_beta_enabled", cfg.filter.adaptive_beta_enabled);
     get_float(filter, "adaptive_accel_threshold_g",
               cfg.filter.adaptive_accel_threshold_g);
+    get_bool(filter, "motor_model_enabled", cfg.filter.motor_model_enabled);
+    get_float(filter, "motor_speed_gain", cfg.filter.motor_speed_gain);
+    get_float(filter, "motor_deadzone", cfg.filter.motor_deadzone);
+    get_float(filter, "speed_meas_noise", cfg.filter.speed_meas_noise);
+    get_bool(filter, "nhc_enabled", cfg.filter.nhc_enabled);
+    get_float(filter, "nhc_noise", cfg.filter.nhc_noise);
   }
 
   // Yaw rate config
