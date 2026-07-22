@@ -98,14 +98,27 @@ void VehicleControlUnified::StartMagCalibration() {
 }
 
 void VehicleControlUnified::FinishMagCalibration() {
+  const bool was_collecting =
+      mag_calib_.GetStatus() == MagCalibStatus::Collecting;
   mag_calib_.Finish();
   if (mag_calib_.IsValid()) {
     platform_->SaveMagCalib(mag_calib_.GetData());
-    // Apply() дальше будет выдавать другой скорректированный вектор (новый
-    // hard-iron offset) — накопленный до этого прогресс сходимости yaw
-    // относился к старой калибровке (или к сырым данным) и не годится под
-    // новую (LOS-229).
-    madgwick_.InvalidateYawTrust();
+    // Инвалидируем опору курса, только если ИМЕННО ЭТОТ вызов реально
+    // перевёл калибровку Collecting → Done (data_ действительно перезаписан
+    // новым offset). Finish() — no-op вне сбора (status_ тогда не
+    // Collecting), а неудачная попытка (мало семплов / плохой radius /
+    // NotPlanar) тоже не трогает data_ — в обоих случаях IsValid() может
+    // остаться true от СТАРОЙ, уже сохранённой калибровки, и инвалидация
+    // была бы ложной: следующая IMU/Forward-калибровка обнулила бы курс без
+    // причины, хотя mag-калибровка на самом деле не менялась (review
+    // r3630682666, LOS-229).
+    if (was_collecting && mag_calib_.GetStatus() == MagCalibStatus::Done) {
+      // Apply() дальше будет выдавать другой скорректированный вектор (новый
+      // hard-iron offset) — накопленный до этого прогресс сходимости yaw
+      // относился к старой калибровке (или к сырым данным) и не годится под
+      // новую (LOS-229).
+      madgwick_.InvalidateYawTrust();
+    }
   }
   if (telem_mgr_) {
     TelemetryEventType t = mag_calib_.IsValid()
