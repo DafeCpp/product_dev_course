@@ -871,9 +871,11 @@ TEST(MadgwickTest, SetVehicleFrame_PreservesConvergedYaw) {
   filter.SetVehicleFrame(gravity, forward, true);
 
   // Машина стоит ровно, магнитное поле развёрнуто так, что курс ≠ 0.
-  // Даём фильтру сойтись.
+  // Даём фильтру сойтись — 7500 * 2 мс = 15 с реального времени коррекции,
+  // с запасом больше kMinMargSecondsForYawRef (12 с), чтобы опора успела
+  // стать абсолютной до повторной калибровки ниже.
   constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
-  for (int i = 0; i < 5000; ++i) {
+  for (int i = 0; i < 7500; ++i) {
     filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
                          0.002f);
   }
@@ -968,6 +970,48 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotPreserveStaleYawFromSingleMagSample) {
   EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
       << "Единственный mag-семпл не даёт абсолютной опоры — курс должен "
          "обнулиться, как в чистом 6DOF";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
+TEST(MadgwickTest, SetVehicleFrame_DoesNotPreserveYawAfterOnlyBriefMargWindow) {
+  // Ревью PR #283 (r3628818049): в продакшене UpdateWithMag дёргается каждые
+  // 2 мс (500 Гц control loop) независимо от частоты обновления самого
+  // магнитометра (ImuHandler::FeedMadgwick подаёт кэшированный mag-семпл на
+  // каждом тике). Старый счётчик «подряд идущих обновлений» открывался уже
+  // за 50 таких тиков — то есть за 100 мс реального времени, хотя градиентный
+  // спуск при дефолтном beta=0.1 реально сходится за ~10-11 с (см. телеметрию
+  // LOS-229). Эмулируем ровно этот сценарий: 50 тиков по 2 мс (100 мс) —
+  // курс всё ещё не должен считаться абсолютно опёртым.
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // Крутим машину вокруг вертикали в 6DOF — курс уезжает и дрейфует без опоры.
+  for (int i = 0; i < 1000; ++i) {
+    filter.Update(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.002f);
+  }
+  float pitch, roll, yaw_drifted;
+  filter.GetEulerDeg(pitch, roll, yaw_drifted);
+  ASSERT_GT(std::abs(yaw_drifted), 10.0f) << "Тест бессмысленен без дрейфа yaw";
+
+  // Ровно 50 MARG-тиков по 2 мс (100 мс суммарно) прямо перед калибровкой —
+  // столько же, сколько раньше считалось достаточным по старому счётчику.
+  for (int i = 0; i < 50; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.0f, 0.6f,
+                         -0.8f, 0.002f);
+  }
+
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "100 мс MARG-коррекции недостаточно для абсолютной опоры курса — "
+         "должно обнулиться, как в чистом 6DOF";
   EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
