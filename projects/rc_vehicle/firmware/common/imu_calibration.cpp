@@ -291,7 +291,13 @@ void ImuCalibration::RotateToVehicleFrame(ImuData& data) const {
                 data_.accel_forward_vec[2]};
   if (!OrthogonalizeForward(x, z)) return;  // вырожденный базис — не трогаем
 
-  // Y_veh (вправо) = Z_veh × X_veh — как в MadgwickFilter::SetVehicleFrame().
+  // Y_veh (влево) = Z_veh × X_veh — как в MadgwickFilter::SetVehicleFrame().
+  // Согласовано с конвенцией VehicleEkf (vy>0/yaw rate>0 = «влево»,
+  // ay=+r·vx для левого поворота — код-ревью PR #290, 8-й раунд: комментарий
+  // раньше ошибочно гласил «вправо», хотя формула давала «влево»; проверено
+  // построением и тестом RotateToVehicleFrame_YAxisMatchesEkfLeftPositive
+  // Convention — см. VehicleEkfTest.NormalTurn_CentripetalAccel_
+  // NoFalseSlip/SlipAngle_PositiveFor_LeftSideslip в test_vehicle_ekf.cpp).
   const float yx = z[1] * x[2] - z[2] * x[1];
   const float yy = z[2] * x[0] - z[0] * x[2];
   const float yz = z[0] * x[1] - z[1] * x[0];

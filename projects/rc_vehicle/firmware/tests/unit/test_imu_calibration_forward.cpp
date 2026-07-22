@@ -464,6 +464,36 @@ TEST_F(ImuCalibrationForwardTest,
   EXPECT_NEAR(d.gz, 3.f, 1e-5f);
 }
 
+// Код-ревью PR #290 (8-й раунд): проверка знака Y_veh против конвенции,
+// уже установленной в VehicleEkf (vy>0/gz>0 = «влево», ay=+r·vx для левого
+// поворота — см. VehicleEkfTest.NormalTurn_CentripetalAccel_NoFalseSlip/
+// SlipAngle_PositiveFor_LeftSideslip/DriftScenario_SideslipDevelopsOnIce в
+// test_vehicle_ekf.cpp). Y_veh = Z_veh×X_veh — прямая проверка построением:
+// «право» = поворот X_veh на −90° вокруг Z_veh (по часовой сверху), значит
+// Y_veh обязана быть «лево». Раскладка через явную геометрию, а не только
+// абстрактную алгебру — чтобы не полагаться на комментарий в коде (который
+// как раз был перепутан: «Y_veh (вправо)» при формуле, дающей «влево»).
+TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_YAxisMatchesEkfLeftPositiveConvention) {
+  // Монтаж на 90° по yaw (как TiltComp_YawedMount в
+  // test_control_loop_processor.cpp): «вперёд» машины — сенсорная Y.
+  Load(0.f, 1.f, 0.f,   // accel_forward_vec (X_veh) = сенсорная Y
+       0.f, 0.f, 1.f);  // gravity_vec (Z_veh) = сенсорная Z (без наклона)
+
+  // Истинное центростремительное ускорение при ЛЕВОМ повороте на этом
+  // монтаже физически направлено вдоль сенсорной −X (право = X_veh,
+  // повёрнутая на −90° вокруг Z_veh = сенсорная +X для X_veh=сенсорная Y).
+  constexpr float kCentripetalG = 0.3f;
+  ImuData d{-kCentripetalG, 0.f, 1.f, 0.f, 0.f, 0.f};
+  calib.RotateToVehicleFrame(d);
+
+  // rotated ay обязана быть ПОЛОЖИТЕЛЬНОЙ (влево), совпадая с конвенцией
+  // ay=+r·vx для левого поворота, установленной в VehicleEkf.
+  EXPECT_NEAR(d.ay, kCentripetalG, 1e-5f)
+      << "Y_veh не согласована с left-positive конвенцией EKF";
+  EXPECT_NEAR(d.ax, 0.0f, 1e-5f);
+}
+
 TEST_F(ImuCalibrationForwardTest, RotateToVehicleFrame_RotatesGyroToo) {
   // Чистое вращение по тангажу корпуса (вокруг Y машины) на наклонном
   // монтаже должно после ротации читаться целиком по gy СК машины, без
