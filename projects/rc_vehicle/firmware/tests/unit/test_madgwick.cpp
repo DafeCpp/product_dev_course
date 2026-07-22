@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 #include "mpu6050_spi.hpp"
 #include "test_helpers.hpp"
@@ -1535,6 +1536,60 @@ TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
   EXPECT_NEAR(std::abs(pitch), 30.0f, 8.0f) << "Pitch should track ~30° tilt";
   EXPECT_NEAR(roll, 0.0f, 10.0f)
       << "Roll should remain ~0 during pure pitch tilt";
+}
+
+TEST(MadgwickTest, SetVehicleFrame_UsesCalibratedForwardOnTiltedMount) {
+  // LOS-225: gravity_vec is the raw rest accel vector, while
+  // accel_forward_vec is learned from post-Apply linear acceleration. The saved
+  // forward axis must still build a correct vehicle frame with the raw gravity
+  // reference when the IMU is mounted with an 8° pitch.
+  constexpr float kMountPitchRad = 8.0f * static_cast<float>(M_PI) / 180.0f;
+
+  auto tilted_rest = [=]() {
+    ImuData d{};
+    d.ax = std::sin(kMountPitchRad);
+    d.az = std::cos(kMountPitchRad);
+    return d;
+  };
+  auto tilted_forward_accel = [=](float accel_g) {
+    ImuData d{};
+    d.ax = std::cos(kMountPitchRad) * accel_g + std::sin(kMountPitchRad);
+    d.az = -std::sin(kMountPitchRad) * accel_g + std::cos(kMountPitchRad);
+    return d;
+  };
+
+  ImuCalibration calib;
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(tilted_rest());
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(tilted_forward_accel(0.3f));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  const ImuCalibData& data = calib.GetData();
+  EXPECT_NEAR(data.gravity_vec[0], std::sin(kMountPitchRad), 1e-5f);
+  EXPECT_NEAR(std::abs(data.accel_forward_vec[2]), std::sin(kMountPitchRad),
+              1e-3f)
+      << "Forward axis should preserve the physical mount pitch component";
+
+  MadgwickFilter filter;
+  filter.SetVehicleFrame(data.gravity_vec, data.accel_forward_vec, true);
+
+  for (int i = 0; i < 500; ++i) {
+    filter.Update(data.gravity_vec[0], data.gravity_vec[1], data.gravity_vec[2],
+                  0.0f, 0.0f, 0.0f, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  (void)yaw;
+  EXPECT_NEAR(pitch, 0.0f, 1.0f);
+  EXPECT_NEAR(roll, 0.0f, 1.0f);
 }
 
 TEST(MadgwickTest, SetVehicleFrame_NullGravity) {
