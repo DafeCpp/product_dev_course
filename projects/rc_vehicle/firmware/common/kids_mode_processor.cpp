@@ -6,6 +6,31 @@
 
 namespace rc_vehicle {
 
+namespace {
+
+// Порог доверия к оценке скорости EKF (LOS-215): здоровая ковариация vx
+// держится в районе 0.06..1.0 м²/с² (см. VehicleEkf::SetState/Predict), а при
+// расходимости (LOS-217) улетает до сотен-тысяч. Выше порога speed limiter не
+// применяется — иначе мусорная оценка «5-40 м/с при стоящей машине» рубит
+// throttle почти до нуля независимо от силы нажатия газа.
+//
+// Вариацию одну недостаточно проверять (код-ревью PR #292): мотор-модельный
+// якорь (LOS-233, motor_model_enabled=true по умолчанию) подаёт в EKF
+// UpdateSpeed() каждый тик со слабым, но частым шумом speed_meas_noise=4.0 —
+// это стягивает P_[0] обратно к шуму измерения независимо от того, доверять
+// ли самой оценке x_[0]. Если EKF при этом клемпит скорость физическим
+// максимумом (VehicleEkf::GuardState(), IsDiverged()==true), дисперсия может
+// остаться ниже kSpeedTrustVarMax при заведомо испорченном состоянии —
+// поэтому дополнительно гейтим по !ekf_->IsDiverged().
+constexpr float kSpeedTrustVarMax = 4.0f;
+
+// Верхний предел пропорционального снижения (LOS-215): reduction=1.0 обрывал
+// throttle в ноль вместо плавного удержания у max_speed_ms — именно это и
+// проявлялось как «газ почти всегда обрезается».
+constexpr float kSpeedReductionMax = 0.85f;
+
+}  // namespace
+
 void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
   ekf_ = &ekf;
   imu_ = imu;
@@ -87,14 +112,15 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   speed_limit_active_ = false;
 
   if (km.speed_limit_enabled && ekf_ && imu_ && imu_->IsEnabled() &&
-      throttle > 0.0f) {
+      throttle > 0.0f && !ekf_->IsDiverged() &&
+      ekf_->GetVxVariance() <= kSpeedTrustVarMax) {
     const float speed = ekf_->GetSpeedMs();
     if (speed > km.max_speed_ms) {
       speed_limit_active_ = true;
       const float excess = speed - km.max_speed_ms;
-      const float reduction = std::min(excess * km.speed_limit_gain, 1.0f);
+      const float reduction =
+          std::min(excess * km.speed_limit_gain, kSpeedReductionMax);
       throttle *= (1.0f - reduction);
-      throttle = std::max(throttle, 0.0f);
     }
   }
 }
