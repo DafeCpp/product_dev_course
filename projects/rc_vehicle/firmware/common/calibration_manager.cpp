@@ -123,6 +123,16 @@ void CalibrationManager::StopAutoForward() {
 
 void CalibrationManager::SetForwardDirection(float fx, float fy, float fz) {
   imu_calib_.SetForwardDirection(fx, fy, fz);
+
+  // Как и на завершении Full/Forward в ProcessCompletion() (код-ревью
+  // PR #290, 6-й раунд): это тоже меняет базис RotateToVehicleFrame(), и
+  // Madgwick, и TiltEstimator/prev_vx_/a_lin_prev_g_ вызывающего кода
+  // должны обновиться/сброситься — иначе оба используют устаревшую СК
+  // до следующей полной калибровки.
+  const auto& d = imu_calib_.GetData();
+  madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+  frame_changed_ = true;
+
   auto result = platform_.SaveCalib(imu_calib_.GetData());
   if (result.has_value()) {
     platform_.Log(LogLevel::Info, "Forward direction set and saved to NVS");

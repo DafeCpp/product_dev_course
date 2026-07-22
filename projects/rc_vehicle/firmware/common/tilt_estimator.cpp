@@ -17,7 +17,7 @@ void TiltEstimator::Reset() noexcept {
 }
 
 void TiltEstimator::Update(const ImuData& imu, float a_lin_long_g,
-                           float dt_sec) noexcept {
+                           float a_lin_lat_g, float dt_sec) noexcept {
   if (dt_sec <= 0.0f) {
     return;
   }
@@ -27,24 +27,28 @@ void TiltEstimator::Update(const ImuData& imu, float a_lin_long_g,
   pitch_rad_ = ClampTilt(pitch_rad_ + imu.gy * kDegToRad * dt_sec);
   roll_rad_ = ClampTilt(roll_rad_ + imu.gx * kDegToRad * dt_sec);
 
-  // ── 2) Accel-коррекция со снятием известного линейного ускорения ───────
-  // Остаток ax_grav ≈ чистая гравитационная проекция, если a_lin_long_g
-  // верно оценивает продольное ускорение (см. Update() в вызывающем коде).
+  // ── 2) Accel-коррекция со снятием известных ускорений ──────────────────
+  // Остаток ax_grav/ay_grav ≈ чистая гравитационная проекция, если
+  // a_lin_long_g/a_lin_lat_g верно оценивают продольное/боковое ускорение
+  // (см. Update() в вызывающем коде). Без вычитания a_lin_lat_g разворот с
+  // устойчивым боковым ускорением заваливал бы roll тем же путём, каким
+  // продольный разгон заваливал pitch без a_lin_long_g.
   const float ax_grav = imu.ax - a_lin_long_g;
-  const float ay = imu.ay;
+  const float ay_grav = imu.ay - a_lin_lat_g;
   const float az = imu.az;
-  const float accel_mag = std::sqrt(ax_grav * ax_grav + ay * ay + az * az);
+  const float accel_mag =
+      std::sqrt(ax_grav * ax_grav + ay_grav * ay_grav + az * az);
 
   // ── 3) Гейт: коррекция только когда скорректированный вектор близок к
-  // 1g. Вне диапазона (удар/выброс на ухабе, либо a_lin_long_g неточен) —
-  // акселерометру не доверяем, тангаж временно держится на гиро.
+  // 1g. Вне диапазона (удар/выброс на ухабе, либо a_lin_*_g неточен) —
+  // акселерометру не доверяем, тангаж/крен временно держатся на гиро.
   if (std::abs(accel_mag - 1.0f) > params_.accel_gate_band_g) {
     return;
   }
 
-  const float horiz = std::sqrt(ay * ay + az * az);
+  const float horiz = std::sqrt(ay_grav * ay_grav + az * az);
   const float pitch_acc = std::atan2(-ax_grav, horiz);
-  const float roll_acc = std::atan2(ay, az);
+  const float roll_acc = std::atan2(ay_grav, az);
 
   const float k = params_.corr_gain_hz * dt_sec;
   pitch_rad_ = ClampTilt(pitch_rad_ + k * WrapAngle(pitch_acc - pitch_rad_));

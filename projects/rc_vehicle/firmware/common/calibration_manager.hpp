@@ -146,13 +146,14 @@ class CalibrationManager {
   /**
    * @brief Проверить и сбросить флаг «СК машины изменилась».
    *
-   * true один раз после того, как ProcessCompletion() обновил vehicle
-   * frame (SetVehicleFrame() Madgwick + Reset() EKF) на завершении Full/
-   * Forward калибровки. Вызывающий код (ControlLoopProcessor) обязан
-   * сбросить свои собственные накопители, зависящие от СК машины —
+   * true один раз после того, как ProcessCompletion() (завершение Full/
+   * Forward калибровки) ИЛИ SetForwardDirection() (ручная WS-команда)
+   * обновили vehicle frame (SetVehicleFrame() Madgwick + новые
+   * gravity_vec/accel_forward_vec). Вызывающий код (ControlLoopProcessor)
+   * обязан сбросить свои собственные накопители, зависящие от СК машины —
    * TiltEstimator (LOS-240) и конечно-разностное состояние a_lin — иначе
    * они интерпретируют старые (сошедшиеся под ПРЕЖНИМ базисом) значения
-   * тангажа/крена в НОВОЙ СК (код-ревью PR #290, 5-й раунд).
+   * тангажа/крена в НОВОЙ СК (код-ревью PR #290, 5-й/6-й раунды).
    */
   [[nodiscard]] bool ConsumeFrameChanged() {
     const bool v = frame_changed_;

@@ -36,7 +36,8 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   // Единственный snapshot конфига на итерацию (FW-RF5): одна копия под
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
-  stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+  stab_cfg_ =
+      ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
 
   PROF_START();
 
@@ -80,9 +81,9 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   PROF_LAP(prof_telem_us_);
 
   {
-    const DiagnosticsContext dctx{ctx_.platform, *ctx_.stab_mgr, ctx_.madgwick,
-                                  ctx_.ekf, ctx_.imu_handler,
-                                  ctx_.last_loop_hz};
+    const DiagnosticsContext dctx{ctx_.platform,    *ctx_.stab_mgr,
+                                  ctx_.madgwick,    ctx_.ekf,
+                                  ctx_.imu_handler, ctx_.last_loop_hz};
 #ifdef RC_PROFILE_LOOP
     const uint32_t prof_loops = diag_loop_count_;
 #endif
@@ -102,8 +103,8 @@ void ControlLoopProcessor::UpdateComponents(uint32_t now, uint32_t dt_ms) {
 }
 
 void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
-  sensors_ = BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler,
-                                 ctx_.imu_handler);
+  sensors_ =
+      BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler, ctx_.imu_handler);
   prev_gz_rad_s_ =
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
 
@@ -148,9 +149,22 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     float pitch_rad = 0.0f, roll_rad = 0.0f;
     if (stab_cfg_.filter.tilt_comp_enabled) {
       const float a_lin_g = motor_model_active ? a_lin_prev_g_ : 0.0f;
+      // Боковое (центростремительное) ускорение для roll-коррекции —
+      // симметричный аналог a_lin_g для pitch (код-ревью PR #290, 6-й
+      // раунд): без него устойчивый разворот с боковым ускорением ~0.2g
+      // заваливал бы roll тем же путём, каким продольный разгон заваливал
+      // pitch без a_lin_g. a = ω×v для тела, вращающегося вокруг Z со
+      // скоростью gz и движущегося вперёд с vx: a_y = gz·vx (Y_veh,
+      // veh_imu.gz — уже в СК машины, ROTATED выше). В отличие от a_lin_g
+      // НЕ гейтится якорем: vx влияет через pitch/grav_x, roll в этой
+      // формуле не участвует вовсе — циркулярности для roll нет ни при
+      // каком источнике vx (в худшем случае — унаследованная неточность
+      // vx без якоря, не новая расходимость).
+      constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+      const float a_lin_lat_g = (veh_imu.gz * kDegToRad) * prev_vx_ / kG;
       tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
                            stab_cfg_.filter.tilt_accel_gate_band_g});
-      tilt_est_.Update(veh_imu, a_lin_g, dt_sec);
+      tilt_est_.Update(veh_imu, a_lin_g, a_lin_lat_g, dt_sec);
       pitch_rad = tilt_est_.GetPitchRad();
       roll_rad = tilt_est_.GetRollRad();
     } else if (stab_cfg_.filter.madgwick_enabled) {
@@ -294,11 +308,10 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
         std::abs(commanded_throttle_) < std::abs(applied_throttle_)) {
       effective_slew_thr *= stab_cfg_.brake_slew_multiplier;
     }
-    UpdatePwmWithSlewRate(ctx_.platform, now, commanded_throttle_,
-                          commanded_steering_, applied_throttle_,
-                          applied_steering_, last_pwm_update_, thr_trim,
-                          steer_trim, effective_slew_thr,
-                          stab_cfg_.slew_steering);
+    UpdatePwmWithSlewRate(
+        ctx_.platform, now, commanded_throttle_, commanded_steering_,
+        applied_throttle_, applied_steering_, last_pwm_update_, thr_trim,
+        steer_trim, effective_slew_thr, stab_cfg_.slew_steering);
   } else {
     applied_throttle_ = commanded_throttle_ + thr_trim;
     applied_steering_ = commanded_steering_ + steer_trim;
@@ -308,16 +321,18 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
 
 void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
   (void)dt_ms;
-  const TelemetryContext tctx{ctx_.ekf,    ctx_.madgwick,   ctx_.imu_calib,
-                               ctx_.oversteer_guard, ctx_.kids_processor,
-                               ctx_.auto_drive};
+  const TelemetryContext tctx{ctx_.ekf,
+                              ctx_.madgwick,
+                              ctx_.imu_calib,
+                              ctx_.oversteer_guard,
+                              ctx_.kids_processor,
+                              ctx_.auto_drive};
   const DriveMode drive_mode = stab_cfg_.mode;
 
   if (ctx_.telem_handler) {
-    auto snap = BuildTelemetrySnapshot(tctx, now, sensors_, stab_cfg_,
-                                       drive_mode, applied_throttle_,
-                                       applied_steering_, commanded_throttle_,
-                                       commanded_steering_);
+    auto snap = BuildTelemetrySnapshot(
+        tctx, now, sensors_, stab_cfg_, drive_mode, applied_throttle_,
+        applied_steering_, commanded_throttle_, commanded_steering_);
     // FW-RF8: failsafe в снимок — чтобы JSON строился в задаче телеметрии без
     // обращения к платформе из чужого потока.
     snap.failsafe = ctx_.platform.FailsafeIsActive();

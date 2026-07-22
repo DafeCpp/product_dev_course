@@ -34,7 +34,7 @@ TEST(TiltEstimatorTest, LevelAccel_NoTiltGrowth) {
   imu.az = 1.0f;
 
   for (int i = 0; i < 2500; ++i) {  // 5 секунд
-    est.Update(imu, a_lin_g, kDt);
+    est.Update(imu, a_lin_g, 0.0f, kDt);
   }
 
   EXPECT_NEAR(RadToDeg(est.GetPitchRad()), 0.0f, 1.0f);
@@ -56,7 +56,7 @@ TEST(TiltEstimatorTest, StaticPitch_ConvergesToTrueAngle) {
   imu.az = std::cos(pitch_true);
 
   for (int i = 0; i < 5000; ++i) {  // 10 секунд — дать сойтись комплементарке
-    est.Update(imu, 0.0f, kDt);
+    est.Update(imu, 0.0f, 0.0f, kDt);
   }
 
   EXPECT_NEAR(RadToDeg(est.GetPitchRad()), 20.0f, 1.0f);
@@ -74,7 +74,7 @@ TEST(TiltEstimatorTest, StaticRoll_ConvergesToTrueAngle) {
   imu.az = std::cos(roll_true);
 
   for (int i = 0; i < 5000; ++i) {
-    est.Update(imu, 0.0f, kDt);
+    est.Update(imu, 0.0f, 0.0f, kDt);
   }
 
   EXPECT_NEAR(RadToDeg(est.GetRollRad()), 15.0f, 1.0f);
@@ -99,10 +99,56 @@ TEST(TiltEstimatorTest, TiltedForwardAccel_PitchStaysAccurate) {
   imu.az = std::cos(pitch_true);
 
   for (int i = 0; i < 5000; ++i) {
-    est.Update(imu, a_lin_g, kDt);
+    est.Update(imu, a_lin_g, 0.0f, kDt);
   }
 
   EXPECT_NEAR(RadToDeg(est.GetPitchRad()), 20.0f, 1.5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Разворот С боковым ускорением: реальный крен + боковое ускорение — крен
+// остаётся верным, если a_lin_lat_g верно оценивает боковое ускорение
+// (симметричный аналог TiltedForwardAccel_PitchStaysAccurate — код-ревью
+// PR #290, 6-й раунд: без вычитания a_lin_lat_g разворот с устойчивым
+// ~0.2g боковым ускорением заваливал бы roll тем же путём).
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(TiltEstimatorTest, LevelLateralAccel_NoRollGrowth) {
+  TiltEstimator est;
+  ImuData imu{};
+  imu.gx = 0.0f;  // корпус не кренится
+  imu.gy = 0.0f;
+  imu.ax = 0.0f;
+
+  // Разворот 0.2g: |a| ≈ 1.0198g — в пределах дефолтного гейта 0.1.
+  const float a_lat_g = 0.2f;
+  imu.ay = a_lat_g;
+  imu.az = 1.0f;
+
+  for (int i = 0; i < 2500; ++i) {  // 5 секунд
+    est.Update(imu, 0.0f, a_lat_g, kDt);
+  }
+
+  EXPECT_NEAR(RadToDeg(est.GetRollRad()), 0.0f, 1.0f);
+  EXPECT_NEAR(RadToDeg(est.GetPitchRad()), 0.0f, 1.0f);
+}
+
+TEST(TiltEstimatorTest, TiltedLateralAccel_RollStaysAccurate) {
+  TiltEstimator est;
+  ImuData imu{};
+  imu.gx = imu.gy = imu.gz = 0.0f;
+
+  const float roll_true = DegToRad(15.0f);
+  const float a_lat_g = 0.2f;
+  imu.ax = 0.0f;
+  imu.ay = std::sin(roll_true) + a_lat_g;
+  imu.az = std::cos(roll_true);
+
+  for (int i = 0; i < 5000; ++i) {
+    est.Update(imu, 0.0f, a_lat_g, kDt);
+  }
+
+  EXPECT_NEAR(RadToDeg(est.GetRollRad()), 15.0f, 1.5f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -120,7 +166,7 @@ TEST(TiltEstimatorTest, AccelSpike_GateRejectsCorrection) {
 
   // Дать coasted pitch устояться на 0 через несколько тиков без выброса.
   for (int i = 0; i < 10; ++i) {
-    est.Update(imu, 0.0f, kDt);
+    est.Update(imu, 0.0f, 0.0f, kDt);
   }
   ASSERT_NEAR(RadToDeg(est.GetPitchRad()), 0.0f, 0.1f);
 
@@ -128,7 +174,7 @@ TEST(TiltEstimatorTest, AccelSpike_GateRejectsCorrection) {
   imu.ax = 4.0f;
   imu.az = 1.0f;
   for (int i = 0; i < 50; ++i) {  // 100 мс удара
-    est.Update(imu, 0.0f, kDt);
+    est.Update(imu, 0.0f, 0.0f, kDt);
   }
 
   EXPECT_NEAR(RadToDeg(est.GetPitchRad()), 0.0f, 1.0f);
@@ -143,7 +189,7 @@ TEST(TiltEstimatorTest, Reset_RestoresZero) {
   ImuData imu{};
   imu.gy = 50.0f;  // dps
   for (int i = 0; i < 100; ++i) {
-    est.Update(imu, 0.0f, kDt);
+    est.Update(imu, 0.0f, 0.0f, kDt);
   }
   ASSERT_NE(est.GetPitchRad(), 0.0f);
 

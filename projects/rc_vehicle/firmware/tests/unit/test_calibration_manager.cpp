@@ -95,6 +95,22 @@ TEST_F(CalibrationManagerTest, ProcessCompletion_Done_SetsFrameChanged) {
       << "повторный вызов должен вернуть false — флаг одноразовый";
 }
 
+// Код-ревью PR #290 (6-й раунд): SetForwardDirection() — ещё один путь
+// смены базиса RotateToVehicleFrame() (ручная WS-команда), помимо
+// ProcessCompletion(). Раньше он не обновлял ни Madgwick vehicle frame,
+// ни frame_changed_.
+TEST_F(CalibrationManagerTest, SetForwardDirection_SetsFrameChanged) {
+  ImuCalibData d{};
+  d.valid = true;
+  imu_calib_.SetData(d);
+
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
+  mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  EXPECT_TRUE(mgr_->ConsumeFrameChanged());
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "повторный вызов должен вернуть false — флаг одноразовый";
+}
+
 TEST_F(CalibrationManagerTest,
        ProcessCompletion_Failed_DoesNotSetFrameChanged) {
   imu_calib_.StartCalibration(CalibMode::Full, 10);
