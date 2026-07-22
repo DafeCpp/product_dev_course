@@ -305,6 +305,54 @@ TEST_F(ProcessorTest, WithoutImu_TelemLogEmpty) {
   EXPECT_EQ(count, 0u);
 }
 
+TEST_F(ProcessorTest, MadgwickDisabled_NoStaleGravityCompensation) {
+  // LOS-232 (Codex P2): при выключенном в рантайме Madgwick кватернион залипает
+  // на последнем (наклонном) значении. Grav-компенсация EKF не должна вычитать
+  // эту устаревшую проекцию — иначе на ровной едущей машине появляется
+  // фантомное ускорение и vx расходится. Проверяем, что чтение углов загейчено
+  // на madgwick_enabled: наклонённый «протухший» AHRS не приводит к разгону.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  // Накреняем Madgwick напрямую (нос вверх ~30°): ax=-sin, az=cos.
+  constexpr float kPitch = 30.0f * 3.14159265358979f / 180.0f;
+  for (int i = 0; i < 6000; ++i) {
+    madgwick_.Update(-std::sin(kPitch), 0.0f, std::cos(kPitch), 0.0f, 0.0f,
+                     0.0f, 0.002f);
+  }
+  float p = 0.0f, r = 0.0f, y = 0.0f;
+  madgwick_.GetEulerRad(p, r, y);
+  ASSERT_GT(std::abs(p), 20.0f * 3.14159265358979f / 180.0f)
+      << "Пресет наклона не сошёлся — тест не проверяет то, что должен";
+
+  // Выключаем Madgwick: и в конфиге (гейт grav-comp), и в хендлере (чтобы он не
+  // перезаписал «протухшую» ориентацию ровными семплами на последующих шагах).
+  // Мотор-модельный якорь отключаем, чтобы vx определялся ТОЛЬКО интеграцией
+  // IMU — иначе якорь маскирует фантом и тест становится вакуумным.
+  imu_handler.SetMadgwickEnabled(false);
+  SetDirectLaw();  // без slew: throttle сразу 0.5 → ZUPT выключен
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.madgwick_enabled = false;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // Ровная едущая машина: throttle 0.5 (ZUPT выключен), ускорение чисто
+  // гравитационное по Z (ax=ay=0).
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_.SetImuData(imu);
+
+  RunSteps(2000);  // 4 c
+
+  // С багом устаревший pitch=30° даёт фантом g·sin30≈4.9 м/с²: без якоря vx
+  // интегрируется до клемпа kMaxSpeedMs и поднимает diverged. С фиксом углы
+  // читаются как 0 → фантома нет → vx остаётся ≈0.
+  EXPECT_FALSE(ekf_.IsDiverged());
+  EXPECT_LT(ekf_.GetVx(), 1.0f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CalibrationManager
 // ═══════════════════════════════════════════════════════════════════════════

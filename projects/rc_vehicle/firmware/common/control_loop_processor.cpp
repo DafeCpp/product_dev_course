@@ -98,8 +98,14 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
     // Ориентация из Madgwick (обновлён в этом же цикле в UpdateComponents) —
     // для снятия проекции гравитации из ускорения перед интеграцией в EKF.
-    float pitch_rad = 0.0f, roll_rad = 0.0f, yaw_rad = 0.0f;
-    ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
+    // При выключенном AHRS кватернион не обновляется (углы залипают на
+    // последнем значении) — читаем 0, что эквивалентно отсутствию
+    // grav-компенсации (безопасный дефолт, старое поведение EKF).
+    float pitch_rad = 0.0f, roll_rad = 0.0f;
+    if (stab_cfg_.filter.madgwick_enabled) {
+      float yaw_rad = 0.0f;
+      ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
+    }
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
     ctx_.ekf.UpdateFromImu(sensors_.imu_data.ax, sensors_.imu_data.ay,
