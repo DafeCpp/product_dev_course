@@ -129,7 +129,5 @@ int Lsm6ds3Spi::Read(ImuData &data) {
   data.ax = static_cast<float>(raw_ax) / LSM6DS3_ACCEL_SCALE;
   data.ay = static_cast<float>(raw_ay) / LSM6DS3_ACCEL_SCALE;
   data.az = static_cast<float>(raw_az) / LSM6DS3_ACCEL_SCALE;
-  NormalizeMountedImuToVehicleFrame(data);
-
   return 0;
 }

@@ -105,8 +105,6 @@ int Mpu6050Spi::Read(ImuData &data) {
   data.gx = static_cast<float>(raw_gx) / MPU6050_GYRO_SCALE;
   data.gy = static_cast<float>(raw_gy) / MPU6050_GYRO_SCALE;
   data.gz = static_cast<float>(raw_gz) / MPU6050_GYRO_SCALE;
-  NormalizeMountedImuToVehicleFrame(data);
-
   return 0;
 }
 
