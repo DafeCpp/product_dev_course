@@ -662,6 +662,27 @@ TEST_F(KidsModeSpeedLimitTest, DivergedEkf_NoReductionEvenAboveLimit) {
   EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
 
+TEST_F(KidsModeSpeedLimitTest,
+       DivergedByGuardClamp_NoReductionEvenWithLowVariance) {
+  // Код-ревью PR #292: мотор-модельный якорь (LOS-233) в реальном control
+  // loop подаёт в EKF UpdateSpeed() каждый тик со слабым, но частым шумом
+  // (speed_meas_noise=4.0 по умолчанию) — это стягивает P_[0] обратно к
+  // шуму измерения, даже если сама оценка x_[0] уже клемпится
+  // GuardState()-физическим максимумом как заведомо испорченная
+  // (IsDiverged()==true). Проверка "только дисперсия" такое пропускает —
+  // воспроизводим серией confident-но-неверных pseudo-измерений.
+  for (int i = 0; i < 5; ++i) {
+    ekf_.UpdateSpeed(50.0f, 4.0f);  // нефизичная цель, стандартный шум
+  }
+  ASSERT_TRUE(ekf_.IsDiverged());
+  ASSERT_LE(ekf_.GetVxVariance(), 4.0f);  // дисперсия сама по себе "здорова"
+
+  float throttle = 0.4f, steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_NEAR(throttle, 0.4f, 0.01f);
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+}
+
 TEST_F(KidsModeSpeedLimitTest, ReverseThrottle_NotAffected) {
   ekf_.SetState(1.5f, 0.0f, 0.0f);  // над лимитом
   float throttle = -0.3f, steering = 0.0f;
