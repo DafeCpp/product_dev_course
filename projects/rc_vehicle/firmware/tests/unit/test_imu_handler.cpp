@@ -231,5 +231,74 @@ TEST(ImuHandlerTest, CalibrationOnExactStaleTimeoutTickDoesNotPreserveYaw) {
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(ImuHandlerTest, DisablingMadgwickResetsYawTrustForNextCalibration) {
+  // Ревью PR #283 (r3630915899): SetMadgwickEnabled(false)
+  // (StabilizationManager::ApplyToFilters переключает это на ходу через
+  // cfg.filter.madgwick_enabled) замораживает filter_.Update()/
+  // UpdateWithMag() целиком — ни один из них не вызывается, пока Мэджвик
+  // выключен, а машина всё это время могла продолжать двигаться. Флаги
+  // доверия при этом не трогались. Если калибровка случается сразу после
+  // повторного включения — раньше, чем фильтр успеет реально сойтись
+  // заново, — она могла бы закрепить курс, посчитанный по уже неактуальному,
+  // замороженному кватерниону.
+  FakePlatform platform;
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  ImuHandler imu(platform, calib, filter, /*read_interval_ms=*/2);
+  imu.SetEnabled(true);
+  platform.SetImuData(LevelImu());
+  platform.SetMagData(SomeMag());
+
+  ImuCalibData valid_calib{};
+  valid_calib.valid = true;
+  valid_calib.gravity_vec[0] = 0.f;
+  valid_calib.gravity_vec[1] = 0.f;
+  valid_calib.gravity_vec[2] = -1.f;
+  valid_calib.accel_forward_vec[0] = 1.f;
+  valid_calib.accel_forward_vec[1] = 0.f;
+  valid_calib.accel_forward_vec[2] = 0.f;
+  calib.SetData(valid_calib);
+
+  uint32_t now_ms = 0;
+  now_ms += 2;
+  imu.Update(now_ms, 2);  // первая калибровка — устанавливает vehicle frame
+
+  for (int i = 0; i < 7000; ++i) {  // 7000 * 2 мс = 14 с сходимости
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+  float pitch, roll, yaw_converged;
+  filter.GetEulerDeg(pitch, roll, yaw_converged);
+  ASSERT_GT(std::abs(yaw_converged), 5.0f)
+      << "Тест бессмысленен, если курс не сошёлся к ненулевому значению";
+
+  // Выключаем Мэджвик — как при live-переключении cfg.filter.madgwick_enabled.
+  imu.SetMadgwickEnabled(false);
+  for (int i = 0; i < 500; ++i) {
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+  imu.SetMadgwickEnabled(true);
+
+  // Повторная калибровка сразу после включения — фильтр реально сойтись
+  // ещё не успел. Вызываем filter.SetVehicleFrame() НАПРЯМУЮ (минуя
+  // ImuHandler::UpdateVehicleFrame() с промежуточным invalid-вызовом через
+  // calib.SetData(ImuCalibData{})): тот промежуточный вызов сам по себе
+  // снимает use_vehicle_frame_ и маскирует проверку — здесь важно
+  // изолированно проверить именно сброс yaw_has_absolute_ref_ при
+  // выключении/включении Мэджвика, а не гейт «была ли предыдущая vehicle
+  // frame» (см. review r3630012102, уже проверен отдельным тестом).
+  filter.SetVehicleFrame(valid_calib.gravity_vec, valid_calib.accel_forward_vec,
+                         true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "После выключения/включения Мэджвика опора должна быть сброшена — "
+         "калибровка обнуляет курс, а не сохраняет неактуальный";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
 }  // namespace
 }  // namespace rc_vehicle

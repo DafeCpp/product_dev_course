@@ -199,6 +199,14 @@ float ImuHandler::ComputePcaHeadingDeg(const MagData& mag_cal) const {
 void ImuHandler::FeedMadgwick(float raw_ax, float raw_ay, float raw_az,
                               float dt_sec) {
   if (!madgwick_enabled_) {
+    // Кватернион заморожен (ни Update(), ни UpdateWithMag() не вызываются),
+    // но машина могла продолжать двигаться, пока Мэджвик выключен
+    // (StabilizationManager::ApplyToFilters переключает это на ходу через
+    // cfg.filter.madgwick_enabled). Опору для будущей калибровки нужно
+    // заработать заново после повторного включения — иначе
+    // IMU/Forward-калибровка могла бы сохранить курс, посчитанный по уже
+    // неактуальному кватерниону (review r3630915899, LOS-229).
+    filter_.InvalidateYawTrust();
     return;
   }
 
