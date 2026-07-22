@@ -1537,6 +1537,55 @@ TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
       << "Roll should remain ~0 during pure pitch tilt";
 }
 
+TEST(MadgwickTest, SetVehicleFrame_AcceptsPostApplyForwardWithRawGravity) {
+  // LOS-225: ImuCalibData intentionally stores gravity_vec and
+  // accel_forward_vec in different frames after Apply() removes static X/Y
+  // gravity components. For an 8° pitched mount, the post-Apply forward axis is
+  // {1,0,0}; SetVehicleFrame must project it against the raw gravity_vec and
+  // recover the same vehicle frame as the true raw forward axis.
+  constexpr float kMountPitchRad = 8.0f * static_cast<float>(M_PI) / 180.0f;
+  const float gravity[3] = {-std::sin(kMountPitchRad), 0.0f,
+                            std::cos(kMountPitchRad)};
+  const float raw_forward[3] = {std::cos(kMountPitchRad), 0.0f,
+                                std::sin(kMountPitchRad)};
+  const float post_apply_forward[3] = {1.0f, 0.0f, 0.0f};
+
+  MadgwickFilter raw_filter;
+  raw_filter.SetVehicleFrame(gravity, raw_forward, true);
+  MadgwickFilter post_apply_filter;
+  post_apply_filter.SetVehicleFrame(gravity, post_apply_forward, true);
+
+  float raw_qw, raw_qx, raw_qy, raw_qz;
+  float post_qw, post_qx, post_qy, post_qz;
+  raw_filter.GetQuaternion(raw_qw, raw_qx, raw_qy, raw_qz);
+  post_apply_filter.GetQuaternion(post_qw, post_qx, post_qy, post_qz);
+
+  // Quaternions may differ by sign and still represent the same rotation.
+  if (raw_qw * post_qw + raw_qx * post_qx + raw_qy * post_qy +
+          raw_qz * post_qz <
+      0.0f) {
+    post_qw = -post_qw;
+    post_qx = -post_qx;
+    post_qy = -post_qy;
+    post_qz = -post_qz;
+  }
+
+  EXPECT_NEAR(raw_qw, post_qw, 1e-5f);
+  EXPECT_NEAR(raw_qx, post_qx, 1e-5f);
+  EXPECT_NEAR(raw_qy, post_qy, 1e-5f);
+  EXPECT_NEAR(raw_qz, post_qz, 1e-5f);
+
+  for (int i = 0; i < 500; ++i) {
+    post_apply_filter.Update(gravity[0], gravity[1], gravity[2], 0.0f, 0.0f,
+                             0.0f, 0.002f);
+  }
+
+  float pitch, roll, yaw;
+  post_apply_filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(pitch, 0.0f, 1.0f);
+  EXPECT_NEAR(roll, 0.0f, 1.0f);
+}
+
 TEST(MadgwickTest, SetVehicleFrame_NullGravity) {
   MadgwickFilter filter;
   float forward[3] = {1.0f, 0.0f, 0.0f};

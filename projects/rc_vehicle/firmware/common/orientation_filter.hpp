@@ -49,19 +49,27 @@ class IOrientationFilter {
    * реализации без MARG не обязаны переопределять этот метод.
    */
   virtual void UpdateWithMag(float ax, float ay, float az, float gx, float gy,
-                              float gz, float mx, float my, float mz,
-                              float dt_sec) {
+                             float gz, float mx, float my, float mz,
+                             float dt_sec) {
     Update(ax, ay, az, gx, gy, gz, dt_sec);
-    (void)mx; (void)my; (void)mz;
+    (void)mx;
+    (void)my;
+    (void)mz;
   }
 
   /**
    * Задать опорную СК, связанную с машиной (g и направление движения).
-   * Векторы в СК датчика в момент калибровки (gravity_vec, accel_forward_vec из
-   * ImuCalibData). После вызова GetQuaternion/GetEuler возвращают ориентацию
-   * датчика относительно этой СК. Если valid=false или векторы не заданы —
+   * После вызова GetQuaternion/GetEuler возвращают ориентацию датчика
+   * относительно этой СК. Если valid=false или векторы не заданы —
    * используется NED.
-   * @param gravity_vec — вектор гравитации в СК датчика [3]
+   *
+   * ImuCalibData разделяет две опоры: gravity_vec — сырой вектор покоя в СК
+   * датчика для Madgwick, а accel_forward_vec выучен по линейному ускорению
+   * после ImuCalibration::Apply() и хранит физическое направление «вперёд».
+   * Реализация должна ортогонализовать forward_vec относительно gravity_vec,
+   * чтобы не зависеть от остаточной вертикальной компоненты.
+   *
+   * @param gravity_vec — сырой вектор показания акселерометра в покое [3]
    * @param forward_vec — вектор направления движения в СК датчика [3]
    * @param valid — флаг валидности калибровки
    */
