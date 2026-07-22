@@ -49,6 +49,10 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   if (ctx_.calib_mgr) {
     ctx_.calib_mgr->ProcessRequest(now);
     ctx_.calib_mgr->ProcessCompletion(now);
+    // Отложенный SetForwardDirection() (WS-команда, код-ревью PR #290,
+    // 7-й раунд) — применяется здесь же, на потоке control loop, где
+    // единственно безопасно трогать imu_calib_/madgwick_.
+    ctx_.calib_mgr->ProcessForwardDirectionRequest();
     // Завершение Full/Forward калибровки меняет базис RotateToVehicleFrame()
     // (код-ревью PR #290, 5-й раунд): tilt_est_ уже мог сойтись под ПРЕЖНИМ
     // базисом — без сброса эти тангаж/крен интерпретировались бы в НОВОЙ СК

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
@@ -92,6 +93,14 @@ class CalibrationManager {
 
   /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
+   *
+   * Вызывается из WS-обработчика (задача HTTP-сервера) — НЕ из потока
+   * control loop. Сама не трогает ImuCalibration/MadgwickFilter (ни один
+   * из них не потокобезопасен, оба непрерывно читаются/пишутся из control
+   * loop на 500 Гц) — только откладывает запрос под мьютексом, аналогично
+   * StartCalibration()/calib_request_. Реальная работа — в
+   * ProcessForwardDirectionRequest() (код-ревью PR #290, 7-й раунд).
+   *
    * @param fx X компонента вектора
    * @param fy Y компонента вектора
    * @param fz Z компонента вектора
@@ -121,6 +130,15 @@ class CalibrationManager {
    * @param now_ms Текущее время для метки события
    */
   void ProcessCompletion(uint32_t now_ms);
+
+  /**
+   * @brief Применить отложенный SetForwardDirection() (вызывается из
+   * control loop, рядом с ProcessRequest()/ProcessCompletion()).
+   *
+   * Только здесь (на потоке control loop) трогаем ImuCalibration и
+   * MadgwickFilter — см. SetForwardDirection().
+   */
+  void ProcessForwardDirectionRequest();
 
   /**
    * @brief Привязать лог событий (необязательно).
@@ -170,10 +188,23 @@ class CalibrationManager {
   // Запрос калибровки (атомарный для потокобезопасности)
   std::atomic<int> calib_request_{0};
 
+  // Отложенный SetForwardDirection() — под мьютексом, а не atomic<float>×3:
+  // редкая, некритичная по времени команда, а согласованность fx/fy/fz как
+  // группы важнее (три независимых atomic допускали бы разрыв при двух
+  // подряд идущих вызовах). См. SetForwardDirection()/
+  // ProcessForwardDirectionRequest() (код-ревью PR #290, 7-й раунд).
+  std::mutex forward_dir_mutex_;
+  bool forward_dir_pending_{false};
+  float forward_dir_fx_{0.f};
+  float forward_dir_fy_{0.f};
+  float forward_dir_fz_{0.f};
+
   // Предыдущий статус калибровки (для логирования только при переходах)
   CalibStatus prev_calib_status_{CalibStatus::Idle};
 
-  // См. ConsumeFrameChanged()
+  // См. ConsumeFrameChanged(). Пишется только из ProcessCompletion()/
+  // ProcessForwardDirectionRequest() — обе вызываются исключительно с
+  // потока control loop, обычный bool безопасен.
   bool frame_changed_{false};
 
   // Опциональный лог событий (не владеет объектом)

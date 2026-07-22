@@ -122,6 +122,29 @@ void CalibrationManager::StopAutoForward() {
 }
 
 void CalibrationManager::SetForwardDirection(float fx, float fy, float fz) {
+  // Вызывается с потока WS/HTTP-сервера — НЕ трогаем imu_calib_/madgwick_
+  // отсюда напрямую (ни один не потокобезопасен, оба непрерывно
+  // используются control loop на 500 Гц); только откладываем запрос под
+  // мьютексом, как StartCalibration()/calib_request_ (код-ревью PR #290,
+  // 7-й раунд). Применяется в ProcessForwardDirectionRequest().
+  std::lock_guard<std::mutex> lock(forward_dir_mutex_);
+  forward_dir_fx_ = fx;
+  forward_dir_fy_ = fy;
+  forward_dir_fz_ = fz;
+  forward_dir_pending_ = true;
+}
+
+void CalibrationManager::ProcessForwardDirectionRequest() {
+  float fx, fy, fz;
+  {
+    std::lock_guard<std::mutex> lock(forward_dir_mutex_);
+    if (!forward_dir_pending_) return;
+    forward_dir_pending_ = false;
+    fx = forward_dir_fx_;
+    fy = forward_dir_fy_;
+    fz = forward_dir_fz_;
+  }
+
   imu_calib_.SetForwardDirection(fx, fy, fz);
 
   // Как и на завершении Full/Forward в ProcessCompletion() (код-ревью

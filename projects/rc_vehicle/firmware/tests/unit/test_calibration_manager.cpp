@@ -99,6 +99,11 @@ TEST_F(CalibrationManagerTest, ProcessCompletion_Done_SetsFrameChanged) {
 // смены базиса RotateToVehicleFrame() (ручная WS-команда), помимо
 // ProcessCompletion(). Раньше он не обновлял ни Madgwick vehicle frame,
 // ни frame_changed_.
+//
+// 7-й раунд: SetForwardDirection() вызывается с потока WS-сервера и теперь
+// только откладывает запрос (imu_calib_/madgwick_ не потокобезопасны) —
+// эффект применяется ProcessForwardDirectionRequest() на потоке control
+// loop, как и здесь в тесте.
 TEST_F(CalibrationManagerTest, SetForwardDirection_SetsFrameChanged) {
   ImuCalibData d{};
   d.valid = true;
@@ -106,9 +111,19 @@ TEST_F(CalibrationManagerTest, SetForwardDirection_SetsFrameChanged) {
 
   EXPECT_FALSE(mgr_->ConsumeFrameChanged());
   mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "SetForwardDirection() откладывает запрос — эффекта быть не должно "
+         "до ProcessForwardDirectionRequest()";
+  mgr_->ProcessForwardDirectionRequest();
   EXPECT_TRUE(mgr_->ConsumeFrameChanged());
   EXPECT_FALSE(mgr_->ConsumeFrameChanged())
       << "повторный вызов должен вернуть false — флаг одноразовый";
+}
+
+TEST_F(CalibrationManagerTest,
+       ProcessForwardDirectionRequest_NoPendingRequest_DoesNothing) {
+  mgr_->ProcessForwardDirectionRequest();
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
 }
 
 TEST_F(CalibrationManagerTest,
