@@ -112,7 +112,13 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     if (stab_cfg_.filter.tilt_comp_enabled) {
       tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
                            stab_cfg_.filter.tilt_accel_gate_band_g});
-      tilt_est_.Update(sensors_.imu_data, a_lin_prev_g_, dt_sec);
+      // Ротация в СК машины (LOS-240, код-ревью PR #290): при наклонном
+      // монтаже IMU bias-corrected ax/ay/gx/gy остаются в осях датчика.
+      // Madgwick корректирует это на выходе через SetVehicleFrame(); тут —
+      // на входе, поскольку TiltEstimator сам не работает с кватернионами.
+      ImuData veh_imu = sensors_.imu_data;
+      ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
+      tilt_est_.Update(veh_imu, a_lin_prev_g_, dt_sec);
       pitch_rad = tilt_est_.GetPitchRad();
       roll_rad = tilt_est_.GetRollRad();
     } else if (stab_cfg_.filter.madgwick_enabled) {

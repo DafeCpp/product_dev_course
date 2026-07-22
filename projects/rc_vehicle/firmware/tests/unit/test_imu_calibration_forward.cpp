@@ -317,6 +317,84 @@ TEST_F(ImuCalibrationForwardTest, CancelCalibration_DoesNotClobberDone) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// RotateToVehicleFrame (код-ревью PR #290, LOS-240)
+//
+// TiltEstimator, в отличие от Madgwick (SetVehicleFrame корректирует вывод),
+// сам не знает про наклонный монтаж. При наклоне IMU относительно корпуса
+// bias-corrected ax/ay/gx/gy остаются смесью осей ДАТЧИКА, а не корпуса — их
+// нужно повернуть в СК машины ПЕРЕД TiltEstimator::Update(), иначе тангаж на
+// наклонном монтаже получается систематически неверным (P1 code review).
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_IdentityWhenUncalibrated) {
+  // Дефолт: gravity_vec=(0,0,1), accel_forward_vec=(1,0,0) — тождественная СК.
+  ImuData d{0.2f, 0.1f, 0.9f, 5.f, -3.f, 1.f};
+  calib.RotateToVehicleFrame(d);
+  EXPECT_NEAR(d.ax, 0.2f, 1e-5f);
+  EXPECT_NEAR(d.ay, 0.1f, 1e-5f);
+  EXPECT_NEAR(d.az, 0.9f, 1e-5f);
+  EXPECT_NEAR(d.gx, 5.f, 1e-5f);
+  EXPECT_NEAR(d.gy, -3.f, 1e-5f);
+  EXPECT_NEAR(d.gz, 1.f, 1e-5f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_TiltedMount_RestAccelIsUp) {
+  // Монтаж наклонён на 20° вокруг оси Y датчика (как в TiltedRest/
+  // TiltedForwardAccel выше). В покое на ровной машине СК-машины ожидание:
+  // ax=0, ay=0, az=1 — независимо от угла монтажа.
+  constexpr float kPitch = 20.0f * 3.14159265f / 180.0f;
+  Load(std::cos(kPitch), 0.f, -std::sin(kPitch),  // accel_forward_vec (X_veh)
+       std::sin(kPitch), 0.f, std::cos(kPitch));  // gravity_vec (Z_veh)
+
+  ImuData d = TiltedRest(kPitch);  // сырое показание датчика в покое
+  calib.RotateToVehicleFrame(d);
+  EXPECT_NEAR(d.ax, 0.0f, 1e-4f);
+  EXPECT_NEAR(d.ay, 0.0f, 1e-4f);
+  EXPECT_NEAR(d.az, 1.0f, 1e-4f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_TiltedMount_ForwardAccelMatchesVehicleFrame) {
+  // Прямолинейный разгон 0.2g на ровном месте, наклонный монтаж 20°: после
+  // ротации продольное ускорение читается по оси X СК машины, боковое/
+  // вертикальное — без примеси. Это то, что раньше проецировал вручную
+  // GetForwardAccel(); теперь TiltEstimator получает то же самое как полный
+  // 3-осевой accel/gyro вектор.
+  constexpr float kPitch = 20.0f * 3.14159265f / 180.0f;
+  Load(std::cos(kPitch), 0.f, -std::sin(kPitch), std::sin(kPitch), 0.f,
+       std::cos(kPitch));
+
+  ImuData d = TiltedForwardAccel(kPitch, 0.2f);
+  calib.RotateToVehicleFrame(d);
+  EXPECT_NEAR(d.ax, 0.2f, 1e-4f);
+  EXPECT_NEAR(d.ay, 0.0f, 1e-4f);
+  EXPECT_NEAR(d.az, 1.0f, 1e-4f);
+}
+
+TEST_F(ImuCalibrationForwardTest, RotateToVehicleFrame_RotatesGyroToo) {
+  // Чистое вращение по тангажу корпуса (вокруг Y машины) на наклонном
+  // монтаже должно после ротации читаться целиком по gy СК машины, без
+  // утечки в gx — иначе гиро-интеграция TiltEstimator накопит перекрёстную
+  // ошибку между pitch и roll.
+  constexpr float kPitch = 20.0f * 3.14159265f / 180.0f;
+  Load(std::cos(kPitch), 0.f, -std::sin(kPitch), std::sin(kPitch), 0.f,
+       std::cos(kPitch));
+
+  // Угловая скорость корпуса (0, 50, 0) dps в СК машины повёрнута в СК
+  // датчика тем же поворотом на kPitch вокруг Y — Y инвариантна.
+  ImuData d{};
+  d.gx = 0.f;
+  d.gy = 50.f;
+  d.gz = 0.f;
+  calib.RotateToVehicleFrame(d);
+  EXPECT_NEAR(d.gx, 0.0f, 1e-3f);
+  EXPECT_NEAR(d.gy, 50.0f, 1e-3f);
+  EXPECT_NEAR(d.gz, 0.0f, 1e-3f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Forward-калибровка целиком
 // ═══════════════════════════════════════════════════════════════════════════
 

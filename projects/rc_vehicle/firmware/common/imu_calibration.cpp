@@ -268,6 +268,27 @@ float ImuCalibration::GetForwardAccel(const ImuData& data) const {
          lz * data_.accel_forward_vec[2];
 }
 
+void ImuCalibration::RotateToVehicleFrame(ImuData& data) const {
+  // Z_veh (вверх), X_veh (вперёд) уже нормализованы и ортогональны —
+  // инвариант data_ поддерживается SetData()/Finalize()/SetForwardDirection().
+  const float* z = data_.gravity_vec;
+  const float* x = data_.accel_forward_vec;
+  // Y_veh (вправо) = Z_veh × X_veh — как в MadgwickFilter::SetVehicleFrame().
+  const float yx = z[1] * x[2] - z[2] * x[1];
+  const float yy = z[2] * x[0] - z[0] * x[2];
+  const float yz = z[0] * x[1] - z[1] * x[0];
+
+  const float sax = data.ax, say = data.ay, saz = data.az;
+  data.ax = x[0] * sax + x[1] * say + x[2] * saz;
+  data.ay = yx * sax + yy * say + yz * saz;
+  data.az = z[0] * sax + z[1] * say + z[2] * saz;
+
+  const float sgx = data.gx, sgy = data.gy, sgz = data.gz;
+  data.gx = x[0] * sgx + x[1] * sgy + x[2] * sgz;
+  data.gy = yx * sgx + yy * sgy + yz * sgz;
+  data.gz = z[0] * sgx + z[1] * sgy + z[2] * sgz;
+}
+
 void ImuCalibration::SetForwardDirection(float fx, float fy, float fz) {
   double n2 = static_cast<double>(fx) * fx + static_cast<double>(fy) * fy +
               static_cast<double>(fz) * fz;
