@@ -944,6 +944,48 @@ TEST(MadgwickTest,
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(MadgwickTest, SetVehicleFrame_ForcedZeroYawResetsTrustForNextCalibration) {
+  // Ревью PR #283 (r3630541297): когда SetVehicleFrame() принудительно
+  // обнуляет курс (preserve_yaw == false — например, самая первая
+  // калибровка, хотя MARG уже сошёлся до неё), новый кватернион — НЕ
+  // органически сошедшееся значение, а искусственно заданная точка старта.
+  // Если флаги доверия (yaw_has_absolute_ref_/marg_correction_progress_) не
+  // сбросить, они остаются от ДО-калибровочного состояния — и если СЛЕДУЮЩАЯ
+  // калибровка (например, Forward сразу после Full — оба вызывают
+  // SetVehicleFrame() через CalibrationManager::ProcessCompletion) случится
+  // раньше, чем фильтр успеет реально сойтись под новой отправной точкой,
+  // она ошибочно «сохранит» недосошедшийся курс.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  // Сходимся по магнитометру ДО какой-либо калибровки.
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  for (int i = 0; i < 7500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward_full[3] = {1.0f, 0.0f, 0.0f};
+  // Full-калибровка: первая в жизни фильтра — принудительно обнуляет курс.
+  filter.SetVehicleFrame(gravity, forward_full, true);
+
+  // Forward-калибровка сразу следом (без единого дополнительного тика
+  // UpdateWithMag — не было времени реально сойтись под новой точкой
+  // старта), уточняет ось «вперёд».
+  float forward_refined[3] = {0.0f, 1.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward_refined, true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "Без сброса флагов доверия после принудительного обнуления курс "
+         "ошибочно 'сохранился' бы при следующей калибровке, хотя реально "
+         "сойтись не успел";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
 TEST(MadgwickTest, InvalidateYawTrust_ResetsProgressNotQuaternion) {
   // Ревью PR #283 (r3630102909): смена калибровки магнитометра
   // (MagCalibration::Finish()) заставляет mag_calib_->Apply() выдавать
