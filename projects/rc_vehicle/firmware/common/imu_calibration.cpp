@@ -269,20 +269,52 @@ float ImuCalibration::GetForwardAccel(const ImuData& data) const {
 }
 
 void ImuCalibration::RotateToVehicleFrame(ImuData& data) const {
-  // Z_veh (вверх), X_veh (вперёд) уже нормализованы и ортогональны —
-  // инвариант data_ поддерживается SetData()/Finalize()/SetForwardDirection().
-  const float* z = data_.gravity_vec;
-  const float* x = data_.accel_forward_vec;
+  // gravity_vec обязан быть нормализован (инвариант SetData()/Finalize()),
+  // но accel_forward_vec может ещё не быть ортогонализован под НЕГО: сразу
+  // после Full-калибровки (до Forward) он остаётся дефолтным (1,0,0),
+  // forward_valid=false. Как и MadgwickFilter::SetVehicleFrame(),
+  // перепроецируем и нормализуем «вперёд» здесь же — не полагаемся на то,
+  // что вызывающий код уже это сделал (P2, код-ревью PR #290).
+  float z[3] = {data_.gravity_vec[0], data_.gravity_vec[1],
+                data_.gravity_vec[2]};
+  const double z2 = static_cast<double>(z[0]) * z[0] +
+                    static_cast<double>(z[1]) * z[1] +
+                    static_cast<double>(z[2]) * z[2];
+  constexpr double kMinNorm2 = 1e-12;
+  if (z2 < kMinNorm2) return;  // вырожденная гравитация — не трогаем данные
+  const double zn = 1.0 / std::sqrt(z2);
+  z[0] = static_cast<float>(z[0] * zn);
+  z[1] = static_cast<float>(z[1] * zn);
+  z[2] = static_cast<float>(z[2] * zn);
+
+  float x[3] = {data_.accel_forward_vec[0], data_.accel_forward_vec[1],
+                data_.accel_forward_vec[2]};
+  if (!OrthogonalizeForward(x, z)) return;  // вырожденный базис — не трогаем
+
   // Y_veh (вправо) = Z_veh × X_veh — как в MadgwickFilter::SetVehicleFrame().
   const float yx = z[1] * x[2] - z[2] * x[1];
   const float yy = z[2] * x[0] - z[0] * x[2];
   const float yz = z[0] * x[1] - z[1] * x[0];
 
-  const float sax = data.ax, say = data.ay, saz = data.az;
-  data.ax = x[0] * sax + x[1] * say + x[2] * saz;
-  data.ay = yx * sax + yy * say + yz * saz;
-  data.az = z[0] * sax + z[1] * say + z[2] * saz;
+  // Apply() лишь сдвигает начало отсчёта (bias), не поворачивает оси: accel
+  // bias подобран в Finalize() так, что СТАТИЧЕСКАЯ (гравитационная) часть
+  // bias-corrected accel в покое всегда РОВНО RestDownVec() — (0,0,±1) — вне
+  // зависимости от реального наклона монтажа (см. GetForwardAccel() выше).
+  // Поэтому крутить нужно не сырой accel, а его ДИНАМИЧЕСКУЮ часть
+  // (accel − down); саму гравитацию после поворота возвращаем как «вверх»
+  // СК машины (0,0,down[2]) (P1, код-ревью PR #290 — до фикса гравитация
+  // проецировалась дважды: и через down, и через сырой наклонённый базис).
+  float down[3];
+  RestDownVec(down);
+  const float lx = data.ax - down[0];
+  const float ly = data.ay - down[1];
+  const float lz = data.az - down[2];
+  data.ax = x[0] * lx + x[1] * ly + x[2] * lz;
+  data.ay = yx * lx + yy * ly + yz * lz;
+  data.az = z[0] * lx + z[1] * ly + z[2] * lz + down[2];
 
+  // Гироскоп: bias — чистый аддитивный офсет дрейфа, гравитацией не
+  // порождён и «уплощения» не имеет — крутим напрямую, без down-поправки.
   const float sgx = data.gx, sgy = data.gy, sgz = data.gz;
   data.gx = x[0] * sgx + x[1] * sgy + x[2] * sgz;
   data.gy = yx * sgx + yy * sgy + yz * sgz;

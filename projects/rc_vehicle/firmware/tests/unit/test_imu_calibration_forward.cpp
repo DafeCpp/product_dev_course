@@ -339,20 +339,37 @@ TEST_F(ImuCalibrationForwardTest,
   EXPECT_NEAR(d.gz, 1.f, 1e-5f);
 }
 
+// ВАЖНО: RotateToVehicleFrame() рассчитана на данные ПОСЛЕ Apply() (как их
+// получает control_loop_processor.cpp через sensors_.imu_data). Apply()
+// сдвигает начало отсчёта (bias), но не поворачивает оси, и accel_bias
+// подобран Finalize() так, что покой после Apply() — ВСЕГДА (0,0,±1),
+// независимо от наклона монтажа (см. GetForwardAccel() выше). Поэтому тесты
+// прогоняют реальную калибровку (Full+Forward) и Apply(), а не задают
+// gravity_vec/accel_forward_vec напрямую через Load() с нулевым bias — иначе
+// «наклонный монтаж» на входе RotateToVehicleFrame() был бы нереалистичен
+// (P1, код-ревью PR #290: до фикса гравитация проецировалась дважды — и
+// через down-поправку в Apply(), и повторно через сырой наклонённый базис).
+
 TEST_F(ImuCalibrationForwardTest,
        RotateToVehicleFrame_TiltedMount_RestAccelIsUp) {
-  // Монтаж наклонён на 20° вокруг оси Y датчика (как в TiltedRest/
-  // TiltedForwardAccel выше). В покое на ровной машине СК-машины ожидание:
-  // ax=0, ay=0, az=1 — независимо от угла монтажа.
   constexpr float kPitch = 20.0f * 3.14159265f / 180.0f;
-  Load(std::cos(kPitch), 0.f, -std::sin(kPitch),  // accel_forward_vec (X_veh)
-       std::sin(kPitch), 0.f, std::cos(kPitch));  // gravity_vec (Z_veh)
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(TiltedRest(kPitch));
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(TiltedForwardAccel(kPitch, 0.3f));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
 
-  ImuData d = TiltedRest(kPitch);  // сырое показание датчика в покое
-  calib.RotateToVehicleFrame(d);
-  EXPECT_NEAR(d.ax, 0.0f, 1e-4f);
-  EXPECT_NEAR(d.ay, 0.0f, 1e-4f);
-  EXPECT_NEAR(d.az, 1.0f, 1e-4f);
+  // В покое на ровной машине СК-машины ожидание: ax=0, ay=0, az=1 —
+  // независимо от угла монтажа.
+  ImuData rest = TiltedRest(kPitch);
+  calib.Apply(rest);
+  calib.RotateToVehicleFrame(rest);
+  EXPECT_NEAR(rest.ax, 0.0f, 1e-3f);
+  EXPECT_NEAR(rest.ay, 0.0f, 1e-3f);
+  EXPECT_NEAR(rest.az, 1.0f, 1e-3f);
 }
 
 TEST_F(ImuCalibrationForwardTest,
@@ -363,14 +380,58 @@ TEST_F(ImuCalibrationForwardTest,
   // GetForwardAccel(); теперь TiltEstimator получает то же самое как полный
   // 3-осевой accel/gyro вектор.
   constexpr float kPitch = 20.0f * 3.14159265f / 180.0f;
-  Load(std::cos(kPitch), 0.f, -std::sin(kPitch), std::sin(kPitch), 0.f,
-       std::cos(kPitch));
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(TiltedRest(kPitch));
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(TiltedForwardAccel(kPitch, 0.3f));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
 
-  ImuData d = TiltedForwardAccel(kPitch, 0.2f);
+  ImuData moving = TiltedForwardAccel(kPitch, 0.2f);
+  calib.Apply(moving);
+  calib.RotateToVehicleFrame(moving);
+  EXPECT_NEAR(moving.ax, 0.2f, 3e-3f);
+  EXPECT_NEAR(moving.ay, 0.0f, 1e-3f);
+  EXPECT_NEAR(moving.az, 1.0f, 3e-3f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_FullCalibOnly_OrthogonalizesDefaultForward) {
+  // После ТОЛЬКО Full-калибровки (до Forward) accel_forward_vec остаётся
+  // дефолтным (1,0,0), forward_valid=false — не ортогонален наклонённому
+  // gravity_vec. RotateToVehicleFrame обязана переортогонализовать базис
+  // сама (как MadgwickFilter::SetVehicleFrame()), а не давать перекошенный
+  // результат (P2, код-ревью PR #290).
+  constexpr float kPitch = 20.0f * 3.14159265f / 180.0f;
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(TiltedRest(kPitch));
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+  ASSERT_FALSE(calib.GetData().forward_valid);
+
+  ImuData rest = TiltedRest(kPitch);
+  calib.Apply(rest);
+  calib.RotateToVehicleFrame(rest);
+  EXPECT_NEAR(rest.ax, 0.0f, 1e-2f);
+  EXPECT_NEAR(rest.ay, 0.0f, 1e-2f);
+  EXPECT_NEAR(rest.az, 1.0f, 1e-2f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_DegenerateBasis_LeavesDataUnchanged) {
+  // «Вперёд» вдоль гравитации — построить базис нельзя. Не должно портить
+  // данные (ни NaN, ни произвольный поворот) — фолбэк на тождественное
+  // преобразование, как при отсутствии калибровки.
+  Load(0.f, 0.f, 1.f, 0.f, 0.f, 1.f);
+  ImuData d{0.1f, 0.2f, 0.3f, 1.f, 2.f, 3.f};
   calib.RotateToVehicleFrame(d);
-  EXPECT_NEAR(d.ax, 0.2f, 1e-4f);
-  EXPECT_NEAR(d.ay, 0.0f, 1e-4f);
-  EXPECT_NEAR(d.az, 1.0f, 1e-4f);
+  EXPECT_NEAR(d.ax, 0.1f, 1e-5f);
+  EXPECT_NEAR(d.ay, 0.2f, 1e-5f);
+  EXPECT_NEAR(d.az, 0.3f, 1e-5f);
+  EXPECT_NEAR(d.gx, 1.f, 1e-5f);
+  EXPECT_NEAR(d.gy, 2.f, 1e-5f);
+  EXPECT_NEAR(d.gz, 3.f, 1e-5f);
 }
 
 TEST_F(ImuCalibrationForwardTest, RotateToVehicleFrame_RotatesGyroToo) {
