@@ -656,7 +656,8 @@ TEST(VehicleEkfTest, UpdateFromImu_PitchedStationary_NoVelocityGrowth) {
 }
 
 TEST(VehicleEkfTest, UpdateFromImu_RolledStationary_NoLateralGrowth) {
-  // Машина неподвижна под креном 15°. Боковая проекция g не должна утекать в vy.
+  // Машина неподвижна под креном 15°. Боковая проекция g не должна утекать в
+  // vy.
   VehicleEkf ekf;
   const float roll = DegToRad(15.0f);
   const float ay_g = std::sin(roll);  // grav_y при pitch=0

@@ -242,10 +242,9 @@ void VehicleEkf::UpdateNonHolonomic(float r_nhc) noexcept {
 // Высокоуровневое обновление из IMU
 // ═════════════════════════════════════════════════════════════════════════
 
-void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g,
-                               float gz_dps, float dt_sec,
-                               float throttle_abs, float pitch_rad,
-                               float roll_rad) noexcept {
+void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g, float gz_dps,
+                               float dt_sec, float throttle_abs,
+                               float pitch_rad, float roll_rad) noexcept {
   constexpr float kG = 9.80665f;
   constexpr float kDegToRad = kPi / 180.0f;
 
