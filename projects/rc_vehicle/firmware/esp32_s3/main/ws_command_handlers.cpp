@@ -184,6 +184,8 @@ void HandleGetLogData(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
       cJSON_AddNumberToObject(f, "ekf_r_var", frame.ekf_r_var);
       cJSON_AddNumberToObject(f, "test_marker", frame.test_marker);
       cJSON_AddNumberToObject(f, "ekf_diverged", frame.ekf_diverged);
+      cJSON_AddNumberToObject(f, "drive_mode", frame.drive_mode);
+      cJSON_AddNumberToObject(f, "stab_enabled", frame.stab_enabled);
       cJSON_AddItemToArray(frames_arr, f);
     }
     cJSON_AddItemToObject(reply, "frames", frames_arr);

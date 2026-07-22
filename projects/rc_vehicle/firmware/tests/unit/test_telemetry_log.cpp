@@ -76,6 +76,27 @@ TEST(TelemetryLogTest, GetFrame_ReturnsOldestFirst) {
   EXPECT_EQ(out.ts_ms, 3u);  // newest
 }
 
+TEST(TelemetryLogTest, GetFrame_TailByteFieldsRoundTrip_DoNotAlias) {
+  TelemetryLog log;
+  ASSERT_TRUE(log.Init(5));
+
+  TelemetryLogFrame frame;
+  frame.test_marker = 200;
+  frame.zupt_status = 3;
+  frame.ekf_diverged = 1;
+  frame.drive_mode = static_cast<uint8_t>(4);  // DriveMode::DirectLaw
+  frame.stab_enabled = 1;
+  log.Push(frame);
+
+  TelemetryLogFrame out;
+  ASSERT_TRUE(log.GetFrame(0, out));
+  EXPECT_EQ(out.test_marker, 200);
+  EXPECT_EQ(out.zupt_status, 3);
+  EXPECT_EQ(out.ekf_diverged, 1);
+  EXPECT_EQ(out.drive_mode, 4);
+  EXPECT_EQ(out.stab_enabled, 1);
+}
+
 TEST(TelemetryLogTest, GetFrame_AfterWrap_OldestFirst) {
   TelemetryLog log;
   const size_t cap = 4;
