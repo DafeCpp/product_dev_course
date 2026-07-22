@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 #include "mpu6050_spi.hpp"
 #include "test_helpers.hpp"
@@ -1537,51 +1538,56 @@ TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
       << "Roll should remain ~0 during pure pitch tilt";
 }
 
-TEST(MadgwickTest, SetVehicleFrame_AcceptsPostApplyForwardWithRawGravity) {
-  // LOS-225: ImuCalibData intentionally stores gravity_vec and
-  // accel_forward_vec in different frames after Apply() removes static X/Y
-  // gravity components. For an 8° pitched mount, the post-Apply forward axis is
-  // {1,0,0}; SetVehicleFrame must project it against the raw gravity_vec and
-  // recover the same vehicle frame as the true raw forward axis.
+TEST(MadgwickTest, SetVehicleFrame_UsesCalibratedForwardOnTiltedMount) {
+  // LOS-225: gravity_vec is the raw rest accel vector, while
+  // accel_forward_vec is learned from post-Apply linear acceleration. The saved
+  // forward axis must still build a correct vehicle frame with the raw gravity
+  // reference when the IMU is mounted with an 8° pitch.
   constexpr float kMountPitchRad = 8.0f * static_cast<float>(M_PI) / 180.0f;
-  const float gravity[3] = {-std::sin(kMountPitchRad), 0.0f,
-                            std::cos(kMountPitchRad)};
-  const float raw_forward[3] = {std::cos(kMountPitchRad), 0.0f,
-                                std::sin(kMountPitchRad)};
-  const float post_apply_forward[3] = {1.0f, 0.0f, 0.0f};
 
-  MadgwickFilter raw_filter;
-  raw_filter.SetVehicleFrame(gravity, raw_forward, true);
-  MadgwickFilter post_apply_filter;
-  post_apply_filter.SetVehicleFrame(gravity, post_apply_forward, true);
+  auto tilted_rest = [=]() {
+    ImuData d{};
+    d.ax = std::sin(kMountPitchRad);
+    d.az = std::cos(kMountPitchRad);
+    return d;
+  };
+  auto tilted_forward_accel = [=](float accel_g) {
+    ImuData d{};
+    d.ax = std::cos(kMountPitchRad) * accel_g + std::sin(kMountPitchRad);
+    d.az = -std::sin(kMountPitchRad) * accel_g + std::cos(kMountPitchRad);
+    return d;
+  };
 
-  float raw_qw, raw_qx, raw_qy, raw_qz;
-  float post_qw, post_qx, post_qy, post_qz;
-  raw_filter.GetQuaternion(raw_qw, raw_qx, raw_qy, raw_qz);
-  post_apply_filter.GetQuaternion(post_qw, post_qx, post_qy, post_qz);
-
-  // Quaternions may differ by sign and still represent the same rotation.
-  if (raw_qw * post_qw + raw_qx * post_qx + raw_qy * post_qy +
-          raw_qz * post_qz <
-      0.0f) {
-    post_qw = -post_qw;
-    post_qx = -post_qx;
-    post_qy = -post_qy;
-    post_qz = -post_qz;
+  ImuCalibration calib;
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(tilted_rest());
   }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
 
-  EXPECT_NEAR(raw_qw, post_qw, 1e-5f);
-  EXPECT_NEAR(raw_qx, post_qx, 1e-5f);
-  EXPECT_NEAR(raw_qy, post_qy, 1e-5f);
-  EXPECT_NEAR(raw_qz, post_qz, 1e-5f);
+  ASSERT_TRUE(calib.StartForwardCalibration(10));
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(tilted_forward_accel(0.3f));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  const ImuCalibData& data = calib.GetData();
+  EXPECT_NEAR(data.gravity_vec[0], std::sin(kMountPitchRad), 1e-5f);
+  EXPECT_NEAR(std::abs(data.accel_forward_vec[2]), std::sin(kMountPitchRad),
+              1e-3f)
+      << "Forward axis should preserve the physical mount pitch component";
+
+  MadgwickFilter filter;
+  filter.SetVehicleFrame(data.gravity_vec, data.accel_forward_vec, true);
 
   for (int i = 0; i < 500; ++i) {
-    post_apply_filter.Update(gravity[0], gravity[1], gravity[2], 0.0f, 0.0f,
-                             0.0f, 0.002f);
+    filter.Update(data.gravity_vec[0], data.gravity_vec[1], data.gravity_vec[2],
+                  0.0f, 0.0f, 0.0f, 0.002f);
   }
 
   float pitch, roll, yaw;
-  post_apply_filter.GetEulerDeg(pitch, roll, yaw);
+  filter.GetEulerDeg(pitch, roll, yaw);
+  (void)yaw;
   EXPECT_NEAR(pitch, 0.0f, 1.0f);
   EXPECT_NEAR(roll, 0.0f, 1.0f);
 }
