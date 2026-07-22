@@ -104,7 +104,6 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Применить компенсацию bias (если калибровка валидна)
   calib_.Apply(data_);
 
-
   // LPF инициализирован в конструкторе — горячий путь без проверок
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
