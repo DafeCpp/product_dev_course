@@ -31,7 +31,6 @@ ImuData LevelImu() {
 
 MagData SomeMag() { return MagData{0.0f, 0.6f, -0.8f}; }
 
-
 TEST(ImuFrameTest, NormalizeMountedImuToVehicleFrame) {
   ImuData data{};
   data.ax = -0.2f;  // физическое ускорение вперёд на установленном IMU

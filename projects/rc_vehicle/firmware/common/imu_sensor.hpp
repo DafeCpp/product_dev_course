@@ -41,8 +41,8 @@ class IImuSensor {
 
 /** Конвертация ImuData в формат телеметрии (mg, mdps → int16). */
 inline void ImuDataConvertToTelem(const ImuData& data, int16_t& ax, int16_t& ay,
-                                   int16_t& az, int16_t& gx, int16_t& gy,
-                                   int16_t& gz) {
+                                  int16_t& az, int16_t& gx, int16_t& gy,
+                                  int16_t& gz) {
   ax = static_cast<int16_t>(data.ax * 1000.f);
   ay = static_cast<int16_t>(data.ay * 1000.f);
   az = static_cast<int16_t>(data.az * 1000.f);
