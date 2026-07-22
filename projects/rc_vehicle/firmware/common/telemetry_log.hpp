@@ -7,10 +7,10 @@
 /**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 116 байт (27 × float + uint32_t + uint8_t + padding).
+ * Размер: 132 байта (30 × float + uint32_t + 5 × uint8_t + padding).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
  *
- * Буфер 60000 кадров × 116 байт ≈ 6.6 МБ (PSRAM из 16 МБ).
+ * Буфер 60000 кадров × 132 байта ≈ 7.6 МБ (PSRAM из 16 МБ).
  */
 struct TelemetryLogFrame {
   uint32_t ts_ms{0};           // Метка времени [мс]
@@ -44,11 +44,13 @@ struct TelemetryLogFrame {
   uint8_t test_marker{0};       // Маркер теста (0 = нет, >0 = ID теста)
   uint8_t zupt_status{0};       // ZuptStatus на последнем IMU-тике
   uint8_t ekf_diverged{0};  // EKF: 1 = сработал guard расходимости (LOS-233)
-  uint8_t _pad[1]{};        // Выравнивание до 4 байт
-};  // sizeof == 128 bytes (30 × float + uint32_t + 3 × uint8_t + 1 pad)
+  uint8_t drive_mode{0};    // Активный DriveMode (0=Normal..4=DirectLaw)
+  uint8_t stab_enabled{0};  // Стабилизация включена (1) / выключена (0)
+  uint8_t _pad[3]{};        // Выравнивание до 4 байт
+};  // sizeof == 132 bytes (30 × float + uint32_t + 5 × uint8_t + 3 pad)
 
 // Compile-time проверка размера структуры
-static_assert(sizeof(TelemetryLogFrame) == 128,
+static_assert(sizeof(TelemetryLogFrame) == 132,
               "TelemetryLogFrame size mismatch");
 
 /**

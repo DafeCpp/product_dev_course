@@ -34,6 +34,7 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
                                 const SensorSnapshot& sensors,
                                 float applied_throttle, float applied_steering,
                                 float commanded_throttle,
-                                float commanded_steering);
+                                float commanded_steering, DriveMode drive_mode,
+                                bool stab_enabled);
 
 }  // namespace rc_vehicle
