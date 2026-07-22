@@ -49,6 +49,10 @@ void FilterConfig::Clamp() noexcept {
   if (imu_sample_rate_hz < 100.0f) imu_sample_rate_hz = 100.0f;
   adaptive_accel_threshold_g =
       std::clamp(adaptive_accel_threshold_g, 0.05f, 0.5f);
+  motor_speed_gain = std::clamp(motor_speed_gain, 0.5f, 30.0f);
+  motor_deadzone = std::clamp(motor_deadzone, 0.0f, 0.9f);
+  if (speed_meas_noise <= 0.0f) speed_meas_noise = 4.0f;
+  if (nhc_noise <= 0.0f) nhc_noise = 2.0f;
 }
 
 // ============================================================================
@@ -211,6 +215,12 @@ void StabilizationConfig::Reset() noexcept {
   filter.ekf_enabled = true;
   filter.adaptive_beta_enabled = true;
   filter.adaptive_accel_threshold_g = 0.2f;
+  filter.motor_model_enabled = true;
+  filter.motor_speed_gain = 8.0f;
+  filter.motor_deadzone = 0.05f;
+  filter.speed_meas_noise = 4.0f;
+  filter.nhc_enabled = true;
+  filter.nhc_noise = 2.0f;
 
   // Yaw rate defaults
   yaw_rate.pid.kp = 0.1f;

@@ -24,9 +24,13 @@ static constexpr uint8_t kDriveModeCount = 5;
 // v2: добавлены FilterConfig::adaptive_beta_enabled, adaptive_accel_threshold_g
 // v3: добавлены slew_throttle, slew_steering в StabilizationConfig
 // v4: добавлены FilterConfig::madgwick_enabled, ekf_enabled
-// v5: добавлены KidsModeConfig::speed_limit_enabled, max_speed_ms, speed_limit_gain
-// v6: добавлены StabilizationConfig::braking_mode, brake_slew_multiplier
-static constexpr uint8_t kCurrentStabConfigVersion = 6;
+// v5: добавлены KidsModeConfig::speed_limit_enabled, max_speed_ms,
+// speed_limit_gain v6: добавлены StabilizationConfig::braking_mode,
+// brake_slew_multiplier v7: добавлены FilterConfig мотор-модель/NHC
+// (motor_model_enabled,
+//     motor_speed_gain, motor_deadzone, speed_meas_noise, nhc_enabled,
+//     nhc_noise)
+static constexpr uint8_t kCurrentStabConfigVersion = 7;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
 struct StabConfigBlob {

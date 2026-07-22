@@ -60,7 +60,8 @@ std::string OutputHeader() {
   return "throttle,steering,neutral,failsafe,rc_throttle,rc_steering,"
          "cmd_throttle,cmd_steering,yaw_deg,pitch_deg,roll_deg,filtered_gz,"
          "heading_deg,heading_rel_deg,ekf_vx,ekf_vy,ekf_yaw_rate,ekf_slip_deg,"
-         "ekf_speed_ms,ekf_vx_var,ekf_vy_var,ekf_r_var,oversteer_active,"
+         "ekf_speed_ms,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_speed_meas,"
+         "ekf_diverged,oversteer_active,"
          "kids_mode_active,kids_throttle_limit,forward_accel,test_active";
 }
 
@@ -75,7 +76,8 @@ std::string FormatOutputLine(const TelemetrySnapshot& s, float throttle,
      << s.heading_deg << ',' << s.heading_rel_deg << ',' << s.ekf_vx << ','
      << s.ekf_vy << ',' << s.ekf_yaw_rate << ',' << s.ekf_slip_deg << ','
      << s.ekf_speed_ms << ',' << s.ekf_vx_var << ',' << s.ekf_vy_var << ','
-     << s.ekf_r_var << ',' << (s.oversteer_active ? 1 : 0) << ','
+     << s.ekf_r_var << ',' << s.ekf_speed_meas << ','
+     << (s.ekf_diverged ? 1 : 0) << ',' << (s.oversteer_active ? 1 : 0) << ','
      << (s.kids_mode_active ? 1 : 0) << ',' << s.kids_throttle_limit << ','
      << s.forward_accel << ',' << (test_active ? 1 : 0);
   return os.str();

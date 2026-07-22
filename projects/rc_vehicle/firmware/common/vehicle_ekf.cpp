@@ -30,6 +30,8 @@ void VehicleEkf::Reset() noexcept {
   x_[0] = x_[1] = x_[2] = x_[3] = 0.0f;
   zupt_status_ = ZuptStatus::NotEvaluated;
   InitP();
+  diverged_ = false;
+  last_speed_meas_ = 0.0f;
 }
 
 void VehicleEkf::SetState(float vx, float vy, float r) noexcept {
@@ -50,6 +52,8 @@ void VehicleEkf::Predict(float ax, float ay, float dt) noexcept {
   if (dt <= 0.0f) {
     return;
   }
+  // Пер-тиковый сброс флага guard: Predict — первая операция цикла EKF.
+  diverged_ = false;
 
   const float vx = x_[0];
   const float vy = x_[1];
@@ -94,6 +98,7 @@ void VehicleEkf::Predict(float ax, float ay, float dt) noexcept {
   memcpy(P_, FPFt, sizeof(P_));
   SymmetrizeP(P_);
   ClampP();
+  GuardState();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -130,6 +135,9 @@ void VehicleEkf::UpdateGyroZ(float gz) noexcept {
 
   SymmetrizeP(P_);
   ClampP();
+  // Guard и после измерения: выброс гироскопа (тысячи dps) не должен
+  // оставить r за физическим пределом до следующего Predict.
+  GuardState();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -170,15 +178,17 @@ void VehicleEkf::UpdateHeading(float heading_rad) noexcept {
 
   SymmetrizeP(P_);
   ClampP();
+  GuardState();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
 // Zero Velocity Update (ZUPT)
 // ═════════════════════════════════════════════════════════════════════════
 
-void VehicleEkf::ScalarZeroUpdate(int col, float r) noexcept {
-  // Скалярное Kalman-обновление: z = 0, H = e_col^T.
-  // Joseph form: P_new[i][j] = P[i][j] − K[i]·Pcol[j] − K[j]·Pcol[i] + K[i]·K[j]·S
+void VehicleEkf::ScalarMeasUpdate(int col, float z, float r) noexcept {
+  // Скалярное Kalman-обновление: измерение z по столбцу col, H = e_col^T.
+  // Joseph form: P_new[i][j] = P[i][j] − K[i]·Pcol[j] − K[j]·Pcol[i] +
+  // K[i]·K[j]·S
   const float S = P_[col * 4 + col] + r;
   if (S < kPDiagMin) return;
 
@@ -186,7 +196,7 @@ void VehicleEkf::ScalarZeroUpdate(int col, float r) noexcept {
   const float Pcol[4] = {P_[col], P_[4 + col], P_[8 + col], P_[12 + col]};
   const float K[4] = {Pcol[0] / S, Pcol[1] / S, Pcol[2] / S, Pcol[3] / S};
 
-  const float innov = -x_[col];
+  const float innov = z - x_[col];
   x_[0] += K[0] * innov;
   x_[1] += K[1] * innov;
   x_[2] += K[2] * innov;
@@ -203,10 +213,29 @@ void VehicleEkf::ScalarZeroUpdate(int col, float r) noexcept {
   }
 }
 
+void VehicleEkf::ScalarZeroUpdate(int col, float r) noexcept {
+  ScalarMeasUpdate(col, 0.0f, r);  // z = 0
+}
+
 void VehicleEkf::UpdateZeroVelocity(float r_zupt) noexcept {
   ScalarZeroUpdate(0, r_zupt);  // vx → 0
   ScalarZeroUpdate(1, r_zupt);  // vy → 0
   ClampP();
+}
+
+void VehicleEkf::UpdateSpeed(float v_meas, float r_speed) noexcept {
+  last_speed_meas_ = v_meas;
+  ScalarMeasUpdate(0, v_meas, r_speed);  // vx → v_meas
+  ClampP();
+  // Guard и после измерения: v_meas (до 30 м/с по клемпу gain) не должен
+  // утянуть vx выше физического максимума до следующего Predict.
+  GuardState();
+}
+
+void VehicleEkf::UpdateNonHolonomic(float r_nhc) noexcept {
+  ScalarMeasUpdate(1, 0.0f, r_nhc);  // vy → 0 (машина не едет боком)
+  ClampP();
+  GuardState();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -313,6 +342,42 @@ void VehicleEkf::ClampP() noexcept {
   for (int d : diag) {
     if (P_[d] > kPDiagMax) P_[d] = kPDiagMax;
     if (P_[d] < kPDiagMin) P_[d] = kPDiagMin;
+  }
+}
+
+void VehicleEkf::GuardState() noexcept {
+  // Флаг НЕ сбрасывается здесь (OR-семантика): guard вызывается и после
+  // measurement-апдейтов, и сброс затирал бы факт клемпа в Predict того же
+  // тика. Пер-тиковый сброс — в начале Predict.
+
+  // NaN/Inf в состоянии → полный сброс (аналогично ClampP для P_).
+  for (int i = 0; i < 4; ++i) {
+    if (!std::isfinite(x_[i])) {
+      x_[0] = x_[1] = x_[2] = x_[3] = 0.0f;
+      InitP();
+      diverged_ = true;
+      return;
+    }
+  }
+
+  // Клемп продольной/боковой скорости физическим максимумом: не даём мусорной
+  // оценке (разгон vx до десятков м/с) уйти к потребителям (drive modes/kids).
+  for (int i = 0; i < 2; ++i) {
+    if (x_[i] > kMaxSpeedMs) {
+      x_[i] = kMaxSpeedMs;
+      diverged_ = true;
+    } else if (x_[i] < -kMaxSpeedMs) {
+      x_[i] = -kMaxSpeedMs;
+      diverged_ = true;
+    }
+  }
+  // Клемп угловой скорости рыскания.
+  if (x_[2] > kMaxYawRateRps) {
+    x_[2] = kMaxYawRateRps;
+    diverged_ = true;
+  } else if (x_[2] < -kMaxYawRateRps) {
+    x_[2] = -kMaxYawRateRps;
+    diverged_ = true;
   }
 }
 

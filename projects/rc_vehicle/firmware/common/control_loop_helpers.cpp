@@ -31,9 +31,15 @@ void HandleAutoDriveCompletion(const AutoDriveOutput& ad_out,
   }
 
   if (ad_out.speed_cal_completed) {
-    if (ad_out.speed_cal_result.valid) {
+    if (ad_out.speed_cal_result.valid && stab_mgr) {
+      // Провод результата калибровки в мотор-модель EKF (LOS-233): speed_gain
+      // становится коэффициентом якоря скорости и персистится в NVS.
+      auto cfg = stab_mgr->GetConfig();
+      cfg.filter.motor_speed_gain = ad_out.speed_cal_result.speed_gain;
+      cfg.filter.Clamp();
+      stab_mgr->SetConfig(cfg, true);
       platform.Log(LogLevel::Info, "Speed calibration done");
-    } else {
+    } else if (!ad_out.speed_cal_result.valid) {
       platform.Log(LogLevel::Warning, "Speed calibration failed");
     }
   }

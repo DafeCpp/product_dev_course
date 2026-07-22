@@ -55,6 +55,8 @@ TelemetrySnapshot BuildTelemetrySnapshot(
     snap.ekf_vx_var = ctx.ekf.GetVxVariance();
     snap.ekf_vy_var = ctx.ekf.GetVyVariance();
     snap.ekf_r_var = ctx.ekf.GetRVariance();
+    snap.ekf_speed_meas = ctx.ekf.GetLastSpeedMeas();
+    snap.ekf_diverged = ctx.ekf.IsDiverged();
     snap.oversteer_available = true;
     snap.oversteer_active = ctx.oversteer_guard.IsActive();
   }
@@ -102,6 +104,7 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
     frame.heading_rel_deg = sensors.heading_rel_deg;
   }
   frame.test_marker = ctx.auto_drive.GetTestMarker();
+  frame.ekf_diverged = ctx.ekf.IsDiverged() ? 1 : 0;
   return frame;
 }
 
