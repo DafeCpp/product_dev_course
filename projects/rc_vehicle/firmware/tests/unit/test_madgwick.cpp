@@ -944,6 +944,60 @@ TEST(MadgwickTest,
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(MadgwickTest, InvalidateYawTrust_ResetsProgressNotQuaternion) {
+  // Ревью PR #283 (r3630102909): смена калибровки магнитометра
+  // (MagCalibration::Finish()) заставляет mag_calib_->Apply() выдавать
+  // другой скорректированный вектор (новый hard-iron offset) — накопленный
+  // до этого прогресс сходимости yaw относился к СТАРОЙ калибровке. Без
+  // сброса IMU-калибровка, завершившаяся вскоре после смены mag-калибровки,
+  // могла бы закрепить курс, посчитанный по устаревшей магнитной опоре —
+  // тот же фантомный переход, что и остальной LOS-229.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  for (int i = 0; i < 7500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+  float pitch_before, roll_before, yaw_before;
+  filter.GetEulerDeg(pitch_before, roll_before, yaw_before);
+  ASSERT_GT(std::abs(yaw_before), 5.0f)
+      << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+
+  float qw_before, qx_before, qy_before, qz_before;
+  filter.GetQuaternion(qw_before, qx_before, qy_before, qz_before);
+
+  // Симулируем VehicleControlUnified::FinishMagCalibration() — mag-калибровка
+  // сменилась, датчик физически не двигался.
+  filter.InvalidateYawTrust();
+
+  // Сам кватернион (ориентация) не тронут — это не сброс фильтра.
+  float qw_after, qx_after, qy_after, qz_after;
+  filter.GetQuaternion(qw_after, qx_after, qy_after, qz_after);
+  EXPECT_FLOAT_EQ(qw_after, qw_before);
+  EXPECT_FLOAT_EQ(qx_after, qx_before);
+  EXPECT_FLOAT_EQ(qy_after, qy_before);
+  EXPECT_FLOAT_EQ(qz_after, qz_before);
+
+  // Но опора для сохранения курса теперь не абсолютна: повторная калибровка
+  // обнуляет yaw, а не сохраняет устаревший (контраст с
+  // SetVehicleFrame_PreservesConvergedYaw, где БЕЗ InvalidateYawTrust()
+  // курс сохранился бы).
+  filter.SetVehicleFrame(gravity, forward, true);
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "После InvalidateYawTrust() опора должна быть сброшена — "
+         "калибровка обнуляет курс, а не сохраняет устаревший";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
 TEST(MadgwickTest, SetVehicleFrame_ResetsYawWithoutMagnetometer) {
   // Обратная сторона LOS-229: без магнитометра (6DOF) yaw — это накопленный
   // дрейф гироскопа без абсолютной опоры. Сохранять его нечего, и контракт

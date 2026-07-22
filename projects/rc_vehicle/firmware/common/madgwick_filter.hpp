@@ -70,6 +70,24 @@ class MadgwickFilter : public IOrientationFilter {
   }
   float GetAdaptiveThresholdG() const { return adaptive_threshold_g_; }
 
+  /**
+   * Сбросить накопленную опору курса (yaw_has_absolute_ref_ и прогресс
+   * сходимости), не трогая сам кватернион ориентации.
+   *
+   * Вызывать при смене калибровки магнитометра (MagCalibration::Finish()):
+   * mag_calib_->Apply() начинает выдавать другой скорректированный вектор
+   * (иной hard-iron offset), и накопленный до этого прогресс относился к
+   * СТАРОЙ калибровке (или вовсе к сырым, некалиброванным данным) — курс,
+   * посчитанный по нему, ещё не сошёлся под НОВУЮ калибровку. Без сброса
+   * IMU-калибровка, завершившаяся вскоре после смены mag-калибровки, могла
+   * бы закрепить курс, посчитанный по устаревшей магнитной опоре (review
+   * r3630102909, LOS-229).
+   */
+  void InvalidateYawTrust() {
+    yaw_has_absolute_ref_ = false;
+    marg_correction_progress_ = 0.f;
+  }
+
  private:
   float q0_{1.f}, q1_{0.f}, q2_{0.f}, q3_{0.f};
   float beta_{0.1f};

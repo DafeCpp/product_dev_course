@@ -101,6 +101,11 @@ void VehicleControlUnified::FinishMagCalibration() {
   mag_calib_.Finish();
   if (mag_calib_.IsValid()) {
     platform_->SaveMagCalib(mag_calib_.GetData());
+    // Apply() дальше будет выдавать другой скорректированный вектор (новый
+    // hard-iron offset) — накопленный до этого прогресс сходимости yaw
+    // относился к старой калибровке (или к сырым данным) и не годится под
+    // новую (LOS-229).
+    madgwick_.InvalidateYawTrust();
   }
   if (telem_mgr_) {
     TelemetryEventType t = mag_calib_.IsValid()
