@@ -633,13 +633,33 @@ TEST_F(KidsModeSpeedLimitTest, AboveLimit_ReducesThrottle) {
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
 
-TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_CutsThrottleToZero) {
-  // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.0, reduction=min(10,1)=1.0
+TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_ReducesThrottleButNotToZero) {
+  // LOS-215: снижение — пропорциональное, но не полный обрыв в ноль.
+  // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.0,
+  // reduction=min(10, kSpeedReductionMax=0.85)=0.85 → throttle=0.4*0.15=0.06
   ekf_.SetState(3.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
   processor_.Process(cfg_, throttle, steering, 10);
-  EXPECT_FLOAT_EQ(throttle, 0.0f);
+  EXPECT_NEAR(throttle, 0.06f, 0.005f);
+  EXPECT_GT(throttle, 0.0f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
+}
+
+TEST_F(KidsModeSpeedLimitTest, DivergedEkf_NoReductionEvenAboveLimit) {
+  // LOS-215: первопричина найденного бага — speed limiter доверял разошедшейся
+  // оценке EKF (LOS-217) и рубил throttle почти до нуля независимо от силы
+  // нажатия газа. Раздуваем ковариацию Predict-циклами без измерений — так же,
+  // как реально расходится оценка при накоплении ошибки интегрирования IMU.
+  for (int i = 0; i < 200; ++i) {
+    ekf_.Predict(0.0f, 0.0f, 0.01f);
+  }
+  ASSERT_GT(ekf_.GetVxVariance(), 10.0f);  // заведомо выше порога доверия
+
+  ekf_.SetState(20.0f, 0.0f, 0.0f);  // нефизичная скорость, как в LOS-217
+  float throttle = 0.4f, steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_NEAR(throttle, 0.4f, 0.01f);
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
 
 TEST_F(KidsModeSpeedLimitTest, ReverseThrottle_NotAffected) {
