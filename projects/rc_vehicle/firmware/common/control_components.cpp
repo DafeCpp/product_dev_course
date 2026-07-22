@@ -123,8 +123,16 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
 
   const auto mag_opt = platform_.ReadMag();
   if (!mag_opt) {
+    // Магнетометр перестал отвечать: раньше mag_enabled_ здесь не сбрасывался,
+    // и FeedMadgwick кормил UpdateWithMag замороженным mag_calibrated_ сколько
+    // угодно долго — MadgwickFilter не может сам понять, что семпл устарел.
+    // Откатываемся в 6DOF, если сбои затянулись дольше таймаута.
+    if (mag_enabled_ && (now_ms - last_mag_success_ms_) > kMagStaleTimeoutMs) {
+      mag_enabled_ = false;
+    }
     return;
   }
+  last_mag_success_ms_ = now_ms;
   mag_data_ = *mag_opt;
   mag_enabled_ = true;
 

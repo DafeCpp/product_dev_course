@@ -193,6 +193,21 @@ class FakePlatform : public VehicleControlPlatform {
   void SetImuData(const ImuData& data) { imu_data_ = data; }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Магнетометр
+  // ─────────────────────────────────────────────────────────────────────────
+
+  std::optional<MagData> ReadMag() override {
+    if (mag_read_fails_) return std::nullopt;
+    return mag_data_;
+  }
+
+  void SetMagData(const MagData& data) {
+    mag_data_ = data;
+    mag_read_fails_ = false;
+  }
+  void SetMagReadShouldFail(bool fail) { mag_read_fails_ = fail; }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Калибровка IMU
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -352,6 +367,10 @@ class FakePlatform : public VehicleControlPlatform {
   std::optional<ImuCalibData> calib_data_;
   float com_offset_[2]{0.f, 0.f};
   bool com_offset_set_{false};
+
+  // Магнетометр
+  std::optional<MagData> mag_data_;
+  bool mag_read_fails_{false};
 
   // Stabilization (per-mode: один слот на каждый DriveMode 0..4)
   std::array<std::optional<StabilizationConfig>, 5> stab_configs_{};
