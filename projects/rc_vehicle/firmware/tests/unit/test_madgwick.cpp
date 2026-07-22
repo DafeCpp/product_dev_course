@@ -871,9 +871,9 @@ TEST(MadgwickTest, SetVehicleFrame_PreservesConvergedYaw) {
   filter.SetVehicleFrame(gravity, forward, true);
 
   // Машина стоит ровно, магнитное поле развёрнуто так, что курс ≠ 0.
-  // Даём фильтру сойтись — 7500 * 2 мс = 15 с реального времени коррекции,
-  // с запасом больше kMinMargSecondsForYawRef (12 с), чтобы опора успела
-  // стать абсолютной до повторной калибровки ниже.
+  // Даём фильтру сойтись — 7500 * 2 мс = 15 с при beta=0.5, что даёт вклад
+  // 0.5*15=7.5 в накопитель, с запасом больше kMinMargProgressForYawRef
+  // (0.1*12=1.2), чтобы опора успела стать абсолютной до калибровки ниже.
   constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
   for (int i = 0; i < 7500; ++i) {
     filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
@@ -1074,6 +1074,77 @@ TEST(MadgwickTest, SetVehicleFrame_ScalesMargWindowWithBeta) {
         << "25 с при beta=0.05 достаточно (нужно ~24 с) — курс должен "
            "пережить рекалибровку";
   }
+}
+
+TEST(MadgwickTest, SetVehicleFrame_DoesNotOverweightStaleLowBetaDwell) {
+  // Ревью PR #283 (r3629340617): предыдущая версия сравнивала накопленное
+  // время коррекции с порогом, пересчитанным по ТЕКУЩЕМУ beta_. Если beta
+  // менялась на ходу (StabilizationManager::ApplyToFilters вызывает
+  // SetBeta()), это позволяло переоценить старое, накопленное при низком
+  // beta время: 12 с при beta=0.01 давали ту же «сходимость», что и 1.2 с
+  // при beta=1.0, хотя реальной коррекции произошло в 100 раз меньше.
+  // Теперь копится вклад effective_beta * dt_sec, а не голое время — вклад
+  // низкого beta остаётся заниженным независимо от того, что beta потом
+  // увеличили.
+  MadgwickFilter filter;
+  filter.SetBeta(0.01f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // Крутим машину вокруг вертикали в 6DOF — курс уезжает и дрейфует без опоры.
+  for (int i = 0; i < 1000; ++i) {
+    filter.Update(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.002f);
+  }
+  float pitch, roll, yaw_drifted;
+  filter.GetEulerDeg(pitch, roll, yaw_drifted);
+  ASSERT_GT(std::abs(yaw_drifted), 10.0f) << "Тест бессмысленен без дрейфа yaw";
+
+  // 12 с MARG-коррекции при beta=0.01: вклад в накопитель — всего 0.01*12 =
+  // 0.12, далеко от порога 1.2. В старой (тиковой) реализации это было бы
+  // "12 секунд", то есть уже больше исходного фиксированного порога в 12 с.
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  for (int i = 0; i < 6000; ++i) {  // 6000 * 2 мс = 12 с
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+
+  // Разгон: увеличиваем beta до 1.0. Требуемое время при таком beta —
+  // 12*0.1/1.0 = 1.2 с, то есть меньше уже "прошедших" (в старой модели) 12
+  // с — баг позволил бы следующему же тику ошибочно открыть опору.
+  filter.SetBeta(1.0f);
+  filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, kMx, kMy, kMz,
+                       0.002f);
+
+  filter.SetVehicleFrame(gravity, forward, true);
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "Смена beta не должна задним числом переоценивать накопленное при "
+         "низком beta время — опора всё ещё не абсолютна, курс обнуляется";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+
+  // Продолжаем при beta=1.0 достаточно долго, чтобы реально накопить порог
+  // (нужно ещё ~1.08 — берём с запасом 1.5 с), и убеждаемся, что опора
+  // ЗАКОНОМЕРНО открывается, когда реальная сходимость действительно набрана.
+  for (int i = 0; i < 750; ++i) {  // 750 * 2 мс = 1.5 с
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+  float pitch_converged, roll_converged, yaw_converged;
+  filter.GetEulerDeg(pitch_converged, roll_converged, yaw_converged);
+  ASSERT_GT(std::abs(yaw_converged), 5.0f)
+      << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+
+  filter.SetVehicleFrame(gravity, forward, true);
+  float pitch_final, roll_final, yaw_final;
+  filter.GetEulerDeg(pitch_final, roll_final, yaw_final);
+  EXPECT_NEAR(yaw_final, yaw_converged, 0.5f)
+      << "После реального набора порога курс должен пережить рекалибровку";
+  EXPECT_NEAR(pitch_final, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_final, 0.0f, 0.1f);
 }
 
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {

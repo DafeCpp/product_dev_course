@@ -22,7 +22,7 @@ void MadgwickFilter::Reset() {
   q2_ = 0.f;
   q3_ = 0.f;
   yaw_has_absolute_ref_ = false;
-  marg_correction_time_sec_ = 0.f;
+  marg_correction_progress_ = 0.f;
 }
 
 void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
@@ -32,7 +32,7 @@ void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
   // 6DOF: акселерометр задаёт только наклон, курс держится на одном гироскопе
   // и свободно дрейфует — абсолютной опоры у yaw нет.
   yaw_has_absolute_ref_ = false;
-  marg_correction_time_sec_ = 0.f;
+  marg_correction_progress_ = 0.f;
 
   // Гироскоп: град/с → рад/с
   const float gx_rad = gx * kDegToRad;
@@ -220,25 +220,15 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
     }
 
     // Курс притянут к магнитному полю — но опора становится абсолютной только
-    // после накопления реального времени коррекции (не тиков, см. комментарий
-    // у marg_correction_time_sec_ в .hpp): единственный mag-семпл ещё не успел
-    // вытянуть курс из накопленного 6DOF-дрейфа, градиентный спуск сходится
-    // постепенно. Тики с effective_beta == 0 (адаптивный beta при разгоне/
-    // торможении) курс к полю не приближают и не засчитываются.
-    if (effective_beta > 0.f) {
-      marg_correction_time_sec_ += dt_sec;
-    }
-    // Требуемое время масштабируем по сконфигурированному beta_ (не по
-    // мгновенному effective_beta — адаптивные провалы уже учтены накоплением
-    // выше): при beta_ <= 0 коррекции нет вообще, опора не должна открыться
-    // никогда.
-    bool marg_converged = false;
-    if (beta_ > 0.f) {
-      const float required_marg_sec =
-          kReferenceSecondsForYawRef * kReferenceBeta / beta_;
-      marg_converged = marg_correction_time_sec_ >= required_marg_sec;
-    }
-    yaw_has_absolute_ref_ = marg_converged;
+    // после накопления вклада коррекции, взвешенного по beta (см. комментарий
+    // у marg_correction_progress_ в .hpp): единственный mag-семпл ещё не
+    // успел вытянуть курс из накопленного 6DOF-дрейфа, градиентный спуск
+    // сходится постепенно, а его скорость пропорциональна beta. Тики с
+    // effective_beta == 0 (адаптивный beta при разгоне/торможении) вклада не
+    // дают.
+    marg_correction_progress_ += effective_beta * dt_sec;
+    yaw_has_absolute_ref_ =
+        marg_correction_progress_ >= kMinMargProgressForYawRef;
   } else if (anorm2 > 1e-12f) {
     // Нет mag — деградируем до 6DOF
     Update(ax, ay, az, gx, gy, gz, dt_sec);
