@@ -44,7 +44,8 @@ TEST(ImuHandlerTest, MagEnabledStaysTrueThroughBriefReadBlip) {
 
   uint32_t now_ms = 10;
   imu.Update(now_ms, 10);
-  ASSERT_TRUE(imu.IsMagEnabled()) << "Первое успешное чтение должно включить mag";
+  ASSERT_TRUE(imu.IsMagEnabled())
+      << "Первое успешное чтение должно включить mag";
 
   // Один пропуск (< kMagStaleTimeoutMs = 250 мс от последнего успеха).
   platform.SetMagReadShouldFail(true);
@@ -88,7 +89,7 @@ TEST(ImuHandlerTest, MagDisabledAfterProlongedReadFailure) {
 }
 
 TEST(ImuHandlerTest,
-    StaleMagDropoutDoesNotPreserveYawOnRecalibrationAfterwards) {
+     StaleMagDropoutDoesNotPreserveYawOnRecalibrationAfterwards) {
   // Полный сценарий из ревью: курс сходится по магнитометру, датчик
   // отказывает, машина в это время предположительно поворачивается — если
   // бы mag_enabled_ оставался true, повторная калибровка сохранила бы
