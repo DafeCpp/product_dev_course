@@ -108,9 +108,12 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     // v ≈ gain·throttle (с мёртвой зоной) подаётся слабым измерением.
     // Во время калибровки скорости якорь отключён: иначе калибровка мерила бы
     // EKF-скорость, заякоренную текущим gain, и подтверждала бы сама себя.
+    // Вход модели — applied_throttle_ (значение прошлого тика, после slew и
+    // trim): это то, что реально ушло в PWM. Команда при slew-рампе прыгает
+    // мгновенно и завышала бы ожидаемую скорость на всё время рампы.
     const auto& f = stab_cfg_.filter;
     if (f.motor_model_enabled && !ctx_.auto_drive.IsSpeedCalibActive()) {
-      const float thr = commanded_throttle_;
+      const float thr = applied_throttle_;
       const float thr_abs = std::abs(thr);
       float v_expected = 0.0f;
       if (thr_abs > f.motor_deadzone && f.motor_deadzone < 1.0f) {
