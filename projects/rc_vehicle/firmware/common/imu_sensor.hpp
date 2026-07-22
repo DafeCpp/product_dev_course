@@ -9,6 +9,19 @@ struct ImuData {
 };
 
 /**
+ * Привести показания физически установленного IMU к СК автомобиля.
+ *
+ * LOS-222: на текущей плате продольная ось датчика смотрит назад, а знак
+ * gyro Z противоположен принятой в прошивке конвенции yaw_deg. После этой
+ * нормализации X направлен вперёд, а положительный yaw_rate соответствует
+ * левому повороту / росту yaw_deg.
+ */
+inline void NormalizeMountedImuToVehicleFrame(ImuData& data) {
+  data.ax = -data.ax;
+  data.gz = -data.gz;
+}
+
+/**
  * Абстрактный интерфейс IMU-датчика.
  * Реализован Mpu6050Spi и Lsm6ds3Spi.
  */
@@ -28,8 +41,8 @@ class IImuSensor {
 
 /** Конвертация ImuData в формат телеметрии (mg, mdps → int16). */
 inline void ImuDataConvertToTelem(const ImuData& data, int16_t& ax, int16_t& ay,
-                                   int16_t& az, int16_t& gx, int16_t& gy,
-                                   int16_t& gz) {
+                                  int16_t& az, int16_t& gx, int16_t& gy,
+                                  int16_t& gz) {
   ax = static_cast<int16_t>(data.ax * 1000.f);
   ay = static_cast<int16_t>(data.ay * 1000.f);
   az = static_cast<int16_t>(data.az * 1000.f);

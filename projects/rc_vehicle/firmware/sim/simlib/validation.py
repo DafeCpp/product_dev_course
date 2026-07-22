@@ -21,13 +21,49 @@ _G = 9.80665
 CHANNELS = ("yaw_rate_dps", "speed_ms", "long_accel_ms2")
 
 
+def _corr(a, b) -> float:
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    if len(a) < 3 or np.std(a) < 1e-9 or np.std(b) < 1e-9:
+        return float("nan")
+    return float(np.corrcoef(a, b)[0, 1])
+
+
+def _maybe_fix_legacy_signs(ts, yaw_rate, yaw_deg, speed_ms, long_accel):
+    """Поддержать старые LOS-213 логи, не трогая новые логи прошивки.
+
+    Начиная с LOS-222 прошивка должна писать yaw_rate_dps и ax уже в СК
+    автомобиля. Старые записанные CSV из LOS-213 остаются полезны для CI и
+    ретро-валидации, поэтому детектируем их по физическим связям внутри лога и
+    компенсируем только при явно отрицательной корреляции.
+    """
+    if yaw_deg:
+        ts_arr = np.asarray(ts, float)
+        yaw_deg_arr = np.asarray(yaw_deg, float)
+        dt = np.diff(ts_arr, prepend=ts_arr[0] - 2.0) / 1000.0
+        dt = np.clip(dt, 1e-3, 0.1)
+        yaw_from_deg = np.diff(yaw_deg_arr, prepend=yaw_deg_arr[0]) / dt
+        if _corr(yaw_from_deg, yaw_rate) < -0.5:
+            yaw_rate = [-v for v in yaw_rate]
+
+    if len(speed_ms) >= 3:
+        ts_arr = np.asarray(ts, float)
+        spd_arr = np.asarray(speed_ms, float)
+        dt = np.diff(ts_arr, prepend=ts_arr[0] - 2.0) / 1000.0
+        dt = np.clip(dt, 1e-3, 0.1)
+        accel_from_speed = np.diff(spd_arr, prepend=spd_arr[0]) / dt
+        if _corr(accel_from_speed, long_accel) < -0.5:
+            long_accel = [-v for v in long_accel]
+
+    return yaw_rate, long_accel
+
+
 def load_drive_log(path: str, use_applied: bool = True) -> dict:
     """Прочитать лог прошивки → команды (вход модели) + записанные сенсоры.
 
     `use_applied=True` — кормить модель ПРИМЕНЁННЫМ выходом (`throttle`/`steering`,
     физический вход актуаторов); False — сырыми командами пульта (`rc_*`).
     """
-    ts, thr, steer, yaw, spd, lon = [], [], [], [], [], []
+    ts, thr, steer, yaw, yaw_deg, spd, lon = [], [], [], [], [], [], []
     with open(path, newline="") as fh:
         for row in csv.DictReader(fh):
             def f(key: str) -> float:
@@ -40,15 +76,13 @@ def load_drive_log(path: str, use_applied: bool = True) -> dict:
             ts.append(f("ts_ms"))
             thr.append(f("throttle") if use_applied else f("rc_throttle"))
             steer.append(f("steering") if use_applied else f("rc_steering"))
-            # Знак гироскопа в логах прошивки инвертирован относительно yaw_deg
-            # (corr(d yaw_deg/dt, yaw_rate_dps) ≈ −0.94…−0.99 на реальных логах);
-            # модель использует конвенцию yaw_deg (левый поворот → r > 0).
-            yaw.append(-f("yaw_rate_dps"))
+            yaw.append(f("yaw_rate_dps"))
+            if "yaw_deg" in row:
+                yaw_deg.append(f("yaw_deg"))
             spd.append(f("speed_ms"))
-            # Ось X акселерометра в логах направлена назад по ходу движения
-            # (corr(ax, dV/dt) ≈ −0.9 на устойчивых кругах) — инвертируем в
-            # конвенцию модели (вперёд > 0). ax в g → м/с².
-            lon.append(-f("ax") * _G)
+            lon.append(f("ax") * _G)
+
+    yaw, lon = _maybe_fix_legacy_signs(ts, yaw, yaw_deg, spd, lon)
 
     ts = np.asarray(ts, float)
     dt = np.diff(ts, prepend=ts[0] - 2.0) / 1000.0

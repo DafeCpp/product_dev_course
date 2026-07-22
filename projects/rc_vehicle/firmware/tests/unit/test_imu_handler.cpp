@@ -31,6 +31,25 @@ ImuData LevelImu() {
 
 MagData SomeMag() { return MagData{0.0f, 0.6f, -0.8f}; }
 
+TEST(ImuFrameTest, NormalizeMountedImuToVehicleFrame) {
+  ImuData data{};
+  data.ax = -0.2f;  // физическое ускорение вперёд на установленном IMU
+  data.ay = 0.1f;
+  data.az = -1.0f;
+  data.gx = 1.0f;
+  data.gy = 2.0f;
+  data.gz = -30.0f;  // левый поворот по установленному IMU
+
+  NormalizeMountedImuToVehicleFrame(data);
+
+  EXPECT_NEAR(data.ax, 0.2f, 1e-6f);
+  EXPECT_NEAR(data.ay, 0.1f, 1e-6f);
+  EXPECT_NEAR(data.az, -1.0f, 1e-6f);
+  EXPECT_NEAR(data.gx, 1.0f, 1e-6f);
+  EXPECT_NEAR(data.gy, 2.0f, 1e-6f);
+  EXPECT_NEAR(data.gz, 30.0f, 1e-6f);
+}
+
 TEST(ImuHandlerTest, MagEnabledStaysTrueThroughBriefReadBlip) {
   // Кратковременный сбой (один пропуск) — не должен считаться поломкой
   // датчика: mag_enabled_ остаётся true.
