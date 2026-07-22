@@ -538,8 +538,20 @@ void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     }
   });
 
-  ESP_LOGI(TAG, "run_self_test -> %s (%zu checks)",
-           all_passed ? "ALL PASS" : "FAIL", results.size());
+  // Разбивка по проверкам в serial-лог: без неё в boot-логе виден только итог
+  // (см. LOS-220). Проваленные — WARN, прошедшие — DEBUG, чтобы понять, какие
+  // именно из проверок не прошли, не перехватывая JSON-ответ WS.
+  for (const auto& item : results) {
+    if (item.passed) {
+      ESP_LOGD(TAG, "  self_test ok:   %s = %s", item.name, item.value);
+    } else {
+      ESP_LOGW(TAG, "  self_test FAIL: %s = %s", item.name, item.value);
+    }
+  }
+
+  size_t failed = rc_vehicle::SelfTest::FailedCount(results);
+  ESP_LOGI(TAG, "run_self_test -> %s (%zu/%zu failed)",
+           all_passed ? "ALL PASS" : "FAIL", failed, results.size());
 }
 
 void HandleUdpStreamStart(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {

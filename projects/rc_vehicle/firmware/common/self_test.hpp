@@ -87,6 +87,13 @@ class SelfTest {
    * @return true если все passed
    */
   static bool AllPassed(const std::vector<SelfTestItem>& results);
+
+  /**
+   * @brief Подсчитать число проваленных проверок
+   * @param results Результаты Run()
+   * @return Количество items с passed == false
+   */
+  static size_t FailedCount(const std::vector<SelfTestItem>& results);
 };
 
 }  // namespace rc_vehicle

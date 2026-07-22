@@ -203,6 +203,26 @@ TEST(SelfTestTest, MultipleFailures) {
   EXPECT_GE(fail_count, 3);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FailedCount — используется для итоговой строки лога "X/10 failed" (LOS-220)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(SelfTestTest, FailedCountZeroOnIdeal) {
+  auto results = SelfTest::Run(MakeIdealInput());
+  EXPECT_EQ(SelfTest::FailedCount(results), 0u);
+  EXPECT_TRUE(SelfTest::AllPassed(results));
+}
+
+TEST(SelfTestTest, FailedCountMatchesThreeFailures) {
+  auto in = MakeIdealInput();
+  in.imu_enabled = false;
+  in.failsafe_active = true;
+  in.calib_valid = false;
+  auto results = SelfTest::Run(in);
+  EXPECT_EQ(SelfTest::FailedCount(results), 3u);
+  EXPECT_FALSE(SelfTest::AllPassed(results));
+}
+
 TEST(SelfTestTest, ResultCount) {
   auto results = SelfTest::Run(MakeIdealInput());
   EXPECT_EQ(results.size(), 10u);

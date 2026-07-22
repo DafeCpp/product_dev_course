@@ -98,4 +98,12 @@ bool SelfTest::AllPassed(const std::vector<SelfTestItem>& results) {
   return true;
 }
 
+size_t SelfTest::FailedCount(const std::vector<SelfTestItem>& results) {
+  size_t failed = 0;
+  for (const auto& item : results) {
+    if (!item.passed) ++failed;
+  }
+  return failed;
+}
+
 }  // namespace rc_vehicle
