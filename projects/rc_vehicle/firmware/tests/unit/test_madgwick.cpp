@@ -934,6 +934,44 @@ TEST(MadgwickTest, SetVehicleFrame_ResetsYawWithoutMagnetometer) {
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(MadgwickTest, SetVehicleFrame_DoesNotPreserveStaleYawFromSingleMagSample) {
+  // Ревью PR #283 (r3609421304): один-единственный mag-семпл прямо перед
+  // калибровкой не должен помечать курс как «абсолютно опёртый» — MARG ещё не
+  // успел скорректировать накопленный в 6DOF дрейф, градиентный спуск сходится
+  // постепенно. Если бы флаг ставился на первом же семпле, SetVehicleFrame()
+  // сохранил бы этот неисправленный дрейф вместо честного обнуления курса —
+  // ровно тот фантомный поворот, который и был причиной LOS-229.
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // Крутим машину вокруг вертикали в 6DOF — курс уезжает и дрейфует без опоры.
+  for (int i = 0; i < 1000; ++i) {
+    filter.Update(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.002f);
+  }
+  float pitch, roll, yaw_drifted;
+  filter.GetEulerDeg(pitch, roll, yaw_drifted);
+  ASSERT_GT(std::abs(yaw_drifted), 10.0f) << "Тест бессмысленен без дрейфа yaw";
+
+  // Ровно ОДИН валидный mag-семпл прямо перед калибровкой — недостаточно для
+  // абсолютной опоры курса.
+  filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.0f, 0.6f, -0.8f,
+                       0.002f);
+
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "Единственный mag-семпл не даёт абсолютной опоры — курс должен "
+         "обнулиться, как в чистом 6DOF";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
   // After SetVehicleFrame init + convergence, roll stays ~0
   MadgwickFilter filter;

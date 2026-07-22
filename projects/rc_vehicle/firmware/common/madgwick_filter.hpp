@@ -78,10 +78,19 @@ class MadgwickFilter : public IOrientationFilter {
   bool adaptive_enabled_{false};
   float adaptive_threshold_g_{0.2f};
 
-  // Есть ли у курса абсолютная опора: true после 9DOF-обновления с
+  // Есть ли у курса абсолютная опора: true после серии 9DOF-обновлений с
   // магнитометром, false после 6DOF (там yaw — только дрейф гироскопа).
   // От этого зависит, сохранять ли курс в SetVehicleFrame().
   bool yaw_has_absolute_ref_{false};
+
+  // Число подряд идущих валидных MARG-обновлений (accel+mag). Единственный
+  // mag-семпл не означает, что MARG успел скорректировать накопленный в 6DOF
+  // дрейф — градиентный спуск тянет курс постепенно (см. review r3609421304,
+  // LOS-229). Опора считается абсолютной только после kMinMargUpdatesForYawRef
+  // подряд идущих валидных обновлений; любой провал (нет mag/accel, чистый
+  // 6DOF) обнуляет счётчик.
+  int consecutive_marg_updates_{0};
+  static constexpr int kMinMargUpdatesForYawRef = 50;
 
   // Опорная СК машины: q_veh_to_ned (поворот из СК машины в NED), только если
   // use_vehicle_frame_

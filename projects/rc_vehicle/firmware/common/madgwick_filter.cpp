@@ -22,6 +22,7 @@ void MadgwickFilter::Reset() {
   q2_ = 0.f;
   q3_ = 0.f;
   yaw_has_absolute_ref_ = false;
+  consecutive_marg_updates_ = 0;
 }
 
 void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
@@ -31,6 +32,7 @@ void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
   // 6DOF: акселерометр задаёт только наклон, курс держится на одном гироскопе
   // и свободно дрейфует — абсолютной опоры у yaw нет.
   yaw_has_absolute_ref_ = false;
+  consecutive_marg_updates_ = 0;
 
   // Гироскоп: град/с → рад/с
   const float gx_rad = gx * kDegToRad;
@@ -217,8 +219,13 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
       qDot4 -= effective_beta * s3;
     }
 
-    // Курс притянут к магнитному полю — у него появилась абсолютная опора.
-    yaw_has_absolute_ref_ = true;
+    // Курс притянут к магнитному полю — но опора становится абсолютной только
+    // после серии обновлений: единственный mag-семпл ещё не успел вытянуть
+    // курс из накопленного 6DOF-дрейфа (градиентный спуск сходится постепенно).
+    if (consecutive_marg_updates_ < kMinMargUpdatesForYawRef) {
+      ++consecutive_marg_updates_;
+    }
+    yaw_has_absolute_ref_ = consecutive_marg_updates_ >= kMinMargUpdatesForYawRef;
   } else if (anorm2 > 1e-12f) {
     // Нет mag — деградируем до 6DOF
     Update(ax, ay, az, gx, gy, gz, dt_sec);
