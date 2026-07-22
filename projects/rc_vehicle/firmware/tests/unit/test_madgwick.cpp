@@ -220,9 +220,8 @@ TEST(MadgwickTest, ResetToIdentity) {
 TEST(MadgwickTest, UpdateWithImuData) {
   MadgwickFilter filter;
 
-  ImuData imu =
-      MakeImuData(0.f, 0.f, 1.f,   // 1g down
-                  0.f, 0.f, 0.f);  // no rotation
+  ImuData imu = MakeImuData(0.f, 0.f, 1.f,   // 1g down
+                            0.f, 0.f, 0.f);  // no rotation
 
   // Update using ImuData overload
   for (int i = 0; i < 100; ++i) {
@@ -837,9 +836,9 @@ TEST(MadgwickTest, SetVehicleFrame_InitializesQuaternion) {
   // vehicle-frame Euler angles are immediately ~0 WITHOUT any Update calls.
   // This works for ANY mounting angle.
   for (auto& grav : std::vector<std::array<float, 3>>{
-           {0.f, 0.f, 1.f},    // upside-down mount
-           {0.f, 0.f, -1.f},   // normal mount (z down)
-           {0.f, 1.f, 0.f},    // 90° tilt (y up)
+           {0.f, 0.f, 1.f},       // upside-down mount
+           {0.f, 0.f, -1.f},      // normal mount (z down)
+           {0.f, 1.f, 0.f},       // 90° tilt (y up)
            {0.707f, 0.f, 0.707f}  // 45° tilt
        }) {
     MadgwickFilter filter;
@@ -905,6 +904,44 @@ TEST(MadgwickTest, SetVehicleFrame_PreservesConvergedYaw) {
   filter.GetEulerDeg(pitch_settled, roll_settled, yaw_settled);
   EXPECT_NEAR(yaw_settled, yaw_before, 1.0f)
       << "Фильтр не должен никуда уезжать после рекалибровки";
+}
+
+TEST(MadgwickTest,
+     SetVehicleFrame_FirstCalibrationDoesNotBakeInPreCalibrationYaw) {
+  // Ревью PR #283 (r3630012102): если MARG уже сошёлся ДО самой первой
+  // SetVehicleFrame() (use_vehicle_frame_ ещё false), GetEulerRad() внутри
+  // читает yaw в СЫРОЙ СК датчика — не в СК машины. Раньше это значение
+  // безусловно сохранялось как ψ, из-за чего первая калибровка могла
+  // вернуть ненулевой курс вместо честного Euler≈0. Особенно заметно при
+  // монтаже со смещением по курсу: стоящая машина, смотрящая вперёд,
+  // с сенсором, развёрнутым на 90° в курсе, показывала бы yaw≈90° после
+  // самой первой калибровки — предыдущей vehicle frame ещё не было, значит
+  // сохранять нечего.
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  // Сходимся по магнитометру ДО какой-либо калибровки — чистый курс СК
+  // датчика (NED), фильтр только что создан, SetVehicleFrame ещё не
+  // вызывался ни разу.
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  for (int i = 0; i < 7500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+
+  // Монтаж со смещением по курсу: «вперёд» машины = локальная ось Y датчика
+  // (сенсор развёрнут на 90° по курсу относительно машины).
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {0.0f, 1.0f, 0.0f};
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+      << "Первая калибровка не должна закреплять сырой курс СК датчика — "
+         "сохранять ещё нечего (предыдущей vehicle frame не было)";
+  EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
 TEST(MadgwickTest, SetVehicleFrame_ResetsYawWithoutMagnetometer) {
@@ -1239,17 +1276,25 @@ TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
 
   // Phase 2: compute vehicle frame axes to rotate correctly.
   // Replicate SetVehicleFrame math to find Y_veh (pitch axis in sensor coords).
-  auto inv_sqrt = [](float x) -> float { return (x > 0.f) ? 1.f / std::sqrt(x) : 0.f; };
+  auto inv_sqrt = [](float x) -> float {
+    return (x > 0.f) ? 1.f / std::sqrt(x) : 0.f;
+  };
 
   float zx = grav[0], zy = grav[1], zz = grav[2];
   float zn = inv_sqrt(zx * zx + zy * zy + zz * zz);
-  zx *= zn; zy *= zn; zz *= zn;
+  zx *= zn;
+  zy *= zn;
+  zz *= zn;
 
   float fx = fwd[0], fy = fwd[1], fz = fwd[2];
   float dot_fz = fx * zx + fy * zy + fz * zz;
-  fx -= dot_fz * zx; fy -= dot_fz * zy; fz -= dot_fz * zz;
+  fx -= dot_fz * zx;
+  fy -= dot_fz * zy;
+  fz -= dot_fz * zz;
   float fn = inv_sqrt(fx * fx + fy * fy + fz * fz);
-  fx *= fn; fy *= fn; fz *= fn;
+  fx *= fn;
+  fy *= fn;
+  fz *= fn;
 
   // Y_veh = Z_veh × X_veh (pitch axis in sensor coords)
   float yx = zy * fz - zz * fy;
@@ -1269,8 +1314,8 @@ TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
     filter.Update(grav[0], grav[1], grav[2], gyro_gx, gyro_gy, gyro_gz, 0.002f);
   }
 
-  // Phase 4: compute tilted accel (Rodrigues rotation of gravity_vec about Y_veh).
-  // v' = v*cos(θ) + (k×v)*sin(θ) + k*(k·v)*(1-cos(θ))
+  // Phase 4: compute tilted accel (Rodrigues rotation of gravity_vec about
+  // Y_veh). v' = v*cos(θ) + (k×v)*sin(θ) + k*(k·v)*(1-cos(θ))
   const float theta = 30.0f * static_cast<float>(M_PI) / 180.0f;
   const float ct = std::cos(theta), st = std::sin(theta);
   // k = Y_veh, v = grav (normalized: zx,zy,zz ... no, grav_raw)
@@ -1292,8 +1337,7 @@ TEST(MadgwickTest, RealHardwareValues_PitchTracking) {
   }
 
   filter.GetEulerDeg(pitch, roll, yaw);
-  EXPECT_NEAR(std::abs(pitch), 30.0f, 8.0f)
-      << "Pitch should track ~30° tilt";
+  EXPECT_NEAR(std::abs(pitch), 30.0f, 8.0f) << "Pitch should track ~30° tilt";
   EXPECT_NEAR(roll, 0.0f, 10.0f)
       << "Roll should remain ~0 during pure pitch tilt";
 }
@@ -1357,8 +1401,8 @@ TEST(MadgwickTest, UpdateWithMag_LevelSensor_YawConvergesToZero) {
   // Сенсор горизонтален, ориентирован на север: accel = (0,0,1),
   // mag = поле как есть
   for (int i = 0; i < 2000; ++i) {
-    filter.UpdateWithMag(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                         kFieldN, 0.0f, kFieldD, 0.002f);
+    filter.UpdateWithMag(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, kFieldN, 0.0f,
+                         kFieldD, 0.002f);
   }
 
   float pitch, roll, yaw;
@@ -1410,8 +1454,8 @@ TEST(MadgwickTest, UpdateWithMag_YawedSensor_DetectsHeading) {
   const float mz = kFieldD;
 
   for (int i = 0; i < 3000; ++i) {
-    filter.UpdateWithMag(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                         mx, my, mz, 0.002f);
+    filter.UpdateWithMag(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, mx, my, mz,
+                         0.002f);
   }
 
   float pitch, roll, yaw;
@@ -1427,8 +1471,8 @@ TEST(MadgwickTest, UpdateWithMag_QuaternionStaysNormalized) {
   filter.SetBeta(0.5f);
 
   for (int i = 0; i < 1000; ++i) {
-    filter.UpdateWithMag(0.1f, -0.05f, 0.95f, 1.0f, -2.0f, 0.5f,
-                         0.4f, 0.2f, 0.7f, 0.002f);
+    filter.UpdateWithMag(0.1f, -0.05f, 0.95f, 1.0f, -2.0f, 0.5f, 0.4f, 0.2f,
+                         0.7f, 0.002f);
   }
 
   float qw, qx, qy, qz;
