@@ -34,6 +34,7 @@ idf_component_register(
         "../../common/telemetry_event_log.cpp"
         "../../common/motion_driver.cpp"
         "../../common/vehicle_ekf.cpp"
+        "../../common/tilt_estimator.cpp"
         "vehicle_control_platform_esp32.cpp"
         "pwm_control.cpp"
         "rc_input.cpp"

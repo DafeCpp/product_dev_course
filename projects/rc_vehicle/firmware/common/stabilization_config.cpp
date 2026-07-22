@@ -53,6 +53,8 @@ void FilterConfig::Clamp() noexcept {
   motor_deadzone = std::clamp(motor_deadzone, 0.0f, 0.9f);
   if (speed_meas_noise <= 0.0f) speed_meas_noise = 4.0f;
   if (nhc_noise <= 0.0f) nhc_noise = 2.0f;
+  tilt_corr_gain_hz = std::clamp(tilt_corr_gain_hz, 0.05f, 5.0f);
+  tilt_accel_gate_band_g = std::clamp(tilt_accel_gate_band_g, 0.02f, 0.5f);
 }
 
 // ============================================================================
@@ -221,6 +223,9 @@ void StabilizationConfig::Reset() noexcept {
   filter.speed_meas_noise = 4.0f;
   filter.nhc_enabled = true;
   filter.nhc_noise = 2.0f;
+  filter.tilt_comp_enabled = true;
+  filter.tilt_corr_gain_hz = 0.5f;
+  filter.tilt_accel_gate_band_g = 0.1f;
 
   // Yaw rate defaults
   yaw_rate.pid.kp = 0.1f;
