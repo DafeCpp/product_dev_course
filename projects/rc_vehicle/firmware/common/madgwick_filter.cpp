@@ -82,8 +82,9 @@ void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
     float s3 = 4.f * q1q1 * q3_ - _2q1 * ax_n + 4.f * q2q2 * q3_ - _2q2 * ay_n;
 
     const float sSqNorm = s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3;
-    // Пропускаем коррекцию если градиент вырожден (кватернион точно выровнен с g)
-    // или subnormal float — умножение на InvSqrt(~0) даст NaN/Inf в кватернионе
+    // Пропускаем коррекцию если градиент вырожден (кватернион точно выровнен с
+    // g) или subnormal float — умножение на InvSqrt(~0) даст NaN/Inf в
+    // кватернионе
     if (sSqNorm >= 1e-20f) {
       const float sNorm = InvSqrt(sSqNorm);
       s0 *= sNorm;
@@ -168,13 +169,11 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
     // Вычисляем опорное магнитное поле Земли из текущего кватерниона:
     // h = q ⊗ [0, mx, my, mz] ⊗ q* — поле в earth-frame
     const float hx = mx_n * (q0q0 + q1q1 - q2q2 - q3q3) +
-                     2.f * my_n * (q1q2 - q0q3) +
-                     2.f * mz_n * (q1q3 + q0q2);
+                     2.f * my_n * (q1q2 - q0q3) + 2.f * mz_n * (q1q3 + q0q2);
     const float hy = 2.f * mx_n * (q1q2 + q0q3) +
                      my_n * (q0q0 - q1q1 + q2q2 - q3q3) +
                      2.f * mz_n * (q2q3 - q0q1);
-    const float hz = 2.f * mx_n * (q1q3 - q0q2) +
-                     2.f * my_n * (q2q3 + q0q1) +
+    const float hz = 2.f * mx_n * (q1q3 - q0q2) + 2.f * my_n * (q2q3 + q0q1) +
                      mz_n * (q0q0 - q1q1 - q2q2 + q3q3);
 
     // Проецируем в горизонтальную плоскость: bx = sqrt(hx²+hy²), bz = hz.
@@ -195,9 +194,8 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
     const float fb3 = _2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz_n;
 
     // Градиент: J^T * f (объединённый для g и b)
-    float s0 = -2.f * q2_ * fg1 + 2.f * q1_ * fg2 +
-               (-_2bz * q2_) * fb1 + (-_2bx * q3_ + _2bz * q1_) * fb2 +
-               _2bx * q2_ * fb3;
+    float s0 = -2.f * q2_ * fg1 + 2.f * q1_ * fg2 + (-_2bz * q2_) * fb1 +
+               (-_2bx * q3_ + _2bz * q1_) * fb2 + _2bx * q2_ * fb3;
     float s1 = 2.f * q3_ * fg1 + 2.f * q0_ * fg2 - 4.f * q1_ * fg3 +
                _2bz * q3_ * fb1 + (_2bx * q2_ + _2bz * q0_) * fb2 +
                (_2bx * q3_ - _4bz * q1_) * fb3;
@@ -212,7 +210,10 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
     const float sSqNorm = s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3;
     if (sSqNorm >= 1e-20f) {
       const float sNorm = InvSqrt(sSqNorm);
-      s0 *= sNorm; s1 *= sNorm; s2 *= sNorm; s3 *= sNorm;
+      s0 *= sNorm;
+      s1 *= sNorm;
+      s2 *= sNorm;
+      s3 *= sNorm;
       qDot1 -= effective_beta * s0;
       qDot2 -= effective_beta * s1;
       qDot3 -= effective_beta * s2;
@@ -243,37 +244,42 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
 
   const float qSqNorm = q0_ * q0_ + q1_ * q1_ + q2_ * q2_ + q3_ * q3_;
   if (qSqNorm < 1e-12f) {
-    q0_ = 1.f; q1_ = 0.f; q2_ = 0.f; q3_ = 0.f;
+    q0_ = 1.f;
+    q1_ = 0.f;
+    q2_ = 0.f;
+    q3_ = 0.f;
     return;
   }
   const float qNorm = InvSqrt(qSqNorm);
-  q0_ *= qNorm; q1_ *= qNorm; q2_ *= qNorm; q3_ *= qNorm;
+  q0_ *= qNorm;
+  q1_ *= qNorm;
+  q2_ *= qNorm;
+  q3_ *= qNorm;
 }
 
 void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
                                      const float forward_vec[3], bool valid) {
-  // Курс, на который фильтр уже сошёлся, снимаем ДО смены опорной СК —
-  // переинициализация ниже обнуляет наклон, но курс должна сохранить (см.
-  // комментарий у присваивания кватерниона).
-  //
-  // Требуются ОБА условия:
+  // Курс сохраняем, только если:
   // 1. yaw_has_absolute_ref_ — курс подкреплён магнитометром. В 6DOF yaw —
   //    накопленный дрейф гироскопа без абсолютной опоры: сохранять его
   //    нечего, и контракт vehicle-frame («после калибровки Euler ≈ 0»)
   //    важнее.
-  // 2. use_vehicle_frame_ — уже была УСПЕШНАЯ предыдущая калибровка. Иначе
-  //    GetEulerRad() ниже вернёт yaw в СЫРОЙ СК датчика (use_vehicle_frame_
-  //    ещё false), а не в системе координат машины — если монтаж имеет
-  //    смещение по курсу (или машина просто не смотрит на 0° при самой
-  //    первой калибровке), это значение некорректно интерпретировать как
-  //    «курс машины для сохранения»: оно съедет в vehicle-frame после
-  //    построения q_sv ниже. На первой калибровке сохранять ещё нечего —
-  //    обнуляем (review r3630012102, LOS-229).
-  float prev_yaw_rad = 0.f;
-  if (yaw_has_absolute_ref_ && use_vehicle_frame_) {
-    float pitch_unused, roll_unused;
-    GetEulerRad(pitch_unused, roll_unused, prev_yaw_rad);
-  }
+  // 2. use_vehicle_frame_ — уже была УСПЕШНАЯ предыдущая калибровка. На
+  //    самой первой сохранять ещё нечего — обнуляем (review r3630012102,
+  //    LOS-229).
+  //
+  // q_madgwick СЕЙЧАС (до перезаписи ниже) — единственная величина,
+  // инвариантная к смене монтажа: в стандартной конвенции это «датчик→NED»,
+  // не зависящее от того, какой vehicle frame был установлен ранее. Снимаем
+  // его здесь, а курс относительно НОВОГО монтажа считаем НИЖЕ, уже после
+  // построения q_sv_new — GetEulerRad() читал бы курс через СТАРЫЙ q_sv, и
+  // если между калибровками сменился forward_vec (например, Forward-стадия
+  // уточнила ось после грубой Full), «старый» vehicle-frame yaw был бы
+  // посчитан относительно старого монтажа — переносить его 1:1 на новый
+  // некорректно (review r3630372356, LOS-229).
+  const bool preserve_yaw = yaw_has_absolute_ref_ && use_vehicle_frame_;
+  const float q_madgwick_prev_w = q0_, q_madgwick_prev_x = q1_,
+              q_madgwick_prev_y = q2_, q_madgwick_prev_z = q3_;
 
   use_vehicle_frame_ = false;
   if (!valid || forward_vec == nullptr || gravity_vec == nullptr) return;
@@ -351,6 +357,23 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   q_veh_to_ned_3_ *= qn;
   use_vehicle_frame_ = true;
 
+  // Курс относительно НОВОГО монтажа: q_madgwick_prev (снятый до перезаписи
+  // выше, «датчик→NED») умножаем на СВЕЖЕПОСТРОЕННЫЙ q_sv_new — та же
+  // формула, что использует GetQuaternion() для активного vehicle frame
+  // (q_result = q_madgwick * q_sv), но с НОВЫМ q_sv, а не старым. Если
+  // монтаж не менялся между калибровками, результат идентичен старому
+  // GetEulerRad()-based способу; если менялся — курс корректно
+  // пересчитывается через смену базиса, а не переносится 1:1.
+  float prev_yaw_rad = 0.f;
+  if (preserve_yaw) {
+    float qw, qx, qy, qz;
+    QuatMul(q_madgwick_prev_w, q_madgwick_prev_x, q_madgwick_prev_y,
+            q_madgwick_prev_z, q_veh_to_ned_0_, q_veh_to_ned_1_,
+            q_veh_to_ned_2_, q_veh_to_ned_3_, qw, qx, qy, qz);
+    prev_yaw_rad =
+        std::atan2(2.f * (qw * qz + qx * qy), 1.f - 2.f * (qy * qy + qz * qz));
+  }
+
   // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame pitch/roll =
   // 0 при курсе ψ (prev_yaw_rad). Мэджвик использует сопряжённую конвенцию:
   // v_sensor = q* ⊗ v_ref ⊗ q, т.е. q в стандартной конвенции =
@@ -386,10 +409,10 @@ void MadgwickFilter::GetQuaternion(float& qw, float& qx, float& qy,
     GetQuaternionInNed(qw, qx, qy, qz);
     return;
   }
-  // Мэджвик (сопряжённая конвенция): q_madgwick = sensor→reference (стандартная).
-  // q_sv = vehicle→sensor (стандартная).
-  // q_result = q_madgwick * q_sv = vehicle→reference (стандартная конвенция).
-  // Euler ZYX из q_result дают ориентацию машины относительно горизонта.
+  // Мэджвик (сопряжённая конвенция): q_madgwick = sensor→reference
+  // (стандартная). q_sv = vehicle→sensor (стандартная). q_result = q_madgwick *
+  // q_sv = vehicle→reference (стандартная конвенция). Euler ZYX из q_result
+  // дают ориентацию машины относительно горизонта.
   QuatMul(q0_, q1_, q2_, q3_, q_veh_to_ned_0_, q_veh_to_ned_1_, q_veh_to_ned_2_,
           q_veh_to_ned_3_, qw, qx, qy, qz);
 }

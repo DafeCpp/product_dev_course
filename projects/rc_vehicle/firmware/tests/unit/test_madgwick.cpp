@@ -998,6 +998,60 @@ TEST(MadgwickTest, InvalidateYawTrust_ResetsProgressNotQuaternion) {
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+TEST(MadgwickTest, SetVehicleFrame_RoundTripThroughDifferentMountIsConsistent) {
+  // Ревью PR #283 (r3630372356): если МЕЖДУ калибровками сменился q_sv
+  // (например, Forward-стадия уточнила accel_forward_vec после грубой
+  // Full-стадии), «старый» vehicle-frame yaw был посчитан относительно
+  // СТАРОГО монтажа — переносить его 1:1 на новый некорректно. Курс должен
+  // пересчитываться через смену базиса.
+  //
+  // Проверяем самосогласованностью: калибровка под монтажом A → под
+  // монтажом B → снова под монтажом A (без движения между вызовами) должна
+  // вернуть ИСХОДНЫЙ курс. При некорректном пересчёте (или его отсутствии,
+  // как раньше — прямое копирование числа) round-trip НЕ восстановит
+  // исходное значение, а промежуточный курс под B совпадёт с курсом под A
+  // (что и является багом: копирование, а не пересчёт).
+  MadgwickFilter filter;
+  filter.SetBeta(0.5f);
+
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward_a[3] = {1.0f, 0.0f, 0.0f};
+  float forward_b[3] = {0.0f, 1.0f, 0.0f};  // монтаж B: 90° по курсу от A
+
+  filter.SetVehicleFrame(gravity, forward_a, true);
+
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+  for (int i = 0; i < 7500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+
+  float pitch_a1, roll_a1, yaw_a1;
+  filter.GetEulerDeg(pitch_a1, roll_a1, yaw_a1);
+  ASSERT_GT(std::abs(yaw_a1), 5.0f)
+      << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+
+  // Монтаж меняется на B (например, Forward-калибровка уточнила ось).
+  filter.SetVehicleFrame(gravity, forward_b, true);
+  float pitch_b, roll_b, yaw_b;
+  filter.GetEulerDeg(pitch_b, roll_b, yaw_b);
+  EXPECT_GT(std::abs(yaw_b - yaw_a1), 5.0f)
+      << "Курс под другим монтажом должен отличаться от курса под старым — "
+         "если совпадает, значит число просто скопировано без пересчёта "
+         "через смену базиса (баг)";
+
+  // И обратно на A — без движения между вызовами курс должен вернуться
+  // к исходному значению.
+  filter.SetVehicleFrame(gravity, forward_a, true);
+  float pitch_a2, roll_a2, yaw_a2;
+  filter.GetEulerDeg(pitch_a2, roll_a2, yaw_a2);
+  EXPECT_NEAR(yaw_a2, yaw_a1, 1.0f)
+      << "Round-trip A→B→A без движения должен вернуть исходный курс — "
+         "иначе курс пересчитывается через смену базиса некорректно";
+  EXPECT_NEAR(pitch_a2, 0.0f, 0.1f);
+  EXPECT_NEAR(roll_a2, 0.0f, 0.1f);
+}
+
 TEST(MadgwickTest, SetVehicleFrame_ResetsYawWithoutMagnetometer) {
   // Обратная сторона LOS-229: без магнитометра (6DOF) yaw — это накопленный
   // дрейф гироскопа без абсолютной опоры. Сохранять его нечего, и контракт
