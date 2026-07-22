@@ -190,21 +190,22 @@ TEST(ImuHandlerTest, CalibrationOnExactStaleTimeoutTickDoesNotPreserveYaw) {
   ASSERT_GT(std::abs(yaw_converged), 5.0f)
       << "Тест бессмысленен, если курс не сошёлся к ненулевому значению";
 
-  // Последнее успешное чтение mag было на границе 14000 мс (опрос на 100 Гц).
-  // Магнетометр перестаёт отвечать; шагаем ДО, но не ВКЛЮЧАЯ тик, на котором
-  // истекает kMagStaleTimeoutMs (250 мс от 14000 = 14250 — ещё не > порога,
-  // следующий опрос на 14260 — первый, где 260 > 250).
+  // Последнее успешное чтение mag было на границе 14000 мс. Магнетометр
+  // перестаёт отвечать; шагаем ДО, но не ВКЛЮЧАЯ тик, на котором истекает
+  // kMagStaleTimeoutMs. Таймаут проверяется на КАЖДОМ IMU-тике (2 мс), а не
+  // только на 10-мс опросах магнетометра (review r3629933116, LOS-229) —
+  // 14250 даёт ровно 250 (не > порога), 14252 — первый тик, где 252 > 250.
   platform.SetMagReadShouldFail(true);
-  while (now_ms < 14258) {
+  while (now_ms < 14250) {
     now_ms += 2;
     imu.Update(now_ms, 2);
   }
-  ASSERT_EQ(now_ms, 14258u);
+  ASSERT_EQ(now_ms, 14250u);
   ASSERT_TRUE(imu.IsMagEnabled())
       << "На этом тике таймаут ещё не должен был сработать (250, не > 250)";
 
   // Критический тик: калибровка становится валидной РОВНО на том же тике,
-  // где магнетометр впервые признаётся устаревшим (260 мс > 250).
+  // где магнетометр впервые признаётся устаревшим (252 мс > 250).
   ImuCalibData valid_calib{};
   valid_calib.valid = true;
   valid_calib.gravity_vec[0] = 0.f;
@@ -215,7 +216,7 @@ TEST(ImuHandlerTest, CalibrationOnExactStaleTimeoutTickDoesNotPreserveYaw) {
   valid_calib.accel_forward_vec[2] = 0.f;
   calib.SetData(valid_calib);
   now_ms += 2;
-  ASSERT_EQ(now_ms, 14260u);
+  ASSERT_EQ(now_ms, 14252u);
   imu.Update(now_ms, 2);
 
   EXPECT_FALSE(imu.IsMagEnabled())

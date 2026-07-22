@@ -122,6 +122,17 @@ void ImuHandler::UpdateVehicleFrame() {
 }
 
 void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
+  // Таймаут устаревания — ДО throttle-гейта опроса ниже и на каждом вызове
+  // (IMU-тик, 2 мс), а не только на тиках, где реально идёт опрос
+  // магнетометра (100 Гц): иначе IMU-тики между опросами могут уже
+  // превысить kMagStaleTimeoutMs по факту, но mag_enabled_ останется true
+  // до следующего 10-мс опроса — до 8 мс лишнего доверия к замороженному
+  // семплу, в течение которых калибровка могла бы закрепить устаревший курс
+  // (review r3629933116, LOS-229).
+  if (mag_enabled_ && (now_ms - last_mag_success_ms_) > kMagStaleTimeoutMs) {
+    mag_enabled_ = false;
+  }
+
   // Читаем магнетометр на 100 Hz (MMC5983 CMM rate).
   // I2C/SPI транзакция ~350 мкс — не читаем каждые 2 мс.
   if ((now_ms - last_mag_read_ms_) < kMagReadIntervalMs) {
@@ -131,13 +142,6 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
 
   const auto mag_opt = platform_.ReadMag();
   if (!mag_opt) {
-    // Магнетометр перестал отвечать: раньше mag_enabled_ здесь не сбрасывался,
-    // и FeedMadgwick кормил UpdateWithMag замороженным mag_calibrated_ сколько
-    // угодно долго — MadgwickFilter не может сам понять, что семпл устарел.
-    // Откатываемся в 6DOF, если сбои затянулись дольше таймаута.
-    if (mag_enabled_ && (now_ms - last_mag_success_ms_) > kMagStaleTimeoutMs) {
-      mag_enabled_ = false;
-    }
     return;
   }
   last_mag_success_ms_ = now_ms;
