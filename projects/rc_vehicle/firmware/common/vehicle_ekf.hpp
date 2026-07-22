@@ -170,9 +170,20 @@ class VehicleEkf {
    * @param throttle_abs Абсолютное значение throttle [0..1] для ZUPT gating.
    *        Если > kZuptThrottleThresh, ZUPT пропускается (машина пытается ехать).
    *        По умолчанию 0 — ZUPT всегда активен (обратная совместимость).
+   * @param pitch_rad Тангаж от фильтра ориентации [рад] (ZYX: вокруг оси Y).
+   * @param roll_rad  Крен от фильтра ориентации [рад] (ZYX: вокруг оси X).
+   *
+   * Перед интеграцией из измеренного ускорения снимается проекция гравитации
+   * по live-ориентации, так что в Predict уходит линейное ускорение «без g»
+   * (см. контракт Predict). Вектор реакции гравитации в СК кузова (в g):
+   *   grav_x = -sin(pitch),  grav_y = cos(pitch)·sin(roll).
+   * По умолчанию pitch=roll=0 — компенсации нет (обратная совместимость).
+   * ZUPT-гейт использует сырой модуль ускорения (|a|≈1g статически при любом
+   * наклоне), поэтому компенсация на него не влияет.
    */
   void UpdateFromImu(float ax_g, float ay_g, float az_g, float gz_dps,
-                     float dt_sec, float throttle_abs = 0.0f) noexcept;
+                     float dt_sec, float throttle_abs = 0.0f,
+                     float pitch_rad = 0.0f, float roll_rad = 0.0f) noexcept;
 
   /** Результат ZUPT gate на последнем обновлении IMU. */
   [[nodiscard]] ZuptStatus GetZuptStatus() const noexcept {
