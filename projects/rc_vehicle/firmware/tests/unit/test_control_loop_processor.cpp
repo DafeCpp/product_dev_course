@@ -354,6 +354,79 @@ TEST_F(ProcessorTest, MadgwickDisabled_NoStaleGravityCompensation) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TiltEstimator grav-comp (LOS-240)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST_F(ProcessorTest, TiltComp_LevelAccel_VxTracksTrueSpeed) {
+  // Критерий приёмки LOS-240: прямой разгон 0.2g/5с на РОВНОМ не должен
+  // «съедаться» grav-comp. С Madgwick как источником тангажа (баг из
+  // код-ревью #287) |a|≈1.02g остаётся ниже порога adaptive-beta и Madgwick
+  // заваливает pitch на ~11°, из-за чего EKF vx сильно недооценивает
+  // истинную скорость. TiltEstimator держит pitch≈0 на гироскопе.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();  // throttle сразу применяется, без slew
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  // Мотор-модельный якорь отключаем: иначе он подтянет vx к ожидаемой
+  // скорости независимо от корректности grav-comp, и тест станет вакуумным
+  // (как и в MadgwickDisabled_NoStaleGravityCompensation выше).
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // throttle > 2% отключает ZUPT; машина «едет прямо» с постоянным
+  // продольным ускорением 0.2g на ровном месте (ay=0, gx=gy=gz=0).
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  ImuData imu{};
+  imu.ax = 0.2f;
+  imu.az = 1.0f;
+  platform_.SetImuData(imu);
+
+  RunSteps(2500);  // 5 секунд при dt=2мс
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  // Истинная скорость: 0.2g · 9.80665 · 5с ≈ 9.8 м/с. Допуск учитывает
+  // короткий переходный процесс комплементарного фильтра на старте.
+  EXPECT_NEAR(ekf_.GetVx(), 9.8f, 2.5f);
+  EXPECT_GT(ekf_.GetVx(), 6.0f)
+      << "vx не должен быть «съеден» ложной grav-компенсацией (было ~1.1 "
+         "м/с при баге с Madgwick — см. код-ревью PR #287)";
+}
+
+TEST_F(ProcessorTest, TiltComp_StaticTilt_NoDivergence) {
+  // Дополняет тест выше: одновременно с разгоном на ровном grav-comp должна
+  // продолжать защищать от статического наклона (критерий приёмки LOS-240
+  // требует прохождения обоих сценариев).
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // throttle > 2% отключает ZUPT — иначе тест грав-компенсации был бы
+  // вакуумным (ZUPT сам обнулил бы vx независимо от корректности тангажа).
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
+  ImuData imu{};
+  imu.ax = -std::sin(kPitch);
+  imu.az = std::cos(kPitch);
+  platform_.SetImuData(imu);
+
+  RunSteps(2000);  // 4 секунды
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  // Без grav-comp фантомное ускорение g·sin(20°)≈3.35 м/с² за 4с ушло бы к
+  // клемпу kMaxSpeedMs=15. С компенсацией vx остаётся на порядок меньше.
+  EXPECT_LT(ekf_.GetVx(), 5.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CalibrationManager
 // ═══════════════════════════════════════════════════════════════════════════
 

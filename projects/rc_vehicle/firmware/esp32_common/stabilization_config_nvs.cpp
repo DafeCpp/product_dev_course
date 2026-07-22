@@ -30,7 +30,9 @@ static constexpr uint8_t kDriveModeCount = 5;
 // (motor_model_enabled,
 //     motor_speed_gain, motor_deadzone, speed_meas_noise, nhc_enabled,
 //     nhc_noise)
-static constexpr uint8_t kCurrentStabConfigVersion = 7;
+// v8: добавлены FilterConfig::tilt_comp_enabled, tilt_corr_gain_hz,
+//     tilt_accel_gate_band_g (LOS-240)
+static constexpr uint8_t kCurrentStabConfigVersion = 8;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
 struct StabConfigBlob {

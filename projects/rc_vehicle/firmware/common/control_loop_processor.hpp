@@ -13,6 +13,7 @@
 #include "stabilization_manager.hpp"
 #include "stabilization_pipeline.hpp"
 #include "telemetry_manager.hpp"
+#include "tilt_estimator.hpp"
 #include "vehicle_control_platform.hpp"
 #include "vehicle_ekf.hpp"
 
@@ -87,6 +88,15 @@ class ControlLoopProcessor {
   float applied_steering_{0.0f};
   float prev_gz_rad_s_{0.0f};
   bool failsafe_was_active_{false};
+
+  // Независимый от акселерометра источник тангажа/крена для grav-comp
+  // (LOS-240). prev_vx_ хранит EKF vx предыдущего тика; a_lin_prev_g_ —
+  // оценку продольного линейного ускорения (конечная разность), которая
+  // подаётся в TiltEstimator СЛЕДУЮЩЕГО тика (без циркулярности внутри
+  // одного тика между тангажом и vx).
+  TiltEstimator tilt_est_;
+  float prev_vx_{0.0f};
+  float a_lin_prev_g_{0.0f};
   uint32_t last_pwm_update_;
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;

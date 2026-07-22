@@ -181,6 +181,30 @@ struct FilterConfig {
   float nhc_noise{2.0f};
 
   /**
+   * Комплементарный тилт-фильтр (TiltEstimator) как источник тангажа/крена
+   * для grav-comp вместо Madgwick (LOS-240). Не загрязняется линейным
+   * ускорением при разгоне/торможении — см. tilt_estimator.hpp. При
+   * выключении — фолбэк на Madgwick (если madgwick_enabled), иначе grav-comp
+   * не работает (pitch=roll=0). По умолчанию включено.
+   */
+  bool tilt_comp_enabled{true};
+
+  /**
+   * Коэффициент комплементарного подтяга тангажа/крена к accel-оценке
+   * [1/с]. Больше → быстрее компенсация дрейфа гироскопа, но больше
+   * остаточной утечки ложного тилта при разгоне. Диапазон: 0.05–5.0,
+   * по умолчанию 0.5 (постоянная времени ~2 с).
+   */
+  float tilt_corr_gain_hz{0.5f};
+
+  /**
+   * Полуширина гейта |a|-1g для accel-коррекции TiltEstimator [g]. Вне
+   * диапазона (удар/выброс на ухабе) коррекция не применяется. Диапазон:
+   * 0.02–0.5, по умолчанию 0.1.
+   */
+  float tilt_accel_gate_band_g{0.1f};
+
+  /**
    * @brief Проверить валидность конфигурации фильтров
    */
   [[nodiscard]] bool IsValid() const noexcept {
@@ -189,7 +213,10 @@ struct FilterConfig {
            imu_sample_rate_hz > 0.0f && adaptive_accel_threshold_g >= 0.05f &&
            adaptive_accel_threshold_g <= 0.5f && motor_speed_gain >= 0.5f &&
            motor_speed_gain <= 30.0f && motor_deadzone >= 0.0f &&
-           motor_deadzone < 1.0f && speed_meas_noise > 0.0f && nhc_noise > 0.0f;
+           motor_deadzone < 1.0f && speed_meas_noise > 0.0f &&
+           nhc_noise > 0.0f && tilt_corr_gain_hz >= 0.05f &&
+           tilt_corr_gain_hz <= 5.0f && tilt_accel_gate_band_g >= 0.02f &&
+           tilt_accel_gate_band_g <= 0.5f;
   }
 
   /**

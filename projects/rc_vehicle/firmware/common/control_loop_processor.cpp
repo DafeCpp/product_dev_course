@@ -96,21 +96,33 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
 
   const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
   if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
-    // Ориентация из Madgwick (обновлён в этом же цикле в UpdateComponents) —
-    // для снятия проекции гравитации из ускорения перед интеграцией в EKF.
-    // При выключенном AHRS кватернион не обновляется (углы залипают на
-    // последнем значении) — читаем 0, что эквивалентно отсутствию
-    // grav-компенсации (безопасный дефолт, старое поведение EKF).
+    const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
+    constexpr float kG = 9.80665f;
+
+    // Ориентация для снятия проекции гравитации из ускорения перед
+    // интеграцией в EKF. Источник по умолчанию — TiltEstimator (LOS-240):
+    // комплементарный фильтр, не загрязняемый линейным ускорением (в
+    // отличие от Madgwick — см. tilt_estimator.hpp). a_lin_prev_g_ хранит
+    // оценку продольного линейного ускорения ПРЕДЫДУЩЕГО тика (конечная
+    // разность заякоренного EKF vx), что исключает циркулярность внутри
+    // одного тика между тангажом и vx, вычисляемым этим же UpdateFromImu.
+    // При выключенном tilt-фильтре — фолбэк на Madgwick (обратная
+    // совместимость); при выключенных обоих — 0 (без grav-компенсации).
     float pitch_rad = 0.0f, roll_rad = 0.0f;
-    if (stab_cfg_.filter.madgwick_enabled) {
+    if (stab_cfg_.filter.tilt_comp_enabled) {
+      tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
+                           stab_cfg_.filter.tilt_accel_gate_band_g});
+      tilt_est_.Update(sensors_.imu_data, a_lin_prev_g_, dt_sec);
+      pitch_rad = tilt_est_.GetPitchRad();
+      roll_rad = tilt_est_.GetRollRad();
+    } else if (stab_cfg_.filter.madgwick_enabled) {
       float yaw_rad = 0.0f;
       ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
     }
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
     ctx_.ekf.UpdateFromImu(sensors_.imu_data.ax, sensors_.imu_data.ay,
-                           sensors_.imu_data.az, sensors_.filtered_gz,
-                           static_cast<float>(dt_ms) * 0.001f,
+                           sensors_.imu_data.az, sensors_.filtered_gz, dt_sec,
                            std::abs(commanded_throttle_), pitch_rad, roll_rad);
 
     // Якорь продольной скорости через мотор-модель (LOS-233): без датчика
@@ -140,6 +152,12 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     if (f.nhc_enabled && std::abs(ctx_.ekf.GetYawRate()) < kNhcMaxYawRateRps) {
       ctx_.ekf.UpdateNonHolonomic(f.nhc_noise);
     }
+
+    // Обновляем оценку продольного линейного ускорения для TiltEstimator
+    // СЛЕДУЮЩЕГО тика: конечная разность заякоренного EKF vx этого тика.
+    const float vx_now = ctx_.ekf.GetVx();
+    a_lin_prev_g_ = (vx_now - prev_vx_) / dt_sec / kG;
+    prev_vx_ = vx_now;
   }
   if (ekf_active && sensors_.imu_enabled && sensors_.mag_enabled) {
     constexpr float kDegToRad = 3.14159265358979f / 180.0f;
