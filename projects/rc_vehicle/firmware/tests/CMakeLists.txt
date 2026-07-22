@@ -128,6 +128,7 @@ add_executable(unit_tests
     unit/test_imu_calibration_forward.cpp
     unit/test_control_loop_helpers.cpp
     unit/test_control_loop_processor.cpp
+    unit/test_imu_handler.cpp
     unit/test_mmc5983.cpp
     unit/test_mag_calibration.cpp
     unit/test_stdio_platform.cpp

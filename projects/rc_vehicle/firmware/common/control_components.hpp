@@ -262,7 +262,13 @@ class ImuHandler : public ControlComponent {
   MagData mag_calibrated_{};  ///< Последний семпл после Apply() калибровки
   bool mag_enabled_{false};
   uint32_t last_mag_read_ms_{0};
+  uint32_t last_mag_success_ms_{0};
   static constexpr uint32_t kMagReadIntervalMs = 10;  ///< 100 Hz
+  // Если магнетометр не отвечает дольше этого времени — считаем данные
+  // невалидными и откатываемся в 6DOF (review r3629660991, LOS-229): иначе
+  // FeedMadgwick кормил бы UpdateWithMag замороженным mag_calibrated_ сколько
+  // угодно долго, а сам MadgwickFilter не может определить, что семпл устарел.
+  static constexpr uint32_t kMagStaleTimeoutMs = 250;
 
   // Калибровка магнитометра (не владеет)
   MagCalibration* mag_calib_{nullptr};

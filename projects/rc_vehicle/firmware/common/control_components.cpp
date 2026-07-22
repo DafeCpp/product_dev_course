@@ -107,15 +107,23 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // LPF инициализирован в конструкторе — горячий путь без проверок
   filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
 
-  UpdateVehicleFrame();
-
   const float dt_sec =
       first_read_ ? (read_interval_ms_ / 1000.0f)
                   : (static_cast<float>(now_ms - prev_read_ms) / 1000.0f);
   first_read_ = false;
 
+  // UpdateMagAndHeading + FeedMadgwick — ДО UpdateVehicleFrame(): иначе на
+  // тике, где калибровка становится валидной ровно в момент истечения
+  // таймаута устаревшего магнетометра, SetVehicleFrame() прочитал бы
+  // filter_.yaw_has_absolute_ref_ ещё с ПРЕДЫДУЩЕГО тика (mag_enabled_ тогда
+  // ещё не был инвалидирован) и мог бы закрепить курс, посчитанный по уже
+  // замороженному mag-семплу (review r3629768456, LOS-229). В этом порядке
+  // к моменту UpdateVehicleFrame() флаг уже отражает состояние текущего
+  // тика.
   UpdateMagAndHeading(now_ms);
   FeedMadgwick(raw_ax, raw_ay, raw_az, dt_sec);
+
+  UpdateVehicleFrame();
 }
 
 void ImuHandler::UpdateVehicleFrame() {
@@ -134,6 +142,17 @@ void ImuHandler::UpdateVehicleFrame() {
 }
 
 void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
+  // Таймаут устаревания — ДО throttle-гейта опроса ниже и на каждом вызове
+  // (IMU-тик, 2 мс), а не только на тиках, где реально идёт опрос
+  // магнетометра (100 Гц): иначе IMU-тики между опросами могут уже
+  // превысить kMagStaleTimeoutMs по факту, но mag_enabled_ останется true
+  // до следующего 10-мс опроса — до 8 мс лишнего доверия к замороженному
+  // семплу, в течение которых калибровка могла бы закрепить устаревший курс
+  // (review r3629933116, LOS-229).
+  if (mag_enabled_ && (now_ms - last_mag_success_ms_) > kMagStaleTimeoutMs) {
+    mag_enabled_ = false;
+  }
+
   // Читаем магнетометр на 100 Hz (MMC5983 CMM rate).
   // I2C/SPI транзакция ~350 мкс — не читаем каждые 2 мс.
   if ((now_ms - last_mag_read_ms_) < kMagReadIntervalMs) {
@@ -145,6 +164,7 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
   if (!mag_opt) {
     return;
   }
+  last_mag_success_ms_ = now_ms;
   mag_data_ = *mag_opt;
   mag_enabled_ = true;
 
@@ -199,6 +219,14 @@ float ImuHandler::ComputePcaHeadingDeg(const MagData& mag_cal) const {
 void ImuHandler::FeedMadgwick(float raw_ax, float raw_ay, float raw_az,
                               float dt_sec) {
   if (!madgwick_enabled_) {
+    // Кватернион заморожен (ни Update(), ни UpdateWithMag() не вызываются),
+    // но машина могла продолжать двигаться, пока Мэджвик выключен
+    // (StabilizationManager::ApplyToFilters переключает это на ходу через
+    // cfg.filter.madgwick_enabled). Опору для будущей калибровки нужно
+    // заработать заново после повторного включения — иначе
+    // IMU/Forward-калибровка могла бы сохранить курс, посчитанный по уже
+    // неактуальному кватерниону (review r3630915899, LOS-229).
+    filter_.InvalidateYawTrust();
     return;
   }
 

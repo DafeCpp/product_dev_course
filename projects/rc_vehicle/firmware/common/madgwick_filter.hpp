@@ -70,6 +70,24 @@ class MadgwickFilter : public IOrientationFilter {
   }
   float GetAdaptiveThresholdG() const { return adaptive_threshold_g_; }
 
+  /**
+   * Сбросить накопленную опору курса (yaw_has_absolute_ref_ и прогресс
+   * сходимости), не трогая сам кватернион ориентации.
+   *
+   * Вызывать при смене калибровки магнитометра (MagCalibration::Finish()):
+   * mag_calib_->Apply() начинает выдавать другой скорректированный вектор
+   * (иной hard-iron offset), и накопленный до этого прогресс относился к
+   * СТАРОЙ калибровке (или вовсе к сырым, некалиброванным данным) — курс,
+   * посчитанный по нему, ещё не сошёлся под НОВУЮ калибровку. Без сброса
+   * IMU-калибровка, завершившаяся вскоре после смены mag-калибровки, могла
+   * бы закрепить курс, посчитанный по устаревшей магнитной опоре (review
+   * r3630102909, LOS-229).
+   */
+  void InvalidateYawTrust() {
+    yaw_has_absolute_ref_ = false;
+    marg_correction_progress_ = 0.f;
+  }
+
  private:
   float q0_{1.f}, q1_{0.f}, q2_{0.f}, q3_{0.f};
   float beta_{0.1f};
@@ -77,6 +95,36 @@ class MadgwickFilter : public IOrientationFilter {
   // Адаптивный beta: отключение коррекции при линейном ускорении
   bool adaptive_enabled_{false};
   float adaptive_threshold_g_{0.2f};
+
+  // Есть ли у курса абсолютная опора: true после серии 9DOF-обновлений с
+  // магнитометром, false после 6DOF (там yaw — только дрейф гироскопа).
+  // От этого зависит, сохранять ли курс в SetVehicleFrame().
+  bool yaw_has_absolute_ref_{false};
+
+  // Опора считается абсолютной только после накопления MARG-коррекции,
+  // взвешенной по beta, — не тиков и не голого времени. Продакшен вызывает
+  // UpdateWithMag каждые 2 мс (500 Гц control loop) независимо от частоты
+  // обновления самого магнитометра (ImuHandler::FeedMadgwick), поэтому
+  // счётчик «подряд идущих обновлений» открывался за ~100 мс, хотя
+  // градиентный спуск при дефолтном beta=0.1 реально сходится за ~10-11 с
+  // (см. телеметрию LOS-229, review r3628818049). Скорость сходимости
+  // пропорциональна beta, а конфиг допускает madgwick_beta от 0.01 до 1.0
+  // (FilterConfig::Clamp, stabilization_config.cpp) и может меняться на
+  // ходу через StabilizationManager::ApplyToFilters — поэтому копим
+  // effective_beta * dt_sec (вклад тика в реальную сходимость), а не сырое
+  // время: секунды, накопленные при низком beta, не переоцениваются, если
+  // beta потом увеличили (review r3629340617, LOS-229). Тики с
+  // effective_beta == 0 (адаптивный beta при разгоне/торможении) вклада не
+  // дают. Любой провал в 6DOF обнуляет накопитель.
+  //
+  // Порог — калибровочная точка: при постоянном beta=kReferenceBeta (0.1)
+  // накопитель достигает её за kReferenceSecondsForYawRef (12 с, с запасом
+  // над наблюдаемыми ~10-11 с).
+  float marg_correction_progress_{0.f};
+  static constexpr float kReferenceBeta = 0.1f;
+  static constexpr float kReferenceSecondsForYawRef = 12.0f;
+  static constexpr float kMinMargProgressForYawRef =
+      kReferenceBeta * kReferenceSecondsForYawRef;
 
   // Опорная СК машины: q_veh_to_ned (поворот из СК машины в NED), только если
   // use_vehicle_frame_
