@@ -419,6 +419,36 @@ TEST_F(ImuCalibrationForwardTest,
 }
 
 TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_InvertedMount_RestAccelIsCanonicalUp) {
+  // Перевёрнутый монтаж: gravity_vec[2]<0 (см. InvertedGravity_AtRest_
+  // ReturnsZero выше — уже поддерживаемый случай). «Уровень» в СК машины
+  // обязан читаться как (0,0,+1) — КАНОНИЧЕСКИ, а не (0,0,-1) — иначе
+  // TiltEstimator::Update()'s atan2(ay,az) даёт atan2(0,-1)=π вместо 0
+  // (P1, код-ревью PR #290, 4-й раунд).
+  Load(1.f, 0.f, 0.f, 0.f, 0.f, -1.f);
+
+  ImuData rest{0.f, 0.f, -1.f, 0.f, 0.f, 0.f};  // сырой покой на инвертире
+  calib.RotateToVehicleFrame(rest);
+  EXPECT_NEAR(rest.ax, 0.0f, 1e-5f);
+  EXPECT_NEAR(rest.ay, 0.0f, 1e-5f);
+  EXPECT_NEAR(rest.az, 1.0f, 1e-5f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       RotateToVehicleFrame_InvertedMount_ForwardAccelPreserved) {
+  // На перевёрнутом монтаже продольное ускорение по-прежнему должно
+  // корректно читаться по оси X СК машины, а az — оставаться каноническим
+  // (0,0,+1) при разгоне на ровном месте.
+  Load(1.f, 0.f, 0.f, 0.f, 0.f, -1.f);
+
+  ImuData moving{0.2f, 0.f, -1.f, 0.f, 0.f, 0.f};
+  calib.RotateToVehicleFrame(moving);
+  EXPECT_NEAR(moving.ax, 0.2f, 1e-5f);
+  EXPECT_NEAR(moving.ay, 0.0f, 1e-5f);
+  EXPECT_NEAR(moving.az, 1.0f, 1e-5f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
        RotateToVehicleFrame_DegenerateBasis_LeavesDataUnchanged) {
   // «Вперёд» вдоль гравитации — построить базис нельзя. Не должно портить
   // данные (ни NaN, ни произвольный поворот) — фолбэк на тождественное

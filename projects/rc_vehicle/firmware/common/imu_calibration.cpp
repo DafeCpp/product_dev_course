@@ -301,9 +301,15 @@ void ImuCalibration::RotateToVehicleFrame(ImuData& data) const {
   // bias-corrected accel в покое всегда РОВНО RestDownVec() — (0,0,±1) — вне
   // зависимости от реального наклона монтажа (см. GetForwardAccel() выше).
   // Поэтому крутить нужно не сырой accel, а его ДИНАМИЧЕСКУЮ часть
-  // (accel − down); саму гравитацию после поворота возвращаем как «вверх»
-  // СК машины (0,0,down[2]) (P1, код-ревью PR #290 — до фикса гравитация
-  // проецировалась дважды: и через down, и через сырой наклонённый базис).
+  // (accel − down); z[]=normalize(gravity_vec) — это уже ИСТИННОЕ физическое
+  // «вверх» в СК датчика (какой бы знак ни имела ось Z чипа на плате), так
+  // что после поворота статику возвращаем КАНОНИЧЕСКИ как +1 (не down[2]!)
+  // — «уровень» в СК машины обязан читаться как (0,0,+1) независимо от
+  // перевёрнутого/нормального монтажа: TiltEstimator::Update() формулами
+  // atan2(ay,az)/atan2(-ax,√(ay²+az²)) жёстко предполагает az>0 в покое, а
+  // down[2] сохранял бы знак чипа (−1 при gravity_vec[2]<0 — перевёрнутый
+  // монтаж, см. InvertedGravity_AtRest_ReturnsZero выше) и валил бы roll в
+  // atan2(0,−1)=π (P1, код-ревью PR #290, 4-й раунд).
   float down[3];
   RestDownVec(down);
   const float lx = data.ax - down[0];
@@ -311,7 +317,7 @@ void ImuCalibration::RotateToVehicleFrame(ImuData& data) const {
   const float lz = data.az - down[2];
   data.ax = x[0] * lx + x[1] * ly + x[2] * lz;
   data.ay = yx * lx + yy * ly + yz * lz;
-  data.az = z[0] * lx + z[1] * ly + z[2] * lz + down[2];
+  data.az = z[0] * lx + z[1] * ly + z[2] * lz + 1.0f;
 
   // Гироскоп: bias — чистый аддитивный офсет дрейфа, гравитацией не
   // порождён и «уплощения» не имеет — крутим напрямую, без down-поправки.

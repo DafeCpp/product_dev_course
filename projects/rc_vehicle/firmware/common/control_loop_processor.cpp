@@ -117,20 +117,27 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     ImuData veh_imu = sensors_.imu_data;
     ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
 
+    // Мотор-модельный якорь (LOS-233) гейтится этим флагом — единственный
+    // сигнал в системе, действительно независимый от IMU/EKF/тангажа.
+    // a_lin_g (ниже) использует a_lin_prev_g_ ТОЛЬКО пока якорь активен —
+    // без него EKF vx не является независимым источником (см. комментарий
+    // у a_lin_prev_g_ в .hpp).
+    const auto& f = stab_cfg_.filter;
+    const bool motor_model_active =
+        f.motor_model_enabled && !ctx_.auto_drive.IsSpeedCalibActive();
+
     // Ориентация для снятия проекции гравитации из ускорения перед
     // интеграцией в EKF. Источник по умолчанию — TiltEstimator (LOS-240):
     // комплементарный фильтр, не загрязняемый линейным ускорением (в
-    // отличие от Madgwick — см. tilt_estimator.hpp). a_lin_prev_g_ хранит
-    // оценку продольного линейного ускорения ПРЕДЫДУЩЕГО тика (конечная
-    // разность заякоренного EKF vx), что исключает циркулярность внутри
-    // одного тика между тангажом и vx, вычисляемым этим же UpdateFromImu.
-    // При выключенном tilt-фильтре — фолбэк на Madgwick (обратная
-    // совместимость); при выключенных обоих — 0 (без grav-компенсации).
+    // отличие от Madgwick — см. tilt_estimator.hpp). При выключенном
+    // tilt-фильтре — фолбэк на Madgwick (обратная совместимость); при
+    // выключенных обоих — 0 (без grav-компенсации).
     float pitch_rad = 0.0f, roll_rad = 0.0f;
     if (stab_cfg_.filter.tilt_comp_enabled) {
+      const float a_lin_g = motor_model_active ? a_lin_prev_g_ : 0.0f;
       tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
                            stab_cfg_.filter.tilt_accel_gate_band_g});
-      tilt_est_.Update(veh_imu, a_lin_prev_g_, dt_sec);
+      tilt_est_.Update(veh_imu, a_lin_g, dt_sec);
       pitch_rad = tilt_est_.GetPitchRad();
       roll_rad = tilt_est_.GetRollRad();
     } else if (stab_cfg_.filter.madgwick_enabled) {
@@ -146,13 +153,10 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     // Якорь продольной скорости через мотор-модель (LOS-233): без датчика
     // колёс единственный способ не дать vx уйти в разнос при интеграции IMU.
     // v ≈ gain·throttle (с мёртвой зоной) подаётся слабым измерением.
-    // Во время калибровки скорости якорь отключён: иначе калибровка мерила бы
-    // EKF-скорость, заякоренную текущим gain, и подтверждала бы сама себя.
     // Вход модели — applied_throttle_ (значение прошлого тика, после slew и
     // trim): это то, что реально ушло в PWM. Команда при slew-рампе прыгает
     // мгновенно и завышала бы ожидаемую скорость на всё время рампы.
-    const auto& f = stab_cfg_.filter;
-    if (f.motor_model_enabled && !ctx_.auto_drive.IsSpeedCalibActive()) {
+    if (motor_model_active) {
       const float thr = applied_throttle_;
       const float thr_abs = std::abs(thr);
       float v_expected = 0.0f;
@@ -172,7 +176,10 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     }
 
     // Обновляем оценку продольного линейного ускорения для TiltEstimator
-    // СЛЕДУЮЩЕГО тика: конечная разность заякоренного EKF vx этого тика.
+    // СЛЕДУЮЩЕГО тика: конечная разность заякоренного EKF vx этого тика
+    // (потребляется выше только при motor_model_active — иначе EKF vx не
+    // является независимым источником, см. комментарий у a_lin_prev_g_
+    // в .hpp).
     const float vx_now = ctx_.ekf.GetVx();
     a_lin_prev_g_ = (vx_now - prev_vx_) / dt_sec / kG;
     prev_vx_ = vx_now;
