@@ -32,30 +32,23 @@ ImuData LevelImu() {
 MagData SomeMag() { return MagData{0.0f, 0.6f, -0.8f}; }
 
 
-TEST(ImuHandlerTest, PublishesVehicleFrameConventionsForAxAndYawRate) {
-  // LOS-222: железная ось X IMU направлена назад, а gyro Z имеет знак,
-  // противоположный yaw_deg. После чтения ImuHandler должен отдавать остальной
-  // прошивке и телеметрии СК автомобиля: X вперёд, левый поворот -> yaw_rate > 0.
-  FakePlatform platform;
-  ImuCalibration calib;
-  MadgwickFilter filter;
-  ImuHandler imu(platform, calib, filter, /*read_interval_ms=*/2);
-  imu.SetEnabled(true);
+TEST(ImuFrameTest, NormalizeMountedImuToVehicleFrame) {
+  ImuData data{};
+  data.ax = -0.2f;  // физическое ускорение вперёд на установленном IMU
+  data.ay = 0.1f;
+  data.az = -1.0f;
+  data.gx = 1.0f;
+  data.gy = 2.0f;
+  data.gz = -30.0f;  // левый поворот по установленному IMU
 
-  ImuData sensor_frame{};
-  sensor_frame.ax = -0.2f;  // физическое ускорение вперёд на установленном IMU
-  sensor_frame.ay = 0.0f;
-  sensor_frame.az = -1.0f;
-  sensor_frame.gx = 0.0f;
-  sensor_frame.gy = 0.0f;
-  sensor_frame.gz = -30.0f;  // левый поворот по установленному IMU
-  platform.SetImuData(sensor_frame);
+  NormalizeMountedImuToVehicleFrame(data);
 
-  imu.Update(2, 2);
-
-  EXPECT_NEAR(imu.GetData().ax, 0.2f, 1e-6f);
-  EXPECT_NEAR(imu.GetData().gz, 30.0f, 1e-6f);
-  EXPECT_GT(imu.GetFilteredGyroZ(), 0.0f);
+  EXPECT_NEAR(data.ax, 0.2f, 1e-6f);
+  EXPECT_NEAR(data.ay, 0.1f, 1e-6f);
+  EXPECT_NEAR(data.az, -1.0f, 1e-6f);
+  EXPECT_NEAR(data.gx, 1.0f, 1e-6f);
+  EXPECT_NEAR(data.gy, 2.0f, 1e-6f);
+  EXPECT_NEAR(data.gz, 30.0f, 1e-6f);
 }
 
 TEST(ImuHandlerTest, MagEnabledStaysTrueThroughBriefReadBlip) {
