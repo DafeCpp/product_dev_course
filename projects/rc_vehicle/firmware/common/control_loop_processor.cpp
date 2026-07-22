@@ -48,6 +48,19 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   if (ctx_.calib_mgr) {
     ctx_.calib_mgr->ProcessRequest(now);
     ctx_.calib_mgr->ProcessCompletion(now);
+    // Завершение Full/Forward калибровки меняет базис RotateToVehicleFrame()
+    // (код-ревью PR #290, 5-й раунд): tilt_est_ уже мог сойтись под ПРЕЖНИМ
+    // базисом — без сброса эти тангаж/крен интерпретировались бы в НОВОЙ СК
+    // как есть, до нескольких секунд ложной grav-компенсации (corr_gain_hz
+    // по умолчанию 0.5 — медленно). prev_vx_/a_lin_prev_g_ тоже сбрасываем:
+    // EKF только что обнулён (ProcessCompletion() выше), и без сброса
+    // конечная разность на следующем тике дала бы фиктивный скачок против
+    // «протухшего» prev_vx_ (см. комментарий у a_lin_prev_g_ в .hpp).
+    if (ctx_.calib_mgr->ConsumeFrameChanged()) {
+      tilt_est_.Reset();
+      prev_vx_ = ctx_.ekf.GetVx();
+      a_lin_prev_g_ = 0.0f;
+    }
   }
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);

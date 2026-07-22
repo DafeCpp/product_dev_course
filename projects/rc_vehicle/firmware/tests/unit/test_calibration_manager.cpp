@@ -15,7 +15,7 @@ class CalibrationManagerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     mgr_ = std::make_unique<CalibrationManager>(platform_, imu_calib_,
-                                                 madgwick_, &ekf_);
+                                                madgwick_, &ekf_);
   }
 
   FakePlatform platform_;
@@ -70,6 +70,45 @@ TEST_F(CalibrationManagerTest, ProcessCompletion_NoStatusChange_DoesNothing) {
   // Status stays idle → no action
   mgr_->ProcessCompletion(0);
   EXPECT_STREQ(mgr_->GetStatus(), "idle");
+}
+
+// Код-ревью PR #290 (5-й раунд, LOS-240): завершение Full/Forward
+// калибровки меняет базис RotateToVehicleFrame() (через SetVehicleFrame()
+// Madgwick + новые gravity_vec/accel_forward_vec), но TiltEstimator —
+// член ControlLoopProcessor, не CalibrationManager, и не сбрасывался.
+// ConsumeFrameChanged() — сигнал вызывающему коду сделать это сам.
+TEST_F(CalibrationManagerTest, ProcessCompletion_Done_SetsFrameChanged) {
+  imu_calib_.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    ImuData d{};
+    d.az = 1.0f;
+    imu_calib_.FeedSample(d);
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Done);
+
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "флаг не должен быть выставлен до ProcessCompletion()";
+
+  mgr_->ProcessCompletion(0);
+  EXPECT_TRUE(mgr_->ConsumeFrameChanged());
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "повторный вызов должен вернуть false — флаг одноразовый";
+}
+
+TEST_F(CalibrationManagerTest,
+       ProcessCompletion_Failed_DoesNotSetFrameChanged) {
+  imu_calib_.StartCalibration(CalibMode::Full, 10);
+  // Гироскоп «шумит» — калибровка не должна пройти (variance > порога).
+  for (int i = 0; i < 10; ++i) {
+    ImuData d{};
+    d.gz = (i % 2 == 0) ? 10.0f : -10.0f;
+    d.az = 1.0f;
+    imu_calib_.FeedSample(d);
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Failed);
+
+  mgr_->ProcessCompletion(0);
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

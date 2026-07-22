@@ -143,6 +143,23 @@ class CalibrationManager {
    */
   void StartAutoCalibration();
 
+  /**
+   * @brief Проверить и сбросить флаг «СК машины изменилась».
+   *
+   * true один раз после того, как ProcessCompletion() обновил vehicle
+   * frame (SetVehicleFrame() Madgwick + Reset() EKF) на завершении Full/
+   * Forward калибровки. Вызывающий код (ControlLoopProcessor) обязан
+   * сбросить свои собственные накопители, зависящие от СК машины —
+   * TiltEstimator (LOS-240) и конечно-разностное состояние a_lin — иначе
+   * они интерпретируют старые (сошедшиеся под ПРЕЖНИМ базисом) значения
+   * тангажа/крена в НОВОЙ СК (код-ревью PR #290, 5-й раунд).
+   */
+  [[nodiscard]] bool ConsumeFrameChanged() {
+    const bool v = frame_changed_;
+    frame_changed_ = false;
+    return v;
+  }
+
  private:
   VehicleControlPlatform& platform_;
   ImuCalibration& imu_calib_;
@@ -154,6 +171,9 @@ class CalibrationManager {
 
   // Предыдущий статус калибровки (для логирования только при переходах)
   CalibStatus prev_calib_status_{CalibStatus::Idle};
+
+  // См. ConsumeFrameChanged()
+  bool frame_changed_{false};
 
   // Опциональный лог событий (не владеет объектом)
   TelemetryEventLog* event_log_{nullptr};

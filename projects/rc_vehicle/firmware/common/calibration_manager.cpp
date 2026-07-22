@@ -182,6 +182,7 @@ void CalibrationManager::ProcessCompletion(uint32_t now_ms) {
     // Обновить vehicle frame фильтра Madgwick
     const auto& d = imu_calib_.GetData();
     madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+    frame_changed_ = true;  // см. ConsumeFrameChanged()
 
     // Сбросить EKF, чтобы скорость обнулилась после калибровки
     if (ekf_) {
