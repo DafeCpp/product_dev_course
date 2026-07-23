@@ -302,6 +302,8 @@ TEST_F(ControlLoopTest, AutoForwardCalib_AcceptedWithoutRc) {
   platform_->SetImuData(imu);
   ImuCalibData calib{};
   calib.valid = true;
+  calib.gravity_valid = true;  // 13-й раунд: StartForwardCalibration()
+                               // требует РЕАЛЬНУЮ Full-калибровку
   platform_->SetCalibData(calib);
   // RC-команду не задаём: пульт неактивен
 

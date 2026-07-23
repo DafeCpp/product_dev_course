@@ -36,7 +36,8 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   // Единственный snapshot конфига на итерацию (FW-RF5): одна копия под
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
-  stab_cfg_ = ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+  stab_cfg_ =
+      ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
 
   PROF_START();
 
@@ -48,6 +49,23 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   if (ctx_.calib_mgr) {
     ctx_.calib_mgr->ProcessRequest(now);
     ctx_.calib_mgr->ProcessCompletion(now);
+    // Отложенный SetForwardDirection() (WS-команда, код-ревью PR #290,
+    // 7-й раунд) — применяется здесь же, на потоке control loop, где
+    // единственно безопасно трогать imu_calib_/madgwick_.
+    ctx_.calib_mgr->ProcessForwardDirectionRequest();
+    // Завершение Full/Forward калибровки меняет базис RotateToVehicleFrame()
+    // (код-ревью PR #290, 5-й раунд): tilt_est_ уже мог сойтись под ПРЕЖНИМ
+    // базисом — без сброса эти тангаж/крен интерпретировались бы в НОВОЙ СК
+    // как есть, до нескольких секунд ложной grav-компенсации (corr_gain_hz
+    // по умолчанию 0.5 — медленно). prev_vx_/a_lin_prev_g_ тоже сбрасываем:
+    // EKF только что обнулён (ProcessCompletion() выше), и без сброса
+    // конечная разность на следующем тике дала бы фиктивный скачок против
+    // «протухшего» prev_vx_ (см. комментарий у a_lin_prev_g_ в .hpp).
+    if (ctx_.calib_mgr->ConsumeFrameChanged()) {
+      tilt_est_.Reset();
+      prev_vx_ = ctx_.ekf.GetVx();
+      a_lin_prev_g_ = 0.0f;
+    }
   }
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
@@ -67,9 +85,9 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   PROF_LAP(prof_telem_us_);
 
   {
-    const DiagnosticsContext dctx{ctx_.platform, *ctx_.stab_mgr, ctx_.madgwick,
-                                  ctx_.ekf, ctx_.imu_handler,
-                                  ctx_.last_loop_hz};
+    const DiagnosticsContext dctx{ctx_.platform,    *ctx_.stab_mgr,
+                                  ctx_.madgwick,    ctx_.ekf,
+                                  ctx_.imu_handler, ctx_.last_loop_hz};
 #ifdef RC_PROFILE_LOOP
     const uint32_t prof_loops = diag_loop_count_;
 #endif
@@ -89,30 +107,105 @@ void ControlLoopProcessor::UpdateComponents(uint32_t now, uint32_t dt_ms) {
 }
 
 void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
-  sensors_ = BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler,
-                                 ctx_.imu_handler);
+  sensors_ =
+      BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler, ctx_.imu_handler);
   prev_gz_rad_s_ =
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
 
   const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
+  // tilt_was_enabled_ отслеживает, вызывался ли tilt_est_.Update() на
+  // ПРЕДЫДУЩЕМ тике — установка отложена до конца функции (безусловно,
+  // независимо от того, войдём ли вообще в блок ниже), чтобы ловить ЛЮБОЙ
+  // путь, из-за которого Update() пропускается: не только
+  // tilt_comp_enabled=false (9-й раунд), но и ekf_enabled=false,
+  // imu_enabled=false, dt_ms==0 (код-ревью PR #290, 10-й раунд) — во всех
+  // случаях pitch_rad_/roll_rad_ замораживаются одинаково.
+  bool tilt_active_this_tick = false;
   if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
+    const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
+    constexpr float kG = 9.80665f;
+
+    // Ротация в СК машины (код-ревью PR #290, 3-й раунд): и EKF (grav_x/
+    // grav_y от pitch_rad/roll_rad — СК машины), и TiltEstimator ожидают
+    // vehicle-frame accel/gyro, а sensors_.imu_data — bias-corrected, но НЕ
+    // повёрнутые данные в СК ДАТЧИКА. При наклонном и/или yaw-смещённом
+    // монтаже (Forward-калибровка существует именно для произвольного
+    // разворота IMU на плате) без поворота реальное продольное ускорение
+    // могло бы частично или полностью уйти в «боковую» ось EKF — machine
+    // считала бы, что не разгоняется, а сносит вбок. gz НЕ поворачиваем:
+    // sensors_.filtered_gz — общий LPF-сигнал yaw rate для yaw-rate control/
+    // auto-drive/калибровок (stabilization_pipeline.cpp,
+    // control_loop_helpers.hpp), и его поворот только для EKF завёл бы два
+    // рассинхронизированных «yaw rate» в системе; для чистого yaw-монтажа gz
+    // инвариантен (вращение вокруг Z не меняет Z-компоненту), полный фикс —
+    // перенос ротации перед LPF для всех потребителей разом, отдельная
+    // задача.
+    ImuData veh_imu = sensors_.imu_data;
+    ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
+
+    // Мотор-модельный якорь (LOS-233) гейтится этим флагом — единственный
+    // сигнал в системе, действительно независимый от IMU/EKF/тангажа.
+    // a_lin_g (ниже) использует a_lin_prev_g_ ТОЛЬКО пока якорь активен —
+    // без него EKF vx не является независимым источником (см. комментарий
+    // у a_lin_prev_g_ в .hpp).
+    const auto& f = stab_cfg_.filter;
+    const bool motor_model_active =
+        f.motor_model_enabled && !ctx_.auto_drive.IsSpeedCalibActive();
+
+    // Ориентация для снятия проекции гравитации из ускорения перед
+    // интеграцией в EKF. Источник по умолчанию — TiltEstimator (LOS-240):
+    // комплементарный фильтр, не загрязняемый линейным ускорением (в
+    // отличие от Madgwick — см. tilt_estimator.hpp). При выключенном
+    // tilt-фильтре — фолбэк на Madgwick (обратная совместимость); при
+    // выключенных обоих — 0 (без grav-компенсации).
+    float pitch_rad = 0.0f, roll_rad = 0.0f;
+    if (stab_cfg_.filter.tilt_comp_enabled) {
+      tilt_active_this_tick = true;
+      if (!tilt_was_enabled_) {
+        // Возобновление после ЛЮБОГО перерыва (см. комментарий у
+        // tilt_active_this_tick выше): pitch_rad_/roll_rad_ заморожены с
+        // последнего Update() — сбрасываем, иначе EKF получит протухший
+        // тангаж/крен из интервала простоя.
+        tilt_est_.Reset();
+      }
+      const float a_lin_g = motor_model_active ? a_lin_prev_g_ : 0.0f;
+      // Боковое (центростремительное) ускорение для roll-коррекции —
+      // симметричный аналог a_lin_g для pitch (код-ревью PR #290, 6-й
+      // раунд): без него устойчивый разворот с боковым ускорением ~0.2g
+      // заваливал бы roll тем же путём, каким продольный разгон заваливал
+      // pitch без a_lin_g. a = ω×v для тела, вращающегося вокруг Z со
+      // скоростью gz и движущегося вперёд с vx: a_y = gz·vx (Y_veh,
+      // veh_imu.gz — уже в СК машины, ROTATED выше). В отличие от a_lin_g
+      // НЕ гейтится якорем: vx влияет через pitch/grav_x, roll в этой
+      // формуле не участвует вовсе — циркулярности для roll нет ни при
+      // каком источнике vx (в худшем случае — унаследованная неточность
+      // vx без якоря, не новая расходимость).
+      constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+      const float a_lin_lat_g = (veh_imu.gz * kDegToRad) * prev_vx_ / kG;
+      tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
+                           stab_cfg_.filter.tilt_accel_gate_band_g});
+      tilt_est_.Update(veh_imu, a_lin_g, a_lin_lat_g, dt_sec);
+      pitch_rad = tilt_est_.GetPitchRad();
+      roll_rad = tilt_est_.GetRollRad();
+    } else {
+      if (stab_cfg_.filter.madgwick_enabled) {
+        float yaw_rad = 0.0f;
+        ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
+      }
+    }
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
-    ctx_.ekf.UpdateFromImu(sensors_.imu_data.ax, sensors_.imu_data.ay,
-                           sensors_.imu_data.az, sensors_.filtered_gz,
-                           static_cast<float>(dt_ms) * 0.001f,
-                           std::abs(commanded_throttle_));
+    ctx_.ekf.UpdateFromImu(veh_imu.ax, veh_imu.ay, veh_imu.az,
+                           sensors_.filtered_gz, dt_sec,
+                           std::abs(commanded_throttle_), pitch_rad, roll_rad);
 
     // Якорь продольной скорости через мотор-модель (LOS-233): без датчика
     // колёс единственный способ не дать vx уйти в разнос при интеграции IMU.
     // v ≈ gain·throttle (с мёртвой зоной) подаётся слабым измерением.
-    // Во время калибровки скорости якорь отключён: иначе калибровка мерила бы
-    // EKF-скорость, заякоренную текущим gain, и подтверждала бы сама себя.
     // Вход модели — applied_throttle_ (значение прошлого тика, после slew и
     // trim): это то, что реально ушло в PWM. Команда при slew-рампе прыгает
     // мгновенно и завышала бы ожидаемую скорость на всё время рампы.
-    const auto& f = stab_cfg_.filter;
-    if (f.motor_model_enabled && !ctx_.auto_drive.IsSpeedCalibActive()) {
+    if (motor_model_active) {
       const float thr = applied_throttle_;
       const float thr_abs = std::abs(thr);
       float v_expected = 0.0f;
@@ -130,7 +223,21 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     if (f.nhc_enabled && std::abs(ctx_.ekf.GetYawRate()) < kNhcMaxYawRateRps) {
       ctx_.ekf.UpdateNonHolonomic(f.nhc_noise);
     }
+
+    // Обновляем оценку продольного линейного ускорения для TiltEstimator
+    // СЛЕДУЮЩЕГО тика: конечная разность заякоренного EKF vx этого тика
+    // (потребляется выше только при motor_model_active — иначе EKF vx не
+    // является независимым источником, см. комментарий у a_lin_prev_g_
+    // в .hpp).
+    const float vx_now = ctx_.ekf.GetVx();
+    a_lin_prev_g_ = (vx_now - prev_vx_) / dt_sec / kG;
+    prev_vx_ = vx_now;
   }
+  // Безусловно (см. комментарий у tilt_active_this_tick выше): фиксирует
+  // «tilt_est_.Update() вызывался этот тик» вне зависимости от того, через
+  // какой именно путь он был пропущен.
+  tilt_was_enabled_ = tilt_active_this_tick;
+
   if (ekf_active && sensors_.imu_enabled && sensors_.mag_enabled) {
     constexpr float kDegToRad = 3.14159265358979f / 180.0f;
     ctx_.ekf.UpdateHeading(sensors_.heading_deg * kDegToRad);
@@ -228,11 +335,10 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
         std::abs(commanded_throttle_) < std::abs(applied_throttle_)) {
       effective_slew_thr *= stab_cfg_.brake_slew_multiplier;
     }
-    UpdatePwmWithSlewRate(ctx_.platform, now, commanded_throttle_,
-                          commanded_steering_, applied_throttle_,
-                          applied_steering_, last_pwm_update_, thr_trim,
-                          steer_trim, effective_slew_thr,
-                          stab_cfg_.slew_steering);
+    UpdatePwmWithSlewRate(
+        ctx_.platform, now, commanded_throttle_, commanded_steering_,
+        applied_throttle_, applied_steering_, last_pwm_update_, thr_trim,
+        steer_trim, effective_slew_thr, stab_cfg_.slew_steering);
   } else {
     applied_throttle_ = commanded_throttle_ + thr_trim;
     applied_steering_ = commanded_steering_ + steer_trim;
@@ -242,16 +348,18 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
 
 void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
   (void)dt_ms;
-  const TelemetryContext tctx{ctx_.ekf,    ctx_.madgwick,   ctx_.imu_calib,
-                               ctx_.oversteer_guard, ctx_.kids_processor,
-                               ctx_.auto_drive};
+  const TelemetryContext tctx{ctx_.ekf,
+                              ctx_.madgwick,
+                              ctx_.imu_calib,
+                              ctx_.oversteer_guard,
+                              ctx_.kids_processor,
+                              ctx_.auto_drive};
   const DriveMode drive_mode = stab_cfg_.mode;
 
   if (ctx_.telem_handler) {
-    auto snap = BuildTelemetrySnapshot(tctx, now, sensors_, stab_cfg_,
-                                       drive_mode, applied_throttle_,
-                                       applied_steering_, commanded_throttle_,
-                                       commanded_steering_);
+    auto snap = BuildTelemetrySnapshot(
+        tctx, now, sensors_, stab_cfg_, drive_mode, applied_throttle_,
+        applied_steering_, commanded_throttle_, commanded_steering_);
     // FW-RF8: failsafe в снимок — чтобы JSON строился в задаче телеметрии без
     // обращения к платформе из чужого потока.
     snap.failsafe = ctx_.platform.FailsafeIsActive();

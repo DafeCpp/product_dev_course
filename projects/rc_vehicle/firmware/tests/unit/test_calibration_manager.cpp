@@ -15,7 +15,7 @@ class CalibrationManagerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     mgr_ = std::make_unique<CalibrationManager>(platform_, imu_calib_,
-                                                 madgwick_, &ekf_);
+                                                madgwick_, &ekf_);
   }
 
   FakePlatform platform_;
@@ -72,6 +72,171 @@ TEST_F(CalibrationManagerTest, ProcessCompletion_NoStatusChange_DoesNothing) {
   EXPECT_STREQ(mgr_->GetStatus(), "idle");
 }
 
+// Код-ревью PR #290 (5-й раунд, LOS-240): завершение Full/Forward
+// калибровки меняет базис RotateToVehicleFrame() (через SetVehicleFrame()
+// Madgwick + новые gravity_vec/accel_forward_vec), но TiltEstimator —
+// член ControlLoopProcessor, не CalibrationManager, и не сбрасывался.
+// ConsumeFrameChanged() — сигнал вызывающему коду сделать это сам.
+TEST_F(CalibrationManagerTest, ProcessCompletion_Done_SetsFrameChanged) {
+  imu_calib_.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    ImuData d{};
+    d.az = 1.0f;
+    imu_calib_.FeedSample(d);
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Done);
+
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "флаг не должен быть выставлен до ProcessCompletion()";
+
+  mgr_->ProcessCompletion(0);
+  EXPECT_TRUE(mgr_->ConsumeFrameChanged());
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "повторный вызов должен вернуть false — флаг одноразовый";
+  EXPECT_TRUE(imu_calib_.GetData().gravity_valid)
+      << "Full-калибровка обязана выставлять gravity_valid";
+}
+
+// Код-ревью PR #290 (12-й раунд): GyroOnly тоже выставляет data_.valid
+// (Finalize() делает это для ЛЮБОГО режима завершения), но НЕ трогает
+// gravity_vec/accel_forward_vec — базис RotateToVehicleFrame() не меняется.
+// Если tilt_est_ уже сошёлся к реальному наклону (машина на уклоне),
+// быстрая GyroOnly-калибровка не должна сбрасывать его.
+TEST_F(CalibrationManagerTest,
+       ProcessCompletion_GyroOnlyDone_DoesNotSetFrameChanged) {
+  imu_calib_.StartCalibration(CalibMode::GyroOnly, 10);
+  for (int i = 0; i < 10; ++i) {
+    ImuData d{};
+    imu_calib_.FeedSample(d);
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Done);
+  ASSERT_TRUE(imu_calib_.IsValid());
+  EXPECT_FALSE(imu_calib_.GetData().gravity_valid)
+      << "GyroOnly не измеряет gravity_vec";
+
+  mgr_->ProcessCompletion(0);
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "GyroOnly не меняет базис — сброс tilt/EKF не нужен";
+}
+
+// Код-ревью PR #290 (6-й раунд): SetForwardDirection() — ещё один путь
+// смены базиса RotateToVehicleFrame() (ручная WS-команда), помимо
+// ProcessCompletion(). Раньше он не обновлял ни Madgwick vehicle frame,
+// ни frame_changed_.
+//
+// 7-й раунд: SetForwardDirection() вызывается с потока WS-сервера и теперь
+// только откладывает запрос (imu_calib_/madgwick_ не потокобезопасны) —
+// эффект применяется ProcessForwardDirectionRequest() на потоке control
+// loop, как и здесь в тесте.
+TEST_F(CalibrationManagerTest, SetForwardDirection_SetsFrameChanged) {
+  ImuCalibData d{};
+  d.valid = true;
+  d.gravity_valid = true;  // симулирует завершённую Full-калибровку
+  imu_calib_.SetData(d);
+
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
+  mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "SetForwardDirection() откладывает запрос — эффекта быть не должно "
+         "до ProcessForwardDirectionRequest()";
+  mgr_->ProcessForwardDirectionRequest();
+  EXPECT_TRUE(mgr_->ConsumeFrameChanged());
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "повторный вызов должен вернуть false — флаг одноразовый";
+}
+
+TEST_F(CalibrationManagerTest,
+       ProcessForwardDirectionRequest_NoPendingRequest_DoesNothing) {
+  mgr_->ProcessForwardDirectionRequest();
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
+}
+
+// Код-ревью PR #290 (10-й раунд): смена базиса RotateToVehicleFrame() из
+// ручного SetForwardDirection() поднимала frame_changed_ (сброс
+// TiltEstimator у вызывающего кода), но не трогала сам EKF — если vx/vy
+// уже ненулевые (машина едет), эти значения остаются выражены в СТАРЫХ
+// осях forward/lateral после смены базиса, портя speed/slip и motor/NHC
+// апдейты на следующем тике. Симметрично ProcessCompletion(), которая
+// уже сбрасывает EKF на завершении авто-калибровки.
+TEST_F(CalibrationManagerTest, SetForwardDirection_ResetsEkfState) {
+  ImuCalibData d{};
+  d.valid = true;
+  d.gravity_valid = true;  // симулирует завершённую Full-калибровку
+  imu_calib_.SetData(d);
+  ekf_.SetState(5.0f, 1.0f, 0.5f);  // машина едет: vx=5, vy=1, r=0.5
+
+  mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  mgr_->ProcessForwardDirectionRequest();
+
+  EXPECT_FLOAT_EQ(ekf_.GetVx(), 0.0f)
+      << "vx остался в старых осях после смены направления «вперёд»";
+  EXPECT_FLOAT_EQ(ekf_.GetVy(), 0.0f);
+}
+
+// Код-ревью PR #290 (11-й раунд): без предварительной валидной Full-
+// калибровки set_forward_direction всё равно устанавливал Madgwick vehicle
+// frame и поднимал frame_changed_/сброс EKF на основании ДЕФОЛТНОГО
+// (0,0,1) gravity_vec — тот же контракт валидности, что уже требует
+// StartForwardCalibration(), здесь обходился.
+TEST_F(CalibrationManagerTest,
+       SetForwardDirection_WithoutValidCalibration_Ignored) {
+  ASSERT_FALSE(imu_calib_.IsValid());
+  ASSERT_FALSE(imu_calib_.GetData().gravity_valid);
+  ekf_.SetState(5.0f, 1.0f, 0.5f);
+
+  mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  mgr_->ProcessForwardDirectionRequest();
+
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "смена СК не должна применяться без валидной Full-калибровки";
+  EXPECT_FLOAT_EQ(ekf_.GetVx(), 5.0f) << "EKF не должен сбрасываться зря";
+  EXPECT_FLOAT_EQ(ekf_.GetVy(), 1.0f);
+}
+
+// Код-ревью PR #290 (12-й раунд): точный сценарий из ревью — GyroOnly
+// выставляет IsValid()=true (старая, 11-раундовая проверка), но НЕ трогает
+// gravity_vec. Без различения режима set_forward_direction после ТОЛЬКО
+// GyroOnly устанавливала бы Madgwick vehicle frame и сбрасывала tilt/EKF
+// на основании дефолтного (0,0,1) gravity_vec.
+TEST_F(CalibrationManagerTest,
+       SetForwardDirection_AfterGyroOnlyCalibration_StillIgnored) {
+  imu_calib_.StartCalibration(CalibMode::GyroOnly, 10);
+  for (int i = 0; i < 10; ++i) {
+    ImuData d{};
+    imu_calib_.FeedSample(d);
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Done);
+  ASSERT_TRUE(imu_calib_.IsValid())
+      << "тест должен воспроизводить именно ловушку generic IsValid()";
+  ASSERT_FALSE(imu_calib_.GetData().gravity_valid);
+
+  ekf_.SetState(5.0f, 1.0f, 0.5f);
+  mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  mgr_->ProcessForwardDirectionRequest();
+
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "GyroOnly не должна давать право менять СК через set_forward_"
+         "direction";
+  EXPECT_FLOAT_EQ(ekf_.GetVx(), 5.0f);
+  EXPECT_FLOAT_EQ(ekf_.GetVy(), 1.0f);
+}
+
+TEST_F(CalibrationManagerTest,
+       ProcessCompletion_Failed_DoesNotSetFrameChanged) {
+  imu_calib_.StartCalibration(CalibMode::Full, 10);
+  // Гироскоп «шумит» — калибровка не должна пройти (variance > порога).
+  for (int i = 0; i < 10; ++i) {
+    ImuData d{};
+    d.gz = (i % 2 == 0) ? 10.0f : -10.0f;
+    d.az = 1.0f;
+    imu_calib_.FeedSample(d);
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Failed);
+
+  mgr_->ProcessCompletion(0);
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // LoadFromNvs
 // ═══════════════════════════════════════════════════════════════════════════
@@ -113,6 +278,7 @@ TEST_F(CalibrationManagerTest, StopAutoForward_CancelsSampleCollection) {
   // Стадия 1 (Full) — предусловие для forward-калибровки
   ImuCalibData d{};
   d.valid = true;
+  d.gravity_valid = true;  // 13-й раунд: StartForwardCalibration() требует
   imu_calib_.SetData(d);
 
   ASSERT_TRUE(mgr_->StartAutoForwardCalibration(0.1f));
@@ -134,6 +300,7 @@ TEST_F(CalibrationManagerTest, StopAutoForward_CancelsSampleCollection) {
 static void PrepareStage1(ImuCalibration& calib) {
   ImuCalibData d{};
   d.valid = true;
+  d.gravity_valid = true;  // 13-й раунд: StartForwardCalibration() требует
   calib.SetData(d);
 }
 

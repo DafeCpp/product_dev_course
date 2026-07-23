@@ -36,6 +36,18 @@ struct ImuCalibData {
    * Определяется круговой калибровкой (CW+CCW). */
   float com_offset[2]{0.f, 0.f};
   bool valid{false};
+  /**
+   * gravity_vec получен РЕАЛЬНОЙ Full-калибровкой (не GyroOnly).
+   *
+   * valid выставляется в Finalize() для ЛЮБОГО режима (в т.ч. GyroOnly,
+   * который трогает только gyro_bias) — сам по себе не гарантирует, что
+   * gravity_vec когда-либо был измерен, а не остался на дефолте (0,0,1)
+   * (код-ревью PR #290, 12-й раунд). В отличие от forward_valid, ЭТОТ флаг
+   * ХРАНИТСЯ в NVS (imu_calibration_nvs.cpp) — по значению самого
+   * gravity_vec нельзя отличить «реально измерен и совпал с дефолтом» от
+   * «никогда не измерялся».
+   */
+  bool gravity_valid{false};
 };
 
 /** Режим калибровки. */
@@ -102,8 +114,37 @@ class ImuCalibration {
    * accel_forward_vec. */
   void SetForwardDirection(float fx, float fy, float fz);
 
+  /**
+   * Повернуть акселерометр и гироскоп из СК датчика в СК машины.
+   *
+   * Базис СК машины: Z — gravity_vec (вверх), X — accel_forward_vec (вперёд),
+   * Y = Z×X (влево — согласовано с конвенцией VehicleEkf: vy>0/yaw rate>0 =
+   * «влево», проверено тестом RotateToVehicleFrame_YAxisMatchesEkfLeft
+   * PositiveConvention) — те же оси, что строит MadgwickFilter::
+   * SetVehicleFrame() для вывода Euler-углов. Bias-коррекция (Apply())
+   * только сдвигает начало отсчёта и не поворачивает оси, поэтому при
+   * наклонном монтаже bias-corrected ax/ay/gx/gy остаются смесью осей
+   * датчика — источники тангажа, не прошедшие эту ротацию (в отличие от
+   * Madgwick), дают систематическую ошибку на наклонном монтаже.
+   *
+   * Вызывать ПОСЛЕ Apply(). При отсутствии калибровки (дефолтные
+   * gravity_vec=(0,0,1), accel_forward_vec=(1,0,0)) — тождественное
+   * преобразование.
+   */
+  void RotateToVehicleFrame(ImuData& data) const;
+
   /** Текущий статус калибровки. */
   CalibStatus GetStatus() const { return status_; }
+
+  /**
+   * Режим ПОСЛЕДНЕЙ запущенной/завершённой калибровки (GyroOnly/Full/
+   * Forward). Не сбрасывается автоматически — сохраняет значение до
+   * следующего StartCalibration()/StartForwardCalibration(). Нужен
+   * вызывающему коду, чтобы отличить завершение Full/Forward (базис
+   * RotateToVehicleFrame() реально сменился) от GyroOnly (не сменился) —
+   * код-ревью PR #290, 12-й раунд.
+   */
+  [[nodiscard]] CalibMode GetMode() const { return mode_; }
 
   /** Получить текущие калибровочные данные. */
   const ImuCalibData& GetData() const { return data_; }

@@ -321,7 +321,13 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   fy *= fn;
   fz *= fn;
 
-  // Y_veh (вправо) = Z_veh × X_veh
+  // Y_veh (влево) = Z_veh × X_veh. Согласовано с конвенцией VehicleEkf
+  // (vy>0/yaw rate>0 = «влево», ay=+r·vx для левого поворота — код-ревью
+  // PR #290, 8-й раунд: этот же комментарий раньше ошибочно гласил
+  // «вправо», хотя формула всегда давала «влево» — см. RotateToVehicleFrame
+  // в imu_calibration.cpp, идентичное построение, и VehicleEkfTest.
+  // NormalTurn_CentripetalAccel_NoFalseSlip/SlipAngle_PositiveFor_
+  // LeftSideslip в test_vehicle_ekf.cpp).
   float yx = zy * fz - zz * fy;
   float yy = zz * fx - zx * fz;
   float yz = zx * fy - zy * fx;

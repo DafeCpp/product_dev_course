@@ -71,6 +71,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/control_loop_processor.cpp
     ${COMMON_DIR}/mmc5983_spi.cpp
     ${COMMON_DIR}/mag_calibration.cpp
+    ${COMMON_DIR}/tilt_estimator.cpp
 )
 
 # Include directories
@@ -102,6 +103,7 @@ add_executable(unit_tests
     unit/test_lpf.cpp
     unit/test_pid.cpp
     unit/test_vehicle_ekf.cpp
+    unit/test_tilt_estimator.cpp
     unit/test_telemetry_log.cpp
     unit/test_oversteer_guard.cpp
     unit/test_kids_mode.cpp

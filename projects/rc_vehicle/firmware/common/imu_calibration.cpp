@@ -70,7 +70,14 @@ void ImuCalibration::StartCalibration(CalibMode mode, int num_samples) {
 }
 
 bool ImuCalibration::StartForwardCalibration(int num_samples) {
-  if (!data_.valid) return false;
+  // Раньше проверяли generic valid — как выяснилось в 12-м раунде код-ревью
+  // PR #290, Finalize() выставляет valid=true для ЛЮБОГО режима (в т.ч.
+  // GyroOnly, не трогающего gravity_vec). Без gravity_valid Forward-
+  // калибровка (и ручная set_forward_direction, и этот guided/auto-путь —
+  // 13-й раунд) ортогонализовала бы «вперёд» относительно ДЕФОЛТНОГО
+  // (0,0,1) gravity_vec, скармливая мусор в RotateToVehicleFrame()/
+  // TiltEstimator/EKF.
+  if (!data_.gravity_valid) return false;
   double g2 = static_cast<double>(data_.gravity_vec[0]) * data_.gravity_vec[0] +
               static_cast<double>(data_.gravity_vec[1]) * data_.gravity_vec[1] +
               static_cast<double>(data_.gravity_vec[2]) * data_.gravity_vec[2];
@@ -185,6 +192,7 @@ bool ImuCalibration::Finalize() {
       data_.gravity_vec[0] = static_cast<float>(mean[3] / g);
       data_.gravity_vec[1] = static_cast<float>(mean[4] / g);
       data_.gravity_vec[2] = static_cast<float>(mean[5] / g);
+      data_.gravity_valid = true;  // код-ревью PR #290, 12-й раунд
     }
   }
 
@@ -266,6 +274,71 @@ float ImuCalibration::GetForwardAccel(const ImuData& data) const {
   const float lz = data.az - down[2];
   return lx * data_.accel_forward_vec[0] + ly * data_.accel_forward_vec[1] +
          lz * data_.accel_forward_vec[2];
+}
+
+void ImuCalibration::RotateToVehicleFrame(ImuData& data) const {
+  // gravity_vec обязан быть нормализован (инвариант SetData()/Finalize()),
+  // но accel_forward_vec может ещё не быть ортогонализован под НЕГО: сразу
+  // после Full-калибровки (до Forward) он остаётся дефолтным (1,0,0),
+  // forward_valid=false. Как и MadgwickFilter::SetVehicleFrame(),
+  // перепроецируем и нормализуем «вперёд» здесь же — не полагаемся на то,
+  // что вызывающий код уже это сделал (P2, код-ревью PR #290).
+  float z[3] = {data_.gravity_vec[0], data_.gravity_vec[1],
+                data_.gravity_vec[2]};
+  const double z2 = static_cast<double>(z[0]) * z[0] +
+                    static_cast<double>(z[1]) * z[1] +
+                    static_cast<double>(z[2]) * z[2];
+  constexpr double kMinNorm2 = 1e-12;
+  if (z2 < kMinNorm2) return;  // вырожденная гравитация — не трогаем данные
+  const double zn = 1.0 / std::sqrt(z2);
+  z[0] = static_cast<float>(z[0] * zn);
+  z[1] = static_cast<float>(z[1] * zn);
+  z[2] = static_cast<float>(z[2] * zn);
+
+  float x[3] = {data_.accel_forward_vec[0], data_.accel_forward_vec[1],
+                data_.accel_forward_vec[2]};
+  if (!OrthogonalizeForward(x, z)) return;  // вырожденный базис — не трогаем
+
+  // Y_veh (влево) = Z_veh × X_veh — как в MadgwickFilter::SetVehicleFrame().
+  // Согласовано с конвенцией VehicleEkf (vy>0/yaw rate>0 = «влево»,
+  // ay=+r·vx для левого поворота — код-ревью PR #290, 8-й раунд: комментарий
+  // раньше ошибочно гласил «вправо», хотя формула давала «влево»; проверено
+  // построением и тестом RotateToVehicleFrame_YAxisMatchesEkfLeftPositive
+  // Convention — см. VehicleEkfTest.NormalTurn_CentripetalAccel_
+  // NoFalseSlip/SlipAngle_PositiveFor_LeftSideslip в test_vehicle_ekf.cpp).
+  const float yx = z[1] * x[2] - z[2] * x[1];
+  const float yy = z[2] * x[0] - z[0] * x[2];
+  const float yz = z[0] * x[1] - z[1] * x[0];
+
+  // Apply() лишь сдвигает начало отсчёта (bias), не поворачивает оси: accel
+  // bias подобран в Finalize() так, что СТАТИЧЕСКАЯ (гравитационная) часть
+  // bias-corrected accel в покое всегда РОВНО RestDownVec() — (0,0,±1) — вне
+  // зависимости от реального наклона монтажа (см. GetForwardAccel() выше).
+  // Поэтому крутить нужно не сырой accel, а его ДИНАМИЧЕСКУЮ часть
+  // (accel − down); z[]=normalize(gravity_vec) — это уже ИСТИННОЕ физическое
+  // «вверх» в СК датчика (какой бы знак ни имела ось Z чипа на плате), так
+  // что после поворота статику возвращаем КАНОНИЧЕСКИ как +1 (не down[2]!)
+  // — «уровень» в СК машины обязан читаться как (0,0,+1) независимо от
+  // перевёрнутого/нормального монтажа: TiltEstimator::Update() формулами
+  // atan2(ay,az)/atan2(-ax,√(ay²+az²)) жёстко предполагает az>0 в покое, а
+  // down[2] сохранял бы знак чипа (−1 при gravity_vec[2]<0 — перевёрнутый
+  // монтаж, см. InvertedGravity_AtRest_ReturnsZero выше) и валил бы roll в
+  // atan2(0,−1)=π (P1, код-ревью PR #290, 4-й раунд).
+  float down[3];
+  RestDownVec(down);
+  const float lx = data.ax - down[0];
+  const float ly = data.ay - down[1];
+  const float lz = data.az - down[2];
+  data.ax = x[0] * lx + x[1] * ly + x[2] * lz;
+  data.ay = yx * lx + yy * ly + yz * lz;
+  data.az = z[0] * lx + z[1] * ly + z[2] * lz + 1.0f;
+
+  // Гироскоп: bias — чистый аддитивный офсет дрейфа, гравитацией не
+  // порождён и «уплощения» не имеет — крутим напрямую, без down-поправки.
+  const float sgx = data.gx, sgy = data.gy, sgz = data.gz;
+  data.gx = x[0] * sgx + x[1] * sgy + x[2] * sgz;
+  data.gy = yx * sgx + yy * sgy + yz * sgz;
+  data.gz = z[0] * sgx + z[1] * sgy + z[2] * sgz;
 }
 
 void ImuCalibration::SetForwardDirection(float fx, float fy, float fz) {

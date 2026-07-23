@@ -122,7 +122,67 @@ void CalibrationManager::StopAutoForward() {
 }
 
 void CalibrationManager::SetForwardDirection(float fx, float fy, float fz) {
+  // Вызывается с потока WS/HTTP-сервера — НЕ трогаем imu_calib_/madgwick_
+  // отсюда напрямую (ни один не потокобезопасен, оба непрерывно
+  // используются control loop на 500 Гц); только откладываем запрос под
+  // мьютексом, как StartCalibration()/calib_request_ (код-ревью PR #290,
+  // 7-й раунд). Применяется в ProcessForwardDirectionRequest().
+  std::lock_guard<std::mutex> lock(forward_dir_mutex_);
+  forward_dir_fx_ = fx;
+  forward_dir_fy_ = fy;
+  forward_dir_fz_ = fz;
+  forward_dir_pending_ = true;
+}
+
+void CalibrationManager::ProcessForwardDirectionRequest() {
+  float fx, fy, fz;
+  {
+    std::lock_guard<std::mutex> lock(forward_dir_mutex_);
+    if (!forward_dir_pending_) return;
+    forward_dir_pending_ = false;
+    fx = forward_dir_fx_;
+    fy = forward_dir_fy_;
+    fz = forward_dir_fz_;
+  }
+
+  // Forward-калибровка требует ПРЕДВАРИТЕЛЬНОЙ РЕАЛЬНОЙ Full-калибровки —
+  // тот же контракт, что уже у StartForwardCalibration()
+  // (imu_calibration.cpp: "if (!data_.valid) return false"). Ручная
+  // WS-команда set_forward_direction обходила эту проверку (код-ревью
+  // PR #290, 11-й раунд); проверяли generic IsValid(), которая — как
+  // выяснилось в 12-м раунде — выставляется в Finalize() ЛЮБЫМ режимом, в
+  // т.ч. GyroOnly, не трогающим gravity_vec вовсе. Проверяем именно
+  // gravity_valid — что gravity_vec реально измерен Full-калибровкой, а не
+  // остался на дефолте (0,0,1).
+  if (!imu_calib_.GetData().gravity_valid) {
+    platform_.Log(LogLevel::Warning,
+                  "SetForwardDirection ignored: Full calibration not done");
+    return;
+  }
+
   imu_calib_.SetForwardDirection(fx, fy, fz);
+
+  // Как и на завершении Full/Forward в ProcessCompletion() (код-ревью
+  // PR #290, 6-й раунд): это тоже меняет базис RotateToVehicleFrame(), и
+  // Madgwick, и TiltEstimator/prev_vx_/a_lin_prev_g_ вызывающего кода
+  // должны обновиться/сброситься — иначе оба используют устаревшую СК
+  // до следующей полной калибровки.
+  const auto& d = imu_calib_.GetData();
+  madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+  frame_changed_ = true;
+
+  // Сбросить EKF — симметрично ProcessCompletion() (код-ревью PR #290,
+  // 10-й раунд): vx/vy персистентны и выражены в СТАРЫХ осях forward/
+  // lateral; смена базиса здесь меняет, что означают эти оси, но НЕ сами
+  // значения состояния — без сброса следующий тик интерпретировал бы
+  // старые координаты скорости в новой СК, портя speed/slip и motor/NHC
+  // апдейты после ручной смены направления «вперёд» посреди сессии.
+  if (ekf_) {
+    ekf_->Reset();
+    platform_.Log(LogLevel::Info,
+                  "EKF state reset after forward direction change");
+  }
+
   auto result = platform_.SaveCalib(imu_calib_.GetData());
   if (result.has_value()) {
     platform_.Log(LogLevel::Info, "Forward direction set and saved to NVS");
@@ -179,9 +239,21 @@ void CalibrationManager::ProcessCompletion(uint32_t now_ms) {
     } else {
       platform_.Log(LogLevel::Warning, "Calibration done, NVS save FAILED");
     }
-    // Обновить vehicle frame фильтра Madgwick
-    const auto& d = imu_calib_.GetData();
-    madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+    // GyroOnly не трогает gravity_vec/accel_forward_vec вовсе (Finalize()
+    // обновляет их только для CalibMode::Full) — базис RotateToVehicleFrame()
+    // после GyroOnly НЕ меняется. Раньше frame_changed_ поднимался на ЛЮБОМ
+    // Done, включая GyroOnly: если tilt_est_ уже сошёлся к реальному наклону
+    // (машина на уклоне), быстрая GyroOnly-калибровка сбрасывала его до 0 —
+    // хотя СК не менялась — реинтродуцируя фантомную grav-компенсацию на
+    // несколько секунд (код-ревью PR #290, 12-й раунд). ImuHandler::
+    // UpdateVehicleFrame() отдельно и независимо гарантирует, что Madgwick
+    // получит vehicle frame хотя бы раз при первом valid=true (не только
+    // Full) — повторный вызов здесь для GyroOnly был бы избыточен.
+    if (imu_calib_.GetMode() != CalibMode::GyroOnly) {
+      const auto& d = imu_calib_.GetData();
+      madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
+      frame_changed_ = true;  // см. ConsumeFrameChanged()
+    }
 
     // Сбросить EKF, чтобы скорость обнулилась после калибровки
     if (ekf_) {

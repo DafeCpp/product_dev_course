@@ -38,6 +38,12 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
                             cfg.filter.speed_meas_noise);
     cJSON_AddBoolToObject(filter, "nhc_enabled", cfg.filter.nhc_enabled);
     cJSON_AddNumberToObject(filter, "nhc_noise", cfg.filter.nhc_noise);
+    cJSON_AddBoolToObject(filter, "tilt_comp_enabled",
+                          cfg.filter.tilt_comp_enabled);
+    cJSON_AddNumberToObject(filter, "tilt_corr_gain_hz",
+                            cfg.filter.tilt_corr_gain_hz);
+    cJSON_AddNumberToObject(filter, "tilt_accel_gate_band_g",
+                            cfg.filter.tilt_accel_gate_band_g);
   }
 
   // Yaw rate config
@@ -202,6 +208,10 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_float(filter, "speed_meas_noise", cfg.filter.speed_meas_noise);
     get_bool(filter, "nhc_enabled", cfg.filter.nhc_enabled);
     get_float(filter, "nhc_noise", cfg.filter.nhc_noise);
+    get_bool(filter, "tilt_comp_enabled", cfg.filter.tilt_comp_enabled);
+    get_float(filter, "tilt_corr_gain_hz", cfg.filter.tilt_corr_gain_hz);
+    get_float(filter, "tilt_accel_gate_band_g",
+              cfg.filter.tilt_accel_gate_band_g);
   }
 
   // Yaw rate config

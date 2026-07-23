@@ -305,6 +305,292 @@ TEST_F(ProcessorTest, WithoutImu_TelemLogEmpty) {
   EXPECT_EQ(count, 0u);
 }
 
+TEST_F(ProcessorTest, MadgwickDisabled_NoStaleGravityCompensation) {
+  // LOS-232 (Codex P2): при выключенном в рантайме Madgwick кватернион залипает
+  // на последнем (наклонном) значении. Grav-компенсация EKF не должна вычитать
+  // эту устаревшую проекцию — иначе на ровной едущей машине появляется
+  // фантомное ускорение и vx расходится. Проверяем, что чтение углов загейчено
+  // на madgwick_enabled: наклонённый «протухший» AHRS не приводит к разгону.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  // Накреняем Madgwick напрямую (нос вверх ~30°): ax=-sin, az=cos.
+  constexpr float kPitch = 30.0f * 3.14159265358979f / 180.0f;
+  for (int i = 0; i < 6000; ++i) {
+    madgwick_.Update(-std::sin(kPitch), 0.0f, std::cos(kPitch), 0.0f, 0.0f,
+                     0.0f, 0.002f);
+  }
+  float p = 0.0f, r = 0.0f, y = 0.0f;
+  madgwick_.GetEulerRad(p, r, y);
+  ASSERT_GT(std::abs(p), 20.0f * 3.14159265358979f / 180.0f)
+      << "Пресет наклона не сошёлся — тест не проверяет то, что должен";
+
+  // Выключаем Madgwick: и в конфиге (гейт grav-comp), и в хендлере (чтобы он не
+  // перезаписал «протухшую» ориентацию ровными семплами на последующих шагах).
+  // Мотор-модельный якорь отключаем, чтобы vx определялся ТОЛЬКО интеграцией
+  // IMU — иначе якорь маскирует фантом и тест становится вакуумным.
+  imu_handler.SetMadgwickEnabled(false);
+  SetDirectLaw();  // без slew: throttle сразу 0.5 → ZUPT выключен
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.madgwick_enabled = false;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // Ровная едущая машина: throttle 0.5 (ZUPT выключен), ускорение чисто
+  // гравитационное по Z (ax=ay=0).
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_.SetImuData(imu);
+
+  RunSteps(2000);  // 4 c
+
+  // С багом устаревший pitch=30° даёт фантом g·sin30≈4.9 м/с²: без якоря vx
+  // интегрируется до клемпа kMaxSpeedMs и поднимает diverged. С фиксом углы
+  // читаются как 0 → фантома нет → vx остаётся ≈0.
+  EXPECT_FALSE(ekf_.IsDiverged());
+  EXPECT_LT(ekf_.GetVx(), 1.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TiltEstimator grav-comp (LOS-240)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST_F(ProcessorTest, TiltComp_LevelAccel_VxTracksTrueSpeed) {
+  // Критерий приёмки LOS-240: прямой разгон 0.2g/5с на РОВНОМ не должен
+  // «съедаться» grav-comp. С Madgwick как источником тангажа (баг из
+  // код-ревью #287) |a|≈1.02g остаётся ниже порога adaptive-beta и Madgwick
+  // заваливает pitch на ~11°, из-за чего EKF vx сильно недооценивает
+  // истинную скорость. TiltEstimator держит pitch≈0 на гироскопе.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();  // throttle сразу применяется, без slew
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  // Мотор-модельный якорь отключаем: иначе он подтянет vx к ожидаемой
+  // скорости независимо от корректности grav-comp, и тест станет вакуумным
+  // (как и в MadgwickDisabled_NoStaleGravityCompensation выше). Без якоря
+  // a_lin_g принудительно 0 (код-ревью PR #290, 4-й раунд: подача EKF vx
+  // обратно в TiltEstimator без независимого якоря — самоподтверждающаяся
+  // циркулярность, а не защита), поэтому TiltEstimator честно деградирует
+  // до гиро + негейтированной accel-коррекции — медленнее, чем с якорем
+  // (см. TiltComp_YawedMount ниже), но всё ещё на порядок лучше исходного
+  // бага с Madgwick (было ~1.1 м/с).
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // throttle > 2% отключает ZUPT; машина «едет прямо» с постоянным
+  // продольным ускорением 0.2g на ровном месте (ay=0, gx=gy=gz=0).
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  ImuData imu{};
+  imu.ax = 0.2f;
+  imu.az = 1.0f;
+  platform_.SetImuData(imu);
+
+  RunSteps(2500);  // 5 секунд при dt=2мс
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  EXPECT_GT(ekf_.GetVx(), 2.5f)
+      << "vx не должен быть «съеден» ложной grav-компенсацией (было ~1.1 "
+         "м/с при баге с Madgwick — см. код-ревью PR #287)";
+}
+
+TEST_F(ProcessorTest, TiltComp_StaticTilt_NoDivergence) {
+  // Дополняет тест выше: одновременно с разгоном на ровном grav-comp должна
+  // продолжать защищать от статического наклона (критерий приёмки LOS-240
+  // требует прохождения обоих сценариев).
+  //
+  // Код-ревью PR #290 (4-й раунд): без независимого якоря (motor_model
+  // выключен здесь ровно как выше) EKF vx НЕ является независимым
+  // источником a_lin для TiltEstimator (сам зависит от текущего тангажа
+  // через grav_x/grav_y в этом же UpdateFromImu) — feedback через него
+  // самоподтверждается на любом уровне остаточной ошибки. Раньше a_lin в
+  // этом случае всё равно брался из EKF vx — на статике 20° без якоря при
+  // throttle>2% (ZUPT выключен) это уводило vx в клемп kMaxSpeedMs=-15
+  // (проверено эмпирически). Фикс: без якоря a_lin принудительно 0 —
+  // TiltEstimator деградирует до гиро + негейтированной accel-коррекции,
+  // vx получает СТАБИЛЬНОЕ (не нулевое — нет якоря, тянущего к 0) смещение
+  // за время сходимости тангажа к истине, но БЕЗ разгона к клемпу.
+  // Раньше проверялся только EXPECT_LT(vx, 5.0) — не ловит уход в БОЛЬШОЙ
+  // ОТРИЦАТЕЛЬНЫЙ vx (ровно то, что делал баг здесь). Проверяем |vx|.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // throttle > 2% отключает ZUPT — иначе тест грав-компенсации был бы
+  // вакуумным (ZUPT сам обнулил бы vx независимо от корректности тангажа).
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
+  ImuData imu{};
+  imu.ax = -std::sin(kPitch);
+  imu.az = std::cos(kPitch);
+  platform_.SetImuData(imu);
+
+  RunSteps(4000);  // 8 секунд — достаточно для полной сходимости тангажа
+                   // (corr_gain_hz=0.5 по умолчанию) и выхода vx на плато.
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  // Без grav-comp фантомное ускорение g·sin(20°)≈3.35 м/с² ушло бы к клемпу
+  // kMaxSpeedMs=15 за секунды. С фиксом vx выходит на стабильное плато
+  // заметно меньшей амплитуды (не расходится) — не идеально (нет якоря,
+  // возвращающего vx к 0), но принципиально иное поведение, чем клемп/разнос.
+  EXPECT_LT(std::abs(ekf_.GetVx()), 10.0f);
+}
+
+TEST_F(ProcessorTest, TiltComp_YawedMount_VxTracksTrueSpeedNotVy) {
+  // Код-ревью PR #290 (3-й раунд): EKF получал сенсорные ax/ay напрямую,
+  // тогда как grav_x/grav_y (из pitch_rad/roll_rad) уже в СК машины —
+  // рассинхронизация СК. При IMU, повёрнутом на 90° по yaw (Forward-
+  // калибровка существует именно для произвольного разворота IMU на плате —
+  // не гипотетический случай), истинное продольное ускорение приходит в
+  // сенсорную ay. Без поворота ax/ay перед UpdateFromImu оно ушло бы в vy
+  // вместо vx.
+  ImuCalibData calib_data{};
+  calib_data.valid = true;
+  calib_data.gravity_vec[2] = 1.f;
+  calib_data.accel_forward_vec[1] = 1.f;  // «вперёд» машины = сенсорная Y
+  imu_calib_.SetData(calib_data);
+
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  // Как и в TiltComp_LevelAccel выше: без якоря a_lin_g принудительно 0
+  // (код-ревью PR #290, 4-й раунд) — критерий ослаблен относительно
+  // «якорь есть» случая, но остаётся на порядок лучше бага (vx≈0 без фикса
+  // ротации ax/ay, т.к. ускорение целиком уходило в vy).
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  ImuData imu{};
+  imu.ay = 0.2f;  // истинное продольное 0.2g читается сенсором как ay
+  imu.az = 1.0f;
+  platform_.SetImuData(imu);
+
+  RunSteps(2500);  // 5 секунд
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  EXPECT_GT(ekf_.GetVx(), 2.0f)
+      << "продольное ускорение не должно уходить в vy на yaw-развёрнутом "
+         "монтаже";
+}
+
+TEST_F(ProcessorTest, TiltComp_ReEnabled_ResetsStaleState) {
+  // Код-ревью PR #290 (9-й раунд): tilt_comp_enabled переключается в
+  // рантайме конфигом. Пока выключен, tilt_est_.Update() не вызывается —
+  // её pitch_rad_/roll_rad_ замораживаются на последнем значении. Без
+  // сброса при повторном включении EKF на первом же тике получил бы
+  // протухший тангаж из интервала, пока фильтр был выключен.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // Фаза 1: статический наклон 20° — даём tilt_est_ сойтись близко к 20°.
+  platform_.SetWifiCommand({0.5f, 0.0f});  // throttle>2% отключает ZUPT
+  constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
+  ImuData tilted{};
+  tilted.ax = -std::sin(kPitch);
+  tilted.az = std::cos(kPitch);
+  platform_.SetImuData(tilted);
+  RunSteps(4000);  // 8 секунд
+
+  // Фаза 2: выключаем tilt-фильтр (и Madgwick-фолбэк) и кладём машину
+  // ровно — Update() больше не вызывается, pitch_rad_ должен остаться
+  // замороженным на ~20°, несмотря на то что реальный наклон теперь 0.
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = false;
+  cfg.filter.madgwick_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  RunSteps(100);
+
+  // Фаза 3: заново включаем tilt-фильтр на РОВНОМ месте без реального
+  // ускорения. Сбрасываем EKF, чтобы изолировать именно эффект
+  // протухшего тангажа (иначе фаза 1 уже увела vx далеко от нуля).
+  ekf_.Reset();
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  stab_mgr_->SetConfig(cfg);
+  RunSteps(50);  // 0.1 секунды — достаточно, чтобы проявился фантом
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  // Без фикса протухший pitch≈20° даёт фантомное ускорение ~3.35 м/с²,
+  // т.е. за 0.1с — заметный уход vx. С фиксом (Reset() при повторном
+  // включении) pitch стартует с 0 — vx остаётся близко к нулю.
+  EXPECT_NEAR(ekf_.GetVx(), 0.0f, 0.15f)
+      << "протухший тангаж после повторного включения tilt-фильтра";
+}
+
+TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
+  // Код-ревью PR #290 (10-й раунд): тот же протухший-тангаж баг, что и в
+  // TiltComp_ReEnabled_ResetsStaleState выше, но триггер — не
+  // tilt_comp_enabled, а ekf_enabled (tilt_comp_enabled остаётся true
+  // ВСЁ ВРЕМЯ). Пока ekf_enabled=false, весь блок UpdateSensorsAndEkf()
+  // пропускается — включая tilt_est_.Update() — тем же путём замораживая
+  // pitch_rad_/roll_rad_.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // Фаза 1: статический наклон 20° — даём tilt_est_ сойтись близко к 20°.
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
+  ImuData tilted{};
+  tilted.ax = -std::sin(kPitch);
+  tilted.az = std::cos(kPitch);
+  platform_.SetImuData(tilted);
+  RunSteps(4000);  // 8 секунд
+
+  // Фаза 2: выключаем EKF целиком (tilt_comp_enabled остаётся true!) и
+  // кладём машину ровно.
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.ekf_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  RunSteps(100);
+
+  // Фаза 3: заново включаем EKF на ровном месте без реального ускорения.
+  ekf_.Reset();
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.ekf_enabled = true;
+  stab_mgr_->SetConfig(cfg);
+  RunSteps(50);  // 0.1 секунды
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  EXPECT_NEAR(ekf_.GetVx(), 0.0f, 0.15f)
+      << "протухший тангаж после повторного включения EKF (tilt_comp_"
+         "enabled не менялся)";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CalibrationManager
 // ═══════════════════════════════════════════════════════════════════════════
