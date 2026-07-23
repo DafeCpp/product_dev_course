@@ -539,11 +539,12 @@ void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   });
 
   // Разбивка по проверкам в serial-лог: без неё в boot-логе виден только итог
-  // (см. LOS-220). Проваленные — WARN, прошедшие — DEBUG, чтобы понять, какие
-  // именно из проверок не прошли, не перехватывая JSON-ответ WS.
+  // (см. LOS-220). Проваленные — WARN, прошедшие — INFO (esp32_s3 sdkconfig
+  // ограничивает CONFIG_LOG_MAXIMUM_LEVEL уровнем INFO, поэтому ESP_LOGD здесь
+  // компилируется в no-op и строки PASS были бы не видны).
   for (const auto& item : results) {
     if (item.passed) {
-      ESP_LOGD(TAG, "  self_test ok:   %s = %s", item.name, item.value);
+      ESP_LOGI(TAG, "  self_test ok:   %s = %s", item.name, item.value);
     } else {
       ESP_LOGW(TAG, "  self_test FAIL: %s = %s", item.name, item.value);
     }
