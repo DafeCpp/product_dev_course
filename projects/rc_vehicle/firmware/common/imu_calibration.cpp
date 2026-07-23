@@ -70,7 +70,14 @@ void ImuCalibration::StartCalibration(CalibMode mode, int num_samples) {
 }
 
 bool ImuCalibration::StartForwardCalibration(int num_samples) {
-  if (!data_.valid) return false;
+  // Раньше проверяли generic valid — как выяснилось в 12-м раунде код-ревью
+  // PR #290, Finalize() выставляет valid=true для ЛЮБОГО режима (в т.ч.
+  // GyroOnly, не трогающего gravity_vec). Без gravity_valid Forward-
+  // калибровка (и ручная set_forward_direction, и этот guided/auto-путь —
+  // 13-й раунд) ортогонализовала бы «вперёд» относительно ДЕФОЛТНОГО
+  // (0,0,1) gravity_vec, скармливая мусор в RotateToVehicleFrame()/
+  // TiltEstimator/EKF.
+  if (!data_.gravity_valid) return false;
   double g2 = static_cast<double>(data_.gravity_vec[0]) * data_.gravity_vec[0] +
               static_cast<double>(data_.gravity_vec[1]) * data_.gravity_vec[1] +
               static_cast<double>(data_.gravity_vec[2]) * data_.gravity_vec[2];

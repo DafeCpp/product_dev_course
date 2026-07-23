@@ -278,6 +278,7 @@ TEST_F(CalibrationManagerTest, StopAutoForward_CancelsSampleCollection) {
   // Стадия 1 (Full) — предусловие для forward-калибровки
   ImuCalibData d{};
   d.valid = true;
+  d.gravity_valid = true;  // 13-й раунд: StartForwardCalibration() требует
   imu_calib_.SetData(d);
 
   ASSERT_TRUE(mgr_->StartAutoForwardCalibration(0.1f));
@@ -299,6 +300,7 @@ TEST_F(CalibrationManagerTest, StopAutoForward_CancelsSampleCollection) {
 static void PrepareStage1(ImuCalibration& calib) {
   ImuCalibData d{};
   d.valid = true;
+  d.gravity_valid = true;  // 13-й раунд: StartForwardCalibration() требует
   calib.SetData(d);
 }
 

@@ -32,6 +32,10 @@ class ImuCalibrationForwardTest : public ::testing::Test {
             float gz = 1.f) {
     ImuCalibData d{};
     d.valid = true;
+    // Явный gravity_vec-параметр === симулирует РЕАЛЬНУЮ Full-калибровку
+    // (12-й/13-й раунды код-ревью PR #290 требуют gravity_valid, а не
+    // generic valid, для StartForwardCalibration()/set_forward_direction).
+    d.gravity_valid = true;
     d.gravity_vec[0] = gx;
     d.gravity_vec[1] = gy;
     d.gravity_vec[2] = gz;
@@ -546,6 +550,29 @@ TEST_F(ImuCalibrationForwardTest, ForwardCalibration_VerticalOnly_Fails) {
   }
 
   EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+}
+
+// Код-ревью PR #290 (13-й раунд): StartForwardCalibration() проверял
+// generic valid — GyroOnly тоже выставляет его (Finalize() делает это для
+// ЛЮБОГО режима), не трогая gravity_vec вовсе. Без различения режимов
+// guided/auto-forward путь (StartAutoForwardCalibration() в
+// CalibrationManager) мог бы запуститься против дефолтного (0,0,1)
+// gravity_vec — тот же класс бага, что и с ручной set_forward_direction
+// (11-й/12-й раунды), но через другой вход.
+TEST_F(ImuCalibrationForwardTest,
+       StartForwardCalibration_AfterGyroOnly_Rejected) {
+  calib.StartCalibration(CalibMode::GyroOnly, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(ImuData{});
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+  ASSERT_TRUE(calib.IsValid())
+      << "тест должен воспроизводить именно ловушку generic IsValid()";
+  ASSERT_FALSE(calib.GetData().gravity_valid);
+
+  EXPECT_FALSE(calib.StartForwardCalibration(10))
+      << "Forward-калибровка не должна запускаться без РЕАЛЬНОЙ "
+         "Full-калибровки (gravity_vec ещё не измерен)";
 }
 
 }  // namespace
