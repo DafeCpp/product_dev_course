@@ -488,6 +488,60 @@ TEST_F(ProcessorTest, TiltComp_YawedMount_VxTracksTrueSpeedNotVy) {
          "монтаже";
 }
 
+TEST_F(ProcessorTest, TiltComp_ReEnabled_ResetsStaleState) {
+  // Код-ревью PR #290 (9-й раунд): tilt_comp_enabled переключается в
+  // рантайме конфигом. Пока выключен, tilt_est_.Update() не вызывается —
+  // её pitch_rad_/roll_rad_ замораживаются на последнем значении. Без
+  // сброса при повторном включении EKF на первом же тике получил бы
+  // протухший тангаж из интервала, пока фильтр был выключен.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // Фаза 1: статический наклон 20° — даём tilt_est_ сойтись близко к 20°.
+  platform_.SetWifiCommand({0.5f, 0.0f});  // throttle>2% отключает ZUPT
+  constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
+  ImuData tilted{};
+  tilted.ax = -std::sin(kPitch);
+  tilted.az = std::cos(kPitch);
+  platform_.SetImuData(tilted);
+  RunSteps(4000);  // 8 секунд
+
+  // Фаза 2: выключаем tilt-фильтр (и Madgwick-фолбэк) и кладём машину
+  // ровно — Update() больше не вызывается, pitch_rad_ должен остаться
+  // замороженным на ~20°, несмотря на то что реальный наклон теперь 0.
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = false;
+  cfg.filter.madgwick_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  RunSteps(100);
+
+  // Фаза 3: заново включаем tilt-фильтр на РОВНОМ месте без реального
+  // ускорения. Сбрасываем EKF, чтобы изолировать именно эффект
+  // протухшего тангажа (иначе фаза 1 уже увела vx далеко от нуля).
+  ekf_.Reset();
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  stab_mgr_->SetConfig(cfg);
+  RunSteps(50);  // 0.1 секунды — достаточно, чтобы проявился фантом
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  // Без фикса протухший pitch≈20° даёт фантомное ускорение ~3.35 м/с²,
+  // т.е. за 0.1с — заметный уход vx. С фиксом (Reset() при повторном
+  // включении) pitch стартует с 0 — vx остаётся близко к нулю.
+  EXPECT_NEAR(ekf_.GetVx(), 0.0f, 0.15f)
+      << "протухший тангаж после повторного включения tilt-фильтра";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CalibrationManager
 // ═══════════════════════════════════════════════════════════════════════════

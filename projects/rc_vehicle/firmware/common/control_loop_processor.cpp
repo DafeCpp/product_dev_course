@@ -152,6 +152,15 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     // выключенных обоих — 0 (без grav-компенсации).
     float pitch_rad = 0.0f, roll_rad = 0.0f;
     if (stab_cfg_.filter.tilt_comp_enabled) {
+      if (!tilt_was_enabled_) {
+        // Переход выключено→включено в рантайме (код-ревью PR #290, 9-й
+        // раунд): pitch_rad_/roll_rad_ заморожены с последнего Update() —
+        // сбрасываем, иначе EKF получит протухший тангаж/крен из интервала,
+        // пока фильтр был выключен (см. комментарий у tilt_was_enabled_
+        // в .hpp).
+        tilt_est_.Reset();
+      }
+      tilt_was_enabled_ = true;
       const float a_lin_g = motor_model_active ? a_lin_prev_g_ : 0.0f;
       // Боковое (центростремительное) ускорение для roll-коррекции —
       // симметричный аналог a_lin_g для pitch (код-ревью PR #290, 6-й
@@ -171,9 +180,12 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
       tilt_est_.Update(veh_imu, a_lin_g, a_lin_lat_g, dt_sec);
       pitch_rad = tilt_est_.GetPitchRad();
       roll_rad = tilt_est_.GetRollRad();
-    } else if (stab_cfg_.filter.madgwick_enabled) {
-      float yaw_rad = 0.0f;
-      ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
+    } else {
+      tilt_was_enabled_ = false;
+      if (stab_cfg_.filter.madgwick_enabled) {
+        float yaw_rad = 0.0f;
+        ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
+      }
     }
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
