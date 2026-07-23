@@ -542,6 +542,55 @@ TEST_F(ProcessorTest, TiltComp_ReEnabled_ResetsStaleState) {
       << "протухший тангаж после повторного включения tilt-фильтра";
 }
 
+TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
+  // Код-ревью PR #290 (10-й раунд): тот же протухший-тангаж баг, что и в
+  // TiltComp_ReEnabled_ResetsStaleState выше, но триггер — не
+  // tilt_comp_enabled, а ekf_enabled (tilt_comp_enabled остаётся true
+  // ВСЁ ВРЕМЯ). Пока ekf_enabled=false, весь блок UpdateSensorsAndEkf()
+  // пропускается — включая tilt_est_.Update() — тем же путём замораживая
+  // pitch_rad_/roll_rad_.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = true;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  // Фаза 1: статический наклон 20° — даём tilt_est_ сойтись близко к 20°.
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
+  ImuData tilted{};
+  tilted.ax = -std::sin(kPitch);
+  tilted.az = std::cos(kPitch);
+  platform_.SetImuData(tilted);
+  RunSteps(4000);  // 8 секунд
+
+  // Фаза 2: выключаем EKF целиком (tilt_comp_enabled остаётся true!) и
+  // кладём машину ровно.
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.ekf_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  RunSteps(100);
+
+  // Фаза 3: заново включаем EKF на ровном месте без реального ускорения.
+  ekf_.Reset();
+  cfg = stab_mgr_->GetConfig();
+  cfg.filter.ekf_enabled = true;
+  stab_mgr_->SetConfig(cfg);
+  RunSteps(50);  // 0.1 секунды
+
+  EXPECT_FALSE(ekf_.IsDiverged());
+  EXPECT_NEAR(ekf_.GetVx(), 0.0f, 0.15f)
+      << "протухший тангаж после повторного включения EKF (tilt_comp_"
+         "enabled не менялся)";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CalibrationManager
 // ═══════════════════════════════════════════════════════════════════════════

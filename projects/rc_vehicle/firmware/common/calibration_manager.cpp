@@ -156,6 +156,18 @@ void CalibrationManager::ProcessForwardDirectionRequest() {
   madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
   frame_changed_ = true;
 
+  // Сбросить EKF — симметрично ProcessCompletion() (код-ревью PR #290,
+  // 10-й раунд): vx/vy персистентны и выражены в СТАРЫХ осях forward/
+  // lateral; смена базиса здесь меняет, что означают эти оси, но НЕ сами
+  // значения состояния — без сброса следующий тик интерпретировал бы
+  // старые координаты скорости в новой СК, портя speed/slip и motor/NHC
+  // апдейты после ручной смены направления «вперёд» посреди сессии.
+  if (ekf_) {
+    ekf_->Reset();
+    platform_.Log(LogLevel::Info,
+                  "EKF state reset after forward direction change");
+  }
+
   auto result = platform_.SaveCalib(imu_calib_.GetData());
   if (result.has_value()) {
     platform_.Log(LogLevel::Info, "Forward direction set and saved to NVS");

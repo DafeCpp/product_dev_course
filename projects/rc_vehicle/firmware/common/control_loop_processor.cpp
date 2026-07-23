@@ -113,6 +113,14 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
 
   const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
+  // tilt_was_enabled_ отслеживает, вызывался ли tilt_est_.Update() на
+  // ПРЕДЫДУЩЕМ тике — установка отложена до конца функции (безусловно,
+  // независимо от того, войдём ли вообще в блок ниже), чтобы ловить ЛЮБОЙ
+  // путь, из-за которого Update() пропускается: не только
+  // tilt_comp_enabled=false (9-й раунд), но и ekf_enabled=false,
+  // imu_enabled=false, dt_ms==0 (код-ревью PR #290, 10-й раунд) — во всех
+  // случаях pitch_rad_/roll_rad_ замораживаются одинаково.
+  bool tilt_active_this_tick = false;
   if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
     const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
     constexpr float kG = 9.80665f;
@@ -152,15 +160,14 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     // выключенных обоих — 0 (без grav-компенсации).
     float pitch_rad = 0.0f, roll_rad = 0.0f;
     if (stab_cfg_.filter.tilt_comp_enabled) {
+      tilt_active_this_tick = true;
       if (!tilt_was_enabled_) {
-        // Переход выключено→включено в рантайме (код-ревью PR #290, 9-й
-        // раунд): pitch_rad_/roll_rad_ заморожены с последнего Update() —
-        // сбрасываем, иначе EKF получит протухший тангаж/крен из интервала,
-        // пока фильтр был выключен (см. комментарий у tilt_was_enabled_
-        // в .hpp).
+        // Возобновление после ЛЮБОГО перерыва (см. комментарий у
+        // tilt_active_this_tick выше): pitch_rad_/roll_rad_ заморожены с
+        // последнего Update() — сбрасываем, иначе EKF получит протухший
+        // тангаж/крен из интервала простоя.
         tilt_est_.Reset();
       }
-      tilt_was_enabled_ = true;
       const float a_lin_g = motor_model_active ? a_lin_prev_g_ : 0.0f;
       // Боковое (центростремительное) ускорение для roll-коррекции —
       // симметричный аналог a_lin_g для pitch (код-ревью PR #290, 6-й
@@ -181,7 +188,6 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
       pitch_rad = tilt_est_.GetPitchRad();
       roll_rad = tilt_est_.GetRollRad();
     } else {
-      tilt_was_enabled_ = false;
       if (stab_cfg_.filter.madgwick_enabled) {
         float yaw_rad = 0.0f;
         ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
@@ -227,6 +233,11 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     a_lin_prev_g_ = (vx_now - prev_vx_) / dt_sec / kG;
     prev_vx_ = vx_now;
   }
+  // Безусловно (см. комментарий у tilt_active_this_tick выше): фиксирует
+  // «tilt_est_.Update() вызывался этот тик» вне зависимости от того, через
+  // какой именно путь он был пропущен.
+  tilt_was_enabled_ = tilt_active_this_tick;
+
   if (ekf_active && sensors_.imu_enabled && sensors_.mag_enabled) {
     constexpr float kDegToRad = 3.14159265358979f / 180.0f;
     ctx_.ekf.UpdateHeading(sensors_.heading_deg * kDegToRad);

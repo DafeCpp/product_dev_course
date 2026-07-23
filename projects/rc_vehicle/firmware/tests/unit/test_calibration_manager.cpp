@@ -126,6 +126,27 @@ TEST_F(CalibrationManagerTest,
   EXPECT_FALSE(mgr_->ConsumeFrameChanged());
 }
 
+// Код-ревью PR #290 (10-й раунд): смена базиса RotateToVehicleFrame() из
+// ручного SetForwardDirection() поднимала frame_changed_ (сброс
+// TiltEstimator у вызывающего кода), но не трогала сам EKF — если vx/vy
+// уже ненулевые (машина едет), эти значения остаются выражены в СТАРЫХ
+// осях forward/lateral после смены базиса, портя speed/slip и motor/NHC
+// апдейты на следующем тике. Симметрично ProcessCompletion(), которая
+// уже сбрасывает EKF на завершении авто-калибровки.
+TEST_F(CalibrationManagerTest, SetForwardDirection_ResetsEkfState) {
+  ImuCalibData d{};
+  d.valid = true;
+  imu_calib_.SetData(d);
+  ekf_.SetState(5.0f, 1.0f, 0.5f);  // машина едет: vx=5, vy=1, r=0.5
+
+  mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  mgr_->ProcessForwardDirectionRequest();
+
+  EXPECT_FLOAT_EQ(ekf_.GetVx(), 0.0f)
+      << "vx остался в старых осях после смены направления «вперёд»";
+  EXPECT_FLOAT_EQ(ekf_.GetVy(), 0.0f);
+}
+
 TEST_F(CalibrationManagerTest,
        ProcessCompletion_Failed_DoesNotSetFrameChanged) {
   imu_calib_.StartCalibration(CalibMode::Full, 10);
