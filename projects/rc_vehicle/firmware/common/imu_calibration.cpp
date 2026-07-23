@@ -185,6 +185,7 @@ bool ImuCalibration::Finalize() {
       data_.gravity_vec[0] = static_cast<float>(mean[3] / g);
       data_.gravity_vec[1] = static_cast<float>(mean[4] / g);
       data_.gravity_vec[2] = static_cast<float>(mean[5] / g);
+      data_.gravity_valid = true;  // код-ревью PR #290, 12-й раунд
     }
   }
 

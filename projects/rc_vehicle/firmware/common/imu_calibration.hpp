@@ -23,6 +23,18 @@ struct ImuCalibData {
    * Определяется круговой калибровкой (CW+CCW). */
   float com_offset[2]{0.f, 0.f};
   bool valid{false};
+  /**
+   * gravity_vec получен РЕАЛЬНОЙ Full-калибровкой (не GyroOnly).
+   *
+   * valid выставляется в Finalize() для ЛЮБОГО режима (в т.ч. GyroOnly,
+   * который трогает только gyro_bias) — сам по себе не гарантирует, что
+   * gravity_vec когда-либо был измерен, а не остался на дефолте (0,0,1)
+   * (код-ревью PR #290, 12-й раунд). В отличие от forward_valid, ЭТОТ флаг
+   * ХРАНИТСЯ в NVS (imu_calibration_nvs.cpp) — по значению самого
+   * gravity_vec нельзя отличить «реально измерен и совпал с дефолтом» от
+   * «никогда не измерялся».
+   */
+  bool gravity_valid{false};
 };
 
 /** Режим калибровки. */
@@ -109,6 +121,16 @@ class ImuCalibration {
 
   /** Текущий статус калибровки. */
   CalibStatus GetStatus() const { return status_; }
+
+  /**
+   * Режим ПОСЛЕДНЕЙ запущенной/завершённой калибровки (GyroOnly/Full/
+   * Forward). Не сбрасывается автоматически — сохраняет значение до
+   * следующего StartCalibration()/StartForwardCalibration(). Нужен
+   * вызывающему коду, чтобы отличить завершение Full/Forward (базис
+   * RotateToVehicleFrame() реально сменился) от GyroOnly (не сменился) —
+   * код-ревью PR #290, 12-й раунд.
+   */
+  [[nodiscard]] CalibMode GetMode() const { return mode_; }
 
   /** Получить текущие калибровочные данные. */
   const ImuCalibData& GetData() const { return data_; }

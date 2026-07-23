@@ -33,7 +33,13 @@ static constexpr size_t kBlobSize = sizeof(CalibBlob);
 
 esp_err_t imu_nvs::Save(const rc_vehicle::ImuCalibData& data) {
   CalibBlob blob{};
-  blob.flags = data.valid ? 0x01 : 0x00;
+  // bit0: valid (любой режим, в т.ч. GyroOnly). bit1: gravity_valid — только
+  // РЕАЛЬНАЯ Full-калибровка (код-ревью PR #290, 12-й раунд). Формат blob не
+  // меняется (flags уже был полным байтом с одним использованным битом) —
+  // версию не бампаем; старые записи (bit1=0 по умолчанию) после апгрейда
+  // просто требуют повторной Full-калибровки для gravity_valid=true, что
+  // безопасно (fail-closed).
+  blob.flags = (data.valid ? 0x01 : 0x00) | (data.gravity_valid ? 0x02 : 0x00);
   blob.version = kCurrentCalibVersion;
   std::memcpy(blob.gyro_bias, data.gyro_bias, sizeof(blob.gyro_bias));
   std::memcpy(blob.accel_bias, data.accel_bias, sizeof(blob.accel_bias));
@@ -115,6 +121,7 @@ esp_err_t imu_nvs::Load(rc_vehicle::ImuCalibData& data) {
               sizeof(data.accel_forward_vec));
   std::memcpy(data.gravity_vec, blob.gravity_vec, sizeof(data.gravity_vec));
   data.valid = (blob.flags & 0x01) != 0;
+  data.gravity_valid = (blob.flags & 0x02) != 0;
 
   ESP_LOGI(
       TAG,
