@@ -145,6 +145,21 @@ void CalibrationManager::ProcessForwardDirectionRequest() {
     fz = forward_dir_fz_;
   }
 
+  // Forward-калибровка требует ПРЕДВАРИТЕЛЬНОЙ валидной Full-калибровки —
+  // тот же контракт, что уже у StartForwardCalibration()
+  // (imu_calibration.cpp: "if (!data_.valid) return false"). Ручная
+  // WS-команда set_forward_direction обходила эту проверку: без Full
+  // gravity_vec остаётся дефолтным (0,0,1), и ниже мы бы установили
+  // Madgwick vehicle frame + сбросили tilt/EKF на основании ЭТОГО мусора
+  // (код-ревью PR #290, 11-й раунд). ImuHandler::UpdateVehicleFrame() тоже
+  // не заметил бы подмену — её veh_frame_set_ реагирует только на
+  // переход IsValid() false→true, а этот путь его не трогает.
+  if (!imu_calib_.IsValid()) {
+    platform_.Log(LogLevel::Warning,
+                  "SetForwardDirection ignored: Full calibration not done");
+    return;
+  }
+
   imu_calib_.SetForwardDirection(fx, fy, fz);
 
   // Как и на завершении Full/Forward в ProcessCompletion() (код-ревью

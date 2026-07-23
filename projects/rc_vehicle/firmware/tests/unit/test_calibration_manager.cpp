@@ -147,6 +147,25 @@ TEST_F(CalibrationManagerTest, SetForwardDirection_ResetsEkfState) {
   EXPECT_FLOAT_EQ(ekf_.GetVy(), 0.0f);
 }
 
+// Код-ревью PR #290 (11-й раунд): без предварительной валидной Full-
+// калибровки set_forward_direction всё равно устанавливал Madgwick vehicle
+// frame и поднимал frame_changed_/сброс EKF на основании ДЕФОЛТНОГО
+// (0,0,1) gravity_vec — тот же контракт валидности, что уже требует
+// StartForwardCalibration(), здесь обходился.
+TEST_F(CalibrationManagerTest,
+       SetForwardDirection_WithoutValidCalibration_Ignored) {
+  ASSERT_FALSE(imu_calib_.IsValid());
+  ekf_.SetState(5.0f, 1.0f, 0.5f);
+
+  mgr_->SetForwardDirection(0.f, 1.f, 0.f);
+  mgr_->ProcessForwardDirectionRequest();
+
+  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+      << "смена СК не должна применяться без валидной Full-калибровки";
+  EXPECT_FLOAT_EQ(ekf_.GetVx(), 5.0f) << "EKF не должен сбрасываться зря";
+  EXPECT_FLOAT_EQ(ekf_.GetVy(), 1.0f);
+}
+
 TEST_F(CalibrationManagerTest,
        ProcessCompletion_Failed_DoesNotSetFrameChanged) {
   imu_calib_.StartCalibration(CalibMode::Full, 10);
