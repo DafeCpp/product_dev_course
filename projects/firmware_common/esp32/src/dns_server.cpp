@@ -218,8 +218,15 @@ esp_err_t DnsServerStop(void) {
   // отличит "A жива" от "B стартовала". После каждого пробуждения
   // перечитываем оба под локом, а не доверяем самому факту пробуждения (см.
   // комментарий у s_dns_stopped_sem).
-  TickType_t deadline =
-      xTaskGetTickCount() + pdMS_TO_TICKS(kDnsStopWaitTimeoutMs);
+  // Считаем прошедшее время как разницу тиков (start отдельно, elapsed =
+  // now - start), а не сравнением абсолютных deadline/now: беззнаковое
+  // вычитание корректно переживает переполнение 32-битного счётчика тиков
+  // (~49.7 суток аптайма), а сравнение "now >= deadline" — нет: если Stop()
+  // стартовал в последнюю секунду перед переполнением, deadline = now +
+  // timeout переполнился бы в маленькое число, и now >= deadline было бы
+  // истинно немедленно, до всякого ожидания.
+  const TickType_t start = xTaskGetTickCount();
+  const TickType_t timeout_ticks = pdMS_TO_TICKS(kDnsStopWaitTimeoutMs);
   for (;;) {
     portENTER_CRITICAL(&s_dns_mux);
     bool still_running = s_dns_task_running;
@@ -231,12 +238,12 @@ esp_err_t DnsServerStop(void) {
       return ESP_OK;
     }
 
-    TickType_t now = xTaskGetTickCount();
-    if (now >= deadline) {
+    TickType_t elapsed = xTaskGetTickCount() - start;
+    if (elapsed >= timeout_ticks) {
       ESP_LOGW(TAG, "Timed out waiting for DNS task to exit");
       return ESP_ERR_TIMEOUT;
     }
-    xSemaphoreTake(s_dns_stopped_sem, deadline - now);
+    xSemaphoreTake(s_dns_stopped_sem, timeout_ticks - elapsed);
   }
 }
 

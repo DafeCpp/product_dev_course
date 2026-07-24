@@ -414,11 +414,29 @@ esp_err_t WiFiRadioStart(void) {
 }
 
 esp_err_t WiFiRadioStop(void) {
+  bool was_on = false;
+  bool prev_should_connect = false;
+  int prev_retry_count = 0;
+  WiFiStaStatus prev_status = {};
+
   portENTER_CRITICAL(&s_wifi_mux);
-  bool was_on = s_radio_on;
+  was_on = s_radio_on;
   if (was_on) {
+    // Снимок STA-состояния до деструктивных изменений ниже — если
+    // esp_wifi_stop() не удастся, радио и STA скорее всего продолжают
+    // работать как раньше, и всё это нужно откатить целиком (иначе
+    // WiFiStaGetStatus() соврёт "отключено", а auto-reconnect останется
+    // выключенным навсегда — см. review).
+    prev_should_connect = s_sta_should_connect;
+    prev_retry_count = s_sta_retry_count;
+    prev_status = s_sta_status;
+
     s_radio_on = false;
     s_sta_should_connect_saved = s_sta_should_connect;
+    // Гасим авто-reconnect ДО esp_wifi_stop(): иначе disconnect-событие,
+    // порождённое самим esp_wifi_stop() при разборке STA, может уйти в
+    // обработчик и попытаться переподключиться посреди остановки радио
+    // (тот же приём, что и в WiFiStaConnect()).
     s_sta_should_connect = false;
   }
   portEXIT_CRITICAL(&s_wifi_mux);
@@ -434,10 +452,14 @@ esp_err_t WiFiRadioStop(void) {
   esp_err_t e = esp_wifi_stop();
   if (e != ESP_OK) {
     ESP_LOGE(TAG, "esp_wifi_stop failed: %s", esp_err_to_name(e));
-    // Радио не гарантированно остановилось — не считаем его выключенным.
+    // Радио не гарантированно остановилось — откатываем всё, что успели
+    // поменять в ожидании успешной остановки.
     portENTER_CRITICAL(&s_wifi_mux);
     s_radio_on = true;
+    s_sta_should_connect = prev_should_connect;
+    s_sta_status = prev_status;
     portEXIT_CRITICAL(&s_wifi_mux);
+    s_sta_retry_count = prev_retry_count;
     return e;
   }
   ESP_LOGI(TAG, "Wi-Fi radio stopped");
