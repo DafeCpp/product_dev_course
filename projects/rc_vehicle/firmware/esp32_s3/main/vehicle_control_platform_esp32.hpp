@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esp_err.h"
 #include "failsafe.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -14,6 +15,13 @@ struct WifiCmd {
   float throttle;
   float steering;
 };
+
+/**
+ * Запустить канал WS-телеметрии (низкоприоритетная задача строит JSON из
+ * TelemetrySnapshot и шлёт его подключенным клиентам). Вызывать один раз,
+ * после firmware_common::esp32::WebSocketRegisterUri().
+ */
+esp_err_t RcWsTelemStart();
 
 /**
  * @brief Реализация VehicleControlPlatform для ESP32-S3

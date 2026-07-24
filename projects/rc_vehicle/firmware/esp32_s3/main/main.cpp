@@ -1,33 +1,33 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <firmware_common/esp32/dns_server.hpp>
+#include <firmware_common/esp32/http_server.hpp>
+#include <firmware_common/esp32/websocket_server.hpp>
+#include <firmware_common/esp32/wifi_ap.hpp>
+
 #include "cJSON.h"
 #include "config.hpp"
+#include "crash_logger.hpp"
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
-#include "lwip/inet.h"
-#include "lwip/ip4_addr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "crash_logger.hpp"
-#include "dns_server.hpp"
-#include "http_server.hpp"
+#include "lwip/inet.h"
+#include "lwip/ip4_addr.h"
+#include "rc_http_routes.hpp"
 #include "udp_telem_sender.hpp"
 #include "vehicle_control.hpp"
-#include "websocket_server.hpp"
-#include "wifi_ap.hpp"
 #include "ws_command_handlers.hpp"
 #include "ws_command_registry.hpp"
+
+using namespace firmware_common::esp32;
 
 static const char* TAG = "main";
 
 // Global command registry
 static rc_vehicle::WsCommandRegistry g_command_registry;
-
-static void ws_cmd_handler(float throttle, float steering) {
-  VehicleControlOnWifiCommand(throttle, steering);
-}
 
 /**
  * Обработчик произвольных JSON-команд через WebSocket.
@@ -43,15 +43,21 @@ static void ws_json_handler(const char* type, cJSON* json, httpd_req_t* req) {
 extern "C" void app_main(void) {
   ESP_LOGI(TAG, "RC Vehicle ESP32-S3 firmware starting...");
 
-  // Инициализация Wi-Fi AP
+  // Инициализация Wi-Fi AP (rc_vehicle: радио всегда включено, поведение не
+  // меняется — сравните с runtime start/stop у головы, LOS-180).
   ESP_LOGI(TAG, "Initializing Wi-Fi AP...");
-  if (WiFiApInit() != ESP_OK) {
+  if (WiFiApInit({.ssid_prefix = WIFI_AP_SSID_PREFIX,
+                  .password = WIFI_AP_PASSWORD,
+                  .channel = WIFI_AP_CHANNEL,
+                  .max_connections = WIFI_AP_MAX_CONNECTIONS,
+                  .radio_on_by_default = true}) != ESP_OK) {
     ESP_LOGE(TAG, "Failed to initialize Wi-Fi AP");
     return;
   }
 
-  // Проверить причину перезагрузки и сохранить crash info в NVS при необходимости.
-  // NVS инициализируется внутри WiFiApInit(), поэтому вызываем сразу после него.
+  // Проверить причину перезагрузки и сохранить crash info в NVS при
+  // необходимости. NVS инициализируется внутри WiFiApInit(), поэтому вызываем
+  // сразу после него.
   CrashLoggerInit();
 
   char ap_ip[16] = {};
@@ -68,8 +74,12 @@ extern "C" void app_main(void) {
 
   // Инициализация HTTP сервера
   ESP_LOGI(TAG, "Initializing HTTP server...");
-  if (HttpServerInit() != ESP_OK) {
+  if (HttpServerInit({.port = HTTP_SERVER_PORT}) != ESP_OK) {
     ESP_LOGE(TAG, "Failed to initialize HTTP server");
+    return;
+  }
+  if (RcHttpRegisterRoutes(HttpServerGetHandle()) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to register RC HTTP routes");
     return;
   }
 
@@ -88,6 +98,9 @@ extern "C" void app_main(void) {
 
   // Регистрация обработчиков WebSocket команд
   ESP_LOGI(TAG, "Registering WebSocket command handlers...");
+  // Команда управления throttle/steering — раньше отдельный колбэк
+  // websocket_server, теперь обычная запись в registry (LOS-184).
+  g_command_registry.Register("cmd", rc_vehicle::HandleControlCmd);
   g_command_registry.Register("calibrate_imu", rc_vehicle::HandleCalibrateImu);
   g_command_registry.Register("get_calib_status",
                               rc_vehicle::HandleGetCalibStatus);
@@ -116,7 +129,8 @@ extern "C" void app_main(void) {
                               rc_vehicle::HandleGetComOffsetStatus);
   g_command_registry.Register("start_test", rc_vehicle::HandleStartTest);
   g_command_registry.Register("stop_test", rc_vehicle::HandleStopTest);
-  g_command_registry.Register("get_test_status", rc_vehicle::HandleGetTestStatus);
+  g_command_registry.Register("get_test_status",
+                              rc_vehicle::HandleGetTestStatus);
   g_command_registry.Register("start_speed_calib",
                               rc_vehicle::HandleStartSpeedCalib);
   g_command_registry.Register("stop_speed_calib",
@@ -138,15 +152,17 @@ extern "C" void app_main(void) {
   ESP_LOGI(TAG, "Registered %zu command handlers",
            g_command_registry.GetHandlerCount());
 
-  // WebSocket команды управления → local control loop
-  WebSocketSetCommandHandler(&ws_cmd_handler);
-  // WebSocket JSON-команды (калибровка и т.д.)
+  // WebSocket JSON-команды (управление, калибровка и т.д. — все типы кадров)
   WebSocketSetJsonHandler(&ws_json_handler);
 
   // Регистрация WebSocket URI на HTTP-сервере (один httpd на порту 80)
   ESP_LOGI(TAG, "Registering WebSocket handler...");
   if (WebSocketRegisterUri(HttpServerGetHandle()) != ESP_OK) {
     ESP_LOGE(TAG, "Failed to register WebSocket handler");
+    return;
+  }
+  if (rc_vehicle::RcWsTelemStart() != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to start WS telemetry channel");
     return;
   }
 

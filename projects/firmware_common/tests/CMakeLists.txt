@@ -23,6 +23,9 @@ add_executable(firmware_common_tests
     ${FIRMWARE_COMMON_SOURCES}
     test_pid_controller.cpp
     test_slew_rate.cpp
+    test_dns_response_builder.cpp
+    test_dns_server_race_state.cpp
+    test_ws_client_failure_tracker.cpp
 )
 target_include_directories(firmware_common_tests PRIVATE
     ${FIRMWARE_COMMON_INCLUDE_DIRS}

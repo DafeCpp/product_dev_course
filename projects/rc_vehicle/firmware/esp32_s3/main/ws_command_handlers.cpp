@@ -18,6 +18,20 @@ static const char* TAG = "ws_handlers";
 
 namespace rc_vehicle {
 
+void HandleControlCmd(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
+  (void)req;  // fire-and-forget: ответа на "cmd" не было и раньше
+  cJSON* throttle = cJSON_GetObjectItem(json, "throttle");
+  cJSON* steer = cJSON_GetObjectItem(json, "steering");
+  if (!throttle) throttle = cJSON_GetObjectItem(json, "thr");
+  if (!steer) steer = cJSON_GetObjectItem(json, "steer");
+
+  if (throttle && steer) {
+    float thr = static_cast<float>(throttle->valuedouble);
+    float str = static_cast<float>(steer->valuedouble);
+    vc.OnWifiCommand(thr, str);
+  }
+}
+
 void HandleCalibrateImu(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   const char* mode_str = JsonGetString(json, "mode", "gyro");
   bool is_forward = (strcmp(mode_str, "forward") == 0);
@@ -42,8 +56,7 @@ void HandleCalibrateImu(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
       cJSON_AddBoolToObject(reply, "ok", ok);
       cJSON_AddBoolToObject(reply, "auto_drive", ok);
       cJSON_AddNumberToObject(reply, "target_accel", target_accel);
-      ESP_LOGI(TAG,
-               "calibrate_imu mode=auto_forward target_accel=%.3fg -> %s",
+      ESP_LOGI(TAG, "calibrate_imu mode=auto_forward target_accel=%.3fg -> %s",
                target_accel, ok ? "started" : "failed (need stage 1 full)");
     } else if (is_forward) {
       bool ok = vc.StartForwardCalibration();
@@ -331,8 +344,7 @@ void HandleCalibrateComOffset(IVehicleControl& vc, cJSON* json,
     }
   });
 
-  ESP_LOGI(TAG,
-           "calibrate_com_offset accel=%.3fg steer=%.2f dur=%.1fs -> %s",
+  ESP_LOGI(TAG, "calibrate_com_offset accel=%.3fg steer=%.2f dur=%.1fs -> %s",
            target_accel, steering, duration, ok ? "started" : "failed");
 }
 
@@ -397,8 +409,9 @@ void HandleStartTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   });
 
   ESP_LOGI(TAG, "start_test type=%s accel=%.3fg dur=%.1fs steer=%.2f -> %s",
-           params.type == TestType::Circle ? "circle" :
-           params.type == TestType::Step ? "step" : "straight",
+           params.type == TestType::Circle ? "circle"
+           : params.type == TestType::Step ? "step"
+                                           : "straight",
            params.target_accel_g, params.duration_sec, params.steering,
            ok ? "started" : "failed");
 }
@@ -493,7 +506,7 @@ void HandleStopSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
 }
 
 void HandleGetSpeedCalibStatus(IVehicleControl& vc, cJSON* json,
-                                httpd_req_t* req) {
+                               httpd_req_t* req) {
   (void)json;
 
   bool active = vc.IsSpeedCalibActive();
@@ -605,8 +618,7 @@ void HandleUdpStreamStop(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   ESP_LOGI(TAG, "udp_stream_stop");
 }
 
-void HandleUdpStreamStatus(IVehicleControl& vc, cJSON* json,
-                           httpd_req_t* req) {
+void HandleUdpStreamStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   (void)vc;
   (void)json;
 
@@ -649,7 +661,7 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
 }
 
 void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
-                              httpd_req_t* req) {
+                             httpd_req_t* req) {
   (void)json;
 
   WsReply(req, "mag_calib_status", [&](cJSON* reply) {
