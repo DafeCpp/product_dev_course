@@ -17,16 +17,30 @@
 // курсор времени, PROF_LAP(acc) добавляет дельту с прошлой засечки в
 // аккумулятор и сдвигает курсор. В обычной сборке — пустышки (нулевой оверхед,
 // без _pt).
-#define PROF_START() uint64_t _pt = ctx_.platform.GetTimeUs()
-#define PROF_LAP(acc)                              \
+#define PROF_START()                       \
+  uint64_t _pt = ctx_.platform.GetTimeUs(); \
+  uint64_t _prof_iter_us = 0
+#define PROF_LAP(acc, max_acc)                     \
   do {                                             \
     const uint64_t _n = ctx_.platform.GetTimeUs(); \
-    (acc) += _n - _pt;                             \
+    const uint64_t _d = _n - _pt;                  \
+    (acc) += _d;                                   \
+    if (_d > (max_acc)) (max_acc) = _d;            \
+    _prof_iter_us += _d;                           \
     _pt = _n;                                      \
+  } while (0)
+// Не делает нового замера времени — переиспользует дельты, накопленные
+// в PROF_LAP() за эту итерацию (LOS-219).
+#define PROF_END()                                                        \
+  do {                                                                    \
+    if (_prof_iter_us > prof_total_max_us_) prof_total_max_us_ = _prof_iter_us; \
+    if (_prof_iter_us > config::ProfilingConfig::kOutlierThresholdUs)     \
+      ++prof_outliers_;                                                  \
   } while (0)
 #else
 #define PROF_START() ((void)0)
-#define PROF_LAP(acc) ((void)0)
+#define PROF_LAP(acc, max_acc) ((void)0)
+#define PROF_END() ((void)0)
 #endif
 
 namespace rc_vehicle {
@@ -42,9 +56,9 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   PROF_START();
 
   UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
-  PROF_LAP(prof_components_us_);
+  PROF_LAP(prof_components_us_, prof_components_max_us_);
   UpdateSensorsAndEkf(dt_ms);  // snapshot + ComOffset + EKF
-  PROF_LAP(prof_sensors_us_);
+  PROF_LAP(prof_sensors_us_, prof_sensors_max_us_);
 
   if (ctx_.calib_mgr) {
     ctx_.calib_mgr->ProcessRequest(now);
@@ -70,19 +84,20 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
   UpdateAutoDrive(now, dt_ms);
-  PROF_LAP(prof_control_us_);
+  PROF_LAP(prof_control_us_, prof_control_max_us_);
 
   UpdateStabilization(dt_ms);
-  PROF_LAP(prof_stab_us_);
+  PROF_LAP(prof_stab_us_, prof_stab_max_us_);
   // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
   // перезаписал бы нейтраль ненулевым trim'ом — моторы ползли бы при
   // потере сигнала (FW-R1).
   if (!HandleFailsafe()) {
     UpdatePwm(now, dt_ms);
   }
-  PROF_LAP(prof_pwm_us_);
+  PROF_LAP(prof_pwm_us_, prof_pwm_max_us_);
   UpdateTelemetry(now, dt_ms);
-  PROF_LAP(prof_telem_us_);
+  PROF_LAP(prof_telem_us_, prof_telem_max_us_);
+  PROF_END();
 
   {
     const DiagnosticsContext dctx{ctx_.platform,    *ctx_.stab_mgr,
@@ -385,20 +400,45 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
 #ifdef RC_PROFILE_LOOP
 void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   if (loops == 0) return;
-  LogFormat fmt;
-  fmt << "PROF(us/iter): comp=" << (prof_components_us_ / loops)
-      << " sens=" << (prof_sensors_us_ / loops)
-      << " ctrl=" << (prof_control_us_ / loops)
-      << " stab=" << (prof_stab_us_ / loops)
-      << " pwm=" << (prof_pwm_us_ / loops)
-      << " telem=" << (prof_telem_us_ / loops);
-  ctx_.platform.Log(LogLevel::Info, fmt.str());
+  {
+    LogFormat fmt;
+    fmt << "PROF(us/iter): comp=" << (prof_components_us_ / loops)
+        << " sens=" << (prof_sensors_us_ / loops)
+        << " ctrl=" << (prof_control_us_ / loops)
+        << " stab=" << (prof_stab_us_ / loops)
+        << " pwm=" << (prof_pwm_us_ / loops)
+        << " telem=" << (prof_telem_us_ / loops);
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
+  {
+    // LOS-219: пиковые (worst-case) значения по стадиям + частота
+    // выбросов — среднее теряет редкие однократные stall'ы (напр. от
+    // синхронного NVS commit) на фоне тысяч обычных итераций за интервал.
+    LogFormat fmt;
+    fmt << "PROF(max us): comp=" << prof_components_max_us_
+        << " sens=" << prof_sensors_max_us_
+        << " ctrl=" << prof_control_max_us_
+        << " stab=" << prof_stab_max_us_
+        << " pwm=" << prof_pwm_max_us_
+        << " telem=" << prof_telem_max_us_
+        << " iter=" << prof_total_max_us_
+        << "  outliers=" << prof_outliers_ << "/" << loops;
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
   prof_components_us_ = 0;
   prof_sensors_us_ = 0;
   prof_control_us_ = 0;
   prof_stab_us_ = 0;
   prof_pwm_us_ = 0;
   prof_telem_us_ = 0;
+  prof_components_max_us_ = 0;
+  prof_sensors_max_us_ = 0;
+  prof_control_max_us_ = 0;
+  prof_stab_max_us_ = 0;
+  prof_pwm_max_us_ = 0;
+  prof_telem_max_us_ = 0;
+  prof_total_max_us_ = 0;
+  prof_outliers_ = 0;
 }
 #endif
 

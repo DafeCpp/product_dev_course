@@ -143,6 +143,18 @@ class ControlLoopProcessor {
   uint64_t prof_stab_us_{0};
   uint64_t prof_pwm_us_{0};
   uint64_t prof_telem_us_{0};
+  // LOS-219: worst-case per-stage tracking, reset each diag interval same as sums.
+  uint64_t prof_components_max_us_{0};
+  uint64_t prof_sensors_max_us_{0};
+  uint64_t prof_control_max_us_{0};
+  uint64_t prof_stab_max_us_{0};
+  uint64_t prof_pwm_max_us_{0};
+  uint64_t prof_telem_max_us_{0};
+  // Total Step() time this iteration + outlier count — catches a stall
+  // regardless of which stage it lands in (per-stage max alone can't tell
+  // you "was this whole iteration slow").
+  uint64_t prof_total_max_us_{0};
+  uint32_t prof_outliers_{0};
 #endif
 
   // Кэшированный снимок датчиков (обновляется в UpdateSensorsAndEkf)
