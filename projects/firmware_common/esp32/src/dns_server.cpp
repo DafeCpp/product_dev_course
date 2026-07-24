@@ -94,7 +94,14 @@ static void dns_server_task(void* arg) {
     int n =
         recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*)&from, &from_len);
     if (n <= 0) {
-      if (!s_race_state.IsSocketPublished()) {
+      // IsSocketPublished() читаем под той же критической секцией, что и
+      // запись в RequestStop() (контракт DnsServerRaceState) — без неё на
+      // dual-core ESP32 запись из DnsServerStop() может быть не видна этому
+      // ядру, и цикл будет впустую крутить recvfrom() на закрытом сокете.
+      portENTER_CRITICAL(&s_dns_mux);
+      bool socket_published = s_race_state.IsSocketPublished();
+      portEXIT_CRITICAL(&s_dns_mux);
+      if (!socket_published) {
         // DnsServerStop() закрыл сокет намеренно — завершаем задачу.
         break;
       }
