@@ -257,7 +257,10 @@ esp_err_t WiFiApInit(const WiFiApConfig& cfg) {
     // повторно не делаем. Но если радио должно быть включено и не включилось
     // (предыдущий вызов упал внутри WiFiRadioStart()), даём ещё один шанс —
     // иначе retry молча вернёт ESP_OK, не подняв радио.
-    if (!s_radio_on && ComputeWantRadioOn(cfg)) {
+    portENTER_CRITICAL(&s_wifi_mux);
+    bool radio_on = s_radio_on;
+    portEXIT_CRITICAL(&s_wifi_mux);
+    if (!radio_on && ComputeWantRadioOn(cfg)) {
       return WiFiRadioStart();
     }
     return ESP_OK;
@@ -382,30 +385,45 @@ esp_err_t WiFiApInit(const WiFiApConfig& cfg) {
 }
 
 esp_err_t WiFiRadioStart(void) {
-  if (s_radio_on) return ESP_OK;
-
-  // Восстанавливаем намерение STA-подключения, если оно было до выключения.
+  // Чтение и публикация "включаю" — одна критическая секция: иначе два
+  // конкурентных WiFiRadioStart() (тот же класс гонки, что чинили в
+  // DnsServerStart(), см. dns_server.cpp) оба увидели бы "выключено" и
+  // оба вызвали esp_wifi_start(). s_radio_on = true публикуется ДО самого
+  // esp_wifi_start(), чтобы конкурентный вызов сразу увидел "уже включаю".
   portENTER_CRITICAL(&s_wifi_mux);
+  bool already_on = s_radio_on;
+  if (!already_on) {
+    s_radio_on = true;
+  }
+  // Восстанавливаем намерение STA-подключения, если оно было до выключения.
   s_sta_should_connect = s_sta_should_connect_saved;
   portEXIT_CRITICAL(&s_wifi_mux);
+
+  if (already_on) return ESP_OK;
 
   esp_err_t e = esp_wifi_start();
   if (e != ESP_OK) {
     ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(e));
+    portENTER_CRITICAL(&s_wifi_mux);
+    s_radio_on = false;  // старт не удался — откатываем
+    portEXIT_CRITICAL(&s_wifi_mux);
     return e;
   }
-  s_radio_on = true;
   ESP_LOGI(TAG, "Wi-Fi radio started. AP SSID: %s", s_ap_ssid);
   return ESP_OK;
 }
 
 esp_err_t WiFiRadioStop(void) {
-  if (!s_radio_on) return ESP_OK;
-
   portENTER_CRITICAL(&s_wifi_mux);
-  s_sta_should_connect_saved = s_sta_should_connect;
-  s_sta_should_connect = false;
+  bool was_on = s_radio_on;
+  if (was_on) {
+    s_radio_on = false;
+    s_sta_should_connect_saved = s_sta_should_connect;
+    s_sta_should_connect = false;
+  }
   portEXIT_CRITICAL(&s_wifi_mux);
+
+  if (!was_on) return ESP_OK;
 
   if (s_sta_retry_timer) {
     esp_timer_stop(s_sta_retry_timer);
@@ -416,14 +434,22 @@ esp_err_t WiFiRadioStop(void) {
   esp_err_t e = esp_wifi_stop();
   if (e != ESP_OK) {
     ESP_LOGE(TAG, "esp_wifi_stop failed: %s", esp_err_to_name(e));
+    // Радио не гарантированно остановилось — не считаем его выключенным.
+    portENTER_CRITICAL(&s_wifi_mux);
+    s_radio_on = true;
+    portEXIT_CRITICAL(&s_wifi_mux);
     return e;
   }
-  s_radio_on = false;
   ESP_LOGI(TAG, "Wi-Fi radio stopped");
   return ESP_OK;
 }
 
-bool WiFiRadioIsOn(void) { return s_radio_on; }
+bool WiFiRadioIsOn(void) {
+  portENTER_CRITICAL(&s_wifi_mux);
+  bool on = s_radio_on;
+  portEXIT_CRITICAL(&s_wifi_mux);
+  return on;
+}
 
 esp_err_t WiFiApGetSsid(char* ssid_str, size_t len) {
   if (!ssid_str || len == 0) return ESP_ERR_INVALID_ARG;
