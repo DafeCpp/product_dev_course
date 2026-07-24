@@ -143,6 +143,11 @@ class ControlLoopProcessor {
   uint64_t prof_stab_us_{0};
   uint64_t prof_pwm_us_{0};
   uint64_t prof_telem_us_{0};
+  // Время PrintDiagnostics()/EmitProfile() (сами Log()-вызовы) — код-ревью
+  // PR #297: без отдельной стадии эта работа не попадала ни в один
+  // per-stage max, хотя занимает реальное время внутри Step() раз в
+  // диаг-интервал (см. PROF_LAP-вызов в конце Step()).
+  uint64_t prof_diag_us_{0};
   // LOS-219: worst-case per-stage tracking, reset each diag interval same as
   // sums.
   uint64_t prof_components_max_us_{0};
@@ -151,6 +156,7 @@ class ControlLoopProcessor {
   uint64_t prof_stab_max_us_{0};
   uint64_t prof_pwm_max_us_{0};
   uint64_t prof_telem_max_us_{0};
+  uint64_t prof_diag_max_us_{0};
   // Max Step()-internal execution time this interval — catches a stall
   // regardless of which stage it lands in (per-stage max alone can't tell
   // you "was this whole iteration slow"). NOT the same as the actual loop

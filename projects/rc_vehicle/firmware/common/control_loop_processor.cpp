@@ -104,7 +104,6 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   PROF_LAP(prof_pwm_us_, prof_pwm_max_us_);
   UpdateTelemetry(now, dt_ms);
   PROF_LAP(prof_telem_us_, prof_telem_max_us_);
-  PROF_END(dt_ms);
 
   {
     const DiagnosticsContext dctx{ctx_.platform,    *ctx_.stab_mgr,
@@ -120,6 +119,16 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
     if (diag_loop_count_ == 0) EmitProfile(prof_loops);
 #endif
   }
+  // PROF_LAP для diag-стадии и PROF_END() — ПОСЛЕ диагностики (код-ревью
+  // PR #297): PrintDiagnostics()/EmitProfile() сами делают Log()-вызовы,
+  // которые могут быть небыстрыми (UART на низком baud) — раз в диаг-
+  // интервал, но предсказуемо. Раньше эта работа не входила ни в один
+  // per-stage max, а PROF_END() уже отработал — step_iter не видел эту
+  // стадию вообще, хотя в СЛЕДУЮЩЕЙ итерации dt_ms её всё равно захватил
+  // бы (now-last_loop считается ДО следующего Step()), создавая ложное
+  // расхождение period/step_iter, будто stall произошёл ВНЕ Step().
+  PROF_LAP(prof_diag_us_, prof_diag_max_us_);
+  PROF_END(dt_ms);
 }
 
 void ControlLoopProcessor::UpdateComponents(uint32_t now, uint32_t dt_ms) {
@@ -414,7 +423,8 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
         << " ctrl=" << (prof_control_us_ / loops)
         << " stab=" << (prof_stab_us_ / loops)
         << " pwm=" << (prof_pwm_us_ / loops)
-        << " telem=" << (prof_telem_us_ / loops);
+        << " telem=" << (prof_telem_us_ / loops)
+        << " diag=" << (prof_diag_us_ / loops);
     ctx_.platform.Log(LogLevel::Info, fmt.str());
   }
   {
@@ -429,7 +439,8 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
     fmt << "PROF(max us): comp=" << prof_components_max_us_
         << " sens=" << prof_sensors_max_us_ << " ctrl=" << prof_control_max_us_
         << " stab=" << prof_stab_max_us_ << " pwm=" << prof_pwm_max_us_
-        << " telem=" << prof_telem_max_us_ << " step_iter=" << prof_step_max_us_
+        << " telem=" << prof_telem_max_us_ << " diag=" << prof_diag_max_us_
+        << " step_iter=" << prof_step_max_us_
         << " period=" << prof_period_max_us_ << "  outliers=" << prof_outliers_
         << "/" << loops;
     ctx_.platform.Log(LogLevel::Info, fmt.str());
@@ -440,12 +451,14 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   prof_stab_us_ = 0;
   prof_pwm_us_ = 0;
   prof_telem_us_ = 0;
+  prof_diag_us_ = 0;
   prof_components_max_us_ = 0;
   prof_sensors_max_us_ = 0;
   prof_control_max_us_ = 0;
   prof_stab_max_us_ = 0;
   prof_pwm_max_us_ = 0;
   prof_telem_max_us_ = 0;
+  prof_diag_max_us_ = 0;
   prof_step_max_us_ = 0;
   prof_period_max_us_ = 0;
   prof_outliers_ = 0;
