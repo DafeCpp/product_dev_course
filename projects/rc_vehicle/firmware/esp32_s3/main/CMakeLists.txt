@@ -1,4 +1,5 @@
 include(${CMAKE_CURRENT_LIST_DIR}/../../../../firmware_common/sources.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../../../../firmware_common/esp32/sources_esp32.cmake)
 
 idf_component_register(
     SRCS
@@ -6,10 +7,7 @@ idf_component_register(
         "stabilization_config_json.cpp"
         "ws_command_registry.cpp"
         "ws_command_handlers.cpp"
-        "../../esp32_common/wifi_ap.cpp"
-        "../../esp32_common/dns_server.cpp"
-        "../../esp32_common/http_server.cpp"
-        "../../esp32_common/websocket_server.cpp"
+        "../../esp32_common/rc_http_routes.cpp"
         "../../common/stabilization_config.cpp"
         "../../common/stabilization_pipeline.cpp"
         "../../common/drive_modes.cpp"
@@ -49,6 +47,7 @@ idf_component_register(
         "../../common/failsafe.cpp"
         "../../common/control_components.cpp"
         ${FIRMWARE_COMMON_SOURCES}
+        ${FIRMWARE_COMMON_ESP32_SOURCES}
         "../../common/imu_calibration.cpp"
         "../../common/madgwick_filter.cpp"
         "../../common/lpf_butterworth.cpp"
@@ -61,6 +60,7 @@ idf_component_register(
         "."
         "../../common"
         ${FIRMWARE_COMMON_INCLUDE_DIRS}
+        ${FIRMWARE_COMMON_ESP32_INCLUDE_DIRS}
         "../../esp32_common"
     PRIV_REQUIRES
         esp_wifi

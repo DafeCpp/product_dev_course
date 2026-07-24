@@ -1,6 +1,6 @@
-#include "dns_server.hpp"
-
 #include <string.h>
+
+#include <firmware_common/esp32/dns_server.hpp>
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -8,16 +8,22 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
+namespace firmware_common::esp32 {
+
 static const char* TAG = "dns_server";
 
 #define DNS_PORT 53
 #define DNS_MAX_LEN 256
 static constexpr uint32_t DNS_TASK_STACK = 6144;
 static TaskHandle_t s_dns_task_handle = nullptr;
+// Сокет задачи; DnsServerStop() закрывает его извне, чтобы прервать блокирующий
+// recvfrom() и корректно завершить задачу.
+static int s_dns_sock = -1;
 
 // Минимальный DNS response: заголовок + вопрос (echo) + ответ A record
 static void build_dns_response(const uint8_t* query, size_t query_len,
-                               uint32_t answer_ip, uint8_t* out, size_t* out_len) {
+                               uint32_t answer_ip, uint8_t* out,
+                               size_t* out_len) {
   if (query_len < 12 || *out_len < query_len + 16) {
     *out_len = 0;
     return;
@@ -57,6 +63,7 @@ static void dns_server_task(void* arg) {
   int sock = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock < 0) {
     ESP_LOGE(TAG, "Failed to create socket: %d", errno);
+    s_dns_task_handle = nullptr;
     vTaskDelete(NULL);
     return;
   }
@@ -69,9 +76,12 @@ static void dns_server_task(void* arg) {
   if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
     ESP_LOGE(TAG, "Failed to bind DNS port %d: %d", DNS_PORT, errno);
     close(sock);
+    s_dns_task_handle = nullptr;
     vTaskDelete(NULL);
     return;
   }
+
+  s_dns_sock = sock;
 
   ESP_LOGI(TAG, "DNS server listening on %d.%d.%d.%d:%d",
            (int)((ap_ip >> 0) & 0xFF), (int)((ap_ip >> 8) & 0xFF),
@@ -83,8 +93,15 @@ static void dns_server_task(void* arg) {
 
   while (1) {
     from_len = sizeof(from);
-    int n = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*)&from, &from_len);
-    if (n <= 0) continue;
+    int n =
+        recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*)&from, &from_len);
+    if (n <= 0) {
+      if (s_dns_sock < 0) {
+        // DnsServerStop() закрыл сокет намеренно — завершаем задачу.
+        break;
+      }
+      continue;
+    }
 
     size_t resp_len = sizeof(buf);
     build_dns_response(buf, (size_t)n, ap_ip, buf, &resp_len);
@@ -92,6 +109,10 @@ static void dns_server_task(void* arg) {
       sendto(sock, buf, resp_len, 0, (struct sockaddr*)&from, from_len);
     }
   }
+
+  ESP_LOGI(TAG, "DNS server stopped");
+  s_dns_task_handle = nullptr;
+  vTaskDelete(NULL);
 }
 
 esp_err_t DnsServerStart(uint32_t ap_ip) {
@@ -110,3 +131,19 @@ esp_err_t DnsServerStart(uint32_t ap_ip) {
   }
   return ESP_OK;
 }
+
+esp_err_t DnsServerStop(void) {
+  if (s_dns_task_handle == nullptr) {
+    return ESP_OK;  // уже остановлен
+  }
+  if (s_dns_sock >= 0) {
+    int sock = s_dns_sock;
+    s_dns_sock = -1;  // сигнал задаче: сокет закрывается намеренно
+    shutdown(sock, SHUT_RDWR);
+    close(sock);
+  }
+  // Задача сама себя удалит после выхода из recvfrom() и очистит handle.
+  return ESP_OK;
+}
+
+}  // namespace firmware_common::esp32

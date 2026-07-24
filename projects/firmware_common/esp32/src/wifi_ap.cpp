@@ -1,9 +1,8 @@
-#include "wifi_ap.hpp"
-
 #include <stdio.h>
 #include <string.h>
 
-#include "config.hpp"
+#include <firmware_common/esp32/wifi_ap.hpp>
+
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -13,9 +12,10 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
-#include "log_format.hpp"
 #include "nvs.h"
 #include "nvs_flash.h"
+
+namespace firmware_common::esp32 {
 
 static const char* TAG = "wifi_ap";
 static esp_netif_t* ap_netif = nullptr;
@@ -23,7 +23,11 @@ static esp_netif_t* sta_netif = nullptr;
 
 static portMUX_TYPE s_wifi_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_inited = false;
+static bool s_radio_on = false;
 static bool s_sta_should_connect = false;
+// Намерение STA-подключения на момент WiFiRadioStop() — восстанавливается в
+// WiFiRadioStart().
+static bool s_sta_should_connect_saved = false;
 
 static char s_ap_ssid[32] = {};
 static WiFiStaStatus s_sta_status = {};
@@ -50,6 +54,13 @@ static constexpr const char* kStaNvsNamespace = "wifi_sta";
 static constexpr const char* kStaKeySsid = "ssid";
 static constexpr const char* kStaKeyPass = "pass";
 
+static constexpr const char* kRadioNvsNamespace = "wifi_cfg";
+static constexpr const char* kRadioNvsKey = "radio_on";
+
+static void FormatIpInto(const esp_ip4_addr_t& ip, char* out, size_t out_len) {
+  snprintf(out, out_len, IPSTR, IP2STR(&ip));
+}
+
 static void StaStatusSetConfigured(const char* ssid) {
   portENTER_CRITICAL(&s_wifi_mux);
   s_sta_status.configured = (ssid != nullptr && ssid[0] != '\0');
@@ -73,9 +84,7 @@ static void StaStatusSetConnected(bool connected) {
 
 static void StaStatusSetIp(const esp_netif_ip_info_t& ip_info) {
   portENTER_CRITICAL(&s_wifi_mux);
-  const std::string ip_str = rc_vehicle::FormatIp(ip_info.ip.addr);
-  strncpy(s_sta_status.ip, ip_str.c_str(), sizeof(s_sta_status.ip) - 1);
-  s_sta_status.ip[sizeof(s_sta_status.ip) - 1] = '\0';
+  FormatIpInto(ip_info.ip, s_sta_status.ip, sizeof(s_sta_status.ip));
   s_sta_status.connected = true;
   portEXIT_CRITICAL(&s_wifi_mux);
 }
@@ -138,6 +147,27 @@ static void ClearStaCreds() {
   (void)nvs_erase_key(h, kStaKeyPass);
   (void)nvs_commit(h);
   nvs_close(h);
+}
+
+static bool LoadRadioAutoStart(bool* out_on) {
+  nvs_handle_t h;
+  if (nvs_open(kRadioNvsNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+  uint8_t v = 0;
+  esp_err_t e = nvs_get_u8(h, kRadioNvsKey, &v);
+  nvs_close(h);
+  if (e != ESP_OK) return false;
+  *out_on = (v != 0);
+  return true;
+}
+
+esp_err_t WiFiSetRadioAutoStart(bool on) {
+  nvs_handle_t h;
+  esp_err_t e = nvs_open(kRadioNvsNamespace, NVS_READWRITE, &h);
+  if (e != ESP_OK) return e;
+  e = nvs_set_u8(h, kRadioNvsKey, on ? 1 : 0);
+  if (e == ESP_OK) e = nvs_commit(h);
+  nvs_close(h);
+  return e;
 }
 
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
@@ -211,7 +241,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
   }
 }
 
-esp_err_t WiFiApInit(void) {
+esp_err_t WiFiApInit(const WiFiApConfig& cfg) {
   if (s_inited) return ESP_OK;
 
   // Инициализация NVS (нужно для Wi-Fi)
@@ -234,8 +264,8 @@ esp_err_t WiFiApInit(void) {
   sta_netif = esp_netif_create_default_wifi_sta();
 
   // Конфигурация Wi-Fi
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_wifi_init(&wifi_cfg));
 
   // События Wi‑Fi / IP (для STA статуса)
   ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
@@ -246,26 +276,22 @@ esp_err_t WiFiApInit(void) {
   // Получить MAC адрес для уникального SSID
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-  rc_vehicle::LogFormat fmt;
-  fmt << WIFI_AP_SSID_PREFIX << "-" << std::hex << std::setw(2)
-      << std::setfill('0') << std::uppercase << static_cast<unsigned>(mac[4])
-      << std::setw(2) << std::setfill('0') << static_cast<unsigned>(mac[5]);
-  strncpy(s_ap_ssid, fmt.str().c_str(), sizeof(s_ap_ssid) - 1);
-  s_ap_ssid[sizeof(s_ap_ssid) - 1] = '\0';
+  snprintf(s_ap_ssid, sizeof(s_ap_ssid), "%s-%02X%02X", cfg.ssid_prefix, mac[4],
+           mac[5]);
 
   // Настройка AP
   wifi_config_t ap_cfg = {};
   strncpy((char*)ap_cfg.ap.ssid, s_ap_ssid, sizeof(ap_cfg.ap.ssid) - 1);
   ap_cfg.ap.ssid_len = strlen(s_ap_ssid);
-  if (strlen(WIFI_AP_PASSWORD) > 0) {
-    strncpy((char*)ap_cfg.ap.password, WIFI_AP_PASSWORD,
+  if (cfg.password != nullptr && strlen(cfg.password) > 0) {
+    strncpy((char*)ap_cfg.ap.password, cfg.password,
             sizeof(ap_cfg.ap.password) - 1);
     ap_cfg.ap.authmode = WIFI_AUTH_WPA2_PSK;
   } else {
     ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
   }
-  ap_cfg.ap.channel = WIFI_AP_CHANNEL;
-  ap_cfg.ap.max_connection = WIFI_AP_MAX_CONNECTIONS;
+  ap_cfg.ap.channel = cfg.channel;
+  ap_cfg.ap.max_connection = cfg.max_connections;
   ap_cfg.ap.beacon_interval = 100;
 
   // Настройка STA (опционально): пробуем загрузить из NVS и подключиться.
@@ -297,13 +323,12 @@ esp_err_t WiFiApInit(void) {
     portEXIT_CRITICAL(&s_wifi_mux);
   }
 
-  // AP + STA одновременно (точка доступа остаётся поднятой).
+  // AP + STA одновременно (точка доступа остаётся поднятой, когда радио on).
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_cfg));
   if (have_sta) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
   }
-  ESP_ERROR_CHECK(esp_wifi_start());
 
   // Таймер для медленных STA-ретраев (esp_timer — свой таск с достаточным
   // стеком)
@@ -316,7 +341,7 @@ esp_err_t WiFiApInit(void) {
   };
   esp_timer_create(&retry_timer_args, &s_sta_retry_timer);
 
-  ESP_LOGI(TAG, "Wi-Fi AP initialized. SSID: %s", s_ap_ssid);
+  ESP_LOGI(TAG, "Wi-Fi AP configured. SSID: %s", s_ap_ssid);
   if (have_sta) {
     ESP_LOGI(TAG, "STA configured. SSID: %s (connecting...)", sta_ssid);
   } else {
@@ -324,8 +349,67 @@ esp_err_t WiFiApInit(void) {
   }
 
   s_inited = true;
+  // WiFiRadioStart() ниже восстанавливает намерение STA-подключения из этого
+  // поля — на первом запуске оно должно совпадать с только что вычисленным
+  // s_sta_should_connect (have_sta), а не с дефолтным false.
+  s_sta_should_connect_saved = s_sta_should_connect;
+
+  // Радио включаем по флагу из NVS (если сохранён) или по умолчанию из cfg.
+  bool want_radio_on = cfg.radio_on_by_default;
+  bool saved = false;
+  if (LoadRadioAutoStart(&saved)) {
+    want_radio_on = saved;
+  }
+  if (want_radio_on) {
+    return WiFiRadioStart();
+  }
+  ESP_LOGI(TAG, "Radio auto-start disabled (NVS radio_on=0)");
   return ESP_OK;
 }
+
+esp_err_t WiFiRadioStart(void) {
+  if (s_radio_on) return ESP_OK;
+
+  // Восстанавливаем намерение STA-подключения, если оно было до выключения.
+  portENTER_CRITICAL(&s_wifi_mux);
+  s_sta_should_connect = s_sta_should_connect_saved;
+  portEXIT_CRITICAL(&s_wifi_mux);
+
+  esp_err_t e = esp_wifi_start();
+  if (e != ESP_OK) {
+    ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(e));
+    return e;
+  }
+  s_radio_on = true;
+  ESP_LOGI(TAG, "Wi-Fi radio started. AP SSID: %s", s_ap_ssid);
+  return ESP_OK;
+}
+
+esp_err_t WiFiRadioStop(void) {
+  if (!s_radio_on) return ESP_OK;
+
+  portENTER_CRITICAL(&s_wifi_mux);
+  s_sta_should_connect_saved = s_sta_should_connect;
+  s_sta_should_connect = false;
+  portEXIT_CRITICAL(&s_wifi_mux);
+
+  if (s_sta_retry_timer) {
+    esp_timer_stop(s_sta_retry_timer);
+  }
+  s_sta_retry_count = 0;
+  StaStatusSetConnected(false);
+
+  esp_err_t e = esp_wifi_stop();
+  if (e != ESP_OK) {
+    ESP_LOGE(TAG, "esp_wifi_stop failed: %s", esp_err_to_name(e));
+    return e;
+  }
+  s_radio_on = false;
+  ESP_LOGI(TAG, "Wi-Fi radio stopped");
+  return ESP_OK;
+}
+
+bool WiFiRadioIsOn(void) { return s_radio_on; }
 
 esp_err_t WiFiApGetSsid(char* ssid_str, size_t len) {
   if (!ssid_str || len == 0) return ESP_ERR_INVALID_ARG;
@@ -348,9 +432,7 @@ esp_err_t WiFiApGetIp(char* ip_str, size_t len) {
     return ESP_FAIL;
   }
 
-  const std::string formatted_ip = rc_vehicle::FormatIp(ip_info.ip.addr);
-  strncpy(ip_str, formatted_ip.c_str(), len - 1);
-  ip_str[len - 1] = '\0';
+  FormatIpInto(ip_info.ip, ip_str, len);
   return ESP_OK;
 }
 
@@ -402,6 +484,7 @@ esp_err_t WiFiStaConnect(const char* ssid, const char* password, bool save) {
 
   portENTER_CRITICAL(&s_wifi_mux);
   s_sta_should_connect = true;
+  s_sta_should_connect_saved = true;
   portEXIT_CRITICAL(&s_wifi_mux);
 
   if (e != ESP_OK) return e;
@@ -411,6 +494,7 @@ esp_err_t WiFiStaConnect(const char* ssid, const char* password, bool save) {
 esp_err_t WiFiStaDisconnect(bool forget) {
   portENTER_CRITICAL(&s_wifi_mux);
   s_sta_should_connect = false;
+  s_sta_should_connect_saved = false;
   portEXIT_CRITICAL(&s_wifi_mux);
 
   StaStatusSetConnected(false);
@@ -513,3 +597,5 @@ esp_err_t WiFiStaScan(WiFiScanNetwork* out_networks, size_t* inout_count) {
   *inout_count = out_count;
   return ESP_OK;
 }
+
+}  // namespace firmware_common::esp32

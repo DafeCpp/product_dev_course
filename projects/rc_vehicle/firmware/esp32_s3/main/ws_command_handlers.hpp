@@ -14,6 +14,15 @@ class IVehicleControl;
  * instead of accessing the global singleton directly.
  */
 
+/**
+ * @brief Команда управления throttle/steering (тип "cmd").
+ *
+ * Раньше обрабатывалась в websocket_server отдельным колбэком
+ * (throttle, steering); после развязки websocket_server от rc_vehicle идёт
+ * через тот же registry, что и остальные JSON-команды.
+ */
+void HandleControlCmd(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
+
 void HandleCalibrateImu(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleGetCalibStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleSetForwardDirection(IVehicleControl& vc, cJSON* json,
@@ -40,7 +49,7 @@ void HandleGetTestStatus(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleStartSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleStopSpeedCalib(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleGetSpeedCalibStatus(IVehicleControl& vc, cJSON* json,
-                                httpd_req_t* req);
+                               httpd_req_t* req);
 void HandleRunSelfTest(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleUdpStreamStart(IVehicleControl& vc, cJSON* json, httpd_req_t* req);
 void HandleUdpStreamStop(IVehicleControl& vc, cJSON* json, httpd_req_t* req);

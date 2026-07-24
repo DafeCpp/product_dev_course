@@ -1,18 +1,13 @@
-#include "websocket_server.hpp"
-
 #include <string.h>
 
 #include <atomic>
-#include <string>
+#include <firmware_common/esp32/websocket_server.hpp>
 
 #include "cJSON.h"
-#include "config.hpp"
-#include "control_components.hpp"  // rc_vehicle::TelemetrySnapshot, BuildTelemJson
 #include "esp_http_server.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "freertos/task.h"
+
+namespace firmware_common::esp32 {
 
 static const char* TAG = "websocket";
 static httpd_handle_t ws_server_handle = NULL;
@@ -21,60 +16,17 @@ static httpd_handle_t ws_server_handle = NULL;
 static constexpr size_t MAX_HTTPD_CLIENTS = 8;
 
 /**
- * Очередь телеметрии передаёт POD-снимок (rc_vehicle::TelemetrySnapshot) ПО
- * ЗНАЧЕНИЮ. FreeRTOS копирует элемент целиком (memcpy), поэтому control loop
- * (продьюсер) и telem_sender_task не разделяют память — гонка двойной
- * буферизации исключена by-design (FW-R6). FW-RF8: построение JSON из снимка
- * вынесено в telem_sender_task, в очередь кладётся только снимок.
- */
-using TelemMsg = rc_vehicle::TelemetrySnapshot;
-
-/** Очередь длины 1 (xQueueOverwrite): всегда самый свежий снимок. */
-static QueueHandle_t s_telem_queue = NULL;
-
-/**
  * Кешированное количество WS-клиентов.
- * Обновляется только в telem_sender_task (низкий приоритет, не блокирует
- * control loop). GetWebSocketClientCount() читает атомарно без мьютексов httpd.
+ * Обновляется в ws_handler (на подключении) и WebSocketSendTelem (на
+ * отправке); читается атомарно без мьютексов httpd — безопасно вызывать из
+ * control loop.
  */
 static std::atomic<uint8_t> s_cached_client_count{0};
 
 /** Счётчик неудачных отправок для каждого fd — при 3 подряд закрываем. */
 static constexpr int MAX_SEND_FAILURES = 3;
 
-static void telem_sender_task(void* arg) {
-  (void)arg;
-  uint32_t frames_sent = 0;
-  TickType_t last_diag = xTaskGetTickCount();
-  // static: снимок крупный для стека задачи; задача одна — гонок нет
-  static TelemMsg snap;
-  for (;;) {
-    if (xQueueReceive(s_telem_queue, &snap, portMAX_DELAY) != pdTRUE) {
-      continue;
-    }
-    // FW-RF8: cJSON heap-аллокации — здесь (Core 0, низкий приоритет), а не в
-    // 500 Гц control loop.
-    std::string json = rc_vehicle::BuildTelemJson(snap);
-    WebSocketSendTelem(json.c_str());
-    frames_sent++;
-
-    // Диагностический лог каждые 10 секунд
-    TickType_t now = xTaskGetTickCount();
-    if ((now - last_diag) >= pdMS_TO_TICKS(10000)) {
-      ESP_LOGI(TAG, "telem_sender: %lu frames sent in 10s, clients=%u",
-               (unsigned long)frames_sent,
-               (unsigned)s_cached_client_count.load(std::memory_order_relaxed));
-      frames_sent = 0;
-      last_diag = now;
-    }
-  }
-}
-static WebSocketCommandHandler s_cmd_handler = nullptr;
 static WebSocketJsonHandler s_json_handler = nullptr;
-
-void WebSocketSetCommandHandler(WebSocketCommandHandler handler) {
-  s_cmd_handler = handler;
-}
 
 void WebSocketSetJsonHandler(WebSocketJsonHandler handler) {
   s_json_handler = handler;
@@ -103,12 +55,12 @@ static esp_err_t ws_handler(httpd_req_t* req) {
 
   // Локальный буфер: не static, чтобы избежать гонки при нескольких
   // одновременных WebSocket-соединениях.
-  uint8_t buf[WS_RX_BUFFER_SIZE];
+  uint8_t buf[kWsRxBufferSize];
   httpd_ws_frame_t ws_pkt = {};
   ws_pkt.payload = buf;
   ws_pkt.len = 0;
 
-  esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, WS_RX_BUFFER_SIZE);
+  esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, kWsRxBufferSize);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -118,8 +70,8 @@ static esp_err_t ws_handler(httpd_req_t* req) {
   }
 
   size_t safe_len = ws_pkt.len;
-  if (safe_len >= WS_RX_BUFFER_SIZE) {
-    safe_len = WS_RX_BUFFER_SIZE - 1;
+  if (safe_len >= kWsRxBufferSize) {
+    safe_len = kWsRxBufferSize - 1;
   }
   buf[safe_len] = '\0';
 
@@ -130,21 +82,8 @@ static esp_err_t ws_handler(httpd_req_t* req) {
   }
 
   cJSON* type = cJSON_GetObjectItem(json, "type");
-  if (type && cJSON_IsString(type)) {
-    if (strcmp(type->valuestring, "cmd") == 0) {
-      cJSON* throttle = cJSON_GetObjectItem(json, "throttle");
-      cJSON* steer = cJSON_GetObjectItem(json, "steering");
-      if (!throttle) throttle = cJSON_GetObjectItem(json, "thr");
-      if (!steer) steer = cJSON_GetObjectItem(json, "steer");
-
-      if (throttle && steer && s_cmd_handler) {
-        float thr = static_cast<float>(throttle->valuedouble);
-        float str = static_cast<float>(steer->valuedouble);
-        s_cmd_handler(thr, str);
-      }
-    } else if (s_json_handler) {
-      s_json_handler(type->valuestring, json, req);
-    }
+  if (type && cJSON_IsString(type) && s_json_handler) {
+    s_json_handler(type->valuestring, json, req);
   }
 
   cJSON_Delete(json);
@@ -168,25 +107,6 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
 
   ws_server_handle = server;
 
-  if (s_telem_queue == NULL) {
-    s_telem_queue = xQueueCreate(1, sizeof(TelemMsg));
-    if (s_telem_queue != NULL) {
-      const UBaseType_t prio = 5;
-      // FW-RF8 переносит построение JSON-телеметрии в эту задачу
-      // (cJSON_PrintUnformatted → sprintf на каждое float-поле; форматирование
-      // float в xtensa newlib крайне прожорливо по стеку). Со стеком 3072 это
-      // даёт «stack overflow in task ws_telem» (краш в cvt/vfprintf) и
-      // reboot-петлю при первом же кадре. Эта же работа раньше жила в
-      // control-task со стеком 12288; даём ws_telem запас 8192.
-      constexpr uint32_t kTelemTaskStack = 8192;
-      if (xTaskCreate(telem_sender_task, "ws_telem", kTelemTaskStack, NULL,
-                      prio, NULL) != pdPASS) {
-        vQueueDelete(s_telem_queue);
-        s_telem_queue = NULL;
-      }
-    }
-  }
-
   esp_err_t ret = httpd_register_uri_handler(ws_server_handle, &ws_uri);
   if (ret == ESP_OK) {
     ESP_LOGI(TAG, "WebSocket URI /ws registered");
@@ -196,23 +116,13 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
   return ret;
 }
 
-void WebSocketEnqueueTelem(const rc_vehicle::TelemetrySnapshot& snap) {
-  if (s_telem_queue == NULL) {
-    return;
-  }
-  // Очередь копирует снимок целиком (memcpy); при заполненной очереди старый
-  // снимок перезаписывается свежим (телеметрия — последнее состояние важнее
-  // истории). Вызывается из control loop — детерминированно, без аллокаций.
-  xQueueOverwrite(s_telem_queue, &snap);
-}
-
 esp_err_t WebSocketSendTelem(const char* telem_json) {
   if (ws_server_handle == NULL || telem_json == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  // Получить список клиентов (вызывается из telem_sender_task, не из control
-  // loop). Заодно обновляем кеш для GetWebSocketClientCount().
+  // Получить список клиентов (вызывается из задачи-отправителя телеметрии, не
+  // из control loop). Заодно обновляем кеш для WebSocketGetClientCount().
   int client_fds[MAX_HTTPD_CLIENTS];
   size_t client_count = MAX_HTTPD_CLIENTS;
   esp_err_t list_err =
@@ -227,7 +137,8 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
     s_cached_client_count.store(0, std::memory_order_relaxed);
     return ESP_OK;
   }
-  s_cached_client_count.store(static_cast<uint8_t>(client_count), std::memory_order_relaxed);
+  s_cached_client_count.store(static_cast<uint8_t>(client_count),
+                              std::memory_order_relaxed);
 
   size_t len = strlen(telem_json);
   httpd_ws_frame_t ws_pkt = {};
@@ -244,11 +155,11 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   // индексирование по i было бы некорректным.
   // Sentinel -1 means "empty slot". Using 0 would be incorrect because
   // fd 0 (stdin) is a valid file descriptor that httpd could reuse.
-  static int s_fd_fail_count[WEBSOCKET_MAX_CLIENTS] = {};
-  static int s_fd_keys[WEBSOCKET_MAX_CLIENTS] = {};
+  static int s_fd_fail_count[kWsMaxClients] = {};
+  static int s_fd_keys[kWsMaxClients] = {};
   static bool s_fd_keys_initialized = false;
   if (!s_fd_keys_initialized) {
-    for (int s = 0; s < WEBSOCKET_MAX_CLIENTS; s++) {
+    for (int s = 0; s < kWsMaxClients; s++) {
       s_fd_keys[s] = -1;
     }
     s_fd_keys_initialized = true;
@@ -264,7 +175,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
 
     // Найти или выделить слот для этого fd
     int slot = -1;
-    for (int s = 0; s < WEBSOCKET_MAX_CLIENTS; s++) {
+    for (int s = 0; s < kWsMaxClients; s++) {
       if (s_fd_keys[s] == fd) {
         slot = s;
         break;
@@ -272,7 +183,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
     }
     if (slot == -1) {
       // Новый fd — занять свободный слот
-      for (int s = 0; s < WEBSOCKET_MAX_CLIENTS; s++) {
+      for (int s = 0; s < kWsMaxClients; s++) {
         if (s_fd_keys[s] == -1) {
           s_fd_keys[s] = fd;
           s_fd_fail_count[s] = 0;
@@ -282,13 +193,12 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
       }
     }
 
-    esp_err_t send_err =
-        httpd_ws_send_data(ws_server_handle, fd, &ws_pkt);
+    esp_err_t send_err = httpd_ws_send_data(ws_server_handle, fd, &ws_pkt);
     if (send_err != ESP_OK) {
       if (slot >= 0) s_fd_fail_count[slot]++;
       int fails = (slot >= 0) ? s_fd_fail_count[slot] : -1;
-      ESP_LOGW(TAG, "WS send failed fd=%d err=%s consecutive=%d",
-               fd, esp_err_to_name(send_err), fails);
+      ESP_LOGW(TAG, "WS send failed fd=%d err=%s consecutive=%d", fd,
+               esp_err_to_name(send_err), fails);
       if (slot >= 0 && s_fd_fail_count[slot] >= MAX_SEND_FAILURES) {
         ESP_LOGW(TAG, "Closing stale WS client fd %d after %d failures", fd,
                  s_fd_fail_count[slot]);
@@ -302,7 +212,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   }
 
   // Очистить слоты для fd, которых больше нет в списке клиентов
-  for (int s = 0; s < WEBSOCKET_MAX_CLIENTS; s++) {
+  for (int s = 0; s < kWsMaxClients; s++) {
     if (s_fd_keys[s] == -1) continue;
     bool found = false;
     for (size_t i = 0; i < client_count; i++) {
@@ -326,3 +236,5 @@ uint8_t WebSocketGetClientCount(void) {
   // вызывать из control loop на Core 1 без риска блокировки.
   return s_cached_client_count.load(std::memory_order_relaxed);
 }
+
+}  // namespace firmware_common::esp32

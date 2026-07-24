@@ -1,8 +1,10 @@
 #include "vehicle_control_platform_esp32.hpp"
 
 #include <cstring>
+#include <firmware_common/esp32/ws_telem_channel.hpp>
 
 #include "config.hpp"
+#include "control_components.hpp"  // rc_vehicle::TelemetrySnapshot, BuildTelemJson
 #include "crash_logger.hpp"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
@@ -18,7 +20,6 @@
 #include "rc_input.hpp"
 #include "rc_vehicle_common.hpp"
 #include "stabilization_config_nvs.hpp"
-#include "websocket_server.hpp"
 
 namespace rc_vehicle {
 
@@ -27,6 +28,12 @@ static const char* TAG = "platform_esp32";
 // Константы для задачи control loop
 static constexpr uint32_t CONTROL_TASK_STACK = 12288;
 static constexpr UBaseType_t CONTROL_TASK_PRIORITY = configMAX_PRIORITIES - 1;
+
+// Канал WS-телеметрии: единственный экземпляр на прошивку (один control
+// loop — один продьюсер).
+static firmware_common::esp32::WsTelemChannel<TelemetrySnapshot> g_ws_telem;
+
+esp_err_t RcWsTelemStart() { return g_ws_telem.Start(&BuildTelemJson); }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Конструктор / Деструктор
@@ -260,13 +267,13 @@ bool VehicleControlPlatformEsp32::FailsafeIsActive() const noexcept {
 // ─────────────────────────────────────────────────────────────────────────
 
 unsigned VehicleControlPlatformEsp32::GetWebSocketClientCount() const noexcept {
-  return WebSocketGetClientCount();
+  return firmware_common::esp32::WebSocketGetClientCount();
 }
 
 void VehicleControlPlatformEsp32::PublishTelem(const TelemetrySnapshot& snap) {
   // FW-RF8: из control loop — только публикация POD-снимка в очередь (memcpy,
-  // без аллокаций). Построение JSON и отправку по WS делает telem_sender_task.
-  WebSocketEnqueueTelem(snap);
+  // без аллокаций). Построение JSON и отправку по WS делает telem-задача.
+  g_ws_telem.Enqueue(snap);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
