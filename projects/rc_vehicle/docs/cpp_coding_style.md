@@ -150,8 +150,32 @@ ImuData& data = *result;
 ## Инструменты
 
 ### Форматирование
-- **clang-format** с конфигурацией Google style
-- Файл конфигурации: `.clang-format` в корне проекта прошивки
+- Используется **clang-format-20** с конфигурацией Google style.
+- Файл конфигурации: `firmware/.clang-format`.
+- Для C/C++-файлов `projects/rc_vehicle/firmware/` установлен pre-commit hook.
+  Он не обрабатывает generated code, внешние зависимости и каталоги сборки.
+
+#### Установка и запуск hook
+
+Команды выполняются из корня репозитория:
+
+```bash
+sudo apt-get install clang-format-20
+python3 -m pip install pre-commit
+./scripts/install-pre-commit-hook.sh
+```
+
+После установки hook запускается перед каждым коммитом и форматирует
+изменённые исходники и заголовки прошивки. Для ручной проверки всего набора
+отслеживаемых firmware-файлов используйте:
+
+```bash
+pre-commit run rc-vehicle-clang-format --all-files
+```
+
+В GitHub Actions изменённые строки firmware также проверяются
+`git-clang-format-20 --binary clang-format-20`. Поэтому локальный hook и CI
+используют один и тот же major-релиз форматтера.
 
 ## Примеры
 
@@ -194,4 +218,3 @@ esp_err_t wifi_ap_init(void)  // snake_case вместо PascalCase
 
 - [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)
 - [ESP-IDF Programming Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/)
-

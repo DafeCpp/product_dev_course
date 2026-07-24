@@ -46,4 +46,24 @@ idf.py monitor
 - **Форматирование** — [Google style](https://google.github.io/styleguide/cppguide.html) через clang-format. Конфиг: `firmware/.clang-format`.
 - **Буферы** — по возможности `std::array`, `std::vector`, `std::span`; минимизация сырых указателей.
 
+## Pre-commit: clang-format
+
+В корне репозитория есть pre-commit hook для C/C++-файлов из этого каталога.
+Он запускает `clang-format-20`, применяет существующий `firmware/.clang-format`
+и пропускает generated code, зависимости и каталоги сборки.
+
+Установите зависимости и hook один раз:
+
+```bash
+sudo apt-get install clang-format-20
+python3 -m pip install pre-commit
+./scripts/install-pre-commit-hook.sh
+```
+
+Проверить или отформатировать все отслеживаемые файлы прошивки вручную:
+
+```bash
+pre-commit run rc-vehicle-clang-format --all-files
+```
+
 Подробнее — в корневом README репозитория и `docs/cpp_coding_style.md`.
