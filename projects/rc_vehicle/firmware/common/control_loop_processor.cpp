@@ -17,7 +17,7 @@
 // курсор времени, PROF_LAP(acc) добавляет дельту с прошлой засечки в
 // аккумулятор и сдвигает курсор. В обычной сборке — пустышки (нулевой оверхед,
 // без _pt).
-#define PROF_START()                       \
+#define PROF_START()                        \
   uint64_t _pt = ctx_.platform.GetTimeUs(); \
   uint64_t _prof_iter_us = 0
 #define PROF_LAP(acc, max_acc)                     \
@@ -30,17 +30,24 @@
     _pt = _n;                                      \
   } while (0)
 // Не делает нового замера времени — переиспользует дельты, накопленные
-// в PROF_LAP() за эту итерацию (LOS-219).
-#define PROF_END()                                                        \
-  do {                                                                    \
-    if (_prof_iter_us > prof_total_max_us_) prof_total_max_us_ = _prof_iter_us; \
-    if (_prof_iter_us > config::ProfilingConfig::kOutlierThresholdUs)     \
-      ++prof_outliers_;                                                  \
+// в PROF_LAP() за эту итерацию (LOS-219). Outlier считается по dt_ms
+// (реальный период между вызовами Step(), см. ControlTaskLoop), а не по
+// _prof_iter_us (время ТОЛЬКО внутри Step()) — код-ревью PR #297: stall,
+// произошедший пока таск заблокирован в DelayUntilNextTick() (напр.
+// зависание flash-cache от NVS commit на другом ядре), не тронул бы
+// _prof_iter_us, и outliers остался бы 0 при реально пропущенном такте.
+#define PROF_END(dt_ms)                                                       \
+  do {                                                                        \
+    if (_prof_iter_us > prof_step_max_us_) prof_step_max_us_ = _prof_iter_us; \
+    const uint64_t _period_us = static_cast<uint64_t>(dt_ms) * 1000;          \
+    if (_period_us > prof_period_max_us_) prof_period_max_us_ = _period_us;   \
+    if (_period_us > config::ProfilingConfig::kOutlierThresholdUs)            \
+      ++prof_outliers_;                                                       \
   } while (0)
 #else
 #define PROF_START() ((void)0)
 #define PROF_LAP(acc, max_acc) ((void)0)
-#define PROF_END() ((void)0)
+#define PROF_END(dt_ms) ((void)0)
 #endif
 
 namespace rc_vehicle {
@@ -97,7 +104,7 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   PROF_LAP(prof_pwm_us_, prof_pwm_max_us_);
   UpdateTelemetry(now, dt_ms);
   PROF_LAP(prof_telem_us_, prof_telem_max_us_);
-  PROF_END();
+  PROF_END(dt_ms);
 
   {
     const DiagnosticsContext dctx{ctx_.platform,    *ctx_.stab_mgr,
@@ -414,15 +421,17 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
     // LOS-219: пиковые (worst-case) значения по стадиям + частота
     // выбросов — среднее теряет редкие однократные stall'ы (напр. от
     // синхронного NVS commit) на фоне тысяч обычных итераций за интервал.
+    // step_iter — макс. время ВНУТРИ Step(); period — макс. реальный период
+    // между вызовами Step() (dt_ms). Печатаем оба (код-ревью PR #297):
+    // расхождение между ними указывает на stall ВНЕ Step() (напр. в
+    // DelayUntilNextTick() на другом ядре) — outliers считается по period.
     LogFormat fmt;
     fmt << "PROF(max us): comp=" << prof_components_max_us_
-        << " sens=" << prof_sensors_max_us_
-        << " ctrl=" << prof_control_max_us_
-        << " stab=" << prof_stab_max_us_
-        << " pwm=" << prof_pwm_max_us_
-        << " telem=" << prof_telem_max_us_
-        << " iter=" << prof_total_max_us_
-        << "  outliers=" << prof_outliers_ << "/" << loops;
+        << " sens=" << prof_sensors_max_us_ << " ctrl=" << prof_control_max_us_
+        << " stab=" << prof_stab_max_us_ << " pwm=" << prof_pwm_max_us_
+        << " telem=" << prof_telem_max_us_ << " step_iter=" << prof_step_max_us_
+        << " period=" << prof_period_max_us_ << "  outliers=" << prof_outliers_
+        << "/" << loops;
     ctx_.platform.Log(LogLevel::Info, fmt.str());
   }
   prof_components_us_ = 0;
@@ -437,7 +446,8 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   prof_stab_max_us_ = 0;
   prof_pwm_max_us_ = 0;
   prof_telem_max_us_ = 0;
-  prof_total_max_us_ = 0;
+  prof_step_max_us_ = 0;
+  prof_period_max_us_ = 0;
   prof_outliers_ = 0;
 }
 #endif
