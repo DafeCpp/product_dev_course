@@ -134,6 +134,12 @@ static void dns_server_task(void* arg) {
 esp_err_t DnsServerStart(uint32_t ap_ip) {
   if (s_dns_stopped_sem == nullptr) {
     s_dns_stopped_sem = xSemaphoreCreateBinary();
+    if (s_dns_stopped_sem == nullptr) {
+      // Без семафора DnsServerStop() ниже вызвал бы xSemaphoreTake(NULL, ...)
+      // — падение, а не чистая ошибка. Не публикуем задачу как запущенную.
+      ESP_LOGE(TAG, "Failed to allocate DNS stop semaphore");
+      return ESP_ERR_NO_MEM;
+    }
   }
 
   // Проверка "уже запущено" и установка s_dns_task_running — одна
@@ -144,10 +150,12 @@ esp_err_t DnsServerStart(uint32_t ap_ip) {
   already_running = s_dns_task_running;
   if (!already_running) {
     s_dns_task_running = true;
+    // Стук от гонки прошлого цикла Stop()/Start() (см. dns_server_task) не
+    // должен убить только что стартующую задачу. Только для НОВОЙ задачи —
+    // если already_running уже true, это стёрло бы опубликованный сокет
+    // живой задачи, и следующий DnsServerStop() не смог бы её остановить.
+    s_race_state.ResetForNewTask();
   }
-  // Стук от гонки прошлого цикла Stop()/Start() (см. dns_server_task) не
-  // должен убить только что стартующую задачу.
-  s_race_state.ResetForNewTask();
   portEXIT_CRITICAL(&s_dns_mux);
 
   if (already_running) {
