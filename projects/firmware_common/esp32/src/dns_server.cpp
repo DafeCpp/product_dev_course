@@ -39,10 +39,17 @@ static SemaphoreHandle_t s_dns_stopped_sem = nullptr;
 // закрыт вызывающим (DnsServerStop() забрал его через RequestStop()), либо
 // должен быть закрыт самой задачей — это решает вызывающая сторона.
 static void FinishTask() {
-  s_dns_task_handle = nullptr;
+  // Порядок важен: give ДО обнуления handle. Пока handle не обнулён,
+  // DnsServerStart() видит "занято" и не создаёт новую задачу — значит, не
+  // может ни проскочить мимо этого give (спутав его с завершением ещё не
+  // созданной задачи B), ни увидеть semaphore прежде, чем он реально дан.
+  // Обратный порядок открывал окно: Start() успевал создать задачу B по уже
+  // обнулённому handle, а этот give приходил позже и ошибочно доставался
+  // DnsServerStop() для задачи B.
   if (s_dns_stopped_sem) {
     xSemaphoreGive(s_dns_stopped_sem);
   }
+  s_dns_task_handle = nullptr;
   vTaskDelete(NULL);
 }
 
