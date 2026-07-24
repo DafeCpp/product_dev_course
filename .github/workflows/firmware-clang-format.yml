@@ -9,6 +9,8 @@ on:
       - projects/rc_vehicle/firmware/**
       - projects/bench_controller/firmware/**
       - projects/firmware_common/**
+      - .pre-commit-config.yaml
+      - scripts/install-pre-commit-hook.sh
       - .github/workflows/firmware-clang-format.yml
 
 permissions:
@@ -25,9 +27,13 @@ jobs:
           fetch-depth: 0
 
       # Версия закреплена: разные мажорные версии clang-format
-      # форматируют по-разному
-      - name: Install clang-format
-        run: pip install clang-format==22.1.5
+      # форматируют по-разному. Локальный pre-commit hook использует тот же
+      # бинарник `clang-format-20`.
+      - name: Install clang-format-20
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-format-20
+          clang-format-20 --version
 
       # Проверяются только строки, изменённые в PR: дерево прошивки пока
       # не полностью отформатировано, полная проверка дала бы шум по
@@ -43,13 +49,14 @@ jobs:
           CF_EXT: c,cc,cpp,cxx,h,hh,hpp,hxx
         run: |
           base="$(git merge-base "origin/${GITHUB_BASE_REF}" HEAD)"
-          if git clang-format --extensions "$CF_EXT" --diff "$base" \
+          if git-clang-format-20 --binary clang-format-20 \
+              --extensions "$CF_EXT" --diff "$base" \
               -- projects/rc_vehicle/firmware/ \
                  projects/bench_controller/firmware/ \
                  projects/firmware_common/ > cf.diff; then
             echo "clang-format: OK"
           else
-            echo "::error::Изменённые строки не соответствуют .clang-format. Запустите git clang-format для изменённых firmware-файлов."
+            echo "::error::Изменённые строки не соответствуют .clang-format. Запустите git-clang-format-20 для изменённых firmware-файлов."
             cat cf.diff
             exit 1
           fi
