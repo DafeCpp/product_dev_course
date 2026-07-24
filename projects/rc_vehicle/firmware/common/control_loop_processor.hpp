@@ -163,16 +163,24 @@ class ControlLoopProcessor {
   // period: a stall while the task is blocked in DelayUntilNextTick()
   // (outside Step(), e.g. a flash-cache freeze from a concurrent NVS
   // commit) would leave this unaffected — see prof_period_max_us_/
-  // prof_outliers_ below, which use the real entry-to-entry period (dt_ms)
-  // and are what actually answers "did we miss our target Hz this tick".
+  // prof_outliers_ below, which use the real entry-to-entry period and are
+  // what actually answers "did we miss our target Hz this tick".
   uint64_t prof_step_max_us_{0};
-  // Max real loop period (dt_ms, ms since previous Step() call — see
-  // VehicleControlUnified::ControlTaskLoop) converted to us. Outlier count
-  // is based on THIS, not prof_step_max_us_, per code review on PR #297:
-  // basing it on Step()-internal time alone would miss stalls that happen
-  // while the task is outside Step() (e.g. blocked in DelayUntilNextTick()
-  // during a flash-cache freeze), which is exactly the scenario LOS-219's
-  // NVS-commit hypothesis predicts.
+  // GetTimeUs() timestamp of this Step() call's entry, captured by
+  // PROF_START() — persists across calls so the NEXT call can compute the
+  // real entry-to-entry period at microsecond resolution. 0 sentinel means
+  // "not yet set" (first call). NOT derived from dt_ms (code review PR
+  // #297): dt_ms comes from GetTimeMs() (whole milliseconds), so
+  // dt_ms*1000 can't recover precision already lost to ms-quantization —
+  // a period just over the 4ms outlier threshold could round down to
+  // dt_ms==4 and silently miss detection.
+  uint64_t prof_prev_entry_us_{0};
+  // Max real loop period (entry-to-entry, see prof_prev_entry_us_ above) —
+  // outlier count is based on THIS, not prof_step_max_us_, per code review
+  // on PR #297: basing it on Step()-internal time alone would miss stalls
+  // that happen while the task is outside Step() (e.g. blocked in
+  // DelayUntilNextTick() during a flash-cache freeze), which is exactly the
+  // scenario LOS-219's NVS-commit hypothesis predicts.
   uint64_t prof_period_max_us_{0};
   uint32_t prof_outliers_{0};
 #endif

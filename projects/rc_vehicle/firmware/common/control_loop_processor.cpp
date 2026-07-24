@@ -17,8 +17,19 @@
 // курсор времени, PROF_LAP(acc) добавляет дельту с прошлой засечки в
 // аккумулятор и сдвигает курсор. В обычной сборке — пустышки (нулевой оверхед,
 // без _pt).
-#define PROF_START()                        \
-  uint64_t _pt = ctx_.platform.GetTimeUs(); \
+// PROF_START() также меряет фактический период между входами в Step() через
+// GetTimeUs() (микросекунды) — код-ревью PR #297: dt_ms приходит от
+// GetTimeMs() (целые мс), и period_us = dt_ms*1000 не может восстановить
+// точность, потерянную квантованием до мс: период чуть выше 4-мс порога
+// мог округлиться вниз до dt_ms==4 и не засчитаться как outlier. Считаем
+// период тем же источником (GetTimeUs()), что и остальной профайлер —
+// prof_prev_entry_us_ хранит момент входа в Step() с прошлого вызова.
+#define PROF_START()                                          \
+  const uint64_t _pt0 = ctx_.platform.GetTimeUs();            \
+  uint64_t _pt = _pt0;                                        \
+  const uint64_t _prof_period_us =                            \
+      prof_prev_entry_us_ ? (_pt0 - prof_prev_entry_us_) : 0; \
+  prof_prev_entry_us_ = _pt0;                                 \
   uint64_t _prof_iter_us = 0
 #define PROF_LAP(acc, max_acc)                     \
   do {                                             \
@@ -29,25 +40,21 @@
     _prof_iter_us += _d;                           \
     _pt = _n;                                      \
   } while (0)
-// Не делает нового замера времени — переиспользует дельты, накопленные
-// в PROF_LAP() за эту итерацию (LOS-219). Outlier считается по dt_ms
-// (реальный период между вызовами Step(), см. ControlTaskLoop), а не по
-// _prof_iter_us (время ТОЛЬКО внутри Step()) — код-ревью PR #297: stall,
-// произошедший пока таск заблокирован в DelayUntilNextTick() (напр.
-// зависание flash-cache от NVS commit на другом ядре), не тронул бы
-// _prof_iter_us, и outliers остался бы 0 при реально пропущенном такте.
-#define PROF_END(dt_ms)                                                       \
+// Не делает нового замера времени — переиспользует _prof_iter_us (сумма
+// PROF_LAP-дельт за эту итерацию) и _prof_period_us (из PROF_START(),
+// микросекундный период между входами в Step() — не dt_ms, см. выше).
+#define PROF_END()                                                            \
   do {                                                                        \
     if (_prof_iter_us > prof_step_max_us_) prof_step_max_us_ = _prof_iter_us; \
-    const uint64_t _period_us = static_cast<uint64_t>(dt_ms) * 1000;          \
-    if (_period_us > prof_period_max_us_) prof_period_max_us_ = _period_us;   \
-    if (_period_us > config::ProfilingConfig::kOutlierThresholdUs)            \
+    if (_prof_period_us > prof_period_max_us_)                                \
+      prof_period_max_us_ = _prof_period_us;                                  \
+    if (_prof_period_us > config::ProfilingConfig::kOutlierThresholdUs)       \
       ++prof_outliers_;                                                       \
   } while (0)
 #else
 #define PROF_START() ((void)0)
 #define PROF_LAP(acc, max_acc) ((void)0)
-#define PROF_END(dt_ms) ((void)0)
+#define PROF_END() ((void)0)
 #endif
 
 namespace rc_vehicle {
@@ -114,21 +121,24 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 #endif
     PrintDiagnostics(dctx, stab_cfg_, now, diag_loop_count_, diag_start_ms_);
 #ifdef RC_PROFILE_LOOP
+    // PROF_LAP/PROF_END — ДО EmitProfile() (код-ревью PR #297): EmitProfile()
+    // печатает текущее окно и тут же обнуляет аккумуляторы (diag/step_iter/
+    // period/outliers в том числе). Если вызвать их ПОСЛЕ EmitProfile(), эта
+    // же (пограничная) итерация попала бы в отчёт per-stage максимумами
+    // (записанными выше, до диагностики), но diag/step_iter/period/outliers
+    // от неё же ушли бы в СЛЕДУЮЩИЙ отчёт — рассинхронизация, из-за которой
+    // редкий stall на пограничной итерации давал бы противоречивые max по
+    // стадиям vs по итерации целиком. Не идеально — PROF_LAP(diag) меряет
+    // только PrintDiagnostics() (не может измерить время самого EmitProfile()
+    // до его вызова), но так хотя бы step_iter/period/outliers этой итерации
+    // попадают в ТОТ ЖЕ отчёт, что и её per-stage максимумы.
+    PROF_LAP(prof_diag_us_, prof_diag_max_us_);
+    PROF_END();
     // diag_loop_count_ обнуляется в PrintDiagnostics, когда сработал интервал —
     // это и есть сигнал напечатать средние и сбросить аккумуляторы.
     if (diag_loop_count_ == 0) EmitProfile(prof_loops);
 #endif
   }
-  // PROF_LAP для diag-стадии и PROF_END() — ПОСЛЕ диагностики (код-ревью
-  // PR #297): PrintDiagnostics()/EmitProfile() сами делают Log()-вызовы,
-  // которые могут быть небыстрыми (UART на низком baud) — раз в диаг-
-  // интервал, но предсказуемо. Раньше эта работа не входила ни в один
-  // per-stage max, а PROF_END() уже отработал — step_iter не видел эту
-  // стадию вообще, хотя в СЛЕДУЮЩЕЙ итерации dt_ms её всё равно захватил
-  // бы (now-last_loop считается ДО следующего Step()), создавая ложное
-  // расхождение period/step_iter, будто stall произошёл ВНЕ Step().
-  PROF_LAP(prof_diag_us_, prof_diag_max_us_);
-  PROF_END(dt_ms);
 }
 
 void ControlLoopProcessor::UpdateComponents(uint32_t now, uint32_t dt_ms) {
