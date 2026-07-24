@@ -1,5 +1,5 @@
-#include <string.h>
-
+#include <firmware_common/dns_response_builder.hpp>
+#include <firmware_common/dns_server_race_state.hpp>
 #include <firmware_common/esp32/dns_server.hpp>
 
 #include "esp_log.h"
@@ -23,66 +23,20 @@ static constexpr uint32_t DNS_TASK_STACK = 6144;
 static constexpr uint32_t kDnsStopWaitTimeoutMs = 1000;
 
 static TaskHandle_t s_dns_task_handle = nullptr;
-// Сокет задачи; DnsServerStop() закрывает его извне, чтобы прервать блокирующий
-// recvfrom() и корректно завершить задачу.
-static int s_dns_sock = -1;
-// Защищает публикацию s_dns_sock задачей и её чтение/очистку в
-// DnsServerStop() — без неё возможна гонка в окне между xTaskCreate() (уже
-// проставил s_dns_task_handle) и bind() внутри задачи (s_dns_sock ещё -1):
-// Stop() решит, что закрывать нечего, и вернёт ESP_OK, а задача продолжит
-// слушать порт 53.
+// Гонка bind() (в задаче) vs DnsServerStop() — чистая логика вынесена в
+// DnsServerRaceState (firmware_common/dns_server_race_state.hpp) и покрыта
+// host-тестами в projects/firmware_common/tests; здесь она только
+// оборачивается в критическую секцию.
+static DnsServerRaceState s_race_state;
 static portMUX_TYPE s_dns_mux = portMUX_INITIALIZER_UNLOCKED;
-// Stop() пришёл до того, как задача успела опубликовать сокет — задача
-// должна закрыть его и выйти сразу после bind(), не начиная обслуживать
-// запросы. Сбрасывается в начале DnsServerStart(), чтобы стук от прошлого
-// цикла Stop()/Start() не убил следующую легитимную задачу.
-static bool s_stop_requested = false;
 // Отдаётся задачей непосредственно перед vTaskDelete() на любом пути выхода;
 // DnsServerStop() ждёт его, чтобы гарантировать: к моменту возврата
 // s_dns_task_handle уже nullptr, и следующий DnsServerStart() создаст новую
 // задачу, а не решит, что сервер "уже запущен".
 static SemaphoreHandle_t s_dns_stopped_sem = nullptr;
 
-// Минимальный DNS response: заголовок + вопрос (echo) + ответ A record
-static void build_dns_response(const uint8_t* query, size_t query_len,
-                               uint32_t answer_ip, uint8_t* out,
-                               size_t* out_len) {
-  if (query_len < 12 || *out_len < query_len + 16) {
-    *out_len = 0;
-    return;
-  }
-
-  memcpy(out, query, query_len);
-
-  // Заголовок: QR=1 (response), AA=1 (authoritative), RCODE=0
-  out[2] = 0x81;  // QR=1, Opcode=0, AA=0, TC=0, RD=1
-  out[3] = 0x80;  // RA=1, Z=0, RCODE=0
-  out[6] = 0;     // ANCOUNT high
-  out[7] = 1;     // ANCOUNT low = 1 answer
-
-  // После вопроса добавляем A record
-  size_t off = query_len;
-  out[off++] = 0xC0;  // Pointer to name at offset 12
-  out[off++] = 0x0C;
-  out[off++] = 0;  // TYPE A
-  out[off++] = 1;
-  out[off++] = 0;  // CLASS IN
-  out[off++] = 1;
-  out[off++] = 0;  // TTL
-  out[off++] = 0;
-  out[off++] = 0;
-  out[off++] = 60;  // 60 seconds
-  out[off++] = 0;   // RDLENGTH
-  out[off++] = 4;
-  // A record: answer_ip is already in network byte order — copy bytes directly
-  memcpy(out + off, &answer_ip, 4);
-  off += 4;
-
-  *out_len = off;
-}
-
 // Общий хвост для всех путей выхода задачи: сокет к этому моменту либо уже
-// закрыт вызывающим (DnsServerStop() забрал его через s_dns_sock), либо
+// закрыт вызывающим (DnsServerStop() забрал его через RequestStop()), либо
 // должен быть закрыт самой задачей — это решает вызывающая сторона.
 static void FinishTask() {
   s_dns_task_handle = nullptr;
@@ -113,17 +67,11 @@ static void dns_server_task(void* arg) {
     return;
   }
 
-  bool stop_requested = false;
   portENTER_CRITICAL(&s_dns_mux);
-  if (s_stop_requested) {
-    s_stop_requested = false;
-    stop_requested = true;
-  } else {
-    s_dns_sock = sock;
-  }
+  DnsServerRaceState::BindOutcome outcome = s_race_state.OnBindSucceeded(sock);
   portEXIT_CRITICAL(&s_dns_mux);
 
-  if (stop_requested) {
+  if (outcome == DnsServerRaceState::BindOutcome::kStopRequested) {
     // DnsServerStop() вызвали до этой точки — публиковать сокет уже поздно,
     // закрываем его сами (Stop() его не видел и не закрывал) и завершаемся,
     // ничего не слушая.
@@ -146,7 +94,7 @@ static void dns_server_task(void* arg) {
     int n =
         recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*)&from, &from_len);
     if (n <= 0) {
-      if (s_dns_sock < 0) {
+      if (!s_race_state.IsSocketPublished()) {
         // DnsServerStop() закрыл сокет намеренно — завершаем задачу.
         break;
       }
@@ -154,7 +102,7 @@ static void dns_server_task(void* arg) {
     }
 
     size_t resp_len = sizeof(buf);
-    build_dns_response(buf, (size_t)n, ap_ip, buf, &resp_len);
+    BuildDnsResponse(buf, (size_t)n, ap_ip, buf, &resp_len);
     if (resp_len > 0) {
       sendto(sock, buf, resp_len, 0, (struct sockaddr*)&from, from_len);
     }
@@ -183,10 +131,10 @@ esp_err_t DnsServerStart(uint32_t ap_ip) {
     // на самом деле. Осушаем перед стартом.
     xSemaphoreTake(s_dns_stopped_sem, 0);
   }
-  // Стук от гонки прошлого цикла Stop()/Start() (см. dns_server_task) не
-  // должен убить только что стартующую задачу.
+  // Стук от гонки прошлого цикла Stop()/Start() не должен убить только что
+  // стартующую задачу.
   portENTER_CRITICAL(&s_dns_mux);
-  s_stop_requested = false;
+  s_race_state.ResetForNewTask();
   portEXIT_CRITICAL(&s_dns_mux);
 
   static uint32_t s_ap_ip;  // Task использует после возврата
@@ -207,20 +155,17 @@ esp_err_t DnsServerStop(void) {
 
   int sock_to_close = -1;
   portENTER_CRITICAL(&s_dns_mux);
-  if (s_dns_sock >= 0) {
-    sock_to_close = s_dns_sock;
-    s_dns_sock = -1;  // сигнал задаче: сокет закрывается намеренно
-  } else {
-    // Задача создана (xTaskCreate уже отработал), но ещё не дошла до bind() и
-    // не опубликовала сокет — просим её закрыться самостоятельно сразу после.
-    s_stop_requested = true;
-  }
+  DnsServerRaceState::StopOutcome outcome =
+      s_race_state.RequestStop(&sock_to_close);
   portEXIT_CRITICAL(&s_dns_mux);
 
-  if (sock_to_close >= 0) {
+  if (outcome == DnsServerRaceState::StopOutcome::kCloseSocket) {
     shutdown(sock_to_close, SHUT_RDWR);
     close(sock_to_close);
   }
+  // Иначе (kMarkPending): задача создана, но ещё не дошла до bind() и не
+  // опубликовала сокет — она закроется самостоятельно сразу после (см.
+  // dns_server_task).
 
   // Дожидаемся фактического завершения задачи: recvfrom() разматывается не
   // мгновенно, а следующий DnsServerStart() (например, при повторном

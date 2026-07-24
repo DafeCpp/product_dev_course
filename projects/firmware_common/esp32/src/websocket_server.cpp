@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <firmware_common/esp32/websocket_server.hpp>
+#include <firmware_common/ws_client_failure_tracker.hpp>
 
 #include "cJSON.h"
 #include "esp_http_server.h"
@@ -150,20 +151,10 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   ws_pkt.payload = reinterpret_cast<uint8_t*>(const_cast<char*>(telem_json));
   ws_pkt.len = len;
 
-  // Счётчик последовательных ошибок: ключ — fd (не позиция в списке).
-  // Позиция fd в массиве client_fds меняется между вызовами, поэтому
-  // индексирование по i было бы некорректным.
-  // Sentinel -1 means "empty slot". Using 0 would be incorrect because
-  // fd 0 (stdin) is a valid file descriptor that httpd could reuse.
-  static int s_fd_fail_count[kWsMaxClients] = {};
-  static int s_fd_keys[kWsMaxClients] = {};
-  static bool s_fd_keys_initialized = false;
-  if (!s_fd_keys_initialized) {
-    for (int s = 0; s < kWsMaxClients; s++) {
-      s_fd_keys[s] = -1;
-    }
-    s_fd_keys_initialized = true;
-  }
+  // Счётчик последовательных ошибок на клиента (по fd) — чистая логика
+  // вынесена в WsClientFailureTracker (firmware_common/ws_client_failure_
+  // tracker.hpp) и покрыта host-тестами в projects/firmware_common/tests.
+  static WsClientFailureTracker<kWsMaxClients> s_fd_tracker;
 
   for (size_t i = 0; i < client_count; i++) {
     int fd = client_fds[i];
@@ -173,60 +164,25 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
       continue;
     }
 
-    // Найти или выделить слот для этого fd
-    int slot = -1;
-    for (int s = 0; s < kWsMaxClients; s++) {
-      if (s_fd_keys[s] == fd) {
-        slot = s;
-        break;
-      }
-    }
-    if (slot == -1) {
-      // Новый fd — занять свободный слот
-      for (int s = 0; s < kWsMaxClients; s++) {
-        if (s_fd_keys[s] == -1) {
-          s_fd_keys[s] = fd;
-          s_fd_fail_count[s] = 0;
-          slot = s;
-          break;
-        }
-      }
-    }
+    int slot = s_fd_tracker.FindOrAllocate(fd);
 
     esp_err_t send_err = httpd_ws_send_data(ws_server_handle, fd, &ws_pkt);
     if (send_err != ESP_OK) {
-      if (slot >= 0) s_fd_fail_count[slot]++;
-      int fails = (slot >= 0) ? s_fd_fail_count[slot] : -1;
+      int fails = s_fd_tracker.RecordFailure(slot);
       ESP_LOGW(TAG, "WS send failed fd=%d err=%s consecutive=%d", fd,
                esp_err_to_name(send_err), fails);
-      if (slot >= 0 && s_fd_fail_count[slot] >= MAX_SEND_FAILURES) {
+      if (fails >= MAX_SEND_FAILURES) {
         ESP_LOGW(TAG, "Closing stale WS client fd %d after %d failures", fd,
-                 s_fd_fail_count[slot]);
+                 fails);
         httpd_sess_trigger_close(ws_server_handle, fd);
-        s_fd_keys[slot] = -1;
-        s_fd_fail_count[slot] = 0;
+        s_fd_tracker.Evict(slot);
       }
     } else {
-      if (slot >= 0) s_fd_fail_count[slot] = 0;
+      s_fd_tracker.RecordSuccess(slot);
     }
   }
 
-  // Очистить слоты для fd, которых больше нет в списке клиентов
-  for (int s = 0; s < kWsMaxClients; s++) {
-    if (s_fd_keys[s] == -1) continue;
-    bool found = false;
-    for (size_t i = 0; i < client_count; i++) {
-      if (client_fds[i] == s_fd_keys[s]) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      ESP_LOGD(TAG, "fd %d left, clearing fail slot", s_fd_keys[s]);
-      s_fd_keys[s] = -1;
-      s_fd_fail_count[s] = 0;
-    }
-  }
+  s_fd_tracker.GarbageCollect(client_fds, client_count);
 
   return ESP_OK;
 }
