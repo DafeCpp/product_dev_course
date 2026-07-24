@@ -170,6 +170,16 @@ esp_err_t WiFiSetRadioAutoStart(bool on) {
   return e;
 }
 
+// Флаг из NVS (если сохранён) переопределяет cfg.radio_on_by_default.
+static bool ComputeWantRadioOn(const WiFiApConfig& cfg) {
+  bool want_radio_on = cfg.radio_on_by_default;
+  bool saved = false;
+  if (LoadRadioAutoStart(&saved)) {
+    want_radio_on = saved;
+  }
+  return want_radio_on;
+}
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                int32_t event_id, void* event_data) {
   (void)arg;
@@ -242,7 +252,16 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 }
 
 esp_err_t WiFiApInit(const WiFiApConfig& cfg) {
-  if (s_inited) return ESP_OK;
+  if (s_inited) {
+    // Конфигурация (NVS/netif/event handlers/AP+STA config) уже применена —
+    // повторно не делаем. Но если радио должно быть включено и не включилось
+    // (предыдущий вызов упал внутри WiFiRadioStart()), даём ещё один шанс —
+    // иначе retry молча вернёт ESP_OK, не подняв радио.
+    if (!s_radio_on && ComputeWantRadioOn(cfg)) {
+      return WiFiRadioStart();
+    }
+    return ESP_OK;
+  }
 
   // Инициализация NVS (нужно для Wi-Fi)
   esp_err_t ret = nvs_flash_init();
@@ -355,12 +374,7 @@ esp_err_t WiFiApInit(const WiFiApConfig& cfg) {
   s_sta_should_connect_saved = s_sta_should_connect;
 
   // Радио включаем по флагу из NVS (если сохранён) или по умолчанию из cfg.
-  bool want_radio_on = cfg.radio_on_by_default;
-  bool saved = false;
-  if (LoadRadioAutoStart(&saved)) {
-    want_radio_on = saved;
-  }
-  if (want_radio_on) {
+  if (ComputeWantRadioOn(cfg)) {
     return WiFiRadioStart();
   }
   ESP_LOGI(TAG, "Radio auto-start disabled (NVS radio_on=0)");
