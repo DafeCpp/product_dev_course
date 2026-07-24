@@ -60,14 +60,20 @@
 namespace rc_vehicle {
 
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
+  // PROF_START() — самая первая строка (код-ревью PR #297): GetConfig()
+  // ниже берёт config_mutex_, который также берёт SetConfig() из WS-потока
+  // (LOS-219, NVS-гипотеза) — если бы PROF_START() шёл после снапшота,
+  // задержка на мьютексе была бы НЕВИДИМА ни для step_iter, ни для period,
+  // хотя произошла бы внутри Step(), подрывая саму интерпретацию
+  // расхождения period/step_iter как "stall вне Step()".
+  PROF_START();
+
   ++diag_loop_count_;
 
   // Единственный snapshot конфига на итерацию (FW-RF5): одна копия под
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
   stab_cfg_ =
       ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
-
-  PROF_START();
 
   UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
   PROF_LAP(prof_components_us_, prof_components_max_us_);
