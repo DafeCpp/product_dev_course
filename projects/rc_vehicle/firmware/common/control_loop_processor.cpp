@@ -74,6 +74,11 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
   stab_cfg_ =
       ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+  // Отдельный лап ДО UpdateComponents() (код-ревью PR #297): без него
+  // возможное ожидание config_mutex_ в GetConfig() выше (тот же мьютекс,
+  // что берёт SetConfig() из WS-потока — NVS-гипотеза LOS-219) попало бы
+  // целиком в comp-стадию, ложно указывая на RC/WiFi/IMU.
+  PROF_LAP(prof_cfg_us_, prof_cfg_max_us_);
 
   UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
   PROF_LAP(prof_components_us_, prof_components_max_us_);
@@ -451,7 +456,8 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   if (loops == 0) return;
   {
     LogFormat fmt;
-    fmt << "PROF(us/iter): comp=" << (prof_components_us_ / loops)
+    fmt << "PROF(us/iter): cfg=" << (prof_cfg_us_ / loops)
+        << " comp=" << (prof_components_us_ / loops)
         << " sens=" << (prof_sensors_us_ / loops)
         << " ctrl=" << (prof_control_us_ / loops)
         << " stab=" << (prof_stab_us_ / loops)
@@ -469,7 +475,8 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
     // расхождение между ними указывает на stall ВНЕ Step() (напр. в
     // DelayUntilNextTick() на другом ядре) — outliers считается по period.
     LogFormat fmt;
-    fmt << "PROF(max us): comp=" << prof_components_max_us_
+    fmt << "PROF(max us): cfg=" << prof_cfg_max_us_
+        << " comp=" << prof_components_max_us_
         << " sens=" << prof_sensors_max_us_ << " ctrl=" << prof_control_max_us_
         << " stab=" << prof_stab_max_us_ << " pwm=" << prof_pwm_max_us_
         << " telem=" << prof_telem_max_us_ << " diag=" << prof_diag_max_us_
@@ -478,6 +485,7 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
         << "/" << loops;
     ctx_.platform.Log(LogLevel::Info, fmt.str());
   }
+  prof_cfg_us_ = 0;
   prof_components_us_ = 0;
   prof_sensors_us_ = 0;
   prof_control_us_ = 0;
@@ -485,6 +493,7 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   prof_pwm_us_ = 0;
   prof_telem_us_ = 0;
   prof_diag_us_ = 0;
+  prof_cfg_max_us_ = 0;
   prof_components_max_us_ = 0;
   prof_sensors_max_us_ = 0;
   prof_control_max_us_ = 0;

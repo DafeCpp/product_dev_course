@@ -137,6 +137,11 @@ class ControlLoopProcessor {
   // стадиям и раз в диаг-интервал печатаем средние us/iter. Включается флагом
   // -DRC_PROFILE_LOOP=1; в обычной сборке кода нет (нулевой оверхед).
   void EmitProfile(uint32_t loops);
+  // Время снапшота stab-конфига (GetConfig(), включая возможное ожидание
+  // config_mutex_ — код-ревью PR #297): отдельная стадия, а не часть comp,
+  // иначе ожидание мьютекса (SetConfig() из WS-потока, сама NVS-гипотеза
+  // LOS-219) ложно указывало бы на RC/WiFi/IMU как источник задержки.
+  uint64_t prof_cfg_us_{0};
   uint64_t prof_components_us_{0};
   uint64_t prof_sensors_us_{0};
   uint64_t prof_control_us_{0};
@@ -150,6 +155,7 @@ class ControlLoopProcessor {
   uint64_t prof_diag_us_{0};
   // LOS-219: worst-case per-stage tracking, reset each diag interval same as
   // sums.
+  uint64_t prof_cfg_max_us_{0};
   uint64_t prof_components_max_us_{0};
   uint64_t prof_sensors_max_us_{0};
   uint64_t prof_control_max_us_{0};
