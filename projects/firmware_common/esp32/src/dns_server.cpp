@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -16,6 +17,11 @@ static const char* TAG = "dns_server";
 #define DNS_PORT 53
 #define DNS_MAX_LEN 256
 static constexpr uint32_t DNS_TASK_STACK = 6144;
+// DnsServerStop() ждёт фактического выхода задачи не дольше этого времени —
+// recvfrom() разматывается почти сразу после close(), это просто защита от
+// зависания, а не расчётный таймаут.
+static constexpr uint32_t kDnsStopWaitTimeoutMs = 1000;
+
 static TaskHandle_t s_dns_task_handle = nullptr;
 // Сокет задачи; DnsServerStop() закрывает его извне, чтобы прервать блокирующий
 // recvfrom() и корректно завершить задачу.
@@ -28,8 +34,14 @@ static int s_dns_sock = -1;
 static portMUX_TYPE s_dns_mux = portMUX_INITIALIZER_UNLOCKED;
 // Stop() пришёл до того, как задача успела опубликовать сокет — задача
 // должна закрыть его и выйти сразу после bind(), не начиная обслуживать
-// запросы.
+// запросы. Сбрасывается в начале DnsServerStart(), чтобы стук от прошлого
+// цикла Stop()/Start() не убил следующую легитимную задачу.
 static bool s_stop_requested = false;
+// Отдаётся задачей непосредственно перед vTaskDelete() на любом пути выхода;
+// DnsServerStop() ждёт его, чтобы гарантировать: к моменту возврата
+// s_dns_task_handle уже nullptr, и следующий DnsServerStart() создаст новую
+// задачу, а не решит, что сервер "уже запущен".
+static SemaphoreHandle_t s_dns_stopped_sem = nullptr;
 
 // Минимальный DNS response: заголовок + вопрос (echo) + ответ A record
 static void build_dns_response(const uint8_t* query, size_t query_len,
@@ -69,13 +81,23 @@ static void build_dns_response(const uint8_t* query, size_t query_len,
   *out_len = off;
 }
 
+// Общий хвост для всех путей выхода задачи: сокет к этому моменту либо уже
+// закрыт вызывающим (DnsServerStop() забрал его через s_dns_sock), либо
+// должен быть закрыт самой задачей — это решает вызывающая сторона.
+static void FinishTask() {
+  s_dns_task_handle = nullptr;
+  if (s_dns_stopped_sem) {
+    xSemaphoreGive(s_dns_stopped_sem);
+  }
+  vTaskDelete(NULL);
+}
+
 static void dns_server_task(void* arg) {
   const uint32_t ap_ip = *(uint32_t*)arg;
   int sock = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock < 0) {
     ESP_LOGE(TAG, "Failed to create socket: %d", errno);
-    s_dns_task_handle = nullptr;
-    vTaskDelete(NULL);
+    FinishTask();
     return;
   }
 
@@ -87,8 +109,7 @@ static void dns_server_task(void* arg) {
   if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
     ESP_LOGE(TAG, "Failed to bind DNS port %d: %d", DNS_PORT, errno);
     close(sock);
-    s_dns_task_handle = nullptr;
-    vTaskDelete(NULL);
+    FinishTask();
     return;
   }
 
@@ -104,11 +125,11 @@ static void dns_server_task(void* arg) {
 
   if (stop_requested) {
     // DnsServerStop() вызвали до этой точки — публиковать сокет уже поздно,
-    // закрываем его сами и завершаемся, ничего не слушая.
+    // закрываем его сами (Stop() его не видел и не закрывал) и завершаемся,
+    // ничего не слушая.
     ESP_LOGI(TAG, "DNS server stop requested during startup, exiting");
     close(sock);
-    s_dns_task_handle = nullptr;
-    vTaskDelete(NULL);
+    FinishTask();
     return;
   }
 
@@ -139,9 +160,10 @@ static void dns_server_task(void* arg) {
     }
   }
 
+  // Сокет здесь уже закрыт DnsServerStop() (это тот же fd, что и sock) —
+  // повторный close() был бы закрытием чужого, переиспользованного fd.
   ESP_LOGI(TAG, "DNS server stopped");
-  s_dns_task_handle = nullptr;
-  vTaskDelete(NULL);
+  FinishTask();
 }
 
 esp_err_t DnsServerStart(uint32_t ap_ip) {
@@ -149,6 +171,15 @@ esp_err_t DnsServerStart(uint32_t ap_ip) {
     ESP_LOGW(TAG, "DNS server is already running");
     return ESP_OK;
   }
+
+  if (s_dns_stopped_sem == nullptr) {
+    s_dns_stopped_sem = xSemaphoreCreateBinary();
+  }
+  // Стук от гонки прошлого цикла Stop()/Start() (см. dns_server_task) не
+  // должен убить только что стартующую задачу.
+  portENTER_CRITICAL(&s_dns_mux);
+  s_stop_requested = false;
+  portEXIT_CRITICAL(&s_dns_mux);
 
   static uint32_t s_ap_ip;  // Task использует после возврата
   s_ap_ip = ap_ip;
@@ -182,8 +213,18 @@ esp_err_t DnsServerStop(void) {
     shutdown(sock_to_close, SHUT_RDWR);
     close(sock_to_close);
   }
-  // Задача сама себя удалит (после recvfrom() или сразу после bind()) и
-  // очистит handle.
+
+  // Дожидаемся фактического завершения задачи: recvfrom() разматывается не
+  // мгновенно, а следующий DnsServerStart() (например, при повторном
+  // включении радио) должен увидеть s_dns_task_handle == nullptr, иначе он
+  // молча ничего не создаст, приняв старую (уже умирающую) задачу за живую.
+  if (s_dns_stopped_sem) {
+    if (xSemaphoreTake(s_dns_stopped_sem,
+                       pdMS_TO_TICKS(kDnsStopWaitTimeoutMs)) != pdTRUE) {
+      ESP_LOGW(TAG, "Timed out waiting for DNS task to exit");
+      return ESP_ERR_TIMEOUT;
+    }
+  }
   return ESP_OK;
 }
 
