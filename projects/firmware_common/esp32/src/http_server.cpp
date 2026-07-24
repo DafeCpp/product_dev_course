@@ -215,7 +215,20 @@ static esp_err_t redirect_to_root_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
-static void RegisterWifiApiRoutes(httpd_handle_t server) {
+// Оборачивает httpd_register_uri_handler: логирует и пробрасывает ошибку,
+// а не молча теряет её. Актуально с тех пор, как max_uri_handlers стал
+// настраиваемым (HttpServerConfig) — при заниженном значении httpd_start()
+// успевает пройти, а конкретные регистрации начинают падать "handler table
+// full", и раньше это оставалось незамеченным.
+static esp_err_t RegisterUri(httpd_handle_t server, const httpd_uri_t& uri) {
+  esp_err_t e = httpd_register_uri_handler(server, &uri);
+  if (e != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to register URI %s: %s", uri.uri, esp_err_to_name(e));
+  }
+  return e;
+}
+
+static esp_err_t RegisterWifiApiRoutes(httpd_handle_t server) {
   httpd_uri_t wifi_status_uri = {
       .uri = "/api/wifi/status",
       .method = HTTP_GET,
@@ -227,7 +240,10 @@ static void RegisterWifiApiRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &wifi_status_uri);
+  {
+    esp_err_t e = RegisterUri(server, wifi_status_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t wifi_connect_uri = {
       .uri = "/api/wifi/sta/connect",
@@ -240,7 +256,10 @@ static void RegisterWifiApiRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &wifi_connect_uri);
+  {
+    esp_err_t e = RegisterUri(server, wifi_connect_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t wifi_disconnect_uri = {
       .uri = "/api/wifi/sta/disconnect",
@@ -253,7 +272,10 @@ static void RegisterWifiApiRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &wifi_disconnect_uri);
+  {
+    esp_err_t e = RegisterUri(server, wifi_disconnect_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t wifi_scan_uri = {
       .uri = "/api/wifi/scan",
@@ -266,10 +288,14 @@ static void RegisterWifiApiRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &wifi_scan_uri);
+  {
+    esp_err_t e = RegisterUri(server, wifi_scan_uri);
+    if (e != ESP_OK) return e;
+  }
+  return ESP_OK;
 }
 
-static void RegisterCaptivePortalRoutes(httpd_handle_t server) {
+static esp_err_t RegisterCaptivePortalRoutes(httpd_handle_t server) {
   // Captive portal probes (iOS/Android/Windows/macOS).
   httpd_uri_t captive_android_uri = {
       .uri = "/generate_204",
@@ -282,7 +308,10 @@ static void RegisterCaptivePortalRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &captive_android_uri);
+  {
+    esp_err_t e = RegisterUri(server, captive_android_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t captive_android_alt_uri = {
       .uri = "/gen_204",
@@ -295,7 +324,10 @@ static void RegisterCaptivePortalRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &captive_android_alt_uri);
+  {
+    esp_err_t e = RegisterUri(server, captive_android_alt_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t captive_apple_uri = {
       .uri = "/hotspot-detect.html",
@@ -308,7 +340,10 @@ static void RegisterCaptivePortalRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &captive_apple_uri);
+  {
+    esp_err_t e = RegisterUri(server, captive_apple_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t captive_windows_uri = {
       .uri = "/ncsi.txt",
@@ -321,7 +356,10 @@ static void RegisterCaptivePortalRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &captive_windows_uri);
+  {
+    esp_err_t e = RegisterUri(server, captive_windows_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t captive_windows_alt_uri = {
       .uri = "/connecttest.txt",
@@ -334,7 +372,10 @@ static void RegisterCaptivePortalRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &captive_windows_alt_uri);
+  {
+    esp_err_t e = RegisterUri(server, captive_windows_alt_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t captive_redirect_uri = {
       .uri = "/redirect",
@@ -347,7 +388,11 @@ static void RegisterCaptivePortalRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &captive_redirect_uri);
+  {
+    esp_err_t e = RegisterUri(server, captive_redirect_uri);
+    if (e != ESP_OK) return e;
+  }
+  return ESP_OK;
 }
 
 esp_err_t HttpServerInit(const HttpServerConfig& cfg) {
@@ -373,11 +418,21 @@ esp_err_t HttpServerInit(const HttpServerConfig& cfg) {
     return ESP_FAIL;
   }
 
+  esp_err_t route_err = ESP_OK;
   if (cfg.enable_wifi_api) {
-    RegisterWifiApiRoutes(server_handle);
+    route_err = RegisterWifiApiRoutes(server_handle);
   }
-  if (cfg.enable_captive_portal) {
-    RegisterCaptivePortalRoutes(server_handle);
+  if (route_err == ESP_OK && cfg.enable_captive_portal) {
+    route_err = RegisterCaptivePortalRoutes(server_handle);
+  }
+  if (route_err != ESP_OK) {
+    // Частично зарегистрированный сервер хуже незапущенного: часть URI (в
+    // т.ч. вне cfg — потребитель регистрирует свои после успешного
+    // возврата) уже недоступна, но порт занят. Останавливаем, чтобы вызов
+    // остался однозначным: либо всё готово, либо ничего не запущено.
+    httpd_stop(server_handle);
+    server_handle = NULL;
+    return route_err;
   }
 
   ESP_LOGI(TAG, "HTTP server started");

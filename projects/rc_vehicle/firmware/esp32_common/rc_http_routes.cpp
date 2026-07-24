@@ -625,6 +625,16 @@ static esp_err_t log_bin_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
+// Логирует и пробрасывает ошибку регистрации, а не молча теряет её (main.cpp
+// уже проверяет возврат RcHttpRegisterRoutes и должен получать реальный код).
+static esp_err_t RegisterUri(httpd_handle_t server, const httpd_uri_t& uri) {
+  esp_err_t e = httpd_register_uri_handler(server, &uri);
+  if (e != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to register URI %s: %s", uri.uri, esp_err_to_name(e));
+  }
+  return e;
+}
+
 esp_err_t RcHttpRegisterRoutes(httpd_handle_t server) {
   httpd_uri_t root_uri = {
       .uri = "/",
@@ -637,7 +647,10 @@ esp_err_t RcHttpRegisterRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &root_uri);
+  {
+    esp_err_t e = RegisterUri(server, root_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t css_uri = {
       .uri = "/style.css",
@@ -650,7 +663,10 @@ esp_err_t RcHttpRegisterRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &css_uri);
+  {
+    esp_err_t e = RegisterUri(server, css_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t js_uri = {
       .uri = "/app.js",
@@ -663,7 +679,10 @@ esp_err_t RcHttpRegisterRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &js_uri);
+  {
+    esp_err_t e = RegisterUri(server, js_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t log_bin_uri = {
       .uri = "/api/log.bin",
@@ -676,7 +695,10 @@ esp_err_t RcHttpRegisterRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &log_bin_uri);
+  {
+    esp_err_t e = RegisterUri(server, log_bin_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t crash_json_get_uri = {
       .uri = "/api/crash.json",
@@ -689,7 +711,10 @@ esp_err_t RcHttpRegisterRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &crash_json_get_uri);
+  {
+    esp_err_t e = RegisterUri(server, crash_json_get_uri);
+    if (e != ESP_OK) return e;
+  }
 
   httpd_uri_t crash_json_delete_uri = {
       .uri = "/api/crash.json",
@@ -702,7 +727,10 @@ esp_err_t RcHttpRegisterRoutes(httpd_handle_t server) {
       .supported_subprotocol = NULL,
 #endif
   };
-  httpd_register_uri_handler(server, &crash_json_delete_uri);
+  {
+    esp_err_t e = RegisterUri(server, crash_json_delete_uri);
+    if (e != ESP_OK) return e;
+  }
 
   return ESP_OK;
 }

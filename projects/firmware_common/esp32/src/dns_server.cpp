@@ -22,34 +22,37 @@ static constexpr uint32_t DNS_TASK_STACK = 6144;
 // зависания, а не расчётный таймаут.
 static constexpr uint32_t kDnsStopWaitTimeoutMs = 1000;
 
-static TaskHandle_t s_dns_task_handle = nullptr;
+static portMUX_TYPE s_dns_mux = portMUX_INITIALIZER_UNLOCKED;
+// Единственный источник истины "жива ли сейчас задача" — читают и пишут
+// ТОЛЬКО под s_dns_mux, и Start(), и Stop(). До этого роль такого флага
+// играл TaskHandle_t (non-null = "занято"), а завершение сигнализировалось
+// отдельным семафором — независимость этих двух шагов друг от друга
+// порождала гонки в обе стороны (см. историю фиксов ниже) вне зависимости
+// от того, в каком порядке их выполнял FinishTask(). Здесь состояние одно,
+// поэтому такого зазора в принципе нет.
+static bool s_dns_task_running = false;
 // Гонка bind() (в задаче) vs DnsServerStop() — чистая логика вынесена в
 // DnsServerRaceState (firmware_common/dns_server_race_state.hpp) и покрыта
 // host-тестами в projects/firmware_common/tests; здесь она только
 // оборачивается в критическую секцию.
 static DnsServerRaceState s_race_state;
-static portMUX_TYPE s_dns_mux = portMUX_INITIALIZER_UNLOCKED;
-// Отдаётся задачей непосредственно перед vTaskDelete() на любом пути выхода;
-// DnsServerStop() ждёт его, чтобы гарантировать: к моменту возврата
-// s_dns_task_handle уже nullptr, и следующий DnsServerStart() создаст новую
-// задачу, а не решит, что сервер "уже запущен".
+// Будильник для DnsServerStop(), не источник истины: после каждого
+// пробуждения (в том числе спонтанного — см. FinishTask()) Stop()
+// перечитывает s_dns_task_running под локом и либо возвращается, либо ждёт
+// снова. Поэтому «протухший» give() от чужого/прошлого завершения не может
+// обмануть Stop() — он просто вызовет один лишний холостой цикл ожидания.
 static SemaphoreHandle_t s_dns_stopped_sem = nullptr;
 
 // Общий хвост для всех путей выхода задачи: сокет к этому моменту либо уже
 // закрыт вызывающим (DnsServerStop() забрал его через RequestStop()), либо
 // должен быть закрыт самой задачей — это решает вызывающая сторона.
 static void FinishTask() {
-  // Порядок важен: give ДО обнуления handle. Пока handle не обнулён,
-  // DnsServerStart() видит "занято" и не создаёт новую задачу — значит, не
-  // может ни проскочить мимо этого give (спутав его с завершением ещё не
-  // созданной задачи B), ни увидеть semaphore прежде, чем он реально дан.
-  // Обратный порядок открывал окно: Start() успевал создать задачу B по уже
-  // обнулённому handle, а этот give приходил позже и ошибочно доставался
-  // DnsServerStop() для задачи B.
+  portENTER_CRITICAL(&s_dns_mux);
+  s_dns_task_running = false;
+  portEXIT_CRITICAL(&s_dns_mux);
   if (s_dns_stopped_sem) {
     xSemaphoreGive(s_dns_stopped_sem);
   }
-  s_dns_task_handle = nullptr;
   vTaskDelete(NULL);
 }
 
@@ -129,70 +132,87 @@ static void dns_server_task(void* arg) {
 }
 
 esp_err_t DnsServerStart(uint32_t ap_ip) {
-  if (s_dns_task_handle != nullptr) {
+  if (s_dns_stopped_sem == nullptr) {
+    s_dns_stopped_sem = xSemaphoreCreateBinary();
+  }
+
+  // Проверка "уже запущено" и установка s_dns_task_running — одна
+  // критическая секция, иначе два конкурентных DnsServerStart() могли бы
+  // оба увидеть "свободно" и создать по задаче каждый.
+  bool already_running = false;
+  portENTER_CRITICAL(&s_dns_mux);
+  already_running = s_dns_task_running;
+  if (!already_running) {
+    s_dns_task_running = true;
+  }
+  // Стук от гонки прошлого цикла Stop()/Start() (см. dns_server_task) не
+  // должен убить только что стартующую задачу.
+  s_race_state.ResetForNewTask();
+  portEXIT_CRITICAL(&s_dns_mux);
+
+  if (already_running) {
     ESP_LOGW(TAG, "DNS server is already running");
     return ESP_OK;
   }
-
-  if (s_dns_stopped_sem == nullptr) {
-    s_dns_stopped_sem = xSemaphoreCreateBinary();
-  } else {
-    // Предыдущая задача могла отдать семафор без парного Take() в Stop():
-    // сама завершилась независимо от Stop() (сбой socket()/bind()) или Stop()
-    // не дождался её и вышел по таймауту. В обоих случаях семафор остаётся
-    // "подписанным" чужим give(), и следующий Stop() возьмёт этот токен
-    // мгновенно, решив, что новая задача уже остановилась, не дождавшись её
-    // на самом деле. Осушаем перед стартом.
-    xSemaphoreTake(s_dns_stopped_sem, 0);
-  }
-  // Стук от гонки прошлого цикла Stop()/Start() не должен убить только что
-  // стартующую задачу.
-  portENTER_CRITICAL(&s_dns_mux);
-  s_race_state.ResetForNewTask();
-  portEXIT_CRITICAL(&s_dns_mux);
 
   static uint32_t s_ap_ip;  // Task использует после возврата
   s_ap_ip = ap_ip;
 
   BaseType_t ret = xTaskCreate(dns_server_task, "dns_srv", DNS_TASK_STACK,
-                               &s_ap_ip, 5, &s_dns_task_handle);
+                               &s_ap_ip, 5, nullptr);
   if (ret != pdPASS) {
+    portENTER_CRITICAL(&s_dns_mux);
+    s_dns_task_running = false;
+    portEXIT_CRITICAL(&s_dns_mux);
     return ESP_FAIL;
   }
   return ESP_OK;
 }
 
 esp_err_t DnsServerStop(void) {
-  if (s_dns_task_handle == nullptr) {
+  bool running = false;
+  int sock_to_close = -1;
+
+  portENTER_CRITICAL(&s_dns_mux);
+  running = s_dns_task_running;
+  if (running) {
+    s_race_state.RequestStop(&sock_to_close);
+  }
+  portEXIT_CRITICAL(&s_dns_mux);
+
+  if (!running) {
     return ESP_OK;  // уже остановлен
   }
 
-  int sock_to_close = -1;
-  portENTER_CRITICAL(&s_dns_mux);
-  DnsServerRaceState::StopOutcome outcome =
-      s_race_state.RequestStop(&sock_to_close);
-  portEXIT_CRITICAL(&s_dns_mux);
-
-  if (outcome == DnsServerRaceState::StopOutcome::kCloseSocket) {
+  if (sock_to_close >= 0) {
     shutdown(sock_to_close, SHUT_RDWR);
     close(sock_to_close);
   }
-  // Иначе (kMarkPending): задача создана, но ещё не дошла до bind() и не
-  // опубликовала сокет — она закроется самостоятельно сразу после (см.
-  // dns_server_task).
+  // Иначе задача создана, но ещё не дошла до bind() и не опубликовала
+  // сокет — она закроется самостоятельно сразу после (см. dns_server_task).
 
-  // Дожидаемся фактического завершения задачи: recvfrom() разматывается не
-  // мгновенно, а следующий DnsServerStart() (например, при повторном
-  // включении радио) должен увидеть s_dns_task_handle == nullptr, иначе он
-  // молча ничего не создаст, приняв старую (уже умирающую) задачу за живую.
-  if (s_dns_stopped_sem) {
-    if (xSemaphoreTake(s_dns_stopped_sem,
-                       pdMS_TO_TICKS(kDnsStopWaitTimeoutMs)) != pdTRUE) {
+  // Дожидаемся фактического обнуления s_dns_task_running: после каждого
+  // пробуждения перечитываем флаг под локом, а не доверяем самому факту
+  // пробуждения (см. комментарий у s_dns_stopped_sem) — следующий
+  // DnsServerStart() должен увидеть "свободно", а не решить, что задача
+  // ещё жива.
+  TickType_t deadline =
+      xTaskGetTickCount() + pdMS_TO_TICKS(kDnsStopWaitTimeoutMs);
+  for (;;) {
+    portENTER_CRITICAL(&s_dns_mux);
+    bool still_running = s_dns_task_running;
+    portEXIT_CRITICAL(&s_dns_mux);
+    if (!still_running) {
+      return ESP_OK;
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    if (now >= deadline) {
       ESP_LOGW(TAG, "Timed out waiting for DNS task to exit");
       return ESP_ERR_TIMEOUT;
     }
+    xSemaphoreTake(s_dns_stopped_sem, deadline - now);
   }
-  return ESP_OK;
 }
 
 }  // namespace firmware_common::esp32
