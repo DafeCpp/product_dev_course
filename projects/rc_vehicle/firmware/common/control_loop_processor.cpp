@@ -142,7 +142,24 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
     PROF_END();
     // diag_loop_count_ обнуляется в PrintDiagnostics, когда сработал интервал —
     // это и есть сигнал напечатать средние и сбросить аккумуляторы.
-    if (diag_loop_count_ == 0) EmitProfile(prof_loops);
+    if (diag_loop_count_ == 0) {
+      EmitProfile(prof_loops);
+      // Код-ревью PR #297: сами Log()-вызовы EmitProfile() занимают время,
+      // которое нельзя было измерить ДО её вызова (нельзя напечатать число
+      // о ещё не завершившемся событии). Без этой досчитки оно улетучилось
+      // бы бесследно: PROF_END() выше уже финализировал step_iter ДО
+      // EmitProfile(), а её собственная стоимость влилась бы только в
+      // period СЛЕДУЮЩЕЙ итерации — период-выброс с заниженным step_iter,
+      // будто stall произошёл вне Step(), хотя на деле внутри Step() этой
+      // же итерации, просто после PROF_END(). Добавляем в diag/step_max
+      // (уже обнулённые EmitProfile() выше) — НЕ через PROF_END() повторно,
+      // чтобы не задвоить prof_period_max_us_/prof_outliers_ (period этой
+      // итерации не изменился и уже учтён первым PROF_END() выше).
+      const uint64_t _emit_us = ctx_.platform.GetTimeUs() - _pt;
+      prof_diag_us_ += _emit_us;
+      if (_emit_us > prof_diag_max_us_) prof_diag_max_us_ = _emit_us;
+      if (_emit_us > prof_step_max_us_) prof_step_max_us_ = _emit_us;
+    }
 #endif
   }
 }
