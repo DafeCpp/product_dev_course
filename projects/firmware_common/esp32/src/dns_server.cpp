@@ -4,6 +4,7 @@
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -19,6 +20,16 @@ static TaskHandle_t s_dns_task_handle = nullptr;
 // Сокет задачи; DnsServerStop() закрывает его извне, чтобы прервать блокирующий
 // recvfrom() и корректно завершить задачу.
 static int s_dns_sock = -1;
+// Защищает публикацию s_dns_sock задачей и её чтение/очистку в
+// DnsServerStop() — без неё возможна гонка в окне между xTaskCreate() (уже
+// проставил s_dns_task_handle) и bind() внутри задачи (s_dns_sock ещё -1):
+// Stop() решит, что закрывать нечего, и вернёт ESP_OK, а задача продолжит
+// слушать порт 53.
+static portMUX_TYPE s_dns_mux = portMUX_INITIALIZER_UNLOCKED;
+// Stop() пришёл до того, как задача успела опубликовать сокет — задача
+// должна закрыть его и выйти сразу после bind(), не начиная обслуживать
+// запросы.
+static bool s_stop_requested = false;
 
 // Минимальный DNS response: заголовок + вопрос (echo) + ответ A record
 static void build_dns_response(const uint8_t* query, size_t query_len,
@@ -81,7 +92,25 @@ static void dns_server_task(void* arg) {
     return;
   }
 
-  s_dns_sock = sock;
+  bool stop_requested = false;
+  portENTER_CRITICAL(&s_dns_mux);
+  if (s_stop_requested) {
+    s_stop_requested = false;
+    stop_requested = true;
+  } else {
+    s_dns_sock = sock;
+  }
+  portEXIT_CRITICAL(&s_dns_mux);
+
+  if (stop_requested) {
+    // DnsServerStop() вызвали до этой точки — публиковать сокет уже поздно,
+    // закрываем его сами и завершаемся, ничего не слушая.
+    ESP_LOGI(TAG, "DNS server stop requested during startup, exiting");
+    close(sock);
+    s_dns_task_handle = nullptr;
+    vTaskDelete(NULL);
+    return;
+  }
 
   ESP_LOGI(TAG, "DNS server listening on %d.%d.%d.%d:%d",
            (int)((ap_ip >> 0) & 0xFF), (int)((ap_ip >> 8) & 0xFF),
@@ -136,13 +165,25 @@ esp_err_t DnsServerStop(void) {
   if (s_dns_task_handle == nullptr) {
     return ESP_OK;  // уже остановлен
   }
+
+  int sock_to_close = -1;
+  portENTER_CRITICAL(&s_dns_mux);
   if (s_dns_sock >= 0) {
-    int sock = s_dns_sock;
+    sock_to_close = s_dns_sock;
     s_dns_sock = -1;  // сигнал задаче: сокет закрывается намеренно
-    shutdown(sock, SHUT_RDWR);
-    close(sock);
+  } else {
+    // Задача создана (xTaskCreate уже отработал), но ещё не дошла до bind() и
+    // не опубликовала сокет — просим её закрыться самостоятельно сразу после.
+    s_stop_requested = true;
   }
-  // Задача сама себя удалит после выхода из recvfrom() и очистит handle.
+  portEXIT_CRITICAL(&s_dns_mux);
+
+  if (sock_to_close >= 0) {
+    shutdown(sock_to_close, SHUT_RDWR);
+    close(sock_to_close);
+  }
+  // Задача сама себя удалит (после recvfrom() или сразу после bind()) и
+  // очистит handle.
   return ESP_OK;
 }
 
