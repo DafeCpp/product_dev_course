@@ -31,6 +31,15 @@ static portMUX_TYPE s_dns_mux = portMUX_INITIALIZER_UNLOCKED;
 // от того, в каком порядке их выполнял FinishTask(). Здесь состояние одно,
 // поэтому такого зазора в принципе нет.
 static bool s_dns_task_running = false;
+// Инкрементируется в DnsServerStart() при каждом реальном создании новой
+// задачи. Плоского s_dns_task_running недостаточно: если задача A уже
+// обнулила флаг, но DnsServerStop(), ожидающий именно её, ещё не успел это
+// заметить, а между этими двумя моментами DnsServerStart() создал задачу B
+// (флаг снова true) — ожидание должно закончиться сразу (A завершилась),
+// а не продолжаться, спутав B с A. DnsServerStop() запоминает поколение
+// задачи на момент вызова и завершает ожидание, если оно изменилось, даже
+// при s_dns_task_running == true.
+static uint32_t s_dns_generation = 0;
 // Гонка bind() (в задаче) vs DnsServerStop() — чистая логика вынесена в
 // DnsServerRaceState (firmware_common/dns_server_race_state.hpp) и покрыта
 // host-тестами в projects/firmware_common/tests; здесь она только
@@ -150,6 +159,7 @@ esp_err_t DnsServerStart(uint32_t ap_ip) {
   already_running = s_dns_task_running;
   if (!already_running) {
     s_dns_task_running = true;
+    ++s_dns_generation;
     // Стук от гонки прошлого цикла Stop()/Start() (см. dns_server_task) не
     // должен убить только что стартующую задачу. Только для НОВОЙ задачи —
     // если already_running уже true, это стёрло бы опубликованный сокет
@@ -180,10 +190,12 @@ esp_err_t DnsServerStart(uint32_t ap_ip) {
 esp_err_t DnsServerStop(void) {
   bool running = false;
   int sock_to_close = -1;
+  uint32_t target_generation = 0;
 
   portENTER_CRITICAL(&s_dns_mux);
   running = s_dns_task_running;
   if (running) {
+    target_generation = s_dns_generation;
     s_race_state.RequestStop(&sock_to_close);
   }
   portEXIT_CRITICAL(&s_dns_mux);
@@ -199,18 +211,23 @@ esp_err_t DnsServerStop(void) {
   // Иначе задача создана, но ещё не дошла до bind() и не опубликовала
   // сокет — она закроется самостоятельно сразу после (см. dns_server_task).
 
-  // Дожидаемся фактического обнуления s_dns_task_running: после каждого
-  // пробуждения перечитываем флаг под локом, а не доверяем самому факту
-  // пробуждения (см. комментарий у s_dns_stopped_sem) — следующий
-  // DnsServerStart() должен увидеть "свободно", а не решить, что задача
-  // ещё жива.
+  // Дожидаемся фактического обнуления s_dns_task_running у ИМЕННО этой
+  // задачи (по поколению): плоского флага недостаточно — если задача A уже
+  // обнулила его, а DnsServerStart() успел создать задачу B (флаг снова
+  // true) прежде, чем этот цикл заметил обнуление, флаг сам по себе не
+  // отличит "A жива" от "B стартовала". После каждого пробуждения
+  // перечитываем оба под локом, а не доверяем самому факту пробуждения (см.
+  // комментарий у s_dns_stopped_sem).
   TickType_t deadline =
       xTaskGetTickCount() + pdMS_TO_TICKS(kDnsStopWaitTimeoutMs);
   for (;;) {
     portENTER_CRITICAL(&s_dns_mux);
     bool still_running = s_dns_task_running;
+    uint32_t current_generation = s_dns_generation;
     portEXIT_CRITICAL(&s_dns_mux);
-    if (!still_running) {
+    if (!still_running || current_generation != target_generation) {
+      // Целевая задача либо явно завершилась, либо (поколение сменилось)
+      // успела смениться другой — в обоих случаях она уже не жива.
       return ESP_OK;
     }
 
