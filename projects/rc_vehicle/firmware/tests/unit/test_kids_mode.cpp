@@ -36,6 +36,10 @@ TEST(KidsModeConfigTest, DefaultSteeringLimitIs70Percent) {
   EXPECT_FLOAT_EQ(cfg.steering_limit, 0.7f);
 }
 
+TEST(KidsModeConfigTest, DefaultSteeringSlewRateIsThreePerSecond) {
+  KidsModeConfig cfg;
+  EXPECT_FLOAT_EQ(cfg.slew_steering, 3.0f);
+}
 TEST(KidsModeConfigTest, AntiSpinEnabledByDefault) {
   KidsModeConfig cfg;
   EXPECT_TRUE(cfg.anti_spin_enabled);
@@ -142,7 +146,7 @@ TEST(KidsModeConfigTest, ApplyPresetToddlerSetsCorrectValues) {
   EXPECT_FLOAT_EQ(cfg.reverse_limit, 0.10f);
   EXPECT_FLOAT_EQ(cfg.steering_limit, 0.5f);
   EXPECT_FLOAT_EQ(cfg.slew_throttle, 0.2f);
-  EXPECT_FLOAT_EQ(cfg.slew_steering, 0.3f);
+  EXPECT_FLOAT_EQ(cfg.slew_steering, 3.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_threshold_deg, 5.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_reduction, 0.8f);
   EXPECT_TRUE(cfg.accel_limit_enabled);
@@ -159,7 +163,7 @@ TEST(KidsModeConfigTest, ApplyPresetChildSetsCorrectValues) {
   EXPECT_FLOAT_EQ(cfg.reverse_limit, 0.2f);
   EXPECT_FLOAT_EQ(cfg.steering_limit, 0.7f);
   EXPECT_FLOAT_EQ(cfg.slew_throttle, 0.3f);
-  EXPECT_FLOAT_EQ(cfg.slew_steering, 0.5f);
+  EXPECT_FLOAT_EQ(cfg.slew_steering, 3.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_threshold_deg, 10.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_reduction, 0.7f);
   EXPECT_TRUE(cfg.accel_limit_enabled);
@@ -176,7 +180,7 @@ TEST(KidsModeConfigTest, ApplyPresetPreteenSetsCorrectValues) {
   EXPECT_FLOAT_EQ(cfg.reverse_limit, 0.35f);
   EXPECT_FLOAT_EQ(cfg.steering_limit, 0.85f);
   EXPECT_FLOAT_EQ(cfg.slew_throttle, 0.4f);
-  EXPECT_FLOAT_EQ(cfg.slew_steering, 0.7f);
+  EXPECT_FLOAT_EQ(cfg.slew_steering, 3.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_threshold_deg, 15.0f);
   EXPECT_FLOAT_EQ(cfg.anti_spin_reduction, 0.5f);
   EXPECT_TRUE(cfg.accel_limit_enabled);

@@ -138,6 +138,19 @@ TEST_F(StabilizationManagerTest, ModeSwitch_IgnoresInlineFieldsForNewMode) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+
+TEST_F(StabilizationManagerTest,
+       ModeSwitch_ToKidsWithoutSavedProfileUsesNewSlewRate) {
+  StabilizationConfig request;
+  request.Reset();
+  request.mode = DriveMode::Kids;
+
+  ASSERT_TRUE(mgr_->SetConfig(request, false));
+
+  EXPECT_EQ(mgr_->GetConfig().mode, DriveMode::Kids);
+  EXPECT_FLOAT_EQ(mgr_->GetConfig().kids_mode.slew_steering, 3.0f);
+}
+
 // Weights
 // ═══════════════════════════════════════════════════════════════════════════
 
