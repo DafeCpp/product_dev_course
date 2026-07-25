@@ -7,7 +7,7 @@
 
 namespace firmware_common::esp32 {
 
-/** Конфигурация каркаса HTTP-сервера (httpd + captive-portal + /api/wifi/*). */
+/** Конфигурация каркаса HTTP-сервера (httpd + captive-portal + /api/wifi). */
 struct HttpServerConfig {
   uint16_t port = 80;
   uint16_t max_uri_handlers = 18;
@@ -27,7 +27,7 @@ struct HttpServerConfig {
 
 /**
  * Запустить httpd-сервер: каркас + (опционально) captive-portal-пробы и
- * /api/wifi/*. Специфичные маршруты потребитель регистрирует сам через
+ * /api/wifi. Специфичные маршруты потребитель регистрирует сам через
  * httpd_register_uri_handler(HttpServerGetHandle(), ...) после вызова.
  * @return ESP_OK при успехе, иначе код ошибки
  */
