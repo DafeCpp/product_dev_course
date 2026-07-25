@@ -70,10 +70,8 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
   UpdateAutoDrive(now, dt_ms);
-  // Мотор-модельный якорь должен видеть намерение источника управления, а не
-  // результат стабилизаторов. В частности, Kids speed limiter регулирует
-  // commanded_throttle_ ниже: если отдать в EKF уже урезанный выход, лимитер
-  // начинает менять оценку скорости, по которой сам регулирует (LOS-246).
+  // Базовый вход моторной модели для режимов без Kids-ограничений. В Kids он
+  // ниже уточняется после обычных лимитов, но до speed limiter (LOS-246).
   // Снимок используется на следующем тике в UpdateSensorsAndEkf(), сохраняя
   // прежнюю однотиковую задержку входа моторной модели.
   motor_model_throttle_ = commanded_throttle_;
@@ -281,7 +279,8 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
       kids_fwd_accel = ctx_.imu_calib.GetForwardAccel(sensors_.imu_data);
     }
     ctx_.kids_processor.Process(stab_cfg_, commanded_throttle_,
-                                commanded_steering_, dt_ms, kids_fwd_accel);
+                                commanded_steering_, dt_ms, kids_fwd_accel,
+                                &motor_model_throttle_);
   }
 
   const float sw = ctx_.stab_mgr->GetStabilizationWeight();

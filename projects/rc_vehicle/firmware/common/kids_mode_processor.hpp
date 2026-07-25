@@ -37,9 +37,12 @@ class KidsModeProcessor {
    * @param steering Команда руля [in/out]
    * @param dt_ms Шаг времени в миллисекундах
    * @param forward_accel Продольное ускорение IMU [g] для accel limiter
+   * @param throttle_before_speed_limit Не-null: получает throttle после
+   *        обычных Kids-ограничений, но до speed limiter (LOS-246)
    */
   void Process(const StabilizationConfig& cfg, float& throttle, float& steering,
-               uint32_t dt_ms, float forward_accel = 0.0f) noexcept;
+               uint32_t dt_ms, float forward_accel = 0.0f,
+               float* throttle_before_speed_limit = nullptr) noexcept;
 
   /**
    * @brief Проверить, активен ли Kids Mode для переданного конфига

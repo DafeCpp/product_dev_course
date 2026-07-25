@@ -210,11 +210,16 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
 
   auto cfg = stab_mgr_->GetConfig();
   cfg.mode = DriveMode::Kids;
+  stab_mgr_->SetConfig(cfg);
+
+  cfg = stab_mgr_->GetConfig();
   cfg.kids_mode.throttle_limit = 0.3f;
-  cfg.kids_mode.slew_throttle = 100.0f;
-  cfg.kids_mode.speed_limit_enabled = true;
+  cfg.kids_mode.slew_throttle = 2.0f;
+  cfg.kids_mode.speed_limit_enabled = false;
   cfg.kids_mode.max_speed_ms = 0.5f;
   cfg.kids_mode.speed_limit_gain = 1.0f;
+  cfg.kids_mode.anti_spin_enabled = false;
+  cfg.kids_mode.accel_limit_enabled = false;
   cfg.filter.motor_deadzone = 0.0f;
   cfg.filter.motor_speed_gain = 8.0f;
   stab_mgr_->SetConfig(cfg);
@@ -222,9 +227,11 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
   ImuData level{};
   level.az = 1.0f;
   platform_.SetImuData(level);
-  platform_.SetWifiCommand({0.3f, 0.0f});
+  platform_.SetWifiCommand({1.0f, 0.0f});
 
-  Step();  // сохраняет pre-limiter command=0.3 для следующего тика
+  RunSteps(100);  // внутренний Kids slew (максимум 2.0/с) доходит до 0.3
+  cfg.kids_mode.speed_limit_enabled = true;
+  stab_mgr_->SetConfig(cfg);
   ekf_.SetState(2.0f, 0.0f, 0.0f);
   Step();  // speed limiter активен и урезает PWM ниже 0.3
   ASSERT_TRUE(kids_processor_.IsSpeedLimitActive());

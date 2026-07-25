@@ -23,6 +23,7 @@ def _full_throttle(**kw) -> dict:
         "model_v": sim.model.state.v,
         "peak_ekf": max(r["ekf_speed_ms"] for r in rows),
         "final_ekf": rows[-1]["ekf_speed_ms"],
+        "speed_meas": rows[-1]["ekf_speed_meas"],
         "thr": rows[-1]["throttle"],
         "kids": rows[-1]["kids_mode_active"],
     }
@@ -38,9 +39,18 @@ def test_kids_mode_limits_speed_vs_normal():
     assert kids["thr"] <= 0.31  # газ срезан до kids throttle_limit (0.3)
 
 
-def test_kids_speed_limit_value_controls_speed():
-    """Чем ниже лимит скорости — тем ниже установившаяся скорость (лимитер EKF)."""
-    low = _full_throttle(drive_mode="kids", speed_limit=1.0)
-    high = _full_throttle(drive_mode="kids", speed_limit=2.5)
-    assert low["final_ekf"] < high["final_ekf"]
-    assert low["peak_ekf"] < 2.0  # при лимите 1.0 скорость EKF держится у порога
+def test_kids_speed_limiter_reduces_output_without_changing_motor_anchor():
+    """LOS-246: limiter режет PWM, но не измерение моторной модели EKF."""
+    unlimited = _full_throttle(drive_mode="kids")
+    limited = _full_throttle(drive_mode="kids", speed_limit=1.0)
+
+    # Лимитер сработал: итоговая команда мотора существенно ниже обычного
+    # Kids throttle_limit=0.3.
+    assert limited["thr"] < 0.5 * unlimited["thr"]
+
+    # Моторный якорь получает исходную команду до лимитеров. Если подать сюда
+    # урезанный PWM, как до LOS-246, speed_meas и EKF начнут следовать за
+    # выходом лимитера, снова замыкая положительную обратную связь.
+    assert limited["speed_meas"] == pytest.approx(
+        unlimited["speed_meas"], rel=0.01)
+    assert limited["final_ekf"] == pytest.approx(limited["speed_meas"], rel=0.01)

@@ -39,7 +39,8 @@ void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
 
 void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
                                 float& steering, uint32_t dt_ms,
-                                float forward_accel) noexcept {
+                                float forward_accel,
+                                float* throttle_before_speed_limit) noexcept {
   if (!IsActive(cfg)) {
     return;  // Kids Mode не активен
   }
@@ -103,6 +104,14 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     const float reduction =
         std::min(excess * km.accel_limit_gain, km.accel_max_reduction);
     throttle *= (1.0f - reduction);
+  }
+
+  // Моторная модель должна видеть все обычные ограничения Kids (hard limit,
+  // slew, anti-spin и accel limiter), но не speed limiter: последний
+  // регулируется по EKF и не может быть входом собственного измерения
+  // скорости (LOS-246).
+  if (throttle_before_speed_limit) {
+    *throttle_before_speed_limit = throttle;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
