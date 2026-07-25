@@ -117,6 +117,32 @@ esp_err_t MigrateV8Profiles(nvs_handle_t handle) {
     }
     changed = true;
   }
+
+  StabConfigBlob legacy_blob{};
+  size_t legacy_size = sizeof(legacy_blob);
+  esp_err_t legacy_err =
+      nvs_get_blob(handle, NVS_LEGACY_KEY, &legacy_blob, &legacy_size);
+  if (legacy_err != ESP_ERR_NVS_NOT_FOUND && legacy_err != ESP_OK) {
+    return legacy_err;
+  }
+  if (legacy_err == ESP_OK && legacy_size == sizeof(legacy_blob) &&
+      legacy_blob.version == kPreviousStabConfigVersion) {
+    if (legacy_blob.config.mode == DriveMode::Kids) {
+      legacy_blob.config.Reset();
+      legacy_blob.config.kids_mode = rc_vehicle::KidsModeConfig{};
+      legacy_blob.config.mode = DriveMode::Kids;
+      legacy_blob.config.ApplyModeDefaults();
+      ESP_LOGI(TAG, "Reset legacy Kids config while migrating NVS v8 -> v9");
+    }
+    legacy_blob.version = kCurrentStabConfigVersion;
+    legacy_err =
+        nvs_set_blob(handle, NVS_LEGACY_KEY, &legacy_blob, sizeof(legacy_blob));
+    if (legacy_err != ESP_OK) {
+      return legacy_err;
+    }
+    changed = true;
+  }
+
   return changed ? nvs_commit(handle) : ESP_OK;
 }
 
