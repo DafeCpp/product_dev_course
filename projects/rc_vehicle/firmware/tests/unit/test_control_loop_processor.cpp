@@ -225,6 +225,19 @@ TEST_F(ProcessorTest, SlewRate_EventuallyReachesTarget) {
   EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 0.01f);
 }
 
+TEST_F(ProcessorTest, KidsModeSteeringReachesThreePerSecondSlewRate) {
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.0f, 1.0f});
+  RunSteps(10);  // Первый PWM update через 20 ms.
+
+  // Kids processor и PWM slew limiter оба допускают 3.0 /с:
+  // 3.0 * 0.020 = 0.06. При старом top-level лимите 1.5 было бы 0.03.
+  EXPECT_NEAR(platform_.GetLastSteering(), 0.06f, 0.005f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // BrakingMode
 // ═══════════════════════════════════════════════════════════════════════════

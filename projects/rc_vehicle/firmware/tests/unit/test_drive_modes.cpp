@@ -205,6 +205,7 @@ TEST(KidsModeDefaultsTest, EnablesPitchCompAndAdaptive) {
   EXPECT_TRUE(cfg.adaptive.enabled);
   EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.15f);
   EXPECT_FLOAT_EQ(cfg.yaw_rate.steer_to_yaw_rate_dps, 75.0f);
+  EXPECT_FLOAT_EQ(cfg.slew_steering, 3.0f);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
