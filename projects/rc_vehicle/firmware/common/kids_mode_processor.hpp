@@ -39,10 +39,17 @@ class KidsModeProcessor {
    * @param forward_accel Продольное ускорение IMU [g] для accel limiter
    * @param throttle_before_speed_limit Не-null: получает throttle после
    *        обычных Kids-ограничений, но до speed limiter (LOS-246)
+   * @param apply_speed_limit Применить speed limiter сразу; control loop
+   *        передаёт false, чтобы применить его после остальных стабилизаторов
    */
   void Process(const StabilizationConfig& cfg, float& throttle, float& steering,
                uint32_t dt_ms, float forward_accel = 0.0f,
-               float* throttle_before_speed_limit = nullptr) noexcept;
+               float* throttle_before_speed_limit = nullptr,
+               bool apply_speed_limit = true) noexcept;
+
+  /** Применить feedback speed limiter к уже обработанной команде газа. */
+  void ApplySpeedLimit(const StabilizationConfig& cfg,
+                       float& throttle) noexcept;
 
   /**
    * @brief Проверить, активен ли Kids Mode для переданного конфига

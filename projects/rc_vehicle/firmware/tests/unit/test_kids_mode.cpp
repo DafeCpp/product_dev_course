@@ -633,6 +633,22 @@ TEST_F(KidsModeSpeedLimitTest, AboveLimit_ReducesThrottle) {
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
 
+TEST_F(KidsModeSpeedLimitTest, CanDeferSpeedLimitUntilAfterOtherModifiers) {
+  ekf_.SetState(1.5f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f;
+
+  processor_.Process(cfg_, throttle, steering, 10, 0.0f, nullptr,
+                     /*apply_speed_limit=*/false);
+  EXPECT_NEAR(throttle, 0.4f, 0.01f);
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+
+  // Имитирует throttle-модификатор поздней стабилизации (pitch/oversteer).
+  throttle = 0.5f;
+  processor_.ApplySpeedLimit(cfg_, throttle);
+  EXPECT_LT(throttle, 0.5f);
+  EXPECT_TRUE(processor_.IsSpeedLimitActive());
+}
+
 TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_ReducesThrottleButNotToZero) {
   // LOS-215: снижение — пропорциональное, но не полный обрыв в ноль.
   // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.0,

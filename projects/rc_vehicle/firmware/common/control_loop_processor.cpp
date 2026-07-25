@@ -282,7 +282,7 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
     }
     ctx_.kids_processor.Process(stab_cfg_, commanded_throttle_,
                                 commanded_steering_, dt_ms, kids_fwd_accel,
-                                &motor_model_throttle_);
+                                nullptr, /*apply_speed_limit=*/false);
   }
 
   const float sw = ctx_.stab_mgr->GetStabilizationWeight();
@@ -298,6 +298,14 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
   if (traits.oversteer_guard_active)
     ctx_.oversteer_guard.Process(stab_cfg_, commanded_throttle_, dt_ms,
                                  traits.oversteer_reduces_throttle);
+
+  if (traits.apply_input_limits) {
+    // Все обычные стабилизаторы уже отработали. Снимок — counterfactual
+    // моторного входа без единственного feedback-звена, speed limiter;
+    // затем limiter ограничивает фактическую PWM-команду (LOS-246).
+    motor_model_throttle_ = commanded_throttle_;
+    ctx_.kids_processor.ApplySpeedLimit(stab_cfg_, commanded_throttle_);
+  }
 }
 
 bool ControlLoopProcessor::HandleFailsafe() {

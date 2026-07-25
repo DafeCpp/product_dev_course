@@ -40,7 +40,8 @@ void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
 void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
                                 float& steering, uint32_t dt_ms,
                                 float forward_accel,
-                                float* throttle_before_speed_limit) noexcept {
+                                float* throttle_before_speed_limit,
+                                bool apply_speed_limit) noexcept {
   if (!IsActive(cfg)) {
     return;  // Kids Mode не активен
   }
@@ -114,12 +115,22 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     *throttle_before_speed_limit = throttle;
   }
 
+  if (apply_speed_limit) ApplySpeedLimit(cfg, throttle);
+}
+
+void KidsModeProcessor::ApplySpeedLimit(const StabilizationConfig& cfg,
+                                        float& throttle) noexcept {
   // ─────────────────────────────────────────────────────────────────────────
-  // 5. Ограничение по скорости (EKF, feedback-based)
+  // Ограничение по скорости (EKF, feedback-based). Вызывается control loop
+  // после всех остальных модификаторов throttle, чтобы моторная модель видела
+  // их counterfactual-результат, но не этот feedback (LOS-246).
   // ─────────────────────────────────────────────────────────────────────────
 
   speed_limit_active_ = false;
 
+  if (!IsActive(cfg)) return;
+
+  const auto& km = cfg.kids_mode;
   if (km.speed_limit_enabled && ekf_ && imu_ && imu_->IsEnabled() &&
       throttle > 0.0f && !ekf_->IsDiverged() &&
       ekf_->GetVxVariance() <= kSpeedTrustVarMax) {
