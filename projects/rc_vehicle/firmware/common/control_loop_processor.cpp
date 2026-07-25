@@ -163,7 +163,16 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
       const uint64_t _emit_us = ctx_.platform.GetTimeUs() - _pt;
       prof_diag_us_ += _emit_us;
       if (_emit_us > prof_diag_max_us_) prof_diag_max_us_ = _emit_us;
-      if (_emit_us > prof_step_max_us_) prof_step_max_us_ = _emit_us;
+      // Код-ревью PR #297: сравнивать нужно с ПОЛНЫМ временем этой
+      // (пограничной) итерации внутри Step() (_prof_iter_us + _emit_us),
+      // а не с одним _emit_us — иначе, напр., тело в 3мс + EmitProfile()
+      // в 3мс дают реальные 6мс внутри Step(), но step_iter в свежем
+      // окне засеивался бы только 3мс EmitProfile(), теряя тело. period
+      // СЛЕДУЮЩЕЙ итерации корректно отразил бы все 6мс — расхождение
+      // period/step_iter снова ложно указывало бы на stall вне Step().
+      const uint64_t _boundary_total_us = _prof_iter_us + _emit_us;
+      if (_boundary_total_us > prof_step_max_us_)
+        prof_step_max_us_ = _boundary_total_us;
     }
 #endif
   }
