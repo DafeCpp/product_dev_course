@@ -481,9 +481,23 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
         << " stab=" << prof_stab_max_us_ << " pwm=" << prof_pwm_max_us_
         << " telem=" << prof_telem_max_us_ << " diag=" << prof_diag_max_us_
         << " step_iter=" << prof_step_max_us_
-        << " period=" << prof_period_max_us_ << "  outliers=" << prof_outliers_
+        << " period=" << prof_period_max_us_ << " outliers=" << prof_outliers_
         << "/" << loops;
     ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
+  if (ctx_.imu_handler) {
+    // LOS-219/250: раздельные тайминги внутри "comp" — spi (только
+    // platform_.ReadImu()) vs rest (калибровка/LPF/mag/Madgwick/vehicle-
+    // frame). Проверка гипотезы: IMU SPI-чтение — основной вклад в comp
+    // из-за 6 отдельных транзакций на 6 осей вместо одной burst.
+    LogFormat fmt;
+    fmt << "PROF(imu us): spi_avg="
+        << (ctx_.imu_handler->GetProfSpiUs() / loops)
+        << " spi_max=" << ctx_.imu_handler->GetProfSpiMaxUs()
+        << " rest_avg=" << (ctx_.imu_handler->GetProfRestUs() / loops)
+        << " rest_max=" << ctx_.imu_handler->GetProfRestMaxUs();
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+    ctx_.imu_handler->ResetProfileStats();
   }
   prof_cfg_us_ = 0;
   prof_components_us_ = 0;
