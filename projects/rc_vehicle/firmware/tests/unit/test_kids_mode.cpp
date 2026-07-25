@@ -515,6 +515,21 @@ TEST(StabilizationConfigTest, KidsModeFieldExistsInConfig) {
   EXPECT_TRUE(cfg.kids_mode.IsValid());
 }
 
+TEST(StabilizationConfigTest, ResetRestoresAllKidsModeDefaults) {
+  StabilizationConfig cfg;
+  cfg.kids_mode.accel_limit_enabled = false;
+  cfg.kids_mode.accel_threshold_g = 0.5f;
+  cfg.kids_mode.speed_limit_enabled = true;
+  cfg.kids_mode.max_speed_ms = 5.0f;
+
+  cfg.Reset();
+
+  EXPECT_TRUE(cfg.kids_mode.accel_limit_enabled);
+  EXPECT_FLOAT_EQ(cfg.kids_mode.accel_threshold_g, 0.15f);
+  EXPECT_FALSE(cfg.kids_mode.speed_limit_enabled);
+  EXPECT_FLOAT_EQ(cfg.kids_mode.max_speed_ms, 1.5f);
+}
+
 TEST(StabilizationConfigTest, KidsModeVersionIs3) {
   StabilizationConfig cfg;
   EXPECT_EQ(cfg.version, 3);

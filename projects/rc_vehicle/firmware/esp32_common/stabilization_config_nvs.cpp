@@ -105,6 +105,7 @@ esp_err_t MigrateV8Profiles(nvs_handle_t handle) {
 
     if (mode == DriveMode::Kids) {
       blob.config.Reset();
+      blob.config.kids_mode = rc_vehicle::KidsModeConfig{};
       blob.config.mode = DriveMode::Kids;
       blob.config.ApplyModeDefaults();
       ESP_LOGI(TAG, "Reset Kids config while migrating NVS v8 -> v9");

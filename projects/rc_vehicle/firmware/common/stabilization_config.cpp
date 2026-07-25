@@ -261,14 +261,7 @@ void StabilizationConfig::Reset() noexcept {
   pitch_comp.max_correction = 0.25f;
 
   // Kids mode defaults
-  kids_mode.throttle_limit = 0.3f;
-  kids_mode.reverse_limit = 0.2f;
-  kids_mode.steering_limit = 0.7f;
-  kids_mode.slew_throttle = 0.3f;
-  kids_mode.slew_steering = 3.0f;
-  kids_mode.anti_spin_enabled = true;
-  kids_mode.anti_spin_threshold_deg = 10.0f;
-  kids_mode.anti_spin_reduction = 0.7f;
+  kids_mode = KidsModeConfig{};
 
   // Slew rate defaults
   slew_throttle = 0.5f;
