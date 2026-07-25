@@ -234,6 +234,47 @@ class ImuHandler : public ControlComponent {
    */
   void ResetHeadingRef() noexcept { heading_ref_set_ = false; }
 
+#ifdef RC_PROFILE_LOOP
+  /**
+   * @brief Диагностика LOS-219/250: раздельные тайминги внутри Update() —
+   * "spi" (только platform_.ReadImu(), даже при неудаче) vs "rest"
+   * (калибровка/LPF/mag/Madgwick/vehicle-frame). Проверка гипотезы, что IMU
+   * SPI-чтение — основной вклад в "comp"-стадию профайлера control loop
+   * (PR #297): 6 отдельных 3-байтных транзакций на 6 осей (mpu6050_spi.cpp)
+   * вместо одной burst-транзакции.
+   */
+  [[nodiscard]] uint64_t GetProfSpiUs() const noexcept { return prof_spi_us_; }
+  [[nodiscard]] uint64_t GetProfSpiMaxUs() const noexcept {
+    return prof_spi_max_us_;
+  }
+  [[nodiscard]] uint64_t GetProfRestUs() const noexcept {
+    return prof_rest_us_;
+  }
+  [[nodiscard]] uint64_t GetProfRestMaxUs() const noexcept {
+    return prof_rest_max_us_;
+  }
+  /**
+   * @brief Только platform_.ReadMag() (раз в kMagReadIntervalMs=10мс, т.е.
+   * каждый 5-й вызов Update()) — проверка гипотезы, что скачок rest_max
+   * (~2.6x от rest_avg) вызван именно I2C/SPI-транзакцией магнетометра,
+   * а не Madgwick/калибровкой. Комментарий в .cpp оценивал ~350 мкс —
+   * здесь измеряем фактически.
+   */
+  [[nodiscard]] uint64_t GetProfMagUs() const noexcept { return prof_mag_us_; }
+  [[nodiscard]] uint64_t GetProfMagMaxUs() const noexcept {
+    return prof_mag_max_us_;
+  }
+  /** Сбросить накопленные тайминги (вызывается из EmitProfile()). */
+  void ResetProfileStats() noexcept {
+    prof_spi_us_ = 0;
+    prof_spi_max_us_ = 0;
+    prof_rest_us_ = 0;
+    prof_rest_max_us_ = 0;
+    prof_mag_us_ = 0;
+    prof_mag_max_us_ = 0;
+  }
+#endif
+
  private:
   /// Опорная СК фильтра — обновляется при смене состояния калибровки
   void UpdateVehicleFrame();
@@ -279,6 +320,15 @@ class ImuHandler : public ControlComponent {
   // Относительный курс
   float heading_ref_{0.f};   ///< Опорное значение курса [°]
   bool  heading_ref_set_{false};
+
+#ifdef RC_PROFILE_LOOP
+  uint64_t prof_spi_us_{0};
+  uint64_t prof_spi_max_us_{0};
+  uint64_t prof_rest_us_{0};
+  uint64_t prof_rest_max_us_{0};
+  uint64_t prof_mag_us_{0};
+  uint64_t prof_mag_max_us_{0};
+#endif
 };
 
 // ═════════════════════════════════════════════════════════════════════════

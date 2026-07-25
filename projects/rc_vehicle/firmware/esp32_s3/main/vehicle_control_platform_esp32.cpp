@@ -1,5 +1,6 @@
 #include "vehicle_control_platform_esp32.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <firmware_common/esp32/ws_telem_channel.hpp>
 
@@ -110,6 +111,86 @@ void VehicleControlPlatformEsp32::Log(LogLevel level,
       ESP_LOGE(TAG, "%s", buffer);
       break;
   }
+}
+
+void VehicleControlPlatformEsp32::LogCoreLoad() const {
+  // LOS-219/250: узнать, простаивает ли ядро с веб-стеком (httpd/WS без
+  // core-affinity, WiFi driver task пиннен на core 0), пока control-таск
+  // (core 1, макс. приоритет) перегружен. Нужны CONFIG_FREERTOS_USE_
+  // TRACE_FACILITY и CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS (sdkconfig.
+  // defaults). ulRunTimeCounter кумулятивен с загрузки, не скользящее окно —
+  // достаточно для диагностической сессии в несколько минут.
+  //
+  // Не используем TaskStatus_t::xCoreID — его наличие в структуре зависит
+  // от configTASKLIST_INCLUDE_COREID / CONFIG_FREERTOS_VTASKLIST_INCLUDE_
+  // COREID, а на некоторых версиях/конфигурациях ESP-IDF (SMP-ядро) это
+  // поле в структуре отсутствует вовсе — компиляция падает. Вместо этого
+  // ищем задачи с именами "IDLE0"/"IDLE1": эта нумерация — часть самого
+  // FreeRTOS-Kernel (tasks.c, prvCreateIdleTasks(), не Kconfig-опция) и
+  // одинакова на всех версиях с configNUMBER_OF_CORES > 1.
+  // Код-ревью PR #297: uxTaskGetSystemState() не отдаёт частичный результат
+  // и total_run_time при массиве меньше текущего числа задач (вернёт 0
+  // задач) — молча теряем диагностику именно на полностью загруженной
+  // системе (WiFi+HTTP+DNS+WS+UDP+control+...), ради которой она и нужна.
+  // Проверяем живое число задач и явно предупреждаем, если не влезаем,
+  // вместо тихого no-op.
+  constexpr UBaseType_t kMaxTasks = 32;
+  static TaskStatus_t
+      task_status[kMaxTasks];  // static — не в стеке control-таска
+  const UBaseType_t live_task_count = uxTaskGetNumberOfTasks();
+  if (live_task_count > kMaxTasks) {
+    ESP_LOGW(TAG, "LogCoreLoad: %u tasks > kMaxTasks=%u, пропущено",
+             static_cast<unsigned>(live_task_count),
+             static_cast<unsigned>(kMaxTasks));
+    return;
+  }
+
+  configRUN_TIME_COUNTER_TYPE total_run_time = 0;
+  const UBaseType_t num_tasks =
+      uxTaskGetSystemState(task_status, kMaxTasks, &total_run_time);
+  if (total_run_time == 0) return;
+
+  // Код-ревью PR #297: pulTotalRunTime у uxTaskGetSystemState() —
+  // ЕДИНЫЙ общий счётчик (*pulTotalRunTime = portGET_RUN_TIME_COUNTER_
+  // VALUE(); см. FreeRTOS-Kernel/tasks.c), а НЕ сумма per-task счётчиков
+  // по обоим ядрам. Задача исполняется только на ОДНОМ ядре одновременно,
+  // поэтому её доля от total_run_time — это уже её доля от общего
+  // таймлайна; деление на configNUMBER_OF_CORES было ошибкой и удваивало
+  // все проценты (IDLE, занимающий 100% своего ядра, показывал бы 200%,
+  // busy% уходил в -100%).
+  float idle_pct[2] = {-1.f, -1.f};  // -1 = не найдено (< 2 ядер/имя другое)
+
+  // Код-ревью PR #297: сканируем ВСЕ num_tasks на IDLE0/IDLE1 независимо
+  // от заполненности текстового буфера — иначе на системе с большим
+  // числом задач переполнение buffer[] могло прервать цикл ДО того, как
+  // встретится IDLE-задача, и её % терялся бы молча (не просто не попадал
+  // бы в текстовую строку). Буфер ограничивает только вывод текста.
+  char buffer[400];
+  int off = snprintf(buffer, sizeof(buffer), "CORE TASKS:");
+  for (UBaseType_t i = 0; i < num_tasks; ++i) {
+    const auto& t = task_status[i];
+    const float pct = 100.f * static_cast<float>(t.ulRunTimeCounter) /
+                      static_cast<float>(total_run_time);
+    if (strcmp(t.pcTaskName, "IDLE0") == 0) {
+      idle_pct[0] = pct;
+    } else if (strcmp(t.pcTaskName, "IDLE1") == 0) {
+      idle_pct[1] = pct;
+    }
+    if (off > 0 && off < static_cast<int>(sizeof(buffer)) - 32) {
+      off += snprintf(buffer + off, sizeof(buffer) - off, " %s=%.1f%%",
+                      t.pcTaskName, pct);
+    }
+  }
+  ESP_LOGI(TAG, "%s", buffer);
+
+  char summary[96];
+  int soff = 0;
+  for (int c = 0; c < 2; ++c) {
+    if (idle_pct[c] < 0.f) continue;  // "IDLEc" не найден — не печатаем
+    soff += snprintf(summary + soff, sizeof(summary) - soff,
+                     "core%d_busy=%.1f%% ", c, 100.f - idle_pct[c]);
+  }
+  ESP_LOGI(TAG, "CORE LOAD: %s", summary);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

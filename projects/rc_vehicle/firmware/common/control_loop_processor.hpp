@@ -137,12 +137,65 @@ class ControlLoopProcessor {
   // стадиям и раз в диаг-интервал печатаем средние us/iter. Включается флагом
   // -DRC_PROFILE_LOOP=1; в обычной сборке кода нет (нулевой оверхед).
   void EmitProfile(uint32_t loops);
+  // Время снапшота stab-конфига (GetConfig(), включая возможное ожидание
+  // config_mutex_ — код-ревью PR #297): отдельная стадия, а не часть comp,
+  // иначе ожидание мьютекса (SetConfig() из WS-потока, сама NVS-гипотеза
+  // LOS-219) ложно указывало бы на RC/WiFi/IMU как источник задержки.
+  uint64_t prof_cfg_us_{0};
   uint64_t prof_components_us_{0};
   uint64_t prof_sensors_us_{0};
+  // LOS-219/250: разбивка sens на BuildSensorSnapshot+ComOffset (snapshot)
+  // vs ротация/TiltEstimator/EKF-обновления (ekf) — sens вторая по размеру
+  // стадия после comp и полностью непрозрачна без этой разбивки.
+  uint64_t prof_snapshot_us_{0};
+  uint64_t prof_ekf_us_{0};
   uint64_t prof_control_us_{0};
   uint64_t prof_stab_us_{0};
   uint64_t prof_pwm_us_{0};
   uint64_t prof_telem_us_{0};
+  // Время PrintDiagnostics()/EmitProfile() (сами Log()-вызовы) — код-ревью
+  // PR #297: без отдельной стадии эта работа не попадала ни в один
+  // per-stage max, хотя занимает реальное время внутри Step() раз в
+  // диаг-интервал (см. PROF_LAP-вызов в конце Step()).
+  uint64_t prof_diag_us_{0};
+  // LOS-219: worst-case per-stage tracking, reset each diag interval same as
+  // sums.
+  uint64_t prof_cfg_max_us_{0};
+  uint64_t prof_components_max_us_{0};
+  uint64_t prof_sensors_max_us_{0};
+  uint64_t prof_snapshot_max_us_{0};
+  uint64_t prof_ekf_max_us_{0};
+  uint64_t prof_control_max_us_{0};
+  uint64_t prof_stab_max_us_{0};
+  uint64_t prof_pwm_max_us_{0};
+  uint64_t prof_telem_max_us_{0};
+  uint64_t prof_diag_max_us_{0};
+  // Max Step()-internal execution time this interval — catches a stall
+  // regardless of which stage it lands in (per-stage max alone can't tell
+  // you "was this whole iteration slow"). NOT the same as the actual loop
+  // period: a stall while the task is blocked in DelayUntilNextTick()
+  // (outside Step(), e.g. a flash-cache freeze from a concurrent NVS
+  // commit) would leave this unaffected — see prof_period_max_us_/
+  // prof_outliers_ below, which use the real entry-to-entry period and are
+  // what actually answers "did we miss our target Hz this tick".
+  uint64_t prof_step_max_us_{0};
+  // GetTimeUs() timestamp of this Step() call's entry, captured by
+  // PROF_START() — persists across calls so the NEXT call can compute the
+  // real entry-to-entry period at microsecond resolution. 0 sentinel means
+  // "not yet set" (first call). NOT derived from dt_ms (code review PR
+  // #297): dt_ms comes from GetTimeMs() (whole milliseconds), so
+  // dt_ms*1000 can't recover precision already lost to ms-quantization —
+  // a period just over the 4ms outlier threshold could round down to
+  // dt_ms==4 and silently miss detection.
+  uint64_t prof_prev_entry_us_{0};
+  // Max real loop period (entry-to-entry, see prof_prev_entry_us_ above) —
+  // outlier count is based on THIS, not prof_step_max_us_, per code review
+  // on PR #297: basing it on Step()-internal time alone would miss stalls
+  // that happen while the task is outside Step() (e.g. blocked in
+  // DelayUntilNextTick() during a flash-cache freeze), which is exactly the
+  // scenario LOS-219's NVS-commit hypothesis predicts.
+  uint64_t prof_period_max_us_{0};
+  uint32_t prof_outliers_{0};
 #endif
 
   // Кэшированный снимок датчиков (обновляется в UpdateSensorsAndEkf)
