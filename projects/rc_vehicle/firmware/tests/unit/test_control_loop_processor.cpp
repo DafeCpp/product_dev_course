@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "calibration_manager.hpp"
+#include "config.hpp"
 #include "control_loop_processor.hpp"
 #include "mock_platform.hpp"
 #include "stabilization_manager.hpp"
@@ -607,3 +608,84 @@ TEST_F(ProcessorTest, CalibMgr_Null_NoCrash) {
   ControlLoopProcessor proc(ctx, 0);
   EXPECT_NO_THROW(proc.Step(2, 2));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS-219: профайлер — outlier по реальному периоду между вызовами Step()
+//
+// Собирается только при -DRC_PROFILE_LOOP=1 (см. tests/CMakeLists.txt).
+// FakePlatform::GetTimeUs() читает СВОИ внутренние часы (platform_.time_ms_),
+// независимые от аргументов now/dt_ms, передаваемых в Step() напрямую —
+// поэтому для этих тестов часы платформы двигаются явно через
+// platform_.AdvanceTimeMs(), отдельно от фикстурного time_ms_/Step().
+// ═══════════════════════════════════════════════════════════════════════════
+#ifdef RC_PROFILE_LOOP
+
+class ProfilerTest : public ProcessorTest {
+ protected:
+  /** Шаг с явным приращением часов платформы (мс) — не путать с Step(). */
+  void StepPlatformGap(uint32_t platform_gap_ms) {
+    platform_.AdvanceTimeMs(platform_gap_ms);
+    time_ms_ += 2;
+    processor_->Step(time_ms_, 2);
+  }
+
+  /** Найти последнюю строку "PROF(max us): ..." среди залогированного. */
+  std::optional<std::string> FindLastProfMaxLine() const {
+    std::optional<std::string> result;
+    for (const auto& msg : platform_.GetLoggedMessages()) {
+      if (msg.find("PROF(max us)") != std::string::npos) result = msg;
+    }
+    return result;
+  }
+
+  /** Гонять до гарантированного пересечения границы диаг-интервала. */
+  void RunUntilDiagIntervalCrossed() {
+    while (time_ms_ < config::DiagnosticsConfig::kIntervalMs + 10) {
+      StepPlatformGap(2);
+    }
+  }
+};
+
+TEST_F(ProfilerTest, NoOutliers_OnSteadyPlatformClock) {
+  RunUntilDiagIntervalCrossed();
+
+  auto line = FindLastProfMaxLine();
+  ASSERT_TRUE(line.has_value()) << "PROF(max us) line never logged";
+  EXPECT_NE(line->find("outliers=0/"), std::string::npos) << *line;
+}
+
+TEST_F(ProfilerTest, CountsOutlier_OnRealClockGap) {
+  // Один разовый скачок часов ПЛАТФОРМЫ, сильно выше 2x бюджета цикла
+  // (4000 мкс) — должен быть учтён как outlier, даже несмотря на то что
+  // аргументы Step() (now/dt_ms) идут обычным равномерным тактом.
+  bool gap_injected = false;
+  while (time_ms_ < config::DiagnosticsConfig::kIntervalMs + 10) {
+    if (!gap_injected && time_ms_ >= 1000) {
+      StepPlatformGap(20);  // 20мс >> 4мс порога
+      gap_injected = true;
+    } else {
+      StepPlatformGap(2);
+    }
+  }
+  ASSERT_TRUE(gap_injected);
+
+  auto line = FindLastProfMaxLine();
+  ASSERT_TRUE(line.has_value()) << "PROF(max us) line never логировалась";
+  EXPECT_NE(line->find("outliers=1/"), std::string::npos) << *line;
+}
+
+TEST_F(ProfilerTest, FirstStep_DoesNotFalselyReportOutlier) {
+  // prof_prev_entry_us_ инициализируется 0 (сентинел "ещё не установлен") —
+  // первый вызов Step() не должен подхватить псевдо-огромный период
+  // (GetTimeUs() - 0), даже если платформенные часы уже не в нуле.
+  platform_.AdvanceTimeMs(10000);
+  StepPlatformGap(2);
+
+  RunUntilDiagIntervalCrossed();
+
+  auto line = FindLastProfMaxLine();
+  ASSERT_TRUE(line.has_value());
+  EXPECT_NE(line->find("outliers=0/"), std::string::npos) << *line;
+}
+
+#endif  // RC_PROFILE_LOOP
