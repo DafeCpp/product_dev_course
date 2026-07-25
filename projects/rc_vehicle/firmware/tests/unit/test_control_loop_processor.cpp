@@ -537,13 +537,24 @@ TEST_F(ProcessorTest, TiltComp_ReEnabled_ResetsStaleState) {
       << "протухший тангаж после повторного включения tilt-фильтра";
 }
 
-TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
-  // Код-ревью PR #290 (10-й раунд): тот же протухший-тангаж баг, что и в
-  // TiltComp_ReEnabled_ResetsStaleState выше, но триггер — не
-  // tilt_comp_enabled, а ekf_enabled (tilt_comp_enabled остаётся true
-  // ВСЁ ВРЕМЯ). Пока ekf_enabled=false, весь блок UpdateSensorsAndEkf()
-  // пропускается — включая tilt_est_.Update() — тем же путём замораживая
-  // pitch_rad_/roll_rad_.
+TEST_F(ProcessorTest, TiltComp_EkfDisabled_KeepsTrackingNotFrozen) {
+  // Код-ревью PR #302 (круг 2, найдено независимо ревьюером и ботом Codex):
+  // до этой правки ekf_enabled=false замораживал tilt_est_.Update() тем же
+  // путём, что и tilt_comp_enabled=false (см. TiltComp_ReEnabled_
+  // ResetsStaleState выше) — весь блок UpdateSensorsAndEkf() был вложен под
+  // `if (ekf_active && ...)`. Это ломало НЕ ТОЛЬКО grav-компенсацию EKF, но
+  // и fwd_accel_g_ (LOS-245): при выключенном EKF Kids-лимитер снова ложно
+  // срабатывал на статическом наклоне — ровно тот баг, который чинит
+  // LOS-245 (см. KidsAccelLimitTest.EkfDisabled_TiltCompEnabled_
+  // StillCompensatesTilt ниже, где это проверяется напрямую).
+  //
+  // Тест ниже проверяет, что ПОСЛЕ фикса tilt_est_ ПРОДОЛЖАЕТ отслеживать
+  // реальную ориентацию, пока EKF выключен, а не замораживается: наклон
+  // меняется с 20° на 0° именно В ЭТОМ интервале, и к моменту повторного
+  // включения EKF оценка должна успеть сойтись к истинному (нулевому)
+  // значению без явного Reset() — в отличие от TiltComp_ReEnabled_
+  // ResetsStaleState, где Reset() по-прежнему необходим (там триггер —
+  // tilt_comp_enabled=false, который ВСЁ ЕЩЁ замораживает tilt_est_).
   ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
   imu_handler.SetEnabled(true);
   ctx_->imu_handler = &imu_handler;
@@ -564,14 +575,18 @@ TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
   RunSteps(4000);  // 8 секунд
 
   // Фаза 2: выключаем EKF целиком (tilt_comp_enabled остаётся true!) и
-  // кладём машину ровно.
+  // кладём машину ровно — ДОСТАТОЧНО ДОЛГО (corr_gain_hz=0.5 по умолчанию
+  // ⇒ постоянная времени 2 с), чтобы tilt_est_ реально сошёлся к 0°, если
+  // он продолжает работать. Раньше эта фаза была короткой (0.2 с) — этого
+  // хватало только чтобы проверить, что Reset() в фазе 3 корректно стирает
+  // заморозку; теперь тут ничего замораживать не нужно.
   cfg = stab_mgr_->GetConfig();
   cfg.filter.ekf_enabled = false;
   stab_mgr_->SetConfig(cfg);
   ImuData level{};
   level.az = 1.0f;
   platform_.SetImuData(level);
-  RunSteps(100);
+  RunSteps(3000);  // 6 секунд — ~3 постоянные времени
 
   // Фаза 3: заново включаем EKF на ровном месте без реального ускорения.
   ekf_.Reset();
@@ -582,8 +597,8 @@ TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
 
   EXPECT_FALSE(ekf_.IsDiverged());
   EXPECT_NEAR(ekf_.GetVx(), 0.0f, 0.15f)
-      << "протухший тангаж после повторного включения EKF (tilt_comp_"
-         "enabled не менялся)";
+      << "tilt_est_ не сошёлся к истинному (нулевому) наклону за время, "
+         "пока EKF был выключен — оценка осталась протухшей";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -763,4 +778,29 @@ TEST_F(KidsAccelLimitTest, SustainedAcceleration_LimiterFadesAsTiltAbsorbsIt) {
   RunSteps(2250);  // суммарно 5 с — тангаж «съел» ускорение
   EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
       << "ограничение изменилось: разгон всё ещё виден через 5 с";
+}
+
+TEST_F(KidsAccelLimitTest, EkfDisabled_TiltCompEnabled_StillCompensatesTilt) {
+  // Регресс код-ревью PR #302 (круг 2, найдено независимо ревьюером и ботом
+  // Codex): tilt_est_.Update() был вложен в `if (ekf_active && ...)`, поэтому
+  // при ekf_enabled=false (реальная, переключаемая через WS/мобильное
+  // приложение настройка — НЕ гипотетическая) tilt_est_ замораживался, и
+  // fwd_accel_g_ ниже деградировал в ImuCalibration::GetForwardAccel() —
+  // то есть В ТОЧНОСТИ в баг, который чинит LOS-245: лимитер снова ложно
+  // срабатывал на статическом наклоне. Фикс — считать tilt_est_.Update()
+  // независимо от ekf_active (см. control_loop_processor.cpp).
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.ekf_enabled = false;       // отключено пользователем/оператором
+  cfg.filter.tilt_comp_enabled = true;  // но tilt-фильтр формально включён
+
+  stab_mgr_->SetConfig(cfg);
+
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+  platform_.SetImuData(AtRestWithPitch(kPitchRad));
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(3000);  // 6 с — сходимость TiltEstimator не зависит от EKF
+
+  EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
+      << "при выключенном EKF лимитер сработал на статическом наклоне без "
+         "ускорения — tilt_est_ снова заморожен";
 }

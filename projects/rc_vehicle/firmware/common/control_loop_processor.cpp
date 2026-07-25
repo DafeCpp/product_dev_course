@@ -113,13 +113,32 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
 
   const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
+  constexpr float kG = 9.80665f;
+  constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+  // ВАЖНО (код-ревью PR #302, круг 2, найдено независимо ревьюером и
+  // ботом-ревьюером Codex): tilt_est_.Update() гейтится ТОЛЬКО imu_tick_valid
+  // и tilt_comp_enabled — БЕЗ ekf_active. До этой правки Update() был заперт
+  // внутри `if (ekf_active && ...)`, и при ekf_enabled=false (реальная,
+  // переключаемая через WS/мобильное приложение настройка) tilt_est_
+  // замораживался, fwd_accel_g_ ниже получал tilt_valid=false и молча
+  // деградировал в GetForwardAccel() — то есть В ТОЧНОСТИ в баг, который чинит
+  // LOS-245: Kids-лимитер снова ложно срабатывал на статическом наклоне.
+  // TiltEstimator не нуждается в EKF для собственной работы (комплементарный
+  // фильтр гироскоп+акселерометр, EKF ему только ОПЦИОНАЛЬНО поставляет
+  // мотор-модельный якорь через a_lin_prev_g_/prev_vx_ — см. ниже), поэтому
+  // независимость от ekf_active корректна и для Kids/телеметрии, и для
+  // собственно фильтра.
+  const bool imu_tick_valid = sensors_.imu_enabled && dt_ms > 0;
+  const float dt_sec =
+      imu_tick_valid ? static_cast<float>(dt_ms) * 0.001f : 0.0f;
+
   // tilt_was_enabled_ отслеживает, вызывался ли tilt_est_.Update() на
   // ПРЕДЫДУЩЕМ тике — установка отложена до конца функции (безусловно,
   // независимо от того, войдём ли вообще в блок ниже), чтобы ловить ЛЮБОЙ
-  // путь, из-за которого Update() пропускается: не только
-  // tilt_comp_enabled=false (9-й раунд), но и ekf_enabled=false,
-  // imu_enabled=false, dt_ms==0 (код-ревью PR #290, 10-й раунд) — во всех
-  // случаях pitch_rad_/roll_rad_ замораживаются одинаково.
+  // путь, из-за которого Update() пропускается: tilt_comp_enabled=false
+  // (9-й раунд PR #290), imu_enabled=false, dt_ms==0 (10-й раунд PR #290).
+  // ekf_enabled=false БОЛЬШЕ НЕ в этом списке (см. выше) — во всех
+  // оставшихся случаях pitch_rad_/roll_rad_ замораживаются одинаково.
   bool tilt_active_this_tick = false;
 
   // Ротация в СК машины (код-ревью PR #290, 3-й раунд): и EKF (grav_x/
@@ -144,60 +163,75 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   ImuData veh_imu = sensors_.imu_data;
   if (sensors_.imu_enabled) ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
 
-  if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
-    const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
-    constexpr float kG = 9.80665f;
+  // Ориентация для снятия проекции гравитации — как из ускорения перед
+  // интеграцией в EKF, так и для fwd_accel_g_ (Kids-лимитер/телеметрия,
+  // LOS-245) ниже. Источник по умолчанию — TiltEstimator (LOS-240):
+  // комплементарный фильтр, не загрязняемый линейным ускорением (в отличие
+  // от Madgwick — см. tilt_estimator.hpp).
+  float pitch_rad = 0.0f, roll_rad = 0.0f;
+  if (imu_tick_valid && stab_cfg_.filter.tilt_comp_enabled) {
+    tilt_active_this_tick = true;
+    if (!tilt_was_enabled_) {
+      // Возобновление после ЛЮБОГО перерыва (см. комментарий у
+      // tilt_active_this_tick выше): pitch_rad_/roll_rad_ заморожены с
+      // последнего Update() — сбрасываем, иначе получим протухший
+      // тангаж/крен из интервала простоя.
+      tilt_est_.Reset();
+    }
+    // Мотор-модельный якорь (LOS-233) — единственный сигнал в системе,
+    // действительно независимый от IMU/тангажа, но САМ производится EKF
+    // (a_lin_prev_g_/prev_vx_ обновляются только внутри блока EKF ниже).
+    // Поэтому якорь используем ТОЛЬКО пока ekf_active — иначе, при выключенном
+    // EKF, a_lin_prev_g_/prev_vx_ заморожены на значении, которое было на
+    // момент выключения (или на 0, если EKF не запускался вовсе), и подавать
+    // их в tilt_est_.Update() было бы хуже, чем не подавать: не «унаследованная
+    // неточность», а протухший на неопределённый срок сигнал.
+    const bool motor_model_anchor_active =
+        ekf_active && stab_cfg_.filter.motor_model_enabled &&
+        !ctx_.auto_drive.IsSpeedCalibActive();
+    const float a_lin_g = motor_model_anchor_active ? a_lin_prev_g_ : 0.0f;
+    // Боковое (центростремительное) ускорение для roll-коррекции —
+    // симметричный аналог a_lin_g для pitch (код-ревью PR #290, 6-й
+    // раунд): без него устойчивый разворот с боковым ускорением ~0.2g
+    // заваливал бы roll тем же путём, каким продольный разгон заваливал
+    // pitch без a_lin_g. a = ω×v для тела, вращающегося вокруг Z со
+    // скоростью gz и движущегося вперёд с vx: a_y = gz·vx (Y_veh,
+    // veh_imu.gz — уже в СК машины, ROTATED выше). В отличие от a_lin_g
+    // НЕ гейтится якорем: vx влияет через pitch/grav_x, roll в этой
+    // формуле не участвует вовсе — циркулярности для roll нет ни при
+    // каком источнике vx (в худшем случае — унаследованная неточность
+    // vx без якоря, не новая расходимость); при выключенном EKF prev_vx_
+    // так же остаётся замороженным, но это лишь неточность roll-коррекции,
+    // не ложное срабатывание safety-лимитера.
+    const float a_lin_lat_g = (veh_imu.gz * kDegToRad) * prev_vx_ / kG;
+    tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
+                         stab_cfg_.filter.tilt_accel_gate_band_g});
+    tilt_est_.Update(veh_imu, a_lin_g, a_lin_lat_g, dt_sec);
+    pitch_rad = tilt_est_.GetPitchRad();
+    roll_rad = tilt_est_.GetRollRad();
+  }
+  // Безусловно (см. комментарий у tilt_active_this_tick выше): фиксирует
+  // «tilt_est_.Update() вызывался этот тик» вне зависимости от того, через
+  // какой именно путь он был пропущен.
+  tilt_was_enabled_ = tilt_active_this_tick;
 
-    // Мотор-модельный якорь (LOS-233) гейтится этим флагом — единственный
-    // сигнал в системе, действительно независимый от IMU/EKF/тангажа.
-    // a_lin_g (ниже) использует a_lin_prev_g_ ТОЛЬКО пока якорь активен —
-    // без него EKF vx не является независимым источником (см. комментарий
-    // у a_lin_prev_g_ в .hpp).
+  if (ekf_active && imu_tick_valid) {
     const auto& f = stab_cfg_.filter;
     const bool motor_model_active =
         f.motor_model_enabled && !ctx_.auto_drive.IsSpeedCalibActive();
 
-    // Ориентация для снятия проекции гравитации из ускорения перед
-    // интеграцией в EKF. Источник по умолчанию — TiltEstimator (LOS-240):
-    // комплементарный фильтр, не загрязняемый линейным ускорением (в
-    // отличие от Madgwick — см. tilt_estimator.hpp). При выключенном
-    // tilt-фильтре — фолбэк на Madgwick (обратная совместимость); при
-    // выключенных обоих — 0 (без grav-компенсации).
-    float pitch_rad = 0.0f, roll_rad = 0.0f;
-    if (stab_cfg_.filter.tilt_comp_enabled) {
-      tilt_active_this_tick = true;
-      if (!tilt_was_enabled_) {
-        // Возобновление после ЛЮБОГО перерыва (см. комментарий у
-        // tilt_active_this_tick выше): pitch_rad_/roll_rad_ заморожены с
-        // последнего Update() — сбрасываем, иначе EKF получит протухший
-        // тангаж/крен из интервала простоя.
-        tilt_est_.Reset();
-      }
-      const float a_lin_g = motor_model_active ? a_lin_prev_g_ : 0.0f;
-      // Боковое (центростремительное) ускорение для roll-коррекции —
-      // симметричный аналог a_lin_g для pitch (код-ревью PR #290, 6-й
-      // раунд): без него устойчивый разворот с боковым ускорением ~0.2g
-      // заваливал бы roll тем же путём, каким продольный разгон заваливал
-      // pitch без a_lin_g. a = ω×v для тела, вращающегося вокруг Z со
-      // скоростью gz и движущегося вперёд с vx: a_y = gz·vx (Y_veh,
-      // veh_imu.gz — уже в СК машины, ROTATED выше). В отличие от a_lin_g
-      // НЕ гейтится якорем: vx влияет через pitch/grav_x, roll в этой
-      // формуле не участвует вовсе — циркулярности для roll нет ни при
-      // каком источнике vx (в худшем случае — унаследованная неточность
-      // vx без якоря, не новая расходимость).
-      constexpr float kDegToRad = 3.14159265358979f / 180.0f;
-      const float a_lin_lat_g = (veh_imu.gz * kDegToRad) * prev_vx_ / kG;
-      tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
-                           stab_cfg_.filter.tilt_accel_gate_band_g});
-      tilt_est_.Update(veh_imu, a_lin_g, a_lin_lat_g, dt_sec);
-      pitch_rad = tilt_est_.GetPitchRad();
-      roll_rad = tilt_est_.GetRollRad();
-    } else {
-      if (stab_cfg_.filter.madgwick_enabled) {
-        float yaw_rad = 0.0f;
-        ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
-      }
+    // pitch_rad/roll_rad уже посчитаны выше через TiltEstimator, если
+    // tilt_comp_enabled. Если нет — фолбэк на Madgwick ТОЛЬКО для
+    // grav-компенсации EKF (обратная совместимость); при выключенных обоих —
+    // 0. Этот фолбэк НЕ используется для fwd_accel_g_ (Kids/телеметрия,
+    // LOS-245) — Madgwick загрязняется линейным ускорением и заваливает
+    // safety-лимитер на разгоне (см. комментарий у fwd_accel_g_ ниже).
+    if (!stab_cfg_.filter.tilt_comp_enabled &&
+        stab_cfg_.filter.madgwick_enabled) {
+      float yaw_rad = 0.0f;
+      ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
     }
+
     // Передаём |commanded_throttle_| для ZUPT gating:
     // если throttle > 2%, ZUPT не применяется (машина пытается ехать).
     ctx_.ekf.UpdateFromImu(veh_imu.ax, veh_imu.ay, veh_imu.az,
@@ -231,17 +265,13 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
 
     // Обновляем оценку продольного линейного ускорения для TiltEstimator
     // СЛЕДУЮЩЕГО тика: конечная разность заякоренного EKF vx этого тика
-    // (потребляется выше только при motor_model_active — иначе EKF vx не
-    // является независимым источником, см. комментарий у a_lin_prev_g_
+    // (потребляется выше только при motor_model_anchor_active — иначе EKF vx
+    // не является независимым источником, см. комментарий у a_lin_prev_g_
     // в .hpp).
     const float vx_now = ctx_.ekf.GetVx();
     a_lin_prev_g_ = (vx_now - prev_vx_) / dt_sec / kG;
     prev_vx_ = vx_now;
   }
-  // Безусловно (см. комментарий у tilt_active_this_tick выше): фиксирует
-  // «tilt_est_.Update() вызывался этот тик» вне зависимости от того, через
-  // какой именно путь он был пропущен.
-  tilt_was_enabled_ = tilt_active_this_tick;
 
   // Продольное ускорение для accel-лимитера Kids Mode и телеметрии (LOS-245).
   // Считается ЗДЕСЬ, а не в ImuCalibration: оценщик тангажа живёт в control
@@ -251,17 +281,20 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   // аргументом). Порядок в Step() гарантирует свежесть: UpdateSensorsAndEkf()
   // → UpdateStabilization() → UpdateTelemetry() в пределах одного тика.
   //
-  // ЕДИНСТВЕННЫЙ допустимый источник тангажа здесь — TiltEstimator. Фолбэка
-  // на Madgwick, в отличие от grav-компенсации EKF выше, НЕТ намеренно:
-  // Madgwick загрязняется линейным ускорением (ровно то, ради чего заводили
-  // LOS-240) и при устойчивом разгоне сходится к atan2(−ax, az), то есть
-  // «объясняет» ускорение наклоном и гасит его почти полностью. Замерено на
-  // стенде (test_control_loop_processor.cpp, ровная площадка, реальные 0.3 g
-  // при пороге 0.15): через Madgwick лимитер слепнет за 0.8 с, через
-  // TiltEstimator — за 2.4 с. Для ДЕТСКОГО лимитера ложноотрицательное
-  // срабатывание (не срезал газ, когда надо) хуже ложноположительного,
-  // поэтому при выключенном tilt-фильтре честно возвращаемся к прежнему
-  // горизонтальному приближению GetForwardAccel(), а не к худшему из двух.
+  // ЕДИНСТВЕННЫЙ допустимый источник тангажа здесь — TiltEstimator, и он
+  // считается ВЫШЕ независимо от ekf_active (см. комментарий в начале
+  // функции) — так что этот блок корректно видит tilt_active_this_tick=true
+  // и при выключенном EKF, если tilt_comp_enabled. Фолбэка на Madgwick здесь
+  // намеренно нет: Madgwick загрязняется линейным ускорением (ровно то, ради
+  // чего заводили LOS-240) и при устойчивом разгоне сходится к
+  // atan2(−ax, az), то есть «объясняет» ускорение наклоном и гасит его почти
+  // полностью. Замерено на стенде (test_control_loop_processor.cpp, ровная
+  // площадка, реальные 0.3 g при пороге 0.15): через Madgwick лимитер
+  // слепнет за 0.8 с, через TiltEstimator — за 2.4 с. Для ДЕТСКОГО лимитера
+  // ложноотрицательное срабатывание (не срезал газ, когда надо) хуже
+  // ложноположительного, поэтому при выключенном tilt-фильтре честно
+  // возвращаемся к прежнему горизонтальному приближению GetForwardAccel(),
+  // а не к худшему из двух.
   //
   // ВАЖНО (известное ограничение): даже TiltEstimator не отличает УСТОЙЧИВОЕ
   // продольное ускорение от наклона — с постоянной времени 1/corr_gain_hz
