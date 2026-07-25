@@ -84,6 +84,9 @@ class ControlLoopProcessor {
   // Per-iteration mutable state
   float commanded_throttle_{0.0f};
   float commanded_steering_{0.0f};
+  // Команда источника управления прошлого тика до Kids/stabilization. Это
+  // независимый от speed limiter вход моторной модели EKF (LOS-246).
+  float motor_model_throttle_{0.0f};
   float applied_throttle_{0.0f};
   float applied_steering_{0.0f};
   float prev_gz_rad_s_{0.0f};

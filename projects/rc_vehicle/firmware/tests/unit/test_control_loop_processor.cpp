@@ -198,6 +198,43 @@ TEST_F(ProcessorTest, WifiCommand_WithTrim_OffsetApplied) {
   EXPECT_NEAR(platform_.GetLastSteering(), 0.2f + 0.05f, 1e-4f);
 }
 
+TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
+  // LOS-246: speed limiter меняет commanded_throttle_ в
+  // UpdateStabilization(). Мотор-модель на следующем тике не должна читать
+  // этот выход, иначе лимитер влияет на EKF-скорость, по которой сам же
+  // регулирует.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+  kids_processor_.Init(ekf_, &imu_handler);
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  cfg.kids_mode.throttle_limit = 0.3f;
+  cfg.kids_mode.slew_throttle = 100.0f;
+  cfg.kids_mode.speed_limit_enabled = true;
+  cfg.kids_mode.max_speed_ms = 0.5f;
+  cfg.kids_mode.speed_limit_gain = 1.0f;
+  cfg.filter.motor_deadzone = 0.0f;
+  cfg.filter.motor_speed_gain = 8.0f;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({0.3f, 0.0f});
+
+  Step();  // сохраняет pre-limiter command=0.3 для следующего тика
+  ekf_.SetState(2.0f, 0.0f, 0.0f);
+  Step();  // speed limiter активен и урезает PWM ниже 0.3
+  ASSERT_TRUE(kids_processor_.IsSpeedLimitActive());
+  ASSERT_LT(platform_.GetLastThrottle(), 0.3f);
+
+  Step();
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 2.4f, 1e-4f)
+      << "мотор-модель не должна получать throttle после speed limiter";
+}
+
 TEST_F(ProcessorTest, NoCommand_NeutralPwm_AfterFailsafe) {
   SetDirectLaw();
   Step();  // нет источника управления → failsafe → neutral

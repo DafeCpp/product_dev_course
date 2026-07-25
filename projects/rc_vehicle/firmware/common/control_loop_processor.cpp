@@ -70,6 +70,13 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
   UpdateAutoDrive(now, dt_ms);
+  // Мотор-модельный якорь должен видеть намерение источника управления, а не
+  // результат стабилизаторов. В частности, Kids speed limiter регулирует
+  // commanded_throttle_ ниже: если отдать в EKF уже урезанный выход, лимитер
+  // начинает менять оценку скорости, по которой сам регулирует (LOS-246).
+  // Снимок используется на следующем тике в UpdateSensorsAndEkf(), сохраняя
+  // прежнюю однотиковую задержку входа моторной модели.
+  motor_model_throttle_ = commanded_throttle_;
   PROF_LAP(prof_control_us_);
 
   UpdateStabilization(dt_ms);
@@ -202,11 +209,13 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     // Якорь продольной скорости через мотор-модель (LOS-233): без датчика
     // колёс единственный способ не дать vx уйти в разнос при интеграции IMU.
     // v ≈ gain·throttle (с мёртвой зоной) подаётся слабым измерением.
-    // Вход модели — applied_throttle_ (значение прошлого тика, после slew и
-    // trim): это то, что реально ушло в PWM. Команда при slew-рампе прыгает
-    // мгновенно и завышала бы ожидаемую скорость на всё время рампы.
+    // Вход модели — motor_model_throttle_ (команда прошлого тика до
+    // стабилизаторов). Это намеренно не applied_throttle_: Kids speed limiter
+    // регулирует по EKF и иначе образует положительную обратную связь через
+    // собственное измерение скорости (LOS-246). Однотиковая задержка
+    // сохраняет порядок исполнения контура.
     if (motor_model_active) {
-      const float thr = applied_throttle_;
+      const float thr = motor_model_throttle_;
       const float thr_abs = std::abs(thr);
       float v_expected = 0.0f;
       if (thr_abs > f.motor_deadzone && f.motor_deadzone < 1.0f) {
