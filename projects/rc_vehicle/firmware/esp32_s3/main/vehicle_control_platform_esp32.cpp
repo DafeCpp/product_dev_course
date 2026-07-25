@@ -128,40 +128,58 @@ void VehicleControlPlatformEsp32::LogCoreLoad() const {
   // ищем задачи с именами "IDLE0"/"IDLE1": эта нумерация — часть самого
   // FreeRTOS-Kernel (tasks.c, prvCreateIdleTasks(), не Kconfig-опция) и
   // одинакова на всех версиях с configNUMBER_OF_CORES > 1.
-  constexpr UBaseType_t kMaxTasks = 24;
+  // Код-ревью PR #297: uxTaskGetSystemState() не отдаёт частичный результат
+  // и total_run_time при массиве меньше текущего числа задач (вернёт 0
+  // задач) — молча теряем диагностику именно на полностью загруженной
+  // системе (WiFi+HTTP+DNS+WS+UDP+control+...), ради которой она и нужна.
+  // Проверяем живое число задач и явно предупреждаем, если не влезаем,
+  // вместо тихого no-op.
+  constexpr UBaseType_t kMaxTasks = 32;
   static TaskStatus_t
       task_status[kMaxTasks];  // static — не в стеке control-таска
+  const UBaseType_t live_task_count = uxTaskGetNumberOfTasks();
+  if (live_task_count > kMaxTasks) {
+    ESP_LOGW(TAG, "LogCoreLoad: %u tasks > kMaxTasks=%u, пропущено",
+             static_cast<unsigned>(live_task_count),
+             static_cast<unsigned>(kMaxTasks));
+    return;
+  }
+
   configRUN_TIME_COUNTER_TYPE total_run_time = 0;
   const UBaseType_t num_tasks =
       uxTaskGetSystemState(task_status, kMaxTasks, &total_run_time);
   if (total_run_time == 0) return;
 
-  // total_run_time на SMP (2 ядра) — сумма runtime-счётчиков ВСЕХ задач на
-  // ОБОИХ ядрах (оба всегда что-то исполняют, включая собственный IDLE),
-  // т.е. ~2x "настенного" времени интервала. Нормируем на
-  // total_run_time/configNUMBER_OF_CORES — стандартный приём для per-core
-  // CPU% на ESP-IDF SMP FreeRTOS.
-  const float per_core_total =
-      static_cast<float>(total_run_time) / configNUMBER_OF_CORES;
+  // Код-ревью PR #297: pulTotalRunTime у uxTaskGetSystemState() —
+  // ЕДИНЫЙ общий счётчик (*pulTotalRunTime = portGET_RUN_TIME_COUNTER_
+  // VALUE(); см. FreeRTOS-Kernel/tasks.c), а НЕ сумма per-task счётчиков
+  // по обоим ядрам. Задача исполняется только на ОДНОМ ядре одновременно,
+  // поэтому её доля от total_run_time — это уже её доля от общего
+  // таймлайна; деление на configNUMBER_OF_CORES было ошибкой и удваивало
+  // все проценты (IDLE, занимающий 100% своего ядра, показывал бы 200%,
+  // busy% уходил в -100%).
   float idle_pct[2] = {-1.f, -1.f};  // -1 = не найдено (< 2 ядер/имя другое)
 
+  // Код-ревью PR #297: сканируем ВСЕ num_tasks на IDLE0/IDLE1 независимо
+  // от заполненности текстового буфера — иначе на системе с большим
+  // числом задач переполнение buffer[] могло прервать цикл ДО того, как
+  // встретится IDLE-задача, и её % терялся бы молча (не просто не попадал
+  // бы в текстовую строку). Буфер ограничивает только вывод текста.
   char buffer[400];
   int off = snprintf(buffer, sizeof(buffer), "CORE TASKS:");
-  for (UBaseType_t i = 0;
-       i < num_tasks && off > 0 && off < static_cast<int>(sizeof(buffer)) - 32;
-       ++i) {
+  for (UBaseType_t i = 0; i < num_tasks; ++i) {
     const auto& t = task_status[i];
-    const float pct =
-        per_core_total > 0.f
-            ? 100.f * static_cast<float>(t.ulRunTimeCounter) / per_core_total
-            : 0.f;
+    const float pct = 100.f * static_cast<float>(t.ulRunTimeCounter) /
+                      static_cast<float>(total_run_time);
     if (strcmp(t.pcTaskName, "IDLE0") == 0) {
       idle_pct[0] = pct;
     } else if (strcmp(t.pcTaskName, "IDLE1") == 0) {
       idle_pct[1] = pct;
     }
-    off += snprintf(buffer + off, sizeof(buffer) - off, " %s=%.1f%%",
-                    t.pcTaskName, pct);
+    if (off > 0 && off < static_cast<int>(sizeof(buffer)) - 32) {
+      off += snprintf(buffer + off, sizeof(buffer) - off, " %s=%.1f%%",
+                      t.pcTaskName, pct);
+    }
   }
   ESP_LOGI(TAG, "%s", buffer);
 
