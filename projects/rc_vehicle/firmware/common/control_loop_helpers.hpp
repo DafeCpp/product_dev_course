@@ -152,6 +152,43 @@ inline AutoDriveInput BuildAutoDriveInput(const SensorSnapshot& sensors,
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+// ComputeForwardAccelG
+// ═════════════════════════════════════════════════════════════════════════
+
+/**
+ * Продольное ЛИНЕЙНОЕ ускорение [g] со снятием гравитации по ТЕКУЩЕЙ
+ * ориентации (LOS-245). Положительное = ускорение вперёд.
+ *
+ * ImuCalibration::GetForwardAccel() вычитает КОНСТАНТНЫЙ RestDownVec(), то
+ * есть неявно считает машину горизонтальной, и при реальном тангаже отдаёт
+ * наклон вместо ускорения: в ось «вперёд» протекает sin(pitch)·g. По логу
+ * ночного заезда 25.07 (LOS-244) утечка имела медиану 0.021 g и p95 0.253 g
+ * против медианы 0.010 g полезного сигнала — то есть вдвое превышала его, и
+ * accel-лимитер Kids Mode (порог 0.15 g подделывается тангажом всего в 8.6°)
+ * срезал газ на кочках и клевках вместо разгона.
+ *
+ * Здесь гравитация снимается так же, как в VehicleEkf::UpdateFromImu()
+ * (grav_x = −sin(pitch), см. vehicle_ekf.cpp): это тот же фикс, что уже
+ * сделан для EKF в LOS-232/LOS-240, распространённый на этого потребителя.
+ *
+ * @param veh_imu     accel ПОСЛЕ Apply() и RotateToVehicleFrame() — ax уже
+ *                    есть ось «вперёд» (та же ортогонализованная
+ *                    accel_forward_vec, что использует GetForwardAccel(),
+ *                    поэтому на горизонтали значения совпадают).
+ * @param sensor_imu  те же данные ДО ротации — нужны только для фолбэка.
+ * @param tilt_valid  есть ли оценка тангажа. false → деградация до
+ *                    GetForwardAccel() (верно только на горизонтали, но не
+ *                    хуже прежнего поведения).
+ */
+inline float ComputeForwardAccelG(const ImuCalibration& imu_calib,
+                                  const ImuData& veh_imu,
+                                  const ImuData& sensor_imu, float pitch_rad,
+                                  bool tilt_valid) {
+  if (!tilt_valid) return imu_calib.GetForwardAccel(sensor_imu);
+  return veh_imu.ax + std::sin(pitch_rad);
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 // CorrectImuForComOffset
 // ═════════════════════════════════════════════════════════════════════════
 

@@ -121,27 +121,32 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   // imu_enabled=false, dt_ms==0 (код-ревью PR #290, 10-й раунд) — во всех
   // случаях pitch_rad_/roll_rad_ замораживаются одинаково.
   bool tilt_active_this_tick = false;
+
+  // Ротация в СК машины (код-ревью PR #290, 3-й раунд): и EKF (grav_x/
+  // grav_y от pitch_rad/roll_rad — СК машины), и TiltEstimator ожидают
+  // vehicle-frame accel/gyro, а sensors_.imu_data — bias-corrected, но НЕ
+  // повёрнутые данные в СК ДАТЧИКА. При наклонном и/или yaw-смещённом
+  // монтаже (Forward-калибровка существует именно для произвольного
+  // разворота IMU на плате) без поворота реальное продольное ускорение
+  // могло бы частично или полностью уйти в «боковую» ось EKF — machine
+  // считала бы, что не разгоняется, а сносит вбок. gz НЕ поворачиваем:
+  // sensors_.filtered_gz — общий LPF-сигнал yaw rate для yaw-rate control/
+  // auto-drive/калибровок (stabilization_pipeline.cpp,
+  // control_loop_helpers.hpp), и его поворот только для EKF завёл бы два
+  // рассинхронизированных «yaw rate» в системе; для чистого yaw-монтажа gz
+  // инвариантен (вращение вокруг Z не меняет Z-компоненту), полный фикс —
+  // перенос ротации перед LPF для всех потребителей разом, отдельная
+  // задача.
+  //
+  // Считается ВНЕ блока EKF ниже (LOS-245): результат нужен ещё и для
+  // продольного ускорения Kids Mode/телеметрии, которое обязано считаться
+  // на каждом тике с включённой IMU — в том числе при выключенном EKF.
+  ImuData veh_imu = sensors_.imu_data;
+  if (sensors_.imu_enabled) ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
+
   if (ekf_active && sensors_.imu_enabled && dt_ms > 0) {
     const float dt_sec = static_cast<float>(dt_ms) * 0.001f;
     constexpr float kG = 9.80665f;
-
-    // Ротация в СК машины (код-ревью PR #290, 3-й раунд): и EKF (grav_x/
-    // grav_y от pitch_rad/roll_rad — СК машины), и TiltEstimator ожидают
-    // vehicle-frame accel/gyro, а sensors_.imu_data — bias-corrected, но НЕ
-    // повёрнутые данные в СК ДАТЧИКА. При наклонном и/или yaw-смещённом
-    // монтаже (Forward-калибровка существует именно для произвольного
-    // разворота IMU на плате) без поворота реальное продольное ускорение
-    // могло бы частично или полностью уйти в «боковую» ось EKF — machine
-    // считала бы, что не разгоняется, а сносит вбок. gz НЕ поворачиваем:
-    // sensors_.filtered_gz — общий LPF-сигнал yaw rate для yaw-rate control/
-    // auto-drive/калибровок (stabilization_pipeline.cpp,
-    // control_loop_helpers.hpp), и его поворот только для EKF завёл бы два
-    // рассинхронизированных «yaw rate» в системе; для чистого yaw-монтажа gz
-    // инвариантен (вращение вокруг Z не меняет Z-компоненту), полный фикс —
-    // перенос ротации перед LPF для всех потребителей разом, отдельная
-    // задача.
-    ImuData veh_imu = sensors_.imu_data;
-    ctx_.imu_calib.RotateToVehicleFrame(veh_imu);
 
     // Мотор-модельный якорь (LOS-233) гейтится этим флагом — единственный
     // сигнал в системе, действительно независимый от IMU/EKF/тангажа.
@@ -238,6 +243,33 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   // какой именно путь он был пропущен.
   tilt_was_enabled_ = tilt_active_this_tick;
 
+  // Продольное ускорение для accel-лимитера Kids Mode и телеметрии (LOS-245).
+  // Считается ЗДЕСЬ, а не в ImuCalibration: оценщик тангажа живёт в control
+  // loop, и тянуть зависимость от него в калибровку означало бы связать
+  // низкоуровневый bias-слой с фильтрами ориентации. Потребители получают
+  // готовое число (KidsModeProcessor::Process() уже принимает его
+  // аргументом). Порядок в Step() гарантирует свежесть: UpdateSensorsAndEkf()
+  // → UpdateStabilization() → UpdateTelemetry() в пределах одного тика.
+  //
+  // Источник тангажа — та же цепочка деградации, что у grav-компенсации EKF
+  // выше: TiltEstimator → Madgwick → нет оценки (фолбэк на прежнее
+  // горизонтальное приближение). Ни в одной конфигурации не хуже прежнего.
+  fwd_accel_g_ = 0.0f;
+  if (sensors_.imu_enabled) {
+    float pitch_rad = 0.0f;
+    bool tilt_valid = false;
+    if (tilt_active_this_tick) {
+      pitch_rad = tilt_est_.GetPitchRad();
+      tilt_valid = true;
+    } else if (stab_cfg_.filter.madgwick_enabled) {
+      float roll_rad = 0.0f, yaw_rad = 0.0f;
+      ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
+      tilt_valid = true;
+    }
+    fwd_accel_g_ = ComputeForwardAccelG(
+        ctx_.imu_calib, veh_imu, sensors_.imu_data, pitch_rad, tilt_valid);
+  }
+
   if (ekf_active && sensors_.imu_enabled && sensors_.mag_enabled) {
     constexpr float kDegToRad = 3.14159265358979f / 180.0f;
     ctx_.ekf.UpdateHeading(sensors_.heading_deg * kDegToRad);
@@ -267,12 +299,11 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
 
   if (traits.apply_input_limits) {
-    float kids_fwd_accel = 0.0f;
-    if (sensors_.imu_enabled) {
-      kids_fwd_accel = ctx_.imu_calib.GetForwardAccel(sensors_.imu_data);
-    }
+    // fwd_accel_g_ посчитан в UpdateSensorsAndEkf() этого же тика с учётом
+    // текущего тангажа (LOS-245) — раньше здесь звался GetForwardAccel(),
+    // считавший машину всегда горизонтальной.
     ctx_.kids_processor.Process(stab_cfg_, commanded_throttle_,
-                                commanded_steering_, dt_ms, kids_fwd_accel);
+                                commanded_steering_, dt_ms, fwd_accel_g_);
   }
 
   const float sw = ctx_.stab_mgr->GetStabilizationWeight();
@@ -357,9 +388,10 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
   const DriveMode drive_mode = stab_cfg_.mode;
 
   if (ctx_.telem_handler) {
-    auto snap = BuildTelemetrySnapshot(
-        tctx, now, sensors_, stab_cfg_, drive_mode, applied_throttle_,
-        applied_steering_, commanded_throttle_, commanded_steering_);
+    auto snap = BuildTelemetrySnapshot(tctx, now, sensors_, stab_cfg_,
+                                       drive_mode, applied_throttle_,
+                                       applied_steering_, commanded_throttle_,
+                                       commanded_steering_, fwd_accel_g_);
     // FW-RF8: failsafe в снимок — чтобы JSON строился в задаче телеметрии без
     // обращения к платформе из чужого потока.
     snap.failsafe = ctx_.platform.FailsafeIsActive();

@@ -19,22 +19,20 @@ class ProcessorTest : public ::testing::Test {
   void SetUp() override {
     stab_mgr_ = std::make_unique<StabilizationManager>(
         platform_, madgwick_, yaw_ctrl_, slip_ctrl_, nullptr);
-    calib_mgr_ = std::make_unique<CalibrationManager>(
-        platform_, imu_calib_, madgwick_, &ekf_);
-    wifi_handler_ = std::make_unique<WifiCommandHandler>(
-        platform_, /*timeout_ms=*/500);
+    calib_mgr_ = std::make_unique<CalibrationManager>(platform_, imu_calib_,
+                                                      madgwick_, &ekf_);
+    wifi_handler_ =
+        std::make_unique<WifiCommandHandler>(platform_, /*timeout_ms=*/500);
     telem_mgr_ = std::make_unique<TelemetryManager>();
     telem_mgr_->Init(1000);
 
     auto_drive_.SetCalibrationManager(calib_mgr_.get());
 
     ctx_ = std::make_unique<ControlLoopContext>(ControlLoopContext{
-        platform_,        imu_calib_,        madgwick_,       ekf_,
-        yaw_ctrl_,        pitch_ctrl_,        slip_ctrl_,      oversteer_guard_,
-        kids_processor_,  auto_drive_,
-        calib_mgr_.get(), stab_mgr_.get(),    telem_mgr_.get(),
-        nullptr,          wifi_handler_.get(), nullptr, nullptr,
-        last_loop_hz_});
+        platform_, imu_calib_, madgwick_, ekf_, yaw_ctrl_, pitch_ctrl_,
+        slip_ctrl_, oversteer_guard_, kids_processor_, auto_drive_,
+        calib_mgr_.get(), stab_mgr_.get(), telem_mgr_.get(), nullptr,
+        wifi_handler_.get(), nullptr, nullptr, last_loop_hz_});
 
     processor_ = std::make_unique<ControlLoopProcessor>(*ctx_, 0);
   }
@@ -82,23 +80,18 @@ class ProcessorTest : public ::testing::Test {
 // Базовые инварианты
 // ═══════════════════════════════════════════════════════════════════════════
 
-TEST_F(ProcessorTest, SingleStep_NoCrash) {
-  EXPECT_NO_THROW(Step());
-}
+TEST_F(ProcessorTest, SingleStep_NoCrash) { EXPECT_NO_THROW(Step()); }
 
-TEST_F(ProcessorTest, MultipleSteps_NoCrash) {
-  EXPECT_NO_THROW(RunSteps(50));
-}
+TEST_F(ProcessorTest, MultipleSteps_NoCrash) { EXPECT_NO_THROW(RunSteps(50)); }
 
 TEST_F(ProcessorTest, NullHandlers_NoCrash) {
   // Пересобрать с минимальным контекстом (rc/imu/telem handler = null)
-  ControlLoopContext minimal_ctx{
-      platform_,        imu_calib_,        madgwick_,       ekf_,
-      yaw_ctrl_,        pitch_ctrl_,        slip_ctrl_,      oversteer_guard_,
-      kids_processor_,  auto_drive_,
-      calib_mgr_.get(), stab_mgr_.get(),    nullptr,
-      nullptr,          nullptr,            nullptr, nullptr,
-      last_loop_hz_};
+  ControlLoopContext minimal_ctx{platform_,   imu_calib_,       madgwick_,
+                                 ekf_,        yaw_ctrl_,        pitch_ctrl_,
+                                 slip_ctrl_,  oversteer_guard_, kids_processor_,
+                                 auto_drive_, calib_mgr_.get(), stab_mgr_.get(),
+                                 nullptr,     nullptr,          nullptr,
+                                 nullptr,     nullptr,          last_loop_hz_};
   ControlLoopProcessor proc(minimal_ctx, 0);
   EXPECT_NO_THROW(proc.Step(2, 2));
 }
@@ -229,9 +222,11 @@ TEST_F(ProcessorTest, SlewRate_EventuallyReachesTarget) {
 // BrakingMode
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Включить BrakingMode::Brake в Normal mode (slew_throttle=0.5, mult=4 → 2/s) */
+/** Включить BrakingMode::Brake в Normal mode (slew_throttle=0.5, mult=4 → 2/s)
+ */
 // Note: helper defined as free function to avoid name clash with member
-static void SetBrakeMode(StabilizationManager& stab_mgr, float multiplier = 4.0f) {
+static void SetBrakeMode(StabilizationManager& stab_mgr,
+                         float multiplier = 4.0f) {
   auto cfg = stab_mgr.GetConfig();
   cfg.braking_mode = BrakingMode::Brake;
   cfg.brake_slew_multiplier = multiplier;
@@ -598,12 +593,130 @@ TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
 TEST_F(ProcessorTest, CalibMgr_Null_NoCrash) {
   // Пересобрать без calib_mgr
   ControlLoopContext ctx{
-      platform_,  imu_calib_, madgwick_,       ekf_,
-      yaw_ctrl_,  pitch_ctrl_, slip_ctrl_,      oversteer_guard_,
-      kids_processor_, auto_drive_,
-      nullptr,    stab_mgr_.get(), telem_mgr_.get(),
-      nullptr,    nullptr,         nullptr, nullptr,
-      last_loop_hz_};
+      platform_,        imu_calib_,   madgwick_,  ekf_,
+      yaw_ctrl_,        pitch_ctrl_,  slip_ctrl_, oversteer_guard_,
+      kids_processor_,  auto_drive_,  nullptr,    stab_mgr_.get(),
+      telem_mgr_.get(), nullptr,      nullptr,    nullptr,
+      nullptr,          last_loop_hz_};
   ControlLoopProcessor proc(ctx, 0);
   EXPECT_NO_THROW(proc.Step(2, 2));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Kids Mode: accel-лимитер и тангаж (LOS-245)
+//
+// GetForwardAccel() снимал гравитацию по КОНСТАНТНОМУ RestDownVec(), то есть
+// считал машину всегда горизонтальной, и при тангаже отдавал sin(pitch)·g
+// вместо ускорения. По логу ночного заезда 25.07 утечка превышала порог
+// accel-лимитера (0.15 g ⇔ тангаж 8.6°) в 8.9 % сэмплов, тогда как реальное
+// продольное ускорение имело медиану 0.010 g. Отдельная фикстура: ProcessorTest
+// собран без ImuHandler (imu_enabled=false), а здесь нужен живой IMU-путь.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class KidsAccelLimitTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    stab_mgr_ = std::make_unique<StabilizationManager>(
+        platform_, madgwick_, yaw_ctrl_, slip_ctrl_, nullptr);
+    calib_mgr_ = std::make_unique<CalibrationManager>(platform_, imu_calib_,
+                                                      madgwick_, &ekf_);
+    wifi_handler_ = std::make_unique<WifiCommandHandler>(platform_, 500);
+    imu_handler_ =
+        std::make_unique<ImuHandler>(platform_, imu_calib_, madgwick_, 2);
+    imu_handler_->SetEnabled(true);
+    telem_mgr_ = std::make_unique<TelemetryManager>();
+    telem_mgr_->Init(1000);
+    auto_drive_.SetCalibrationManager(calib_mgr_.get());
+
+    ctx_ = std::make_unique<ControlLoopContext>(ControlLoopContext{
+        platform_, imu_calib_, madgwick_, ekf_, yaw_ctrl_, pitch_ctrl_,
+        slip_ctrl_, oversteer_guard_, kids_processor_, auto_drive_,
+        calib_mgr_.get(), stab_mgr_.get(), telem_mgr_.get(), nullptr,
+        wifi_handler_.get(), imu_handler_.get(), nullptr, last_loop_hz_});
+    processor_ = std::make_unique<ControlLoopProcessor>(*ctx_, 0);
+
+    auto cfg = stab_mgr_->GetConfig();
+    cfg.mode = DriveMode::Kids;
+    stab_mgr_->SetConfig(cfg);
+  }
+
+  void RunSteps(uint32_t n) {
+    for (uint32_t i = 0; i < n; ++i) {
+      time_ms_ += 2;
+      processor_->Step(time_ms_, 2);
+    }
+  }
+
+  /** Показания IMU в покое при заданном тангаже [рад].
+   *  Нос ВНИЗ = pitch < 0 → ax > 0, то есть клевок читается как «разгон». */
+  static ImuData AtRestWithPitch(float pitch_rad) {
+    ImuData d{};
+    d.ax = -std::sin(pitch_rad);
+    d.az = std::cos(pitch_rad);
+    return d;
+  }
+
+  FakePlatform platform_;
+  ImuCalibration imu_calib_;
+  MadgwickFilter madgwick_;
+  VehicleEkf ekf_;
+  YawRateController yaw_ctrl_;
+  PitchCompensator pitch_ctrl_;
+  SlipAngleController slip_ctrl_;
+  OversteerGuard oversteer_guard_;
+  KidsModeProcessor kids_processor_;
+  AutoDriveCoordinator auto_drive_;
+  std::atomic<uint32_t> last_loop_hz_{0};
+
+  std::unique_ptr<StabilizationManager> stab_mgr_;
+  std::unique_ptr<CalibrationManager> calib_mgr_;
+  std::unique_ptr<WifiCommandHandler> wifi_handler_;
+  std::unique_ptr<ImuHandler> imu_handler_;
+  std::unique_ptr<TelemetryManager> telem_mgr_;
+  std::unique_ptr<ControlLoopContext> ctx_;
+  std::unique_ptr<ControlLoopProcessor> processor_;
+
+  uint32_t time_ms_{0};
+};
+
+TEST_F(KidsAccelLimitTest, StaticNoseDownTilt_DoesNotTriggerAccelLimit) {
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+  const ImuData tilted = AtRestWithPitch(kPitchRad);
+
+  // Дискриминативность: прежний путь на СТОЯЩЕЙ машине выдавал ускорение выше
+  // порога лимитера — этот тест падает на реализации до LOS-245.
+  EXPECT_GT(imu_calib_.GetForwardAccel(tilted), 0.15f);
+
+  // Фаза 1: машина стоит носом вниз, газа нет — TiltEstimator сходится к
+  // −15°. При corr_gain_hz=0.5 постоянная времени 2 с, 6 с дают ~95 %.
+  platform_.SetImuData(tilted);
+  platform_.SetWifiCommand(RcCommand{0.0f, 0.0f});
+  RunSteps(3000);
+
+  // Фаза 2: даём газ, оставаясь на том же уклоне. Ускорения по-прежнему нет —
+  // акселерометр показывает только проекцию гравитации.
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(200);
+
+  EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
+      << "accel-лимитер сработал на статическом наклоне без ускорения";
+}
+
+TEST_F(KidsAccelLimitTest, RealAccelerationOnSlope_StillTriggersAccelLimit) {
+  // Обратная сторона: компенсация не должна ослеплять лимитер там, где
+  // ускорение настоящее.
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+
+  platform_.SetImuData(AtRestWithPitch(kPitchRad));
+  platform_.SetWifiCommand(RcCommand{0.0f, 0.0f});
+  RunSteps(3000);
+
+  ImuData accelerating = AtRestWithPitch(kPitchRad);
+  accelerating.ax += 0.4f;  // реальный разгон 0.4 g поверх уклона
+  platform_.SetImuData(accelerating);
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(50);  // коротко: TiltEstimator не успевает «съесть» разгон
+
+  EXPECT_TRUE(kids_processor_.IsAccelLimitActive())
+      << "лимитер пропустил реальный разгон 0.4 g";
 }
