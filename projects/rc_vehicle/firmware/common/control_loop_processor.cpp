@@ -446,8 +446,7 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
 
   if (traits.use_slew_rate) {
     const uint32_t pwm_dt_ms = now - last_pwm_update_;
-    const bool pwm_updated =
-        pwm_dt_ms >= config::PwmConfig::kUpdateIntervalMs;
+    const bool pwm_updated = pwm_dt_ms >= config::PwmConfig::kUpdateIntervalMs;
     float effective_slew_thr = stab_cfg_.slew_throttle;
     if (stab_cfg_.braking_mode == BrakingMode::Brake &&
         std::abs(commanded_throttle_) < std::abs(applied_throttle_)) {
