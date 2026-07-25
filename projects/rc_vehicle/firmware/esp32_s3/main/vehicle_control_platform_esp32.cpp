@@ -1,5 +1,6 @@
 #include "vehicle_control_platform_esp32.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <firmware_common/esp32/ws_telem_channel.hpp>
 
@@ -110,6 +111,59 @@ void VehicleControlPlatformEsp32::Log(LogLevel level,
       ESP_LOGE(TAG, "%s", buffer);
       break;
   }
+}
+
+void VehicleControlPlatformEsp32::LogCoreLoad() const {
+  // LOS-219/250: узнать, простаивает ли ядро с веб-стеком (httpd/WS без
+  // core-affinity, WiFi driver task пиннен на core 0), пока control-таск
+  // (core 1, макс. приоритет) перегружен. Нужны CONFIG_FREERTOS_USE_
+  // TRACE_FACILITY и CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS (sdkconfig.
+  // defaults). ulRunTimeCounter кумулятивен с загрузки, не скользящее окно —
+  // достаточно для диагностической сессии в несколько минут.
+  constexpr UBaseType_t kMaxTasks = 24;
+  static TaskStatus_t
+      task_status[kMaxTasks];  // static — не в стеке control-таска
+  configRUN_TIME_COUNTER_TYPE total_run_time = 0;
+  const UBaseType_t num_tasks =
+      uxTaskGetSystemState(task_status, kMaxTasks, &total_run_time);
+  if (total_run_time == 0) return;
+
+  // total_run_time на SMP (2 ядра) — сумма runtime-счётчиков ВСЕХ задач на
+  // ОБОИХ ядрах (оба всегда что-то исполняют, включая собственный IDLE),
+  // т.е. ~2x "настенного" времени интервала. Нормируем на
+  // total_run_time/configNUMBER_OF_CORES — стандартный приём для per-core
+  // CPU% на ESP-IDF SMP FreeRTOS.
+  const float per_core_total =
+      static_cast<float>(total_run_time) / configNUMBER_OF_CORES;
+  float idle_pct[configNUMBER_OF_CORES] = {};
+
+  char buffer[400];
+  int off = snprintf(buffer, sizeof(buffer), "CORE TASKS:");
+  for (UBaseType_t i = 0;
+       i < num_tasks && off > 0 && off < static_cast<int>(sizeof(buffer)) - 48;
+       ++i) {
+    const auto& t = task_status[i];
+    const float pct =
+        per_core_total > 0.f
+            ? 100.f * static_cast<float>(t.ulRunTimeCounter) / per_core_total
+            : 0.f;
+    const bool pinned = (t.xCoreID == 0 || t.xCoreID == 1);
+    if (pinned && strncmp(t.pcTaskName, "IDLE", 4) == 0) {
+      idle_pct[t.xCoreID] = pct;
+    }
+    off += snprintf(buffer + off, sizeof(buffer) - off, " %s(c%s)=%.1f%%",
+                    t.pcTaskName, pinned ? (t.xCoreID == 0 ? "0" : "1") : "?",
+                    pct);
+  }
+  ESP_LOGI(TAG, "%s", buffer);
+
+  char summary[96];
+  int soff = 0;
+  for (int c = 0; c < configNUMBER_OF_CORES; ++c) {
+    soff += snprintf(summary + soff, sizeof(summary) - soff,
+                     "core%d_busy=%.1f%% ", c, 100.f - idle_pct[c]);
+  }
+  ESP_LOGI(TAG, "CORE LOAD: %s", summary);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

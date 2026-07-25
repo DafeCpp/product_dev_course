@@ -144,6 +144,11 @@ class ControlLoopProcessor {
   uint64_t prof_cfg_us_{0};
   uint64_t prof_components_us_{0};
   uint64_t prof_sensors_us_{0};
+  // LOS-219/250: разбивка sens на BuildSensorSnapshot+ComOffset (snapshot)
+  // vs ротация/TiltEstimator/EKF-обновления (ekf) — sens вторая по размеру
+  // стадия после comp и полностью непрозрачна без этой разбивки.
+  uint64_t prof_snapshot_us_{0};
+  uint64_t prof_ekf_us_{0};
   uint64_t prof_control_us_{0};
   uint64_t prof_stab_us_{0};
   uint64_t prof_pwm_us_{0};
@@ -158,6 +163,8 @@ class ControlLoopProcessor {
   uint64_t prof_cfg_max_us_{0};
   uint64_t prof_components_max_us_{0};
   uint64_t prof_sensors_max_us_{0};
+  uint64_t prof_snapshot_max_us_{0};
+  uint64_t prof_ekf_max_us_{0};
   uint64_t prof_control_max_us_{0};
   uint64_t prof_stab_max_us_{0};
   uint64_t prof_pwm_max_us_{0};

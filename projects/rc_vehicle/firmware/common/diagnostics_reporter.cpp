@@ -27,6 +27,10 @@ void PrintDiagnostics(const DiagnosticsContext& ctx,
     ctx.platform.Log(LogLevel::Info, fmt.str());
   }
 
+  // LOS-219/250: загрузка ядер — не связано с RC_PROFILE_LOOP, no-op на
+  // хосте/симуляторе (см. VehicleControlPlatform::LogCoreLoad()).
+  ctx.platform.LogCoreLoad();
+
   if (ctx.imu_handler && ctx.imu_handler->IsEnabled()) {
     float pitch_deg = 0.f, roll_deg = 0.f, yaw_deg = 0.f;
     ctx.madgwick.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);

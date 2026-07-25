@@ -253,12 +253,25 @@ class ImuHandler : public ControlComponent {
   [[nodiscard]] uint64_t GetProfRestMaxUs() const noexcept {
     return prof_rest_max_us_;
   }
+  /**
+   * @brief Только platform_.ReadMag() (раз в kMagReadIntervalMs=10мс, т.е.
+   * каждый 5-й вызов Update()) — проверка гипотезы, что скачок rest_max
+   * (~2.6x от rest_avg) вызван именно I2C/SPI-транзакцией магнетометра,
+   * а не Madgwick/калибровкой. Комментарий в .cpp оценивал ~350 мкс —
+   * здесь измеряем фактически.
+   */
+  [[nodiscard]] uint64_t GetProfMagUs() const noexcept { return prof_mag_us_; }
+  [[nodiscard]] uint64_t GetProfMagMaxUs() const noexcept {
+    return prof_mag_max_us_;
+  }
   /** Сбросить накопленные тайминги (вызывается из EmitProfile()). */
   void ResetProfileStats() noexcept {
     prof_spi_us_ = 0;
     prof_spi_max_us_ = 0;
     prof_rest_us_ = 0;
     prof_rest_max_us_ = 0;
+    prof_mag_us_ = 0;
+    prof_mag_max_us_ = 0;
   }
 #endif
 
@@ -313,6 +326,8 @@ class ImuHandler : public ControlComponent {
   uint64_t prof_spi_max_us_{0};
   uint64_t prof_rest_us_{0};
   uint64_t prof_rest_max_us_{0};
+  uint64_t prof_mag_us_{0};
+  uint64_t prof_mag_max_us_{0};
 #endif
 };
 

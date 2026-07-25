@@ -184,7 +184,17 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
   }
   last_mag_read_ms_ = now_ms;
 
+#ifdef RC_PROFILE_LOOP
+  const uint64_t _mag_t0 = platform_.GetTimeUs();
+#endif
   const auto mag_opt = platform_.ReadMag();
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _mag_d = platform_.GetTimeUs() - _mag_t0;
+    prof_mag_us_ += _mag_d;
+    if (_mag_d > prof_mag_max_us_) prof_mag_max_us_ = _mag_d;
+  }
+#endif
   if (!mag_opt) {
     return;
   }

@@ -176,10 +176,25 @@ void ControlLoopProcessor::UpdateComponents(uint32_t now, uint32_t dt_ms) {
 }
 
 void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
+#ifdef RC_PROFILE_LOOP
+  // LOS-219/250: раздельные тайминги snapshot (BuildSensorSnapshot+ComOffset)
+  // vs ekf (ротация/TiltEstimator/EKF-обновления ниже) — sens занимает
+  // ~950-1000 мкс на реальном железе, вторая по размеру стадия после comp,
+  // без этой разбивки полностью непрозрачна.
+  const uint64_t _snap_t0 = ctx_.platform.GetTimeUs();
+#endif
   sensors_ =
       BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler, ctx_.imu_handler);
   prev_gz_rad_s_ =
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _snap_d = ctx_.platform.GetTimeUs() - _snap_t0;
+    prof_snapshot_us_ += _snap_d;
+    if (_snap_d > prof_snapshot_max_us_) prof_snapshot_max_us_ = _snap_d;
+  }
+  const uint64_t _ekf_t0 = ctx_.platform.GetTimeUs();
+#endif
 
   const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
   // tilt_was_enabled_ отслеживает, вызывался ли tilt_est_.Update() на
@@ -311,6 +326,14 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     constexpr float kDegToRad = 3.14159265358979f / 180.0f;
     ctx_.ekf.UpdateHeading(sensors_.heading_deg * kDegToRad);
   }
+
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _ekf_d = ctx_.platform.GetTimeUs() - _ekf_t0;
+    prof_ekf_us_ += _ekf_d;
+    if (_ekf_d > prof_ekf_max_us_) prof_ekf_max_us_ = _ekf_d;
+  }
+#endif
 }
 
 void ControlLoopProcessor::UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms) {
@@ -488,20 +511,34 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   if (ctx_.imu_handler) {
     // LOS-219/250: раздельные тайминги внутри "comp" — spi (только
     // platform_.ReadImu()) vs rest (калибровка/LPF/mag/Madgwick/vehicle-
-    // frame). Проверка гипотезы: IMU SPI-чтение — основной вклад в comp
-    // из-за 6 отдельных транзакций на 6 осей вместо одной burst.
+    // frame) vs mag (только platform_.ReadMag(), раз в 5 тиков — проверка
+    // гипотезы, что скачок rest_max вызван именно магнетометром).
     LogFormat fmt;
     fmt << "PROF(imu us): spi_avg="
         << (ctx_.imu_handler->GetProfSpiUs() / loops)
         << " spi_max=" << ctx_.imu_handler->GetProfSpiMaxUs()
         << " rest_avg=" << (ctx_.imu_handler->GetProfRestUs() / loops)
-        << " rest_max=" << ctx_.imu_handler->GetProfRestMaxUs();
+        << " rest_max=" << ctx_.imu_handler->GetProfRestMaxUs()
+        << " mag_avg=" << (ctx_.imu_handler->GetProfMagUs() / loops)
+        << " mag_max=" << ctx_.imu_handler->GetProfMagMaxUs();
     ctx_.platform.Log(LogLevel::Info, fmt.str());
     ctx_.imu_handler->ResetProfileStats();
+  }
+  {
+    // LOS-219/250: разбивка sens — snapshot (BuildSensorSnapshot+ComOffset)
+    // vs ekf (ротация/TiltEstimator/EKF-обновления).
+    LogFormat fmt;
+    fmt << "PROF(sens us): snapshot_avg=" << (prof_snapshot_us_ / loops)
+        << " snapshot_max=" << prof_snapshot_max_us_
+        << " ekf_avg=" << (prof_ekf_us_ / loops)
+        << " ekf_max=" << prof_ekf_max_us_;
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
   }
   prof_cfg_us_ = 0;
   prof_components_us_ = 0;
   prof_sensors_us_ = 0;
+  prof_snapshot_us_ = 0;
+  prof_ekf_us_ = 0;
   prof_control_us_ = 0;
   prof_stab_us_ = 0;
   prof_pwm_us_ = 0;
@@ -510,6 +547,8 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   prof_cfg_max_us_ = 0;
   prof_components_max_us_ = 0;
   prof_sensors_max_us_ = 0;
+  prof_snapshot_max_us_ = 0;
+  prof_ekf_max_us_ = 0;
   prof_control_max_us_ = 0;
   prof_stab_max_us_ = 0;
   prof_pwm_max_us_ = 0;
