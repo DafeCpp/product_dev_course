@@ -175,6 +175,33 @@ TEST_F(ProcessorTest, Failsafe_ResetsToNeutral) {
   EXPECT_FLOAT_EQ(platform_.GetLastSteering(), 0.0f);
 }
 
+TEST_F(ProcessorTest, FailsafeClearsMotorModelSnapshot) {
+  // LOS-246: после failsafe EKF не должен продолжать получать прошлый
+  // throttle-якорь, пока PWM удерживается в нейтрали.
+  SetDirectLaw();
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.motor_deadzone = 0.0f;
+  cfg.filter.motor_speed_gain = 8.0f;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({1.0f, 0.0f});
+  Step();
+
+  platform_.ClearWifiCommand();
+  time_ms_ += 600;
+  processor_->Step(time_ms_, 600);  // активирует failsafe и очищает snapshot
+  Step();
+
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 0.0f, 1e-6f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // WiFi команда → PWM
 // ═══════════════════════════════════════════════════════════════════════════

@@ -413,6 +413,8 @@ bool ControlLoopProcessor::HandleFailsafe() {
 
   commanded_throttle_ = 0.0f;
   commanded_steering_ = 0.0f;
+  motor_model_throttle_ = 0.0f;
+  motor_model_target_throttle_ = 0.0f;
   applied_throttle_ = 0.0f;
   applied_steering_ = 0.0f;
 
