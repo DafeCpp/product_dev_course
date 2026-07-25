@@ -17,6 +17,14 @@ if(DEFINED RC_TELEM_SEND_INTERVAL_MS)
     "RC_TELEM_SEND_INTERVAL_MS=${RC_TELEM_SEND_INTERVAL_MS}" APPEND)
 endif()
 
+# Опциональный профилировщик стадий control loop (LOS-219, FW-R16).
+# Выключен по умолчанию — нулевой оверхед/без спама в лог для прод-сборок.
+#   idf.py build -DRC_PROFILE_LOOP=1
+if(RC_PROFILE_LOOP)
+  idf_build_set_property(COMPILE_DEFINITIONS
+    "RC_PROFILE_LOOP=1" APPEND)
+endif()
+
 # Определение проекта
 project(rc_vehicle_esp32_s3)
 

@@ -51,6 +51,7 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
 
   // Логирование
   void Log(LogLevel level, std::string_view msg) const override;
+  void LogCoreLoad() const override;
 
   // IMU
   [[nodiscard]] std::optional<ImuData> ReadImu() override;

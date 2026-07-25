@@ -116,6 +116,15 @@ class VehicleControlPlatform {
    */
   virtual void Log(LogLevel level, std::string_view msg) const = 0;
 
+  /**
+   * @brief Диагностика загрузки ядер (LOS-219/250) — узнать, простаивает ли
+   * ядро, на котором висит веб-стек (httpd/WS без core-affinity, WiFi driver
+   * task пиннен на core 0), пока control-таск (core 1) перегружен.
+   * По умолчанию no-op — реализуется только на ESP32 через
+   * uxTaskGetSystemState()/xCoreID; на хосте/симуляторе нет FreeRTOS.
+   */
+  virtual void LogCoreLoad() const {}
+
   // ─────────────────────────────────────────────────────────────────────────
   // IMU
   // ─────────────────────────────────────────────────────────────────────────

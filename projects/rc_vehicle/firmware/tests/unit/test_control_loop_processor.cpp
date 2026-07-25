@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "calibration_manager.hpp"
+#include "config.hpp"
 #include "control_loop_processor.hpp"
 #include "mock_platform.hpp"
 #include "stabilization_manager.hpp"
@@ -220,6 +221,7 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
   cfg.kids_mode.speed_limit_gain = 1.0f;
   cfg.kids_mode.anti_spin_enabled = false;
   cfg.kids_mode.accel_limit_enabled = false;
+  cfg.slew_throttle = 100.0f;  // не тестируем внешний PWM slew здесь
   cfg.filter.motor_deadzone = 0.0f;
   cfg.filter.motor_speed_gain = 8.0f;
   stab_mgr_->SetConfig(cfg);
@@ -233,13 +235,83 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
   cfg.kids_mode.speed_limit_enabled = true;
   stab_mgr_->SetConfig(cfg);
   ekf_.SetState(2.0f, 0.0f, 0.0f);
-  Step();  // speed limiter активен и урезает PWM ниже 0.3
+  RunSteps(10);  // дождаться следующего внешнего PWM update
   ASSERT_TRUE(kids_processor_.IsSpeedLimitActive());
   ASSERT_LT(platform_.GetLastThrottle(), 0.3f);
 
   Step();
   EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 2.4f, 1e-4f)
       << "мотор-модель не должна получать throttle после speed limiter";
+}
+
+TEST_F(ProcessorTest, KidsMotorModelTracksCounterfactualPwmSlew) {
+  // LOS-246: внешний PWM slew применяется после speed limiter. Моторная
+  // модель должна повторять этот slew для pre-limiter цели, иначе якорь
+  // забегает вперёд реального мотора.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+  kids_processor_.Init(ekf_, &imu_handler);
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  stab_mgr_->SetConfig(cfg);
+  cfg = stab_mgr_->GetConfig();
+  cfg.kids_mode.throttle_limit = 0.3f;
+  cfg.kids_mode.slew_throttle = 2.0f;
+  cfg.kids_mode.speed_limit_enabled = true;
+  cfg.kids_mode.max_speed_ms = 0.5f;
+  cfg.kids_mode.speed_limit_gain = 1.0f;
+  cfg.kids_mode.anti_spin_enabled = false;
+  cfg.kids_mode.accel_limit_enabled = false;
+  cfg.slew_throttle = 0.3f;
+  cfg.filter.motor_deadzone = 0.0f;
+  cfg.filter.motor_speed_gain = 8.0f;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({1.0f, 0.0f});
+
+  RunSteps(9);
+  ekf_.SetState(2.0f, 0.0f, 0.0f);  // limiter оставляет 15% цели
+  Step();  // первый внешний PWM update: 0.3/s * 20ms = 0.006
+  ASSERT_TRUE(kids_processor_.IsSpeedLimitActive());
+  Step();
+
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 0.006f * 8.0f, 1e-4f)
+      << "Kids-якорь должен учитывать внешний PWM slew";
+}
+
+TEST_F(ProcessorTest, MotorModelKeepsOriginatingModeAcrossModeSwitch) {
+  // Снимок читается в начале следующего тика. Если на этом тике сменить
+  // Normal на Kids, он всё ещё обязан описывать PWM прошлого Normal-тика.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+  kids_processor_.Init(ekf_, &imu_handler);
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Normal;
+  cfg.slew_throttle = 0.1f;
+  cfg.filter.motor_deadzone = 0.0f;
+  cfg.filter.motor_speed_gain = 8.0f;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({1.0f, 0.0f});
+  Step();  // внешний PWM ещё не обновлялся, итоговый снимок = 0
+
+  cfg.mode = DriveMode::Kids;
+  cfg.kids_mode.speed_limit_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+  Step();
+
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 0.0f, 1e-6f)
+      << "при смене режима нельзя подставлять raw-команду прошлого тика";
 }
 
 TEST_F(ProcessorTest, MotorModelUsesAppliedThrottleOutsideKidsMode) {
@@ -293,6 +365,19 @@ TEST_F(ProcessorTest, SlewRate_EventuallyReachesTarget) {
   // 2 секунды = 1000 шагов → успеет дойти при 0.5/с slew
   RunSteps(1000);
   EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 0.01f);
+}
+
+TEST_F(ProcessorTest, KidsModeSteeringReachesThreePerSecondSlewRate) {
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.0f, 1.0f});
+  RunSteps(10);  // Первый PWM update через 20 ms.
+
+  // Kids processor и PWM slew limiter оба допускают 3.0 /с:
+  // 3.0 * 0.020 = 0.06. При старом top-level лимите 1.5 было бы 0.03.
+  EXPECT_NEAR(platform_.GetLastSteering(), 0.06f, 0.005f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -677,3 +762,84 @@ TEST_F(ProcessorTest, CalibMgr_Null_NoCrash) {
   ControlLoopProcessor proc(ctx, 0);
   EXPECT_NO_THROW(proc.Step(2, 2));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS-219: профайлер — outlier по реальному периоду между вызовами Step()
+//
+// Собирается только при -DRC_PROFILE_LOOP=1 (см. tests/CMakeLists.txt).
+// FakePlatform::GetTimeUs() читает СВОИ внутренние часы (platform_.time_ms_),
+// независимые от аргументов now/dt_ms, передаваемых в Step() напрямую —
+// поэтому для этих тестов часы платформы двигаются явно через
+// platform_.AdvanceTimeMs(), отдельно от фикстурного time_ms_/Step().
+// ═══════════════════════════════════════════════════════════════════════════
+#ifdef RC_PROFILE_LOOP
+
+class ProfilerTest : public ProcessorTest {
+ protected:
+  /** Шаг с явным приращением часов платформы (мс) — не путать с Step(). */
+  void StepPlatformGap(uint32_t platform_gap_ms) {
+    platform_.AdvanceTimeMs(platform_gap_ms);
+    time_ms_ += 2;
+    processor_->Step(time_ms_, 2);
+  }
+
+  /** Найти последнюю строку "PROF(max us): ..." среди залогированного. */
+  std::optional<std::string> FindLastProfMaxLine() const {
+    std::optional<std::string> result;
+    for (const auto& msg : platform_.GetLoggedMessages()) {
+      if (msg.find("PROF(max us)") != std::string::npos) result = msg;
+    }
+    return result;
+  }
+
+  /** Гонять до гарантированного пересечения границы диаг-интервала. */
+  void RunUntilDiagIntervalCrossed() {
+    while (time_ms_ < config::DiagnosticsConfig::kIntervalMs + 10) {
+      StepPlatformGap(2);
+    }
+  }
+};
+
+TEST_F(ProfilerTest, NoOutliers_OnSteadyPlatformClock) {
+  RunUntilDiagIntervalCrossed();
+
+  auto line = FindLastProfMaxLine();
+  ASSERT_TRUE(line.has_value()) << "PROF(max us) line never logged";
+  EXPECT_NE(line->find("outliers=0/"), std::string::npos) << *line;
+}
+
+TEST_F(ProfilerTest, CountsOutlier_OnRealClockGap) {
+  // Один разовый скачок часов ПЛАТФОРМЫ, сильно выше 2x бюджета цикла
+  // (4000 мкс) — должен быть учтён как outlier, даже несмотря на то что
+  // аргументы Step() (now/dt_ms) идут обычным равномерным тактом.
+  bool gap_injected = false;
+  while (time_ms_ < config::DiagnosticsConfig::kIntervalMs + 10) {
+    if (!gap_injected && time_ms_ >= 1000) {
+      StepPlatformGap(20);  // 20мс >> 4мс порога
+      gap_injected = true;
+    } else {
+      StepPlatformGap(2);
+    }
+  }
+  ASSERT_TRUE(gap_injected);
+
+  auto line = FindLastProfMaxLine();
+  ASSERT_TRUE(line.has_value()) << "PROF(max us) line never логировалась";
+  EXPECT_NE(line->find("outliers=1/"), std::string::npos) << *line;
+}
+
+TEST_F(ProfilerTest, FirstStep_DoesNotFalselyReportOutlier) {
+  // prof_prev_entry_us_ инициализируется 0 (сентинел "ещё не установлен") —
+  // первый вызов Step() не должен подхватить псевдо-огромный период
+  // (GetTimeUs() - 0), даже если платформенные часы уже не в нуле.
+  platform_.AdvanceTimeMs(10000);
+  StepPlatformGap(2);
+
+  RunUntilDiagIntervalCrossed();
+
+  auto line = FindLastProfMaxLine();
+  ASSERT_TRUE(line.has_value());
+  EXPECT_NE(line->find("outliers=0/"), std::string::npos) << *line;
+}
+
+#endif  // RC_PROFILE_LOOP

@@ -111,6 +111,17 @@ struct DiagnosticsConfig {
       5000;  ///< Интервал вывода диагностики
 };
 
+#ifdef RC_PROFILE_LOOP
+/**
+ * @brief Порог "outlier"-итерации для профилировщика control loop (LOS-219).
+ * 2x номинальный бюджет цикла (ControlLoopConfig::kPeriodMs).
+ */
+struct ProfilingConfig {
+  static constexpr uint32_t kOutlierThresholdUs =
+      ControlLoopConfig::kPeriodMs * 1000 * 2;  ///< 4000 мкс
+};
+#endif
+
 /**
  * @brief Конфигурация Wi-Fi команд
  */
