@@ -242,6 +242,32 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
       << "мотор-модель не должна получать throttle после speed limiter";
 }
 
+TEST_F(ProcessorTest, MotorModelUsesAppliedThrottleOutsideKidsMode) {
+  // В Normal raw-команда не должна обходить внешний PWM slew: моторная модель
+  // видит applied_throttle_ прошлого тика, а не мгновенный full-stick.
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Normal;
+  cfg.slew_throttle = 0.1f;
+  cfg.filter.motor_deadzone = 0.0f;
+  cfg.filter.motor_speed_gain = 8.0f;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({1.0f, 0.0f});
+
+  Step();  // PWM update ещё не наступил: applied_throttle_ остаётся нулём
+  Step();  // якорь должен прочитать именно этот нулевой applied output
+
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 0.0f, 1e-6f)
+      << "моторная модель в Normal обошла внешний PWM slew raw-командой";
+}
+
 TEST_F(ProcessorTest, NoCommand_NeutralPwm_AfterFailsafe) {
   SetDirectLaw();
   Step();  // нет источника управления → failsafe → neutral

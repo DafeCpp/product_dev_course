@@ -207,13 +207,15 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     // Якорь продольной скорости через мотор-модель (LOS-233): без датчика
     // колёс единственный способ не дать vx уйти в разнос при интеграции IMU.
     // v ≈ gain·throttle (с мёртвой зоной) подаётся слабым измерением.
-    // Вход модели — motor_model_throttle_ (команда прошлого тика до
-    // стабилизаторов). Это намеренно не applied_throttle_: Kids speed limiter
-    // регулирует по EKF и иначе образует положительную обратную связь через
-    // собственное измерение скорости (LOS-246). Однотиковая задержка
-    // сохраняет порядок исполнения контура.
+    // В Kids вход модели — снимок после обычных Kids-ограничений, но до speed
+    // limiter: иначе лимитер регулировал бы собственное измерение EKF
+    // (LOS-246). Во всех остальных режимах сохраняем applied_throttle_, чтобы
+    // якорь учитывал внешний PWM slew и trim, то есть фактический выход мотора.
+    // Оба входа относятся к прошлому тику, сохраняя порядок исполнения.
     if (motor_model_active) {
-      const float thr = motor_model_throttle_;
+      const float thr = stab_cfg_.mode == DriveMode::Kids
+                            ? motor_model_throttle_
+                            : applied_throttle_;
       const float thr_abs = std::abs(thr);
       float v_expected = 0.0f;
       if (thr_abs > f.motor_deadzone && f.motor_deadzone < 1.0f) {
