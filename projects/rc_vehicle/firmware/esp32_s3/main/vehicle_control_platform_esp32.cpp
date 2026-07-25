@@ -120,6 +120,14 @@ void VehicleControlPlatformEsp32::LogCoreLoad() const {
   // TRACE_FACILITY и CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS (sdkconfig.
   // defaults). ulRunTimeCounter кумулятивен с загрузки, не скользящее окно —
   // достаточно для диагностической сессии в несколько минут.
+  //
+  // Не используем TaskStatus_t::xCoreID — его наличие в структуре зависит
+  // от configTASKLIST_INCLUDE_COREID / CONFIG_FREERTOS_VTASKLIST_INCLUDE_
+  // COREID, а на некоторых версиях/конфигурациях ESP-IDF (SMP-ядро) это
+  // поле в структуре отсутствует вовсе — компиляция падает. Вместо этого
+  // ищем задачи с именами "IDLE0"/"IDLE1": эта нумерация — часть самого
+  // FreeRTOS-Kernel (tasks.c, prvCreateIdleTasks(), не Kconfig-опция) и
+  // одинакова на всех версиях с configNUMBER_OF_CORES > 1.
   constexpr UBaseType_t kMaxTasks = 24;
   static TaskStatus_t
       task_status[kMaxTasks];  // static — не в стеке control-таска
@@ -135,31 +143,32 @@ void VehicleControlPlatformEsp32::LogCoreLoad() const {
   // CPU% на ESP-IDF SMP FreeRTOS.
   const float per_core_total =
       static_cast<float>(total_run_time) / configNUMBER_OF_CORES;
-  float idle_pct[configNUMBER_OF_CORES] = {};
+  float idle_pct[2] = {-1.f, -1.f};  // -1 = не найдено (< 2 ядер/имя другое)
 
   char buffer[400];
   int off = snprintf(buffer, sizeof(buffer), "CORE TASKS:");
   for (UBaseType_t i = 0;
-       i < num_tasks && off > 0 && off < static_cast<int>(sizeof(buffer)) - 48;
+       i < num_tasks && off > 0 && off < static_cast<int>(sizeof(buffer)) - 32;
        ++i) {
     const auto& t = task_status[i];
     const float pct =
         per_core_total > 0.f
             ? 100.f * static_cast<float>(t.ulRunTimeCounter) / per_core_total
             : 0.f;
-    const bool pinned = (t.xCoreID == 0 || t.xCoreID == 1);
-    if (pinned && strncmp(t.pcTaskName, "IDLE", 4) == 0) {
-      idle_pct[t.xCoreID] = pct;
+    if (strcmp(t.pcTaskName, "IDLE0") == 0) {
+      idle_pct[0] = pct;
+    } else if (strcmp(t.pcTaskName, "IDLE1") == 0) {
+      idle_pct[1] = pct;
     }
-    off += snprintf(buffer + off, sizeof(buffer) - off, " %s(c%s)=%.1f%%",
-                    t.pcTaskName, pinned ? (t.xCoreID == 0 ? "0" : "1") : "?",
-                    pct);
+    off += snprintf(buffer + off, sizeof(buffer) - off, " %s=%.1f%%",
+                    t.pcTaskName, pct);
   }
   ESP_LOGI(TAG, "%s", buffer);
 
   char summary[96];
   int soff = 0;
-  for (int c = 0; c < configNUMBER_OF_CORES; ++c) {
+  for (int c = 0; c < 2; ++c) {
+    if (idle_pct[c] < 0.f) continue;  // "IDLEc" не найден — не печатаем
     soff += snprintf(summary + soff, sizeof(summary) - soff,
                      "core%d_busy=%.1f%% ", c, 100.f - idle_pct[c]);
   }
