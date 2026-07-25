@@ -720,3 +720,47 @@ TEST_F(KidsAccelLimitTest, RealAccelerationOnSlope_StillTriggersAccelLimit) {
   EXPECT_TRUE(kids_processor_.IsAccelLimitActive())
       << "лимитер пропустил реальный разгон 0.4 g";
 }
+
+TEST_F(KidsAccelLimitTest, TiltCompDisabled_DegradesToLegacyNotMadgwick) {
+  // При выключенном tilt-фильтре компенсации быть НЕ должно: фолбэка на
+  // Madgwick здесь нет намеренно (он заваливается на разгоне — LOS-240).
+  // Проверяем именно это: на статическом наклоне лимитер срабатывает, как и
+  // до LOS-245. Через Madgwick он бы, наоборот, промолчал — то есть тест
+  // отличает «деградировали в старое поведение» от «тихо взяли Madgwick».
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = false;
+  cfg.filter.madgwick_enabled = true;  // Madgwick жив, но не должен влиять
+  stab_mgr_->SetConfig(cfg);
+
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+  platform_.SetImuData(AtRestWithPitch(kPitchRad));
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(3000);  // с запасом на сходимость Madgwick
+
+  EXPECT_TRUE(kids_processor_.IsAccelLimitActive())
+      << "без tilt-фильтра ожидалось прежнее поведение, а компенсация всё же "
+         "произошла — вероятно, вернулся фолбэк на Madgwick";
+}
+
+TEST_F(KidsAccelLimitTest, SustainedAcceleration_LimiterFadesAsTiltAbsorbsIt) {
+  // Фиксация ИЗВЕСТНОГО ОГРАНИЧЕНИЯ, а не желаемого поведения. TiltEstimator
+  // не отличает устойчивое продольное ускорение от наклона и с постоянной
+  // времени 1/corr_gain_hz (по умолчанию 2 с) уводит его в тангаж. Замер:
+  // при 0.3 g лимитер держится ~2.4 с, затем слепнет. Kids-режим ловит
+  // короткие тычки газом, так что запаса хватает, но если тест упадёт —
+  // значит характеристика фильтра поехала, и это надо осознать, а не
+  // подкрутить константы.
+  ImuData accelerating{};
+  accelerating.ax = 0.3f;  // вдвое выше порога 0.15 g
+  accelerating.az = 1.0f;
+  platform_.SetImuData(accelerating);
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+
+  RunSteps(250);  // 0.5 с — разгон ещё виден
+  EXPECT_TRUE(kids_processor_.IsAccelLimitActive())
+      << "лимитер не поймал разгон 0.3 g даже в первые 0.5 с";
+
+  RunSteps(2250);  // суммарно 5 с — тангаж «съел» ускорение
+  EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
+      << "ограничение изменилось: разгон всё ещё виден через 5 с";
+}

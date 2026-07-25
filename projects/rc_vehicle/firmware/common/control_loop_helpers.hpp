@@ -171,14 +171,26 @@ inline AutoDriveInput BuildAutoDriveInput(const SensorSnapshot& sensors,
  * (grav_x = −sin(pitch), см. vehicle_ekf.cpp): это тот же фикс, что уже
  * сделан для EKF в LOS-232/LOS-240, распространённый на этого потребителя.
  *
+ * ОГРАНИЧЕНИЕ: оценщик тангажа не отличает УСТОЙЧИВОЕ продольное ускорение от
+ * наклона и с постоянной времени 1/corr_gain_hz уводит его в тангаж — разгон
+ * дольше нескольких секунд перестаёт быть виден. Годится для коротких
+ * событий (тычок газом), не годится как измеритель длительного разгона.
+ *
  * @param veh_imu     accel ПОСЛЕ Apply() и RotateToVehicleFrame() — ax уже
- *                    есть ось «вперёд» (та же ортогонализованная
- *                    accel_forward_vec, что использует GetForwardAccel(),
- *                    поэтому на горизонтали значения совпадают).
+ *                    есть ось «вперёд». ДОЛЖЕН быть получен ровно из
+ *                    sensor_imu: инвариант компилятором не проверяется, и
+ *                    рассогласованная пара молча даст неверный результат.
  * @param sensor_imu  те же данные ДО ротации — нужны только для фолбэка.
- * @param tilt_valid  есть ли оценка тангажа. false → деградация до
- *                    GetForwardAccel() (верно только на горизонтали, но не
- *                    хуже прежнего поведения).
+ * @param tilt_valid  есть ли ДОВЕРЕННАЯ оценка тангажа (только TiltEstimator;
+ *                    Madgwick сюда подавать нельзя — он сам заваливается на
+ *                    разгоне, см. control_loop_processor.cpp). false →
+ *                    деградация до GetForwardAccel().
+ *
+ * На горизонтали основной путь и фолбэк дают одно и то же, ПОКА
+ * accel_forward_vec ортогонален gravity_vec: SetForwardDirection() это
+ * гарантирует, но SetData() (загрузка блоба из NVS) только нормализует, не
+ * ортогонализуя. На неортогональном блобе veh_imu.ax (после
+ * OrthogonalizeForward) и GetForwardAccel() разойдутся; корректнее первое.
  */
 inline float ComputeForwardAccelG(const ImuCalibration& imu_calib,
                                   const ImuData& veh_imu,

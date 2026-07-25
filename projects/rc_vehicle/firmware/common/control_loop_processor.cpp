@@ -251,23 +251,32 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   // аргументом). Порядок в Step() гарантирует свежесть: UpdateSensorsAndEkf()
   // → UpdateStabilization() → UpdateTelemetry() в пределах одного тика.
   //
-  // Источник тангажа — та же цепочка деградации, что у grav-компенсации EKF
-  // выше: TiltEstimator → Madgwick → нет оценки (фолбэк на прежнее
-  // горизонтальное приближение). Ни в одной конфигурации не хуже прежнего.
+  // ЕДИНСТВЕННЫЙ допустимый источник тангажа здесь — TiltEstimator. Фолбэка
+  // на Madgwick, в отличие от grav-компенсации EKF выше, НЕТ намеренно:
+  // Madgwick загрязняется линейным ускорением (ровно то, ради чего заводили
+  // LOS-240) и при устойчивом разгоне сходится к atan2(−ax, az), то есть
+  // «объясняет» ускорение наклоном и гасит его почти полностью. Замерено на
+  // стенде (test_control_loop_processor.cpp, ровная площадка, реальные 0.3 g
+  // при пороге 0.15): через Madgwick лимитер слепнет за 0.8 с, через
+  // TiltEstimator — за 2.4 с. Для ДЕТСКОГО лимитера ложноотрицательное
+  // срабатывание (не срезал газ, когда надо) хуже ложноположительного,
+  // поэтому при выключенном tilt-фильтре честно возвращаемся к прежнему
+  // горизонтальному приближению GetForwardAccel(), а не к худшему из двух.
+  //
+  // ВАЖНО (известное ограничение): даже TiltEstimator не отличает УСТОЙЧИВОЕ
+  // продольное ускорение от наклона — с постоянной времени 1/corr_gain_hz
+  // (по умолчанию 2 с) он постепенно уводит его в тангаж, и лимитер перестаёт
+  // его видеть. Kids-режим ловит короткие «тычки» газом (заметно меньше 2 с),
+  // так что запас есть, но поведение зафиксировано тестом
+  // SustainedAcceleration_LimiterFadesAsTiltAbsorbsIt — если понадобится
+  // ловить длительный разгон, нужен независимый от IMU источник (мотор-модель
+  // LOS-233 уже подаётся в TiltEstimator, но при постоянном газе она сама
+  // сообщает о постоянной скорости).
   fwd_accel_g_ = 0.0f;
   if (sensors_.imu_enabled) {
-    float pitch_rad = 0.0f;
-    bool tilt_valid = false;
-    if (tilt_active_this_tick) {
-      pitch_rad = tilt_est_.GetPitchRad();
-      tilt_valid = true;
-    } else if (stab_cfg_.filter.madgwick_enabled) {
-      float roll_rad = 0.0f, yaw_rad = 0.0f;
-      ctx_.madgwick.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
-      tilt_valid = true;
-    }
-    fwd_accel_g_ = ComputeForwardAccelG(
-        ctx_.imu_calib, veh_imu, sensors_.imu_data, pitch_rad, tilt_valid);
+    fwd_accel_g_ =
+        ComputeForwardAccelG(ctx_.imu_calib, veh_imu, sensors_.imu_data,
+                             tilt_est_.GetPitchRad(), tilt_active_this_tick);
   }
 
   if (ekf_active && sensors_.imu_enabled && sensors_.mag_enabled) {
