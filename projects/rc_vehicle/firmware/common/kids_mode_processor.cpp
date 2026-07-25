@@ -24,10 +24,14 @@ namespace {
 // поэтому дополнительно гейтим по !ekf_->IsDiverged().
 constexpr float kSpeedTrustVarMax = 4.0f;
 
-// Верхний предел пропорционального снижения (LOS-215): reduction=1.0 обрывал
-// throttle в ноль вместо плавного удержания у max_speed_ms — именно это и
-// проявлялось как «газ почти всегда обрезается».
-constexpr float kSpeedReductionMax = 0.85f;
+// Верхний предел пропорционального снижения. 50% оставляет водителю
+// управляемую тягу вместо почти полного обрыва команды.
+constexpr float kSpeedReductionMax = 0.5f;
+
+// Speed limiter включается выше max_speed_ms, а выключается только после
+// возврата на эту величину ниже порога. Это исключает переключение на каждом
+// тике из-за шума оценки скорости EKF.
+constexpr float kSpeedLimitHysteresisMs = 0.1f;
 
 }  // namespace
 
@@ -61,21 +65,7 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   steering = std::clamp(steering, -km.steering_limit, km.steering_limit);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 2. Применить усиленный slew rate (плавность)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  if (dt_ms > 0) {
-    smoothed_throttle_ = firmware_common::ApplySlewRate(
-        throttle, smoothed_throttle_, km.slew_throttle, dt_ms / 1000.0f);
-    smoothed_steering_ = firmware_common::ApplySlewRate(
-        steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
-
-    throttle = smoothed_throttle_;
-    steering = smoothed_steering_;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // 3. Anti-spin защита (снижение газа при заносе)
+  // 2. Anti-spin защита (снижение газа при заносе)
   // ─────────────────────────────────────────────────────────────────────────
 
   anti_spin_active_ = false;
@@ -91,7 +81,7 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 4. Ограничение по ускорению (IMU, не дрейфует)
+  // 3. Ограничение по ускорению (IMU, не дрейфует)
   // ─────────────────────────────────────────────────────────────────────────
 
   accel_limit_active_ = false;
@@ -106,22 +96,42 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 5. Ограничение по скорости (EKF, feedback-based)
+  // 4. Ограничение по скорости (EKF, feedback-based)
   // ─────────────────────────────────────────────────────────────────────────
-
-  speed_limit_active_ = false;
 
   if (km.speed_limit_enabled && ekf_ && imu_ && imu_->IsEnabled() &&
       throttle > 0.0f && !ekf_->IsDiverged() &&
       ekf_->GetVxVariance() <= kSpeedTrustVarMax) {
     const float speed = ekf_->GetSpeedMs();
-    if (speed > km.max_speed_ms) {
-      speed_limit_active_ = true;
-      const float excess = speed - km.max_speed_ms;
+    const float release_speed = km.max_speed_ms - kSpeedLimitHysteresisMs;
+    if (speed_limit_active_) {
+      speed_limit_active_ = speed >= release_speed;
+    } else {
+      speed_limit_active_ = speed > km.max_speed_ms;
+    }
+
+    if (speed_limit_active_) {
+      const float excess = std::max(speed - release_speed, 0.0f);
       const float reduction =
           std::min(excess * km.speed_limit_gain, kSpeedReductionMax);
       throttle *= (1.0f - reduction);
     }
+  } else {
+    speed_limit_active_ = false;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 5. Применить slew к итоговой команде после всех ограничителей
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (dt_ms > 0) {
+    smoothed_throttle_ = firmware_common::ApplySlewRate(
+        throttle, smoothed_throttle_, km.slew_throttle, dt_ms / 1000.0f);
+    smoothed_steering_ = firmware_common::ApplySlewRate(
+        steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
+
+    throttle = smoothed_throttle_;
+    steering = smoothed_steering_;
   }
 }
 

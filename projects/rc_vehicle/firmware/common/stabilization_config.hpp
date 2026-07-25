@@ -453,7 +453,7 @@ struct KidsModeConfig {
   float max_speed_ms{1.5f};
 
   /** P-коэффициент регулятора скорости: excess_ms * gain → снижение [0.5..10.0] */
-  float speed_limit_gain{5.0f};
+  float speed_limit_gain{1.5f};
 
   /**
    * @brief Проверить валидность конфигурации Kids Mode
