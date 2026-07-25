@@ -423,7 +423,7 @@ struct KidsModeConfig {
   float slew_throttle{0.3f};
 
   /** Скорость изменения руля [/сек] */
-  float slew_steering{0.5f};
+  float slew_steering{3.0f};
 
   /** Включить защиту от заноса */
   bool anti_spin_enabled{true};
