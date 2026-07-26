@@ -468,7 +468,7 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
         steer_trim, effective_slew_thr, stab_cfg_.slew_steering);
 
     if (drive_mode == DriveMode::Kids &&
-        ctx_.kids_processor.IsSpeedLimitActive() && pwm_updated) {
+        stab_cfg_.kids_mode.speed_limit_enabled && pwm_updated) {
       // UpdatePwmWithSlewRate обновил реальный PWM на этом тике. Повторяем
       // только его математическую slew-ступень для counterfactual цели, не
       // включая speed limiter. Условие использует уже обновлённый timestamp.
@@ -482,7 +482,7 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
           motor_model_target_throttle_, motor_model_throttle_, model_slew_thr,
           pwm_dt_ms / 1000.0f);
     } else if (drive_mode != DriveMode::Kids ||
-               !ctx_.kids_processor.IsSpeedLimitActive()) {
+               !stab_cfg_.kids_mode.speed_limit_enabled) {
       motor_model_throttle_ = applied_throttle_;
     }
   } else {
@@ -490,7 +490,7 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
     applied_steering_ = commanded_steering_ + steer_trim;
     ctx_.platform.SetPwm(applied_throttle_, applied_steering_);
     motor_model_throttle_ =
-        drive_mode == DriveMode::Kids && ctx_.kids_processor.IsSpeedLimitActive()
+        drive_mode == DriveMode::Kids && stab_cfg_.kids_mode.speed_limit_enabled
             ? motor_model_target_throttle_ + thr_trim
             : applied_throttle_;
   }
