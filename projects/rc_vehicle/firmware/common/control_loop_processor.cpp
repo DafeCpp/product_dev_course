@@ -196,14 +196,22 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     // заваливал бы roll тем же путём, каким продольный разгон заваливал
     // pitch без a_lin_g. a = ω×v для тела, вращающегося вокруг Z со
     // скоростью gz и движущегося вперёд с vx: a_y = gz·vx (Y_veh,
-    // veh_imu.gz — уже в СК машины, ROTATED выше). В отличие от a_lin_g
-    // НЕ гейтится якорем: vx влияет через pitch/grav_x, roll в этой
-    // формуле не участвует вовсе — циркулярности для roll нет ни при
-    // каком источнике vx (в худшем случае — унаследованная неточность
-    // vx без якоря, не новая расходимость); при выключенном EKF prev_vx_
-    // так же остаётся замороженным, но это лишь неточность roll-коррекции,
-    // не ложное срабатывание safety-лимитера.
-    const float a_lin_lat_g = (veh_imu.gz * kDegToRad) * prev_vx_ / kG;
+    // veh_imu.gz — уже в СК машины, ROTATED выше).
+    //
+    // Гейтится ekf_active (код-ревью PR #302, круг 3, найдено ботом Codex):
+    // prev_vx_ обновляется ТОЛЬКО внутри блока EKF ниже, поэтому при
+    // выключенном EKF он заморожен на неопределённый срок. Раньше здесь было
+    // написано, что это «лишь неточность roll-коррекции» — неверно: ay_grav
+    // = imu.ay − a_lin_lat_g идёт не только в roll_acc, но и в accel_mag
+    // (гейт коррекции) и в horiz = √(ay_grav² + az²), откуда берётся
+    // pitch_acc = atan2(−ax_grav, horiz) — то есть протухший prev_vx_ мог
+    // исказить и ТАНГАЖ тоже, включая fwd_accel_g_ и Kids-лимитер
+    // (tilt_estimator.cpp, Update()). При vx=0 (типичный случай на момент
+    // выключения EKF/если EKF не запускался) 0.0f и так совпадает с
+    // прежним значением; расходится только если EKF выключили на ходу —
+    // именно этот случай и был дырой.
+    const float a_lin_lat_g =
+        ekf_active ? (veh_imu.gz * kDegToRad) * prev_vx_ / kG : 0.0f;
     tilt_est_.SetParams({stab_cfg_.filter.tilt_corr_gain_hz,
                          stab_cfg_.filter.tilt_accel_gate_band_g});
     tilt_est_.Update(veh_imu, a_lin_g, a_lin_lat_g, dt_sec);
