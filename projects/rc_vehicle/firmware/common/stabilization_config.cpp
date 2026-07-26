@@ -149,7 +149,7 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       accel_max_reduction = 0.7f;
       speed_limit_enabled = true;
       max_speed_ms = 0.5f;
-      speed_limit_gain = 8.0f;
+      speed_limit_gain = 1.5f;
       break;
 
     case KidsPreset::Child:
@@ -164,7 +164,7 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       accel_max_reduction = 0.5f;
       speed_limit_enabled = true;
       max_speed_ms = 1.0f;
-      speed_limit_gain = 5.0f;
+      speed_limit_gain = 1.5f;
       break;
 
     case KidsPreset::Preteen:
@@ -179,7 +179,7 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       accel_max_reduction = 0.3f;
       speed_limit_enabled = true;
       max_speed_ms = 2.0f;
-      speed_limit_gain = 3.0f;
+      speed_limit_gain = 1.5f;
       break;
 
     default:

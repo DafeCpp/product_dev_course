@@ -506,6 +506,94 @@ TEST_F(KidsModeProcessorTest, SlewRateLimitsRapidSteeringChange) {
   EXPECT_LE(steering, 0.06f);  // Small tolerance
 }
 
+class KidsModeLimiterSlewTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    cfg_.mode = DriveMode::Kids;
+    cfg_.kids_mode.throttle_limit = 0.5f;
+    cfg_.kids_mode.slew_throttle = 1.0f;
+    cfg_.kids_mode.anti_spin_enabled = true;
+    cfg_.kids_mode.anti_spin_threshold_deg = 5.0f;
+    cfg_.kids_mode.anti_spin_reduction = 0.5f;
+    cfg_.kids_mode.accel_limit_enabled = true;
+    cfg_.kids_mode.accel_threshold_g = 0.1f;
+    cfg_.kids_mode.accel_limit_gain = 10.0f;
+    cfg_.kids_mode.accel_max_reduction = 0.5f;
+
+    imu_handler_ =
+        std::make_unique<ImuHandler>(platform_, imu_calib_, madgwick_, 2);
+    imu_handler_->SetEnabled(true);
+    processor_.Init(ekf_, imu_handler_.get());
+  }
+
+  void ReachThrottleLimit() {
+    float steering = 0.0f;
+    for (int i = 0; i < 5; ++i) {
+      float throttle = 0.5f;
+      processor_.Process(cfg_, throttle, steering, 100);
+    }
+  }
+
+  void ExpectLimiterTransitionIsSlewed(float previous_throttle,
+                                       float throttle) const {
+    constexpr float kDtSeconds = 0.1f;
+    const float max_delta = cfg_.kids_mode.slew_throttle * kDtSeconds;
+    EXPECT_LE(std::abs(throttle - previous_throttle), max_delta + 1e-6f);
+  }
+
+  FakePlatform platform_;
+  ImuCalibration imu_calib_;
+  MadgwickFilter madgwick_;
+  VehicleEkf ekf_;
+  StabilizationConfig cfg_;
+  KidsModeProcessor processor_;
+  std::unique_ptr<ImuHandler> imu_handler_;
+};
+
+TEST_F(KidsModeLimiterSlewTest, AntiSpinActivationDoesNotBypassSlewRate) {
+  ReachThrottleLimit();
+  const float previous_throttle = 0.5f;
+  ekf_.SetState(1.0f, 0.2f, 0.0f);  // slip angle > 5°
+
+  float throttle = 0.5f;
+  float steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 100);
+
+  EXPECT_TRUE(processor_.IsAntiSpinActive());
+  ExpectLimiterTransitionIsSlewed(previous_throttle, throttle);
+}
+
+TEST_F(KidsModeLimiterSlewTest, AccelLimitActivationDoesNotBypassSlewRate) {
+  cfg_.kids_mode.anti_spin_enabled = false;
+  ReachThrottleLimit();
+  const float previous_throttle = 0.5f;
+
+  float throttle = 0.5f;
+  float steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 100, 0.3f);
+
+  EXPECT_TRUE(processor_.IsAccelLimitActive());
+  ExpectLimiterTransitionIsSlewed(previous_throttle, throttle);
+}
+
+TEST_F(KidsModeLimiterSlewTest, SpeedLimitActivationDoesNotBypassSlewRate) {
+  cfg_.kids_mode.anti_spin_enabled = false;
+  cfg_.kids_mode.accel_limit_enabled = false;
+  cfg_.kids_mode.speed_limit_enabled = true;
+  cfg_.kids_mode.max_speed_ms = 1.0f;
+  cfg_.kids_mode.speed_limit_gain = 1.5f;
+  ReachThrottleLimit();
+  const float previous_throttle = 0.5f;
+  ekf_.SetState(2.0f, 0.0f, 0.0f);
+
+  float throttle = 0.5f;
+  float steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 100);
+
+  EXPECT_TRUE(processor_.IsSpeedLimitActive());
+  ExpectLimiterTransitionIsSlewed(previous_throttle, throttle);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Integration with StabilizationConfig
 // ═══════════════════════════════════════════════════════════════════════════
@@ -670,12 +758,12 @@ TEST_F(KidsModeSpeedLimitTest, CanDeferSpeedLimitUntilAfterOtherModifiers) {
 
 TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_ReducesThrottleButNotToZero) {
   // LOS-215: снижение — пропорциональное, но не полный обрыв в ноль.
-  // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.0,
-  // reduction=min(10, kSpeedReductionMax=0.85)=0.85 → throttle=0.4*0.15=0.06
+  // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.1 with hysteresis,
+  // reduction=min(10.5, kSpeedReductionMax=0.5)=0.5 → throttle=0.4*0.5=0.2
   ekf_.SetState(3.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
   processor_.Process(cfg_, throttle, steering, 10);
-  EXPECT_NEAR(throttle, 0.06f, 0.005f);
+  EXPECT_NEAR(throttle, 0.2f, 0.005f);
   EXPECT_GT(throttle, 0.0f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
@@ -757,11 +845,30 @@ TEST_F(KidsModeSpeedLimitTest, Reset_ClearsSpeedLimitActive) {
   EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
 
+TEST_F(KidsModeSpeedLimitTest, HysteresisKeepsLimiterActiveNearThreshold) {
+  ekf_.SetState(1.2f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  ASSERT_TRUE(processor_.IsSpeedLimitActive());
+
+  ekf_.SetState(0.95f, 0.0f, 0.0f);
+  throttle = 0.4f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_TRUE(processor_.IsSpeedLimitActive());
+  EXPECT_LT(throttle, 0.4f);
+
+  ekf_.SetState(0.89f, 0.0f, 0.0f);
+  throttle = 0.4f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+  EXPECT_NEAR(throttle, 0.4f, 0.01f);
+}
+
 TEST(KidsModeConfigTest, SpeedLimitDisabledByDefault) {
   KidsModeConfig cfg;
   EXPECT_FALSE(cfg.speed_limit_enabled);
   EXPECT_FLOAT_EQ(cfg.max_speed_ms, 1.5f);
-  EXPECT_FLOAT_EQ(cfg.speed_limit_gain, 5.0f);
+  EXPECT_FLOAT_EQ(cfg.speed_limit_gain, 1.5f);
 }
 
 TEST(KidsModeConfigTest, SpeedLimitIsValidInRange) {
