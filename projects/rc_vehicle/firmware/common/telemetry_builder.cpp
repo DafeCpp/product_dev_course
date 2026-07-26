@@ -6,7 +6,7 @@ TelemetrySnapshot BuildTelemetrySnapshot(
     const TelemetryContext& ctx, uint32_t now, const SensorSnapshot& sensors,
     const StabilizationConfig& stab_cfg, DriveMode drive_mode,
     float applied_throttle, float applied_steering, float commanded_throttle,
-    float commanded_steering) {
+    float commanded_steering, float forward_accel_g) {
   TelemetrySnapshot snap;
   snap.uptime_ms = now;
   snap.rc_ok = sensors.rc_active;
@@ -37,7 +37,7 @@ TelemetrySnapshot BuildTelemetrySnapshot(
     snap.imu_enabled = true;
     snap.imu_data = sensors.imu_data;
     snap.filtered_gz = sensors.filtered_gz;
-    snap.forward_accel = ctx.imu_calib.GetForwardAccel(sensors.imu_data);
+    snap.forward_accel = forward_accel_g;
     ctx.madgwick.GetEulerDeg(snap.pitch_deg, snap.roll_deg, snap.yaw_deg);
     snap.calib_status = ctx.imu_calib.GetStatus();
     snap.calib_stage = ctx.imu_calib.GetCalibStage();

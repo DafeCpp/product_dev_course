@@ -1,8 +1,8 @@
-#include <atomic>
-#include <cmath>
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <atomic>
+#include <cmath>
 
 #include "control_loop_helpers.hpp"
 #include "imu_calibration.hpp"
@@ -66,8 +66,107 @@ TEST(SelectControlSourceTest, RcPriorityOverWifi) {
   s.wifi_cmd = RcCommand{-1.0f, -1.0f};
   float thr = 0.0f, steer = 0.0f;
   EXPECT_TRUE(SelectControlSource(s, thr, steer));
-  EXPECT_FLOAT_EQ(thr, 1.0f);   // RC wins
+  EXPECT_FLOAT_EQ(thr, 1.0f);  // RC wins
   EXPECT_FLOAT_EQ(steer, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ComputeForwardAccelG (LOS-245)
+//
+// GetForwardAccel() вычитает КОНСТАНТНЫЙ RestDownVec() — неявно считает машину
+// горизонтальной, и при тангаже отдаёт наклон вместо ускорения: в ось «вперёд»
+// протекает sin(pitch)·g. Порог accel-лимитера Kids Mode 0.15 g подделывается
+// тангажом всего в 8.6°, а p95 тангажа по логу ночного заезда — 14.7°.
+// ComputeForwardAccelG() снимает гравитацию по ТЕКУЩЕЙ оценке тангажа.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class ForwardAccelTest : public ::testing::Test {
+ protected:
+  ImuCalibration calib;
+
+  void SetUp() override {
+    // Горизонтальная калибровка: СК датчика === СК машины, чтобы тест мерил
+    // именно компенсацию тангажа, а не ротацию монтажа.
+    ImuCalibData d{};
+    d.valid = true;
+    d.gravity_valid = true;
+    d.gravity_vec[2] = 1.f;
+    d.accel_forward_vec[0] = 1.f;
+    calib.SetData(d);
+  }
+
+  /** Показания акселерометра [g] в покое при заданном тангаже.
+   *  Нос ВНИЗ = pitch < 0 → ax > 0 (клевок читается как «разгон»). */
+  static ImuData AtRestWithPitch(float pitch_rad) {
+    ImuData d{};
+    d.ax = -std::sin(pitch_rad);
+    d.az = std::cos(pitch_rad);
+    return d;
+  }
+
+  /** Тот же путь, что в ControlLoopProcessor::UpdateSensorsAndEkf(). */
+  float Compute(const ImuData& sensor_imu, float pitch_rad, bool tilt_valid) {
+    ImuData veh = sensor_imu;
+    calib.RotateToVehicleFrame(veh);
+    return ComputeForwardAccelG(calib, veh, sensor_imu, pitch_rad, tilt_valid);
+  }
+};
+
+TEST_F(ForwardAccelTest, StaticNoseDownPitch_TiltCompensated_ReturnsZero) {
+  constexpr float kPitch = -15.f * 3.14159265358979f / 180.f;  // клевок вниз
+  const ImuData imu = AtRestWithPitch(kPitch);
+
+  // Дискриминативность: старое поведение выдаёт ускорение выше порога
+  // accel-лимитера (0.15 g) на СТОЯЩЕЙ машине — ровно ложное срабатывание,
+  // найденное в логе.
+  EXPECT_GT(calib.GetForwardAccel(imu), 0.15f);
+
+  // С компенсацией по тангажу — покой распознан как покой.
+  EXPECT_NEAR(Compute(imu, kPitch, /*tilt_valid=*/true), 0.0f, 1e-4f);
+}
+
+TEST_F(ForwardAccelTest, StaticNoseUpPitch_TiltCompensated_ReturnsZero) {
+  constexpr float kPitch = 15.f * 3.14159265358979f / 180.f;
+  const ImuData imu = AtRestWithPitch(kPitch);
+
+  EXPECT_LT(calib.GetForwardAccel(imu), -0.15f);
+  EXPECT_NEAR(Compute(imu, kPitch, /*tilt_valid=*/true), 0.0f, 1e-4f);
+}
+
+TEST_F(ForwardAccelTest, ExtremePitch_TiltCompensated_ReturnsZero) {
+  // Максимум тангажа из лога — 58.3°, ниже клампа TiltEstimator (60°).
+  constexpr float kPitch = -58.3f * 3.14159265358979f / 180.f;
+  const ImuData imu = AtRestWithPitch(kPitch);
+
+  EXPECT_GT(calib.GetForwardAccel(imu), 0.8f);
+  EXPECT_NEAR(Compute(imu, kPitch, /*tilt_valid=*/true), 0.0f, 1e-4f);
+}
+
+TEST_F(ForwardAccelTest, LevelSurface_MeasuresRealAcceleration) {
+  ImuData imu{};
+  imu.ax = 0.2f;
+  imu.az = 1.0f;
+  // На горизонтали компенсация — тождество: полезный сигнал не трогаем.
+  EXPECT_NEAR(Compute(imu, 0.0f, /*tilt_valid=*/true), 0.2f, 1e-5f);
+  EXPECT_NEAR(calib.GetForwardAccel(imu), 0.2f, 1e-5f);
+}
+
+TEST_F(ForwardAccelTest, AccelerationOnSlope_SeparatedFromTilt) {
+  // Разгон 0.2 g на подъёме 15°: ускорение видно, наклон снят.
+  constexpr float kPitch = 15.f * 3.14159265358979f / 180.f;
+  ImuData imu = AtRestWithPitch(kPitch);
+  imu.ax += 0.2f;
+
+  EXPECT_NEAR(Compute(imu, kPitch, /*tilt_valid=*/true), 0.2f, 1e-4f);
+}
+
+TEST_F(ForwardAccelTest, TiltInvalid_FallsBackToLegacyBehaviour) {
+  constexpr float kPitch = -15.f * 3.14159265358979f / 180.f;
+  const ImuData imu = AtRestWithPitch(kPitch);
+
+  // Без оценки ориентации деградируем ровно до прежнего поведения — не хуже.
+  EXPECT_FLOAT_EQ(Compute(imu, kPitch, /*tilt_valid=*/false),
+                  calib.GetForwardAccel(imu));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -161,7 +260,7 @@ class HandleAutoDriveTest : public ::testing::Test {
   YawRateController yaw_ctrl_;
   SlipAngleController slip_ctrl_;
   StabilizationManager stab_mgr_{platform_, madgwick_, yaw_ctrl_, slip_ctrl_,
-                                  nullptr};
+                                 nullptr};
   ImuCalibration imu_calib_;
 };
 
@@ -181,7 +280,8 @@ TEST_F(HandleAutoDriveTest, TrimCompleted_Valid_UpdatesConfig) {
   // StabilizationManager::SetConfig may also log → accept ≥1 Info calls
   EXPECT_CALL(platform_, Log(LogLevel::Info, _)).Times(AtLeast(1));
   EXPECT_CALL(platform_, SaveCalib(_)).Times(::testing::AnyNumber());
-  EXPECT_CALL(platform_, SaveStabilizationConfig(_)).Times(::testing::AnyNumber());
+  EXPECT_CALL(platform_, SaveStabilizationConfig(_))
+      .Times(::testing::AnyNumber());
   HandleAutoDriveCompletion(ad, &stab_mgr_, imu_calib_, platform_);
   EXPECT_FLOAT_EQ(stab_mgr_.GetConfig().steering_trim, 0.05f);
 }
@@ -271,15 +371,15 @@ TEST(BuildSelfTestInputTest, NullHandlers_DefaultValues) {
   VehicleEkf ekf;
   ImuCalibration calib;
 
-  SelfTestContext ctx{hz, nullptr, madgwick, ekf,
-                      nullptr, nullptr, calib, nullptr, false, false};
+  SelfTestContext ctx{hz,      nullptr, madgwick, ekf,   nullptr,
+                      nullptr, calib,   nullptr,  false, false};
   auto input = BuildSelfTestInput(ctx);
 
   EXPECT_EQ(input.loop_hz, 500u);
   EXPECT_FALSE(input.imu_enabled);
   EXPECT_TRUE(input.failsafe_active);  // no rc, no wifi
   EXPECT_EQ(input.log_capacity, 0u);
-  EXPECT_EQ(input.pwm_status, -1);    // platform_exists=false
+  EXPECT_EQ(input.pwm_status, -1);  // platform_exists=false
 }
 
 TEST(BuildSelfTestInputTest, PlatformExistsAndInited_PwmOk) {
@@ -288,8 +388,8 @@ TEST(BuildSelfTestInputTest, PlatformExistsAndInited_PwmOk) {
   VehicleEkf ekf;
   ImuCalibration calib;
 
-  SelfTestContext ctx{hz, nullptr, madgwick, ekf,
-                      nullptr, nullptr, calib, nullptr, true, true};
+  SelfTestContext ctx{hz,      nullptr, madgwick, ekf,  nullptr,
+                      nullptr, calib,   nullptr,  true, true};
   auto input = BuildSelfTestInput(ctx);
   EXPECT_EQ(input.pwm_status, 0);
 }
@@ -300,8 +400,8 @@ TEST(BuildSelfTestInputTest, LoopHzReflected) {
   VehicleEkf ekf;
   ImuCalibration calib;
 
-  SelfTestContext ctx{hz, nullptr, madgwick, ekf,
-                      nullptr, nullptr, calib, nullptr, true, true};
+  SelfTestContext ctx{hz,      nullptr, madgwick, ekf,  nullptr,
+                      nullptr, calib,   nullptr,  true, true};
   EXPECT_EQ(BuildSelfTestInput(ctx).loop_hz, 498u);
 }
 
@@ -313,8 +413,8 @@ TEST(BuildSelfTestInputTest, TelemMgrCapacityReflected) {
   TelemetryManager telem;
   telem.Init(1000);
 
-  SelfTestContext ctx{hz, nullptr, madgwick, ekf,
-                      nullptr, nullptr, calib, &telem, true, true};
+  SelfTestContext ctx{hz,      nullptr, madgwick, ekf,  nullptr,
+                      nullptr, calib,   &telem,   true, true};
   EXPECT_EQ(BuildSelfTestInput(ctx).log_capacity, 1000u);
 }
 
@@ -328,8 +428,8 @@ TEST(BuildSelfTestInputTest, CalibValidReflected) {
   data.valid = true;
   calib.SetData(data);
 
-  SelfTestContext ctx{hz, nullptr, madgwick, ekf,
-                      nullptr, nullptr, calib, nullptr, true, true};
+  SelfTestContext ctx{hz,      nullptr, madgwick, ekf,  nullptr,
+                      nullptr, calib,   nullptr,  true, true};
   EXPECT_TRUE(BuildSelfTestInput(ctx).calib_valid);
 }
 
@@ -342,6 +442,7 @@ class FakePlatformWithMag : public FakePlatform {
  public:
   void SetMagData(MagData data) { mag_data_ = data; }
   std::optional<MagData> ReadMag() override { return mag_data_; }
+
  private:
   std::optional<MagData> mag_data_;
 };
@@ -387,7 +488,7 @@ TEST_F(ImuHandlerRelHeadingTest, ResetHeadingRef_ResetsOnNextUpdate) {
 TEST(RelativeHeadingMathTest, WrapAround_PositiveDelta_Over180) {
   // Δ = 350 → should wrap to -10
   float delta = 350.f - 0.f;
-  if (delta >  180.f) delta -= 360.f;
+  if (delta > 180.f) delta -= 360.f;
   if (delta <= -180.f) delta += 360.f;
   EXPECT_NEAR(delta, -10.f, 1e-4f);
 }
@@ -395,7 +496,7 @@ TEST(RelativeHeadingMathTest, WrapAround_PositiveDelta_Over180) {
 TEST(RelativeHeadingMathTest, WrapAround_NegativeDelta_Under180) {
   // Δ = -190 → should wrap to +170
   float delta = 170.f - 360.f;
-  if (delta >  180.f) delta -= 360.f;
+  if (delta > 180.f) delta -= 360.f;
   if (delta <= -180.f) delta += 360.f;
   EXPECT_NEAR(delta, 170.f, 1e-4f);
 }
@@ -403,7 +504,7 @@ TEST(RelativeHeadingMathTest, WrapAround_NegativeDelta_Under180) {
 TEST(RelativeHeadingMathTest, WrapAround_Exactly180) {
   // Δ = 180 → stays 180 (not wrapped; condition is > 180)
   float delta = 180.f;
-  if (delta >  180.f) delta -= 360.f;
+  if (delta > 180.f) delta -= 360.f;
   if (delta <= -180.f) delta += 360.f;
   EXPECT_FLOAT_EQ(delta, 180.f);
 }
@@ -411,14 +512,14 @@ TEST(RelativeHeadingMathTest, WrapAround_Exactly180) {
 TEST(RelativeHeadingMathTest, WrapAround_ExactlyMinus180) {
   // Δ = -180 → wraps to +180
   float delta = -180.f;
-  if (delta >  180.f) delta -= 360.f;
+  if (delta > 180.f) delta -= 360.f;
   if (delta <= -180.f) delta += 360.f;
   EXPECT_FLOAT_EQ(delta, 180.f);
 }
 
 TEST(RelativeHeadingMathTest, NoDelta_Zero) {
   float delta = 45.f - 45.f;
-  if (delta >  180.f) delta -= 360.f;
+  if (delta > 180.f) delta -= 360.f;
   if (delta <= -180.f) delta += 360.f;
   EXPECT_FLOAT_EQ(delta, 0.f);
 }

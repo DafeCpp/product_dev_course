@@ -22,12 +22,26 @@ struct TelemetryContext {
   const AutoDriveCoordinator& auto_drive;
 };
 
-/** Построить WebSocket-снимок телеметрии. */
+/**
+ * Построить WebSocket-снимок телеметрии.
+ *
+ * forward_accel_g — продольное линейное ускорение [g] со снятой по текущему
+ * тангажу гравитацией (LOS-245), считается в ControlLoopProcessor. Передаётся
+ * аргументом, а не вычисляется здесь через ImuCalibration::GetForwardAccel():
+ * снимок обязан показывать ровно ту величину, по которой принимает решение
+ * accel-лимитер Kids Mode, иначе телеметрия расходится с поведением машины.
+ *
+ * ВНИМАНИЕ, СМЕНА СЕМАНТИКИ: до LOS-245 snap.forward_accel содержал проекцию
+ * с вычетом КОНСТАНТНОЙ вертикали, то есть на наклоне включал sin(pitch)·g.
+ * Записи WS-телеметрии до и после несопоставимы. В TelemetryLogFrame этого
+ * поля нет, поэтому CSV-логи и analyze_telemetry.py не затронуты — там
+ * величина восстанавливается из ax и pitch_deg.
+ */
 TelemetrySnapshot BuildTelemetrySnapshot(
     const TelemetryContext& ctx, uint32_t now, const SensorSnapshot& sensors,
     const StabilizationConfig& stab_cfg, DriveMode drive_mode,
     float applied_throttle, float applied_steering, float commanded_throttle,
-    float commanded_steering);
+    float commanded_steering, float forward_accel_g);
 
 /** Построить кадр для кольцевого буфера телеметрии. */
 TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,

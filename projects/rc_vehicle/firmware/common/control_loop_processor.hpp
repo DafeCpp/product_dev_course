@@ -62,9 +62,7 @@ struct ControlLoopContext {
 class ControlLoopProcessor {
  public:
   ControlLoopProcessor(const ControlLoopContext& ctx, uint32_t now_ms)
-      : ctx_(ctx),
-        last_pwm_update_(now_ms),
-        diag_start_ms_(now_ms) {}
+      : ctx_(ctx), last_pwm_update_(now_ms), diag_start_ms_(now_ms) {}
 
   /** Выполнить одну итерацию. */
   void Step(uint32_t now, uint32_t dt_ms);
@@ -137,6 +135,11 @@ class ControlLoopProcessor {
   TiltEstimator tilt_est_;
   float prev_vx_{0.0f};
   float a_lin_prev_g_{0.0f};
+  // Продольное линейное ускорение [g] со снятой по текущему тангажу
+  // гравитацией (LOS-245). Живёт один тик: обновляется в конце
+  // UpdateSensorsAndEkf(), потребляется ниже по Step() — accel-лимитером Kids
+  // Mode в UpdateStabilization() и телеметрией в UpdateTelemetry().
+  float fwd_accel_g_{0.0f};
   uint32_t last_pwm_update_;
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;

@@ -20,22 +20,20 @@ class ProcessorTest : public ::testing::Test {
   void SetUp() override {
     stab_mgr_ = std::make_unique<StabilizationManager>(
         platform_, madgwick_, yaw_ctrl_, slip_ctrl_, nullptr);
-    calib_mgr_ = std::make_unique<CalibrationManager>(
-        platform_, imu_calib_, madgwick_, &ekf_);
-    wifi_handler_ = std::make_unique<WifiCommandHandler>(
-        platform_, /*timeout_ms=*/500);
+    calib_mgr_ = std::make_unique<CalibrationManager>(platform_, imu_calib_,
+                                                      madgwick_, &ekf_);
+    wifi_handler_ =
+        std::make_unique<WifiCommandHandler>(platform_, /*timeout_ms=*/500);
     telem_mgr_ = std::make_unique<TelemetryManager>();
     telem_mgr_->Init(1000);
 
     auto_drive_.SetCalibrationManager(calib_mgr_.get());
 
     ctx_ = std::make_unique<ControlLoopContext>(ControlLoopContext{
-        platform_,        imu_calib_,        madgwick_,       ekf_,
-        yaw_ctrl_,        pitch_ctrl_,        slip_ctrl_,      oversteer_guard_,
-        kids_processor_,  auto_drive_,
-        calib_mgr_.get(), stab_mgr_.get(),    telem_mgr_.get(),
-        nullptr,          wifi_handler_.get(), nullptr, nullptr,
-        last_loop_hz_});
+        platform_, imu_calib_, madgwick_, ekf_, yaw_ctrl_, pitch_ctrl_,
+        slip_ctrl_, oversteer_guard_, kids_processor_, auto_drive_,
+        calib_mgr_.get(), stab_mgr_.get(), telem_mgr_.get(), nullptr,
+        wifi_handler_.get(), nullptr, nullptr, last_loop_hz_});
 
     processor_ = std::make_unique<ControlLoopProcessor>(*ctx_, 0);
   }
@@ -83,23 +81,18 @@ class ProcessorTest : public ::testing::Test {
 // Базовые инварианты
 // ═══════════════════════════════════════════════════════════════════════════
 
-TEST_F(ProcessorTest, SingleStep_NoCrash) {
-  EXPECT_NO_THROW(Step());
-}
+TEST_F(ProcessorTest, SingleStep_NoCrash) { EXPECT_NO_THROW(Step()); }
 
-TEST_F(ProcessorTest, MultipleSteps_NoCrash) {
-  EXPECT_NO_THROW(RunSteps(50));
-}
+TEST_F(ProcessorTest, MultipleSteps_NoCrash) { EXPECT_NO_THROW(RunSteps(50)); }
 
 TEST_F(ProcessorTest, NullHandlers_NoCrash) {
   // Пересобрать с минимальным контекстом (rc/imu/telem handler = null)
-  ControlLoopContext minimal_ctx{
-      platform_,        imu_calib_,        madgwick_,       ekf_,
-      yaw_ctrl_,        pitch_ctrl_,        slip_ctrl_,      oversteer_guard_,
-      kids_processor_,  auto_drive_,
-      calib_mgr_.get(), stab_mgr_.get(),    nullptr,
-      nullptr,          nullptr,            nullptr, nullptr,
-      last_loop_hz_};
+  ControlLoopContext minimal_ctx{platform_,   imu_calib_,       madgwick_,
+                                 ekf_,        yaw_ctrl_,        pitch_ctrl_,
+                                 slip_ctrl_,  oversteer_guard_, kids_processor_,
+                                 auto_drive_, calib_mgr_.get(), stab_mgr_.get(),
+                                 nullptr,     nullptr,          nullptr,
+                                 nullptr,     nullptr,          last_loop_hz_};
   ControlLoopProcessor proc(minimal_ctx, 0);
   EXPECT_NO_THROW(proc.Step(2, 2));
 }
@@ -411,9 +404,11 @@ TEST_F(ProcessorTest, KidsModeSteeringReachesThreePerSecondSlewRate) {
 // BrakingMode
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Включить BrakingMode::Brake в Normal mode (slew_throttle=0.5, mult=4 → 2/s) */
+/** Включить BrakingMode::Brake в Normal mode (slew_throttle=0.5, mult=4 → 2/s)
+ */
 // Note: helper defined as free function to avoid name clash with member
-static void SetBrakeMode(StabilizationManager& stab_mgr, float multiplier = 4.0f) {
+static void SetBrakeMode(StabilizationManager& stab_mgr,
+                         float multiplier = 4.0f) {
   auto cfg = stab_mgr.GetConfig();
   cfg.braking_mode = BrakingMode::Brake;
   cfg.brake_slew_multiplier = multiplier;
@@ -724,13 +719,24 @@ TEST_F(ProcessorTest, TiltComp_ReEnabled_ResetsStaleState) {
       << "протухший тангаж после повторного включения tilt-фильтра";
 }
 
-TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
-  // Код-ревью PR #290 (10-й раунд): тот же протухший-тангаж баг, что и в
-  // TiltComp_ReEnabled_ResetsStaleState выше, но триггер — не
-  // tilt_comp_enabled, а ekf_enabled (tilt_comp_enabled остаётся true
-  // ВСЁ ВРЕМЯ). Пока ekf_enabled=false, весь блок UpdateSensorsAndEkf()
-  // пропускается — включая tilt_est_.Update() — тем же путём замораживая
-  // pitch_rad_/roll_rad_.
+TEST_F(ProcessorTest, TiltComp_EkfDisabled_KeepsTrackingNotFrozen) {
+  // Код-ревью PR #302 (круг 2, найдено независимо ревьюером и ботом Codex):
+  // до этой правки ekf_enabled=false замораживал tilt_est_.Update() тем же
+  // путём, что и tilt_comp_enabled=false (см. TiltComp_ReEnabled_
+  // ResetsStaleState выше) — весь блок UpdateSensorsAndEkf() был вложен под
+  // `if (ekf_active && ...)`. Это ломало НЕ ТОЛЬКО grav-компенсацию EKF, но
+  // и fwd_accel_g_ (LOS-245): при выключенном EKF Kids-лимитер снова ложно
+  // срабатывал на статическом наклоне — ровно тот баг, который чинит
+  // LOS-245 (см. KidsAccelLimitTest.EkfDisabled_TiltCompEnabled_
+  // StillCompensatesTilt ниже, где это проверяется напрямую).
+  //
+  // Тест ниже проверяет, что ПОСЛЕ фикса tilt_est_ ПРОДОЛЖАЕТ отслеживать
+  // реальную ориентацию, пока EKF выключен, а не замораживается: наклон
+  // меняется с 20° на 0° именно В ЭТОМ интервале, и к моменту повторного
+  // включения EKF оценка должна успеть сойтись к истинному (нулевому)
+  // значению без явного Reset() — в отличие от TiltComp_ReEnabled_
+  // ResetsStaleState, где Reset() по-прежнему необходим (там триггер —
+  // tilt_comp_enabled=false, который ВСЁ ЕЩЁ замораживает tilt_est_).
   ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
   imu_handler.SetEnabled(true);
   ctx_->imu_handler = &imu_handler;
@@ -751,14 +757,18 @@ TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
   RunSteps(4000);  // 8 секунд
 
   // Фаза 2: выключаем EKF целиком (tilt_comp_enabled остаётся true!) и
-  // кладём машину ровно.
+  // кладём машину ровно — ДОСТАТОЧНО ДОЛГО (corr_gain_hz=0.5 по умолчанию
+  // ⇒ постоянная времени 2 с), чтобы tilt_est_ реально сошёлся к 0°, если
+  // он продолжает работать. Раньше эта фаза была короткой (0.2 с) — этого
+  // хватало только чтобы проверить, что Reset() в фазе 3 корректно стирает
+  // заморозку; теперь тут ничего замораживать не нужно.
   cfg = stab_mgr_->GetConfig();
   cfg.filter.ekf_enabled = false;
   stab_mgr_->SetConfig(cfg);
   ImuData level{};
   level.az = 1.0f;
   platform_.SetImuData(level);
-  RunSteps(100);
+  RunSteps(3000);  // 6 секунд — ~3 постоянные времени
 
   // Фаза 3: заново включаем EKF на ровном месте без реального ускорения.
   ekf_.Reset();
@@ -769,8 +779,8 @@ TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
 
   EXPECT_FALSE(ekf_.IsDiverged());
   EXPECT_NEAR(ekf_.GetVx(), 0.0f, 0.15f)
-      << "протухший тангаж после повторного включения EKF (tilt_comp_"
-         "enabled не менялся)";
+      << "tilt_est_ не сошёлся к истинному (нулевому) наклону за время, "
+         "пока EKF был выключен — оценка осталась протухшей";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -780,14 +790,270 @@ TEST_F(ProcessorTest, TiltComp_EkfReEnabled_ResetsStaleState) {
 TEST_F(ProcessorTest, CalibMgr_Null_NoCrash) {
   // Пересобрать без calib_mgr
   ControlLoopContext ctx{
-      platform_,  imu_calib_, madgwick_,       ekf_,
-      yaw_ctrl_,  pitch_ctrl_, slip_ctrl_,      oversteer_guard_,
-      kids_processor_, auto_drive_,
-      nullptr,    stab_mgr_.get(), telem_mgr_.get(),
-      nullptr,    nullptr,         nullptr, nullptr,
-      last_loop_hz_};
+      platform_,        imu_calib_,   madgwick_,  ekf_,
+      yaw_ctrl_,        pitch_ctrl_,  slip_ctrl_, oversteer_guard_,
+      kids_processor_,  auto_drive_,  nullptr,    stab_mgr_.get(),
+      telem_mgr_.get(), nullptr,      nullptr,    nullptr,
+      nullptr,          last_loop_hz_};
   ControlLoopProcessor proc(ctx, 0);
   EXPECT_NO_THROW(proc.Step(2, 2));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Kids Mode: accel-лимитер и тангаж (LOS-245)
+//
+// GetForwardAccel() снимал гравитацию по КОНСТАНТНОМУ RestDownVec(), то есть
+// считал машину всегда горизонтальной, и при тангаже отдавал sin(pitch)·g
+// вместо ускорения. По логу ночного заезда 25.07 утечка превышала порог
+// accel-лимитера (0.15 g ⇔ тангаж 8.6°) в 8.9 % сэмплов, тогда как реальное
+// продольное ускорение имело медиану 0.010 g. Отдельная фикстура: ProcessorTest
+// собран без ImuHandler (imu_enabled=false), а здесь нужен живой IMU-путь.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class KidsAccelLimitTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    stab_mgr_ = std::make_unique<StabilizationManager>(
+        platform_, madgwick_, yaw_ctrl_, slip_ctrl_, nullptr);
+    calib_mgr_ = std::make_unique<CalibrationManager>(platform_, imu_calib_,
+                                                      madgwick_, &ekf_);
+    wifi_handler_ = std::make_unique<WifiCommandHandler>(platform_, 500);
+    imu_handler_ =
+        std::make_unique<ImuHandler>(platform_, imu_calib_, madgwick_, 2);
+    imu_handler_->SetEnabled(true);
+    telem_mgr_ = std::make_unique<TelemetryManager>();
+    telem_mgr_->Init(1000);
+    // send_interval_ms=0: каждый тик публикует снимок, чтобы тесты могли
+    // читать forward_accel через platform_.GetLastSnap() без гонки с
+    // троттлингом отправки.
+    telem_handler_ = std::make_unique<TelemetryHandler>(platform_, 0);
+    auto_drive_.SetCalibrationManager(calib_mgr_.get());
+
+    ctx_ = std::make_unique<ControlLoopContext>(ControlLoopContext{
+        platform_, imu_calib_, madgwick_, ekf_, yaw_ctrl_, pitch_ctrl_,
+        slip_ctrl_, oversteer_guard_, kids_processor_, auto_drive_,
+        calib_mgr_.get(), stab_mgr_.get(), telem_mgr_.get(), nullptr,
+        wifi_handler_.get(), imu_handler_.get(), telem_handler_.get(),
+        last_loop_hz_});
+    processor_ = std::make_unique<ControlLoopProcessor>(*ctx_, 0);
+
+    auto cfg = stab_mgr_->GetConfig();
+    cfg.mode = DriveMode::Kids;
+    stab_mgr_->SetConfig(cfg);
+  }
+
+  void RunSteps(uint32_t n) {
+    for (uint32_t i = 0; i < n; ++i) {
+      time_ms_ += 2;
+      processor_->Step(time_ms_, 2);
+    }
+  }
+
+  /** Показания IMU в покое при заданном тангаже [рад].
+   *  Нос ВНИЗ = pitch < 0 → ax > 0, то есть клевок читается как «разгон». */
+  static ImuData AtRestWithPitch(float pitch_rad) {
+    ImuData d{};
+    d.ax = -std::sin(pitch_rad);
+    d.az = std::cos(pitch_rad);
+    return d;
+  }
+
+  FakePlatform platform_;
+  ImuCalibration imu_calib_;
+  MadgwickFilter madgwick_;
+  VehicleEkf ekf_;
+  YawRateController yaw_ctrl_;
+  PitchCompensator pitch_ctrl_;
+  SlipAngleController slip_ctrl_;
+  OversteerGuard oversteer_guard_;
+  KidsModeProcessor kids_processor_;
+  AutoDriveCoordinator auto_drive_;
+  std::atomic<uint32_t> last_loop_hz_{0};
+
+  std::unique_ptr<StabilizationManager> stab_mgr_;
+  std::unique_ptr<CalibrationManager> calib_mgr_;
+  std::unique_ptr<WifiCommandHandler> wifi_handler_;
+  std::unique_ptr<ImuHandler> imu_handler_;
+  std::unique_ptr<TelemetryManager> telem_mgr_;
+  std::unique_ptr<TelemetryHandler> telem_handler_;
+  std::unique_ptr<ControlLoopContext> ctx_;
+  std::unique_ptr<ControlLoopProcessor> processor_;
+
+  uint32_t time_ms_{0};
+};
+
+TEST_F(KidsAccelLimitTest, StaticNoseDownTilt_DoesNotTriggerAccelLimit) {
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+  const ImuData tilted = AtRestWithPitch(kPitchRad);
+
+  // Дискриминативность: прежний путь на СТОЯЩЕЙ машине выдавал ускорение выше
+  // порога лимитера — этот тест падает на реализации до LOS-245.
+  EXPECT_GT(imu_calib_.GetForwardAccel(tilted), 0.15f);
+
+  // Фаза 1: машина стоит носом вниз, газа нет — TiltEstimator сходится к
+  // −15°. При corr_gain_hz=0.5 постоянная времени 2 с, 6 с дают ~95 %.
+  platform_.SetImuData(tilted);
+  platform_.SetWifiCommand(RcCommand{0.0f, 0.0f});
+  RunSteps(3000);
+
+  // Фаза 2: даём газ, оставаясь на том же уклоне. Ускорения по-прежнему нет —
+  // акселерометр показывает только проекцию гравитации.
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(200);
+
+  EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
+      << "accel-лимитер сработал на статическом наклоне без ускорения";
+}
+
+TEST_F(KidsAccelLimitTest, RealAccelerationOnSlope_StillTriggersAccelLimit) {
+  // Обратная сторона: компенсация не должна ослеплять лимитер там, где
+  // ускорение настоящее.
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+
+  platform_.SetImuData(AtRestWithPitch(kPitchRad));
+  platform_.SetWifiCommand(RcCommand{0.0f, 0.0f});
+  RunSteps(3000);
+
+  ImuData accelerating = AtRestWithPitch(kPitchRad);
+  accelerating.ax += 0.4f;  // реальный разгон 0.4 g поверх уклона
+  platform_.SetImuData(accelerating);
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(50);  // коротко: TiltEstimator не успевает «съесть» разгон
+
+  EXPECT_TRUE(kids_processor_.IsAccelLimitActive())
+      << "лимитер пропустил реальный разгон 0.4 g";
+}
+
+TEST_F(KidsAccelLimitTest, TiltCompDisabled_DegradesToLegacyNotMadgwick) {
+  // При выключенном tilt-фильтре компенсации быть НЕ должно: фолбэка на
+  // Madgwick здесь нет намеренно (он заваливается на разгоне — LOS-240).
+  // Проверяем именно это: на статическом наклоне лимитер срабатывает, как и
+  // до LOS-245. Через Madgwick он бы, наоборот, промолчал — то есть тест
+  // отличает «деградировали в старое поведение» от «тихо взяли Madgwick».
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.tilt_comp_enabled = false;
+  cfg.filter.madgwick_enabled = true;  // Madgwick жив, но не должен влиять
+  stab_mgr_->SetConfig(cfg);
+
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+  platform_.SetImuData(AtRestWithPitch(kPitchRad));
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(3000);  // с запасом на сходимость Madgwick
+
+  EXPECT_TRUE(kids_processor_.IsAccelLimitActive())
+      << "без tilt-фильтра ожидалось прежнее поведение, а компенсация всё же "
+         "произошла — вероятно, вернулся фолбэк на Madgwick";
+}
+
+TEST_F(KidsAccelLimitTest, SustainedAcceleration_LimiterFadesAsTiltAbsorbsIt) {
+  // Фиксация ИЗВЕСТНОГО ОГРАНИЧЕНИЯ, а не желаемого поведения. TiltEstimator
+  // не отличает устойчивое продольное ускорение от наклона и с постоянной
+  // времени 1/corr_gain_hz (по умолчанию 2 с) уводит его в тангаж. Замер:
+  // при 0.3 g лимитер держится ~2.4 с, затем слепнет. Kids-режим ловит
+  // короткие тычки газом, так что запаса хватает, но если тест упадёт —
+  // значит характеристика фильтра поехала, и это надо осознать, а не
+  // подкрутить константы.
+  ImuData accelerating{};
+  accelerating.ax = 0.3f;  // вдвое выше порога 0.15 g
+  accelerating.az = 1.0f;
+  platform_.SetImuData(accelerating);
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+
+  RunSteps(250);  // 0.5 с — разгон ещё виден
+  EXPECT_TRUE(kids_processor_.IsAccelLimitActive())
+      << "лимитер не поймал разгон 0.3 g даже в первые 0.5 с";
+
+  RunSteps(2250);  // суммарно 5 с — тангаж «съел» ускорение
+  EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
+      << "ограничение изменилось: разгон всё ещё виден через 5 с";
+}
+
+TEST_F(KidsAccelLimitTest, EkfDisabled_TiltCompEnabled_StillCompensatesTilt) {
+  // Регресс код-ревью PR #302 (круг 2, найдено независимо ревьюером и ботом
+  // Codex): tilt_est_.Update() был вложен в `if (ekf_active && ...)`, поэтому
+  // при ekf_enabled=false (реальная, переключаемая через WS/мобильное
+  // приложение настройка — НЕ гипотетическая) tilt_est_ замораживался, и
+  // fwd_accel_g_ ниже деградировал в ImuCalibration::GetForwardAccel() —
+  // то есть В ТОЧНОСТИ в баг, который чинит LOS-245: лимитер снова ложно
+  // срабатывал на статическом наклоне. Фикс — считать tilt_est_.Update()
+  // независимо от ekf_active (см. control_loop_processor.cpp).
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.ekf_enabled = false;       // отключено пользователем/оператором
+  cfg.filter.tilt_comp_enabled = true;  // но tilt-фильтр формально включён
+
+  stab_mgr_->SetConfig(cfg);
+
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+  platform_.SetImuData(AtRestWithPitch(kPitchRad));
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(3000);  // 6 с — сходимость TiltEstimator не зависит от EKF
+
+  EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
+      << "при выключенном EKF лимитер сработал на статическом наклоне без "
+         "ускорения — tilt_est_ снова заморожен";
+}
+
+TEST_F(KidsAccelLimitTest, EkfDisabledMidTurn_StaleVxDoesNotCorruptTilt) {
+  // Регресс код-ревью PR #302 (круг 3, найдено ботом Codex): a_lin_lat_g в
+  // tilt_est_.Update() читал prev_vx_ БЕЗ гейта на ekf_active — после
+  // разъединения tilt_est_ от ekf_active (круг 2) это давало ПРОТУХШЕЕ на
+  // неопределённый срок значение, если EKF выключили на ходу (prev_vx_ != 0).
+  // ay_grav = imu.ay − a_lin_lat_g влияет не только на roll (как думалось
+  // изначально), но и на accel_mag (гейт коррекции) и horiz — а значит и на
+  // pitch_acc = atan2(−ax_grav, horiz) в tilt_estimator.cpp: протухший
+  // prev_vx_ мог исказить ТАНГАЖ и, как следствие, fwd_accel_g_/Kids-лимитер.
+  //
+  // Прямая проверка через IsAccelLimitActive() на статическом наклоне без
+  // поворота недискриминативна: при ax_grav=0 (нет реального тангажа) atan2(0,
+  // horiz)=0 при ЛЮБОМ horiz, искажение a_lin_lat_g не проявляется. Поэтому
+  // здесь читаем forward_accel из телеметрии напрямую (platform_.GetLastSnap()
+  // ), а не бинарный флаг.
+  //
+  // Сценарий: разгоняемся до ненулевой vx (мотор-модельный якорь через EKF)
+  // на ровной дороге, выключаем EKF на ходу (prev_vx_ замораживается на
+  // достигнутом значении), затем ставим машину на РЕАЛЬНЫЙ статический
+  // наклон (как в StaticNoseDownTilt_DoesNotTriggerAccelLimit) и одновременно
+  // поворачиваем — ax_grav теперь ненулевой.
+  //
+  // На практике эффект оказался ГРУБЕЕ, чем изначально предполагалось (не
+  // тонкое смещение pitch_acc через horiz): при реалистичных vx~3.8 м/с и
+  // gz=200°/с протухший a_lin_lat_g ≈ (gz·vx)/g ≈ 1.35g — это НА ПОРЯДОК
+  // больше accel_gate_band_g (0.1 по умолчанию), поэтому accel_mag гейт
+  // отвергает КАЖДУЮ коррекцию, и tilt_est_ бесконечно замораживается на
+  // значении с момента выключения EKF (здесь — уровень/0°), полностью
+  // игнорируя реальный наклон -15°. Без фикса forward_accel остаётся равным
+  // сырому ax (~0.259g, что уже само по себе выше порога лимитера 0.15g) и
+  // НЕ убывает даже за 10 секунд.
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand(RcCommand{0.5f, 0.0f});
+  RunSteps(3000);  // 6 с: мотор-модельный якорь разгоняет EKF vx
+
+  ASSERT_GT(ekf_.GetVx(), 0.5f)
+      << "не удалось разогнать EKF vx в подготовке теста — сценарий "
+         "непроверяем";
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.filter.ekf_enabled = false;  // prev_vx_ замораживается прямо на ходу
+  stab_mgr_->SetConfig(cfg);
+
+  constexpr float kPitchRad = -15.f * 3.14159265358979f / 180.f;
+  ImuData tilted_turning = AtRestWithPitch(kPitchRad);
+  tilted_turning.gz = 200.0f;  // ощутимый поворот на том же уклоне
+  platform_.SetImuData(tilted_turning);
+  RunSteps(5000);  // 10 с — дать TiltEstimator сойтись к (возможно смещённому)
+                   // значению под постоянной контаминацией a_lin_lat_g
+                   // (corr_gain_hz=0.5 ⇒ постоянная времени 2с, 10с даёт
+                   // <1% остатка — 6с оставляли ~5%, шумевшие в допуске)
+
+  const float forward_accel = platform_.GetLastSnap().forward_accel;
+  EXPECT_NEAR(forward_accel, 0.0f, 0.01f)
+      << "протухший prev_vx_ исказил тангаж через a_lin_lat_g: "
+         "forward_accel="
+      << forward_accel
+      << "g на статическом наклоне без реального продольного ускорения "
+         "(должно быть ~0)";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
