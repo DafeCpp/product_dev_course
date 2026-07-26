@@ -44,9 +44,8 @@ def test_kids_speed_limiter_reduces_output_without_changing_motor_anchor():
     unlimited = _full_throttle(drive_mode="kids")
     limited = _full_throttle(drive_mode="kids", speed_limit=1.0)
 
-    # Лимитер сработал: итоговая команда мотора существенно ниже обычного
-    # Kids throttle_limit=0.3.
-    assert limited["thr"] < 0.5 * unlimited["thr"]
+    # После LOS-247 limiter удерживает не более половины обычной Kids-команды.
+    assert limited["thr"] <= 0.5 * unlimited["thr"]
 
     # Моторный якорь получает исходную команду до лимитеров. Если подать сюда
     # урезанный PWM, как до LOS-246, speed_meas и EKF начнут следовать за
