@@ -82,6 +82,15 @@ class ControlLoopProcessor {
   // Per-iteration mutable state
   float commanded_throttle_{0.0f};
   float commanded_steering_{0.0f};
+  // Финализированный вход моторной модели прошлого тика. В Kids это
+  // counterfactual внешний PWM slew без speed limiter; в остальных режимах
+  // совпадает с applied_throttle_. Храним единый готовый снимок, чтобы
+  // смена режима между тиками не выбирала вход не того режима (LOS-246).
+  float motor_model_throttle_{0.0f};
+  // Цель для counterfactual Kids-PWM до speed limiter. Заполняется после
+  // всех обычных стабилизаторов, затем UpdatePwm применяет к ней тот же
+  // внешний slew, что и к фактической PWM-команде.
+  float motor_model_target_throttle_{0.0f};
   float applied_throttle_{0.0f};
   float applied_steering_{0.0f};
   float prev_gz_rad_s_{0.0f};

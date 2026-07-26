@@ -37,9 +37,26 @@ class KidsModeProcessor {
    * @param steering Команда руля [in/out]
    * @param dt_ms Шаг времени в миллисекундах
    * @param forward_accel Продольное ускорение IMU [g] для accel limiter
+   * @param throttle_before_speed_limit Не-null: получает throttle после
+   *        обычных Kids-ограничений, но до speed limiter (LOS-246)
+   * @param apply_speed_limit Применить speed limiter сразу; control loop
+   *        передаёт false, чтобы применить его после остальных стабилизаторов
    */
   void Process(const StabilizationConfig& cfg, float& throttle, float& steering,
-               uint32_t dt_ms, float forward_accel = 0.0f) noexcept;
+               uint32_t dt_ms, float forward_accel = 0.0f,
+               float* throttle_before_speed_limit = nullptr,
+               bool apply_speed_limit = true) noexcept;
+
+  /**
+   * @brief Применить feedback speed limiter и slew фактической команды.
+   * @param dt_ms Ненулевой шаг применяет Kids throttle slew после limiter.
+   */
+  void ApplySpeedLimit(const StabilizationConfig& cfg, float& throttle,
+                       uint32_t dt_ms = 0) noexcept;
+
+  /** Применить независимый pre-speed-limit Kids slew для EKF-якоря. */
+  void ApplyCounterfactualSlew(const StabilizationConfig& cfg, float& throttle,
+                               uint32_t dt_ms) noexcept;
 
   /**
    * @brief Проверить, активен ли Kids Mode для переданного конфига
@@ -83,6 +100,8 @@ class KidsModeProcessor {
   const ImuHandler* imu_{nullptr};
 
   float smoothed_throttle_{0.0f};
+  // Независимая pre-speed-limit ветка для motor-model snapshot (LOS-246).
+  float counterfactual_throttle_{0.0f};
   float smoothed_steering_{0.0f};
   bool anti_spin_active_{false};
   bool accel_limit_active_{false};
