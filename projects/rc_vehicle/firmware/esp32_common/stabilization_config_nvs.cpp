@@ -33,8 +33,10 @@ static constexpr uint8_t kDriveModeCount = 5;
 // v8: добавлены FilterConfig::tilt_comp_enabled, tilt_corr_gain_hz,
 //     tilt_accel_gate_band_g (LOS-240)
 // v9: сброс Kids-профиля для обновлённого slew_steering (LOS-248)
-static constexpr uint8_t kCurrentStabConfigVersion = 9;
-static constexpr uint8_t kPreviousStabConfigVersion = 8;
+// v10: миграция KidsModeConfig::speed_limit_gain на 1.5 (LOS-247)
+static constexpr uint8_t kCurrentStabConfigVersion = 10;
+static constexpr uint8_t kV8StabConfigVersion = 8;
+static constexpr uint8_t kV9StabConfigVersion = 9;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
 struct StabConfigBlob {
@@ -99,7 +101,7 @@ esp_err_t MigrateV8Profiles(nvs_handle_t handle) {
     if (err != ESP_OK) {
       return err;
     }
-    if (size != sizeof(blob) || blob.version != kPreviousStabConfigVersion) {
+    if (size != sizeof(blob) || blob.version != kV8StabConfigVersion) {
       continue;
     }
 
@@ -109,6 +111,69 @@ esp_err_t MigrateV8Profiles(nvs_handle_t handle) {
       blob.config.mode = DriveMode::Kids;
       blob.config.ApplyModeDefaults();
       ESP_LOGI(TAG, "Reset Kids config while migrating NVS v8 -> v9");
+    }
+    blob.version = kV9StabConfigVersion;
+    err = nvs_set_blob(handle, key, &blob, sizeof(blob));
+    if (err != ESP_OK) {
+      return err;
+    }
+    changed = true;
+  }
+
+  StabConfigBlob legacy_blob{};
+  size_t legacy_size = sizeof(legacy_blob);
+  esp_err_t legacy_err =
+      nvs_get_blob(handle, NVS_LEGACY_KEY, &legacy_blob, &legacy_size);
+  if (legacy_err != ESP_ERR_NVS_NOT_FOUND && legacy_err != ESP_OK) {
+    return legacy_err;
+  }
+  if (legacy_err == ESP_OK && legacy_size == sizeof(legacy_blob) &&
+      legacy_blob.version == kV8StabConfigVersion) {
+    if (legacy_blob.config.mode == DriveMode::Kids) {
+      legacy_blob.config.Reset();
+      legacy_blob.config.kids_mode = rc_vehicle::KidsModeConfig{};
+      legacy_blob.config.mode = DriveMode::Kids;
+      legacy_blob.config.ApplyModeDefaults();
+      ESP_LOGI(TAG, "Reset legacy Kids config while migrating NVS v8 -> v9");
+    }
+    legacy_blob.version = kV9StabConfigVersion;
+    legacy_err =
+        nvs_set_blob(handle, NVS_LEGACY_KEY, &legacy_blob, sizeof(legacy_blob));
+    if (legacy_err != ESP_OK) {
+      return legacy_err;
+    }
+    changed = true;
+  }
+
+  return changed ? nvs_commit(handle) : ESP_OK;
+}
+
+/** Мигрировать v9 Kids-профили на пропорциональный speed limiter. */
+esp_err_t MigrateV9Profiles(nvs_handle_t handle) {
+  bool changed = false;
+  for (uint8_t m = 0; m < kDriveModeCount; ++m) {
+    char key[8];
+    const DriveMode mode = static_cast<DriveMode>(m);
+    ModeKey(mode, key);
+
+    StabConfigBlob blob{};
+    size_t size = sizeof(blob);
+    esp_err_t err = nvs_get_blob(handle, key, &blob, &size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+      continue;
+    }
+    if (err != ESP_OK) {
+      return err;
+    }
+    if (size != sizeof(blob) || blob.version != kV9StabConfigVersion) {
+      continue;
+    }
+
+    if (mode == DriveMode::Kids) {
+      // Сохраняем остальные пользовательские настройки Kids-профиля.
+      blob.config.kids_mode.speed_limit_gain = 1.5f;
+      ESP_LOGI(TAG,
+               "Updated Kids speed limiter gain while migrating v9 -> v10");
     }
     blob.version = kCurrentStabConfigVersion;
     err = nvs_set_blob(handle, key, &blob, sizeof(blob));
@@ -126,13 +191,13 @@ esp_err_t MigrateV8Profiles(nvs_handle_t handle) {
     return legacy_err;
   }
   if (legacy_err == ESP_OK && legacy_size == sizeof(legacy_blob) &&
-      legacy_blob.version == kPreviousStabConfigVersion) {
+      legacy_blob.version == kV9StabConfigVersion) {
     if (legacy_blob.config.mode == DriveMode::Kids) {
-      legacy_blob.config.Reset();
-      legacy_blob.config.kids_mode = rc_vehicle::KidsModeConfig{};
-      legacy_blob.config.mode = DriveMode::Kids;
-      legacy_blob.config.ApplyModeDefaults();
-      ESP_LOGI(TAG, "Reset legacy Kids config while migrating NVS v8 -> v9");
+      // Сохраняем остальные пользовательские настройки legacy-профиля.
+      legacy_blob.config.kids_mode.speed_limit_gain = 1.5f;
+      ESP_LOGI(
+          TAG,
+          "Updated legacy Kids speed limiter gain while migrating v9 -> v10");
     }
     legacy_blob.version = kCurrentStabConfigVersion;
     legacy_err =
@@ -159,6 +224,12 @@ esp_err_t Load(DriveMode mode, StabilizationConfig& config) {
   char key[8];
 
   err = MigrateV8Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV9Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);
@@ -191,6 +262,12 @@ esp_err_t Load(StabilizationConfig& config) {
   // Активный режим → его слот.
 
   err = MigrateV8Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV9Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);
