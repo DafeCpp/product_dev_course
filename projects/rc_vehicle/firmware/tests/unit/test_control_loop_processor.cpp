@@ -1043,9 +1043,9 @@ TEST_F(KidsAccelLimitTest, EkfDisabledMidTurn_StaleVxDoesNotCorruptTilt) {
   tilted_turning.gz = 200.0f;  // ощутимый поворот на том же уклоне
   platform_.SetImuData(tilted_turning);
   RunSteps(5000);  // 10 с — дать TiltEstimator сойтись к (возможно смещённому)
-                    // значению под постоянной контаминацией a_lin_lat_g
-                    // (corr_gain_hz=0.5 ⇒ постоянная времени 2с, 10с даёт
-                    // <1% остатка — 6с оставляли ~5%, шумевшие в допуске)
+                   // значению под постоянной контаминацией a_lin_lat_g
+                   // (corr_gain_hz=0.5 ⇒ постоянная времени 2с, 10с даёт
+                   // <1% остатка — 6с оставляли ~5%, шумевшие в допуске)
 
   const float forward_accel = platform_.GetLastSnap().forward_accel;
   EXPECT_NEAR(forward_accel, 0.0f, 0.01f)
