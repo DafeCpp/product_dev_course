@@ -43,7 +43,9 @@ void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
 
 void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
                                 float& steering, uint32_t dt_ms,
-                                float forward_accel) noexcept {
+                                float forward_accel,
+                                float* throttle_before_speed_limit,
+                                bool apply_speed_limit) noexcept {
   if (!IsActive(cfg)) {
     return;  // Kids Mode не активен
   }
@@ -95,10 +97,58 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     throttle *= (1.0f - reduction);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 4. Ограничение по скорости (EKF, feedback-based)
-  // ─────────────────────────────────────────────────────────────────────────
+  // Руль всегда проходит Kids slew в этой фазе. Throttle при deferred-пути
+  // сглаживается позже, после pitch/oversteer, чтобы якорь отражал все
+  // не-speed модификаторы (LOS-246).
+  if (dt_ms > 0) {
+    smoothed_steering_ = firmware_common::ApplySlewRate(
+        steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
+    steering = smoothed_steering_;
+  }
 
+  if (apply_speed_limit) {
+    float counterfactual = throttle;
+    ApplyCounterfactualSlew(cfg, counterfactual, dt_ms);
+    if (throttle_before_speed_limit) {
+      *throttle_before_speed_limit = counterfactual;
+    }
+    ApplySpeedLimit(cfg, throttle, dt_ms);
+  } else {
+    if (throttle_before_speed_limit) {
+      *throttle_before_speed_limit = throttle;
+    }
+  }
+}
+
+void KidsModeProcessor::ApplyCounterfactualSlew(const StabilizationConfig& cfg,
+                                                float& throttle,
+                                                uint32_t dt_ms) noexcept {
+  if (!IsActive(cfg)) return;
+  // Без speed limiter обе ветки должны описывать один и тот же Kids output.
+  // Сбрасываем скрытое counterfactual-состояние к actual slew, чтобы краткое
+  // выключение/включение limiter не восстановило старую unlimited-цель.
+  if (!cfg.kids_mode.speed_limit_enabled) {
+    counterfactual_throttle_ = smoothed_throttle_;
+  }
+  if (dt_ms > 0) {
+    counterfactual_throttle_ = firmware_common::ApplySlewRate(
+        throttle, counterfactual_throttle_, cfg.kids_mode.slew_throttle,
+        dt_ms / 1000.0f);
+    throttle = counterfactual_throttle_;
+  } else {
+    counterfactual_throttle_ = throttle;
+  }
+}
+
+void KidsModeProcessor::ApplySpeedLimit(const StabilizationConfig& cfg,
+                                        float& throttle,
+                                        uint32_t dt_ms) noexcept {
+  if (!IsActive(cfg)) {
+    speed_limit_active_ = false;
+    return;
+  }
+
+  const auto& km = cfg.kids_mode;
   if (km.speed_limit_enabled && ekf_ && imu_ && imu_->IsEnabled() &&
       throttle > 0.0f && !ekf_->IsDiverged() &&
       ekf_->GetVxVariance() <= kSpeedTrustVarMax) {
@@ -120,23 +170,16 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     speed_limit_active_ = false;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 5. Применить slew к итоговой команде после всех ограничителей
-  // ─────────────────────────────────────────────────────────────────────────
-
   if (dt_ms > 0) {
     smoothed_throttle_ = firmware_common::ApplySlewRate(
         throttle, smoothed_throttle_, km.slew_throttle, dt_ms / 1000.0f);
-    smoothed_steering_ = firmware_common::ApplySlewRate(
-        steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
-
     throttle = smoothed_throttle_;
-    steering = smoothed_steering_;
   }
 }
 
 void KidsModeProcessor::Reset() noexcept {
   smoothed_throttle_ = 0.0f;
+  counterfactual_throttle_ = 0.0f;
   smoothed_steering_ = 0.0f;
   anti_spin_active_ = false;
   accel_limit_active_ = false;

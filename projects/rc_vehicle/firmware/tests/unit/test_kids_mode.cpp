@@ -701,7 +701,8 @@ class KidsModeSpeedLimitTest : public ::testing::Test {
     cfg_.kids_mode.throttle_limit = 0.5f;
     cfg_.kids_mode.reverse_limit = 0.3f;
     cfg_.kids_mode.steering_limit = 1.0f;
-    cfg_.kids_mode.slew_throttle = 100.0f;  // отключаем slew для прямой проверки
+    cfg_.kids_mode.slew_throttle =
+        100.0f;  // отключаем slew для прямой проверки
     cfg_.kids_mode.slew_steering = 100.0f;
     cfg_.kids_mode.anti_spin_enabled = false;
     cfg_.kids_mode.accel_limit_enabled = false;
@@ -709,7 +710,8 @@ class KidsModeSpeedLimitTest : public ::testing::Test {
     cfg_.kids_mode.max_speed_ms = 1.0f;
     cfg_.kids_mode.speed_limit_gain = 5.0f;
 
-    imu_handler_ = std::make_unique<ImuHandler>(platform_, imu_calib_, madgwick_, 2);
+    imu_handler_ =
+        std::make_unique<ImuHandler>(platform_, imu_calib_, madgwick_, 2);
     imu_handler_->SetEnabled(true);
 
     processor_.Init(ekf_, imu_handler_.get());
@@ -737,6 +739,34 @@ TEST_F(KidsModeSpeedLimitTest, AboveLimit_ReducesThrottle) {
   float throttle = 0.4f, steering = 0.0f;
   processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_LT(throttle, 0.4f);
+  EXPECT_TRUE(processor_.IsSpeedLimitActive());
+}
+
+TEST_F(KidsModeSpeedLimitTest, SnapshotExcludesAppliedSpeedLimiter) {
+  // Даже при обычном (неотложенном) вызове snapshot остаётся независимым от
+  // feedback limiter и пригоден для моторной модели EKF (LOS-246).
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f, before_speed_limit = 0.0f;
+
+  processor_.Process(cfg_, throttle, steering, 10, 0.0f, &before_speed_limit);
+
+  EXPECT_NEAR(before_speed_limit, 0.4f, 0.01f);
+  EXPECT_LT(throttle, before_speed_limit);
+}
+
+TEST_F(KidsModeSpeedLimitTest, CanDeferSpeedLimitUntilAfterOtherModifiers) {
+  ekf_.SetState(1.5f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f;
+
+  processor_.Process(cfg_, throttle, steering, 10, 0.0f, nullptr,
+                     /*apply_speed_limit=*/false);
+  EXPECT_NEAR(throttle, 0.4f, 0.01f);
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+
+  // Имитирует throttle-модификатор поздней стабилизации (pitch/oversteer).
+  throttle = 0.5f;
+  processor_.ApplySpeedLimit(cfg_, throttle);
+  EXPECT_LT(throttle, 0.5f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
 
