@@ -47,9 +47,12 @@ class KidsModeProcessor {
                float* throttle_before_speed_limit = nullptr,
                bool apply_speed_limit = true) noexcept;
 
-  /** Применить feedback speed limiter к уже обработанной команде газа. */
-  void ApplySpeedLimit(const StabilizationConfig& cfg,
-                       float& throttle) noexcept;
+  /**
+   * @brief Применить feedback speed limiter и slew фактической команды.
+   * @param dt_ms Ненулевой шаг применяет Kids throttle slew после limiter.
+   */
+  void ApplySpeedLimit(const StabilizationConfig& cfg, float& throttle,
+                       uint32_t dt_ms = 0) noexcept;
 
   /**
    * @brief Проверить, активен ли Kids Mode для переданного конфига
@@ -93,6 +96,8 @@ class KidsModeProcessor {
   const ImuHandler* imu_{nullptr};
 
   float smoothed_throttle_{0.0f};
+  // Независимая pre-speed-limit ветка для motor-model snapshot (LOS-246).
+  float counterfactual_throttle_{0.0f};
   float smoothed_steering_{0.0f};
   bool anti_spin_active_{false};
   bool accel_limit_active_{false};

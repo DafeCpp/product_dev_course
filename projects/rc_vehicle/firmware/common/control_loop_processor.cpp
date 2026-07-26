@@ -409,7 +409,7 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
     // моторного входа без единственного feedback-звена, speed limiter;
     // затем limiter ограничивает фактическую PWM-команду (LOS-246).
     motor_model_target_throttle_ = commanded_throttle_;
-    ctx_.kids_processor.ApplySpeedLimit(stab_cfg_, commanded_throttle_);
+    ctx_.kids_processor.ApplySpeedLimit(stab_cfg_, commanded_throttle_, dt_ms);
   }
 }
 
