@@ -94,6 +94,12 @@ if(WIN32)
     add_compile_definitions(_USE_MATH_DEFINES)
 endif()
 
+# LOS-219: opt-in compile-check for the loop profiler (never built before).
+option(RC_PROFILE_LOOP "Enable control_loop_processor per-stage profiling" OFF)
+if(RC_PROFILE_LOOP)
+    add_compile_definitions(RC_PROFILE_LOOP=1)
+endif()
+
 # Unit tests executable
 add_executable(unit_tests
     ${COMMON_SOURCES}

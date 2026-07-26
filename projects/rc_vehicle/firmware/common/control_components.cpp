@@ -84,11 +84,27 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   last_read_ms_ = now_ms;
 
   // Прочитать данные IMU
+#ifdef RC_PROFILE_LOOP
+  // LOS-219/250: время ТОЛЬКО SPI-транзакции(й), отдельно от остального
+  // (калибровка/LPF/mag/Madgwick) — см. GetProfSpiUs() в .hpp. Меряем даже
+  // при неудаче: сама транзакция уже отработала.
+  const uint64_t _spi_t0 = platform_.GetTimeUs();
+#endif
   auto imu_data = platform_.ReadImu();
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _spi_d = platform_.GetTimeUs() - _spi_t0;
+    prof_spi_us_ += _spi_d;
+    if (_spi_d > prof_spi_max_us_) prof_spi_max_us_ = _spi_d;
+  }
+#endif
   if (!imu_data) {
     return;
   }
 
+#ifdef RC_PROFILE_LOOP
+  const uint64_t _rest_t0 = platform_.GetTimeUs();
+#endif
   data_ = *imu_data;
 
   // Подача семпла в калибровку (если идёт сбор)
@@ -124,6 +140,14 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   FeedMadgwick(raw_ax, raw_ay, raw_az, dt_sec);
 
   UpdateVehicleFrame();
+
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _rest_d = platform_.GetTimeUs() - _rest_t0;
+    prof_rest_us_ += _rest_d;
+    if (_rest_d > prof_rest_max_us_) prof_rest_max_us_ = _rest_d;
+  }
+#endif
 }
 
 void ImuHandler::UpdateVehicleFrame() {
@@ -160,7 +184,17 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
   }
   last_mag_read_ms_ = now_ms;
 
+#ifdef RC_PROFILE_LOOP
+  const uint64_t _mag_t0 = platform_.GetTimeUs();
+#endif
   const auto mag_opt = platform_.ReadMag();
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _mag_d = platform_.GetTimeUs() - _mag_t0;
+    prof_mag_us_ += _mag_d;
+    if (_mag_d > prof_mag_max_us_) prof_mag_max_us_ = _mag_d;
+  }
+#endif
   if (!mag_opt) {
     return;
   }

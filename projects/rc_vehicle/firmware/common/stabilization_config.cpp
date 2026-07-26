@@ -140,7 +140,7 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
     case KidsPreset::Toddler:
       reverse_limit = 0.10f;
       slew_throttle = 0.2f;
-      slew_steering = 0.3f;
+      slew_steering = 3.0f;
       anti_spin_threshold_deg = 5.0f;
       anti_spin_reduction = 0.8f;
       accel_limit_enabled = true;
@@ -149,13 +149,13 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       accel_max_reduction = 0.7f;
       speed_limit_enabled = true;
       max_speed_ms = 0.5f;
-      speed_limit_gain = 8.0f;
+      speed_limit_gain = 1.5f;
       break;
 
     case KidsPreset::Child:
       reverse_limit = 0.20f;
       slew_throttle = 0.3f;
-      slew_steering = 0.5f;
+      slew_steering = 3.0f;
       anti_spin_threshold_deg = 10.0f;
       anti_spin_reduction = 0.7f;
       accel_limit_enabled = true;
@@ -164,13 +164,13 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       accel_max_reduction = 0.5f;
       speed_limit_enabled = true;
       max_speed_ms = 1.0f;
-      speed_limit_gain = 5.0f;
+      speed_limit_gain = 1.5f;
       break;
 
     case KidsPreset::Preteen:
       reverse_limit = 0.35f;
       slew_throttle = 0.4f;
-      slew_steering = 0.7f;
+      slew_steering = 3.0f;
       anti_spin_threshold_deg = 15.0f;
       anti_spin_reduction = 0.5f;
       accel_limit_enabled = true;
@@ -179,7 +179,7 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
       accel_max_reduction = 0.3f;
       speed_limit_enabled = true;
       max_speed_ms = 2.0f;
-      speed_limit_gain = 3.0f;
+      speed_limit_gain = 1.5f;
       break;
 
     default:
@@ -261,14 +261,7 @@ void StabilizationConfig::Reset() noexcept {
   pitch_comp.max_correction = 0.25f;
 
   // Kids mode defaults
-  kids_mode.throttle_limit = 0.3f;
-  kids_mode.reverse_limit = 0.2f;
-  kids_mode.steering_limit = 0.7f;
-  kids_mode.slew_throttle = 0.3f;
-  kids_mode.slew_steering = 0.5f;
-  kids_mode.anti_spin_enabled = true;
-  kids_mode.anti_spin_threshold_deg = 10.0f;
-  kids_mode.anti_spin_reduction = 0.7f;
+  kids_mode = KidsModeConfig{};
 
   // Slew rate defaults
   slew_throttle = 0.5f;

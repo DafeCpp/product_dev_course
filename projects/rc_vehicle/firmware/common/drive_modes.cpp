@@ -118,7 +118,7 @@ void KidsModeStrategy::ApplyDefaults(
   cfg.adaptive.scale_max = 1.5f;
 
   cfg.slew_throttle = 0.3f;
-  cfg.slew_steering = 1.5f;
+  cfg.slew_steering = 3.0f;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

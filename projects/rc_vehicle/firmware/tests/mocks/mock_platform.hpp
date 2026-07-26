@@ -3,6 +3,7 @@
 #include <gmock/gmock.h>
 
 #include <array>
+#include <vector>
 
 #include "control_components.hpp"  // TelemetrySnapshot, BuildTelemJson
 #include "vehicle_control_platform.hpp"
@@ -178,10 +179,14 @@ class FakePlatform : public VehicleControlPlatform {
   // ─────────────────────────────────────────────────────────────────────────
 
   void Log(LogLevel level, std::string_view msg) const override {
-    // Store for verification if needed
     (void)level;
-    (void)msg;
+    logged_messages_.emplace_back(msg);
   }
+
+  const std::vector<std::string>& GetLoggedMessages() const {
+    return logged_messages_;
+  }
+  void ClearLoggedMessages() { logged_messages_.clear(); }
 
   // ─────────────────────────────────────────────────────────────────────────
   // IMU
@@ -361,6 +366,9 @@ class FakePlatform : public VehicleControlPlatform {
  private:
   // Time
   uint32_t time_ms_{0};
+
+  // Log() — const override, поэтому mutable.
+  mutable std::vector<std::string> logged_messages_;
 
   // IMU
   std::optional<ImuData> imu_data_;

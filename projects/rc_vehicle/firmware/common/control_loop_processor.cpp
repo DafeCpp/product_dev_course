@@ -17,34 +17,73 @@
 // курсор времени, PROF_LAP(acc) добавляет дельту с прошлой засечки в
 // аккумулятор и сдвигает курсор. В обычной сборке — пустышки (нулевой оверхед,
 // без _pt).
-#define PROF_START() uint64_t _pt = ctx_.platform.GetTimeUs()
-#define PROF_LAP(acc)                              \
+// PROF_START() также меряет фактический период между входами в Step() через
+// GetTimeUs() (микросекунды) — код-ревью PR #297: dt_ms приходит от
+// GetTimeMs() (целые мс), и period_us = dt_ms*1000 не может восстановить
+// точность, потерянную квантованием до мс: период чуть выше 4-мс порога
+// мог округлиться вниз до dt_ms==4 и не засчитаться как outlier. Считаем
+// период тем же источником (GetTimeUs()), что и остальной профайлер —
+// prof_prev_entry_us_ хранит момент входа в Step() с прошлого вызова.
+#define PROF_START()                                          \
+  const uint64_t _pt0 = ctx_.platform.GetTimeUs();            \
+  uint64_t _pt = _pt0;                                        \
+  const uint64_t _prof_period_us =                            \
+      prof_prev_entry_us_ ? (_pt0 - prof_prev_entry_us_) : 0; \
+  prof_prev_entry_us_ = _pt0;                                 \
+  uint64_t _prof_iter_us = 0
+#define PROF_LAP(acc, max_acc)                     \
   do {                                             \
     const uint64_t _n = ctx_.platform.GetTimeUs(); \
-    (acc) += _n - _pt;                             \
+    const uint64_t _d = _n - _pt;                  \
+    (acc) += _d;                                   \
+    if (_d > (max_acc)) (max_acc) = _d;            \
+    _prof_iter_us += _d;                           \
     _pt = _n;                                      \
+  } while (0)
+// Не делает нового замера времени — переиспользует _prof_iter_us (сумма
+// PROF_LAP-дельт за эту итерацию) и _prof_period_us (из PROF_START(),
+// микросекундный период между входами в Step() — не dt_ms, см. выше).
+#define PROF_END()                                                            \
+  do {                                                                        \
+    if (_prof_iter_us > prof_step_max_us_) prof_step_max_us_ = _prof_iter_us; \
+    if (_prof_period_us > prof_period_max_us_)                                \
+      prof_period_max_us_ = _prof_period_us;                                  \
+    if (_prof_period_us > config::ProfilingConfig::kOutlierThresholdUs)       \
+      ++prof_outliers_;                                                       \
   } while (0)
 #else
 #define PROF_START() ((void)0)
-#define PROF_LAP(acc) ((void)0)
+#define PROF_LAP(acc, max_acc) ((void)0)
+#define PROF_END() ((void)0)
 #endif
 
 namespace rc_vehicle {
 
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
+  // PROF_START() — самая первая строка (код-ревью PR #297): GetConfig()
+  // ниже берёт config_mutex_, который также берёт SetConfig() из WS-потока
+  // (LOS-219, NVS-гипотеза) — если бы PROF_START() шёл после снапшота,
+  // задержка на мьютексе была бы НЕВИДИМА ни для step_iter, ни для period,
+  // хотя произошла бы внутри Step(), подрывая саму интерпретацию
+  // расхождения period/step_iter как "stall вне Step()".
+  PROF_START();
+
   ++diag_loop_count_;
 
   // Единственный snapshot конфига на итерацию (FW-RF5): одна копия под
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
   stab_cfg_ =
       ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
-
-  PROF_START();
+  // Отдельный лап ДО UpdateComponents() (код-ревью PR #297): без него
+  // возможное ожидание config_mutex_ в GetConfig() выше (тот же мьютекс,
+  // что берёт SetConfig() из WS-потока — NVS-гипотеза LOS-219) попало бы
+  // целиком в comp-стадию, ложно указывая на RC/WiFi/IMU.
+  PROF_LAP(prof_cfg_us_, prof_cfg_max_us_);
 
   UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
-  PROF_LAP(prof_components_us_);
+  PROF_LAP(prof_components_us_, prof_components_max_us_);
   UpdateSensorsAndEkf(dt_ms);  // snapshot + ComOffset + EKF
-  PROF_LAP(prof_sensors_us_);
+  PROF_LAP(prof_sensors_us_, prof_sensors_max_us_);
 
   if (ctx_.calib_mgr) {
     ctx_.calib_mgr->ProcessRequest(now);
@@ -70,19 +109,19 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
   UpdateAutoDrive(now, dt_ms);
-  PROF_LAP(prof_control_us_);
+  PROF_LAP(prof_control_us_, prof_control_max_us_);
 
   UpdateStabilization(dt_ms);
-  PROF_LAP(prof_stab_us_);
+  PROF_LAP(prof_stab_us_, prof_stab_max_us_);
   // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
   // перезаписал бы нейтраль ненулевым trim'ом — моторы ползли бы при
   // потере сигнала (FW-R1).
   if (!HandleFailsafe()) {
     UpdatePwm(now, dt_ms);
   }
-  PROF_LAP(prof_pwm_us_);
+  PROF_LAP(prof_pwm_us_, prof_pwm_max_us_);
   UpdateTelemetry(now, dt_ms);
-  PROF_LAP(prof_telem_us_);
+  PROF_LAP(prof_telem_us_, prof_telem_max_us_);
 
   {
     const DiagnosticsContext dctx{ctx_.platform,    *ctx_.stab_mgr,
@@ -93,9 +132,48 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 #endif
     PrintDiagnostics(dctx, stab_cfg_, now, diag_loop_count_, diag_start_ms_);
 #ifdef RC_PROFILE_LOOP
+    // PROF_LAP/PROF_END — ДО EmitProfile() (код-ревью PR #297): EmitProfile()
+    // печатает текущее окно и тут же обнуляет аккумуляторы (diag/step_iter/
+    // period/outliers в том числе). Если вызвать их ПОСЛЕ EmitProfile(), эта
+    // же (пограничная) итерация попала бы в отчёт per-stage максимумами
+    // (записанными выше, до диагностики), но diag/step_iter/period/outliers
+    // от неё же ушли бы в СЛЕДУЮЩИЙ отчёт — рассинхронизация, из-за которой
+    // редкий stall на пограничной итерации давал бы противоречивые max по
+    // стадиям vs по итерации целиком. Не идеально — PROF_LAP(diag) меряет
+    // только PrintDiagnostics() (не может измерить время самого EmitProfile()
+    // до его вызова), но так хотя бы step_iter/period/outliers этой итерации
+    // попадают в ТОТ ЖЕ отчёт, что и её per-stage максимумы.
+    PROF_LAP(prof_diag_us_, prof_diag_max_us_);
+    PROF_END();
     // diag_loop_count_ обнуляется в PrintDiagnostics, когда сработал интервал —
     // это и есть сигнал напечатать средние и сбросить аккумуляторы.
-    if (diag_loop_count_ == 0) EmitProfile(prof_loops);
+    if (diag_loop_count_ == 0) {
+      EmitProfile(prof_loops);
+      // Код-ревью PR #297: сами Log()-вызовы EmitProfile() занимают время,
+      // которое нельзя было измерить ДО её вызова (нельзя напечатать число
+      // о ещё не завершившемся событии). Без этой досчитки оно улетучилось
+      // бы бесследно: PROF_END() выше уже финализировал step_iter ДО
+      // EmitProfile(), а её собственная стоимость влилась бы только в
+      // period СЛЕДУЮЩЕЙ итерации — период-выброс с заниженным step_iter,
+      // будто stall произошёл вне Step(), хотя на деле внутри Step() этой
+      // же итерации, просто после PROF_END(). Добавляем в diag/step_max
+      // (уже обнулённые EmitProfile() выше) — НЕ через PROF_END() повторно,
+      // чтобы не задвоить prof_period_max_us_/prof_outliers_ (period этой
+      // итерации не изменился и уже учтён первым PROF_END() выше).
+      const uint64_t _emit_us = ctx_.platform.GetTimeUs() - _pt;
+      prof_diag_us_ += _emit_us;
+      if (_emit_us > prof_diag_max_us_) prof_diag_max_us_ = _emit_us;
+      // Код-ревью PR #297: сравнивать нужно с ПОЛНЫМ временем этой
+      // (пограничной) итерации внутри Step() (_prof_iter_us + _emit_us),
+      // а не с одним _emit_us — иначе, напр., тело в 3мс + EmitProfile()
+      // в 3мс дают реальные 6мс внутри Step(), но step_iter в свежем
+      // окне засеивался бы только 3мс EmitProfile(), теряя тело. period
+      // СЛЕДУЮЩЕЙ итерации корректно отразил бы все 6мс — расхождение
+      // period/step_iter снова ложно указывало бы на stall вне Step().
+      const uint64_t _boundary_total_us = _prof_iter_us + _emit_us;
+      if (_boundary_total_us > prof_step_max_us_)
+        prof_step_max_us_ = _boundary_total_us;
+    }
 #endif
   }
 }
@@ -107,10 +185,25 @@ void ControlLoopProcessor::UpdateComponents(uint32_t now, uint32_t dt_ms) {
 }
 
 void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
+#ifdef RC_PROFILE_LOOP
+  // LOS-219/250: раздельные тайминги snapshot (BuildSensorSnapshot+ComOffset)
+  // vs ekf (ротация/TiltEstimator/EKF-обновления ниже) — sens занимает
+  // ~950-1000 мкс на реальном железе, вторая по размеру стадия после comp,
+  // без этой разбивки полностью непрозрачна.
+  const uint64_t _snap_t0 = ctx_.platform.GetTimeUs();
+#endif
   sensors_ =
       BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler, ctx_.imu_handler);
   prev_gz_rad_s_ =
       CorrectImuForComOffset(sensors_, ctx_.imu_calib, prev_gz_rad_s_, dt_ms);
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _snap_d = ctx_.platform.GetTimeUs() - _snap_t0;
+    prof_snapshot_us_ += _snap_d;
+    if (_snap_d > prof_snapshot_max_us_) prof_snapshot_max_us_ = _snap_d;
+  }
+  const uint64_t _ekf_t0 = ctx_.platform.GetTimeUs();
+#endif
 
   const bool ekf_active = ctx_.stab_mgr && stab_cfg_.filter.ekf_enabled;
   constexpr float kG = 9.80665f;
@@ -324,6 +417,14 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
     constexpr float kDegToRad = 3.14159265358979f / 180.0f;
     ctx_.ekf.UpdateHeading(sensors_.heading_deg * kDegToRad);
   }
+
+#ifdef RC_PROFILE_LOOP
+  {
+    const uint64_t _ekf_d = ctx_.platform.GetTimeUs() - _ekf_t0;
+    prof_ekf_us_ += _ekf_d;
+    if (_ekf_d > prof_ekf_max_us_) prof_ekf_max_us_ = _ekf_d;
+  }
+#endif
 }
 
 void ControlLoopProcessor::UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms) {
@@ -467,20 +568,86 @@ void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
 #ifdef RC_PROFILE_LOOP
 void ControlLoopProcessor::EmitProfile(uint32_t loops) {
   if (loops == 0) return;
-  LogFormat fmt;
-  fmt << "PROF(us/iter): comp=" << (prof_components_us_ / loops)
-      << " sens=" << (prof_sensors_us_ / loops)
-      << " ctrl=" << (prof_control_us_ / loops)
-      << " stab=" << (prof_stab_us_ / loops)
-      << " pwm=" << (prof_pwm_us_ / loops)
-      << " telem=" << (prof_telem_us_ / loops);
-  ctx_.platform.Log(LogLevel::Info, fmt.str());
+  {
+    LogFormat fmt;
+    fmt << "PROF(us/iter): cfg=" << (prof_cfg_us_ / loops)
+        << " comp=" << (prof_components_us_ / loops)
+        << " sens=" << (prof_sensors_us_ / loops)
+        << " ctrl=" << (prof_control_us_ / loops)
+        << " stab=" << (prof_stab_us_ / loops)
+        << " pwm=" << (prof_pwm_us_ / loops)
+        << " telem=" << (prof_telem_us_ / loops)
+        << " diag=" << (prof_diag_us_ / loops);
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
+  {
+    // LOS-219: пиковые (worst-case) значения по стадиям + частота
+    // выбросов — среднее теряет редкие однократные stall'ы (напр. от
+    // синхронного NVS commit) на фоне тысяч обычных итераций за интервал.
+    // step_iter — макс. время ВНУТРИ Step(); period — макс. реальный период
+    // между вызовами Step() (dt_ms). Печатаем оба (код-ревью PR #297):
+    // расхождение между ними указывает на stall ВНЕ Step() (напр. в
+    // DelayUntilNextTick() на другом ядре) — outliers считается по period.
+    LogFormat fmt;
+    fmt << "PROF(max us): cfg=" << prof_cfg_max_us_
+        << " comp=" << prof_components_max_us_
+        << " sens=" << prof_sensors_max_us_ << " ctrl=" << prof_control_max_us_
+        << " stab=" << prof_stab_max_us_ << " pwm=" << prof_pwm_max_us_
+        << " telem=" << prof_telem_max_us_ << " diag=" << prof_diag_max_us_
+        << " step_iter=" << prof_step_max_us_
+        << " period=" << prof_period_max_us_ << " outliers=" << prof_outliers_
+        << "/" << loops;
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
+  if (ctx_.imu_handler) {
+    // LOS-219/250: раздельные тайминги внутри "comp" — spi (только
+    // platform_.ReadImu()) vs rest (калибровка/LPF/mag/Madgwick/vehicle-
+    // frame) vs mag (только platform_.ReadMag(), раз в 5 тиков — проверка
+    // гипотезы, что скачок rest_max вызван именно магнетометром).
+    LogFormat fmt;
+    fmt << "PROF(imu us): spi_avg="
+        << (ctx_.imu_handler->GetProfSpiUs() / loops)
+        << " spi_max=" << ctx_.imu_handler->GetProfSpiMaxUs()
+        << " rest_avg=" << (ctx_.imu_handler->GetProfRestUs() / loops)
+        << " rest_max=" << ctx_.imu_handler->GetProfRestMaxUs()
+        << " mag_avg=" << (ctx_.imu_handler->GetProfMagUs() / loops)
+        << " mag_max=" << ctx_.imu_handler->GetProfMagMaxUs();
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+    ctx_.imu_handler->ResetProfileStats();
+  }
+  {
+    // LOS-219/250: разбивка sens — snapshot (BuildSensorSnapshot+ComOffset)
+    // vs ekf (ротация/TiltEstimator/EKF-обновления).
+    LogFormat fmt;
+    fmt << "PROF(sens us): snapshot_avg=" << (prof_snapshot_us_ / loops)
+        << " snapshot_max=" << prof_snapshot_max_us_
+        << " ekf_avg=" << (prof_ekf_us_ / loops)
+        << " ekf_max=" << prof_ekf_max_us_;
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
+  prof_cfg_us_ = 0;
   prof_components_us_ = 0;
   prof_sensors_us_ = 0;
+  prof_snapshot_us_ = 0;
+  prof_ekf_us_ = 0;
   prof_control_us_ = 0;
   prof_stab_us_ = 0;
   prof_pwm_us_ = 0;
   prof_telem_us_ = 0;
+  prof_diag_us_ = 0;
+  prof_cfg_max_us_ = 0;
+  prof_components_max_us_ = 0;
+  prof_sensors_max_us_ = 0;
+  prof_snapshot_max_us_ = 0;
+  prof_ekf_max_us_ = 0;
+  prof_control_max_us_ = 0;
+  prof_stab_max_us_ = 0;
+  prof_pwm_max_us_ = 0;
+  prof_telem_max_us_ = 0;
+  prof_diag_max_us_ = 0;
+  prof_step_max_us_ = 0;
+  prof_period_max_us_ = 0;
+  prof_outliers_ = 0;
 }
 #endif
 
