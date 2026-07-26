@@ -124,6 +124,12 @@ void KidsModeProcessor::ApplyCounterfactualSlew(const StabilizationConfig& cfg,
                                                 float& throttle,
                                                 uint32_t dt_ms) noexcept {
   if (!IsActive(cfg)) return;
+  // Без speed limiter обе ветки должны описывать один и тот же Kids output.
+  // Сбрасываем скрытое counterfactual-состояние к actual slew, чтобы краткое
+  // выключение/включение limiter не восстановило старую unlimited-цель.
+  if (!cfg.kids_mode.speed_limit_enabled) {
+    counterfactual_throttle_ = smoothed_throttle_;
+  }
   if (dt_ms > 0) {
     counterfactual_throttle_ = firmware_common::ApplySlewRate(
         throttle, counterfactual_throttle_, cfg.kids_mode.slew_throttle,
