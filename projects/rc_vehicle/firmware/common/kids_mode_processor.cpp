@@ -97,28 +97,40 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     throttle *= (1.0f - reduction);
   }
 
-  // Независимая ветка для EKF повторяет Kids slew, но исключает только
-  // feedback speed limiter (LOS-246). Фактическая ветка ниже применяет тот
-  // же slew уже после limiter, поэтому его переходы не обходят настройку
-  // kids_mode.slew_throttle (LOS-247).
+  // Руль всегда проходит Kids slew в этой фазе. Throttle при deferred-пути
+  // сглаживается позже, после pitch/oversteer, чтобы якорь отражал все
+  // не-speed модификаторы (LOS-246).
   if (dt_ms > 0) {
-    counterfactual_throttle_ = firmware_common::ApplySlewRate(
-        throttle, counterfactual_throttle_, km.slew_throttle, dt_ms / 1000.0f);
     smoothed_steering_ = firmware_common::ApplySlewRate(
         steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
     steering = smoothed_steering_;
-  } else {
-    counterfactual_throttle_ = throttle;
-  }
-
-  if (throttle_before_speed_limit) {
-    *throttle_before_speed_limit = counterfactual_throttle_;
   }
 
   if (apply_speed_limit) {
+    float counterfactual = throttle;
+    ApplyCounterfactualSlew(cfg, counterfactual, dt_ms);
+    if (throttle_before_speed_limit) {
+      *throttle_before_speed_limit = counterfactual;
+    }
     ApplySpeedLimit(cfg, throttle, dt_ms);
   } else {
+    if (throttle_before_speed_limit) {
+      *throttle_before_speed_limit = throttle;
+    }
+  }
+}
+
+void KidsModeProcessor::ApplyCounterfactualSlew(const StabilizationConfig& cfg,
+                                                float& throttle,
+                                                uint32_t dt_ms) noexcept {
+  if (!IsActive(cfg)) return;
+  if (dt_ms > 0) {
+    counterfactual_throttle_ = firmware_common::ApplySlewRate(
+        throttle, counterfactual_throttle_, cfg.kids_mode.slew_throttle,
+        dt_ms / 1000.0f);
     throttle = counterfactual_throttle_;
+  } else {
+    counterfactual_throttle_ = throttle;
   }
 }
 

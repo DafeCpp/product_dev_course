@@ -54,6 +54,10 @@ class KidsModeProcessor {
   void ApplySpeedLimit(const StabilizationConfig& cfg, float& throttle,
                        uint32_t dt_ms = 0) noexcept;
 
+  /** Применить независимый pre-speed-limit Kids slew для EKF-якоря. */
+  void ApplyCounterfactualSlew(const StabilizationConfig& cfg, float& throttle,
+                               uint32_t dt_ms) noexcept;
+
   /**
    * @brief Проверить, активен ли Kids Mode для переданного конфига
    * @return true если cfg.mode == DriveMode::Kids

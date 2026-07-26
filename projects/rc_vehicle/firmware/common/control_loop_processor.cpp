@@ -408,6 +408,8 @@ void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
     // Все обычные стабилизаторы уже отработали. Снимок — counterfactual
     // моторного входа без единственного feedback-звена, speed limiter;
     // затем limiter ограничивает фактическую PWM-команду (LOS-246).
+    ctx_.kids_processor.ApplyCounterfactualSlew(stab_cfg_, commanded_throttle_,
+                                                dt_ms);
     motor_model_target_throttle_ = commanded_throttle_;
     ctx_.kids_processor.ApplySpeedLimit(stab_cfg_, commanded_throttle_, dt_ms);
   }
