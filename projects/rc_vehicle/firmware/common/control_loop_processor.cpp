@@ -74,6 +74,14 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
   stab_cfg_ =
       ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+  // После выключения Kids speed limiter больше нет feedback-звена, которое
+  // нужно исключать из якоря. Сразу возвращаемся к фактическому PWM прошлого
+  // тика, до UpdateSensorsAndEkf(), иначе EKF получает один лишний
+  // counterfactual-снимок на границе переключения (LOS-246).
+  if (stab_cfg_.mode == DriveMode::Kids &&
+      !stab_cfg_.kids_mode.speed_limit_enabled) {
+    motor_model_throttle_ = applied_throttle_;
+  }
   // Отдельный лап ДО UpdateComponents() (код-ревью PR #297): без него
   // возможное ожидание config_mutex_ в GetConfig() выше (тот же мьютекс,
   // что берёт SetConfig() из WS-потока — NVS-гипотеза LOS-219) попало бы
@@ -459,7 +467,8 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
         applied_throttle_, applied_steering_, last_pwm_update_, thr_trim,
         steer_trim, effective_slew_thr, stab_cfg_.slew_steering);
 
-    if (drive_mode == DriveMode::Kids && pwm_updated) {
+    if (drive_mode == DriveMode::Kids &&
+        ctx_.kids_processor.IsSpeedLimitActive() && pwm_updated) {
       // UpdatePwmWithSlewRate обновил реальный PWM на этом тике. Повторяем
       // только его математическую slew-ступень для counterfactual цели, не
       // включая speed limiter. Условие использует уже обновлённый timestamp.
@@ -472,16 +481,18 @@ void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
       motor_model_throttle_ = firmware_common::ApplySlewRate(
           motor_model_target_throttle_, motor_model_throttle_, model_slew_thr,
           pwm_dt_ms / 1000.0f);
-    } else if (drive_mode != DriveMode::Kids) {
+    } else if (drive_mode != DriveMode::Kids ||
+               !ctx_.kids_processor.IsSpeedLimitActive()) {
       motor_model_throttle_ = applied_throttle_;
     }
   } else {
     applied_throttle_ = commanded_throttle_ + thr_trim;
     applied_steering_ = commanded_steering_ + steer_trim;
     ctx_.platform.SetPwm(applied_throttle_, applied_steering_);
-    motor_model_throttle_ = drive_mode == DriveMode::Kids
-                                ? motor_model_target_throttle_ + thr_trim
-                                : applied_throttle_;
+    motor_model_throttle_ =
+        drive_mode == DriveMode::Kids && ctx_.kids_processor.IsSpeedLimitActive()
+            ? motor_model_target_throttle_ + thr_trim
+            : applied_throttle_;
   }
 }
 
