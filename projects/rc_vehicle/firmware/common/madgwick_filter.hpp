@@ -15,8 +15,16 @@
  * - По умолчанию опорная СК = NED (X вперёд, Y вправо, Z вниз). После
  * SetVehicleFrame() опорная СК привязана к машине: ось по вектору g (вниз), ось
  * по направлению движения (вперёд), третья — вправо. Тогда при горизонтальной
- * машине, смотрящей «вперёд», q = (1,0,0,0), pitch=roll=yaw=0.
+ * машине pitch = roll = 0.
  * - Углы Эйлера: ZYX. Roll — вокруг X тела, pitch — вокруг Y, yaw — вокруг Z.
+ *
+ * Смысл yaw после SetVehicleFrame() зависит от наличия магнитометра (LOS-221):
+ * - 9DOF: курс АБСОЛЮТНЫЙ — отсчитывается от магнитного поля Земли, как
+ *   heading_deg/ekf_yaw_deg. SetVehicleFrame() засевает его аналитически из
+ *   последнего mag-семпла, поэтому сразу после калибровки yaw ≈ текущему
+ *   магнитному курсу (НЕ нулю), и переходного процесса нет.
+ * - 6DOF: абсолютной опоры у курса нет, SetVehicleFrame() обнуляет yaw, и
+ *   дальше он свободно дрейфует на смещении гироскопа.
  */
 
 struct ImuData;
@@ -86,6 +94,10 @@ class MadgwickFilter : public IOrientationFilter {
   void InvalidateYawTrust() {
     yaw_has_absolute_ref_ = false;
     marg_correction_progress_ = 0.f;
+    // Кэш засева относится к СТАРОЙ mag-калибровке — засевать по нему новый
+    // vehicle frame нельзя ровно по той же причине, что и сохранять курс
+    // (LOS-221). Следующий UpdateWithMag() наполнит кэш заново.
+    last_mag_valid_ = false;
   }
 
  private:
@@ -126,11 +138,50 @@ class MadgwickFilter : public IOrientationFilter {
   static constexpr float kMinMargProgressForYawRef =
       kReferenceBeta * kReferenceSecondsForYawRef;
 
+  // Последний mag-вектор, поданный в UpdateWithMag() (СК датчика, после
+  // hard-iron коррекции — ровно тот, что видит градиентный спуск).
+  //
+  // LOS-221: SetVehicleFrame() раньше выставлял ψ=0, когда курс не был
+  // подкреплён магнитометром, и MARG потом десятками секунд вытягивал курс
+  // градиентным спуском к магнитному северу — на стоящей машине это выглядело
+  // как дрейф yaw при gz≈0 (телеметрия: 0°→61° за 13 с, boot-лог LOS-213:
+  // 23.7°→122.8° за ~110 с). На загрузочной калибровке гейт
+  // kMinMargProgressForYawRef не открывается в принципе: Full-калибровка (1000
+  // семплов) завершается за 2-4 с, а порогу нужно 12 с при beta=0.1.
+  //
+  // Теперь ψ вычисляется аналитически из этого вектора сразу в точку
+  // равновесия MARG (см. SetVehicleFrame), поэтому догонять нечего.
+  // Держим вектор здесь, а не параметром SetVehicleFrame(): так засев
+  // структурно берёт ИМЕННО то поле, по которому сходится фильтр, и все
+  // вызывающие (CalibrationManager, ImuHandler) получают его без новой
+  // зависимости от магнитометра.
+  float last_mag_x_{0.f}, last_mag_y_{0.f}, last_mag_z_{0.f};
+  bool last_mag_valid_{false};
+
+  // Минимальный квадрат горизонтальной проекции mag в СК машины для засева.
+  // Поле почти вертикально (или вектор вырожден) → курс из него не
+  // восстановить, уходим в фолбэк.
+  static constexpr float kMinHorizMagSq = 1e-12f;
+
   // Опорная СК машины: q_veh_to_ned (поворот из СК машины в NED), только если
   // use_vehicle_frame_
   bool use_vehicle_frame_{false};
   float q_veh_to_ned_0_{1.f}, q_veh_to_ned_1_{0.f}, q_veh_to_ned_2_{0.f},
       q_veh_to_ned_3_{0.f};
+
+  /**
+   * Вычислить курс, в котором MARG находится в равновесии, по последнему
+   * mag-семплу и осям только что построенной СК машины (LOS-221).
+   *
+   * @param x_veh_* — ось «вперёд» СК машины в СК датчика
+   * @param y_veh_* — ось «влево» СК машины в СК датчика
+   * @param yaw_rad — [out] курс в радианах, заполняется только при успехе
+   * @return false, если свежего mag нет либо горизонтальная проекция поля
+   *         вырождена — тогда вызывающий уходит в прежний фолбэк
+   */
+  bool SeedYawFromMag(float x_veh_x, float x_veh_y, float x_veh_z,
+                      float y_veh_x, float y_veh_y, float y_veh_z,
+                      float& yaw_rad) const;
 
   void GetQuaternionInNed(float& qw, float& qx, float& qy, float& qz) const;
   static void QuatMul(float aw, float ax, float ay, float az, float bw,

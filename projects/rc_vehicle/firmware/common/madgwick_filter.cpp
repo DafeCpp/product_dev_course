@@ -23,6 +23,7 @@ void MadgwickFilter::Reset() {
   q3_ = 0.f;
   yaw_has_absolute_ref_ = false;
   marg_correction_progress_ = 0.f;
+  last_mag_valid_ = false;
 }
 
 void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
@@ -33,6 +34,11 @@ void MadgwickFilter::Update(float ax, float ay, float az, float gx, float gy,
   // и свободно дрейфует — абсолютной опоры у yaw нет.
   yaw_has_absolute_ref_ = false;
   marg_correction_progress_ = 0.f;
+  // Кэш засева инвалидируется здесь же — это и есть обработка устаревания
+  // магнитометра: ImuHandler::FeedMadgwick при mag_enabled_ == false (таймаут
+  // kMagStaleTimeoutMs) уходит именно на этот 6DOF-путь, поэтому отдельная
+  // логика staleness внутри фильтра не нужна (LOS-221).
+  last_mag_valid_ = false;
 
   // Гироскоп: град/с → рад/с
   const float gx_rad = gx * kDegToRad;
@@ -230,6 +236,14 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
     marg_correction_progress_ += effective_beta * dt_sec;
     yaw_has_absolute_ref_ =
         marg_correction_progress_ >= kMinMargProgressForYawRef;
+
+    // Запоминаем поле для аналитического засева курса в SetVehicleFrame()
+    // (LOS-221). Ненормализованный вектор: засев берёт atan2 от проекций,
+    // масштаб в нём сокращается.
+    last_mag_x_ = mx;
+    last_mag_y_ = my;
+    last_mag_z_ = mz;
+    last_mag_valid_ = true;
   } else if (anorm2 > 1e-12f) {
     // Нет mag — деградируем до 6DOF
     Update(ax, ay, az, gx, gy, gz, dt_sec);
@@ -246,6 +260,10 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
     // r3630788995, LOS-229).
     yaw_has_absolute_ref_ = false;
     marg_correction_progress_ = 0.f;
+    // Тем же аргументом инвалидируем и кэш засева: тик не подкреплён
+    // акселерометром, а SetVehicleFrame() строит горизонт по гравитации из
+    // калибровки — засевать курс на фоне сбоящего IMU не стоит (LOS-221).
+    last_mag_valid_ = false;
   }
 
   // Интегрирование и нормализация
@@ -267,6 +285,31 @@ void MadgwickFilter::UpdateWithMag(float ax, float ay, float az, float gx,
   q1_ *= qNorm;
   q2_ *= qNorm;
   q3_ *= qNorm;
+}
+
+bool MadgwickFilter::SeedYawFromMag(float x_veh_x, float x_veh_y, float x_veh_z,
+                                    float y_veh_x, float y_veh_y, float y_veh_z,
+                                    float& yaw_rad) const {
+  if (!last_mag_valid_) return false;
+
+  // Проекции последнего mag-вектора на оси СК машины. Обе оси ортогональны
+  // вектору гравитации, поэтому наклон монтажа компенсируется автоматически и
+  // вертикальная составляющая поля в курс не подмешивается.
+  const float mvx =
+      last_mag_x_ * x_veh_x + last_mag_y_ * x_veh_y + last_mag_z_ * x_veh_z;
+  const float mvy =
+      last_mag_x_ * y_veh_x + last_mag_y_ * y_veh_y + last_mag_z_ * y_veh_z;
+  if ((mvx * mvx + mvy * mvy) <= kMinHorizMagSq) return false;
+
+  // Madgwick сходится туда, где earth-frame поле h = R(q_result)·m имеет
+  // hy = 0: референс строится как b = (sqrt(hx²+hy²), 0, hz) (см. UpdateWithMag
+  // выше), и равновесие b = h требует именно hy = 0. Сразу после калибровки
+  // машина стоит ровно, т.е. q_result = Rz(ψ), поэтому h = Rz(ψ)·m_veh, и
+  // условие hy = 0 даёт ψ = atan2(-m_veh_y, m_veh_x). При таком ψ
+  // горизонтальная компонента hx = sqrt(m_veh_x² + m_veh_y²) > 0 — то есть
+  // выбрана правильная из двух ветвей atan2, а не курс «на юг».
+  yaw_rad = std::atan2(-mvy, mvx);
+  return true;
 }
 
 void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
@@ -375,23 +418,40 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   q_veh_to_ned_3_ *= qn;
   use_vehicle_frame_ = true;
 
-  // Курс относительно НОВОГО монтажа: q_madgwick_prev (снятый до перезаписи
-  // выше, «датчик→NED») умножаем на СВЕЖЕПОСТРОЕННЫЙ q_sv_new — та же
-  // формула, что использует GetQuaternion() для активного vehicle frame
-  // (q_result = q_madgwick * q_sv), но с НОВЫМ q_sv, а не старым. Если
-  // монтаж не менялся между калибровками, результат идентичен старому
-  // GetEulerRad()-based способу; если менялся — курс корректно
-  // пересчитывается через смену базиса, а не переносится 1:1.
-  float prev_yaw_rad = 0.f;
-  if (preserve_yaw) {
+  // ── Выбор курса ψ для нового vehicle frame ───────────────────────────────
+  // Три источника по убыванию приоритета: засев из магнитометра (9DOF),
+  // перенос сошедшегося курса через смену базиса, принудительный ноль.
+  float yaw_rad = 0.f;
+
+  if (SeedYawFromMag(fx, fy, fz, yx, yy, yz, yaw_rad)) {
+    // 1. Аналитический засев из магнитометра (LOS-221) — сразу ТОЧКА
+    // РАВНОВЕСИЯ MARG, поэтому градиентному спуску нечего догонять и фантомной
+    // рампы курса не возникает вовсе.
+    //
+    // Засев приоритетнее preserve_yaw: сохранённый курс — в лучшем случае
+    // результат той же сходимости по тому же полю, а калибровка идёт на
+    // стоящей машине с выключенными моторами, где магнитных помех минимум.
+    //
+    // Курс опёрт на магнитное поле по построению — следующая калибровка
+    // (например, Forward сразу после Full) вправе его сохранить.
+    yaw_has_absolute_ref_ = true;
+    marg_correction_progress_ = kMinMargProgressForYawRef;
+  } else if (preserve_yaw) {
+    // 2. Курс относительно НОВОГО монтажа: q_madgwick_prev (снятый до
+    // перезаписи выше, «датчик→NED») умножаем на СВЕЖЕПОСТРОЕННЫЙ q_sv_new —
+    // та же формула, что использует GetQuaternion() для активного vehicle
+    // frame (q_result = q_madgwick * q_sv), но с НОВЫМ q_sv, а не старым. Если
+    // монтаж не менялся между калибровками, результат идентичен старому
+    // GetEulerRad()-based способу; если менялся — курс корректно
+    // пересчитывается через смену базиса, а не переносится 1:1.
     float qw, qx, qy, qz;
     QuatMul(q_madgwick_prev_w, q_madgwick_prev_x, q_madgwick_prev_y,
             q_madgwick_prev_z, q_veh_to_ned_0_, q_veh_to_ned_1_,
             q_veh_to_ned_2_, q_veh_to_ned_3_, qw, qx, qy, qz);
-    prev_yaw_rad =
+    yaw_rad =
         std::atan2(2.f * (qw * qz + qx * qy), 1.f - 2.f * (qy * qy + qz * qz));
   } else {
-    // Курс принудительно обнуляется (ψ=0) — новый кватернион НЕ является
+    // 3. Курс принудительно обнуляется (ψ=0) — новый кватернион НЕ является
     // органически сошедшимся значением, это искусственно заданная точка
     // старта. Опору для БУДУЩИХ калибровок нужно заработать заново: без
     // сброса флаги остаются от ДО-калибровочного состояния (например, MARG
@@ -405,18 +465,21 @@ void MadgwickFilter::SetVehicleFrame(const float gravity_vec[3],
   }
 
   // Инициализировать кватернион Мэджвика так, чтобы vehicle-frame pitch/roll =
-  // 0 при курсе ψ (prev_yaw_rad). Мэджвик использует сопряжённую конвенцию:
+  // 0 при курсе ψ (yaw_rad). Мэджвик использует сопряжённую конвенцию:
   // v_sensor = q* ⊗ v_ref ⊗ q, т.е. q в стандартной конвенции =
   // sensor→reference. GetQuaternion: q_result = q_madgwick * q_sv
   // (vehicle→reference в стандартной). Хотим q_result = Rz(ψ)  ⟹
   // q_madgwick = Rz(ψ) * conj(q_sv). При ψ=0 сводится к прежнему conj(q_sv).
   //
   // В 9DOF обнулять здесь ещё и yaw нельзя: магнитометр держит абсолютный курс,
-  // и сброшенный в ноль yaw фильтр потом ~10 секунд догоняет градиентным
-  // спуском, выдавая всё это время фантомное вращение до 90° на стоящей машине
-  // (LOS-229). Наклон обнулять корректно — после калибровки машина стоит ровно,
-  // и акселерометр это подтверждает.
-  const float half_yaw = 0.5f * prev_yaw_rad;
+  // и сброшенный в ноль yaw фильтр потом десятки секунд догоняет градиентным
+  // спуском, выдавая всё это время фантомное вращение на стоящей машине
+  // (LOS-229, и он же — корень LOS-221: на загрузочной калибровке гейт
+  // yaw_has_absolute_ref_ не успевал открыться, и ψ обнулялся каждый раз).
+  // Поэтому ветка 1 выше засевает ψ прямо из магнитометра. Наклон обнулять
+  // корректно — после калибровки машина стоит ровно, и акселерометр это
+  // подтверждает.
+  const float half_yaw = 0.5f * yaw_rad;
   const float cy = std::cos(half_yaw);
   const float sy = std::sin(half_yaw);
   QuatMul(cy, 0.f, 0.f, sy,  //

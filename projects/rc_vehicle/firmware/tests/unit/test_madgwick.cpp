@@ -1191,18 +1191,26 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotPreserveStaleYawFromSingleMagSample) {
   filter.GetEulerDeg(pitch, roll, yaw_drifted);
   ASSERT_GT(std::abs(yaw_drifted), 10.0f) << "Тест бессмысленен без дрейфа yaw";
 
-  // Ровно ОДИН валидный mag-семпл прямо перед калибровкой — недостаточно для
-  // абсолютной опоры курса.
-  filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.0f, 0.6f, -0.8f,
+  // Ровно ОДИН валидный mag-семпл прямо перед калибровкой. Поле выбрано так,
+  // чтобы засеваемый курс (30°) не совпадал ни с нулём, ни с накопленным
+  // 6DOF-дрейфом (≈ ±90°) — иначе тест не различал бы три исхода.
+  // Для монтажа gravity=(0,0,-1), forward=(1,0,0): X_veh=(1,0,0),
+  // Y_veh=(0,-1,0), поэтому ψ = atan2(-m·Y_veh, m·X_veh) = atan2(my, mx).
+  constexpr float kMx = 0.6f, kMy = 0.34641f;  // atan2(0.34641, 0.6) = 30°
+  filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, kMx, kMy, -0.8f,
                        0.002f);
 
   filter.SetVehicleFrame(gravity, forward, true);
 
   float pitch_after, roll_after, yaw_after;
   filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
-  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
-      << "Единственный mag-семпл не даёт абсолютной опоры — курс должен "
-         "обнулиться, как в чистом 6DOF";
+  // LOS-221: накопленный дрейф по-прежнему НЕ переносится (в этом и был смысл
+  // теста), но вместо обнуления курс теперь засевается аналитически из этого
+  // самого mag-семпла — сразу в точку равновесия MARG. Одного семпла
+  // достаточно: засев — замкнутая формула, а не сходимость.
+  EXPECT_NEAR(yaw_after, 30.0f, 0.1f)
+      << "Курс должен быть засеян из mag, а не унаследован от 6DOF-дрейфа "
+         "и не обнулён";
   EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
@@ -1233,37 +1241,49 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotPreserveYawAfterOnlyBriefMargWindow) {
 
   // Ровно 50 MARG-тиков по 2 мс (100 мс суммарно) прямо перед калибровкой —
   // столько же, сколько раньше считалось достаточным по старому счётчику.
+  // Поле даёт засеваемый курс 30° (см. соседний тест), заведомо отличимый и
+  // от нуля, и от накопленного 6DOF-дрейфа.
+  constexpr float kMx = 0.6f, kMy = 0.34641f;
   for (int i = 0; i < 50; ++i) {
-    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, 0.0f, 0.6f,
-                         -0.8f, 0.002f);
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, kMx, kMy, -0.8f,
+                         0.002f);
   }
 
   filter.SetVehicleFrame(gravity, forward, true);
 
   float pitch_after, roll_after, yaw_after;
   filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
-  EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
-      << "100 мс MARG-коррекции недостаточно для абсолютной опоры курса — "
-         "должно обнулиться, как в чистом 6DOF";
+  // LOS-221: за 100 мс градиентный спуск действительно не успевает сойтись —
+  // но теперь это и не требуется. Курс берётся замкнутой формулой из mag, а не
+  // накоплением коррекции, поэтому короткое MARG-окно больше не приводит ни к
+  // сохранению недосошедшегося курса, ни к обнулению.
+  EXPECT_NEAR(yaw_after, 30.0f, 0.1f)
+      << "Короткое MARG-окно не мешает засеву: ψ считается аналитически";
   EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
-TEST(MadgwickTest, SetVehicleFrame_ScalesMargWindowWithBeta) {
-  // Ревью PR #283 (r3629255508): фиксированный порог 12 с был откалиброван
-  // только под дефолтный beta=0.1, а конфиг допускает madgwick_beta от 0.01
-  // до 1.0 (FilterConfig::Clamp, stabilization_config.cpp). При вдвое
-  // меньшем beta градиентный спуск сходится вдвое медленнее — фиксированный
-  // порог открыл бы опору курса задолго до реальной сходимости. Требуемое
-  // время должно масштабироваться как kReferenceSecondsForYawRef *
-  // kReferenceBeta / beta_, то есть при beta=0.05 требуется ~24 с, а не 12.
+TEST(MadgwickTest, SetVehicleFrame_SeedSupersedesMargWindow) {
+  // Раньше (LOS-229, ревью PR #283 r3629255508) исход SetVehicleFrame() зависел
+  // от того, успел ли накопиться marg_correction_progress_: порог
+  // масштабируется по beta, и при beta=0.05 требовалось ~24 с вместо 12.
+  //
+  // LOS-221: пока магнитометр доступен, ψ считается замкнутой формулой сразу в
+  // точку равновесия MARG, поэтому длина накопленного окна на результат больше
+  // не влияет — и короткое, и длинное окно дают ОДИН И ТОТ ЖЕ курс. Именно это
+  // и убирает фантомную рампу на загрузочной калибровке, где окно всегда
+  // короткое (Full-калибровка завершается за 2-4 с).
+  //
+  // Сам гейт остаётся живым для вырожденного поля — см.
+  // SetVehicleFrame_MargWindowStillGatesYawWhenFieldGivesNoHeading.
   float gravity[3] = {0.0f, 0.0f, -1.0f};
   float forward[3] = {1.0f, 0.0f, 0.0f};
   constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
   constexpr float kBetaHalf = 0.05f;  // вдвое меньше дефолтного 0.1
+  // Для монтажа gravity=(0,0,-1), forward=(1,0,0): ψ = atan2(my, mx) = 90°.
+  constexpr float kSeededYawDeg = 90.0f;
 
-  // 12.5 с коррекции — больше старого фиксированного порога (12 с), но
-  // меньше требуемых при beta=0.05 (~24 с). Опора ещё не должна открыться.
+  // 12.5 с коррекции — заведомо меньше требуемых при beta=0.05 (~24 с).
   {
     MadgwickFilter filter;
     filter.SetBeta(kBetaHalf);
@@ -1272,21 +1292,14 @@ TEST(MadgwickTest, SetVehicleFrame_ScalesMargWindowWithBeta) {
       filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
                            0.002f);
     }
-    float pitch_before, roll_before, yaw_before;
-    filter.GetEulerDeg(pitch_before, roll_before, yaw_before);
-    ASSERT_GT(std::abs(yaw_before), 5.0f)
-        << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
-
     filter.SetVehicleFrame(gravity, forward, true);
     float pitch_after, roll_after, yaw_after;
     filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
-    EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
-        << "12.5 с при beta=0.05 недостаточно (нужно ~24 с) — курс должен "
-           "обнулиться, а не сохраниться по старому фиксированному порогу";
+    EXPECT_NEAR(yaw_after, kSeededYawDeg, 0.1f)
+        << "Недобранное MARG-окно больше не обнуляет курс — он засевается";
   }
 
-  // 25 с коррекции — больше требуемых при beta=0.05. Опора должна открыться,
-  // курс сохраняется.
+  // 25 с коррекции — больше требуемых. Результат обязан быть тем же самым.
   {
     MadgwickFilter filter;
     filter.SetBeta(kBetaHalf);
@@ -1297,15 +1310,70 @@ TEST(MadgwickTest, SetVehicleFrame_ScalesMargWindowWithBeta) {
     }
     float pitch_before, roll_before, yaw_before;
     filter.GetEulerDeg(pitch_before, roll_before, yaw_before);
+    // Сошедшийся градиентным спуском курс совпадает с засеваемым — прямое
+    // подтверждение, что замкнутая формула попадает в точку равновесия MARG
+    // (включая знак: ошибись мы в нём, значения разошлись бы на 180°).
+    EXPECT_NEAR(yaw_before, kSeededYawDeg, 0.5f)
+        << "Засев обязан совпадать с тем, куда MARG сходится сам";
+
+    filter.SetVehicleFrame(gravity, forward, true);
+    float pitch_after, roll_after, yaw_after;
+    filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+    EXPECT_NEAR(yaw_after, kSeededYawDeg, 0.1f)
+        << "Длинное окно даёт тот же курс, что и короткое";
+  }
+}
+
+TEST(MadgwickTest,
+     SetVehicleFrame_MargWindowStillGatesYawWhenFieldGivesNoHeading) {
+  // Засев требует ненулевой горизонтальной проекции поля в СК машины. Если
+  // поле направлено вдоль вертикали машины, курса из него не извлечь
+  // (kMinHorizMagSq) — и тогда решение принимает прежний гейт LOS-229 по
+  // накопленной MARG-коррекции. Этот тест держит гейт под покрытием.
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  // Поле строго вдоль Z_veh = (0,0,-1): горизонтальная проекция ровно нулевая.
+  constexpr float kMx = 0.0f, kMy = 0.0f, kMz = -0.8f;
+
+  // Короткое окно (100 мс) — опора не набрана, курс обнуляется.
+  {
+    MadgwickFilter filter;
+    filter.SetBeta(0.1f);
+    filter.SetVehicleFrame(gravity, forward, true);
+    for (int i = 0; i < 50; ++i) {  // 50 * 2 мс = 100 мс
+      filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, kMx, kMy, kMz,
+                           0.002f);
+    }
+    float pitch, roll, yaw_before;
+    filter.GetEulerDeg(pitch, roll, yaw_before);
+
+    filter.SetVehicleFrame(gravity, forward, true);
+    float pitch_after, roll_after, yaw_after;
+    filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+    EXPECT_NEAR(yaw_after, 0.0f, 0.1f)
+        << "Вертикальное поле не даёт курса, окно не набрано — обнуление";
+  }
+
+  // Длинное окно (13 с при beta=0.1, порог 12 с) — опора набрана, курс
+  // переживает рекалибровку.
+  {
+    MadgwickFilter filter;
+    filter.SetBeta(0.1f);
+    filter.SetVehicleFrame(gravity, forward, true);
+    for (int i = 0; i < 6500; ++i) {  // 6500 * 2 мс = 13 с
+      filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 5.0f, kMx, kMy, kMz,
+                           0.002f);
+    }
+    float pitch, roll, yaw_before;
+    filter.GetEulerDeg(pitch, roll, yaw_before);
     ASSERT_GT(std::abs(yaw_before), 5.0f)
-        << "Тест бессмысленен, если фильтр сошёлся к yaw ≈ 0";
+        << "Тест бессмысленен без накопленного курса";
 
     filter.SetVehicleFrame(gravity, forward, true);
     float pitch_after, roll_after, yaw_after;
     filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
     EXPECT_NEAR(yaw_after, yaw_before, 0.5f)
-        << "25 с при beta=0.05 достаточно (нужно ~24 с) — курс должен "
-           "пережить рекалибровку";
+        << "Набранное MARG-окно сохраняет курс и без засева";
   }
 }
 
@@ -1319,6 +1387,12 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotOverweightStaleLowBetaDwell) {
   // Теперь копится вклад effective_beta * dt_sec, а не голое время — вклад
   // низкого beta остаётся заниженным независимо от того, что beta потом
   // увеличили.
+  //
+  // LOS-221: проверяем это на ВЫРОЖДЕННОМ поле (строго вдоль вертикали
+  // машины). При обычном поле исход определял бы засев курса из магнитометра,
+  // и накопитель на результат не влиял бы вовсе; вертикальное поле курса не
+  // несёт, засев отключается, и решение снова принимает гейт — ровно тот
+  // сценарий, ради которого написан этот тест.
   MadgwickFilter filter;
   filter.SetBeta(0.01f);
 
@@ -1337,8 +1411,8 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotOverweightStaleLowBetaDwell) {
   // 12 с MARG-коррекции при beta=0.01: вклад в накопитель — всего 0.01*12 =
   // 0.12, далеко от порога 1.2. В старой (тиковой) реализации это было бы
   // "12 секунд", то есть уже больше исходного фиксированного порога в 12 с.
-  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
-  for (int i = 0; i < 6000; ++i) {  // 6000 * 2 мс = 12 с
+  constexpr float kMx = 0.0f, kMy = 0.0f, kMz = -0.8f;  // вдоль Z_veh
+  for (int i = 0; i < 6000; ++i) {                      // 6000 * 2 мс = 12 с
     filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 45.0f, kMx, kMy, kMz,
                          0.002f);
   }
@@ -1362,8 +1436,11 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotOverweightStaleLowBetaDwell) {
   // Продолжаем при beta=1.0 достаточно долго, чтобы реально накопить порог
   // (нужно ещё ~1.08 — берём с запасом 1.5 с), и убеждаемся, что опора
   // ЗАКОНОМЕРНО открывается, когда реальная сходимость действительно набрана.
-  for (int i = 0; i < 750; ++i) {  // 750 * 2 мс = 1.5 с
-    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+  // Медленное вращение нужно, чтобы курсу было куда уйти от нуля: вертикальное
+  // поле сюда его не притягивает, а без ненулевого курса сохранение нечем
+  // отличить от обнуления.
+  for (int i = 0; i < 750; ++i) {  // 750 * 2 мс = 1.5 с, 5 °/с → ~7.5°
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 5.0f, kMx, kMy, kMz,
                          0.002f);
   }
   float pitch_converged, roll_converged, yaw_converged;
@@ -1378,6 +1455,213 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotOverweightStaleLowBetaDwell) {
       << "После реального набора порога курс должен пережить рекалибровку";
   EXPECT_NEAR(pitch_final, 0.0f, 0.1f);
   EXPECT_NEAR(roll_final, 0.0f, 0.1f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS-221: засев курса из магнитометра в SetVehicleFrame()
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+// Максимальный уход курса за прогон статических MARG-тиков, с разворотом
+// перехода через ±180°.
+float YawDriftDeg(MadgwickFilter& filter, int ticks, float dt_sec, float mx,
+                  float my, float mz) {
+  float pitch, roll, yaw_start;
+  filter.GetEulerDeg(pitch, roll, yaw_start);
+  float prev = yaw_start;
+  float unwrapped = yaw_start;
+  for (int i = 0; i < ticks; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, mx, my, mz,
+                         dt_sec);
+    float yaw_now;
+    filter.GetEulerDeg(pitch, roll, yaw_now);
+    float step = yaw_now - prev;
+    if (step > 180.0f) step -= 360.0f;
+    if (step < -180.0f) step += 360.0f;
+    unwrapped += step;
+    prev = yaw_now;
+  }
+  return unwrapped - yaw_start;
+}
+
+}  // namespace
+
+TEST(MadgwickTest, SetVehicleFrame_SeedsYawFromMagnetometer) {
+  // Базовый случай: курс берётся замкнутой формулой из последнего mag-семпла.
+  // Для монтажа gravity=(0,0,-1), forward=(1,0,0) получается X_veh=(1,0,0),
+  // Y_veh=(0,-1,0), поэтому ψ = atan2(-m·Y_veh, m·X_veh) = atan2(my, mx).
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+
+  struct Case {
+    float mx, my;
+    float expected_yaw_deg;
+  };
+  const Case cases[] = {
+      {0.6f, 0.0f, 0.0f},         // поле «вперёд» — курс 0
+      {0.0f, 0.6f, 90.0f},        // поле «влево»
+      {-0.6f, 0.0f, 180.0f},      // поле «назад»
+      {0.6f, 0.34641f, 30.0f},    // произвольный курс
+      {0.6f, -0.34641f, -30.0f},  // и симметричный ему
+  };
+
+  for (const auto& c : cases) {
+    MadgwickFilter filter;
+    filter.SetBeta(0.1f);
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, c.mx, c.my, -0.8f,
+                         0.002f);
+    filter.SetVehicleFrame(gravity, forward, true);
+
+    float pitch, roll, yaw;
+    filter.GetEulerDeg(pitch, roll, yaw);
+    EXPECT_NEAR(std::abs(yaw), std::abs(c.expected_yaw_deg), 0.5f)
+        << "mx=" << c.mx << " my=" << c.my;
+    // Наклон обнуляется в любом случае — контракт vehicle frame.
+    EXPECT_NEAR(pitch, 0.0f, 0.1f);
+    EXPECT_NEAR(roll, 0.0f, 0.1f);
+  }
+}
+
+TEST(MadgwickTest, SetVehicleFrame_SeededYawIsMargEquilibrium) {
+  // ГЛАВНЫЙ регресс LOS-221. Засев обязан попадать ровно в точку равновесия
+  // градиентного спуска: тогда после калибровки на неподвижной машине курс
+  // стоит на месте. До фикса ψ обнулялся, и MARG десятками секунд вытягивал
+  // курс обратно — в телеметрии это выглядело как дрейф yaw при gz≈0
+  // (night_25_07: 0°→61° за 13 с; boot-лог LOS-213: 23.7°→122.8° за ~110 с).
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  constexpr float kMx = 0.42f, kMy = 0.43f, kMz = -0.8f;
+
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+  filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                       0.002f);
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // 5000 тиков по 2 мс = 10 с полностью статического входа.
+  const float drift = YawDriftDeg(filter, 5000, 0.002f, kMx, kMy, kMz);
+  EXPECT_LT(std::abs(drift), 1.0f)
+      << "Курс после засева должен стоять на месте, а не сходиться; уход "
+      << drift << "° за 10 с";
+}
+
+TEST(MadgwickTest, SetVehicleFrame_SeedsYawOnTiltedMount) {
+  // Засев должен компенсировать наклон монтажа: проекции берутся на оси
+  // X_veh/Y_veh, обе ортогональные вектору гравитации, поэтому вертикальная
+  // составляющая поля в курс не подмешивается. Проверяем это тем же
+  // критерием равновесия — если бы компенсация наклона была неверной, MARG
+  // немедленно потянул бы курс прочь от засеянного.
+  constexpr float kMountPitchRad = 8.0f * static_cast<float>(M_PI) / 180.0f;
+  float gravity[3] = {std::sin(kMountPitchRad), 0.0f,
+                      -std::cos(kMountPitchRad)};
+  float forward[3] = {std::cos(kMountPitchRad), 0.0f, std::sin(kMountPitchRad)};
+  constexpr float kMx = 0.35f, kMy = 0.45f, kMz = -0.82f;
+
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+  // Акселерометр в покое читает gravity_vec — тот же наклонный монтаж.
+  filter.UpdateWithMag(gravity[0], gravity[1], gravity[2], 0.0f, 0.0f, 0.0f,
+                       kMx, kMy, kMz, 0.002f);
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch, roll, yaw_seeded;
+  filter.GetEulerDeg(pitch, roll, yaw_seeded);
+  EXPECT_NEAR(pitch, 0.0f, 0.5f) << "Наклон монтажа должен быть снят";
+  EXPECT_NEAR(roll, 0.0f, 0.5f);
+
+  float prev = yaw_seeded;
+  float unwrapped = yaw_seeded;
+  for (int i = 0; i < 10000; ++i) {  // 20 с
+    filter.UpdateWithMag(gravity[0], gravity[1], gravity[2], 0.0f, 0.0f, 0.0f,
+                         kMx, kMy, kMz, 0.002f);
+    float yaw_now;
+    filter.GetEulerDeg(pitch, roll, yaw_now);
+    float step = yaw_now - prev;
+    if (step > 180.0f) step -= 360.0f;
+    if (step < -180.0f) step += 360.0f;
+    unwrapped += step;
+    prev = yaw_now;
+  }
+  EXPECT_LT(std::abs(unwrapped - yaw_seeded), 1.0f)
+      << "На наклонном монтаже засев тоже обязан быть равновесием";
+}
+
+TEST(MadgwickTest, SetVehicleFrame_NoYawRampOnFirstCalibration) {
+  // Сценарий boot-лога целиком: фильтр стартует с единичного кватерниона, MARG
+  // успевает поработать лишь несколько секунд (Full-калибровка — 1000 семплов,
+  // это ~2-4 с), затем приходит ПЕРВАЯ калибровка. Именно здесь гейт
+  // yaw_has_absolute_ref_ никогда не открывался (порогу нужно 12 с при
+  // beta=0.1), из-за чего ψ обнулялся на каждой загрузке.
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  constexpr float kMx = 0.42f, kMy = 0.43f, kMz = -0.8f;
+
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+
+  // ~3 с MARG до калибровки — меньше 12-секундного порога.
+  for (int i = 0; i < 1500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+
+  filter.SetVehicleFrame(gravity, forward, true);
+  float pitch, roll, yaw_after_calib;
+  filter.GetEulerDeg(pitch, roll, yaw_after_calib);
+
+  // Машина стоит следующие 60 с — ровно тот интервал, на котором в логе
+  // наблюдалась рампа.
+  const float drift = YawDriftDeg(filter, 30000, 0.002f, kMx, kMy, kMz);
+  EXPECT_LT(std::abs(drift), 1.0f)
+      << "После первой калибровки курс не должен «уезжать»; уход " << drift
+      << "° за 60 с (в логе было 61° за 13 с)";
+}
+
+TEST(MadgwickTest, SetVehicleFrame_FallsBackToZeroWhenMagGoesStale) {
+  // Устаревание магнитометра ImuHandler отражает переходом на 6DOF Update().
+  // Он же инвалидирует кэш засева, поэтому калибровка без свежего поля ведёт
+  // себя как раньше — курс обнуляется, а не засевается по протухшему семплу.
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  constexpr float kMx = 0.42f, kMy = 0.43f, kMz = -0.8f;
+
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+  for (int i = 0; i < 1000; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+  // Магнитометр пропал — ImuHandler уходит на 6DOF.
+  for (int i = 0; i < 200; ++i) {
+    filter.Update(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 10.0f, 0.002f);
+  }
+
+  filter.SetVehicleFrame(gravity, forward, true);
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(yaw, 0.0f, 0.1f)
+      << "Без свежего mag засева быть не должно — только обнуление";
+}
+
+TEST(MadgwickTest, SetVehicleFrame_FallsBackWhenMagHorizontalIsDegenerate) {
+  // Порог kMinHorizMagSq защищает только от истинного вырождения (поле строго
+  // вдоль вертикали машины): любое реальное поле его проходит. Проверяем, что
+  // граница действительно срабатывает и уводит в прежнее поведение.
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+  // Горизонтальная проекция 1e-7 → её квадрат 1e-14 < kMinHorizMagSq (1e-12).
+  filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1e-7f, 0.0f, -0.8f,
+                       0.002f);
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(yaw, 0.0f, 0.1f)
+      << "Вырожденная горизонталь поля — засев невозможен, работает фолбэк";
 }
 
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {
