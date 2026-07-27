@@ -133,7 +133,7 @@ class VehicleControlUnified : public IVehicleControl {
   bool CancelMagCalibration() override;
 
   /** Стереть калибровку магнитометра из NVS. */
-  bool EraseMagCalibration() override;
+  MagCalibEraseAck EraseMagCalibration() override;
 
   /**
    * Статус калибровки магнитометра и причина неудачи.
@@ -465,10 +465,20 @@ class VehicleControlUnified : public IVehicleControl {
   // ok=true (факт постановки в очередь) без какого-либо намёка на провал.
   const char* mag_erase_result_pub_{"none"};
   uint32_t mag_erase_seq_pub_{0};
+  // Растёт на 1 при КАЖДОМ УСПЕШНО ПОСТАВЛЕННОМ В ОЧЕРЕДЬ erase — т.е. в
+  // момент приёма, а не применения. Присваивается под тем же мьютексом, что
+  // и сам факт постановки, поэтому значение, отданное вызывающему из
+  // EraseMagCalibration(), не может разойтись с тем erase_seq, который
+  // control loop опубликует, когда применит именно эту команду: оба счётчика
+  // растут по одной на erase, в одном FIFO-порядке (ревью PR #308).
+  uint32_t mag_erase_enqueued_seq_{0};
 
   // Поставить команду в очередь. Вызывается с HTTP/WS-задачи.
   // false — очередь переполнена, команда отброшена.
-  bool QueueMagCalibRequest(MagCalibRequest req);
+  // out_erase_target, если не nullptr, получает mag_erase_enqueued_seq_ ПОСЛЕ
+  // инкремента — вызывающий обязан передавать его только для req == Erase.
+  bool QueueMagCalibRequest(MagCalibRequest req,
+                            uint32_t* out_erase_target = nullptr);
 
   // Всё ниже исполняется исключительно с потока control loop.
   void ProcessMagCalibRequests();

@@ -117,7 +117,8 @@ void VehicleControlUnified::PublishMagCalibState() {
   mag_erase_seq_pub_ = mag_erase_seq_;
 }
 
-bool VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
+bool VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req,
+                                                 uint32_t* out_erase_target) {
   // Вызывается из HTTP/WS-задачи (ws_command_handlers.cpp, HandleCalibrateMag),
   // а ControlTaskLoop() — независимая задача. Ничего из mag_calib_/madgwick_/
   // imu_handler_ отсюда трогать нельзя: все они непрерывно читаются и пишутся
@@ -143,6 +144,14 @@ bool VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
   std::lock_guard<std::mutex> lock(mag_state_mutex_);
   if (mag_request_count_ >= kMagCalibQueueSize) return false;
   mag_requests_[mag_request_count_++] = req;
+  // Назначаем target той же критической секцией, что и сам приём — иначе
+  // отдельный последующий вызов GetMagCalibState() рисковал бы прочитать
+  // erase_seq, который control loop уже успел увеличить за это самое время
+  // (ревью PR #308).
+  if (req == MagCalibRequest::Erase) {
+    ++mag_erase_enqueued_seq_;
+    if (out_erase_target) *out_erase_target = mag_erase_enqueued_seq_;
+  }
   return true;
 }
 
@@ -158,8 +167,10 @@ bool VehicleControlUnified::CancelMagCalibration() {
   return QueueMagCalibRequest(MagCalibRequest::Cancel);
 }
 
-bool VehicleControlUnified::EraseMagCalibration() {
-  return QueueMagCalibRequest(MagCalibRequest::Erase);
+MagCalibEraseAck VehicleControlUnified::EraseMagCalibration() {
+  uint32_t target = 0;
+  const bool accepted = QueueMagCalibRequest(MagCalibRequest::Erase, &target);
+  return {accepted, target};
 }
 
 void VehicleControlUnified::ProcessMagCalibRequests() {

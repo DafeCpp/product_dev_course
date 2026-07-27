@@ -507,7 +507,7 @@ TEST_F(ControlLoopTest, MagCalibEraseFailureIsReportedInState) {
   RunLoop(0);
   platform_->SetEraseMagCalibShouldFail(true);
 
-  EXPECT_TRUE(vc_.EraseMagCalibration());  // команда принята в очередь
+  EXPECT_TRUE(vc_.EraseMagCalibration().accepted);  // команда принята в очередь
   vc_.HostStep(2);
 
   EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "failed");
@@ -541,6 +541,29 @@ TEST_F(ControlLoopTest,
   EXPECT_NE(seq_after_first, seq_after_second)
       << "Одинаковый erase_result двух erase не должен маскировать факт "
          "второго завершения";
+}
+
+TEST_F(ControlLoopTest, MagCalibEraseTargetSeqMatchesAppliedSeq) {
+  // target_seq, возвращённый EraseMagCalibration() СИНХРОННО с постановкой в
+  // очередь, обязан совпасть с erase_seq, который control loop опубликует
+  // после применения ИМЕННО этой команды. Раньше HandleCalibrateMag() читал
+  // erase_seq отдельным вызовом GetMagCalibState() уже ПОСЛЕ постановки —
+  // а если control loop успевал вклиниться и применить erase в этом зазоре,
+  // снимок показывал бы erase_seq этой же команды, и target, посчитанный от
+  // него (+1), указывал бы на следующий erase, которого никогда не будет
+  // (ревью PR #308). В однопоточном тесте гонку не воспроизвести напрямую,
+  // но инвариант — что target_seq совпадает с итоговым erase_seq — тестируем
+  // без неё.
+  RunLoop(0);
+
+  const auto ack1 = vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  EXPECT_EQ(vc_.GetMagCalibState().erase_seq, ack1.target_seq);
+
+  const auto ack2 = vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  EXPECT_EQ(vc_.GetMagCalibState().erase_seq, ack2.target_seq);
+  EXPECT_NE(ack1.target_seq, ack2.target_seq);
 }
 
 TEST_F(ControlLoopTest, MagCalibQueueOverflowIsReportedToCaller) {

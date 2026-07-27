@@ -108,7 +108,6 @@ let wifiStatusInterval = null;
 let magCalibPollTimer = null;
 let magCalibRefreshTimer = null;
 let lastMagEraseResult = 'none';
-let lastMagEraseSeq = 0;
 let magEraseWatching = false;
 let magEraseWatchTimer = null;
 let magEraseWatchAttempts = 0;
@@ -227,14 +226,22 @@ function connectWebSocket() {
                     if (speedCalibStatusEl) speedCalibStatusEl.textContent = 'Остановлено';
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 } else if (data.type === 'calibrate_mag_ack') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none', data.erase_seq ?? 0);
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
                     // action эхом от сервера — надёжнее клиентского флага "жду
                     // ack": не путается, если erase кликнули дважды подряд или
                     // вперемешку с start/finish/cancel (ревью PR #308).
-                    if (data.action === 'erase' && data.ok) extendMagEraseWatch();
+                    //
+                    // erase_target_seq назначен сервером АТОМАРНО в момент
+                    // приёма команды — в отличие от erase_seq (просто текущий
+                    // снимок на момент ack), его не нужно достраивать на
+                    // клиенте прибавлением 1: любое клиентское вычисление
+                    // target из erase_seq снимка гоняется с control loop,
+                    // который мог успеть применить именно этот erase между
+                    // постановкой в очередь и чтением снимка (ревью PR #308).
+                    if (data.action === 'erase' && data.ok) extendMagEraseWatch(data.erase_target_seq ?? 0);
                     scheduleMagCalibRefresh();
                 } else if (data.type === 'mag_calib_status') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none', data.erase_seq ?? 0);
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
                     onMagEraseSeqObserved(data.erase_seq ?? 0);
                 } else if (data.type === 'reset_heading_ref_ack') {
                     if (magCalibMsg) { magCalibMsg.textContent = 'Нулевой курс сброшен'; magCalibMsg.style.display = 'block'; setTimeout(() => { if (magCalibMsg) magCalibMsg.style.display = 'none'; }, 2000); }
@@ -443,17 +450,20 @@ function scheduleMagCalibRefresh() {
     }, 100);
 }
 
-// Опрашивать, пока erase_seq не достигнет цели — суммы уже известного
-// значения и числа ПРИНЯТЫХ, но ещё не подтверждённых erase-команд. Просто
-// "!= baseline" (прошлый раунд ревью PR #308) ломается на перекрывающихся
-// erase: если второй erase кликнут до подтверждения первого, оба используют
-// один и тот же устаревший baseline, и наблюдение остановится, едва увидев
-// ПЕРВОЕ приращение — то есть до применения второго erase. Если второй потом
-// провалится, об этом уже некому узнать (status вне collecting новых
-// опросов не заводит). extendMagEraseWatch() поэтому всегда отталкивается от
-// уже действующей цели (если наблюдение уже идёт), а не от lastMagEraseSeq —
-// цель растёт на 1 за каждый принятый erase, и наблюдение не считается
-// завершённым, пока real erase_seq не догонит все их разом.
+// Опрашивать, пока erase_seq не достигнет цели, присланной сервером в
+// erase_target_seq. Раньше цель клиент считал сам — прибавлял 1 к уже
+// известному erase_seq. Это ломается ровно тогда, когда control loop успевал
+// применить только что принятый erase МЕЖДУ постановкой его в очередь на
+// сервере и последующим чтением снимка состояния для ack: ack тогда уже нёс
+// erase_seq ЭТОЙ команды, а клиентское "+1" целилось в следующую, которой не
+// будет — наблюдение зависало бы до таймаута (ревью PR #308). Сервер
+// назначает target_seq атомарно вместе с самим приёмом команды (см.
+// EraseMagCalibration()), поэтому клиенту достаточно просто использовать его,
+// не пересчитывая.
+//
+// Перекрывающиеся erase (кликнули второй, не дождавшись первого) по той же
+// причине больше не требуют суммирования на клиенте: target — максимум из
+// всех erase_target_seq, что видел клиент, действующая цель не уменьшается.
 //
 // Одноразового scheduleMagCalibRefresh (100 мс) достаточно для status/
 // fail_reason: пока status==collecting, их и так продолжает подтягивать
@@ -463,9 +473,8 @@ function scheduleMagCalibRefresh() {
 const MAG_ERASE_WATCH_INTERVAL_MS = 150;
 const MAG_ERASE_WATCH_MAX_ATTEMPTS = 20;  // 20 × 150 мс = 3 с — с запасом на NVS
 
-function extendMagEraseWatch() {
-    const base = magEraseWatching ? magEraseTargetSeq : lastMagEraseSeq;
-    magEraseTargetSeq = base + 1;
+function extendMagEraseWatch(targetSeq) {
+    magEraseTargetSeq = Math.max(magEraseTargetSeq, targetSeq);
     magEraseWatching = true;
     magEraseWatchAttempts = 0;  // каждый принятый erase заслуживает свой полный бюджет попыток
     scheduleMagEraseWatchPoll();
@@ -497,9 +506,8 @@ function onMagEraseSeqObserved(eraseSeq) {
     scheduleMagEraseWatchPoll();
 }
 
-function updateMagCalibUI(status, failReason, eraseResult, eraseSeq) {
+function updateMagCalibUI(status, failReason, eraseResult) {
     lastMagEraseResult = eraseResult;
-    lastMagEraseSeq = eraseSeq;
     const collecting = status === 'collecting';
     const done       = status === 'done';
     const failed     = status === 'failed';
