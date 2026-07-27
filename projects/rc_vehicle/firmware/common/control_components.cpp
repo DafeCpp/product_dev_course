@@ -5,12 +5,11 @@
 #include <cstring>
 #include <string>
 
-#include "mag_calibration.hpp"
-
 #include "cJSON.h"
 #include "config.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
+#include "mag_calibration.hpp"
 
 namespace rc_vehicle {
 
@@ -173,8 +172,9 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
   // до следующего 10-мс опроса — до 8 мс лишнего доверия к замороженному
   // семплу, в течение которых калибровка могла бы закрепить устаревший курс
   // (review r3629933116, LOS-229).
-  if (mag_enabled_ && (now_ms - last_mag_success_ms_) > kMagStaleTimeoutMs) {
-    mag_enabled_ = false;
+  if (mag_enabled_.load(std::memory_order_relaxed) &&
+      (now_ms - last_mag_success_ms_) > kMagStaleTimeoutMs) {
+    mag_enabled_.store(false, std::memory_order_relaxed);
   }
 
   // Читаем магнетометр на 100 Hz (MMC5983 CMM rate).
@@ -200,7 +200,7 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
   }
   last_mag_success_ms_ = now_ms;
   mag_data_ = *mag_opt;
-  mag_enabled_ = true;
+  mag_enabled_.store(true, std::memory_order_relaxed);
 
   // Подача нового семпла в калибровку (если идёт сбор)
   if (mag_calib_ && mag_calib_->IsCollecting()) {
@@ -264,7 +264,7 @@ void ImuHandler::FeedMadgwick(float raw_ax, float raw_ay, float raw_az,
     return;
   }
 
-  if (mag_enabled_) {
+  if (mag_enabled_.load(std::memory_order_relaxed)) {
     // 9DOF: полный калиброванный mag-вектор в СК датчика (FW-R3).
     // Подаётся каждый тик (включая тики без нового семпла) — предотвращает
     // дрейф yaw между обновлениями магнитометра. Madgwick сам устраняет
@@ -281,7 +281,7 @@ void ImuHandler::FeedMadgwick(float raw_ax, float raw_ay, float raw_az,
 
 float ImuHandler::GetRelativeHeadingDeg() const noexcept {
   float delta = heading_deg_ - heading_ref_;
-  if (delta >  180.f) delta -= 360.f;
+  if (delta > 180.f) delta -= 360.f;
   if (delta <= -180.f) delta += 360.f;
   return delta;
 }

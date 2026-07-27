@@ -297,11 +297,13 @@ TEST(ImuHandlerTest, MagRecalibrationBlocksYawSeedUntilFreshSample) {
   ASSERT_EQ(now_ms, 14000u);
   ASSERT_TRUE(imu.IsMagEnabled());
 
-  // Смена mag-калибровки — ровно то, что делает FinishMagCalibration().
-  // Одного InvalidateYawTrust() мало: он гасит кэш засева, но следующий же
-  // тик восстановил бы его по старому вектору.
-  filter.InvalidateYawTrust();
+  // Смена mag-калибровки в том же порядке, что и в FinishMagCalibration():
+  // сначала гасится кэшированный семпл (до Finish(), пока старый offset ещё
+  // активен), и лишь потом сбрасывается опора курса в фильтре. Одного
+  // InvalidateYawTrust() мало: он гасит кэш засева, но следующий же тик
+  // восстановил бы его по старому вектору.
   imu.InvalidateMagSample();
+  filter.InvalidateYawTrust();
   EXPECT_FALSE(imu.IsMagEnabled());
 
   // Калибровка попадает в окно ДО следующего чтения (2 мс из 10).

@@ -97,6 +97,28 @@ void VehicleControlUnified::StartMagCalibration() {
 void VehicleControlUnified::FinishMagCalibration() {
   const bool was_collecting =
       mag_calib_.GetStatus() == MagCalibStatus::Collecting;
+
+  // Гасим кэшированный mag-семпл ДО Finish(), а не после (ревью PR #308).
+  //
+  // Этот метод вызывается из HTTP/WS-задачи (ws_command_handlers.cpp,
+  // HandleCalibrateMag), а ControlTaskLoop() крутится независимой задачей на
+  // другом ядре — атомарности между вызовами здесь нет. Кэш ImuHandler
+  // посчитан ТЕКУЩИМ, ещё старым offset, и до инвалидации подаётся в
+  // UpdateWithMag() на каждом тике. Всё, что стоит между сменой калибровки и
+  // инвалидацией, — это окно, в котором control task может засеять курс по
+  // старому offset, а последующее гашение семпла уже не откатит кватернион.
+  // Окно это не микроскопическое: SaveMagCalib() ниже — запись в NVS на
+  // миллисекунды, то есть сотни тиков control loop.
+  //
+  // Порядок с гашением впереди безопасен и в обратную сторону: после него
+  // FeedMadgwick() уходит в 6DOF, а первое же свежее чтение (≤10 мс) уже
+  // применит НОВУЮ калибровку — засев по нему корректен.
+  //
+  // Гейтим по was_collecting, чтобы не дёргать 6DOF-провал на no-op вызовах
+  // Finish() вне сбора. Если сбор был, но калибровка не удалась, цена
+  // ошибки — тот же ≤10 мс откат в 6DOF, что и при обычном пропуске чтения.
+  if (was_collecting && imu_handler_) imu_handler_->InvalidateMagSample();
+
   mag_calib_.Finish();
   if (mag_calib_.IsValid()) {
     platform_->SaveMagCalib(mag_calib_.GetData());
@@ -114,15 +136,12 @@ void VehicleControlUnified::FinishMagCalibration() {
       // hard-iron offset) — накопленный до этого прогресс сходимости yaw
       // относился к старой калибровке (или к сырым данным) и не годится под
       // новую (LOS-229).
+      // Кэшированный семпл уже погашен выше, до Finish(): одного сброса в
+      // фильтре мало, потому что ImuHandler отдаёт кэш в UpdateWithMag() на
+      // КАЖДОМ тике, обновляя его лишь на 100 Гц чтениях, и следующий же тик
+      // снова пометил бы старый вектор пригодным для засева (ревью PR #308,
+      // LOS-221).
       madgwick_.InvalidateYawTrust();
-      // Одного сброса в фильтре мало: ImuHandler кэширует mag_calibrated_ и
-      // отдаёт его в UpdateWithMag() на КАЖДОМ тике, обновляя лишь на 100 Гц
-      // чтениях. Первый же тик после InvalidateYawTrust() снова пометил бы
-      // этот СТАРЫЙ вектор пригодным для засева курса, и калибровка,
-      // попавшая в окно до следующего чтения (≤10 мс), закрепила бы курс по
-      // ровно той калибровке, которую мы только что объявили негодной
-      // (ревью PR #308, LOS-221).
-      if (imu_handler_) imu_handler_->InvalidateMagSample();
     }
   }
   if (telem_mgr_) {
