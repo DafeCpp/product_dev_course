@@ -88,10 +88,28 @@ class IVehicleControl {
   // Относительный курс
   virtual void ResetHeadingRef() = 0;
 
-  // Калибровка магнитометра
-  virtual void StartMagCalibration() = 0;
-  virtual void FinishMagCalibration() = 0;
-  virtual void CancelMagCalibration() = 0;
+  // ─── Калибровка магнитометра ─────────────────────────────────────────────
+  //
+  // Все четыре команды исполняются не на месте, а в порядке поступления на
+  // потоке control loop (реализация решает, как именно). Возвращают НЕ
+  // результат операции, а факт приёма: false означает, что очередь команд
+  // переполнена и команда отброшена, — вызывающий обязан сообщить об этом
+  // клиенту, иначе отброшенный cancel оставит калибровку собирать семплы
+  // вечно, а клиент будет считать команду принятой (ревью PR #308).
+
+  virtual bool StartMagCalibration() = 0;
+  virtual bool FinishMagCalibration() = 0;
+  virtual bool CancelMagCalibration() = 0;
+
+  /**
+   * @brief Стереть калибровку магнитометра из NVS.
+   *
+   * Тоже через очередь: иначе erase, пришедший сразу за finish, стирал бы
+   * NVS ДО того, как отложенный finish запишет туда только что посчитанную
+   * калибровку — и клиент получал бы ok на стирание, после которого
+   * калибровка на месте (ревью PR #308).
+   */
+  virtual bool EraseMagCalibration() = 0;
 
   /**
    * @brief Статус калибровки магнитометра и причина неудачи — одним снимком.
@@ -103,8 +121,6 @@ class IVehicleControl {
    * "failed" с "none" (ревью PR #308).
    */
   [[nodiscard]] virtual MagCalibStateView GetMagCalibState() const = 0;
-
-  virtual bool EraseMagCalibration() = 0;
 
   // Телеметрия лог (кадры)
   virtual void GetLogInfo(size_t& count_out, size_t& cap_out) const = 0;

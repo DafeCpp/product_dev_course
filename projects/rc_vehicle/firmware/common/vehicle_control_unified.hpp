@@ -115,19 +115,25 @@ class VehicleControlUnified : public IVehicleControl {
 
   // ─── Калибровка магнитометра ─────────────────────────────────────────────
 
-  // Все три команды приходят из WS-обработчика (задача HTTP-сервера) — НЕ из
-  // потока control loop, поэтому только ставятся в очередь под мьютексом.
+  // Все четыре команды приходят из WS-обработчика (задача HTTP-сервера) — НЕ
+  // из потока control loop, поэтому только ставятся в очередь под мьютексом.
   // Реальная работа — в ProcessMagCalibRequests() (ревью PR #308). Статус
   // наружу меняется не раньше следующего тика (≤2 мс).
+  //
+  // Возвращают факт приёма команды, а не результат операции: false = очередь
+  // переполнена, команда отброшена.
 
   /** Запустить сбор семплов калибровки магнитометра. */
-  void StartMagCalibration() override;
+  bool StartMagCalibration() override;
 
   /** Завершить сбор, вычислить offset и сохранить в NVS (если валидно). */
-  void FinishMagCalibration() override;
+  bool FinishMagCalibration() override;
 
   /** Прервать сбор, вернуться в Idle. */
-  void CancelMagCalibration() override;
+  bool CancelMagCalibration() override;
+
+  /** Стереть калибровку магнитометра из NVS. */
+  bool EraseMagCalibration() override;
 
   /**
    * Статус калибровки магнитометра и причина неудачи.
@@ -142,9 +148,6 @@ class VehicleControlUnified : public IVehicleControl {
     std::lock_guard<std::mutex> lock(mag_state_mutex_);
     return {mag_status_pub_, mag_fail_reason_pub_};
   }
-
-  /** Удалить калибровку магнитометра из NVS. */
-  bool EraseMagCalibration() override { return platform_->EraseMagCalib(); }
 
   /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
@@ -414,7 +417,7 @@ class VehicleControlUnified : public IVehicleControl {
   MagCalibration mag_calib_;
 
   /** Отложенная команда mag-калибровки, пришедшая с HTTP/WS-задачи. */
-  enum class MagCalibRequest : uint8_t { Start, Finish, Cancel };
+  enum class MagCalibRequest : uint8_t { Start, Finish, Cancel, Erase };
 
   // Очередь отложенных команд mag-калибровки — по образцу
   // forward_dir_pending_ в CalibrationManager (PR #290). Они трогают
@@ -425,7 +428,7 @@ class VehicleControlUnified : public IVehicleControl {
   // СТАРЫЙ offset и заново пометить семпл пригодным — после чего
   // параллельная калибровка СК засеет курс по старой калибровке.
   //
-  // Откладываются все три команды (start/finish/cancel), а не только finish:
+  // Откладываются все четыре команды, а не только finish:
   // иначе синхронный Start() с HTTP-задачи подменял бы сессию под уже
   // начатым завершением. Гейты на стороне HTTP окно только сужают — три
   // итерации ревью PR #308 ровно об этом.
@@ -446,13 +449,15 @@ class VehicleControlUnified : public IVehicleControl {
   const char* mag_fail_reason_pub_{"none"};
 
   // Поставить команду в очередь. Вызывается с HTTP/WS-задачи.
-  void QueueMagCalibRequest(MagCalibRequest req);
+  // false — очередь переполнена, команда отброшена.
+  bool QueueMagCalibRequest(MagCalibRequest req);
 
   // Всё ниже исполняется исключительно с потока control loop.
   void ProcessMagCalibRequests();
   void ApplyMagCalibStart();
   void ApplyMagCalibFinish();
   void ApplyMagCalibCancel();
+  void ApplyMagCalibErase();
 
   // Опубликовать текущий статус mag_calib_ для читателей из HTTP-задачи.
   void PublishMagCalibState();

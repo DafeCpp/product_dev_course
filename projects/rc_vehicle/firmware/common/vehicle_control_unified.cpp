@@ -115,7 +115,7 @@ void VehicleControlUnified::PublishMagCalibState() {
   mag_fail_reason_pub_ = fail_reason;
 }
 
-void VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
+bool VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
   // Вызывается из HTTP/WS-задачи (ws_command_handlers.cpp, HandleCalibrateMag),
   // а ControlTaskLoop() — независимая задача. Ничего из mag_calib_/madgwick_/
   // imu_handler_ отсюда трогать нельзя: все они непрерывно читаются и пишутся
@@ -131,23 +131,33 @@ void VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
   //
   // Очередь, а не одна ячейка: команды применяются в том же порядке, в каком
   // пришли по WS, поэтому наблюдаемое поведение совпадает с прежним
-  // синхронным. Переполнение (>kMagCalibQueueSize команд за один тик, 2 мс)
-  // не ждём: команды порождает человек в UI.
+  // синхронным.
+  //
+  // Переполнения (>kMagCalibQueueSize команд за один тик, 2 мс) от человека
+  // в UI не ждём, но автоматический клиент способен и на такое, поэтому оно
+  // не проглатывается: false доходит до WS-обработчика и до клиента в
+  // ok=false. Молча отброшенный cancel оставил бы калибровку собирать семплы
+  // вечно при том, что клиент считает команду принятой (ревью PR #308).
   std::lock_guard<std::mutex> lock(mag_state_mutex_);
-  if (mag_request_count_ >= kMagCalibQueueSize) return;
+  if (mag_request_count_ >= kMagCalibQueueSize) return false;
   mag_requests_[mag_request_count_++] = req;
+  return true;
 }
 
-void VehicleControlUnified::StartMagCalibration() {
-  QueueMagCalibRequest(MagCalibRequest::Start);
+bool VehicleControlUnified::StartMagCalibration() {
+  return QueueMagCalibRequest(MagCalibRequest::Start);
 }
 
-void VehicleControlUnified::FinishMagCalibration() {
-  QueueMagCalibRequest(MagCalibRequest::Finish);
+bool VehicleControlUnified::FinishMagCalibration() {
+  return QueueMagCalibRequest(MagCalibRequest::Finish);
 }
 
-void VehicleControlUnified::CancelMagCalibration() {
-  QueueMagCalibRequest(MagCalibRequest::Cancel);
+bool VehicleControlUnified::CancelMagCalibration() {
+  return QueueMagCalibRequest(MagCalibRequest::Cancel);
+}
+
+bool VehicleControlUnified::EraseMagCalibration() {
+  return QueueMagCalibRequest(MagCalibRequest::Erase);
 }
 
 void VehicleControlUnified::ProcessMagCalibRequests() {
@@ -172,6 +182,9 @@ void VehicleControlUnified::ProcessMagCalibRequests() {
       case MagCalibRequest::Cancel:
         ApplyMagCalibCancel();
         break;
+      case MagCalibRequest::Erase:
+        ApplyMagCalibErase();
+        break;
     }
   }
 
@@ -192,6 +205,16 @@ void VehicleControlUnified::ApplyMagCalibCancel() {
   if (telem_mgr_) {
     telem_mgr_->PushEvent({0, TelemetryEventType::MagCalibCancelled, 0});
   }
+}
+
+void VehicleControlUnified::ApplyMagCalibErase() {
+  // Через ту же очередь — только ради порядка относительно finish. Сам
+  // mag_calib_ стирание не трогает: калибровка в памяти доживает до
+  // перезагрузки, как и раньше.
+  const bool ok = platform_->EraseMagCalib();
+  platform_->Log(
+      ok ? LogLevel::Info : LogLevel::Warning,
+      ok ? "Mag calibration erased from NVS" : "Mag calibration erase FAILED");
 }
 
 void VehicleControlUnified::ApplyMagCalibFinish() {

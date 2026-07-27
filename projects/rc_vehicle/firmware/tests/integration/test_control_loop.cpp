@@ -468,6 +468,53 @@ TEST_F(ControlLoopTest, MagCalibCancelIsLastWhenQueuedLast) {
          "MagCalibCancelled";
 }
 
+TEST_F(ControlLoopTest, MagCalibEraseIsOrderedAfterFinish) {
+  // erase, пришедший следом за finish, обязан стирать NVS ПОСЛЕ того, как
+  // finish туда записал. Пока erase исполнялся синхронно на HTTP-задаче, а
+  // finish ждал тика, порядок был обратный: стирание проходило первым, а
+  // затем finish записывал калибровку обратно — клиент получал ok на
+  // стирание, после которого калибровка на месте (ревью PR #308).
+  auto platform = std::make_unique<SimPlatform>(0);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+
+  MagCalibData stored{};
+  stored.valid = true;
+  platform_->SetStoredMagCalib(stored);
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();
+  ASSERT_TRUE(platform_->HasStoredMagCalib());
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();  // 0 семплов → Failed, но IsValid() от stored
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+
+  EXPECT_FALSE(platform_->HasStoredMagCalib())
+      << "Стирание пришло последним — калибровка не должна пережить его";
+}
+
+TEST_F(ControlLoopTest, MagCalibQueueOverflowIsReportedToCaller) {
+  // Переполнение очереди не проглатывается: иначе отброшенный cancel оставит
+  // калибровку собирать семплы вечно, а клиент будет считать команду
+  // принятой, потому что ack придёт с ok=true (ревью PR #308).
+  RunLoop(0);
+
+  for (int i = 0; i < 8; ++i) {
+    EXPECT_TRUE(vc_.StartMagCalibration()) << "команда " << i << " из 8";
+  }
+  EXPECT_FALSE(vc_.CancelMagCalibration())
+      << "Девятая команда не влезает — вызывающий обязан узнать об этом";
+
+  // После разбора очереди приём снова открыт.
+  vc_.HostStep(2);
+  EXPECT_TRUE(vc_.CancelMagCalibration());
+}
+
 TEST_F(ControlLoopTest, FailedMagCalibKeepsMagSampleValid) {
   // Неудачная попытка перекалибровки (мало семплов) НЕ трогает offset:
   // прежняя калибровка остаётся в силе, а значит остаётся в силе и всё, что

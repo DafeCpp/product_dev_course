@@ -223,8 +223,16 @@ class FakePlatform : public VehicleControlPlatform {
     return true;
   }
 
+  bool EraseMagCalib() override {
+    mag_calib_data_.reset();
+    return true;
+  }
+
   /** Предзаполнить «NVS» калибровкой магнитометра до Init(). */
   void SetStoredMagCalib(const MagCalibData& data) { mag_calib_data_ = data; }
+
+  /** Лежит ли что-то в «NVS» магнитометра. */
+  bool HasStoredMagCalib() const { return mag_calib_data_.has_value(); }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Калибровка IMU

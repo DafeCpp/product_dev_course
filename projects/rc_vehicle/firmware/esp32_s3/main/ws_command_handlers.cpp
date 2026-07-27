@@ -636,21 +636,26 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   const char* action = JsonGetString(json, "action", "");
 
   bool ok = true;
-  // start/finish/cancel откладываются на control loop (ревью PR #308):
+  // Все четыре действия откладываются на control loop (ревью PR #308):
   // применятся первым же тиком (≤2 мс), а статус в ack ниже на этот момент
   // ещё прежний. UI и так опрашивает get_mag_calib_status.
+  //
+  // ok здесь — факт ПРИЁМА команды, а не результат операции: false означает
+  // переполненную очередь. Молчать об этом нельзя, иначе отброшенный cancel
+  // оставит калибровку собирать семплы вечно при том, что клиент считает
+  // команду принятой.
   if (strcmp(action, "start") == 0) {
-    vc.StartMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: start queued");
+    ok = vc.StartMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: start %s", ok ? "queued" : "DROPPED (full)");
   } else if (strcmp(action, "finish") == 0) {
-    vc.FinishMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: finish queued");
+    ok = vc.FinishMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: finish %s", ok ? "queued" : "DROPPED (full)");
   } else if (strcmp(action, "cancel") == 0) {
-    vc.CancelMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: cancel queued");
+    ok = vc.CancelMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: cancel %s", ok ? "queued" : "DROPPED (full)");
   } else if (strcmp(action, "erase") == 0) {
     ok = vc.EraseMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: erase -> %s", ok ? "ok" : "failed");
+    ESP_LOGI(TAG, "calibrate_mag: erase %s", ok ? "queued" : "DROPPED (full)");
   } else {
     ok = false;
     ESP_LOGW(TAG, "calibrate_mag: unknown action '%s'", action);
