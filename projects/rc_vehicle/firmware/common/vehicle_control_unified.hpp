@@ -130,24 +130,24 @@ class VehicleControlUnified : public IVehicleControl {
   /** Прервать сбор, вернуться в Idle. */
   void CancelMagCalibration() override;
 
-  /** Причина неудачи калибровки магнитометра (валидна при статусе "failed"). */
+  /**
+   * Причина неудачи калибровки магнитометра (валидна при статусе "failed").
+   *
+   * Читается из HTTP/WS-задачи, поэтому отдаёт опубликованный снимок, а не
+   * mag_calib_ напрямую: статус теперь меняется в том числе с потока control
+   * loop (ProcessMagFinishRequest), и прямое чтение было бы гонкой —
+   * причём парной, с риском отдать новый статус со старой причиной
+   * (ревью PR #308).
+   */
   [[nodiscard]] const char* GetMagCalibFailReason() const override {
-    return mag_calib_.GetFailReasonStr();
+    std::lock_guard<std::mutex> lock(mag_state_mutex_);
+    return mag_fail_reason_pub_;
   }
 
-  /** Строковый статус калибровки магнитометра. */
+  /** Строковый статус калибровки магнитометра (снимок, см. выше). */
   [[nodiscard]] const char* GetMagCalibStatus() const override {
-    switch (mag_calib_.GetStatus()) {
-      case MagCalibStatus::Idle:
-        return "idle";
-      case MagCalibStatus::Collecting:
-        return "collecting";
-      case MagCalibStatus::Done:
-        return "done";
-      case MagCalibStatus::Failed:
-        return "failed";
-    }
-    return "idle";
+    std::lock_guard<std::mutex> lock(mag_state_mutex_);
+    return mag_status_pub_;
   }
 
   /** Удалить калибровку магнитометра из NVS. */
@@ -430,11 +430,26 @@ class VehicleControlUnified : public IVehicleControl {
   // семпл пригодным — после чего параллельная калибровка СК засеет курс по
   // старой калибровке (ревью PR #308). Точечные инвалидации окно лишь
   // сужают, но не закрывают.
-  std::mutex mag_finish_mutex_;
+  //
+  // Тот же мьютекс закрывает и обратное направление: статус калибровки теперь
+  // пишется с потока control loop, а читают его GetMagCalibStatus() /
+  // GetMagCalibFailReason() из HTTP-задачи (UI опрашивает их, пока идёт
+  // сбор). Наружу отдаётся опубликованный снимок mag_status_pub_ /
+  // mag_fail_reason_pub_, а не mag_calib_ напрямую: пара публикуется одним
+  // критическим участком, поэтому статус и причина всегда согласованы
+  // (ревью PR #308).
+  mutable std::mutex mag_state_mutex_;
   bool mag_finish_pending_{false};
+  const char* mag_status_pub_{"idle"};
+  const char* mag_fail_reason_pub_{"none"};
 
   // Исполняется исключительно с потока control loop.
   void ProcessMagFinishRequest();
+
+  // Опубликовать текущий статус mag_calib_ для читателей из HTTP-задачи.
+  // Вызывать после КАЖДОГО перехода статуса, с того же потока, что его
+  // выполнил.
+  void PublishMagCalibState();
   MadgwickFilter madgwick_;
 
   // Стратегии стабилизации (pipeline)

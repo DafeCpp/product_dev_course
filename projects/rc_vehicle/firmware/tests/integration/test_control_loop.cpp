@@ -401,3 +401,64 @@ TEST_F(ControlLoopTest, MagCalibFinishIsDeferredToControlLoop) {
   EXPECT_STRNE(vc_.GetMagCalibStatus(), "collecting")
       << "Первый же тик control loop обязан применить отложенный запрос";
 }
+
+TEST_F(ControlLoopTest, FailedMagCalibKeepsMagSampleValid) {
+  // Неудачная попытка перекалибровки (мало семплов) НЕ трогает offset:
+  // прежняя калибровка остаётся в силе, а значит остаётся в силе и всё, что
+  // к ней сошлось. Гасить кэшированный mag-семпл в этом случае нельзя —
+  // ImuHandler ушёл бы на 6DOF-путь, а тот обнуляет опору курса
+  // (yaw_has_absolute_ref_ / marg_correction_progress_), и следующие 12 с
+  // калибровка СК засевала бы курс по одному мгновенному семплу вместо уже
+  // сошедшегося yaw — ровно тот скачок курса, который чинит LOS-221
+  // (ревью PR #308).
+  auto platform = std::make_unique<SimPlatform>(0);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+
+  MagData mag{};
+  mag.mx = 300.f;
+  mag.my = 40.f;
+  mag.mz = -400.f;
+  platform_->SetMagData(mag);
+
+  // Валидная калибровка «из NVS» — сценарий ревью требует, чтобы старая
+  // калибровка оставалась валидной после неудачной попытки.
+  MagCalibData stored{};
+  stored.valid = true;
+  platform_->SetStoredMagCalib(stored);
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();  // Init вызывает CreateTask → цикл идёт синхронно
+  EXPECT_STREQ(vc_.GetMagCalibStatus(), "done")
+      << "Калибровка, поднятая из NVS, обязана быть видна снаружи";
+
+  // Прогрев: магнитометр читается на 100 Гц, телеметрия публикуется на 20 Гц.
+  for (int i = 0; i < 60; ++i) {
+    platform_->AdvanceTimeMs(2);
+    vc_.HostStep(2);
+  }
+  ASSERT_TRUE(platform_->GetLastSnap().mag_enabled);
+
+  // Дальше опрос магнитометра ломаем: иначе следующее же 100 Гц чтение
+  // вернуло бы mag_enabled_ в true за 10 мс и замаскировало инвалидацию.
+  // Запас до kMagStaleTimeoutMs = 250 мс перекрывает интервал телеметрии.
+  platform_->SetMagReadShouldFail(true);
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();  // семплов 0 < kMinSamples → Failed
+
+  for (int i = 0; i < 30; ++i) {
+    platform_->AdvanceTimeMs(2);
+    vc_.HostStep(2);
+  }
+
+  ASSERT_STREQ(vc_.GetMagCalibStatus(), "failed");
+  EXPECT_STREQ(vc_.GetMagCalibFailReason(), "too_few_samples")
+      << "Статус и причина публикуются одним снимком — расходиться не могут";
+  EXPECT_TRUE(platform_->GetLastSnap().mag_enabled)
+      << "Провалившаяся перекалибровка не меняет offset — гасить mag-семпл "
+         "и терять опору курса не за что";
+}

@@ -90,8 +90,34 @@ bool VehicleControlUnified::StartSteeringTrimCalibration(float target_accel_g) {
                                     cfg.yaw_rate.steer_to_yaw_rate_dps);
 }
 
+void VehicleControlUnified::PublishMagCalibState() {
+  const char* status = "idle";
+  switch (mag_calib_.GetStatus()) {
+    case MagCalibStatus::Idle:
+      status = "idle";
+      break;
+    case MagCalibStatus::Collecting:
+      status = "collecting";
+      break;
+    case MagCalibStatus::Done:
+      status = "done";
+      break;
+    case MagCalibStatus::Failed:
+      status = "failed";
+      break;
+  }
+  const char* fail_reason = mag_calib_.GetFailReasonStr();
+
+  // Обе строки — литералы со статическим временем жизни, поэтому отдавать
+  // указатель из-под мьютекса безопасно.
+  std::lock_guard<std::mutex> lock(mag_state_mutex_);
+  mag_status_pub_ = status;
+  mag_fail_reason_pub_ = fail_reason;
+}
+
 void VehicleControlUnified::StartMagCalibration() {
   mag_calib_.Start();
+  PublishMagCalibState();
   if (telem_mgr_) {
     telem_mgr_->PushEvent({0, TelemetryEventType::MagCalibStart, 0});
   }
@@ -110,13 +136,17 @@ void VehicleControlUnified::FinishMagCalibration() {
   // сделать 100 Гц чтение магнитометра, применить к нему ещё старый offset и
   // заново пометить семпл пригодным для засева. Прошлые итерации этой правки
   // окно лишь сужали (ревью PR #308).
-  std::lock_guard<std::mutex> lock(mag_finish_mutex_);
+  //
+  // Статус наружу тоже не выставляем: он сменится только когда control loop
+  // реально исполнит запрос, и GetMagCalibStatus() до этого момента честно
+  // продолжает отдавать "collecting".
+  std::lock_guard<std::mutex> lock(mag_state_mutex_);
   mag_finish_pending_ = true;
 }
 
 void VehicleControlUnified::ProcessMagFinishRequest() {
   {
-    std::lock_guard<std::mutex> lock(mag_finish_mutex_);
+    std::lock_guard<std::mutex> lock(mag_state_mutex_);
     if (!mag_finish_pending_) return;
     mag_finish_pending_ = false;
   }
@@ -124,40 +154,46 @@ void VehicleControlUnified::ProcessMagFinishRequest() {
   const bool was_collecting =
       mag_calib_.GetStatus() == MagCalibStatus::Collecting;
 
-  // Всё ниже исполняется на потоке control loop, поэтому чужих тиков между
-  // шагами больше нет и последовательность атомарна по отношению к
-  // UpdateMagAndHeading()/FeedMadgwick().
-  //
-  // Гасить кэшированный семпл всё равно нужно: он посчитан ещё старым offset
-  // на предыдущем тике и оставался бы пригодным для засева до следующего
-  // 100 Гц чтения. Гейтим по was_collecting, чтобы не ронять магнитометр в
-  // 6DOF на no-op вызовах Finish() вне сбора.
-  if (was_collecting && imu_handler_) imu_handler_->InvalidateMagSample();
-
   mag_calib_.Finish();
+
+  // Всё это исполняется на потоке control loop, поэтому чужих тиков между
+  // шагами нет: последовательность атомарна по отношению к
+  // UpdateMagAndHeading()/FeedMadgwick(). Порядок шагов внутри свободен —
+  // именно поэтому инвалидации сдвинуты СЮДА, за Finish(), где уже известен
+  // его исход.
+  //
+  // Сбрасываем что-либо, только если ИМЕННО ЭТОТ вызов реально перевёл
+  // калибровку Collecting → Done, т.е. data_ перезаписан новым offset.
+  // Finish() — no-op вне сбора (status_ тогда не Collecting), а неудачная
+  // попытка (мало семплов / плохой radius / NotPlanar) тоже не трогает
+  // data_. В обоих случаях IsValid() может остаться true от СТАРОЙ, уже
+  // сохранённой калибровки, и сброс был бы ложным: yaw сходился к ней же и
+  // остаётся действительным, а обнулять его — значит на 12 с лишить
+  // следующую IMU/Forward-калибровку опоры preserve_yaw и заставить её
+  // засевать курс по одному мгновенному семплу (review r3630682666,
+  // LOS-229; ревью PR #308).
+  const bool recalibrated =
+      was_collecting && mag_calib_.GetStatus() == MagCalibStatus::Done;
+
+  if (recalibrated) {
+    // Кэш ImuHandler посчитан ещё старым offset на предыдущем тике и
+    // оставался бы пригодным для засева до следующего 100 Гц чтения.
+    if (imu_handler_) imu_handler_->InvalidateMagSample();
+    // Apply() дальше будет выдавать другой скорректированный вектор (новый
+    // hard-iron offset) — накопленный прогресс сходимости yaw относился к
+    // старой калибровке (или к сырым данным) и не годится под новую
+    // (LOS-229). Одного сброса в фильтре мало: ImuHandler отдаёт кэш в
+    // UpdateWithMag() на КАЖДОМ тике, обновляя его лишь на 100 Гц чтениях,
+    // и следующий же тик снова пометил бы старый вектор пригодным.
+    madgwick_.InvalidateYawTrust();
+  }
+
   if (mag_calib_.IsValid()) {
     platform_->SaveMagCalib(mag_calib_.GetData());
-    // Инвалидируем опору курса, только если ИМЕННО ЭТОТ вызов реально
-    // перевёл калибровку Collecting → Done (data_ действительно перезаписан
-    // новым offset). Finish() — no-op вне сбора (status_ тогда не
-    // Collecting), а неудачная попытка (мало семплов / плохой radius /
-    // NotPlanar) тоже не трогает data_ — в обоих случаях IsValid() может
-    // остаться true от СТАРОЙ, уже сохранённой калибровки, и инвалидация
-    // была бы ложной: следующая IMU/Forward-калибровка обнулила бы курс без
-    // причины, хотя mag-калибровка на самом деле не менялась (review
-    // r3630682666, LOS-229).
-    if (was_collecting && mag_calib_.GetStatus() == MagCalibStatus::Done) {
-      // Apply() дальше будет выдавать другой скорректированный вектор (новый
-      // hard-iron offset) — накопленный до этого прогресс сходимости yaw
-      // относился к старой калибровке (или к сырым данным) и не годится под
-      // новую (LOS-229).
-      // Кэшированный семпл погашен выше: одного сброса в фильтре мало,
-      // потому что ImuHandler отдаёт кэш в UpdateWithMag() на КАЖДОМ тике,
-      // обновляя его лишь на 100 Гц чтениях, и следующий же тик снова
-      // пометил бы старый вектор пригодным для засева (ревью PR #308).
-      madgwick_.InvalidateYawTrust();
-    }
   }
+
+  PublishMagCalibState();
+
   if (telem_mgr_) {
     TelemetryEventType t = mag_calib_.IsValid()
                                ? TelemetryEventType::MagCalibDone
@@ -168,6 +204,7 @@ void VehicleControlUnified::ProcessMagFinishRequest() {
 
 void VehicleControlUnified::CancelMagCalibration() {
   mag_calib_.Cancel();
+  PublishMagCalibState();
   if (telem_mgr_) {
     telem_mgr_->PushEvent({0, TelemetryEventType::MagCalibCancelled, 0});
   }

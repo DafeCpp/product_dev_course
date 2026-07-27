@@ -212,6 +212,20 @@ class FakePlatform : public VehicleControlPlatform {
   }
   void SetMagReadShouldFail(bool fail) { mag_read_fails_ = fail; }
 
+  bool SaveMagCalib(const MagCalibData& data) override {
+    mag_calib_data_ = data;
+    return true;
+  }
+
+  bool LoadMagCalib(MagCalibData& data) override {
+    if (!mag_calib_data_) return false;
+    data = *mag_calib_data_;
+    return true;
+  }
+
+  /** Предзаполнить «NVS» калибровкой магнитометра до Init(). */
+  void SetStoredMagCalib(const MagCalibData& data) { mag_calib_data_ = data; }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Калибровка IMU
   // ─────────────────────────────────────────────────────────────────────────
@@ -379,6 +393,7 @@ class FakePlatform : public VehicleControlPlatform {
   // Магнетометр
   std::optional<MagData> mag_data_;
   bool mag_read_fails_{false};
+  std::optional<MagCalibData> mag_calib_data_;
 
   // Stabilization (per-mode: один слот на каждый DriveMode 0..4)
   std::array<std::optional<StabilizationConfig>, 5> stab_configs_{};
