@@ -106,6 +106,7 @@ const MCU_TIMEOUT_MS = 1500;
 let mcuStatusCheckInterval = null;
 let wifiStatusInterval = null;
 let magCalibPollTimer = null;
+let magCalibRefreshTimer = null;
 
 // ── Accordion ──
 document.querySelectorAll('.panel-header').forEach(hdr => {
@@ -221,6 +222,7 @@ function connectWebSocket() {
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 } else if (data.type === 'calibrate_mag_ack') {
                     updateMagCalibUI(data.status, data.fail_reason ?? 'none');
+                    scheduleMagCalibRefresh();
                 } else if (data.type === 'mag_calib_status') {
                     updateMagCalibUI(data.status, data.fail_reason ?? 'none');
                 } else if (data.type === 'reset_heading_ref_ack') {
@@ -410,6 +412,25 @@ const MAG_FAIL_REASON_TEXT = {
     radius_too_large: 'Сильные помехи — уберите магниты и металл рядом с датчиком',
     not_planar: 'Вращение не в одной плоскости — поворачивайте машину только вокруг вертикальной оси',
 };
+
+// Догоняющий запрос статуса после любой команды mag-калибровки.
+//
+// Прошивка исполняет start/finish/cancel не на месте, а на control loop
+// (ревью PR #308), поэтому статус в calibrate_mag_ack — ещё ДО команды.
+// Без этого запроса клик «Старт» из idle оставлял бы панель мёртвой:
+// updateMagCalibUI заводит таймер поллинга, только увидев collecting, а ack
+// приносит idle — сбор идёт на машине, но UI об этом никогда не узнаёт и
+// Finish остаётся заблокированным. Для finish/cancel таймер уже крутится и
+// сам бы догнал за секунду, но одинаковое поведение проще.
+//
+// 100 мс с запасом перекрывают тик цикла (2 мс).
+function scheduleMagCalibRefresh() {
+    if (magCalibRefreshTimer) clearTimeout(magCalibRefreshTimer);
+    magCalibRefreshTimer = setTimeout(() => {
+        magCalibRefreshTimer = null;
+        wsSend({ type: 'get_mag_calib_status' });
+    }, 100);
+}
 
 function updateMagCalibUI(status, failReason) {
     const collecting = status === 'collecting';
