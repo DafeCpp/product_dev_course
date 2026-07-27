@@ -1263,19 +1263,16 @@ TEST(MadgwickTest, SetVehicleFrame_DoesNotPreserveYawAfterOnlyBriefMargWindow) {
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
-TEST(MadgwickTest, SetVehicleFrame_SeedSupersedesMargWindow) {
+TEST(MadgwickTest, SetVehicleFrame_ShortMargWindowSeedsInsteadOfZeroing) {
   // Раньше (LOS-229, ревью PR #283 r3629255508) исход SetVehicleFrame() зависел
   // от того, успел ли накопиться marg_correction_progress_: порог
   // масштабируется по beta, и при beta=0.05 требовалось ~24 с вместо 12.
+  // Недобранное окно means обнуление курса — источник рампы LOS-221, потому что
+  // на загрузочной калибровке окно всегда короткое (Full — 2-4 с).
   //
-  // LOS-221: пока магнитометр доступен, ψ считается замкнутой формулой сразу в
-  // точку равновесия MARG, поэтому длина накопленного окна на результат больше
-  // не влияет — и короткое, и длинное окно дают ОДИН И ТОТ ЖЕ курс. Именно это
-  // и убирает фантомную рампу на загрузочной калибровке, где окно всегда
-  // короткое (Full-калибровка завершается за 2-4 с).
-  //
-  // Сам гейт остаётся живым для вырожденного поля — см.
-  // SetVehicleFrame_MargWindowStillGatesYawWhenFieldGivesNoHeading.
+  // Теперь недобранное окно уводит не в ноль, а в засев из магнитометра;
+  // добранное — сохраняет сошедшийся курс. Оба пути дают ОДНО И ТО ЖЕ
+  // значение, потому что засев и есть точка равновесия MARG.
   float gravity[3] = {0.0f, 0.0f, -1.0f};
   float forward[3] = {1.0f, 0.0f, 0.0f};
   constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
@@ -1283,7 +1280,8 @@ TEST(MadgwickTest, SetVehicleFrame_SeedSupersedesMargWindow) {
   // Для монтажа gravity=(0,0,-1), forward=(1,0,0): ψ = atan2(my, mx) = 90°.
   constexpr float kSeededYawDeg = 90.0f;
 
-  // 12.5 с коррекции — заведомо меньше требуемых при beta=0.05 (~24 с).
+  // 12.5 с коррекции — заведомо меньше требуемых при beta=0.05 (~24 с),
+  // значит preserve_yaw закрыт и работает засев.
   {
     MadgwickFilter filter;
     filter.SetBeta(kBetaHalf);
@@ -1299,7 +1297,7 @@ TEST(MadgwickTest, SetVehicleFrame_SeedSupersedesMargWindow) {
         << "Недобранное MARG-окно больше не обнуляет курс — он засевается";
   }
 
-  // 25 с коррекции — больше требуемых. Результат обязан быть тем же самым.
+  // 25 с коррекции — окно добрано, курс сохраняется. Значение то же.
   {
     MadgwickFilter filter;
     filter.SetBeta(kBetaHalf);
@@ -1320,8 +1318,49 @@ TEST(MadgwickTest, SetVehicleFrame_SeedSupersedesMargWindow) {
     float pitch_after, roll_after, yaw_after;
     filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
     EXPECT_NEAR(yaw_after, kSeededYawDeg, 0.1f)
-        << "Длинное окно даёт тот же курс, что и короткое";
+        << "Добранное окно сохраняет курс — то же значение, что даёт засев";
   }
+}
+
+TEST(MadgwickTest, SetVehicleFrame_ConvergedYawSurvivesDisturbedMagSample) {
+  // Ревью PR #308: смена СК может случиться и на ходу —
+  // CalibrationManager::ProcessForwardDirectionRequest() (WS-команда
+  // set_forward_direction) требует только gravity_valid и не проверяет
+  // остановку. На ходу поле искажают токи мотора: в логах LOS-221 |m| гуляет
+  // 485…770 мГс. Если бы засев имел приоритет над сохранением, один такой
+  // семпл подменял бы усреднённый сошедшийся курс — скачок плюс новая рампа,
+  // ровно то, что фикс должен убирать.
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  constexpr float kMx = 0.0f, kMy = 0.6f, kMz = -0.8f;
+
+  MadgwickFilter filter;
+  filter.SetBeta(0.1f);
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  // Сходимся по чистому полю с запасом над порогом (13 с при beta=0.1).
+  for (int i = 0; i < 6500; ++i) {
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx, kMy, kMz,
+                         0.002f);
+  }
+  float pitch, roll, yaw_converged;
+  filter.GetEulerDeg(pitch, roll, yaw_converged);
+  ASSERT_NEAR(yaw_converged, 90.0f, 0.5f);
+
+  // Один искажённый семпл: поле «повёрнуто» примерно на 90° и раздуто по
+  // модулю — типичная наводка от мотора. Сам по себе он сдвинет кватернион
+  // лишь на один шаг градиента (beta*dt), но как ЗАСЕВ дал бы ~0°.
+  filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.9f, 0.0f, -1.2f,
+                       0.002f);
+
+  // Смена направления «вперёд» посреди сессии — СК та же, курс должен
+  // сохраниться.
+  filter.SetVehicleFrame(gravity, forward, true);
+
+  float pitch_after, roll_after, yaw_after;
+  filter.GetEulerDeg(pitch_after, roll_after, yaw_after);
+  EXPECT_NEAR(yaw_after, yaw_converged, 0.5f)
+      << "Сошедшийся курс не должен подменяться искажённым мгновенным семплом";
 }
 
 TEST(MadgwickTest,
