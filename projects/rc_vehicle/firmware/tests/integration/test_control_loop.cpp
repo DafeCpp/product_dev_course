@@ -377,66 +377,95 @@ TEST_F(ControlLoopTest, SteeringTrimCalib_StartStop) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Отложенное завершение mag-калибровки (LOS-221, ревью PR #308)
+// Отложенные команды mag-калибровки (LOS-221, ревью PR #308)
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_F(ControlLoopTest, MagCalibFinishIsDeferredToControlLoop) {
-  // FinishMagCalibration() приходит из HTTP/WS-задачи и трогает mag_calib_,
-  // madgwick_ и imu_handler_ — все они принадлежат control loop и не
-  // потокобезопасны. Выполнять эту многошаговую последовательность на месте
-  // нельзя: между её шагами control loop успевает сделать 100 Гц чтение
-  // магнитометра со ещё СТАРЫМ offset и заново пометить семпл пригодным для
-  // засева курса. Поэтому запрос только ставится в очередь, а применяется
-  // первым же тиком.
+// Собрать типы событий mag-калибровки из лога, в порядке появления.
+static std::vector<TelemetryEventType> MagCalibEvents(
+    const IVehicleControl& vc) {
+  std::vector<TelemetryEventType> out;
+  const size_t count = vc.GetEventCount();
+  for (size_t i = 0; i < count; ++i) {
+    TelemetryEvent ev{};
+    if (!vc.GetEvent(i, ev)) continue;
+    switch (ev.type) {
+      case TelemetryEventType::MagCalibStart:
+      case TelemetryEventType::MagCalibDone:
+      case TelemetryEventType::MagCalibFailed:
+      case TelemetryEventType::MagCalibCancelled:
+        out.push_back(ev.type);
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
+TEST_F(ControlLoopTest, MagCalibCommandsAreDeferredToControlLoop) {
+  // Команды приходят из HTTP/WS-задачи и трогают mag_calib_, madgwick_ и
+  // imu_handler_ — все они принадлежат control loop и не потокобезопасны.
+  // Выполнять их на месте нельзя: завершение это многошаговая
+  // последовательность, между шагами которой control loop успевает сделать
+  // 100 Гц чтение магнитометра со ещё СТАРЫМ offset и заново пометить семпл
+  // пригодным для засева курса. Поэтому команды только ставятся в очередь, а
+  // применяются первым же тиком.
   RunLoop(0);
 
   vc_.StartMagCalibration();
+  EXPECT_STREQ(vc_.GetMagCalibStatus(), "idle")
+      << "Старт обязан быть отложенным, а не применённым на месте";
+  vc_.HostStep(2);
   ASSERT_STREQ(vc_.GetMagCalibStatus(), "collecting");
 
   vc_.FinishMagCalibration();
   EXPECT_STREQ(vc_.GetMagCalibStatus(), "collecting")
       << "Завершение обязано быть отложенным, а не применённым на месте";
-
   vc_.HostStep(2);
   EXPECT_STRNE(vc_.GetMagCalibStatus(), "collecting")
       << "Первый же тик control loop обязан применить отложенный запрос";
 }
 
-TEST_F(ControlLoopTest, RestartedMagCalibSurvivesStaleFinishRequest) {
-  // finish + start, пришедшие с WS внутри одного тика (2 мс): отложенный
-  // finish относится к ПРЕДЫДУЩЕЙ сессии и завершать новую не должен —
-  // иначе она умрёт с нулём семплов, т.е. сразу failed. Пока завершение было
-  // синхронным, порядок команд соблюдался сам собой (ревью PR #308).
+TEST_F(ControlLoopTest, MagCalibRequestsApplyInArrivalOrder) {
+  // Пачка команд, пришедшая с WS внутри одного тика (2 мс), применяется в том
+  // же порядке — наблюдаемое поведение совпадает с прежним синхронным.
+  // Отдельно откладывать finish, оставив start синхронным, недостаточно:
+  // control loop доходит до mag_calib_ уже вне мьютекса, и Start() успевал бы
+  // в этот зазор подменить сессию под начатым завершением (ревью PR #308).
   RunLoop(0);
 
   vc_.StartMagCalibration();
   vc_.FinishMagCalibration();
   vc_.StartMagCalibration();
-
   vc_.HostStep(2);
+
   EXPECT_STREQ(vc_.GetMagCalibStatus(), "collecting")
-      << "Новая сессия обязана пережить finish, поставленный до неё";
+      << "Последний start обязан пережить finish, поставленный до него";
+  EXPECT_EQ(MagCalibEvents(vc_),
+            (std::vector<TelemetryEventType>{
+                TelemetryEventType::MagCalibStart,
+                TelemetryEventType::MagCalibFailed,  // 0 семплов
+                TelemetryEventType::MagCalibStart}));
 }
 
-TEST_F(ControlLoopTest, CancelDropsPendingMagCalibFinish) {
-  // Та же коллизия с отменой. Статус тут не показателен (Finish() вне сбора —
-  // no-op, и снаружи всё равно "idle"), поэтому смотрим лог событий: после
-  // MagCalibCancelled не должно прилететь MagCalibDone/MagCalibFailed.
+TEST_F(ControlLoopTest, MagCalibCancelIsLastWhenQueuedLast) {
+  // Та же пачка, но с отменой в хвосте. Статус тут не показателен (Finish()
+  // отработает до Cancel(), а тот вернёт Idle), поэтому смотрим лог событий:
+  // отмена обязана быть последней, а не перекрытой завершением.
   RunLoop(0);
 
   vc_.StartMagCalibration();
   vc_.FinishMagCalibration();
   vc_.CancelMagCalibration();
-
   vc_.HostStep(2);
+
   EXPECT_STREQ(vc_.GetMagCalibStatus(), "idle");
 
-  const size_t count = vc_.GetEventCount();
-  ASSERT_GT(count, 0u);
-  TelemetryEvent last{};
-  ASSERT_TRUE(vc_.GetEvent(count - 1, last));
-  EXPECT_EQ(last.type, TelemetryEventType::MagCalibCancelled)
-      << "Отменённая калибровка не должна досылать событие завершения";
+  const auto events = MagCalibEvents(vc_);
+  ASSERT_FALSE(events.empty());
+  EXPECT_EQ(events.back(), TelemetryEventType::MagCalibCancelled)
+      << "Отменённая калибровка не должна досылать событие завершения после "
+         "MagCalibCancelled";
 }
 
 TEST_F(ControlLoopTest, FailedMagCalibKeepsMagSampleValid) {

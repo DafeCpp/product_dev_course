@@ -49,7 +49,7 @@ void VehicleControlUnified::ControlTaskLoop() {
     platform_->DelayUntilNextTick(config::ControlLoopConfig::kPeriodMs);
     const uint32_t now = platform_->GetTimeMs();
     // Отложенные WS-запросы, которые безопасно применять только здесь.
-    ProcessMagFinishRequest();
+    ProcessMagCalibRequests();
     processor_->Step(now, now - last_loop);
     last_loop = now;
     platform_->FeedTaskWdt();
@@ -60,7 +60,7 @@ void VehicleControlUnified::HostStep(uint32_t dt_ms) {
   if (!platform_) return;
   BuildProcessor();
   control_task_ready_.store(true, std::memory_order_release);
-  ProcessMagFinishRequest();
+  ProcessMagCalibRequests();
   processor_->Step(platform_->GetTimeMs(), dt_ms);
 }
 
@@ -115,66 +115,97 @@ void VehicleControlUnified::PublishMagCalibState() {
   mag_fail_reason_pub_ = fail_reason;
 }
 
-void VehicleControlUnified::DropPendingMagFinish() {
+void VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
+  // Вызывается из HTTP/WS-задачи (ws_command_handlers.cpp, HandleCalibrateMag),
+  // а ControlTaskLoop() — независимая задача. Ничего из mag_calib_/madgwick_/
+  // imu_handler_ отсюда трогать нельзя: все они непрерывно читаются и пишутся
+  // control loop'ом на 500 Гц и не потокобезопасны. Только ставим запрос в
+  // очередь — по образцу CalibrationManager::SetForwardDirection() (PR #290).
+  //
+  // Откладываются ВСЕ три команды, а не только finish. Отложить одну означало
+  // бы гонку между ней и оставшимися синхронными: control loop, забрав запрос
+  // из очереди, доходит до mag_calib_ уже вне мьютекса, и Start() с чужой
+  // задачи успевал бы в этот зазор подменить сессию под уже начатым
+  // завершением. Никакой гейт на стороне HTTP этого не закрывает — окно
+  // сужается, но остаётся (три итерации ревью PR #308 ровно об этом).
+  //
+  // Очередь, а не одна ячейка: команды применяются в том же порядке, в каком
+  // пришли по WS, поэтому наблюдаемое поведение совпадает с прежним
+  // синхронным. Переполнение (>kMagCalibQueueSize команд за один тик, 2 мс)
+  // не ждём: команды порождает человек в UI.
   std::lock_guard<std::mutex> lock(mag_state_mutex_);
-  mag_finish_pending_ = false;
+  if (mag_request_count_ >= kMagCalibQueueSize) return;
+  mag_requests_[mag_request_count_++] = req;
 }
 
 void VehicleControlUnified::StartMagCalibration() {
-  // Снимаем отложенный finish ПРЕДЫДУЩЕЙ сессии до Start(): пока завершение
-  // было синхронным, порядок команд WS соблюдался сам собой, а теперь
-  // finish + start, пришедшие внутри одного тика (2 мс), дали бы
-  // ProcessMagFinishRequest() завершить уже НОВУЮ сессию — с нулём семплов,
-  // то есть сразу Failed (ревью PR #308).
-  //
-  // Порядок важен: сначала снять флаг, потом Start(). В обратном порядке
-  // control loop успел бы вклиниться между ними и убить новую сессию.
-  DropPendingMagFinish();
-  mag_calib_.Start();
+  QueueMagCalibRequest(MagCalibRequest::Start);
+}
+
+void VehicleControlUnified::FinishMagCalibration() {
+  QueueMagCalibRequest(MagCalibRequest::Finish);
+}
+
+void VehicleControlUnified::CancelMagCalibration() {
+  QueueMagCalibRequest(MagCalibRequest::Cancel);
+}
+
+void VehicleControlUnified::ProcessMagCalibRequests() {
+  MagCalibRequest batch[kMagCalibQueueSize];
+  size_t count = 0;
+  {
+    std::lock_guard<std::mutex> lock(mag_state_mutex_);
+    count = mag_request_count_;
+    for (size_t i = 0; i < count; ++i) batch[i] = mag_requests_[i];
+    mag_request_count_ = 0;
+  }
+  if (count == 0) return;
+
+  for (size_t i = 0; i < count; ++i) {
+    switch (batch[i]) {
+      case MagCalibRequest::Start:
+        ApplyMagCalibStart();
+        break;
+      case MagCalibRequest::Finish:
+        ApplyMagCalibFinish();
+        break;
+      case MagCalibRequest::Cancel:
+        ApplyMagCalibCancel();
+        break;
+    }
+  }
+
+  // Публикуем один раз на пачку: промежуточные статусы внутри неё всё равно
+  // ненаблюдаемы — она применяется целиком в пределах одного тика.
   PublishMagCalibState();
+}
+
+void VehicleControlUnified::ApplyMagCalibStart() {
+  mag_calib_.Start();
   if (telem_mgr_) {
     telem_mgr_->PushEvent({0, TelemetryEventType::MagCalibStart, 0});
   }
 }
 
-void VehicleControlUnified::FinishMagCalibration() {
-  // Вызывается из HTTP/WS-задачи (ws_command_handlers.cpp, HandleCalibrateMag),
-  // а ControlTaskLoop() — независимая задача. Ничего из mag_calib_/madgwick_/
-  // imu_handler_ отсюда трогать нельзя: все они непрерывно читаются и пишутся
-  // control loop'ом на 500 Гц и не потокобезопасны. Только откладываем запрос —
-  // ровно как CalibrationManager::SetForwardDirection() (PR #290).
-  //
-  // Точечных инвалидаций здесь недостаточно принципиально: завершение
-  // калибровки — многошаговая последовательность (Finish → SaveMagCalib →
-  // сброс опоры курса), и между ЛЮБЫМИ двумя её шагами control loop успевает
-  // сделать 100 Гц чтение магнитометра, применить к нему ещё старый offset и
-  // заново пометить семпл пригодным для засева. Прошлые итерации этой правки
-  // окно лишь сужали (ревью PR #308).
-  //
-  // Статус наружу тоже не выставляем: он сменится только когда control loop
-  // реально исполнит запрос, и GetMagCalibStatus() до этого момента честно
-  // продолжает отдавать "collecting".
-  std::lock_guard<std::mutex> lock(mag_state_mutex_);
-  mag_finish_pending_ = true;
+void VehicleControlUnified::ApplyMagCalibCancel() {
+  mag_calib_.Cancel();
+  if (telem_mgr_) {
+    telem_mgr_->PushEvent({0, TelemetryEventType::MagCalibCancelled, 0});
+  }
 }
 
-void VehicleControlUnified::ProcessMagFinishRequest() {
-  {
-    std::lock_guard<std::mutex> lock(mag_state_mutex_);
-    if (!mag_finish_pending_) return;
-    mag_finish_pending_ = false;
-  }
-
+void VehicleControlUnified::ApplyMagCalibFinish() {
   const bool was_collecting =
       mag_calib_.GetStatus() == MagCalibStatus::Collecting;
 
   mag_calib_.Finish();
 
   // Всё это исполняется на потоке control loop, поэтому чужих тиков между
-  // шагами нет: последовательность атомарна по отношению к
-  // UpdateMagAndHeading()/FeedMadgwick(). Порядок шагов внутри свободен —
-  // именно поэтому инвалидации сдвинуты СЮДА, за Finish(), где уже известен
-  // его исход.
+  // шагами нет: последовательность атомарна и по отношению к
+  // UpdateMagAndHeading()/FeedMadgwick(), и по отношению к start/cancel —
+  // те приходят через ту же очередь. Порядок шагов внутри свободен — именно
+  // поэтому инвалидации сдвинуты СЮДА, за Finish(), где уже известен его
+  // исход.
   //
   // Сбрасываем что-либо, только если ИМЕННО ЭТОТ вызов реально перевёл
   // калибровку Collecting → Done, т.е. data_ перезаписан новым offset.
@@ -206,25 +237,11 @@ void VehicleControlUnified::ProcessMagFinishRequest() {
     platform_->SaveMagCalib(mag_calib_.GetData());
   }
 
-  PublishMagCalibState();
-
   if (telem_mgr_) {
     TelemetryEventType t = mag_calib_.IsValid()
                                ? TelemetryEventType::MagCalibDone
                                : TelemetryEventType::MagCalibFailed;
     telem_mgr_->PushEvent({0, t, 0});
-  }
-}
-
-void VehicleControlUnified::CancelMagCalibration() {
-  // Тот же порядок и та же причина, что в StartMagCalibration(). Иначе
-  // отложенный finish дожил бы до тика уже после отмены и выдал в лог
-  // событий MagCalibDone/MagCalibFailed поверх MagCalibCancelled.
-  DropPendingMagFinish();
-  mag_calib_.Cancel();
-  PublishMagCalibState();
-  if (telem_mgr_) {
-    telem_mgr_->PushEvent({0, TelemetryEventType::MagCalibCancelled, 0});
   }
 }
 

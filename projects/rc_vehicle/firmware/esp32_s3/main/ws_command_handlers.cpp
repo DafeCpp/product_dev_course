@@ -636,17 +636,18 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   const char* action = JsonGetString(json, "action", "");
 
   bool ok = true;
+  // start/finish/cancel откладываются на control loop (ревью PR #308):
+  // применятся первым же тиком (≤2 мс), а статус в ack ниже на этот момент
+  // ещё прежний. UI и так опрашивает get_mag_calib_status.
   if (strcmp(action, "start") == 0) {
     vc.StartMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: start");
+    ESP_LOGI(TAG, "calibrate_mag: start queued");
   } else if (strcmp(action, "finish") == 0) {
     vc.FinishMagCalibration();
-    // Завершение откладывается на control loop (ревью PR #308), поэтому
-    // статус здесь ещё прежний — печатать его как результат было бы враньём.
     ESP_LOGI(TAG, "calibrate_mag: finish queued");
   } else if (strcmp(action, "cancel") == 0) {
     vc.CancelMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: cancel");
+    ESP_LOGI(TAG, "calibrate_mag: cancel queued");
   } else if (strcmp(action, "erase") == 0) {
     ok = vc.EraseMagCalibration();
     ESP_LOGI(TAG, "calibrate_mag: erase -> %s", ok ? "ok" : "failed");

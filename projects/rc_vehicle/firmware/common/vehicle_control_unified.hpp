@@ -115,16 +115,15 @@ class VehicleControlUnified : public IVehicleControl {
 
   // ─── Калибровка магнитометра ─────────────────────────────────────────────
 
+  // Все три команды приходят из WS-обработчика (задача HTTP-сервера) — НЕ из
+  // потока control loop, поэтому только ставятся в очередь под мьютексом.
+  // Реальная работа — в ProcessMagCalibRequests() (ревью PR #308). Статус
+  // наружу меняется не раньше следующего тика (≤2 мс).
+
   /** Запустить сбор семплов калибровки магнитометра. */
   void StartMagCalibration() override;
 
-  /**
-   * Завершить сбор, вычислить offset и сохранить в NVS (если валидно).
-   *
-   * Вызывается из WS-обработчика (задача HTTP-сервера) — НЕ из потока
-   * control loop, поэтому сама лишь откладывает запрос под мьютексом.
-   * Реальная работа — в ProcessMagFinishRequest() (ревью PR #308).
-   */
+  /** Завершить сбор, вычислить offset и сохранить в NVS (если валидно). */
   void FinishMagCalibration() override;
 
   /** Прервать сбор, вернуться в Idle. */
@@ -134,10 +133,9 @@ class VehicleControlUnified : public IVehicleControl {
    * Причина неудачи калибровки магнитометра (валидна при статусе "failed").
    *
    * Читается из HTTP/WS-задачи, поэтому отдаёт опубликованный снимок, а не
-   * mag_calib_ напрямую: статус теперь меняется в том числе с потока control
-   * loop (ProcessMagFinishRequest), и прямое чтение было бы гонкой —
-   * причём парной, с риском отдать новый статус со старой причиной
-   * (ревью PR #308).
+   * mag_calib_ напрямую: статус меняется с потока control loop, и прямое
+   * чтение было бы гонкой — причём парной, с риском отдать новый статус со
+   * старой причиной (ревью PR #308).
    */
   [[nodiscard]] const char* GetMagCalibFailReason() const override {
     std::lock_guard<std::mutex> lock(mag_state_mutex_);
@@ -420,16 +418,22 @@ class VehicleControlUnified : public IVehicleControl {
   ImuCalibration imu_calib_;
   MagCalibration mag_calib_;
 
-  // Отложенный FinishMagCalibration() — по образцу forward_dir_pending_ в
-  // CalibrationManager (PR #290). Завершение mag-калибровки трогает
+  /** Отложенная команда mag-калибровки, пришедшая с HTTP/WS-задачи. */
+  enum class MagCalibRequest : uint8_t { Start, Finish, Cancel };
+
+  // Очередь отложенных команд mag-калибровки — по образцу
+  // forward_dir_pending_ в CalibrationManager (PR #290). Они трогают
   // mag_calib_, madgwick_ и imu_handler_, а все три непрерывно
   // читаются/пишутся control loop'ом на 500 Гц и не потокобезопасны.
-  // Выполнять эту многошаговую последовательность с чужой задачи нельзя:
-  // между её шагами control loop успевает сделать 100 Гц чтение
-  // магнитометра, применить к нему ещё СТАРЫЙ offset и заново пометить
-  // семпл пригодным — после чего параллельная калибровка СК засеет курс по
-  // старой калибровке (ревью PR #308). Точечные инвалидации окно лишь
-  // сужают, но не закрывают.
+  // Выполнять их с чужой задачи нельзя: между шагами завершения control loop
+  // успевает сделать 100 Гц чтение магнитометра, применить к нему ещё
+  // СТАРЫЙ offset и заново пометить семпл пригодным — после чего
+  // параллельная калибровка СК засеет курс по старой калибровке.
+  //
+  // Откладываются все три команды (start/finish/cancel), а не только finish:
+  // иначе синхронный Start() с HTTP-задачи подменял бы сессию под уже
+  // начатым завершением. Гейты на стороне HTTP окно только сужают — три
+  // итерации ревью PR #308 ровно об этом.
   //
   // Тот же мьютекс закрывает и обратное направление: статус калибровки теперь
   // пишется с потока control loop, а читают его GetMagCalibStatus() /
@@ -438,22 +442,25 @@ class VehicleControlUnified : public IVehicleControl {
   // mag_fail_reason_pub_, а не mag_calib_ напрямую: пара публикуется одним
   // критическим участком, поэтому статус и причина всегда согласованы
   // (ревью PR #308).
+  static constexpr size_t kMagCalibQueueSize = 8;
+
   mutable std::mutex mag_state_mutex_;
-  bool mag_finish_pending_{false};
+  MagCalibRequest mag_requests_[kMagCalibQueueSize]{};
+  size_t mag_request_count_{0};
   const char* mag_status_pub_{"idle"};
   const char* mag_fail_reason_pub_{"none"};
 
-  // Исполняется исключительно с потока control loop.
-  void ProcessMagFinishRequest();
+  // Поставить команду в очередь. Вызывается с HTTP/WS-задачи.
+  void QueueMagCalibRequest(MagCalibRequest req);
+
+  // Всё ниже исполняется исключительно с потока control loop.
+  void ProcessMagCalibRequests();
+  void ApplyMagCalibStart();
+  void ApplyMagCalibFinish();
+  void ApplyMagCalibCancel();
 
   // Опубликовать текущий статус mag_calib_ для читателей из HTTP-задачи.
-  // Вызывать после КАЖДОГО перехода статуса, с того же потока, что его
-  // выполнил.
   void PublishMagCalibState();
-
-  // Снять отложенный finish: он относился к сессии, которую только что
-  // сменили Start()/Cancel(), и завершать новую не должен.
-  void DropPendingMagFinish();
   MadgwickFilter madgwick_;
 
   // Стратегии стабилизации (pipeline)
