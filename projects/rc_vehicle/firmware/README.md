@@ -35,6 +35,8 @@ make help
 Нужен [ESP-IDF](https://docs.espressif.com/projects/esp-idf/). Из каталога `esp32_s3/`:
 
 ```bash
+cd projects/rc_vehicle/firmware/esp32_s3
+./scripts/migrate_cpu_freq_sdkconfig.sh
 idf.py build
 idf.py flash
 idf.py monitor
