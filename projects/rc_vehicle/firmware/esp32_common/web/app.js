@@ -109,11 +109,10 @@ let magCalibPollTimer = null;
 let magCalibRefreshTimer = null;
 let lastMagEraseResult = 'none';
 let lastMagEraseSeq = 0;
-let magErasePendingSeqBaseline = null;
 let magEraseWatching = false;
 let magEraseWatchTimer = null;
 let magEraseWatchAttempts = 0;
-let magEraseWatchSeqBaseline = 0;
+let magEraseTargetSeq = 0;
 
 // ── Accordion ──
 document.querySelectorAll('.panel-header').forEach(hdr => {
@@ -229,10 +228,10 @@ function connectWebSocket() {
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 } else if (data.type === 'calibrate_mag_ack') {
                     updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none', data.erase_seq ?? 0);
-                    if (magErasePendingSeqBaseline !== null) {
-                        if (data.ok) startMagEraseWatch(magErasePendingSeqBaseline);
-                        magErasePendingSeqBaseline = null;
-                    }
+                    // action эхом от сервера — надёжнее клиентского флага "жду
+                    // ack": не путается, если erase кликнули дважды подряд или
+                    // вперемешку с start/finish/cancel (ревью PR #308).
+                    if (data.action === 'erase' && data.ok) extendMagEraseWatch();
                     scheduleMagCalibRefresh();
                 } else if (data.type === 'mag_calib_status') {
                     updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none', data.erase_seq ?? 0);
@@ -444,29 +443,31 @@ function scheduleMagCalibRefresh() {
     }, 100);
 }
 
-// Опрашивать, пока erase_seq не сдвинется относительно значения на момент
-// клика. Раньше сравнивали erase_result — но два erase подряд с ОДИНАКОВЫМ
-// исходом (оба "ok") дают то же самое значение, и такое сравнение никогда не
-// заметило бы завершение второго (ревью PR #308). erase_seq растёт на 1 при
-// КАЖДОМ применении erase вне зависимости от исхода, поэтому сравнение по
-// нему не путает новое завершение со старым.
+// Опрашивать, пока erase_seq не достигнет цели — суммы уже известного
+// значения и числа ПРИНЯТЫХ, но ещё не подтверждённых erase-команд. Просто
+// "!= baseline" (прошлый раунд ревью PR #308) ломается на перекрывающихся
+// erase: если второй erase кликнут до подтверждения первого, оба используют
+// один и тот же устаревший baseline, и наблюдение остановится, едва увидев
+// ПЕРВОЕ приращение — то есть до применения второго erase. Если второй потом
+// провалится, об этом уже некому узнать (status вне collecting новых
+// опросов не заводит). extendMagEraseWatch() поэтому всегда отталкивается от
+// уже действующей цели (если наблюдение уже идёт), а не от lastMagEraseSeq —
+// цель растёт на 1 за каждый принятый erase, и наблюдение не считается
+// завершённым, пока real erase_seq не догонит все их разом.
 //
 // Одноразового scheduleMagCalibRefresh (100 мс) достаточно для status/
 // fail_reason: пока status==collecting, их и так продолжает подтягивать
 // поллинг раз в секунду ниже. Для erase такой страховки нет — стирание не
-// меняет status/fail_reason калибровки в памяти, а если erase пришёл следом
-// за finish, оба применяются в ОДНОМ тике control loop, последовательно, и
-// синхронная запись NVS каждого может занять заметно больше 100 мс —
-// разовый запрос тогда попадёт ДО публикации и застрянет на старом значении
-// навсегда, т.к. status вне collecting новых опросов не заводит (ревью
-// PR #308).
+// меняет status/fail_reason калибровки в памяти, а синхронная запись NVS
+// может занять заметно больше 100 мс.
 const MAG_ERASE_WATCH_INTERVAL_MS = 150;
 const MAG_ERASE_WATCH_MAX_ATTEMPTS = 20;  // 20 × 150 мс = 3 с — с запасом на NVS
 
-function startMagEraseWatch(seqBaseline) {
+function extendMagEraseWatch() {
+    const base = magEraseWatching ? magEraseTargetSeq : lastMagEraseSeq;
+    magEraseTargetSeq = base + 1;
     magEraseWatching = true;
-    magEraseWatchAttempts = 0;
-    magEraseWatchSeqBaseline = seqBaseline;
+    magEraseWatchAttempts = 0;  // каждый принятый erase заслуживает свой полный бюджет попыток
     scheduleMagEraseWatchPoll();
 }
 
@@ -481,8 +482,8 @@ function scheduleMagEraseWatchPoll() {
 function onMagEraseSeqObserved(eraseSeq) {
     if (!magEraseWatching) return;
     magEraseWatchAttempts++;
-    if (eraseSeq !== magEraseWatchSeqBaseline) {
-        magEraseWatching = false;  // именно наш erase применился
+    if (eraseSeq >= magEraseTargetSeq) {
+        magEraseWatching = false;  // все принятые на этот момент erase применились
         return;
     }
     if (magEraseWatchAttempts >= MAG_ERASE_WATCH_MAX_ATTEMPTS) {
@@ -1707,7 +1708,6 @@ if (btnMagFinish) btnMagFinish.addEventListener('click', () => wsSend({ type: 'c
 if (btnMagCancel) btnMagCancel.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'cancel' }));
 if (btnMagErase)  btnMagErase.addEventListener('click',  () => {
     if (!confirm('Стереть калибровку магнитометра?')) return;
-    magErasePendingSeqBaseline = lastMagEraseSeq;
     wsSend({ type: 'calibrate_mag', action: 'erase' });
 });
 if (btnResetHeading) btnResetHeading.addEventListener('click', () => wsSend({ type: 'reset_heading_ref' }));

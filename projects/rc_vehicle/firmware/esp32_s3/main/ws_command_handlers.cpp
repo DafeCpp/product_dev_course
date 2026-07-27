@@ -668,6 +668,11 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     cJSON_AddStringToObject(reply, "erase_result", mag_state.erase_result);
     cJSON_AddNumberToObject(reply, "erase_seq", (double)mag_state.erase_seq);
     cJSON_AddBoolToObject(reply, "ok", ok);
+    // Эхо запрошенного action — чтобы клиент мог сопоставить ack именно с
+    // erase-командой напрямую, а не гадать по порядку/таймингу пришедших
+    // calibrate_mag_ack, если erase кликнули дважды подряд или вперемешку с
+    // другими действиями (ревью PR #308).
+    cJSON_AddStringToObject(reply, "action", action);
   });
 }
 
