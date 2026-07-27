@@ -636,27 +636,55 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   const char* action = JsonGetString(json, "action", "");
 
   bool ok = true;
+  uint32_t erase_target_seq = 0;
+  // Все четыре действия откладываются на control loop (ревью PR #308):
+  // применятся первым же тиком (≤2 мс), а статус в ack ниже на этот момент
+  // ещё прежний. UI и так опрашивает get_mag_calib_status.
+  //
+  // ok здесь — факт ПРИЁМА команды, а не результат операции: false означает
+  // переполненную очередь. Молчать об этом нельзя, иначе отброшенный cancel
+  // оставит калибровку собирать семплы вечно при том, что клиент считает
+  // команду принятой.
   if (strcmp(action, "start") == 0) {
-    vc.StartMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: start");
+    ok = vc.StartMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: start %s", ok ? "queued" : "DROPPED (full)");
   } else if (strcmp(action, "finish") == 0) {
-    vc.FinishMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: finish -> %s", vc.GetMagCalibStatus());
+    ok = vc.FinishMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: finish %s", ok ? "queued" : "DROPPED (full)");
   } else if (strcmp(action, "cancel") == 0) {
-    vc.CancelMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: cancel");
+    ok = vc.CancelMagCalibration();
+    ESP_LOGI(TAG, "calibrate_mag: cancel %s", ok ? "queued" : "DROPPED (full)");
   } else if (strcmp(action, "erase") == 0) {
-    ok = vc.EraseMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: erase -> %s", ok ? "ok" : "failed");
+    // target_seq назначается АТОМАРНО в момент постановки в очередь — читать
+    // его отдельным вызовом GetMagCalibState() ниже было бы гонкой: control
+    // loop может успеть применить именно этот erase между постановкой и
+    // чтением, и снимок уже показывал бы erase_seq этой команды, а не
+    // предыдущее значение (ревью PR #308).
+    const MagCalibEraseAck erase_ack = vc.EraseMagCalibration();
+    ok = erase_ack.accepted;
+    erase_target_seq = erase_ack.target_seq;
+    ESP_LOGI(TAG, "calibrate_mag: erase %s", ok ? "queued" : "DROPPED (full)");
   } else {
     ok = false;
     ESP_LOGW(TAG, "calibrate_mag: unknown action '%s'", action);
   }
 
+  const MagCalibStateView mag_state = vc.GetMagCalibState();
   WsReply(req, "calibrate_mag_ack", [&](cJSON* reply) {
-    cJSON_AddStringToObject(reply, "status", vc.GetMagCalibStatus());
-    cJSON_AddStringToObject(reply, "fail_reason", vc.GetMagCalibFailReason());
+    cJSON_AddStringToObject(reply, "status", mag_state.status);
+    cJSON_AddStringToObject(reply, "fail_reason", mag_state.fail_reason);
+    cJSON_AddStringToObject(reply, "erase_result", mag_state.erase_result);
+    cJSON_AddNumberToObject(reply, "erase_seq", (double)mag_state.erase_seq);
+    // Значим только при action == "erase" — назначен атомарно с приёмом
+    // этой конкретной команды, в отличие от erase_seq выше.
+    cJSON_AddNumberToObject(reply, "erase_target_seq",
+                            (double)erase_target_seq);
     cJSON_AddBoolToObject(reply, "ok", ok);
+    // Эхо запрошенного action — чтобы клиент мог сопоставить ack именно с
+    // erase-командой напрямую, а не гадать по порядку/таймингу пришедших
+    // calibrate_mag_ack, если erase кликнули дважды подряд или вперемешку с
+    // другими действиями (ревью PR #308).
+    cJSON_AddStringToObject(reply, "action", action);
   });
 }
 
@@ -664,9 +692,12 @@ void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
                              httpd_req_t* req) {
   (void)json;
 
+  const MagCalibStateView mag_state = vc.GetMagCalibState();
   WsReply(req, "mag_calib_status", [&](cJSON* reply) {
-    cJSON_AddStringToObject(reply, "status", vc.GetMagCalibStatus());
-    cJSON_AddStringToObject(reply, "fail_reason", vc.GetMagCalibFailReason());
+    cJSON_AddStringToObject(reply, "status", mag_state.status);
+    cJSON_AddStringToObject(reply, "fail_reason", mag_state.fail_reason);
+    cJSON_AddStringToObject(reply, "erase_result", mag_state.erase_result);
+    cJSON_AddNumberToObject(reply, "erase_seq", (double)mag_state.erase_seq);
   });
 }
 

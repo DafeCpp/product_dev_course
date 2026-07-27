@@ -106,6 +106,12 @@ const MCU_TIMEOUT_MS = 1500;
 let mcuStatusCheckInterval = null;
 let wifiStatusInterval = null;
 let magCalibPollTimer = null;
+let magCalibRefreshTimer = null;
+let lastMagEraseResult = 'none';
+let magEraseWatching = false;
+let magEraseWatchTimer = null;
+let magEraseWatchAttempts = 0;
+let magEraseTargetSeq = 0;
 
 // ── Accordion ──
 document.querySelectorAll('.panel-header').forEach(hdr => {
@@ -220,9 +226,23 @@ function connectWebSocket() {
                     if (speedCalibStatusEl) speedCalibStatusEl.textContent = 'Остановлено';
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 } else if (data.type === 'calibrate_mag_ack') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none');
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
+                    // action эхом от сервера — надёжнее клиентского флага "жду
+                    // ack": не путается, если erase кликнули дважды подряд или
+                    // вперемешку с start/finish/cancel (ревью PR #308).
+                    //
+                    // erase_target_seq назначен сервером АТОМАРНО в момент
+                    // приёма команды — в отличие от erase_seq (просто текущий
+                    // снимок на момент ack), его не нужно достраивать на
+                    // клиенте прибавлением 1: любое клиентское вычисление
+                    // target из erase_seq снимка гоняется с control loop,
+                    // который мог успеть применить именно этот erase между
+                    // постановкой в очередь и чтением снимка (ревью PR #308).
+                    if (data.action === 'erase' && data.ok) extendMagEraseWatch(data.erase_target_seq ?? 0);
+                    scheduleMagCalibRefresh();
                 } else if (data.type === 'mag_calib_status') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none');
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
+                    onMagEraseSeqObserved(data.erase_seq ?? 0);
                 } else if (data.type === 'reset_heading_ref_ack') {
                     if (magCalibMsg) { magCalibMsg.textContent = 'Нулевой курс сброшен'; magCalibMsg.style.display = 'block'; setTimeout(() => { if (magCalibMsg) magCalibMsg.style.display = 'none'; }, 2000); }
                 }
@@ -411,7 +431,83 @@ const MAG_FAIL_REASON_TEXT = {
     not_planar: 'Вращение не в одной плоскости — поворачивайте машину только вокруг вертикальной оси',
 };
 
-function updateMagCalibUI(status, failReason) {
+// Догоняющий запрос статуса после любой команды mag-калибровки.
+//
+// Прошивка исполняет start/finish/cancel не на месте, а на control loop
+// (ревью PR #308), поэтому статус в calibrate_mag_ack — ещё ДО команды.
+// Без этого запроса клик «Старт» из idle оставлял бы панель мёртвой:
+// updateMagCalibUI заводит таймер поллинга, только увидев collecting, а ack
+// приносит idle — сбор идёт на машине, но UI об этом никогда не узнаёт и
+// Finish остаётся заблокированным. Для finish/cancel таймер уже крутится и
+// сам бы догнал за секунду, но одинаковое поведение проще.
+//
+// 100 мс с запасом перекрывают тик цикла (2 мс).
+function scheduleMagCalibRefresh() {
+    if (magCalibRefreshTimer) clearTimeout(magCalibRefreshTimer);
+    magCalibRefreshTimer = setTimeout(() => {
+        magCalibRefreshTimer = null;
+        wsSend({ type: 'get_mag_calib_status' });
+    }, 100);
+}
+
+// Опрашивать, пока erase_seq не достигнет цели, присланной сервером в
+// erase_target_seq. Раньше цель клиент считал сам — прибавлял 1 к уже
+// известному erase_seq. Это ломается ровно тогда, когда control loop успевал
+// применить только что принятый erase МЕЖДУ постановкой его в очередь на
+// сервере и последующим чтением снимка состояния для ack: ack тогда уже нёс
+// erase_seq ЭТОЙ команды, а клиентское "+1" целилось в следующую, которой не
+// будет — наблюдение зависало бы до таймаута (ревью PR #308). Сервер
+// назначает target_seq атомарно вместе с самим приёмом команды (см.
+// EraseMagCalibration()), поэтому клиенту достаточно просто использовать его,
+// не пересчитывая.
+//
+// Перекрывающиеся erase (кликнули второй, не дождавшись первого) по той же
+// причине больше не требуют суммирования на клиенте: target — максимум из
+// всех erase_target_seq, что видел клиент, действующая цель не уменьшается.
+//
+// Одноразового scheduleMagCalibRefresh (100 мс) достаточно для status/
+// fail_reason: пока status==collecting, их и так продолжает подтягивать
+// поллинг раз в секунду ниже. Для erase такой страховки нет — стирание не
+// меняет status/fail_reason калибровки в памяти, а синхронная запись NVS
+// может занять заметно больше 100 мс.
+const MAG_ERASE_WATCH_INTERVAL_MS = 150;
+const MAG_ERASE_WATCH_MAX_ATTEMPTS = 20;  // 20 × 150 мс = 3 с — с запасом на NVS
+
+function extendMagEraseWatch(targetSeq) {
+    magEraseTargetSeq = Math.max(magEraseTargetSeq, targetSeq);
+    magEraseWatching = true;
+    magEraseWatchAttempts = 0;  // каждый принятый erase заслуживает свой полный бюджет попыток
+    scheduleMagEraseWatchPoll();
+}
+
+function scheduleMagEraseWatchPoll() {
+    if (magEraseWatchTimer) clearTimeout(magEraseWatchTimer);
+    magEraseWatchTimer = setTimeout(() => {
+        magEraseWatchTimer = null;
+        wsSend({ type: 'get_mag_calib_status' });
+    }, MAG_ERASE_WATCH_INTERVAL_MS);
+}
+
+function onMagEraseSeqObserved(eraseSeq) {
+    if (!magEraseWatching) return;
+    magEraseWatchAttempts++;
+    if (eraseSeq >= magEraseTargetSeq) {
+        magEraseWatching = false;  // все принятые на этот момент erase применились
+        return;
+    }
+    if (magEraseWatchAttempts >= MAG_ERASE_WATCH_MAX_ATTEMPTS) {
+        magEraseWatching = false;  // не дождались — сообщаем об этом честно
+        if (magCalibMsg) {
+            magCalibMsg.textContent = 'Не удалось подтвердить результат стирания калибровки';
+            magCalibMsg.style.display = 'block';
+        }
+        return;
+    }
+    scheduleMagEraseWatchPoll();
+}
+
+function updateMagCalibUI(status, failReason, eraseResult) {
+    lastMagEraseResult = eraseResult;
     const collecting = status === 'collecting';
     const done       = status === 'done';
     const failed     = status === 'failed';
@@ -433,9 +529,17 @@ function updateMagCalibUI(status, failReason) {
     }
     if (magCalibStatus) magCalibStatus.textContent = statusText;
 
-    // Сообщение (скрыть если нет ошибки)
+    // Сообщение: результат erase — единственный сигнал о нём, т.к. само
+    // стирание NVS не меняет status/fail_reason калибровки в памяти
+    // (ревью PR #308). Держится, пока не придёт следующий erase с другим
+    // исходом — это последний известный результат, а не разовое уведомление.
     if (magCalibMsg) {
-        magCalibMsg.style.display = 'none';
+        if (eraseResult === 'failed') {
+            magCalibMsg.textContent = 'Стирание калибровки в NVS не удалось';
+            magCalibMsg.style.display = 'block';
+        } else {
+            magCalibMsg.style.display = 'none';
+        }
     }
 
     // Polling пока collecting
@@ -1610,7 +1714,10 @@ if (btnTestStop) btnTestStop.addEventListener('click', () => {
 if (btnMagStart)  btnMagStart.addEventListener('click',  () => wsSend({ type: 'calibrate_mag', action: 'start' }));
 if (btnMagFinish) btnMagFinish.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'finish' }));
 if (btnMagCancel) btnMagCancel.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'cancel' }));
-if (btnMagErase)  btnMagErase.addEventListener('click',  () => { if (confirm('Стереть калибровку магнитометра?')) wsSend({ type: 'calibrate_mag', action: 'erase' }); });
+if (btnMagErase)  btnMagErase.addEventListener('click',  () => {
+    if (!confirm('Стереть калибровку магнитометра?')) return;
+    wsSend({ type: 'calibrate_mag', action: 'erase' });
+});
 if (btnResetHeading) btnResetHeading.addEventListener('click', () => wsSend({ type: 'reset_heading_ref' }));
 
 // ── Speed Calibration ──

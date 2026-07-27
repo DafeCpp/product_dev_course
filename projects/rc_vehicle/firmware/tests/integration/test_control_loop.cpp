@@ -2,8 +2,8 @@
 
 #include <stdexcept>
 
-#include "vehicle_control_unified.hpp"
 #include "mock_platform.hpp"
+#include "vehicle_control_unified.hpp"
 
 using namespace rc_vehicle;
 using namespace rc_vehicle::testing;
@@ -145,7 +145,8 @@ TEST_F(ControlLoopTest, RcOverridesWifi) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, TelemetryLogPopulated_WithImu) {
-  RunLoop(200);  // 200 × 2ms = 400ms → должно быть ~4 log frames (100 Hz = 10ms)
+  RunLoop(
+      200);  // 200 × 2ms = 400ms → должно быть ~4 log frames (100 Hz = 10ms)
 
   size_t count = 0, cap = 0;
   vc_.GetLogInfo(count, cap);
@@ -161,8 +162,8 @@ TEST_F(ControlLoopTest, NoImu_LoopStillRuns) {
   auto platform = std::make_unique<SimPlatform>(20);
   platform_ = platform.get();
   // НЕ устанавливаем IMU data → InitImu вернёт Ok, но ReadImu = nullopt
-  // Однако FakePlatform::InitImu() возвращает Ok, а ReadImu() возвращает nullopt
-  // ImuHandler увидит nullopt и не включится
+  // Однако FakePlatform::InitImu() возвращает Ok, а ReadImu() возвращает
+  // nullopt ImuHandler увидит nullopt и не включится
 
   vc_.SetPlatform(std::move(platform));
   (void)vc_.Init();
@@ -373,4 +374,274 @@ TEST_F(ControlLoopTest, SteeringTrimCalib_StartStop) {
 
   vc_.StopSteeringTrimCalibration();
   EXPECT_FALSE(vc_.IsSteeringTrimCalibActive());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Отложенные команды mag-калибровки (LOS-221, ревью PR #308)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Собрать типы событий mag-калибровки из лога, в порядке появления.
+static std::vector<TelemetryEventType> MagCalibEvents(
+    const IVehicleControl& vc) {
+  std::vector<TelemetryEventType> out;
+  const size_t count = vc.GetEventCount();
+  for (size_t i = 0; i < count; ++i) {
+    TelemetryEvent ev{};
+    if (!vc.GetEvent(i, ev)) continue;
+    switch (ev.type) {
+      case TelemetryEventType::MagCalibStart:
+      case TelemetryEventType::MagCalibDone:
+      case TelemetryEventType::MagCalibFailed:
+      case TelemetryEventType::MagCalibCancelled:
+        out.push_back(ev.type);
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
+TEST_F(ControlLoopTest, MagCalibCommandsAreDeferredToControlLoop) {
+  // Команды приходят из HTTP/WS-задачи и трогают mag_calib_, madgwick_ и
+  // imu_handler_ — все они принадлежат control loop и не потокобезопасны.
+  // Выполнять их на месте нельзя: завершение это многошаговая
+  // последовательность, между шагами которой control loop успевает сделать
+  // 100 Гц чтение магнитометра со ещё СТАРЫМ offset и заново пометить семпл
+  // пригодным для засева курса. Поэтому команды только ставятся в очередь, а
+  // применяются первым же тиком.
+  RunLoop(0);
+
+  vc_.StartMagCalibration();
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "idle")
+      << "Старт обязан быть отложенным, а не применённым на месте";
+  vc_.HostStep(2);
+  ASSERT_STREQ(vc_.GetMagCalibState().status, "collecting");
+
+  vc_.FinishMagCalibration();
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "collecting")
+      << "Завершение обязано быть отложенным, а не применённым на месте";
+  vc_.HostStep(2);
+  EXPECT_STRNE(vc_.GetMagCalibState().status, "collecting")
+      << "Первый же тик control loop обязан применить отложенный запрос";
+}
+
+TEST_F(ControlLoopTest, MagCalibRequestsApplyInArrivalOrder) {
+  // Пачка команд, пришедшая с WS внутри одного тика (2 мс), применяется в том
+  // же порядке — наблюдаемое поведение совпадает с прежним синхронным.
+  // Отдельно откладывать finish, оставив start синхронным, недостаточно:
+  // control loop доходит до mag_calib_ уже вне мьютекса, и Start() успевал бы
+  // в этот зазор подменить сессию под начатым завершением (ревью PR #308).
+  RunLoop(0);
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();
+  vc_.StartMagCalibration();
+  vc_.HostStep(2);
+
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "collecting")
+      << "Последний start обязан пережить finish, поставленный до него";
+  EXPECT_EQ(MagCalibEvents(vc_),
+            (std::vector<TelemetryEventType>{
+                TelemetryEventType::MagCalibStart,
+                TelemetryEventType::MagCalibFailed,  // 0 семплов
+                TelemetryEventType::MagCalibStart}));
+}
+
+TEST_F(ControlLoopTest, MagCalibCancelIsLastWhenQueuedLast) {
+  // Та же пачка, но с отменой в хвосте. Статус тут не показателен (Finish()
+  // отработает до Cancel(), а тот вернёт Idle), поэтому смотрим лог событий:
+  // отмена обязана быть последней, а не перекрытой завершением.
+  RunLoop(0);
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();
+  vc_.CancelMagCalibration();
+  vc_.HostStep(2);
+
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "idle");
+
+  const auto events = MagCalibEvents(vc_);
+  ASSERT_FALSE(events.empty());
+  EXPECT_EQ(events.back(), TelemetryEventType::MagCalibCancelled)
+      << "Отменённая калибровка не должна досылать событие завершения после "
+         "MagCalibCancelled";
+}
+
+TEST_F(ControlLoopTest, MagCalibEraseIsOrderedAfterFinish) {
+  // erase, пришедший следом за finish, обязан стирать NVS ПОСЛЕ того, как
+  // finish туда записал. Пока erase исполнялся синхронно на HTTP-задаче, а
+  // finish ждал тика, порядок был обратный: стирание проходило первым, а
+  // затем finish записывал калибровку обратно — клиент получал ok на
+  // стирание, после которого калибровка на месте (ревью PR #308).
+  auto platform = std::make_unique<SimPlatform>(0);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+
+  MagCalibData stored{};
+  stored.valid = true;
+  platform_->SetStoredMagCalib(stored);
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();
+  ASSERT_TRUE(platform_->HasStoredMagCalib());
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();  // 0 семплов → Failed, но IsValid() от stored
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+
+  EXPECT_FALSE(platform_->HasStoredMagCalib())
+      << "Стирание пришло последним — калибровка не должна пережить его";
+}
+
+TEST_F(ControlLoopTest, MagCalibEraseFailureIsReportedInState) {
+  // EraseMagCalib() может вернуть false (ошибка NVS), а mag_calib_ в памяти
+  // при этом не трогается — значит status/fail_reason провал никак не
+  // выражают. Раньше он уходил только в лог: calibrate_mag_ack всё равно
+  // отдавал бы ok=true (команда принята), и клиент считал бы NVS стёртой
+  // (ревью PR #308).
+  RunLoop(0);
+  platform_->SetEraseMagCalibShouldFail(true);
+
+  EXPECT_TRUE(vc_.EraseMagCalibration().accepted);  // команда принята в очередь
+  vc_.HostStep(2);
+
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "failed");
+
+  // Успешная попытка меняет результат обратно.
+  platform_->SetEraseMagCalibShouldFail(false);
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "ok");
+}
+
+TEST_F(ControlLoopTest,
+       MagCalibEraseSeqAdvancesOnEveryEraseRegardlessOfOutcome) {
+  // Два erase подряд с ОДИНАКОВЫМ исходом (оба "ok") клиент не отличил бы по
+  // erase_result — значение то же самое, что уже видел. erase_seq обязан
+  // расти при КАЖДОМ применении erase вне зависимости от исхода, иначе
+  // ретрай-поллинг клиента (сравнение по значению) молчаливо зависал бы на
+  // втором erase, считая его никогда не завершившимся (ревью PR #308).
+  RunLoop(0);
+
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  const uint32_t seq_after_first = vc_.GetMagCalibState().erase_seq;
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "ok");
+
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  const uint32_t seq_after_second = vc_.GetMagCalibState().erase_seq;
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "ok");
+
+  EXPECT_NE(seq_after_first, seq_after_second)
+      << "Одинаковый erase_result двух erase не должен маскировать факт "
+         "второго завершения";
+}
+
+TEST_F(ControlLoopTest, MagCalibEraseTargetSeqMatchesAppliedSeq) {
+  // target_seq, возвращённый EraseMagCalibration() СИНХРОННО с постановкой в
+  // очередь, обязан совпасть с erase_seq, который control loop опубликует
+  // после применения ИМЕННО этой команды. Раньше HandleCalibrateMag() читал
+  // erase_seq отдельным вызовом GetMagCalibState() уже ПОСЛЕ постановки —
+  // а если control loop успевал вклиниться и применить erase в этом зазоре,
+  // снимок показывал бы erase_seq этой же команды, и target, посчитанный от
+  // него (+1), указывал бы на следующий erase, которого никогда не будет
+  // (ревью PR #308). В однопоточном тесте гонку не воспроизвести напрямую,
+  // но инвариант — что target_seq совпадает с итоговым erase_seq — тестируем
+  // без неё.
+  RunLoop(0);
+
+  const auto ack1 = vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  EXPECT_EQ(vc_.GetMagCalibState().erase_seq, ack1.target_seq);
+
+  const auto ack2 = vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  EXPECT_EQ(vc_.GetMagCalibState().erase_seq, ack2.target_seq);
+  EXPECT_NE(ack1.target_seq, ack2.target_seq);
+}
+
+TEST_F(ControlLoopTest, MagCalibQueueOverflowIsReportedToCaller) {
+  // Переполнение очереди не проглатывается: иначе отброшенный cancel оставит
+  // калибровку собирать семплы вечно, а клиент будет считать команду
+  // принятой, потому что ack придёт с ok=true (ревью PR #308).
+  RunLoop(0);
+
+  for (int i = 0; i < 8; ++i) {
+    EXPECT_TRUE(vc_.StartMagCalibration()) << "команда " << i << " из 8";
+  }
+  EXPECT_FALSE(vc_.CancelMagCalibration())
+      << "Девятая команда не влезает — вызывающий обязан узнать об этом";
+
+  // После разбора очереди приём снова открыт.
+  vc_.HostStep(2);
+  EXPECT_TRUE(vc_.CancelMagCalibration());
+}
+
+TEST_F(ControlLoopTest, FailedMagCalibKeepsMagSampleValid) {
+  // Неудачная попытка перекалибровки (мало семплов) НЕ трогает offset:
+  // прежняя калибровка остаётся в силе, а значит остаётся в силе и всё, что
+  // к ней сошлось. Гасить кэшированный mag-семпл в этом случае нельзя —
+  // ImuHandler ушёл бы на 6DOF-путь, а тот обнуляет опору курса
+  // (yaw_has_absolute_ref_ / marg_correction_progress_), и следующие 12 с
+  // калибровка СК засевала бы курс по одному мгновенному семплу вместо уже
+  // сошедшегося yaw — ровно тот скачок курса, который чинит LOS-221
+  // (ревью PR #308).
+  auto platform = std::make_unique<SimPlatform>(0);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+
+  MagData mag{};
+  mag.mx = 300.f;
+  mag.my = 40.f;
+  mag.mz = -400.f;
+  platform_->SetMagData(mag);
+
+  // Валидная калибровка «из NVS» — сценарий ревью требует, чтобы старая
+  // калибровка оставалась валидной после неудачной попытки.
+  MagCalibData stored{};
+  stored.valid = true;
+  platform_->SetStoredMagCalib(stored);
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();  // Init вызывает CreateTask → цикл идёт синхронно
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "done")
+      << "Калибровка, поднятая из NVS, обязана быть видна снаружи";
+
+  // Прогрев: магнитометр читается на 100 Гц, телеметрия публикуется на 20 Гц.
+  for (int i = 0; i < 60; ++i) {
+    platform_->AdvanceTimeMs(2);
+    vc_.HostStep(2);
+  }
+  ASSERT_TRUE(platform_->GetLastSnap().mag_enabled);
+
+  // Дальше опрос магнитометра ломаем: иначе следующее же 100 Гц чтение
+  // вернуло бы mag_enabled_ в true за 10 мс и замаскировало инвалидацию.
+  // Запас до kMagStaleTimeoutMs = 250 мс перекрывает интервал телеметрии.
+  platform_->SetMagReadShouldFail(true);
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();  // семплов 0 < kMinSamples → Failed
+
+  for (int i = 0; i < 30; ++i) {
+    platform_->AdvanceTimeMs(2);
+    vc_.HostStep(2);
+  }
+
+  // Один снимок на обе строки — так их и обязаны читать WS-обработчики.
+  const MagCalibStateView mag_state = vc_.GetMagCalibState();
+  ASSERT_STREQ(mag_state.status, "failed");
+  EXPECT_STREQ(mag_state.fail_reason, "too_few_samples")
+      << "Статус и причина публикуются одним снимком — расходиться не могут";
+  EXPECT_TRUE(platform_->GetLastSnap().mag_enabled)
+      << "Провалившаяся перекалибровка не меняет offset — гасить mag-семпл "
+         "и терять опору курса не за что";
 }

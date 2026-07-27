@@ -141,6 +141,9 @@ bool VehicleControlUnified::InitializeComponents() {
     MagCalibData mag_calib_data{};
     if (platform_->LoadMagCalib(mag_calib_data)) {
       mag_calib_.SetData(mag_calib_data);
+      // SetData() при valid переводит статус в Done — снимок для читателей
+      // из HTTP-задачи обязан это отразить (ревью PR #308).
+      PublishMagCalibState();
       platform_->Log(LogLevel::Info, "Mag calibration loaded from NVS");
     }
     imu_handler_->SetMagCalibration(&mag_calib_);

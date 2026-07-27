@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 #include "auto_drive_coordinator.hpp"
@@ -106,41 +107,47 @@ class VehicleControlUnified : public IVehicleControl {
 
   // ─── Относительный курс ──────────────────────────────────────────────────
 
-  /** Сбросить опорный курс (установится при следующем Update() с магнитометром). */
+  /** Сбросить опорный курс (установится при следующем Update() с
+   * магнитометром). */
   void ResetHeadingRef() override {
     if (imu_handler_) imu_handler_->ResetHeadingRef();
   }
 
   // ─── Калибровка магнитометра ─────────────────────────────────────────────
 
+  // Все четыре команды приходят из WS-обработчика (задача HTTP-сервера) — НЕ
+  // из потока control loop, поэтому только ставятся в очередь под мьютексом.
+  // Реальная работа — в ProcessMagCalibRequests() (ревью PR #308). Статус
+  // наружу меняется не раньше следующего тика (≤2 мс).
+  //
+  // Возвращают факт приёма команды, а не результат операции: false = очередь
+  // переполнена, команда отброшена.
+
   /** Запустить сбор семплов калибровки магнитометра. */
-  void StartMagCalibration() override;
+  bool StartMagCalibration() override;
 
   /** Завершить сбор, вычислить offset и сохранить в NVS (если валидно). */
-  void FinishMagCalibration() override;
+  bool FinishMagCalibration() override;
 
   /** Прервать сбор, вернуться в Idle. */
-  void CancelMagCalibration() override;
+  bool CancelMagCalibration() override;
 
-  /** Причина неудачи калибровки магнитометра (валидна при статусе "failed"). */
-  [[nodiscard]] const char* GetMagCalibFailReason() const override {
-    return mag_calib_.GetFailReasonStr();
-  }
+  /** Стереть калибровку магнитометра из NVS. */
+  MagCalibEraseAck EraseMagCalibration() override;
 
-  /** Строковый статус калибровки магнитометра. */
-  [[nodiscard]] const char* GetMagCalibStatus() const override {
-    switch (mag_calib_.GetStatus()) {
-      case MagCalibStatus::Idle:       return "idle";
-      case MagCalibStatus::Collecting: return "collecting";
-      case MagCalibStatus::Done:       return "done";
-      case MagCalibStatus::Failed:     return "failed";
-    }
-    return "idle";
-  }
-
-  /** Удалить калибровку магнитометра из NVS. */
-  bool EraseMagCalibration() override {
-    return platform_->EraseMagCalib();
+  /**
+   * Статус калибровки магнитометра и причина неудачи.
+   *
+   * Читается из HTTP/WS-задачи, поэтому отдаёт опубликованный снимок, а не
+   * mag_calib_ напрямую: статус меняется с потока control loop, и прямое
+   * чтение было бы гонкой. Пара снимается за ОДИН захват мьютекса — два
+   * раздельных геттера, пусть даже каждый под замком, успевали бы
+   * разъехаться между вызовами (ревью PR #308).
+   */
+  [[nodiscard]] MagCalibStateView GetMagCalibState() const override {
+    std::lock_guard<std::mutex> lock(mag_state_mutex_);
+    return {mag_status_pub_, mag_fail_reason_pub_, mag_erase_result_pub_,
+            mag_erase_seq_pub_};
   }
 
   /**
@@ -169,8 +176,8 @@ class VehicleControlUnified : public IVehicleControl {
   }
 
   /** Результат калибровки trim (валиден после завершения). */
-  [[nodiscard]] SteeringTrimCalibration::Result
-  GetSteeringTrimCalibResult() const override {
+  [[nodiscard]] SteeringTrimCalibration::Result GetSteeringTrimCalibResult()
+      const override {
     return auto_drive_.GetTrimCalibResult();
   }
 
@@ -194,8 +201,8 @@ class VehicleControlUnified : public IVehicleControl {
   }
 
   /** Результат калибровки CoM offset. */
-  [[nodiscard]] ComOffsetCalibration::Result
-  GetComOffsetCalibResult() const override {
+  [[nodiscard]] ComOffsetCalibration::Result GetComOffsetCalibResult()
+      const override {
     return auto_drive_.GetComCalibResult();
   }
 
@@ -226,7 +233,7 @@ class VehicleControlUnified : public IVehicleControl {
    * @return true при успешном запуске
    */
   bool StartSpeedCalibration(float target_throttle = 0.3f,
-                              float cruise_duration_sec = 3.0f) override;
+                             float cruise_duration_sec = 3.0f) override;
 
   /** Прервать калибровку скорости. */
   void StopSpeedCalibration() override { auto_drive_.StopSpeedCalib(); }
@@ -370,7 +377,6 @@ class VehicleControlUnified : public IVehicleControl {
   VehicleControlUnified& operator=(const VehicleControlUnified&) = delete;
 
  private:
-
   /**
    * @brief Точка входа для control loop задачи
    * @param arg Указатель на экземпляр VehicleControlUnified
@@ -400,8 +406,6 @@ class VehicleControlUnified : public IVehicleControl {
   /** Создание компонентов control loop. */
   bool InitializeComponents();
 
-
-
   // ─────────────────────────────────────────────────────────────────────────
   // Члены класса
   // ─────────────────────────────────────────────────────────────────────────
@@ -412,6 +416,79 @@ class VehicleControlUnified : public IVehicleControl {
   // Калибровка, фильтр
   ImuCalibration imu_calib_;
   MagCalibration mag_calib_;
+
+  // Результат последней команды erase (control-task-only, как и mag_calib_
+  // выше) — публикуется наружу через mag_erase_result_pub_.
+  const char* mag_erase_result_{"none"};
+  // Счётчик применённых erase (control-task-only). Растёт на 1 при КАЖДОМ
+  // ApplyMagCalibErase(), вне зависимости от исхода — erase_result у двух
+  // последовательных erase может совпасть (оба "ok"), а seq не совпадёт
+  // никогда, поэтому это единственный надёжный признак завершения именно
+  // последней команды, а не той же самой, что уже была видна (ревью PR #308).
+  uint32_t mag_erase_seq_{0};
+
+  /** Отложенная команда mag-калибровки, пришедшая с HTTP/WS-задачи. */
+  enum class MagCalibRequest : uint8_t { Start, Finish, Cancel, Erase };
+
+  // Очередь отложенных команд mag-калибровки — по образцу
+  // forward_dir_pending_ в CalibrationManager (PR #290). Они трогают
+  // mag_calib_, madgwick_ и imu_handler_, а все три непрерывно
+  // читаются/пишутся control loop'ом на 500 Гц и не потокобезопасны.
+  // Выполнять их с чужой задачи нельзя: между шагами завершения control loop
+  // успевает сделать 100 Гц чтение магнитометра, применить к нему ещё
+  // СТАРЫЙ offset и заново пометить семпл пригодным — после чего
+  // параллельная калибровка СК засеет курс по старой калибровке.
+  //
+  // Откладываются все четыре команды, а не только finish:
+  // иначе синхронный Start() с HTTP-задачи подменял бы сессию под уже
+  // начатым завершением. Гейты на стороне HTTP окно только сужают — три
+  // итерации ревью PR #308 ровно об этом.
+  //
+  // Тот же мьютекс закрывает и обратное направление: статус калибровки теперь
+  // пишется с потока control loop, а читают его GetMagCalibStatus() /
+  // GetMagCalibFailReason() из HTTP-задачи (UI опрашивает их, пока идёт
+  // сбор). Наружу отдаётся опубликованный снимок mag_status_pub_ /
+  // mag_fail_reason_pub_, а не mag_calib_ напрямую: пара публикуется одним
+  // критическим участком, поэтому статус и причина всегда согласованы
+  // (ревью PR #308).
+  static constexpr size_t kMagCalibQueueSize = 8;
+
+  mutable std::mutex mag_state_mutex_;
+  MagCalibRequest mag_requests_[kMagCalibQueueSize]{};
+  size_t mag_request_count_{0};
+  const char* mag_status_pub_{"idle"};
+  const char* mag_fail_reason_pub_{"none"};
+  // Результат ПОСЛЕДНЕГО erase ("none" — команды ещё не было). Отдельно от
+  // status/fail_reason: само стирание NVS не трогает mag_calib_ в памяти,
+  // поэтому им результат erase не выразить (ревью PR #308) — EraseMagCalib()
+  // мог вернуть false, а calibrate_mag_ack без этого поля показывал бы
+  // ok=true (факт постановки в очередь) без какого-либо намёка на провал.
+  const char* mag_erase_result_pub_{"none"};
+  uint32_t mag_erase_seq_pub_{0};
+  // Растёт на 1 при КАЖДОМ УСПЕШНО ПОСТАВЛЕННОМ В ОЧЕРЕДЬ erase — т.е. в
+  // момент приёма, а не применения. Присваивается под тем же мьютексом, что
+  // и сам факт постановки, поэтому значение, отданное вызывающему из
+  // EraseMagCalibration(), не может разойтись с тем erase_seq, который
+  // control loop опубликует, когда применит именно эту команду: оба счётчика
+  // растут по одной на erase, в одном FIFO-порядке (ревью PR #308).
+  uint32_t mag_erase_enqueued_seq_{0};
+
+  // Поставить команду в очередь. Вызывается с HTTP/WS-задачи.
+  // false — очередь переполнена, команда отброшена.
+  // out_erase_target, если не nullptr, получает mag_erase_enqueued_seq_ ПОСЛЕ
+  // инкремента — вызывающий обязан передавать его только для req == Erase.
+  bool QueueMagCalibRequest(MagCalibRequest req,
+                            uint32_t* out_erase_target = nullptr);
+
+  // Всё ниже исполняется исключительно с потока control loop.
+  void ProcessMagCalibRequests();
+  void ApplyMagCalibStart();
+  void ApplyMagCalibFinish();
+  void ApplyMagCalibCancel();
+  void ApplyMagCalibErase();
+
+  // Опубликовать текущий статус mag_calib_ для читателей из HTTP-задачи.
+  void PublishMagCalibState();
   MadgwickFilter madgwick_;
 
   // Стратегии стабилизации (pipeline)

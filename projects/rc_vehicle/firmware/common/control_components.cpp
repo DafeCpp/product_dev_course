@@ -5,12 +5,11 @@
 #include <cstring>
 #include <string>
 
-#include "mag_calibration.hpp"
-
 #include "cJSON.h"
 #include "config.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
+#include "mag_calibration.hpp"
 
 namespace rc_vehicle {
 
@@ -281,7 +280,7 @@ void ImuHandler::FeedMadgwick(float raw_ax, float raw_ay, float raw_az,
 
 float ImuHandler::GetRelativeHeadingDeg() const noexcept {
   float delta = heading_deg_ - heading_ref_;
-  if (delta >  180.f) delta -= 360.f;
+  if (delta > 180.f) delta -= 360.f;
   if (delta <= -180.f) delta += 360.f;
   return delta;
 }
