@@ -115,7 +115,21 @@ void VehicleControlUnified::PublishMagCalibState() {
   mag_fail_reason_pub_ = fail_reason;
 }
 
+void VehicleControlUnified::DropPendingMagFinish() {
+  std::lock_guard<std::mutex> lock(mag_state_mutex_);
+  mag_finish_pending_ = false;
+}
+
 void VehicleControlUnified::StartMagCalibration() {
+  // Снимаем отложенный finish ПРЕДЫДУЩЕЙ сессии до Start(): пока завершение
+  // было синхронным, порядок команд WS соблюдался сам собой, а теперь
+  // finish + start, пришедшие внутри одного тика (2 мс), дали бы
+  // ProcessMagFinishRequest() завершить уже НОВУЮ сессию — с нулём семплов,
+  // то есть сразу Failed (ревью PR #308).
+  //
+  // Порядок важен: сначала снять флаг, потом Start(). В обратном порядке
+  // control loop успел бы вклиниться между ними и убить новую сессию.
+  DropPendingMagFinish();
   mag_calib_.Start();
   PublishMagCalibState();
   if (telem_mgr_) {
@@ -203,6 +217,10 @@ void VehicleControlUnified::ProcessMagFinishRequest() {
 }
 
 void VehicleControlUnified::CancelMagCalibration() {
+  // Тот же порядок и та же причина, что в StartMagCalibration(). Иначе
+  // отложенный finish дожил бы до тика уже после отмены и выдал в лог
+  // событий MagCalibDone/MagCalibFailed поверх MagCalibCancelled.
+  DropPendingMagFinish();
   mag_calib_.Cancel();
   PublishMagCalibState();
   if (telem_mgr_) {

@@ -450,6 +450,10 @@ class VehicleControlUnified : public IVehicleControl {
   // Вызывать после КАЖДОГО перехода статуса, с того же потока, что его
   // выполнил.
   void PublishMagCalibState();
+
+  // Снять отложенный finish: он относился к сессии, которую только что
+  // сменили Start()/Cancel(), и завершать новую не должен.
+  void DropPendingMagFinish();
   MadgwickFilter madgwick_;
 
   // Стратегии стабилизации (pipeline)

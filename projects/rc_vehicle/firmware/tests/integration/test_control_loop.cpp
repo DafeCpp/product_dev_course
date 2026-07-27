@@ -402,6 +402,43 @@ TEST_F(ControlLoopTest, MagCalibFinishIsDeferredToControlLoop) {
       << "Первый же тик control loop обязан применить отложенный запрос";
 }
 
+TEST_F(ControlLoopTest, RestartedMagCalibSurvivesStaleFinishRequest) {
+  // finish + start, пришедшие с WS внутри одного тика (2 мс): отложенный
+  // finish относится к ПРЕДЫДУЩЕЙ сессии и завершать новую не должен —
+  // иначе она умрёт с нулём семплов, т.е. сразу failed. Пока завершение было
+  // синхронным, порядок команд соблюдался сам собой (ревью PR #308).
+  RunLoop(0);
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();
+  vc_.StartMagCalibration();
+
+  vc_.HostStep(2);
+  EXPECT_STREQ(vc_.GetMagCalibStatus(), "collecting")
+      << "Новая сессия обязана пережить finish, поставленный до неё";
+}
+
+TEST_F(ControlLoopTest, CancelDropsPendingMagCalibFinish) {
+  // Та же коллизия с отменой. Статус тут не показателен (Finish() вне сбора —
+  // no-op, и снаружи всё равно "idle"), поэтому смотрим лог событий: после
+  // MagCalibCancelled не должно прилететь MagCalibDone/MagCalibFailed.
+  RunLoop(0);
+
+  vc_.StartMagCalibration();
+  vc_.FinishMagCalibration();
+  vc_.CancelMagCalibration();
+
+  vc_.HostStep(2);
+  EXPECT_STREQ(vc_.GetMagCalibStatus(), "idle");
+
+  const size_t count = vc_.GetEventCount();
+  ASSERT_GT(count, 0u);
+  TelemetryEvent last{};
+  ASSERT_TRUE(vc_.GetEvent(count - 1, last));
+  EXPECT_EQ(last.type, TelemetryEventType::MagCalibCancelled)
+      << "Отменённая калибровка не должна досылать событие завершения";
+}
+
 TEST_F(ControlLoopTest, FailedMagCalibKeepsMagSampleValid) {
   // Неудачная попытка перекалибровки (мало семплов) НЕ трогает offset:
   // прежняя калибровка остаётся в силе, а значит остаётся в силе и всё, что
