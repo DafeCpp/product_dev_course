@@ -146,7 +146,8 @@ class VehicleControlUnified : public IVehicleControl {
    */
   [[nodiscard]] MagCalibStateView GetMagCalibState() const override {
     std::lock_guard<std::mutex> lock(mag_state_mutex_);
-    return {mag_status_pub_, mag_fail_reason_pub_, mag_erase_result_pub_};
+    return {mag_status_pub_, mag_fail_reason_pub_, mag_erase_result_pub_,
+            mag_erase_seq_pub_};
   }
 
   /**
@@ -419,6 +420,12 @@ class VehicleControlUnified : public IVehicleControl {
   // Результат последней команды erase (control-task-only, как и mag_calib_
   // выше) — публикуется наружу через mag_erase_result_pub_.
   const char* mag_erase_result_{"none"};
+  // Счётчик применённых erase (control-task-only). Растёт на 1 при КАЖДОМ
+  // ApplyMagCalibErase(), вне зависимости от исхода — erase_result у двух
+  // последовательных erase может совпасть (оба "ok"), а seq не совпадёт
+  // никогда, поэтому это единственный надёжный признак завершения именно
+  // последней команды, а не той же самой, что уже была видна (ревью PR #308).
+  uint32_t mag_erase_seq_{0};
 
   /** Отложенная команда mag-калибровки, пришедшая с HTTP/WS-задачи. */
   enum class MagCalibRequest : uint8_t { Start, Finish, Cancel, Erase };
@@ -457,6 +464,7 @@ class VehicleControlUnified : public IVehicleControl {
   // мог вернуть false, а calibrate_mag_ack без этого поля показывал бы
   // ok=true (факт постановки в очередь) без какого-либо намёка на провал.
   const char* mag_erase_result_pub_{"none"};
+  uint32_t mag_erase_seq_pub_{0};
 
   // Поставить команду в очередь. Вызывается с HTTP/WS-задачи.
   // false — очередь переполнена, команда отброшена.

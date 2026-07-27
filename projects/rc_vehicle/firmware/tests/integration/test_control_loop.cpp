@@ -519,6 +519,30 @@ TEST_F(ControlLoopTest, MagCalibEraseFailureIsReportedInState) {
   EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "ok");
 }
 
+TEST_F(ControlLoopTest,
+       MagCalibEraseSeqAdvancesOnEveryEraseRegardlessOfOutcome) {
+  // Два erase подряд с ОДИНАКОВЫМ исходом (оба "ok") клиент не отличил бы по
+  // erase_result — значение то же самое, что уже видел. erase_seq обязан
+  // расти при КАЖДОМ применении erase вне зависимости от исхода, иначе
+  // ретрай-поллинг клиента (сравнение по значению) молчаливо зависал бы на
+  // втором erase, считая его никогда не завершившимся (ревью PR #308).
+  RunLoop(0);
+
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  const uint32_t seq_after_first = vc_.GetMagCalibState().erase_seq;
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "ok");
+
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  const uint32_t seq_after_second = vc_.GetMagCalibState().erase_seq;
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "ok");
+
+  EXPECT_NE(seq_after_first, seq_after_second)
+      << "Одинаковый erase_result двух erase не должен маскировать факт "
+         "второго завершения";
+}
+
 TEST_F(ControlLoopTest, MagCalibQueueOverflowIsReportedToCaller) {
   // Переполнение очереди не проглатывается: иначе отброшенный cancel оставит
   // калибровку собирать семплы вечно, а клиент будет считать команду

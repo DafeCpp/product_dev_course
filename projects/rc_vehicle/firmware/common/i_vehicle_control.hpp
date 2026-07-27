@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "com_offset_calibration.hpp"
@@ -17,15 +18,19 @@ namespace rc_vehicle {
 /**
  * @brief Согласованный снимок состояния калибровки магнитометра.
  *
- * Все строки — литералы со статическим временем жизни, копировать их не
- * нужно. erase_result — результат ПОСЛЕДНЕЙ команды erase ("none", пока её
- * не было; иначе "ok"/"failed"), т.к. само стирание NVS не меняет status/
- * fail_reason калибровки в памяти.
+ * Строки — литералы со статическим временем жизни, копировать их не нужно.
+ * erase_result — результат ПОСЛЕДНЕЙ команды erase ("none", пока её не было;
+ * иначе "ok"/"failed"), т.к. само стирание NVS не меняет status/fail_reason
+ * калибровки в памяти. erase_seq растёт на 1 при КАЖДОМ применении erase —
+ * это единственный надёжный признак, что именно ЭТА команда завершилась:
+ * erase_result двух последовательных erase может совпасть (оба "ok"), и
+ * сравнение только по значению не отличило бы новое завершение от старого.
  */
 struct MagCalibStateView {
   const char* status{"idle"};
   const char* fail_reason{"none"};
   const char* erase_result{"none"};
+  uint32_t erase_seq{0};
 };
 
 /**

@@ -666,6 +666,7 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     cJSON_AddStringToObject(reply, "status", mag_state.status);
     cJSON_AddStringToObject(reply, "fail_reason", mag_state.fail_reason);
     cJSON_AddStringToObject(reply, "erase_result", mag_state.erase_result);
+    cJSON_AddNumberToObject(reply, "erase_seq", (double)mag_state.erase_seq);
     cJSON_AddBoolToObject(reply, "ok", ok);
   });
 }
@@ -679,6 +680,7 @@ void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
     cJSON_AddStringToObject(reply, "status", mag_state.status);
     cJSON_AddStringToObject(reply, "fail_reason", mag_state.fail_reason);
     cJSON_AddStringToObject(reply, "erase_result", mag_state.erase_result);
+    cJSON_AddNumberToObject(reply, "erase_seq", (double)mag_state.erase_seq);
   });
 }
 

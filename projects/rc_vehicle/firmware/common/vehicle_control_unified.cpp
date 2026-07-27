@@ -114,6 +114,7 @@ void VehicleControlUnified::PublishMagCalibState() {
   mag_status_pub_ = status;
   mag_fail_reason_pub_ = fail_reason;
   mag_erase_result_pub_ = mag_erase_result_;
+  mag_erase_seq_pub_ = mag_erase_seq_;
 }
 
 bool VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
@@ -218,6 +219,10 @@ void VehicleControlUnified::ApplyMagCalibErase() {
   // ok=true (команда принята) без единого признака, что стирание не удалось
   // (ревью PR #308).
   mag_erase_result_ = ok ? "ok" : "failed";
+  // erase_result двух последовательных erase может совпасть (оба "ok"), и
+  // тогда сравнение клиента только по значению не отличило бы новое
+  // завершение от уже виденного (ревью PR #308) — seq растёт всегда.
+  ++mag_erase_seq_;
   platform_->Log(
       ok ? LogLevel::Info : LogLevel::Warning,
       ok ? "Mag calibration erased from NVS" : "Mag calibration erase FAILED");

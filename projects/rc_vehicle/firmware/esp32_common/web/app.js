@@ -108,11 +108,12 @@ let wifiStatusInterval = null;
 let magCalibPollTimer = null;
 let magCalibRefreshTimer = null;
 let lastMagEraseResult = 'none';
-let magErasePendingBaseline = null;
+let lastMagEraseSeq = 0;
+let magErasePendingSeqBaseline = null;
 let magEraseWatching = false;
 let magEraseWatchTimer = null;
 let magEraseWatchAttempts = 0;
-let magEraseWatchBaseline = 'none';
+let magEraseWatchSeqBaseline = 0;
 
 // ── Accordion ──
 document.querySelectorAll('.panel-header').forEach(hdr => {
@@ -227,15 +228,15 @@ function connectWebSocket() {
                     if (speedCalibStatusEl) speedCalibStatusEl.textContent = 'Остановлено';
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 } else if (data.type === 'calibrate_mag_ack') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
-                    if (magErasePendingBaseline !== null) {
-                        if (data.ok) startMagEraseWatch(magErasePendingBaseline);
-                        magErasePendingBaseline = null;
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none', data.erase_seq ?? 0);
+                    if (magErasePendingSeqBaseline !== null) {
+                        if (data.ok) startMagEraseWatch(magErasePendingSeqBaseline);
+                        magErasePendingSeqBaseline = null;
                     }
                     scheduleMagCalibRefresh();
                 } else if (data.type === 'mag_calib_status') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
-                    onMagEraseResultObserved(data.erase_result ?? 'none');
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none', data.erase_seq ?? 0);
+                    onMagEraseSeqObserved(data.erase_seq ?? 0);
                 } else if (data.type === 'reset_heading_ref_ack') {
                     if (magCalibMsg) { magCalibMsg.textContent = 'Нулевой курс сброшен'; magCalibMsg.style.display = 'block'; setTimeout(() => { if (magCalibMsg) magCalibMsg.style.display = 'none'; }, 2000); }
                 }
@@ -443,8 +444,12 @@ function scheduleMagCalibRefresh() {
     }, 100);
 }
 
-// Опрашивать, пока не увидим свежий erase_result — свежий, а не наш же
-// старый, отличный от значения, известного на момент клика.
+// Опрашивать, пока erase_seq не сдвинется относительно значения на момент
+// клика. Раньше сравнивали erase_result — но два erase подряд с ОДИНАКОВЫМ
+// исходом (оба "ok") дают то же самое значение, и такое сравнение никогда не
+// заметило бы завершение второго (ревью PR #308). erase_seq растёт на 1 при
+// КАЖДОМ применении erase вне зависимости от исхода, поэтому сравнение по
+// нему не путает новое завершение со старым.
 //
 // Одноразового scheduleMagCalibRefresh (100 мс) достаточно для status/
 // fail_reason: пока status==collecting, их и так продолжает подтягивать
@@ -458,10 +463,10 @@ function scheduleMagCalibRefresh() {
 const MAG_ERASE_WATCH_INTERVAL_MS = 150;
 const MAG_ERASE_WATCH_MAX_ATTEMPTS = 20;  // 20 × 150 мс = 3 с — с запасом на NVS
 
-function startMagEraseWatch(baseline) {
+function startMagEraseWatch(seqBaseline) {
     magEraseWatching = true;
     magEraseWatchAttempts = 0;
-    magEraseWatchBaseline = baseline;
+    magEraseWatchSeqBaseline = seqBaseline;
     scheduleMagEraseWatchPoll();
 }
 
@@ -473,11 +478,11 @@ function scheduleMagEraseWatchPoll() {
     }, MAG_ERASE_WATCH_INTERVAL_MS);
 }
 
-function onMagEraseResultObserved(eraseResult) {
+function onMagEraseSeqObserved(eraseSeq) {
     if (!magEraseWatching) return;
     magEraseWatchAttempts++;
-    if (eraseResult !== magEraseWatchBaseline) {
-        magEraseWatching = false;  // получили свежий результат
+    if (eraseSeq !== magEraseWatchSeqBaseline) {
+        magEraseWatching = false;  // именно наш erase применился
         return;
     }
     if (magEraseWatchAttempts >= MAG_ERASE_WATCH_MAX_ATTEMPTS) {
@@ -491,8 +496,9 @@ function onMagEraseResultObserved(eraseResult) {
     scheduleMagEraseWatchPoll();
 }
 
-function updateMagCalibUI(status, failReason, eraseResult) {
+function updateMagCalibUI(status, failReason, eraseResult, eraseSeq) {
     lastMagEraseResult = eraseResult;
+    lastMagEraseSeq = eraseSeq;
     const collecting = status === 'collecting';
     const done       = status === 'done';
     const failed     = status === 'failed';
@@ -1701,7 +1707,7 @@ if (btnMagFinish) btnMagFinish.addEventListener('click', () => wsSend({ type: 'c
 if (btnMagCancel) btnMagCancel.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'cancel' }));
 if (btnMagErase)  btnMagErase.addEventListener('click',  () => {
     if (!confirm('Стереть калибровку магнитометра?')) return;
-    magErasePendingBaseline = lastMagEraseResult;
+    magErasePendingSeqBaseline = lastMagEraseSeq;
     wsSend({ type: 'calibrate_mag', action: 'erase' });
 });
 if (btnResetHeading) btnResetHeading.addEventListener('click', () => wsSend({ type: 'reset_heading_ref' }));
