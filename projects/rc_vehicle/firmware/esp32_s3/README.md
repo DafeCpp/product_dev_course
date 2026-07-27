@@ -23,6 +23,9 @@ cd projects/rc_vehicle/firmware/esp32_s3
 # один раз:
 idf.py set-target esp32s3
 
+# После обновления существующего checkout: синхронизировать с 240 МГц.
+./scripts/migrate_cpu_freq_sdkconfig.sh
+
 # сборка
 idf.py build
 
@@ -63,4 +66,3 @@ WebSocket:
 - `wifi_active=true`, если команды по WebSocket приходили недавно (`WIFI_CMD_TIMEOUT_MS`).
 - **failsafe**: если нет активного источника (RC или Wi‑Fi) дольше `FAILSAFE_TIMEOUT_MS` → выставляется нейтраль.
 - **slew‑rate**: applied плавно тянется к commanded.
-
