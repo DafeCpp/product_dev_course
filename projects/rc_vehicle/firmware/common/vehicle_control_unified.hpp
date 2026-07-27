@@ -146,7 +146,7 @@ class VehicleControlUnified : public IVehicleControl {
    */
   [[nodiscard]] MagCalibStateView GetMagCalibState() const override {
     std::lock_guard<std::mutex> lock(mag_state_mutex_);
-    return {mag_status_pub_, mag_fail_reason_pub_};
+    return {mag_status_pub_, mag_fail_reason_pub_, mag_erase_result_pub_};
   }
 
   /**
@@ -416,6 +416,10 @@ class VehicleControlUnified : public IVehicleControl {
   ImuCalibration imu_calib_;
   MagCalibration mag_calib_;
 
+  // Результат последней команды erase (control-task-only, как и mag_calib_
+  // выше) — публикуется наружу через mag_erase_result_pub_.
+  const char* mag_erase_result_{"none"};
+
   /** Отложенная команда mag-калибровки, пришедшая с HTTP/WS-задачи. */
   enum class MagCalibRequest : uint8_t { Start, Finish, Cancel, Erase };
 
@@ -447,6 +451,12 @@ class VehicleControlUnified : public IVehicleControl {
   size_t mag_request_count_{0};
   const char* mag_status_pub_{"idle"};
   const char* mag_fail_reason_pub_{"none"};
+  // Результат ПОСЛЕДНЕГО erase ("none" — команды ещё не было). Отдельно от
+  // status/fail_reason: само стирание NVS не трогает mag_calib_ в памяти,
+  // поэтому им результат erase не выразить (ревью PR #308) — EraseMagCalib()
+  // мог вернуть false, а calibrate_mag_ack без этого поля показывал бы
+  // ok=true (факт постановки в очередь) без какого-либо намёка на провал.
+  const char* mag_erase_result_pub_{"none"};
 
   // Поставить команду в очередь. Вызывается с HTTP/WS-задачи.
   // false — очередь переполнена, команда отброшена.

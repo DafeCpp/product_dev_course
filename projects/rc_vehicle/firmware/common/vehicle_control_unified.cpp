@@ -108,11 +108,12 @@ void VehicleControlUnified::PublishMagCalibState() {
   }
   const char* fail_reason = mag_calib_.GetFailReasonStr();
 
-  // Обе строки — литералы со статическим временем жизни, поэтому отдавать
+  // Все строки — литералы со статическим временем жизни, поэтому отдавать
   // указатель из-под мьютекса безопасно.
   std::lock_guard<std::mutex> lock(mag_state_mutex_);
   mag_status_pub_ = status;
   mag_fail_reason_pub_ = fail_reason;
+  mag_erase_result_pub_ = mag_erase_result_;
 }
 
 bool VehicleControlUnified::QueueMagCalibRequest(MagCalibRequest req) {
@@ -212,6 +213,11 @@ void VehicleControlUnified::ApplyMagCalibErase() {
   // mag_calib_ стирание не трогает: калибровка в памяти доживает до
   // перезагрузки, как и раньше.
   const bool ok = platform_->EraseMagCalib();
+  // status/fail_reason тут ни при чём (mag_calib_ не тронут), поэтому провал
+  // NVS иначе ушёл бы клиенту только логом — calibrate_mag_ack отдал бы
+  // ok=true (команда принята) без единого признака, что стирание не удалось
+  // (ревью PR #308).
+  mag_erase_result_ = ok ? "ok" : "failed";
   platform_->Log(
       ok ? LogLevel::Info : LogLevel::Warning,
       ok ? "Mag calibration erased from NVS" : "Mag calibration erase FAILED");

@@ -498,6 +498,27 @@ TEST_F(ControlLoopTest, MagCalibEraseIsOrderedAfterFinish) {
       << "Стирание пришло последним — калибровка не должна пережить его";
 }
 
+TEST_F(ControlLoopTest, MagCalibEraseFailureIsReportedInState) {
+  // EraseMagCalib() может вернуть false (ошибка NVS), а mag_calib_ в памяти
+  // при этом не трогается — значит status/fail_reason провал никак не
+  // выражают. Раньше он уходил только в лог: calibrate_mag_ack всё равно
+  // отдавал бы ok=true (команда принята), и клиент считал бы NVS стёртой
+  // (ревью PR #308).
+  RunLoop(0);
+  platform_->SetEraseMagCalibShouldFail(true);
+
+  EXPECT_TRUE(vc_.EraseMagCalibration());  // команда принята в очередь
+  vc_.HostStep(2);
+
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "failed");
+
+  // Успешная попытка меняет результат обратно.
+  platform_->SetEraseMagCalibShouldFail(false);
+  vc_.EraseMagCalibration();
+  vc_.HostStep(2);
+  EXPECT_STREQ(vc_.GetMagCalibState().erase_result, "ok");
+}
+
 TEST_F(ControlLoopTest, MagCalibQueueOverflowIsReportedToCaller) {
   // Переполнение очереди не проглатывается: иначе отброшенный cancel оставит
   // калибровку собирать семплы вечно, а клиент будет считать команду

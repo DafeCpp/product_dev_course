@@ -224,6 +224,7 @@ class FakePlatform : public VehicleControlPlatform {
   }
 
   bool EraseMagCalib() override {
+    if (mag_erase_fails_) return false;
     mag_calib_data_.reset();
     return true;
   }
@@ -233,6 +234,10 @@ class FakePlatform : public VehicleControlPlatform {
 
   /** Лежит ли что-то в «NVS» магнитометра. */
   bool HasStoredMagCalib() const { return mag_calib_data_.has_value(); }
+
+  /** Заставить следующие EraseMagCalib() возвращать false (без побочных
+   * эффектов). */
+  void SetEraseMagCalibShouldFail(bool fail) { mag_erase_fails_ = fail; }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Калибровка IMU
@@ -402,6 +407,7 @@ class FakePlatform : public VehicleControlPlatform {
   std::optional<MagData> mag_data_;
   bool mag_read_fails_{false};
   std::optional<MagCalibData> mag_calib_data_;
+  bool mag_erase_fails_{false};
 
   // Stabilization (per-mode: один слот на каждый DriveMode 0..4)
   std::array<std::optional<StabilizationConfig>, 5> stab_configs_{};

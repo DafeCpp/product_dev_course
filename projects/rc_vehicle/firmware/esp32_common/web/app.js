@@ -221,10 +221,10 @@ function connectWebSocket() {
                     if (speedCalibStatusEl) speedCalibStatusEl.textContent = 'Остановлено';
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 } else if (data.type === 'calibrate_mag_ack') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none');
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
                     scheduleMagCalibRefresh();
                 } else if (data.type === 'mag_calib_status') {
-                    updateMagCalibUI(data.status, data.fail_reason ?? 'none');
+                    updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
                 } else if (data.type === 'reset_heading_ref_ack') {
                     if (magCalibMsg) { magCalibMsg.textContent = 'Нулевой курс сброшен'; magCalibMsg.style.display = 'block'; setTimeout(() => { if (magCalibMsg) magCalibMsg.style.display = 'none'; }, 2000); }
                 }
@@ -432,7 +432,7 @@ function scheduleMagCalibRefresh() {
     }, 100);
 }
 
-function updateMagCalibUI(status, failReason) {
+function updateMagCalibUI(status, failReason, eraseResult) {
     const collecting = status === 'collecting';
     const done       = status === 'done';
     const failed     = status === 'failed';
@@ -454,9 +454,17 @@ function updateMagCalibUI(status, failReason) {
     }
     if (magCalibStatus) magCalibStatus.textContent = statusText;
 
-    // Сообщение (скрыть если нет ошибки)
+    // Сообщение: результат erase — единственный сигнал о нём, т.к. само
+    // стирание NVS не меняет status/fail_reason калибровки в памяти
+    // (ревью PR #308). Держится, пока не придёт следующий erase с другим
+    // исходом — это последний известный результат, а не разовое уведомление.
     if (magCalibMsg) {
-        magCalibMsg.style.display = 'none';
+        if (eraseResult === 'failed') {
+            magCalibMsg.textContent = 'Стирание калибровки в NVS не удалось';
+            magCalibMsg.style.display = 'block';
+        } else {
+            magCalibMsg.style.display = 'none';
+        }
     }
 
     // Polling пока collecting

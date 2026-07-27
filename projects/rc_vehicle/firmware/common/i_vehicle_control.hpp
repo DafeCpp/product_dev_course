@@ -17,12 +17,15 @@ namespace rc_vehicle {
 /**
  * @brief Согласованный снимок состояния калибровки магнитометра.
  *
- * Обе строки — литералы со статическим временем жизни, копировать их не
- * нужно.
+ * Все строки — литералы со статическим временем жизни, копировать их не
+ * нужно. erase_result — результат ПОСЛЕДНЕЙ команды erase ("none", пока её
+ * не было; иначе "ok"/"failed"), т.к. само стирание NVS не меняет status/
+ * fail_reason калибровки в памяти.
  */
 struct MagCalibStateView {
   const char* status{"idle"};
   const char* fail_reason{"none"};
+  const char* erase_result{"none"};
 };
 
 /**
