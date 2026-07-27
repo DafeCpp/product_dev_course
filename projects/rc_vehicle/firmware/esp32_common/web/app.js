@@ -107,6 +107,12 @@ let mcuStatusCheckInterval = null;
 let wifiStatusInterval = null;
 let magCalibPollTimer = null;
 let magCalibRefreshTimer = null;
+let lastMagEraseResult = 'none';
+let magErasePendingBaseline = null;
+let magEraseWatching = false;
+let magEraseWatchTimer = null;
+let magEraseWatchAttempts = 0;
+let magEraseWatchBaseline = 'none';
 
 // ── Accordion ──
 document.querySelectorAll('.panel-header').forEach(hdr => {
@@ -222,9 +228,14 @@ function connectWebSocket() {
                     if (btnSpeedCalibStart) btnSpeedCalibStart.disabled = false;
                 } else if (data.type === 'calibrate_mag_ack') {
                     updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
+                    if (magErasePendingBaseline !== null) {
+                        if (data.ok) startMagEraseWatch(magErasePendingBaseline);
+                        magErasePendingBaseline = null;
+                    }
                     scheduleMagCalibRefresh();
                 } else if (data.type === 'mag_calib_status') {
                     updateMagCalibUI(data.status, data.fail_reason ?? 'none', data.erase_result ?? 'none');
+                    onMagEraseResultObserved(data.erase_result ?? 'none');
                 } else if (data.type === 'reset_heading_ref_ack') {
                     if (magCalibMsg) { magCalibMsg.textContent = 'Нулевой курс сброшен'; magCalibMsg.style.display = 'block'; setTimeout(() => { if (magCalibMsg) magCalibMsg.style.display = 'none'; }, 2000); }
                 }
@@ -432,7 +443,56 @@ function scheduleMagCalibRefresh() {
     }, 100);
 }
 
+// Опрашивать, пока не увидим свежий erase_result — свежий, а не наш же
+// старый, отличный от значения, известного на момент клика.
+//
+// Одноразового scheduleMagCalibRefresh (100 мс) достаточно для status/
+// fail_reason: пока status==collecting, их и так продолжает подтягивать
+// поллинг раз в секунду ниже. Для erase такой страховки нет — стирание не
+// меняет status/fail_reason калибровки в памяти, а если erase пришёл следом
+// за finish, оба применяются в ОДНОМ тике control loop, последовательно, и
+// синхронная запись NVS каждого может занять заметно больше 100 мс —
+// разовый запрос тогда попадёт ДО публикации и застрянет на старом значении
+// навсегда, т.к. status вне collecting новых опросов не заводит (ревью
+// PR #308).
+const MAG_ERASE_WATCH_INTERVAL_MS = 150;
+const MAG_ERASE_WATCH_MAX_ATTEMPTS = 20;  // 20 × 150 мс = 3 с — с запасом на NVS
+
+function startMagEraseWatch(baseline) {
+    magEraseWatching = true;
+    magEraseWatchAttempts = 0;
+    magEraseWatchBaseline = baseline;
+    scheduleMagEraseWatchPoll();
+}
+
+function scheduleMagEraseWatchPoll() {
+    if (magEraseWatchTimer) clearTimeout(magEraseWatchTimer);
+    magEraseWatchTimer = setTimeout(() => {
+        magEraseWatchTimer = null;
+        wsSend({ type: 'get_mag_calib_status' });
+    }, MAG_ERASE_WATCH_INTERVAL_MS);
+}
+
+function onMagEraseResultObserved(eraseResult) {
+    if (!magEraseWatching) return;
+    magEraseWatchAttempts++;
+    if (eraseResult !== magEraseWatchBaseline) {
+        magEraseWatching = false;  // получили свежий результат
+        return;
+    }
+    if (magEraseWatchAttempts >= MAG_ERASE_WATCH_MAX_ATTEMPTS) {
+        magEraseWatching = false;  // не дождались — сообщаем об этом честно
+        if (magCalibMsg) {
+            magCalibMsg.textContent = 'Не удалось подтвердить результат стирания калибровки';
+            magCalibMsg.style.display = 'block';
+        }
+        return;
+    }
+    scheduleMagEraseWatchPoll();
+}
+
 function updateMagCalibUI(status, failReason, eraseResult) {
+    lastMagEraseResult = eraseResult;
     const collecting = status === 'collecting';
     const done       = status === 'done';
     const failed     = status === 'failed';
@@ -1639,7 +1699,11 @@ if (btnTestStop) btnTestStop.addEventListener('click', () => {
 if (btnMagStart)  btnMagStart.addEventListener('click',  () => wsSend({ type: 'calibrate_mag', action: 'start' }));
 if (btnMagFinish) btnMagFinish.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'finish' }));
 if (btnMagCancel) btnMagCancel.addEventListener('click', () => wsSend({ type: 'calibrate_mag', action: 'cancel' }));
-if (btnMagErase)  btnMagErase.addEventListener('click',  () => { if (confirm('Стереть калибровку магнитометра?')) wsSend({ type: 'calibrate_mag', action: 'erase' }); });
+if (btnMagErase)  btnMagErase.addEventListener('click',  () => {
+    if (!confirm('Стереть калибровку магнитометра?')) return;
+    magErasePendingBaseline = lastMagEraseResult;
+    wsSend({ type: 'calibrate_mag', action: 'erase' });
+});
 if (btnResetHeading) btnResetHeading.addEventListener('click', () => wsSend({ type: 'reset_heading_ref' }));
 
 // ── Speed Calibration ──
