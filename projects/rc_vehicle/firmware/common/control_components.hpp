@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -210,9 +209,7 @@ class ImuHandler : public ControlComponent {
   /**
    * @brief Доступен ли магнитометр (инициализирован и есть данные).
    */
-  [[nodiscard]] bool IsMagEnabled() const noexcept {
-    return mag_enabled_.load(std::memory_order_relaxed);
-  }
+  [[nodiscard]] bool IsMagEnabled() const noexcept { return mag_enabled_; }
 
   /**
    * @brief Установить объект калибровки магнитометра.
@@ -236,9 +233,7 @@ class ImuHandler : public ControlComponent {
    * свежего чтения FeedMadgwick() уходит в 6DOF, который гасит кэш засева
    * каждым тиком.
    */
-  void InvalidateMagSample() noexcept {
-    mag_enabled_.store(false, std::memory_order_relaxed);
-  }
+  void InvalidateMagSample() noexcept { mag_enabled_ = false; }
 
   /**
    * @brief Tilt-compensated magnetic heading [°, 0=N, 90=E].
@@ -326,12 +321,7 @@ class ImuHandler : public ControlComponent {
   // Магнетометр (опционален)
   MagData mag_data_{};
   MagData mag_calibrated_{};  ///< Последний семпл после Apply() калибровки
-  // Атомарный: пишется не только из control task, но и из HTTP/WS-задачи
-  // через InvalidateMagSample() (VehicleControlUnified::FinishMagCalibration).
-  // Флаг самодостаточен — через него не публикуются другие данные, поэтому
-  // relaxed достаточно; нужна лишь гарантия, что запись с чужой задачи будет
-  // замечена, а не закеширована компилятором в регистре (ревью PR #308).
-  std::atomic<bool> mag_enabled_{false};
+  bool mag_enabled_{false};
   uint32_t last_mag_read_ms_{0};
   uint32_t last_mag_success_ms_{0};
   static constexpr uint32_t kMagReadIntervalMs = 10;  ///< 100 Hz

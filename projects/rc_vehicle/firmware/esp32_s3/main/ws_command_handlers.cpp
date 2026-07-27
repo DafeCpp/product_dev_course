@@ -641,7 +641,9 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     ESP_LOGI(TAG, "calibrate_mag: start");
   } else if (strcmp(action, "finish") == 0) {
     vc.FinishMagCalibration();
-    ESP_LOGI(TAG, "calibrate_mag: finish -> %s", vc.GetMagCalibStatus());
+    // Завершение откладывается на control loop (ревью PR #308), поэтому
+    // статус здесь ещё прежний — печатать его как результат было бы враньём.
+    ESP_LOGI(TAG, "calibrate_mag: finish queued");
   } else if (strcmp(action, "cancel") == 0) {
     vc.CancelMagCalibration();
     ESP_LOGI(TAG, "calibrate_mag: cancel");

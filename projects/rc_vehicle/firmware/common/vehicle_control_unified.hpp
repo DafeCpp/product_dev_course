@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 #include "auto_drive_coordinator.hpp"
@@ -106,7 +107,8 @@ class VehicleControlUnified : public IVehicleControl {
 
   // ─── Относительный курс ──────────────────────────────────────────────────
 
-  /** Сбросить опорный курс (установится при следующем Update() с магнитометром). */
+  /** Сбросить опорный курс (установится при следующем Update() с
+   * магнитометром). */
   void ResetHeadingRef() override {
     if (imu_handler_) imu_handler_->ResetHeadingRef();
   }
@@ -116,7 +118,13 @@ class VehicleControlUnified : public IVehicleControl {
   /** Запустить сбор семплов калибровки магнитометра. */
   void StartMagCalibration() override;
 
-  /** Завершить сбор, вычислить offset и сохранить в NVS (если валидно). */
+  /**
+   * Завершить сбор, вычислить offset и сохранить в NVS (если валидно).
+   *
+   * Вызывается из WS-обработчика (задача HTTP-сервера) — НЕ из потока
+   * control loop, поэтому сама лишь откладывает запрос под мьютексом.
+   * Реальная работа — в ProcessMagFinishRequest() (ревью PR #308).
+   */
   void FinishMagCalibration() override;
 
   /** Прервать сбор, вернуться в Idle. */
@@ -130,18 +138,20 @@ class VehicleControlUnified : public IVehicleControl {
   /** Строковый статус калибровки магнитометра. */
   [[nodiscard]] const char* GetMagCalibStatus() const override {
     switch (mag_calib_.GetStatus()) {
-      case MagCalibStatus::Idle:       return "idle";
-      case MagCalibStatus::Collecting: return "collecting";
-      case MagCalibStatus::Done:       return "done";
-      case MagCalibStatus::Failed:     return "failed";
+      case MagCalibStatus::Idle:
+        return "idle";
+      case MagCalibStatus::Collecting:
+        return "collecting";
+      case MagCalibStatus::Done:
+        return "done";
+      case MagCalibStatus::Failed:
+        return "failed";
     }
     return "idle";
   }
 
   /** Удалить калибровку магнитометра из NVS. */
-  bool EraseMagCalibration() override {
-    return platform_->EraseMagCalib();
-  }
+  bool EraseMagCalibration() override { return platform_->EraseMagCalib(); }
 
   /**
    * @brief Задать направление «вперёд» единичным вектором в СК датчика
@@ -169,8 +179,8 @@ class VehicleControlUnified : public IVehicleControl {
   }
 
   /** Результат калибровки trim (валиден после завершения). */
-  [[nodiscard]] SteeringTrimCalibration::Result
-  GetSteeringTrimCalibResult() const override {
+  [[nodiscard]] SteeringTrimCalibration::Result GetSteeringTrimCalibResult()
+      const override {
     return auto_drive_.GetTrimCalibResult();
   }
 
@@ -194,8 +204,8 @@ class VehicleControlUnified : public IVehicleControl {
   }
 
   /** Результат калибровки CoM offset. */
-  [[nodiscard]] ComOffsetCalibration::Result
-  GetComOffsetCalibResult() const override {
+  [[nodiscard]] ComOffsetCalibration::Result GetComOffsetCalibResult()
+      const override {
     return auto_drive_.GetComCalibResult();
   }
 
@@ -226,7 +236,7 @@ class VehicleControlUnified : public IVehicleControl {
    * @return true при успешном запуске
    */
   bool StartSpeedCalibration(float target_throttle = 0.3f,
-                              float cruise_duration_sec = 3.0f) override;
+                             float cruise_duration_sec = 3.0f) override;
 
   /** Прервать калибровку скорости. */
   void StopSpeedCalibration() override { auto_drive_.StopSpeedCalib(); }
@@ -370,7 +380,6 @@ class VehicleControlUnified : public IVehicleControl {
   VehicleControlUnified& operator=(const VehicleControlUnified&) = delete;
 
  private:
-
   /**
    * @brief Точка входа для control loop задачи
    * @param arg Указатель на экземпляр VehicleControlUnified
@@ -400,8 +409,6 @@ class VehicleControlUnified : public IVehicleControl {
   /** Создание компонентов control loop. */
   bool InitializeComponents();
 
-
-
   // ─────────────────────────────────────────────────────────────────────────
   // Члены класса
   // ─────────────────────────────────────────────────────────────────────────
@@ -412,6 +419,22 @@ class VehicleControlUnified : public IVehicleControl {
   // Калибровка, фильтр
   ImuCalibration imu_calib_;
   MagCalibration mag_calib_;
+
+  // Отложенный FinishMagCalibration() — по образцу forward_dir_pending_ в
+  // CalibrationManager (PR #290). Завершение mag-калибровки трогает
+  // mag_calib_, madgwick_ и imu_handler_, а все три непрерывно
+  // читаются/пишутся control loop'ом на 500 Гц и не потокобезопасны.
+  // Выполнять эту многошаговую последовательность с чужой задачи нельзя:
+  // между её шагами control loop успевает сделать 100 Гц чтение
+  // магнитометра, применить к нему ещё СТАРЫЙ offset и заново пометить
+  // семпл пригодным — после чего параллельная калибровка СК засеет курс по
+  // старой калибровке (ревью PR #308). Точечные инвалидации окно лишь
+  // сужают, но не закрывают.
+  std::mutex mag_finish_mutex_;
+  bool mag_finish_pending_{false};
+
+  // Исполняется исключительно с потока control loop.
+  void ProcessMagFinishRequest();
   MadgwickFilter madgwick_;
 
   // Стратегии стабилизации (pipeline)

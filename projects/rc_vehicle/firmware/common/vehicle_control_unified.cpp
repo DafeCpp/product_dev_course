@@ -48,6 +48,8 @@ void VehicleControlUnified::ControlTaskLoop() {
   while (true) {
     platform_->DelayUntilNextTick(config::ControlLoopConfig::kPeriodMs);
     const uint32_t now = platform_->GetTimeMs();
+    // Отложенные WS-запросы, которые безопасно применять только здесь.
+    ProcessMagFinishRequest();
     processor_->Step(now, now - last_loop);
     last_loop = now;
     platform_->FeedTaskWdt();
@@ -58,6 +60,7 @@ void VehicleControlUnified::HostStep(uint32_t dt_ms) {
   if (!platform_) return;
   BuildProcessor();
   control_task_ready_.store(true, std::memory_order_release);
+  ProcessMagFinishRequest();
   processor_->Step(platform_->GetTimeMs(), dt_ms);
 }
 
@@ -95,28 +98,40 @@ void VehicleControlUnified::StartMagCalibration() {
 }
 
 void VehicleControlUnified::FinishMagCalibration() {
+  // Вызывается из HTTP/WS-задачи (ws_command_handlers.cpp, HandleCalibrateMag),
+  // а ControlTaskLoop() — независимая задача. Ничего из mag_calib_/madgwick_/
+  // imu_handler_ отсюда трогать нельзя: все они непрерывно читаются и пишутся
+  // control loop'ом на 500 Гц и не потокобезопасны. Только откладываем запрос —
+  // ровно как CalibrationManager::SetForwardDirection() (PR #290).
+  //
+  // Точечных инвалидаций здесь недостаточно принципиально: завершение
+  // калибровки — многошаговая последовательность (Finish → SaveMagCalib →
+  // сброс опоры курса), и между ЛЮБЫМИ двумя её шагами control loop успевает
+  // сделать 100 Гц чтение магнитометра, применить к нему ещё старый offset и
+  // заново пометить семпл пригодным для засева. Прошлые итерации этой правки
+  // окно лишь сужали (ревью PR #308).
+  std::lock_guard<std::mutex> lock(mag_finish_mutex_);
+  mag_finish_pending_ = true;
+}
+
+void VehicleControlUnified::ProcessMagFinishRequest() {
+  {
+    std::lock_guard<std::mutex> lock(mag_finish_mutex_);
+    if (!mag_finish_pending_) return;
+    mag_finish_pending_ = false;
+  }
+
   const bool was_collecting =
       mag_calib_.GetStatus() == MagCalibStatus::Collecting;
 
-  // Гасим кэшированный mag-семпл ДО Finish(), а не после (ревью PR #308).
+  // Всё ниже исполняется на потоке control loop, поэтому чужих тиков между
+  // шагами больше нет и последовательность атомарна по отношению к
+  // UpdateMagAndHeading()/FeedMadgwick().
   //
-  // Этот метод вызывается из HTTP/WS-задачи (ws_command_handlers.cpp,
-  // HandleCalibrateMag), а ControlTaskLoop() крутится независимой задачей на
-  // другом ядре — атомарности между вызовами здесь нет. Кэш ImuHandler
-  // посчитан ТЕКУЩИМ, ещё старым offset, и до инвалидации подаётся в
-  // UpdateWithMag() на каждом тике. Всё, что стоит между сменой калибровки и
-  // инвалидацией, — это окно, в котором control task может засеять курс по
-  // старому offset, а последующее гашение семпла уже не откатит кватернион.
-  // Окно это не микроскопическое: SaveMagCalib() ниже — запись в NVS на
-  // миллисекунды, то есть сотни тиков control loop.
-  //
-  // Порядок с гашением впереди безопасен и в обратную сторону: после него
-  // FeedMadgwick() уходит в 6DOF, а первое же свежее чтение (≤10 мс) уже
-  // применит НОВУЮ калибровку — засев по нему корректен.
-  //
-  // Гейтим по was_collecting, чтобы не дёргать 6DOF-провал на no-op вызовах
-  // Finish() вне сбора. Если сбор был, но калибровка не удалась, цена
-  // ошибки — тот же ≤10 мс откат в 6DOF, что и при обычном пропуске чтения.
+  // Гасить кэшированный семпл всё равно нужно: он посчитан ещё старым offset
+  // на предыдущем тике и оставался бы пригодным для засева до следующего
+  // 100 Гц чтения. Гейтим по was_collecting, чтобы не ронять магнитометр в
+  // 6DOF на no-op вызовах Finish() вне сбора.
   if (was_collecting && imu_handler_) imu_handler_->InvalidateMagSample();
 
   mag_calib_.Finish();
@@ -136,11 +151,10 @@ void VehicleControlUnified::FinishMagCalibration() {
       // hard-iron offset) — накопленный до этого прогресс сходимости yaw
       // относился к старой калибровке (или к сырым данным) и не годится под
       // новую (LOS-229).
-      // Кэшированный семпл уже погашен выше, до Finish(): одного сброса в
-      // фильтре мало, потому что ImuHandler отдаёт кэш в UpdateWithMag() на
-      // КАЖДОМ тике, обновляя его лишь на 100 Гц чтениях, и следующий же тик
-      // снова пометил бы старый вектор пригодным для засева (ревью PR #308,
-      // LOS-221).
+      // Кэшированный семпл погашен выше: одного сброса в фильтре мало,
+      // потому что ImuHandler отдаёт кэш в UpdateWithMag() на КАЖДОМ тике,
+      // обновляя его лишь на 100 Гц чтениях, и следующий же тик снова
+      // пометил бы старый вектор пригодным для засева (ревью PR #308).
       madgwick_.InvalidateYawTrust();
     }
   }

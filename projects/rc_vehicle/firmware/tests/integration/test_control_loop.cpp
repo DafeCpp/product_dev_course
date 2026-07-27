@@ -2,8 +2,8 @@
 
 #include <stdexcept>
 
-#include "vehicle_control_unified.hpp"
 #include "mock_platform.hpp"
+#include "vehicle_control_unified.hpp"
 
 using namespace rc_vehicle;
 using namespace rc_vehicle::testing;
@@ -145,7 +145,8 @@ TEST_F(ControlLoopTest, RcOverridesWifi) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, TelemetryLogPopulated_WithImu) {
-  RunLoop(200);  // 200 × 2ms = 400ms → должно быть ~4 log frames (100 Hz = 10ms)
+  RunLoop(
+      200);  // 200 × 2ms = 400ms → должно быть ~4 log frames (100 Hz = 10ms)
 
   size_t count = 0, cap = 0;
   vc_.GetLogInfo(count, cap);
@@ -161,8 +162,8 @@ TEST_F(ControlLoopTest, NoImu_LoopStillRuns) {
   auto platform = std::make_unique<SimPlatform>(20);
   platform_ = platform.get();
   // НЕ устанавливаем IMU data → InitImu вернёт Ok, но ReadImu = nullopt
-  // Однако FakePlatform::InitImu() возвращает Ok, а ReadImu() возвращает nullopt
-  // ImuHandler увидит nullopt и не включится
+  // Однако FakePlatform::InitImu() возвращает Ok, а ReadImu() возвращает
+  // nullopt ImuHandler увидит nullopt и не включится
 
   vc_.SetPlatform(std::move(platform));
   (void)vc_.Init();
@@ -373,4 +374,30 @@ TEST_F(ControlLoopTest, SteeringTrimCalib_StartStop) {
 
   vc_.StopSteeringTrimCalibration();
   EXPECT_FALSE(vc_.IsSteeringTrimCalibActive());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Отложенное завершение mag-калибровки (LOS-221, ревью PR #308)
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(ControlLoopTest, MagCalibFinishIsDeferredToControlLoop) {
+  // FinishMagCalibration() приходит из HTTP/WS-задачи и трогает mag_calib_,
+  // madgwick_ и imu_handler_ — все они принадлежат control loop и не
+  // потокобезопасны. Выполнять эту многошаговую последовательность на месте
+  // нельзя: между её шагами control loop успевает сделать 100 Гц чтение
+  // магнитометра со ещё СТАРЫМ offset и заново пометить семпл пригодным для
+  // засева курса. Поэтому запрос только ставится в очередь, а применяется
+  // первым же тиком.
+  RunLoop(0);
+
+  vc_.StartMagCalibration();
+  ASSERT_STREQ(vc_.GetMagCalibStatus(), "collecting");
+
+  vc_.FinishMagCalibration();
+  EXPECT_STREQ(vc_.GetMagCalibStatus(), "collecting")
+      << "Завершение обязано быть отложенным, а не применённым на месте";
+
+  vc_.HostStep(2);
+  EXPECT_STRNE(vc_.GetMagCalibStatus(), "collecting")
+      << "Первый же тик control loop обязан применить отложенный запрос";
 }
