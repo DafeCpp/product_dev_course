@@ -15,6 +15,17 @@
 namespace rc_vehicle {
 
 /**
+ * @brief Согласованный снимок состояния калибровки магнитометра.
+ *
+ * Обе строки — литералы со статическим временем жизни, копировать их не
+ * нужно.
+ */
+struct MagCalibStateView {
+  const char* status{"idle"};
+  const char* fail_reason{"none"};
+};
+
+/**
  * @brief Интерфейс управления машиной для WS-хендлеров и внешних модулей.
  *
  * Позволяет подставлять mock-реализацию в тестах без зависимости
@@ -57,8 +68,8 @@ class IVehicleControl {
                                          float cruise_duration_sec = 5.0f) = 0;
   virtual void StopComOffsetCalibration() = 0;
   [[nodiscard]] virtual bool IsComOffsetCalibActive() const = 0;
-  [[nodiscard]] virtual ComOffsetCalibration::Result
-  GetComOffsetCalibResult() const = 0;
+  [[nodiscard]] virtual ComOffsetCalibration::Result GetComOffsetCalibResult()
+      const = 0;
 
   // Тестовые манёвры
   virtual bool StartTest(const TestParams& params) = 0;
@@ -71,8 +82,8 @@ class IVehicleControl {
                                      float cruise_duration_sec = 3.0f) = 0;
   virtual void StopSpeedCalibration() = 0;
   [[nodiscard]] virtual bool IsSpeedCalibActive() const = 0;
-  [[nodiscard]] virtual SpeedCalibration::Result
-  GetSpeedCalibResult() const = 0;
+  [[nodiscard]] virtual SpeedCalibration::Result GetSpeedCalibResult()
+      const = 0;
 
   // Относительный курс
   virtual void ResetHeadingRef() = 0;
@@ -81,8 +92,18 @@ class IVehicleControl {
   virtual void StartMagCalibration() = 0;
   virtual void FinishMagCalibration() = 0;
   virtual void CancelMagCalibration() = 0;
-  [[nodiscard]] virtual const char* GetMagCalibStatus() const = 0;
-  [[nodiscard]] virtual const char* GetMagCalibFailReason() const = 0;
+
+  /**
+   * @brief Статус калибровки магнитометра и причина неудачи — одним снимком.
+   *
+   * Именно парой, а не двумя геттерами: статус меняется с потока control
+   * loop, а читают его WS-обработчики, поэтому два раздельных чтения (пусть
+   * даже каждое под мьютексом) успевают разъехаться и дать наружу
+   * несуществовавшее сочетание — "collecting" с "too_few_samples" или
+   * "failed" с "none" (ревью PR #308).
+   */
+  [[nodiscard]] virtual MagCalibStateView GetMagCalibState() const = 0;
+
   virtual bool EraseMagCalibration() = 0;
 
   // Телеметрия лог (кадры)

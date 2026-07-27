@@ -413,16 +413,16 @@ TEST_F(ControlLoopTest, MagCalibCommandsAreDeferredToControlLoop) {
   RunLoop(0);
 
   vc_.StartMagCalibration();
-  EXPECT_STREQ(vc_.GetMagCalibStatus(), "idle")
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "idle")
       << "Старт обязан быть отложенным, а не применённым на месте";
   vc_.HostStep(2);
-  ASSERT_STREQ(vc_.GetMagCalibStatus(), "collecting");
+  ASSERT_STREQ(vc_.GetMagCalibState().status, "collecting");
 
   vc_.FinishMagCalibration();
-  EXPECT_STREQ(vc_.GetMagCalibStatus(), "collecting")
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "collecting")
       << "Завершение обязано быть отложенным, а не применённым на месте";
   vc_.HostStep(2);
-  EXPECT_STRNE(vc_.GetMagCalibStatus(), "collecting")
+  EXPECT_STRNE(vc_.GetMagCalibState().status, "collecting")
       << "Первый же тик control loop обязан применить отложенный запрос";
 }
 
@@ -439,7 +439,7 @@ TEST_F(ControlLoopTest, MagCalibRequestsApplyInArrivalOrder) {
   vc_.StartMagCalibration();
   vc_.HostStep(2);
 
-  EXPECT_STREQ(vc_.GetMagCalibStatus(), "collecting")
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "collecting")
       << "Последний start обязан пережить finish, поставленный до него";
   EXPECT_EQ(MagCalibEvents(vc_),
             (std::vector<TelemetryEventType>{
@@ -459,7 +459,7 @@ TEST_F(ControlLoopTest, MagCalibCancelIsLastWhenQueuedLast) {
   vc_.CancelMagCalibration();
   vc_.HostStep(2);
 
-  EXPECT_STREQ(vc_.GetMagCalibStatus(), "idle");
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "idle");
 
   const auto events = MagCalibEvents(vc_);
   ASSERT_FALSE(events.empty());
@@ -498,7 +498,7 @@ TEST_F(ControlLoopTest, FailedMagCalibKeepsMagSampleValid) {
 
   vc_.SetPlatform(std::move(platform));
   (void)vc_.Init();  // Init вызывает CreateTask → цикл идёт синхронно
-  EXPECT_STREQ(vc_.GetMagCalibStatus(), "done")
+  EXPECT_STREQ(vc_.GetMagCalibState().status, "done")
       << "Калибровка, поднятая из NVS, обязана быть видна снаружи";
 
   // Прогрев: магнитометр читается на 100 Гц, телеметрия публикуется на 20 Гц.
@@ -521,8 +521,10 @@ TEST_F(ControlLoopTest, FailedMagCalibKeepsMagSampleValid) {
     vc_.HostStep(2);
   }
 
-  ASSERT_STREQ(vc_.GetMagCalibStatus(), "failed");
-  EXPECT_STREQ(vc_.GetMagCalibFailReason(), "too_few_samples")
+  // Один снимок на обе строки — так их и обязаны читать WS-обработчики.
+  const MagCalibStateView mag_state = vc_.GetMagCalibState();
+  ASSERT_STREQ(mag_state.status, "failed");
+  EXPECT_STREQ(mag_state.fail_reason, "too_few_samples")
       << "Статус и причина публикуются одним снимком — расходиться не могут";
   EXPECT_TRUE(platform_->GetLastSnap().mag_enabled)
       << "Провалившаяся перекалибровка не меняет offset — гасить mag-семпл "

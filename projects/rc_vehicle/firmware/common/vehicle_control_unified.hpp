@@ -130,22 +130,17 @@ class VehicleControlUnified : public IVehicleControl {
   void CancelMagCalibration() override;
 
   /**
-   * Причина неудачи калибровки магнитометра (валидна при статусе "failed").
+   * Статус калибровки магнитометра и причина неудачи.
    *
    * Читается из HTTP/WS-задачи, поэтому отдаёт опубликованный снимок, а не
    * mag_calib_ напрямую: статус меняется с потока control loop, и прямое
-   * чтение было бы гонкой — причём парной, с риском отдать новый статус со
-   * старой причиной (ревью PR #308).
+   * чтение было бы гонкой. Пара снимается за ОДИН захват мьютекса — два
+   * раздельных геттера, пусть даже каждый под замком, успевали бы
+   * разъехаться между вызовами (ревью PR #308).
    */
-  [[nodiscard]] const char* GetMagCalibFailReason() const override {
+  [[nodiscard]] MagCalibStateView GetMagCalibState() const override {
     std::lock_guard<std::mutex> lock(mag_state_mutex_);
-    return mag_fail_reason_pub_;
-  }
-
-  /** Строковый статус калибровки магнитометра (снимок, см. выше). */
-  [[nodiscard]] const char* GetMagCalibStatus() const override {
-    std::lock_guard<std::mutex> lock(mag_state_mutex_);
-    return mag_status_pub_;
+    return {mag_status_pub_, mag_fail_reason_pub_};
   }
 
   /** Удалить калибровку магнитометра из NVS. */

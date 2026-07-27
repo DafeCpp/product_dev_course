@@ -656,9 +656,10 @@ void HandleCalibrateMag(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     ESP_LOGW(TAG, "calibrate_mag: unknown action '%s'", action);
   }
 
+  const MagCalibStateView mag_state = vc.GetMagCalibState();
   WsReply(req, "calibrate_mag_ack", [&](cJSON* reply) {
-    cJSON_AddStringToObject(reply, "status", vc.GetMagCalibStatus());
-    cJSON_AddStringToObject(reply, "fail_reason", vc.GetMagCalibFailReason());
+    cJSON_AddStringToObject(reply, "status", mag_state.status);
+    cJSON_AddStringToObject(reply, "fail_reason", mag_state.fail_reason);
     cJSON_AddBoolToObject(reply, "ok", ok);
   });
 }
@@ -667,9 +668,10 @@ void HandleGetMagCalibStatus(IVehicleControl& vc, cJSON* json,
                              httpd_req_t* req) {
   (void)json;
 
+  const MagCalibStateView mag_state = vc.GetMagCalibState();
   WsReply(req, "mag_calib_status", [&](cJSON* reply) {
-    cJSON_AddStringToObject(reply, "status", vc.GetMagCalibStatus());
-    cJSON_AddStringToObject(reply, "fail_reason", vc.GetMagCalibFailReason());
+    cJSON_AddStringToObject(reply, "status", mag_state.status);
+    cJSON_AddStringToObject(reply, "fail_reason", mag_state.fail_reason);
   });
 }
 
