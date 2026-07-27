@@ -66,7 +66,7 @@ define run_idf
 		echo "   Или в текущем терминале: . \$$IDF_PATH/export.sh"; \
 		exit 127; \
 	fi; \
-	./scripts/migrate_cpu_freq_sdkconfig.sh; \
+	./scripts/migrate_cpu_freq_sdkconfig.sh || exit $$?; \
 	exec idf.py $(1)'
 endef
 
