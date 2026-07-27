@@ -193,9 +193,12 @@ class ImuHandler : public ControlComponent {
 
   /**
    * @brief Включить/выключить обновление фильтра Madgwick
-   * @param enabled false — IMU читается и LPF работает, но Madgwick не обновляется
+   * @param enabled false — IMU читается и LPF работает, но Madgwick не
+   * обновляется
    */
-  void SetMadgwickEnabled(bool enabled) noexcept { madgwick_enabled_ = enabled; }
+  void SetMadgwickEnabled(bool enabled) noexcept {
+    madgwick_enabled_ = enabled;
+  }
 
   /**
    * @brief Последние данные магнитометра (мГс).
@@ -212,9 +215,25 @@ class ImuHandler : public ControlComponent {
    * @brief Установить объект калибровки магнитометра.
    * @param calib Указатель на MagCalibration (не владеет), nullptr — отключить.
    */
-  void SetMagCalibration(MagCalibration* calib) noexcept {
-    mag_calib_ = calib;
-  }
+  void SetMagCalibration(MagCalibration* calib) noexcept { mag_calib_ = calib; }
+
+  /**
+   * @brief Объявить кэшированный mag-семпл непригодным до следующего чтения.
+   *
+   * Вызывать при смене калибровки магнитометра (VehicleControlUnified::
+   * FinishMagCalibration). mag_calibrated_ хранит вектор, посчитанный СТАРЫМ
+   * hard-iron offset, а FeedMadgwick() отдаёт его в UpdateWithMag() на каждом
+   * тике — то есть до следующего 100 Гц чтения (≤10 мс) фильтр продолжал бы
+   * считать этот вектор свежим и мог бы засеять по нему курс, если в это окно
+   * попадёт IMU/Forward-калибровка. Ровно от этого защищает
+   * MadgwickFilter::InvalidateYawTrust(), но сам по себе он бессилен: флаг
+   * пригодности семпла восстанавливается на следующем же тике (ревью PR #308).
+   *
+   * Реализовано через тот же mag_enabled_, что и таймаут устаревания: до
+   * свежего чтения FeedMadgwick() уходит в 6DOF, который гасит кэш засева
+   * каждым тиком.
+   */
+  void InvalidateMagSample() noexcept { mag_enabled_ = false; }
 
   /**
    * @brief Tilt-compensated magnetic heading [°, 0=N, 90=E].
@@ -230,7 +249,8 @@ class ImuHandler : public ControlComponent {
 
   /**
    * @brief Сбросить опорный курс.
-   * При следующем Update() с валидным магнитометром heading_ref_ запишет текущий heading_deg_.
+   * При следующем Update() с валидным магнитометром heading_ref_ запишет
+   * текущий heading_deg_.
    */
   void ResetHeadingRef() noexcept { heading_ref_set_ = false; }
 
@@ -318,8 +338,8 @@ class ImuHandler : public ControlComponent {
   float heading_deg_{0.f};
 
   // Относительный курс
-  float heading_ref_{0.f};   ///< Опорное значение курса [°]
-  bool  heading_ref_set_{false};
+  float heading_ref_{0.f};  ///< Опорное значение курса [°]
+  bool heading_ref_set_{false};
 
 #ifdef RC_PROFILE_LOOP
   uint64_t prof_spi_us_{0};
@@ -370,8 +390,9 @@ struct SensorSnapshot {
 /**
  * @brief Снимок данных для телеметрии
  *
- * Заполняется в ControlTaskLoop() и передаётся в TelemetryHandler::SendTelemetry(),
- * устраняя прямые зависимости от отдельных компонентов.
+ * Заполняется в ControlTaskLoop() и передаётся в
+ * TelemetryHandler::SendTelemetry(), устраняя прямые зависимости от отдельных
+ * компонентов.
  */
 struct TelemetrySnapshot {
   // Link status

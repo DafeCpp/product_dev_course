@@ -1645,15 +1645,14 @@ TEST(MadgwickTest, SetVehicleFrame_FallsBackToZeroWhenMagGoesStale) {
 }
 
 TEST(MadgwickTest, SetVehicleFrame_FallsBackWhenMagHorizontalIsDegenerate) {
-  // Порог kMinHorizMagSq защищает только от истинного вырождения (поле строго
-  // вдоль вертикали машины): любое реальное поле его проходит. Проверяем, что
-  // граница действительно срабатывает и уводит в прежнее поведение.
+  // Порог `kMinHorizFractionSq` защищает только от истинного вырождения (поле
+  // практически вдоль вертикали машины): любое реальное поле его проходит.
   float gravity[3] = {0.0f, 0.0f, -1.0f};
   float forward[3] = {1.0f, 0.0f, 0.0f};
 
   MadgwickFilter filter;
   filter.SetBeta(0.1f);
-  // Горизонтальная проекция 1e-7 → её квадрат 1e-14 < kMinHorizMagSq (1e-12).
+  // Горизонталь 1e-7 при |m| ≈ 0.8 → доля² ≈ 1.6e-14, много ниже 1e-8.
   filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1e-7f, 0.0f, -0.8f,
                        0.002f);
   filter.SetVehicleFrame(gravity, forward, true);
@@ -1662,6 +1661,42 @@ TEST(MadgwickTest, SetVehicleFrame_FallsBackWhenMagHorizontalIsDegenerate) {
   filter.GetEulerDeg(pitch, roll, yaw);
   EXPECT_NEAR(yaw, 0.0f, 0.1f)
       << "Вырожденная горизонталь поля — засев невозможен, работает фолбэк";
+}
+
+TEST(MadgwickTest, SetVehicleFrame_SeedIsScaleInvariant) {
+  // Ревью PR #308: размерность mag по контракту UpdateWithMag произвольна
+  // («нужна только нормировка»). Абсолютный порог вырожденности отправлял бы
+  // одно и то же поле в разных единицах по разным веткам — слабое поле
+  // засевалось бы нулём и возвращало рампу. Порог относительный, поэтому
+  // масштаб результата не меняет.
+  float gravity[3] = {0.0f, 0.0f, -1.0f};
+  float forward[3] = {1.0f, 0.0f, 0.0f};
+  // Поле с большим наклонением: горизонталь ≈ 10% модуля (наклонение ~84°,
+  // реалистично для высоких широт). Именно на таком поле абсолютный порог и
+  // расходится с относительным — горизонталь падает ниже 1e-6 задолго до
+  // того, как полный модуль упрётся в гейт mnorm2 > 1e-12 внутри
+  // UpdateWithMag. Ожидаемый курс: atan2(my, mx) = 45°.
+  constexpr float kMx = 0.0707f, kMy = 0.0707f, kMz = -0.995f;
+
+  auto seeded_yaw = [&](float scale) {
+    MadgwickFilter filter;
+    filter.SetBeta(0.1f);
+    filter.UpdateWithMag(0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, kMx * scale,
+                         kMy * scale, kMz * scale, 0.002f);
+    filter.SetVehicleFrame(gravity, forward, true);
+    float pitch, roll, yaw;
+    filter.GetEulerDeg(pitch, roll, yaw);
+    return yaw;
+  };
+
+  const float ref = seeded_yaw(1.0f);
+  ASSERT_NEAR(std::abs(ref), 45.0f, 0.5f) << "Опорный курс посчитан неверно";
+
+  // scale=5e-6: полный модуль² ≈ 2.5e-11 — уверенно проходит гейт
+  // UpdateWithMag, а горизонталь² ≈ 2.5e-13 уже ниже 1e-12, то есть любой
+  // абсолютный порог отправил бы это поле в фолбэк и вернул рампу.
+  EXPECT_NEAR(seeded_yaw(5e-6f), ref, 0.1f) << "ослабленное поле";
+  EXPECT_NEAR(seeded_yaw(1e3f), ref, 0.1f) << "усиленное поле";
 }
 
 TEST(MadgwickTest, UpsideDownMount_RollNearZero) {

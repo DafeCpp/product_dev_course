@@ -299,7 +299,15 @@ bool MadgwickFilter::SeedYawFromMag(float x_veh_x, float x_veh_y, float x_veh_z,
       last_mag_x_ * x_veh_x + last_mag_y_ * x_veh_y + last_mag_z_ * x_veh_z;
   const float mvy =
       last_mag_x_ * y_veh_x + last_mag_y_ * y_veh_y + last_mag_z_ * y_veh_z;
-  if ((mvx * mvx + mvy * mvy) <= kMinHorizMagSq) return false;
+
+  // Вырожденность оцениваем по ДОЛЕ горизонтали от полного модуля поля, а не
+  // по абсолютной величине: единицы измерения mag произвольны, и абсолютный
+  // порог отправлял бы одно и то же поле в разных масштабах по разным веткам.
+  const float m_total_sq = last_mag_x_ * last_mag_x_ +
+                           last_mag_y_ * last_mag_y_ +
+                           last_mag_z_ * last_mag_z_;
+  if (m_total_sq <= 0.f) return false;
+  if ((mvx * mvx + mvy * mvy) <= kMinHorizFractionSq * m_total_sq) return false;
 
   // Madgwick сходится туда, где earth-frame поле h = R(q_result)·m имеет
   // hy = 0: референс строится как b = (sqrt(hx²+hy²), 0, hz) (см. UpdateWithMag

@@ -62,13 +62,11 @@ void VehicleControlUnified::HostStep(uint32_t dt_ms) {
 }
 
 bool VehicleControlUnified::StartComOffsetCalibration(
-    float target_accel_g, float steering_magnitude,
-    float cruise_duration_sec) {
+    float target_accel_g, float steering_magnitude, float cruise_duration_sec) {
   if (!stab_mgr_ || !imu_enabled_) return false;
   const auto& calib_data = imu_calib_.GetData();
   return auto_drive_.StartComCalib(target_accel_g, steering_magnitude,
-                                   cruise_duration_sec,
-                                   calib_data.gravity_vec);
+                                   cruise_duration_sec, calib_data.gravity_vec);
 }
 
 bool VehicleControlUnified::StartTest(const TestParams& params) {
@@ -77,13 +75,12 @@ bool VehicleControlUnified::StartTest(const TestParams& params) {
 }
 
 bool VehicleControlUnified::StartSpeedCalibration(float target_throttle,
-                                                   float cruise_duration_sec) {
+                                                  float cruise_duration_sec) {
   if (!imu_enabled_) return false;
   return auto_drive_.StartSpeedCalib(target_throttle, cruise_duration_sec);
 }
 
-bool VehicleControlUnified::StartSteeringTrimCalibration(
-    float target_accel_g) {
+bool VehicleControlUnified::StartSteeringTrimCalibration(float target_accel_g) {
   if (!stab_mgr_ || !imu_enabled_) return false;
   const auto& cfg = stab_mgr_->GetConfig();
   return auto_drive_.StartTrimCalib(target_accel_g, cfg.steering_trim,
@@ -118,6 +115,14 @@ void VehicleControlUnified::FinishMagCalibration() {
       // относился к старой калибровке (или к сырым данным) и не годится под
       // новую (LOS-229).
       madgwick_.InvalidateYawTrust();
+      // Одного сброса в фильтре мало: ImuHandler кэширует mag_calibrated_ и
+      // отдаёт его в UpdateWithMag() на КАЖДОМ тике, обновляя лишь на 100 Гц
+      // чтениях. Первый же тик после InvalidateYawTrust() снова пометил бы
+      // этот СТАРЫЙ вектор пригодным для засева курса, и калибровка,
+      // попавшая в окно до следующего чтения (≤10 мс), закрепила бы курс по
+      // ровно той калибровке, которую мы только что объявили негодной
+      // (ревью PR #308, LOS-221).
+      if (imu_handler_) imu_handler_->InvalidateMagSample();
     }
   }
   if (telem_mgr_) {
@@ -142,11 +147,11 @@ void VehicleControlUnified::OnWifiCommand(float throttle, float steering) {
 }
 
 std::vector<SelfTestItem> VehicleControlUnified::RunSelfTest() const {
-  const SelfTestContext ctx{last_loop_hz_,   imu_handler_.get(),
-                            madgwick_,       ekf_,
-                            rc_handler_.get(), wifi_handler_.get(),
-                            imu_calib_,      telem_mgr_.get(),
-                            platform_ != nullptr, inited_};
+  const SelfTestContext ctx{
+      last_loop_hz_, imu_handler_.get(), madgwick_,
+      ekf_,          rc_handler_.get(),  wifi_handler_.get(),
+      imu_calib_,    telem_mgr_.get(),   platform_ != nullptr,
+      inited_};
   return SelfTest::Run(BuildSelfTestInput(ctx));
 }
 

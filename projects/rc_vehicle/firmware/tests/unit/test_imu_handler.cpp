@@ -250,6 +250,114 @@ TEST(ImuHandlerTest, CalibrationOnExactStaleTimeoutTickDoesNotPreserveYaw) {
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
 }
 
+namespace {
+
+ImuCalibData LevelCalib() {
+  ImuCalibData d{};
+  d.valid = true;
+  d.gravity_vec[0] = 0.f;
+  d.gravity_vec[1] = 0.f;
+  d.gravity_vec[2] = -1.f;
+  d.accel_forward_vec[0] = 1.f;
+  d.accel_forward_vec[1] = 0.f;
+  d.accel_forward_vec[2] = 0.f;
+  return d;
+}
+
+// Прогнать хэндлер до момента сразу ПОСЛЕ 100 Гц чтения магнетометра, чтобы
+// следующее чтение отстояло ровно на kMagReadIntervalMs.
+uint32_t RunUntilFreshMagRead(ImuHandler& imu) {
+  uint32_t now_ms = 0;
+  for (int i = 0; i < 7000; ++i) {  // 7000 * 2 мс = 14 с
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+  return now_ms;  // 14000 — кратно 10 мс, значит чтение только что прошло
+}
+
+}  // namespace
+
+TEST(ImuHandlerTest, MagRecalibrationBlocksYawSeedUntilFreshSample) {
+  // Ревью PR #308 (LOS-221): FinishMagCalibration() зовёт
+  // MadgwickFilter::InvalidateYawTrust(), но ImuHandler отдаёт кэшированный
+  // mag_calibrated_ в UpdateWithMag() на КАЖДОМ тике, обновляя его лишь на
+  // 100 Гц чтениях. Первый же тик после инвалидации снова помечал этот СТАРЫЙ
+  // вектор пригодным для засева, и калибровка, попавшая в окно до следующего
+  // чтения (≤10 мс), закрепила бы курс по ровно той mag-калибровке, которую
+  // только что объявили негодной. InvalidateMagSample() закрывает это окно.
+  FakePlatform platform;
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  ImuHandler imu(platform, calib, filter, /*read_interval_ms=*/2);
+  imu.SetEnabled(true);
+  platform.SetImuData(LevelImu());
+  platform.SetMagData(SomeMag());
+
+  uint32_t now_ms = RunUntilFreshMagRead(imu);
+  ASSERT_EQ(now_ms, 14000u);
+  ASSERT_TRUE(imu.IsMagEnabled());
+
+  // Смена mag-калибровки — ровно то, что делает FinishMagCalibration().
+  // Одного InvalidateYawTrust() мало: он гасит кэш засева, но следующий же
+  // тик восстановил бы его по старому вектору.
+  filter.InvalidateYawTrust();
+  imu.InvalidateMagSample();
+  EXPECT_FALSE(imu.IsMagEnabled());
+
+  // Калибровка попадает в окно ДО следующего чтения (2 мс из 10).
+  calib.SetData(LevelCalib());
+  now_ms += 2;
+  imu.Update(now_ms, 2);
+  ASSERT_EQ(now_ms, 14002u);
+  EXPECT_FALSE(imu.IsMagEnabled())
+      << "До свежего чтения магнетометр не должен считаться пригодным";
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  EXPECT_NEAR(yaw, 0.0f, 0.1f)
+      << "Курс не должен засеваться по вектору от старой mag-калибровки";
+  EXPECT_NEAR(pitch, 0.0f, 0.1f);
+  EXPECT_NEAR(roll, 0.0f, 0.1f);
+}
+
+TEST(ImuHandlerTest, YawSeedResumesAfterFreshMagSample) {
+  // Обратная сторона предыдущего теста: блокировка снимается сама, как только
+  // приходит чтение, уже пересчитанное новой калибровкой (≤10 мс). Иначе
+  // InvalidateMagSample() выключал бы засев навсегда.
+  FakePlatform platform;
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  ImuHandler imu(platform, calib, filter, /*read_interval_ms=*/2);
+  imu.SetEnabled(true);
+  platform.SetImuData(LevelImu());
+  platform.SetMagData(SomeMag());
+
+  uint32_t now_ms = RunUntilFreshMagRead(imu);
+  imu.InvalidateMagSample();
+  ASSERT_FALSE(imu.IsMagEnabled());
+
+  // Доходим до следующего 100 Гц чтения — оно уже свежее.
+  while (now_ms < 14010) {
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+  ASSERT_TRUE(imu.IsMagEnabled())
+      << "Свежее чтение обязано вернуть магнетометр в строй";
+
+  calib.SetData(LevelCalib());
+  now_ms += 2;
+  imu.Update(now_ms, 2);
+
+  float pitch, roll, yaw;
+  filter.GetEulerDeg(pitch, roll, yaw);
+  // mag=(0, 0.6, -0.8) при gravity=(0,0,-1), forward=(1,0,0) →
+  // ψ=atan2(my,mx)=90°.
+  EXPECT_NEAR(std::abs(yaw), 90.0f, 0.5f)
+      << "После свежего семпла засев должен снова работать";
+  EXPECT_NEAR(pitch, 0.0f, 0.1f);
+  EXPECT_NEAR(roll, 0.0f, 0.1f);
+}
+
 TEST(ImuHandlerTest, DisablingMadgwickResetsYawTrustForNextCalibration) {
   // Ревью PR #283 (r3630915899): SetMadgwickEnabled(false)
   // (StabilizationManager::ApplyToFilters переключает это на ходу через
