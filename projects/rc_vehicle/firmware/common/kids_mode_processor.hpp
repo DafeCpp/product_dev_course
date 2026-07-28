@@ -6,6 +6,8 @@
 
 namespace rc_vehicle {
 
+struct StabilizationInput;
+
 /**
  * @brief Процессор детского режима (Kids Mode)
  *
@@ -47,12 +49,22 @@ class KidsModeProcessor {
                float* throttle_before_speed_limit = nullptr,
                bool apply_speed_limit = true) noexcept;
 
+  /** Snapshot-based production path. */
+  void Process(const StabilizationConfig& cfg, float& throttle, float& steering,
+               const StabilizationInput& input,
+               float* throttle_before_speed_limit = nullptr,
+               bool apply_speed_limit = true) noexcept;
+
   /**
    * @brief Применить feedback speed limiter и slew фактической команды.
    * @param dt_ms Ненулевой шаг применяет Kids throttle slew после limiter.
    */
   void ApplySpeedLimit(const StabilizationConfig& cfg, float& throttle,
                        uint32_t dt_ms = 0) noexcept;
+
+  /** Snapshot-based production path. */
+  void ApplySpeedLimit(const StabilizationConfig& cfg, float& throttle,
+                       const StabilizationInput& input) noexcept;
 
   /** Применить независимый pre-speed-limit Kids slew для EKF-якоря. */
   void ApplyCounterfactualSlew(const StabilizationConfig& cfg, float& throttle,

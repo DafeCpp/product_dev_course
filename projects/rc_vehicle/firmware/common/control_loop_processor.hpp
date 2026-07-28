@@ -65,6 +65,8 @@ class ControlLoopProcessor {
   ControlLoopProcessor(const ControlLoopContext& ctx, uint32_t now_ms)
       : ctx_(ctx),
         state_estimator_(ctx.imu_calib, ctx.madgwick, ctx.ekf),
+        stabilization_pipeline_(ctx.yaw_ctrl, ctx.pitch_ctrl, ctx.slip_ctrl,
+                                ctx.oversteer_guard, ctx.kids_processor),
         diag_start_ms_(now_ms) {
     persistent_.last_pwm_update = now_ms;
   }
@@ -99,6 +101,7 @@ class ControlLoopProcessor {
   };
 
   VehicleStateEstimator state_estimator_;
+  StabilizationPipeline stabilization_pipeline_;
   PersistentState persistent_;
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;

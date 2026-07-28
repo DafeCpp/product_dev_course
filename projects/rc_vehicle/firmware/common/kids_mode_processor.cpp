@@ -4,6 +4,8 @@
 #include <cmath>
 #include <firmware_common/slew_rate.hpp>
 
+#include "stabilization_pipeline.hpp"
+
 namespace rc_vehicle {
 
 namespace {
@@ -46,6 +48,24 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
                                 float forward_accel,
                                 float* throttle_before_speed_limit,
                                 bool apply_speed_limit) noexcept {
+  const StabilizationInput input{
+      .dt_ms = dt_ms,
+      .speed_ms = ekf_ ? ekf_->GetSpeedMs() : 0.0f,
+      .slip_angle_deg = ekf_ ? ekf_->GetSlipAngleDeg() : 0.0f,
+      .vx_variance = ekf_ ? ekf_->GetVxVariance() : 0.0f,
+      .forward_accel_g = forward_accel,
+      .imu_enabled = imu_ && imu_->IsEnabled(),
+      .ekf_diverged = ekf_ && ekf_->IsDiverged(),
+  };
+  Process(cfg, throttle, steering, input, throttle_before_speed_limit,
+          apply_speed_limit);
+}
+
+void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
+                                float& steering,
+                                const StabilizationInput& input,
+                                float* throttle_before_speed_limit,
+                                bool apply_speed_limit) noexcept {
   if (!IsActive(cfg)) {
     return;  // Kids Mode не активен
   }
@@ -72,8 +92,8 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
 
   anti_spin_active_ = false;
 
-  if (km.anti_spin_enabled && ekf_ && imu_ && imu_->IsEnabled()) {
-    const float slip_deg = std::abs(ekf_->GetSlipAngleDeg());
+  if (km.anti_spin_enabled && input.imu_enabled) {
+    const float slip_deg = std::abs(input.slip_angle_deg);
 
     if (slip_deg > km.anti_spin_threshold_deg) {
       anti_spin_active_ = true;
@@ -89,9 +109,9 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   accel_limit_active_ = false;
 
   if (km.accel_limit_enabled && throttle > 0.0f &&
-      forward_accel > km.accel_threshold_g) {
+      input.forward_accel_g > km.accel_threshold_g) {
     accel_limit_active_ = true;
-    const float excess = forward_accel - km.accel_threshold_g;
+    const float excess = input.forward_accel_g - km.accel_threshold_g;
     const float reduction =
         std::min(excess * km.accel_limit_gain, km.accel_max_reduction);
     throttle *= (1.0f - reduction);
@@ -100,19 +120,19 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   // Руль всегда проходит Kids slew в этой фазе. Throttle при deferred-пути
   // сглаживается позже, после pitch/oversteer, чтобы якорь отражал все
   // не-speed модификаторы (LOS-246).
-  if (dt_ms > 0) {
+  if (input.dt_ms > 0) {
     smoothed_steering_ = firmware_common::ApplySlewRate(
-        steering, smoothed_steering_, km.slew_steering, dt_ms / 1000.0f);
+        steering, smoothed_steering_, km.slew_steering, input.dt_ms / 1000.0f);
     steering = smoothed_steering_;
   }
 
   if (apply_speed_limit) {
     float counterfactual = throttle;
-    ApplyCounterfactualSlew(cfg, counterfactual, dt_ms);
+    ApplyCounterfactualSlew(cfg, counterfactual, input.dt_ms);
     if (throttle_before_speed_limit) {
       *throttle_before_speed_limit = counterfactual;
     }
-    ApplySpeedLimit(cfg, throttle, dt_ms);
+    ApplySpeedLimit(cfg, throttle, input);
   } else {
     if (throttle_before_speed_limit) {
       *throttle_before_speed_limit = throttle;
@@ -143,16 +163,28 @@ void KidsModeProcessor::ApplyCounterfactualSlew(const StabilizationConfig& cfg,
 void KidsModeProcessor::ApplySpeedLimit(const StabilizationConfig& cfg,
                                         float& throttle,
                                         uint32_t dt_ms) noexcept {
+  const StabilizationInput input{
+      .dt_ms = dt_ms,
+      .speed_ms = ekf_ ? ekf_->GetSpeedMs() : 0.0f,
+      .vx_variance = ekf_ ? ekf_->GetVxVariance() : 0.0f,
+      .imu_enabled = imu_ && imu_->IsEnabled(),
+      .ekf_diverged = ekf_ && ekf_->IsDiverged(),
+  };
+  ApplySpeedLimit(cfg, throttle, input);
+}
+
+void KidsModeProcessor::ApplySpeedLimit(
+    const StabilizationConfig& cfg, float& throttle,
+    const StabilizationInput& input) noexcept {
   if (!IsActive(cfg)) {
     speed_limit_active_ = false;
     return;
   }
 
   const auto& km = cfg.kids_mode;
-  if (km.speed_limit_enabled && ekf_ && imu_ && imu_->IsEnabled() &&
-      throttle > 0.0f && !ekf_->IsDiverged() &&
-      ekf_->GetVxVariance() <= kSpeedTrustVarMax) {
-    const float speed = ekf_->GetSpeedMs();
+  if (km.speed_limit_enabled && input.imu_enabled && throttle > 0.0f &&
+      !input.ekf_diverged && input.vx_variance <= kSpeedTrustVarMax) {
+    const float speed = input.speed_ms;
     const float release_speed = km.max_speed_ms - kSpeedLimitHysteresisMs;
     if (speed_limit_active_) {
       speed_limit_active_ = speed >= release_speed;
@@ -170,9 +202,9 @@ void KidsModeProcessor::ApplySpeedLimit(const StabilizationConfig& cfg,
     speed_limit_active_ = false;
   }
 
-  if (dt_ms > 0) {
+  if (input.dt_ms > 0) {
     smoothed_throttle_ = firmware_common::ApplySlewRate(
-        throttle, smoothed_throttle_, km.slew_throttle, dt_ms / 1000.0f);
+        throttle, smoothed_throttle_, km.slew_throttle, input.dt_ms / 1000.0f);
     throttle = smoothed_throttle_;
   }
 }

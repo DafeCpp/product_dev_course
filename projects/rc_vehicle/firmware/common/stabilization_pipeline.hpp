@@ -3,11 +3,37 @@
 #include <firmware_common/pid_controller.hpp>
 
 #include "control_components.hpp"
+#include "control_tick.hpp"
+#include "drive_mode_strategy.hpp"
+#include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
 #include "stabilization_config.hpp"
 #include "vehicle_ekf.hpp"
 
 namespace rc_vehicle {
+
+/** Snapshot consumed by the stabilization pipeline for one control tick. */
+struct StabilizationInput {
+  ControlSetpoint command{};
+  uint32_t dt_ms{0};
+  float speed_ms{0.0f};
+  float slip_angle_deg{0.0f};
+  float yaw_rate_rps{0.0f};
+  float vx_variance{0.0f};
+  float filtered_gyro_z_dps{0.0f};
+  float pitch_deg{0.0f};
+  float forward_accel_g{0.0f};
+  float stabilization_weight{0.0f};
+  float mode_transition_weight{0.0f};
+  bool imu_enabled{false};
+  bool ekf_diverged{false};
+};
+
+/** Command and motor-model target produced by stabilization for this tick. */
+struct StabilizationOutput {
+  ControlSetpoint command{};
+  float motor_model_target_throttle{0.0f};
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // YawRateController
@@ -51,6 +77,11 @@ class YawRateController {
    */
   void Process(const StabilizationConfig& cfg, float& steering, float stab_w,
                float mode_w, uint32_t dt_ms, bool reversing = false) noexcept;
+
+  /** Snapshot-based production path. */
+  void Process(const StabilizationConfig& cfg, float& steering,
+               const StabilizationInput& input,
+               bool reversing = false) noexcept;
 
   /**
    * @brief Обновить PID-коэффициенты из конфигурации.
@@ -107,6 +138,10 @@ class PitchCompensator {
   void Process(const StabilizationConfig& cfg, float& throttle,
                float stab_w) noexcept;
 
+  /** Snapshot-based production path. */
+  void Process(const StabilizationConfig& cfg, float& throttle,
+               const StabilizationInput& input) noexcept;
+
  private:
   const MadgwickFilter* madgwick_{nullptr};
   const ImuHandler* imu_{nullptr};
@@ -148,6 +183,10 @@ class SlipAngleController {
    */
   void Process(const StabilizationConfig& cfg, float& throttle, float stab_w,
                float mode_w, uint32_t dt_ms) noexcept;
+
+  /** Snapshot-based production path. */
+  void Process(const StabilizationConfig& cfg, float& throttle,
+               const StabilizationInput& input) noexcept;
 
   /**
    * @brief Обновить PID-коэффициенты из конфигурации.
@@ -207,6 +246,11 @@ class OversteerGuard {
   void Process(const StabilizationConfig& cfg, float& throttle, uint32_t dt_ms,
                bool reduce_throttle = true) noexcept;
 
+  /** Snapshot-based production path. */
+  void Process(const StabilizationConfig& cfg, float& throttle,
+               const StabilizationInput& input,
+               bool reduce_throttle = true) noexcept;
+
   /** @brief Сбросить состояние (вызывается при failsafe). */
   void Reset() noexcept;
 
@@ -227,6 +271,37 @@ class OversteerGuard {
 
   float prev_slip_deg_{0.0f};  ///< Предыдущий угол заноса для оценки dslip/dt
   bool oversteer_active_{false};  ///< Текущее состояние oversteer detection
+};
+
+/**
+ * Ordered, mode-agnostic stabilization computation.
+ *
+ * Drive-mode selection happens outside this class. The pipeline receives only
+ * declarative ModeTraits and value snapshots; it performs no platform I/O.
+ */
+class StabilizationPipeline {
+ public:
+  StabilizationPipeline(YawRateController& yaw_ctrl,
+                        PitchCompensator& pitch_ctrl,
+                        SlipAngleController& slip_ctrl,
+                        OversteerGuard& oversteer_guard,
+                        KidsModeProcessor& kids_processor) noexcept
+      : yaw_ctrl_(yaw_ctrl),
+        pitch_ctrl_(pitch_ctrl),
+        slip_ctrl_(slip_ctrl),
+        oversteer_guard_(oversteer_guard),
+        kids_processor_(kids_processor) {}
+
+  [[nodiscard]] StabilizationOutput Process(
+      const StabilizationConfig& cfg, const ModeTraits& policy,
+      const StabilizationInput& input) noexcept;
+
+ private:
+  YawRateController& yaw_ctrl_;
+  PitchCompensator& pitch_ctrl_;
+  SlipAngleController& slip_ctrl_;
+  OversteerGuard& oversteer_guard_;
+  KidsModeProcessor& kids_processor_;
 };
 
 }  // namespace rc_vehicle

@@ -263,45 +263,35 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
 
   ctx_.stab_mgr->UpdateWeights(input.config, input.dt_ms);
 
-  const DriveMode drive_mode = input.config.mode;
-  const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
-
-  if (traits.apply_input_limits) {
-    // forward_accel_g посчитан в UpdateSensorsAndEkf() этого же тика с учётом
-    // текущего тангажа (LOS-245) — раньше здесь звался GetForwardAccel(),
-    // считавший машину всегда горизонтальной.
-    ctx_.kids_processor.Process(input.config, state.command.throttle,
-                                state.command.steering, input.dt_ms,
-                                state.estimate.forward_accel_g, nullptr,
-                                /*apply_speed_limit=*/false);
+  const ModeTraits policy =
+      DriveModeRegistry::Get(input.config.mode).GetTraits();
+  float pitch_deg = 0.0f;
+  if (policy.pitch_comp_active && input.sensors.imu_enabled) {
+    float roll_deg = 0.0f;
+    float yaw_deg = 0.0f;
+    ctx_.madgwick.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
   }
 
-  const float sw = ctx_.stab_mgr->GetStabilizationWeight();
-  const float mw = ctx_.stab_mgr->GetModeTransitionWeight();
-
-  if (traits.yaw_rate_active)
-    ctx_.yaw_ctrl.Process(input.config, state.command.steering, sw, mw,
-                          input.dt_ms, state.command.throttle < 0.0f);
-  if (traits.pitch_comp_active)
-    ctx_.pitch_ctrl.Process(input.config, state.command.throttle, sw);
-  if (traits.slip_angle_active)
-    ctx_.slip_ctrl.Process(input.config, state.command.throttle, sw, mw,
-                           input.dt_ms);
-  if (traits.oversteer_guard_active)
-    ctx_.oversteer_guard.Process(input.config, state.command.throttle,
-                                 input.dt_ms,
-                                 traits.oversteer_reduces_throttle);
-
-  if (traits.apply_input_limits) {
-    // Все обычные стабилизаторы уже отработали. Снимок — counterfactual
-    // моторного входа без единственного feedback-звена, speed limiter;
-    // затем limiter ограничивает фактическую PWM-команду (LOS-246).
-    ctx_.kids_processor.ApplyCounterfactualSlew(
-        input.config, state.command.throttle, input.dt_ms);
-    state.motor_model_target_throttle = state.command.throttle;
-    ctx_.kids_processor.ApplySpeedLimit(input.config, state.command.throttle,
-                                        input.dt_ms);
-  }
+  constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
+  const StabilizationInput stabilization_input{
+      .command = state.command,
+      .dt_ms = input.dt_ms,
+      .speed_ms = state.estimate.speed_ms,
+      .slip_angle_deg = state.estimate.slip_angle_rad * kRadToDeg,
+      .yaw_rate_rps = state.estimate.yaw_rate_rps,
+      .vx_variance = ctx_.ekf.GetVxVariance(),
+      .filtered_gyro_z_dps = input.sensors.filtered_gz,
+      .pitch_deg = pitch_deg,
+      .forward_accel_g = state.estimate.forward_accel_g,
+      .stabilization_weight = ctx_.stab_mgr->GetStabilizationWeight(),
+      .mode_transition_weight = ctx_.stab_mgr->GetModeTransitionWeight(),
+      .imu_enabled = input.sensors.imu_enabled,
+      .ekf_diverged = state.estimate.ekf_diverged,
+  };
+  const StabilizationOutput output = stabilization_pipeline_.Process(
+      input.config, policy, stabilization_input);
+  state.command = output.command;
+  state.motor_model_target_throttle = output.motor_model_target_throttle;
 }
 
 bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
