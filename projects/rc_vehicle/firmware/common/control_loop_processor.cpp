@@ -230,7 +230,10 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
 void ControlLoopProcessor::UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms) {
   auto ad_input = BuildAutoDriveInput(sensors_, ctx_.imu_calib, dt_ms, now_ms);
   if (sensors_.imu_enabled) {
-    ad_input.speed_ms = state_estimate_.speed_ms;
+    // CalibrationManager may reset the EKF after UpdateSensorsAndEkf() in
+    // this tick. Read the live value so auto-drive never consumes the cached
+    // pre-reset speed.
+    ad_input.speed_ms = ctx_.ekf.GetSpeedMs();
   }
   auto ad_out = ctx_.auto_drive.Update(ad_input);
   if (ad_out.active) {
