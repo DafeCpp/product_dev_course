@@ -195,8 +195,7 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
       BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler, ctx_.imu_handler);
 #ifdef RC_PROFILE_LOOP
   {
-    const uint64_t snapshot_us =
-        ctx_.platform.GetTimeUs() - snapshot_start_us;
+    const uint64_t snapshot_us = ctx_.platform.GetTimeUs() - snapshot_start_us;
     prof_snapshot_us_ += snapshot_us;
     if (snapshot_us > prof_snapshot_max_us_) {
       prof_snapshot_max_us_ = snapshot_us;

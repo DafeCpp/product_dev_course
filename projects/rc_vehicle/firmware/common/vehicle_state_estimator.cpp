@@ -13,10 +13,9 @@ constexpr float kNhcMaxYawRateRps = 1.0f;
 }  // namespace
 
 VehicleStateEstimate VehicleStateEstimator::Update(
-    SensorSnapshot& sensors,
-    const VehicleStateEstimatorInput& input) noexcept {
-  prev_gz_rad_s_ = CorrectImuForComOffset(
-      sensors, imu_calib_, prev_gz_rad_s_, input.dt_ms);
+    SensorSnapshot& sensors, const VehicleStateEstimatorInput& input) noexcept {
+  prev_gz_rad_s_ =
+      CorrectImuForComOffset(sensors, imu_calib_, prev_gz_rad_s_, input.dt_ms);
 
   const bool ekf_active = input.ekf_available && input.filter.ekf_enabled;
   const bool imu_tick_valid = sensors.imu_enabled && input.dt_ms > 0;
@@ -37,15 +36,15 @@ VehicleStateEstimate VehicleStateEstimator::Update(
       tilt_est_.Reset();
     }
 
-    const bool motor_model_anchor_active =
-        ekf_active && input.filter.motor_model_enabled &&
-        !input.speed_calibration_active;
+    const bool motor_model_anchor_active = ekf_active &&
+                                           input.filter.motor_model_enabled &&
+                                           !input.speed_calibration_active;
     const float a_lin_g = motor_model_anchor_active ? a_lin_prev_g_ : 0.0f;
     const float a_lin_lat_g =
         ekf_active ? (vehicle_imu.gz * kDegToRad) * prev_vx_ / kG : 0.0f;
 
-    tilt_est_.SetParams({input.filter.tilt_corr_gain_hz,
-                         input.filter.tilt_accel_gate_band_g});
+    tilt_est_.SetParams(
+        {input.filter.tilt_corr_gain_hz, input.filter.tilt_accel_gate_band_g});
     tilt_est_.Update(vehicle_imu, a_lin_g, a_lin_lat_g, dt_sec);
     pitch_rad = tilt_est_.GetPitchRad();
     roll_rad = tilt_est_.GetRollRad();
@@ -56,15 +55,14 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     const bool motor_model_active =
         input.filter.motor_model_enabled && !input.speed_calibration_active;
 
-    if (!input.filter.tilt_comp_enabled &&
-        input.filter.madgwick_enabled) {
+    if (!input.filter.tilt_comp_enabled && input.filter.madgwick_enabled) {
       float yaw_rad = 0.0f;
       madgwick_.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
     }
 
-    ekf_.UpdateFromImu(
-        vehicle_imu.ax, vehicle_imu.ay, vehicle_imu.az, sensors.filtered_gz,
-        dt_sec, std::abs(input.commanded_throttle), pitch_rad, roll_rad);
+    ekf_.UpdateFromImu(vehicle_imu.ax, vehicle_imu.ay, vehicle_imu.az,
+                       sensors.filtered_gz, dt_sec,
+                       std::abs(input.commanded_throttle), pitch_rad, roll_rad);
 
     if (motor_model_active) {
       const float throttle = input.motor_model_throttle;
@@ -73,10 +71,9 @@ VehicleStateEstimate VehicleStateEstimator::Update(
       if (throttle_abs > input.filter.motor_deadzone &&
           input.filter.motor_deadzone < 1.0f) {
         const float sign = throttle < 0.0f ? -1.0f : 1.0f;
-        expected_speed =
-            sign * input.filter.motor_speed_gain *
-            (throttle_abs - input.filter.motor_deadzone) /
-            (1.0f - input.filter.motor_deadzone);
+        expected_speed = sign * input.filter.motor_speed_gain *
+                         (throttle_abs - input.filter.motor_deadzone) /
+                         (1.0f - input.filter.motor_deadzone);
       }
       ekf_.UpdateSpeed(expected_speed, input.filter.speed_meas_noise);
     }
