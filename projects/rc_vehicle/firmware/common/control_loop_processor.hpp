@@ -7,6 +7,7 @@
 #include "calibration_manager.hpp"
 #include "control_components.hpp"
 #include "control_loop_helpers.hpp"
+#include "control_tick.hpp"
 #include "imu_calibration.hpp"
 #include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
@@ -64,44 +65,41 @@ class ControlLoopProcessor {
   ControlLoopProcessor(const ControlLoopContext& ctx, uint32_t now_ms)
       : ctx_(ctx),
         state_estimator_(ctx.imu_calib, ctx.madgwick, ctx.ekf),
-        last_pwm_update_(now_ms),
-        diag_start_ms_(now_ms) {}
+        diag_start_ms_(now_ms) {
+    persistent_.last_pwm_update = now_ms;
+  }
 
   /** Выполнить одну итерацию. */
   void Step(uint32_t now, uint32_t dt_ms);
 
  private:
   void UpdateComponents(uint32_t now, uint32_t dt_ms);
-  void UpdateSensorsAndEkf(uint32_t dt_ms);
-  void UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms);
-  void UpdateStabilization(uint32_t dt_ms);
+  void UpdateSensorsAndEkf(ControlTickInput& input, ControlTickState& state);
+  void ProcessCalibration(uint32_t now_ms, ControlTickState& state);
+  void UpdateAutoDrive(const ControlTickInput& input, ControlTickState& state);
+  void UpdateStabilization(const ControlTickInput& input,
+                           ControlTickState& state);
   /** @return true — failsafe активен, PWM удерживается в нейтрали. */
-  bool HandleFailsafe();
-  void UpdatePwm(uint32_t now, uint32_t dt_ms);
-  void UpdateTelemetry(uint32_t now, uint32_t dt_ms);
+  bool HandleFailsafe(const ControlTickInput& input, ControlTickState& state);
+  void UpdatePwm(const ControlTickInput& input, ControlTickState& state);
+  void UpdateTelemetry(const ControlTickInput& input,
+                       const ControlTickState& state);
 
   const ControlLoopContext& ctx_;
 
-  // Per-iteration mutable state
-  float commanded_throttle_{0.0f};
-  float commanded_steering_{0.0f};
-  // Финализированный вход моторной модели прошлого тика. В Kids это
-  // counterfactual внешний PWM slew без speed limiter; в остальных режимах
-  // совпадает с applied_throttle_. Храним единый готовый снимок, чтобы
-  // смена режима между тиками не выбирала вход не того режима (LOS-246).
-  float motor_model_throttle_{0.0f};
-  // Цель для counterfactual Kids-PWM до speed limiter. Заполняется после
-  // всех обычных стабилизаторов, затем UpdatePwm применяет к ней тот же
-  // внешний slew, что и к фактической PWM-команде.
-  float motor_model_target_throttle_{0.0f};
-  float applied_throttle_{0.0f};
-  float applied_steering_{0.0f};
-  bool failsafe_was_active_{false};
+  /** State that intentionally survives between 500 Hz ticks. */
+  struct PersistentState {
+    ControlSetpoint command{};
+    ControlSetpoint applied{};
+    // Final motor-model input from the previous tick. In Kids this is the
+    // counterfactual PWM without speed limiting (LOS-246).
+    float motor_model_throttle{0.0f};
+    uint32_t last_pwm_update{0};
+    bool failsafe_was_active{false};
+  };
 
   VehicleStateEstimator state_estimator_;
-  VehicleStateEstimate state_estimate_;
-  float fwd_accel_g_{0.0f};
-  uint32_t last_pwm_update_;
+  PersistentState persistent_;
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;
 
@@ -168,10 +166,6 @@ class ControlLoopProcessor {
   uint64_t prof_period_max_us_{0};
   uint32_t prof_outliers_{0};
 #endif
-
-  // Кэшированный снимок датчиков (обновляется в UpdateSensorsAndEkf)
-  SensorSnapshot sensors_;
-  StabilizationConfig stab_cfg_;
 };
 
 }  // namespace rc_vehicle

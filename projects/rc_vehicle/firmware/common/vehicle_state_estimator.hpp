@@ -67,6 +67,9 @@ class VehicleStateEstimator {
   /** Reset state tied to the calibrated vehicle reference frame. */
   void OnReferenceFrameChanged() noexcept;
 
+  /** Refresh only EKF-backed fields after an external EKF reset. */
+  void RefreshEkfFields(VehicleStateEstimate& estimate) const noexcept;
+
  private:
   [[nodiscard]] VehicleStateEstimate BuildEstimate(
       bool imu_valid, bool tilt_valid, float pitch_rad, float roll_rad,

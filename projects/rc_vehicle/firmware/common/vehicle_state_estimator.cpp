@@ -110,6 +110,18 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
   tilt_was_enabled_ = false;
 }
 
+void VehicleStateEstimator::RefreshEkfFields(
+    VehicleStateEstimate& estimate) const noexcept {
+  estimate.yaw_rad = ekf_.GetYawRad();
+  estimate.vx_ms = ekf_.GetVx();
+  estimate.vy_ms = ekf_.GetVy();
+  estimate.speed_ms = ekf_.GetSpeedMs();
+  estimate.yaw_rate_rps = ekf_.GetYawRate();
+  estimate.slip_angle_rad = ekf_.GetSlipAngleRad();
+  estimate.zupt_status = ekf_.GetZuptStatus();
+  estimate.ekf_diverged = ekf_.IsDiverged();
+}
+
 VehicleStateEstimate VehicleStateEstimator::BuildEstimate(
     bool imu_valid, bool tilt_valid, float pitch_rad, float roll_rad,
     float forward_accel_g) const noexcept {
@@ -118,15 +130,8 @@ VehicleStateEstimate VehicleStateEstimator::BuildEstimate(
   estimate.tilt_valid = tilt_valid;
   estimate.pitch_rad = pitch_rad;
   estimate.roll_rad = roll_rad;
-  estimate.yaw_rad = ekf_.GetYawRad();
-  estimate.vx_ms = ekf_.GetVx();
-  estimate.vy_ms = ekf_.GetVy();
-  estimate.speed_ms = ekf_.GetSpeedMs();
-  estimate.yaw_rate_rps = ekf_.GetYawRate();
-  estimate.slip_angle_rad = ekf_.GetSlipAngleRad();
   estimate.forward_accel_g = forward_accel_g;
-  estimate.zupt_status = ekf_.GetZuptStatus();
-  estimate.ekf_diverged = ekf_.IsDiverged();
+  RefreshEkfFields(estimate);
   return estimate;
 }
 

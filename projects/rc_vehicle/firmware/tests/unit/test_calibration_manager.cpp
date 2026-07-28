@@ -76,7 +76,7 @@ TEST_F(CalibrationManagerTest, ProcessCompletion_NoStatusChange_DoesNothing) {
 // калибровки меняет базис RotateToVehicleFrame() (через SetVehicleFrame()
 // Madgwick + новые gravity_vec/accel_forward_vec), но TiltEstimator —
 // член ControlLoopProcessor, не CalibrationManager, и не сбрасывался.
-// ConsumeFrameChanged() — сигнал вызывающему коду сделать это сам.
+// ConsumeEffects() — сигнал вызывающему коду сделать это самому.
 TEST_F(CalibrationManagerTest, ProcessCompletion_Done_SetsFrameChanged) {
   imu_calib_.StartCalibration(CalibMode::Full, 10);
   for (int i = 0; i < 10; ++i) {
@@ -86,12 +86,12 @@ TEST_F(CalibrationManagerTest, ProcessCompletion_Done_SetsFrameChanged) {
   }
   ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Done);
 
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed)
       << "флаг не должен быть выставлен до ProcessCompletion()";
 
   mgr_->ProcessCompletion(0);
-  EXPECT_TRUE(mgr_->ConsumeFrameChanged());
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+  EXPECT_TRUE(mgr_->ConsumeEffects().reference_frame_changed);
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed)
       << "повторный вызов должен вернуть false — флаг одноразовый";
   EXPECT_TRUE(imu_calib_.GetData().gravity_valid)
       << "Full-калибровка обязана выставлять gravity_valid";
@@ -115,8 +115,39 @@ TEST_F(CalibrationManagerTest,
       << "GyroOnly не измеряет gravity_vec";
 
   mgr_->ProcessCompletion(0);
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed)
       << "GyroOnly не меняет базис — сброс tilt/EKF не нужен";
+}
+
+TEST_F(CalibrationManagerTest, FullCompletionReportsAllEffectsOnce) {
+  imu_calib_.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    ImuData d{};
+    d.az = 1.0f;
+    imu_calib_.FeedSample(d);
+  }
+
+  mgr_->ProcessCompletion(0);
+  const CalibrationEffects effects = mgr_->ConsumeEffects();
+
+  EXPECT_TRUE(effects.reference_frame_changed);
+  EXPECT_TRUE(effects.ekf_reset);
+  const CalibrationEffects consumed = mgr_->ConsumeEffects();
+  EXPECT_FALSE(consumed.reference_frame_changed);
+  EXPECT_FALSE(consumed.ekf_reset);
+}
+
+TEST_F(CalibrationManagerTest, GyroOnlyCompletionReportsOnlyEkfReset) {
+  imu_calib_.StartCalibration(CalibMode::GyroOnly, 10);
+  for (int i = 0; i < 10; ++i) {
+    imu_calib_.FeedSample(ImuData{});
+  }
+
+  mgr_->ProcessCompletion(0);
+  const CalibrationEffects effects = mgr_->ConsumeEffects();
+
+  EXPECT_FALSE(effects.reference_frame_changed);
+  EXPECT_TRUE(effects.ekf_reset);
 }
 
 // Код-ревью PR #290 (6-й раунд): SetForwardDirection() — ещё один путь
@@ -134,21 +165,21 @@ TEST_F(CalibrationManagerTest, SetForwardDirection_SetsFrameChanged) {
   d.gravity_valid = true;  // симулирует завершённую Full-калибровку
   imu_calib_.SetData(d);
 
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed);
   mgr_->SetForwardDirection(0.f, 1.f, 0.f);
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed)
       << "SetForwardDirection() откладывает запрос — эффекта быть не должно "
          "до ProcessForwardDirectionRequest()";
   mgr_->ProcessForwardDirectionRequest();
-  EXPECT_TRUE(mgr_->ConsumeFrameChanged());
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+  EXPECT_TRUE(mgr_->ConsumeEffects().reference_frame_changed);
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed)
       << "повторный вызов должен вернуть false — флаг одноразовый";
 }
 
 TEST_F(CalibrationManagerTest,
        ProcessForwardDirectionRequest_NoPendingRequest_DoesNothing) {
   mgr_->ProcessForwardDirectionRequest();
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed);
 }
 
 // Код-ревью PR #290 (10-й раунд): смена базиса RotateToVehicleFrame() из
@@ -187,7 +218,7 @@ TEST_F(CalibrationManagerTest,
   mgr_->SetForwardDirection(0.f, 1.f, 0.f);
   mgr_->ProcessForwardDirectionRequest();
 
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed)
       << "смена СК не должна применяться без валидной Full-калибровки";
   EXPECT_FLOAT_EQ(ekf_.GetVx(), 5.0f) << "EKF не должен сбрасываться зря";
   EXPECT_FLOAT_EQ(ekf_.GetVy(), 1.0f);
@@ -214,7 +245,7 @@ TEST_F(CalibrationManagerTest,
   mgr_->SetForwardDirection(0.f, 1.f, 0.f);
   mgr_->ProcessForwardDirectionRequest();
 
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged())
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed)
       << "GyroOnly не должна давать право менять СК через set_forward_"
          "direction";
   EXPECT_FLOAT_EQ(ekf_.GetVx(), 5.0f);
@@ -234,7 +265,7 @@ TEST_F(CalibrationManagerTest,
   ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Failed);
 
   mgr_->ProcessCompletion(0);
-  EXPECT_FALSE(mgr_->ConsumeFrameChanged());
+  EXPECT_FALSE(mgr_->ConsumeEffects().reference_frame_changed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
