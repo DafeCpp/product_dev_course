@@ -46,6 +46,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/uart_bridge_base.cpp
     ${FIRMWARE_COMMON_SOURCES}
     ${COMMON_DIR}/vehicle_ekf.cpp
+    ${COMMON_DIR}/vehicle_state_estimator.cpp
     ${COMMON_DIR}/telemetry_log.cpp
     ${COMMON_DIR}/telemetry_event_log.cpp
     ${COMMON_DIR}/motion_driver.cpp
@@ -109,6 +110,7 @@ add_executable(unit_tests
     unit/test_lpf.cpp
     unit/test_pid.cpp
     unit/test_vehicle_ekf.cpp
+    unit/test_vehicle_state_estimator.cpp
     unit/test_tilt_estimator.cpp
     unit/test_telemetry_log.cpp
     unit/test_oversteer_guard.cpp
