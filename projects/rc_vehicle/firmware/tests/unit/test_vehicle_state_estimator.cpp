@@ -1,0 +1,131 @@
+#include <gtest/gtest.h>
+
+#include <cmath>
+
+#include "vehicle_state_estimator.hpp"
+
+namespace rc_vehicle {
+namespace {
+
+class VehicleStateEstimatorTest : public ::testing::Test {
+ protected:
+  VehicleStateEstimatorTest() : estimator_(calib_, madgwick_, ekf_) {
+    input_.filter.ekf_enabled = true;
+    input_.filter.tilt_comp_enabled = true;
+    input_.filter.madgwick_enabled = true;
+    input_.dt_ms = 2;
+    input_.ekf_available = true;
+
+    sensors_.imu_enabled = true;
+    sensors_.imu_data.az = 1.0f;
+  }
+
+  ImuCalibration calib_;
+  MadgwickFilter madgwick_;
+  VehicleEkf ekf_;
+  VehicleStateEstimator estimator_;
+  SensorSnapshot sensors_;
+  VehicleStateEstimatorInput input_;
+};
+
+TEST_F(VehicleStateEstimatorTest, NoImuReturnsInvalidZeroEstimate) {
+  sensors_.imu_enabled = false;
+
+  const auto estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_FALSE(estimate.imu_valid);
+  EXPECT_FALSE(estimate.tilt_valid);
+  EXPECT_FLOAT_EQ(estimate.forward_accel_g, 0.0f);
+  EXPECT_FLOAT_EQ(estimate.speed_ms, 0.0f);
+}
+
+TEST_F(VehicleStateEstimatorTest, ZeroDtDoesNotAdvanceTiltOrEkf) {
+  input_.dt_ms = 0;
+  sensors_.imu_data.ax = 0.4f;
+
+  const auto estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_TRUE(estimate.imu_valid);
+  EXPECT_FALSE(estimate.tilt_valid);
+  EXPECT_FLOAT_EQ(estimate.speed_ms, 0.0f);
+}
+
+TEST_F(VehicleStateEstimatorTest, LevelStationaryProducesStableState) {
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 500; ++i) {
+    estimate = estimator_.Update(sensors_, input_);
+  }
+
+  EXPECT_TRUE(estimate.imu_valid);
+  EXPECT_TRUE(estimate.tilt_valid);
+  EXPECT_NEAR(estimate.pitch_rad, 0.0f, 1e-4f);
+  EXPECT_NEAR(estimate.roll_rad, 0.0f, 1e-4f);
+  EXPECT_NEAR(estimate.speed_ms, 0.0f, 1e-3f);
+  EXPECT_NEAR(estimate.forward_accel_g, 0.0f, 1e-4f);
+  EXPECT_EQ(estimate.zupt_status, ZuptStatus::Applied);
+  EXPECT_FALSE(estimate.ekf_diverged);
+}
+
+TEST_F(VehicleStateEstimatorTest, TiltRunsWhenEkfIsDisabled) {
+  input_.filter.ekf_enabled = false;
+  sensors_.imu_data.ax = -0.17364818f;
+  sensors_.imu_data.az = 0.98480775f;
+
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 3000; ++i) {
+    estimate = estimator_.Update(sensors_, input_);
+  }
+
+  EXPECT_TRUE(estimate.tilt_valid);
+  EXPECT_GT(estimate.pitch_rad, 0.1f);
+  EXPECT_NEAR(estimate.speed_ms, 0.0f, 1e-5f);
+  EXPECT_NEAR(estimate.forward_accel_g, 0.0f, 0.03f);
+}
+
+TEST_F(VehicleStateEstimatorTest, MagnetometerHeadingUpdatesEkfYaw) {
+  sensors_.mag_enabled = true;
+  sensors_.heading_deg = 90.0f;
+
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 20; ++i) {
+    estimate = estimator_.Update(sensors_, input_);
+  }
+
+  EXPECT_NEAR(estimate.yaw_rad, 3.14159265f / 2.0f, 0.05f);
+}
+
+TEST_F(VehicleStateEstimatorTest, MotorModelAnchorsForwardSpeed) {
+  input_.filter.motor_model_enabled = true;
+  input_.filter.motor_deadzone = 0.1f;
+  input_.filter.motor_speed_gain = 5.0f;
+  input_.filter.speed_meas_noise = 0.1f;
+  input_.commanded_throttle = 0.5f;
+  input_.motor_model_throttle = 0.5f;
+
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 100; ++i) {
+    estimate = estimator_.Update(sensors_, input_);
+  }
+
+  EXPECT_GT(estimate.vx_ms, 1.0f);
+  EXPECT_LT(estimate.vx_ms, VehicleEkf::kMaxSpeedMs);
+}
+
+TEST_F(VehicleStateEstimatorTest, FrameChangeResetsTiltHistory) {
+  sensors_.imu_data.ax = -0.5f;
+  sensors_.imu_data.az = 0.8660254f;
+  for (int i = 0; i < 500; ++i) {
+    (void)estimator_.Update(sensors_, input_);
+  }
+
+  estimator_.OnReferenceFrameChanged();
+  sensors_.imu_data.ax = 0.0f;
+  sensors_.imu_data.az = 1.0f;
+  const auto estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_TRUE(estimate.tilt_valid);
+  EXPECT_NEAR(estimate.pitch_rad, 0.0f, 1e-3f);
+}
+
+}  // namespace
+}  // namespace rc_vehicle

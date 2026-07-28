@@ -32,6 +32,7 @@ idf_component_register(
         "../../common/telemetry_event_log.cpp"
         "../../common/motion_driver.cpp"
         "../../common/vehicle_ekf.cpp"
+        "../../common/vehicle_state_estimator.cpp"
         "../../common/tilt_estimator.cpp"
         "vehicle_control_platform_esp32.cpp"
         "pwm_control.cpp"
@@ -87,4 +88,3 @@ endif()
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_STANDARD ${RC_VEHICLE_CXX_STANDARD})
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_EXTENSIONS ON)
-
