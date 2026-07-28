@@ -169,7 +169,7 @@ void CalibrationManager::ProcessForwardDirectionRequest() {
   // до следующей полной калибровки.
   const auto& d = imu_calib_.GetData();
   madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
-  frame_changed_ = true;
+  pending_effects_.reference_frame_changed = true;
 
   // Сбросить EKF — симметрично ProcessCompletion() (код-ревью PR #290,
   // 10-й раунд): vx/vy персистентны и выражены в СТАРЫХ осях forward/
@@ -179,6 +179,7 @@ void CalibrationManager::ProcessForwardDirectionRequest() {
   // апдейты после ручной смены направления «вперёд» посреди сессии.
   if (ekf_) {
     ekf_->Reset();
+    pending_effects_.ekf_reset = true;
     platform_.Log(LogLevel::Info,
                   "EKF state reset after forward direction change");
   }
@@ -252,12 +253,13 @@ void CalibrationManager::ProcessCompletion(uint32_t now_ms) {
     if (imu_calib_.GetMode() != CalibMode::GyroOnly) {
       const auto& d = imu_calib_.GetData();
       madgwick_.SetVehicleFrame(d.gravity_vec, d.accel_forward_vec, true);
-      frame_changed_ = true;  // см. ConsumeFrameChanged()
+      pending_effects_.reference_frame_changed = true;
     }
 
     // Сбросить EKF, чтобы скорость обнулилась после калибровки
     if (ekf_) {
       ekf_->Reset();
+      pending_effects_.ekf_reset = true;
       platform_.Log(LogLevel::Info, "EKF state reset after calibration");
     }
     if (event_log_) {

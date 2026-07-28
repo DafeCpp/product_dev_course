@@ -15,6 +15,12 @@ namespace rc_vehicle {
 // Forward declaration
 class VehicleEkf;
 
+/** Side effects produced while processing pending calibration work. */
+struct CalibrationEffects {
+  bool reference_frame_changed{false};
+  bool ekf_reset{false};
+};
+
 /**
  * @brief Менеджер калибровки IMU
  *
@@ -146,7 +152,8 @@ class CalibrationManager {
    * При каждом старте/завершении/ошибке калибровки записывается событие.
    * Передайте nullptr чтобы отключить запись.
    *
-   * @param log Указатель на TelemetryEventLog (время жизни ≥ CalibrationManager)
+   * @param log Указатель на TelemetryEventLog (время жизни ≥
+   * CalibrationManager)
    */
   void SetEventLog(TelemetryEventLog* log) { event_log_ = log; }
 
@@ -173,10 +180,11 @@ class CalibrationManager {
    * они интерпретируют старые (сошедшиеся под ПРЕЖНИМ базисом) значения
    * тангажа/крена в НОВОЙ СК (код-ревью PR #290, 5-й/6-й раунды).
    */
-  [[nodiscard]] bool ConsumeFrameChanged() {
-    const bool v = frame_changed_;
-    frame_changed_ = false;
-    return v;
+  /** Return and clear all calibration side effects for this control tick. */
+  [[nodiscard]] CalibrationEffects ConsumeEffects() {
+    const CalibrationEffects effects = pending_effects_;
+    pending_effects_ = {};
+    return effects;
   }
 
  private:
@@ -202,10 +210,10 @@ class CalibrationManager {
   // Предыдущий статус калибровки (для логирования только при переходах)
   CalibStatus prev_calib_status_{CalibStatus::Idle};
 
-  // См. ConsumeFrameChanged(). Пишется только из ProcessCompletion()/
+  // См. ConsumeEffects(). Пишется только из ProcessCompletion()/
   // ProcessForwardDirectionRequest() — обе вызываются исключительно с
   // потока control loop, обычный bool безопасен.
-  bool frame_changed_{false};
+  CalibrationEffects pending_effects_{};
 
   // Опциональный лог событий (не владеет объектом)
   TelemetryEventLog* event_log_{nullptr};

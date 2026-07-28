@@ -127,5 +127,24 @@ TEST_F(VehicleStateEstimatorTest, FrameChangeResetsTiltHistory) {
   EXPECT_NEAR(estimate.pitch_rad, 0.0f, 1e-3f);
 }
 
+TEST_F(VehicleStateEstimatorTest, RefreshEkfFieldsDropsPreResetState) {
+  VehicleStateEstimate estimate;
+  estimate.pitch_rad = 0.25f;
+  estimate.forward_accel_g = 0.4f;
+  ekf_.SetState(4.0f, 3.0f, 0.5f);
+  estimator_.RefreshEkfFields(estimate);
+  ASSERT_FLOAT_EQ(estimate.speed_ms, 5.0f);
+
+  ekf_.Reset();
+  estimator_.RefreshEkfFields(estimate);
+
+  EXPECT_FLOAT_EQ(estimate.vx_ms, 0.0f);
+  EXPECT_FLOAT_EQ(estimate.vy_ms, 0.0f);
+  EXPECT_FLOAT_EQ(estimate.speed_ms, 0.0f);
+  EXPECT_FLOAT_EQ(estimate.yaw_rate_rps, 0.0f);
+  EXPECT_FLOAT_EQ(estimate.pitch_rad, 0.25f);
+  EXPECT_FLOAT_EQ(estimate.forward_accel_g, 0.4f);
+}
+
 }  // namespace
 }  // namespace rc_vehicle

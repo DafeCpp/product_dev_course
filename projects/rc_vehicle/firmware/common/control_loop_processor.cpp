@@ -72,15 +72,19 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   // Единственный snapshot конфига на итерацию (FW-RF5): одна копия под
   // мьютексом вместо трёх (Step/UpdateWeights/диагностика) на 500 Гц.
-  stab_cfg_ =
-      ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{};
+  ControlTickInput input{
+      .now_ms = now,
+      .dt_ms = dt_ms,
+      .config =
+          ctx_.stab_mgr ? ctx_.stab_mgr->GetConfig() : StabilizationConfig{},
+  };
   // После выключения Kids speed limiter больше нет feedback-звена, которое
   // нужно исключать из якоря. Сразу возвращаемся к фактическому PWM прошлого
   // тика, до UpdateSensorsAndEkf(), иначе EKF получает один лишний
   // counterfactual-снимок на границе переключения (LOS-246).
-  if (stab_cfg_.mode == DriveMode::Kids &&
-      !stab_cfg_.kids_mode.speed_limit_enabled) {
-    motor_model_throttle_ = applied_throttle_;
+  if (input.config.mode == DriveMode::Kids &&
+      !input.config.kids_mode.speed_limit_enabled) {
+    persistent_.motor_model_throttle = persistent_.applied.throttle;
   }
   // Отдельный лап ДО UpdateComponents() (код-ревью PR #297): без него
   // возможное ожидание config_mutex_ в GetConfig() выше (тот же мьютекс,
@@ -90,40 +94,31 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
   PROF_LAP(prof_components_us_, prof_components_max_us_);
-  UpdateSensorsAndEkf(dt_ms);  // sensor snapshot + vehicle state estimate
+  ControlTickState state{.command = persistent_.command};
+  UpdateSensorsAndEkf(input, state);
   PROF_LAP(prof_sensors_us_, prof_sensors_max_us_);
 
-  if (ctx_.calib_mgr) {
-    ctx_.calib_mgr->ProcessRequest(now);
-    ctx_.calib_mgr->ProcessCompletion(now);
-    // Отложенный SetForwardDirection() (WS-команда, код-ревью PR #290,
-    // 7-й раунд) — применяется здесь же, на потоке control loop, где
-    // единственно безопасно трогать imu_calib_/madgwick_.
-    ctx_.calib_mgr->ProcessForwardDirectionRequest();
-    // Завершение Full/Forward калибровки меняет vehicle-frame basis.
-    // Estimator owns all state tied to that basis and resets it atomically.
-    if (ctx_.calib_mgr->ConsumeFrameChanged()) {
-      state_estimator_.OnReferenceFrameChanged();
-    }
-  }
+  ProcessCalibration(now, state);
 
-  SelectControlSource(sensors_, commanded_throttle_, commanded_steering_);
-  UpdateAutoDrive(now, dt_ms);
+  SelectControlSource(input.sensors, state.command.throttle,
+                      state.command.steering);
+  UpdateAutoDrive(input, state);
   // Базовая цель для не-Kids режимов. В Kids она ниже уточняется после всех
   // не-speed стабилизаторов, но до speed limiter (LOS-246).
-  motor_model_target_throttle_ = commanded_throttle_;
+  state.motor_model_target_throttle = state.command.throttle;
   PROF_LAP(prof_control_us_, prof_control_max_us_);
 
-  UpdateStabilization(dt_ms);
+  UpdateStabilization(input, state);
   PROF_LAP(prof_stab_us_, prof_stab_max_us_);
   // При активном failsafe UpdatePwm пропускается: иначе SetPwm(0 + trim)
   // перезаписал бы нейтраль ненулевым trim'ом — моторы ползли бы при
   // потере сигнала (FW-R1).
-  if (!HandleFailsafe()) {
-    UpdatePwm(now, dt_ms);
+  if (!HandleFailsafe(input, state)) {
+    UpdatePwm(input, state);
   }
+  persistent_.command = state.command;
   PROF_LAP(prof_pwm_us_, prof_pwm_max_us_);
-  UpdateTelemetry(now, dt_ms);
+  UpdateTelemetry(input, state);
   PROF_LAP(prof_telem_us_, prof_telem_max_us_);
 
   {
@@ -133,7 +128,7 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 #ifdef RC_PROFILE_LOOP
     const uint32_t prof_loops = diag_loop_count_;
 #endif
-    PrintDiagnostics(dctx, stab_cfg_, now, diag_loop_count_, diag_start_ms_);
+    PrintDiagnostics(dctx, input.config, now, diag_loop_count_, diag_start_ms_);
 #ifdef RC_PROFILE_LOOP
     // PROF_LAP/PROF_END — ДО EmitProfile() (код-ревью PR #297): EmitProfile()
     // печатает текущее окно и тут же обнуляет аккумуляторы (diag/step_iter/
@@ -187,11 +182,12 @@ void ControlLoopProcessor::UpdateComponents(uint32_t now, uint32_t dt_ms) {
   if (ctx_.imu_handler) ctx_.imu_handler->Update(now, dt_ms);
 }
 
-void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
+void ControlLoopProcessor::UpdateSensorsAndEkf(ControlTickInput& input,
+                                               ControlTickState& state) {
 #ifdef RC_PROFILE_LOOP
   const uint64_t snapshot_start_us = ctx_.platform.GetTimeUs();
 #endif
-  sensors_ =
+  input.sensors =
       BuildSensorSnapshot(ctx_.rc_handler, ctx_.wifi_handler, ctx_.imu_handler);
 #ifdef RC_PROFILE_LOOP
   {
@@ -204,16 +200,15 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
   const uint64_t estimator_start_us = ctx_.platform.GetTimeUs();
 #endif
 
-  const VehicleStateEstimatorInput input{
-      .filter = stab_cfg_.filter,
-      .dt_ms = dt_ms,
-      .commanded_throttle = commanded_throttle_,
-      .motor_model_throttle = motor_model_throttle_,
+  const VehicleStateEstimatorInput estimator_input{
+      .filter = input.config.filter,
+      .dt_ms = input.dt_ms,
+      .commanded_throttle = persistent_.command.throttle,
+      .motor_model_throttle = persistent_.motor_model_throttle,
       .ekf_available = ctx_.stab_mgr != nullptr,
       .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
   };
-  state_estimate_ = state_estimator_.Update(sensors_, input);
-  fwd_accel_g_ = state_estimate_.forward_accel_g;
+  state.estimate = state_estimator_.Update(input.sensors, estimator_input);
 
 #ifdef RC_PROFILE_LOOP
   {
@@ -227,88 +222,114 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(uint32_t dt_ms) {
 #endif
 }
 
-void ControlLoopProcessor::UpdateAutoDrive(uint32_t now_ms, uint32_t dt_ms) {
-  auto ad_input = BuildAutoDriveInput(sensors_, ctx_.imu_calib, dt_ms, now_ms);
-  if (sensors_.imu_enabled) {
-    // CalibrationManager may reset the EKF after UpdateSensorsAndEkf() in
-    // this tick. Read the live value so auto-drive never consumes the cached
-    // pre-reset speed.
-    ad_input.speed_ms = ctx_.ekf.GetSpeedMs();
+void ControlLoopProcessor::ProcessCalibration(uint32_t now_ms,
+                                              ControlTickState& state) {
+  if (!ctx_.calib_mgr) return;
+
+  ctx_.calib_mgr->ProcessRequest(now_ms);
+  ctx_.calib_mgr->ProcessCompletion(now_ms);
+  // Applied on the control-loop thread because ImuCalibration and Madgwick
+  // are not thread-safe.
+  ctx_.calib_mgr->ProcessForwardDirectionRequest();
+
+  const CalibrationEffects effects = ctx_.calib_mgr->ConsumeEffects();
+  if (effects.reference_frame_changed) {
+    state_estimator_.OnReferenceFrameChanged();
+  }
+  if (effects.ekf_reset) {
+    state_estimator_.RefreshEkfFields(state.estimate);
+  }
+}
+
+void ControlLoopProcessor::UpdateAutoDrive(const ControlTickInput& input,
+                                           ControlTickState& state) {
+  auto ad_input = BuildAutoDriveInput(input.sensors, ctx_.imu_calib,
+                                      input.dt_ms, input.now_ms);
+  if (input.sensors.imu_enabled) {
+    ad_input.speed_ms = state.estimate.speed_ms;
   }
   auto ad_out = ctx_.auto_drive.Update(ad_input);
   if (ad_out.active) {
-    commanded_throttle_ = ad_out.throttle;
-    commanded_steering_ = ad_out.steering;
+    state.command.throttle = ad_out.throttle;
+    state.command.steering = ad_out.steering;
   }
   HandleAutoDriveCompletion(ad_out, ctx_.stab_mgr, ctx_.imu_calib,
                             ctx_.platform);
 }
 
-void ControlLoopProcessor::UpdateStabilization(uint32_t dt_ms) {
+void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
+                                               ControlTickState& state) {
   if (!ctx_.stab_mgr) return;
 
-  ctx_.stab_mgr->UpdateWeights(stab_cfg_, dt_ms);
+  ctx_.stab_mgr->UpdateWeights(input.config, input.dt_ms);
 
-  const DriveMode drive_mode = stab_cfg_.mode;
+  const DriveMode drive_mode = input.config.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
 
   if (traits.apply_input_limits) {
-    // fwd_accel_g_ посчитан в UpdateSensorsAndEkf() этого же тика с учётом
+    // forward_accel_g посчитан в UpdateSensorsAndEkf() этого же тика с учётом
     // текущего тангажа (LOS-245) — раньше здесь звался GetForwardAccel(),
     // считавший машину всегда горизонтальной.
-    ctx_.kids_processor.Process(stab_cfg_, commanded_throttle_,
-                                commanded_steering_, dt_ms, fwd_accel_g_,
-                                nullptr, /*apply_speed_limit=*/false);
+    ctx_.kids_processor.Process(input.config, state.command.throttle,
+                                state.command.steering, input.dt_ms,
+                                state.estimate.forward_accel_g, nullptr,
+                                /*apply_speed_limit=*/false);
   }
 
   const float sw = ctx_.stab_mgr->GetStabilizationWeight();
   const float mw = ctx_.stab_mgr->GetModeTransitionWeight();
 
   if (traits.yaw_rate_active)
-    ctx_.yaw_ctrl.Process(stab_cfg_, commanded_steering_, sw, mw, dt_ms,
-                          commanded_throttle_ < 0.0f);
+    ctx_.yaw_ctrl.Process(input.config, state.command.steering, sw, mw,
+                          input.dt_ms, state.command.throttle < 0.0f);
   if (traits.pitch_comp_active)
-    ctx_.pitch_ctrl.Process(stab_cfg_, commanded_throttle_, sw);
+    ctx_.pitch_ctrl.Process(input.config, state.command.throttle, sw);
   if (traits.slip_angle_active)
-    ctx_.slip_ctrl.Process(stab_cfg_, commanded_throttle_, sw, mw, dt_ms);
+    ctx_.slip_ctrl.Process(input.config, state.command.throttle, sw, mw,
+                           input.dt_ms);
   if (traits.oversteer_guard_active)
-    ctx_.oversteer_guard.Process(stab_cfg_, commanded_throttle_, dt_ms,
+    ctx_.oversteer_guard.Process(input.config, state.command.throttle,
+                                 input.dt_ms,
                                  traits.oversteer_reduces_throttle);
 
   if (traits.apply_input_limits) {
     // Все обычные стабилизаторы уже отработали. Снимок — counterfactual
     // моторного входа без единственного feedback-звена, speed limiter;
     // затем limiter ограничивает фактическую PWM-команду (LOS-246).
-    ctx_.kids_processor.ApplyCounterfactualSlew(stab_cfg_, commanded_throttle_,
-                                                dt_ms);
-    motor_model_target_throttle_ = commanded_throttle_;
-    ctx_.kids_processor.ApplySpeedLimit(stab_cfg_, commanded_throttle_, dt_ms);
+    ctx_.kids_processor.ApplyCounterfactualSlew(
+        input.config, state.command.throttle, input.dt_ms);
+    state.motor_model_target_throttle = state.command.throttle;
+    ctx_.kids_processor.ApplySpeedLimit(input.config, state.command.throttle,
+                                        input.dt_ms);
   }
 }
 
-bool ControlLoopProcessor::HandleFailsafe() {
-  if (!ctx_.platform.FailsafeUpdate(sensors_.rc_active, sensors_.wifi_active)) {
-    failsafe_was_active_ = false;
+bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
+                                          ControlTickState& state) {
+  if (!ctx_.platform.FailsafeUpdate(input.sensors.rc_active,
+                                    input.sensors.wifi_active)) {
+    persistent_.failsafe_was_active = false;
+    state.failsafe_active = false;
     return false;
   }
 
-  commanded_throttle_ = 0.0f;
-  commanded_steering_ = 0.0f;
-  motor_model_throttle_ = 0.0f;
-  motor_model_target_throttle_ = 0.0f;
-  applied_throttle_ = 0.0f;
-  applied_steering_ = 0.0f;
+  state.failsafe_active = true;
+  state.command = {};
+  state.motor_model_target_throttle = 0.0f;
+  persistent_.motor_model_throttle = 0.0f;
+  persistent_.applied = {};
 
   // Сброс подсистем — однократно на переходе Inactive→Active.
   // Повторять каждые 2 мс бессмысленно (EKF/ПИД и так пусты), а EKF
   // при длительном failsafe может продолжать оценку без помех.
-  if (!failsafe_was_active_) {
-    failsafe_was_active_ = true;
+  if (!persistent_.failsafe_was_active) {
+    persistent_.failsafe_was_active = true;
     ctx_.yaw_ctrl.Reset();
     ctx_.slip_ctrl.Reset();
     ctx_.oversteer_guard.Reset();
     ctx_.kids_processor.Reset();
     ctx_.ekf.Reset();
+    state_estimator_.RefreshEkfFields(state.estimate);
     if (ctx_.stab_mgr) ctx_.stab_mgr->ResetWeights();
     if (ctx_.telem_mgr) ctx_.telem_mgr->ResetLastLogTime();
     ctx_.auto_drive.StopAll();
@@ -319,86 +340,91 @@ bool ControlLoopProcessor::HandleFailsafe() {
   return true;
 }
 
-void ControlLoopProcessor::UpdatePwm(uint32_t now, uint32_t dt_ms) {
-  (void)dt_ms;
-  const float steer_trim = stab_cfg_.steering_trim;
-  const float thr_trim = stab_cfg_.throttle_trim;
+void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
+                                     ControlTickState& state) {
+  const float steer_trim = input.config.steering_trim;
+  const float thr_trim = input.config.throttle_trim;
 
-  const DriveMode drive_mode = stab_cfg_.mode;
+  const DriveMode drive_mode = input.config.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
 
   if (traits.use_slew_rate) {
-    const uint32_t pwm_dt_ms = now - last_pwm_update_;
+    const uint32_t pwm_dt_ms = input.now_ms - persistent_.last_pwm_update;
     const bool pwm_updated = pwm_dt_ms >= config::PwmConfig::kUpdateIntervalMs;
-    float effective_slew_thr = stab_cfg_.slew_throttle;
-    if (stab_cfg_.braking_mode == BrakingMode::Brake &&
-        std::abs(commanded_throttle_) < std::abs(applied_throttle_)) {
-      effective_slew_thr *= stab_cfg_.brake_slew_multiplier;
+    float effective_slew_thr = input.config.slew_throttle;
+    if (input.config.braking_mode == BrakingMode::Brake &&
+        std::abs(state.command.throttle) <
+            std::abs(persistent_.applied.throttle)) {
+      effective_slew_thr *= input.config.brake_slew_multiplier;
     }
-    UpdatePwmWithSlewRate(
-        ctx_.platform, now, commanded_throttle_, commanded_steering_,
-        applied_throttle_, applied_steering_, last_pwm_update_, thr_trim,
-        steer_trim, effective_slew_thr, stab_cfg_.slew_steering);
+    UpdatePwmWithSlewRate(ctx_.platform, input.now_ms, state.command.throttle,
+                          state.command.steering, persistent_.applied.throttle,
+                          persistent_.applied.steering,
+                          persistent_.last_pwm_update, thr_trim, steer_trim,
+                          effective_slew_thr, input.config.slew_steering);
 
     if (drive_mode == DriveMode::Kids &&
-        stab_cfg_.kids_mode.speed_limit_enabled && pwm_updated) {
+        input.config.kids_mode.speed_limit_enabled && pwm_updated) {
       // UpdatePwmWithSlewRate обновил реальный PWM на этом тике. Повторяем
       // только его математическую slew-ступень для counterfactual цели, не
       // включая speed limiter. Условие использует уже обновлённый timestamp.
-      float model_slew_thr = stab_cfg_.slew_throttle;
-      if (stab_cfg_.braking_mode == BrakingMode::Brake &&
-          std::abs(motor_model_target_throttle_) <
-              std::abs(motor_model_throttle_)) {
-        model_slew_thr *= stab_cfg_.brake_slew_multiplier;
+      float model_slew_thr = input.config.slew_throttle;
+      if (input.config.braking_mode == BrakingMode::Brake &&
+          std::abs(state.motor_model_target_throttle) <
+              std::abs(persistent_.motor_model_throttle)) {
+        model_slew_thr *= input.config.brake_slew_multiplier;
       }
-      motor_model_throttle_ = firmware_common::ApplySlewRate(
-          motor_model_target_throttle_, motor_model_throttle_, model_slew_thr,
-          pwm_dt_ms / 1000.0f);
+      persistent_.motor_model_throttle = firmware_common::ApplySlewRate(
+          state.motor_model_target_throttle, persistent_.motor_model_throttle,
+          model_slew_thr, pwm_dt_ms / 1000.0f);
     } else if (drive_mode != DriveMode::Kids ||
-               !stab_cfg_.kids_mode.speed_limit_enabled) {
-      motor_model_throttle_ = applied_throttle_;
+               !input.config.kids_mode.speed_limit_enabled) {
+      persistent_.motor_model_throttle = persistent_.applied.throttle;
     }
   } else {
-    applied_throttle_ = commanded_throttle_ + thr_trim;
-    applied_steering_ = commanded_steering_ + steer_trim;
-    ctx_.platform.SetPwm(applied_throttle_, applied_steering_);
-    motor_model_throttle_ =
-        drive_mode == DriveMode::Kids && stab_cfg_.kids_mode.speed_limit_enabled
-            ? motor_model_target_throttle_ + thr_trim
-            : applied_throttle_;
+    persistent_.applied.throttle = state.command.throttle + thr_trim;
+    persistent_.applied.steering = state.command.steering + steer_trim;
+    ctx_.platform.SetPwm(persistent_.applied.throttle,
+                         persistent_.applied.steering);
+    persistent_.motor_model_throttle =
+        drive_mode == DriveMode::Kids &&
+                input.config.kids_mode.speed_limit_enabled
+            ? state.motor_model_target_throttle + thr_trim
+            : persistent_.applied.throttle;
   }
 }
 
-void ControlLoopProcessor::UpdateTelemetry(uint32_t now, uint32_t dt_ms) {
-  (void)dt_ms;
+void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
+                                           const ControlTickState& state) {
   const TelemetryContext tctx{ctx_.ekf,
                               ctx_.madgwick,
                               ctx_.imu_calib,
                               ctx_.oversteer_guard,
                               ctx_.kids_processor,
                               ctx_.auto_drive};
-  const DriveMode drive_mode = stab_cfg_.mode;
+  const DriveMode drive_mode = input.config.mode;
 
   if (ctx_.telem_handler) {
-    auto snap = BuildTelemetrySnapshot(tctx, now, sensors_, stab_cfg_,
-                                       drive_mode, applied_throttle_,
-                                       applied_steering_, commanded_throttle_,
-                                       commanded_steering_, fwd_accel_g_);
+    auto snap = BuildTelemetrySnapshot(
+        tctx, input.now_ms, input.sensors, input.config, drive_mode,
+        persistent_.applied.throttle, persistent_.applied.steering,
+        state.command.throttle, state.command.steering,
+        state.estimate.forward_accel_g);
     // FW-RF8: failsafe в снимок — чтобы JSON строился в задаче телеметрии без
     // обращения к платформе из чужого потока.
     snap.failsafe = ctx_.platform.FailsafeIsActive();
-    ctx_.telem_handler->SendTelemetry(now, snap);
+    ctx_.telem_handler->SendTelemetry(input.now_ms, snap);
   }
 
-  if (sensors_.imu_enabled && ctx_.telem_mgr) {
+  if (input.sensors.imu_enabled && ctx_.telem_mgr) {
     const uint32_t last_log = ctx_.telem_mgr->GetLastLogTime();
-    if (now - last_log >= config::TelemetryLogConfig::kLogIntervalMs) {
-      auto frame =
-          BuildLogFrame(tctx, now, sensors_, applied_throttle_,
-                        applied_steering_, commanded_throttle_,
-                        commanded_steering_, drive_mode, stab_cfg_.enabled);
+    if (input.now_ms - last_log >= config::TelemetryLogConfig::kLogIntervalMs) {
+      auto frame = BuildLogFrame(
+          tctx, input.now_ms, input.sensors, persistent_.applied.throttle,
+          persistent_.applied.steering, state.command.throttle,
+          state.command.steering, drive_mode, input.config.enabled);
       ctx_.telem_mgr->Push(frame);
-      ctx_.telem_mgr->SetLastLogTime(now);
+      ctx_.telem_mgr->SetLastLogTime(input.now_ms);
 #ifdef ESP_PLATFORM
       UdpTelemEnqueue(frame);
 #endif
