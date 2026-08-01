@@ -476,34 +476,29 @@ TEST_F(KidsModeProcessorTest, ProcessDoesNothingWhenModeIsNotKids) {
 // Slew Rate Tests
 // ═══════════════════════════════════════════════════════════════════════════
 
-TEST_F(KidsModeProcessorTest, SlewRateLimitsRapidThrottleIncrease) {
-  cfg_.kids_mode.slew_throttle = 0.5f;  // 0.5 per second
+TEST_F(KidsModeProcessorTest, DoesNotApplyThrottleSlewBeforePwm) {
+  cfg_.kids_mode.throttle_limit = 0.5f;
   processor_.Init(ekf_, nullptr);
 
   float throttle = 0.0f;
   float steering = 0.0f;
 
-  // First call: throttle jumps to 1.0
   throttle = 1.0f;
   processor_.Process(cfg_, throttle, steering, 100);  // 100ms = 0.1s
 
-  // Should be limited to 0.5 * 0.1 = 0.05
-  EXPECT_LE(throttle, 0.06f);  // Small tolerance
+  EXPECT_FLOAT_EQ(throttle, 0.5f);
 }
 
-TEST_F(KidsModeProcessorTest, SlewRateLimitsRapidSteeringChange) {
-  cfg_.kids_mode.slew_steering = 0.5f;  // 0.5 per second
+TEST_F(KidsModeProcessorTest, DoesNotApplySteeringSlewBeforePwm) {
   processor_.Init(ekf_, nullptr);
 
   float throttle = 0.0f;
   float steering = 0.0f;
 
-  // First call: steering jumps to 0.7
-  steering = 0.7f;
+  steering = 1.0f;
   processor_.Process(cfg_, throttle, steering, 100);  // 100ms = 0.1s
 
-  // Should be limited to 0.5 * 0.1 = 0.05
-  EXPECT_LE(steering, 0.06f);  // Small tolerance
+  EXPECT_FLOAT_EQ(steering, cfg_.kids_mode.steering_limit);
 }
 
 class KidsModeLimiterSlewTest : public ::testing::Test {
@@ -511,7 +506,6 @@ class KidsModeLimiterSlewTest : public ::testing::Test {
   void SetUp() override {
     cfg_.mode = DriveMode::Kids;
     cfg_.kids_mode.throttle_limit = 0.5f;
-    cfg_.kids_mode.slew_throttle = 1.0f;
     cfg_.kids_mode.anti_spin_enabled = true;
     cfg_.kids_mode.anti_spin_threshold_deg = 5.0f;
     cfg_.kids_mode.anti_spin_reduction = 0.5f;
@@ -534,13 +528,6 @@ class KidsModeLimiterSlewTest : public ::testing::Test {
     }
   }
 
-  void ExpectLimiterTransitionIsSlewed(float previous_throttle,
-                                       float throttle) const {
-    constexpr float kDtSeconds = 0.1f;
-    const float max_delta = cfg_.kids_mode.slew_throttle * kDtSeconds;
-    EXPECT_LE(std::abs(throttle - previous_throttle), max_delta + 1e-6f);
-  }
-
   FakePlatform platform_;
   ImuCalibration imu_calib_;
   MadgwickFilter madgwick_;
@@ -550,9 +537,8 @@ class KidsModeLimiterSlewTest : public ::testing::Test {
   std::unique_ptr<ImuHandler> imu_handler_;
 };
 
-TEST_F(KidsModeLimiterSlewTest, AntiSpinActivationDoesNotBypassSlewRate) {
+TEST_F(KidsModeLimiterSlewTest, AntiSpinAppliesBeforePwmSlew) {
   ReachThrottleLimit();
-  const float previous_throttle = 0.5f;
   ekf_.SetState(1.0f, 0.2f, 0.0f);  // slip angle > 5°
 
   float throttle = 0.5f;
@@ -560,30 +546,28 @@ TEST_F(KidsModeLimiterSlewTest, AntiSpinActivationDoesNotBypassSlewRate) {
   processor_.Process(cfg_, throttle, steering, 100);
 
   EXPECT_TRUE(processor_.IsAntiSpinActive());
-  ExpectLimiterTransitionIsSlewed(previous_throttle, throttle);
+  EXPECT_FLOAT_EQ(throttle, 0.25f);
 }
 
-TEST_F(KidsModeLimiterSlewTest, AccelLimitActivationDoesNotBypassSlewRate) {
+TEST_F(KidsModeLimiterSlewTest, AccelLimitAppliesBeforePwmSlew) {
   cfg_.kids_mode.anti_spin_enabled = false;
   ReachThrottleLimit();
-  const float previous_throttle = 0.5f;
 
   float throttle = 0.5f;
   float steering = 0.0f;
   processor_.Process(cfg_, throttle, steering, 100, 0.3f);
 
   EXPECT_TRUE(processor_.IsAccelLimitActive());
-  ExpectLimiterTransitionIsSlewed(previous_throttle, throttle);
+  EXPECT_FLOAT_EQ(throttle, 0.25f);
 }
 
-TEST_F(KidsModeLimiterSlewTest, SpeedLimitActivationDoesNotBypassSlewRate) {
+TEST_F(KidsModeLimiterSlewTest, SpeedLimitAppliesBeforePwmSlew) {
   cfg_.kids_mode.anti_spin_enabled = false;
   cfg_.kids_mode.accel_limit_enabled = false;
   cfg_.kids_mode.speed_limit_enabled = true;
   cfg_.kids_mode.max_speed_ms = 1.0f;
   cfg_.kids_mode.speed_limit_gain = 1.5f;
   ReachThrottleLimit();
-  const float previous_throttle = 0.5f;
   ekf_.SetState(2.0f, 0.0f, 0.0f);
 
   float throttle = 0.5f;
@@ -591,7 +575,7 @@ TEST_F(KidsModeLimiterSlewTest, SpeedLimitActivationDoesNotBypassSlewRate) {
   processor_.Process(cfg_, throttle, steering, 100);
 
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
-  ExpectLimiterTransitionIsSlewed(previous_throttle, throttle);
+  EXPECT_FLOAT_EQ(throttle, 0.25f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -11,8 +11,9 @@ struct StabilizationInput;
 /**
  * @brief Процессор детского режима (Kids Mode)
  *
- * Применяет ограничения газа, руля и slew rate,
- * а также усиленную защиту от заноса (anti-spin).
+ * Применяет ограничения газа и руля, а также усиленную защиту от заноса
+ * (anti-spin). Slew rate применяется единым каскадом в PWM-пути; поля
+ * kids_mode.slew_* задают его безопасный верхний предел.
  *
  * Конфиг передаётся в Process()/IsActive() аргументом — живой per-tick снимок
  * из control loop (FW-R21). Процессор НЕ хранит указатель на конфиг: при старте
@@ -56,8 +57,7 @@ class KidsModeProcessor {
                bool apply_speed_limit = true) noexcept;
 
   /**
-   * @brief Применить feedback speed limiter и slew фактической команды.
-   * @param dt_ms Ненулевой шаг применяет Kids throttle slew после limiter.
+   * @brief Применить feedback speed limiter к фактической команде.
    */
   void ApplySpeedLimit(const StabilizationConfig& cfg, float& throttle,
                        uint32_t dt_ms = 0) noexcept;
@@ -65,10 +65,6 @@ class KidsModeProcessor {
   /** Snapshot-based production path. */
   void ApplySpeedLimit(const StabilizationConfig& cfg, float& throttle,
                        const StabilizationInput& input) noexcept;
-
-  /** Применить независимый pre-speed-limit Kids slew для EKF-якоря. */
-  void ApplyCounterfactualSlew(const StabilizationConfig& cfg, float& throttle,
-                               uint32_t dt_ms) noexcept;
 
   /**
    * @brief Проверить, активен ли Kids Mode для переданного конфига
@@ -111,10 +107,6 @@ class KidsModeProcessor {
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
 
-  float smoothed_throttle_{0.0f};
-  // Независимая pre-speed-limit ветка для motor-model snapshot (LOS-246).
-  float counterfactual_throttle_{0.0f};
-  float smoothed_steering_{0.0f};
   bool anti_spin_active_{false};
   bool accel_limit_active_{false};
   bool speed_limit_active_{false};
