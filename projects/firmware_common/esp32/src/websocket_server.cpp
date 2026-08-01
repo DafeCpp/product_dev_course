@@ -18,9 +18,9 @@ static constexpr size_t MAX_HTTPD_CLIENTS = 8;
 
 /**
  * Кешированное количество WS-клиентов.
- * Обновляется в ws_handler (на подключении) и WebSocketSendTelem (на
- * отправке); читается атомарно без мьютексов httpd — безопасно вызывать из
- * control loop.
+ * Обновляется в ws_handler (на подключении) и в RefreshWsClientList (на
+ * отправке телеметрии и при явном опросе перед построением кадра); читается
+ * атомарно без мьютексов httpd — безопасно вызывать из control loop.
  */
 static std::atomic<uint8_t> s_cached_client_count{0};
 
@@ -117,13 +117,23 @@ esp_err_t WebSocketRegisterUri(httpd_handle_t server) {
   return ret;
 }
 
-esp_err_t WebSocketSendTelem(const char* telem_json) {
-  if (ws_server_handle == NULL || telem_json == NULL) {
-    return ESP_ERR_INVALID_ARG;
+/**
+ * Опросить httpd и обновить кеш числа WS-клиентов.
+ *
+ * Вызывается из задачи-отправителя телеметрии, не из control loop.
+ * Считаются только сокеты, реально помеченные httpd как WebSocket:
+ * обычные keep-alive HTTP-сессии (портал раздаётся с той же ESP) клиентами
+ * телеметрии не являются.
+ *
+ * @param[out] ws_fds fd подключённых WS-клиентов (первые N элементов)
+ * @return число WS-клиентов; 0 при ошибке опроса или отсутствии сервера
+ */
+static uint8_t RefreshWsClientList(int (&ws_fds)[MAX_HTTPD_CLIENTS]) {
+  if (ws_server_handle == NULL) {
+    s_cached_client_count.store(0, std::memory_order_relaxed);
+    return 0;
   }
 
-  // Получить список клиентов (вызывается из задачи-отправителя телеметрии, не
-  // из control loop). Заодно обновляем кеш для WebSocketGetClientCount().
   int client_fds[MAX_HTTPD_CLIENTS];
   size_t client_count = MAX_HTTPD_CLIENTS;
   esp_err_t list_err =
@@ -132,14 +142,40 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
     ESP_LOGW(TAG, "httpd_get_client_list failed: %s",
              esp_err_to_name(list_err));
     s_cached_client_count.store(0, std::memory_order_relaxed);
+    return 0;
+  }
+
+  uint8_t ws_count = 0;
+  for (size_t i = 0; i < client_count; i++) {
+    int fd = client_fds[i];
+    if (httpd_ws_get_fd_info(ws_server_handle, fd) !=
+        HTTPD_WS_CLIENT_WEBSOCKET) {
+      ESP_LOGD(TAG, "fd %d is not a WS client, skipping", fd);
+      continue;
+    }
+    ws_fds[ws_count++] = fd;
+  }
+
+  s_cached_client_count.store(ws_count, std::memory_order_relaxed);
+  return ws_count;
+}
+
+uint8_t WebSocketRefreshAndGetClientCount(void) {
+  int ws_fds[MAX_HTTPD_CLIENTS];
+  return RefreshWsClientList(ws_fds);
+}
+
+esp_err_t WebSocketSendTelem(const char* telem_json) {
+  if (ws_server_handle == NULL || telem_json == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  // Заодно обновляем кеш для WebSocketGetClientCount().
+  int ws_fds[MAX_HTTPD_CLIENTS];
+  uint8_t ws_count = RefreshWsClientList(ws_fds);
+  if (ws_count == 0) {
     return ESP_OK;
   }
-  if (client_count == 0) {
-    s_cached_client_count.store(0, std::memory_order_relaxed);
-    return ESP_OK;
-  }
-  s_cached_client_count.store(static_cast<uint8_t>(client_count),
-                              std::memory_order_relaxed);
 
   size_t len = strlen(telem_json);
   httpd_ws_frame_t ws_pkt = {};
@@ -156,14 +192,8 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
   // tracker.hpp) и покрыта host-тестами в projects/firmware_common/tests.
   static WsClientFailureTracker<kWsMaxClients> s_fd_tracker;
 
-  for (size_t i = 0; i < client_count; i++) {
-    int fd = client_fds[i];
-    if (httpd_ws_get_fd_info(ws_server_handle, fd) !=
-        HTTPD_WS_CLIENT_WEBSOCKET) {
-      ESP_LOGD(TAG, "fd %d is not a WS client, skipping", fd);
-      continue;
-    }
-
+  for (uint8_t i = 0; i < ws_count; i++) {
+    int fd = ws_fds[i];
     int slot = s_fd_tracker.FindOrAllocate(fd);
 
     esp_err_t send_err = httpd_ws_send_data(ws_server_handle, fd, &ws_pkt);
@@ -182,7 +212,7 @@ esp_err_t WebSocketSendTelem(const char* telem_json) {
     }
   }
 
-  s_fd_tracker.GarbageCollect(client_fds, client_count);
+  s_fd_tracker.GarbageCollect(ws_fds, ws_count);
 
   return ESP_OK;
 }
