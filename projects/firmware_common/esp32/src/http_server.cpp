@@ -410,6 +410,10 @@ esp_err_t HttpServerInit(const HttpServerConfig& cfg) {
   config.lru_purge_enable =
       true;  // Автозакрытие старых соединений при нехватке
   config.uri_match_fn = httpd_uri_match_wildcard;
+  // LOS-252: по умолчанию tskNO_AFFINITY — httpd-воркер (включая
+  // блокирующий httpd_ws_send_data() из ws_telem) мог оказаться на core1
+  // и конкурировать за цикл/кеш с control loop'ом, закреплённым за core1.
+  config.core_id = 0;
 
   ESP_LOGI(TAG, "Starting HTTP server on port %d", config.server_port);
 
