@@ -100,6 +100,9 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   [[nodiscard]] unsigned GetWebSocketClientCount() const noexcept override;
   void PublishTelem(const TelemetrySnapshot& snap) override;
 
+  // Диагностика
+  void PublishDiagnostics(const DiagnosticsSnapshot& snap) override;
+
   // Wi-Fi команды
   [[nodiscard]] std::optional<RcCommand> TryReceiveWifiCommand() override;
   void SendWifiCommand(float throttle, float steering) override;

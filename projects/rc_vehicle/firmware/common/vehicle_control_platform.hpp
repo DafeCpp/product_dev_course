@@ -18,6 +18,10 @@ namespace rc_vehicle {
 // включает этот заголовок — иначе был бы цикл).
 struct TelemetrySnapshot;
 
+// LOS-252: тот же приём для PublishDiagnostics — полное определение в
+// diagnostics_reporter.hpp, который сам включает этот заголовок.
+struct DiagnosticsSnapshot;
+
 /**
  * @brief Ошибки инициализации платформы
  */
@@ -298,6 +302,22 @@ class VehicleControlPlatform {
    * выполняются в отдельной задаче телеметрии вне горячего 500 Гц пути.
    */
   virtual void PublishTelem(const TelemetrySnapshot& snap) = 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Диагностика (LOS-252)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * @brief Опубликовать снимок диагностики (loop Hz, IMU, EKF)
+   * @param snap POD-снимок состояния
+   *
+   * Вызывается из control loop раз в DiagnosticsConfig::kIntervalMs.
+   * Реализация должна только поставить снимок в очередь (без
+   * аллокаций/блокировок) — форматирование строк и LogCoreLoad() (обход
+   * FreeRTOS-задач) выполняются в отдельной задаче вне горячего 500 Гц пути,
+   * как у PublishTelem.
+   */
+  virtual void PublishDiagnostics(const DiagnosticsSnapshot& snap) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Wi-Fi команды (только для ESP32)
