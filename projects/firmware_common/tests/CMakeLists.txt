@@ -26,6 +26,7 @@ add_executable(firmware_common_tests
     test_dns_response_builder.cpp
     test_dns_server_race_state.cpp
     test_ws_client_failure_tracker.cpp
+    test_json_writer.cpp
 )
 target_include_directories(firmware_common_tests PRIVATE
     ${FIRMWARE_COMMON_INCLUDE_DIRS}

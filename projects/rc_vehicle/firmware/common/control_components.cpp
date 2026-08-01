@@ -5,8 +5,8 @@
 #include <cstring>
 #include <string>
 
-#include "cJSON.h"
 #include "config.hpp"
+#include "firmware_common/json_writer.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 #include "mag_calibration.hpp"
@@ -318,174 +318,158 @@ void TelemetryHandler::SendTelemetry(uint32_t now_ms,
 }
 
 std::string BuildTelemJson(const TelemetrySnapshot& snap) {
-  cJSON* root = cJSON_CreateObject();
-  if (!root) return "{}";
+  // LOS-252: firmware_common::JsonWriter вместо cJSON — целочисленное
+  // форматирование чисел (без printf/sscanf round-trip) и без malloc на
+  // узел дерева. Один reserve() на кадр вместо ~160 аллокаций cJSON.
+  std::string result;
+  result.reserve(768);
+  firmware_common::JsonWriter w(result);
 
-  cJSON_AddStringToObject(root, "type", "telem");
+  w.BeginObject();
+  w.RawStr("type", "telem");
   // Для совместимости: "mcu_pong_ok" = "контроллер жив"
-  cJSON_AddBoolToObject(root, "mcu_pong_ok", true);
-  cJSON_AddNumberToObject(root, "uptime_ms", snap.uptime_ms);
+  w.Bool("mcu_pong_ok", true);
+  w.Int("uptime_ms", snap.uptime_ms);
 
   // Link status
-  cJSON* link = cJSON_AddObjectToObject(root, "link");
-  if (link) {
-    cJSON_AddBoolToObject(link, "rc_ok", snap.rc_ok);
-    cJSON_AddBoolToObject(link, "wifi_ok", snap.wifi_ok);
-    cJSON_AddBoolToObject(link, "failsafe", snap.failsafe);
-  }
+  w.BeginObject("link");
+  w.Bool("rc_ok", snap.rc_ok);
+  w.Bool("wifi_ok", snap.wifi_ok);
+  w.Bool("failsafe", snap.failsafe);
+  w.EndObject();
 
   // IMU data (если включен)
   if (snap.imu_enabled) {
-    cJSON* imu = cJSON_AddObjectToObject(root, "imu");
-    if (imu) {
-      cJSON_AddNumberToObject(imu, "ax", snap.imu_data.ax);
-      cJSON_AddNumberToObject(imu, "ay", snap.imu_data.ay);
-      cJSON_AddNumberToObject(imu, "az", snap.imu_data.az);
-      cJSON_AddNumberToObject(imu, "gx", snap.imu_data.gx);
-      cJSON_AddNumberToObject(imu, "gy", snap.imu_data.gy);
-      cJSON_AddNumberToObject(imu, "gz", snap.imu_data.gz);
-      cJSON_AddNumberToObject(imu, "gyro_z_filtered", snap.filtered_gz);
-      cJSON_AddNumberToObject(imu, "forward_accel", snap.forward_accel);
+    w.BeginObject("imu");
+    w.Fixed("ax", snap.imu_data.ax, 3);
+    w.Fixed("ay", snap.imu_data.ay, 3);
+    w.Fixed("az", snap.imu_data.az, 3);
+    w.Fixed("gx", snap.imu_data.gx, 2);
+    w.Fixed("gy", snap.imu_data.gy, 2);
+    w.Fixed("gz", snap.imu_data.gz, 2);
+    w.Fixed("gyro_z_filtered", snap.filtered_gz, 2);
+    w.Fixed("forward_accel", snap.forward_accel, 3);
 
-      // Orientation (Madgwick)
-      cJSON* orientation = cJSON_AddObjectToObject(imu, "orientation");
-      if (orientation) {
-        cJSON_AddNumberToObject(orientation, "pitch", snap.pitch_deg);
-        cJSON_AddNumberToObject(orientation, "roll", snap.roll_deg);
-        cJSON_AddNumberToObject(orientation, "yaw", snap.yaw_deg);
-      }
-    }
+    // Orientation (Madgwick)
+    w.BeginObject("orientation");
+    w.Fixed("pitch", snap.pitch_deg, 2);
+    w.Fixed("roll", snap.roll_deg, 2);
+    w.Fixed("yaw", snap.yaw_deg, 2);
+    w.EndObject();
+    w.EndObject();  // imu
 
     // Calibration status
-    cJSON* calib = cJSON_AddObjectToObject(root, "calib");
-    if (calib) {
-      const char* status_str = "unknown";
-      switch (snap.calib_status) {
-        case CalibStatus::Idle:
-          status_str = "idle";
-          break;
-        case CalibStatus::Collecting:
-          status_str = "collecting";
-          break;
-        case CalibStatus::Done:
-          status_str = "done";
-          break;
-        case CalibStatus::Failed:
-          status_str = "failed";
-          break;
-      }
-      cJSON_AddStringToObject(calib, "status", status_str);
-      cJSON_AddNumberToObject(calib, "stage", snap.calib_stage);
-      cJSON_AddBoolToObject(calib, "valid", snap.calib_valid);
-
-      if (snap.calib_valid) {
-        const auto& cd = snap.calib_data;
-        cJSON* bias = cJSON_AddObjectToObject(calib, "bias");
-        if (bias) {
-          cJSON_AddNumberToObject(bias, "gx", cd.gyro_bias[0]);
-          cJSON_AddNumberToObject(bias, "gy", cd.gyro_bias[1]);
-          cJSON_AddNumberToObject(bias, "gz", cd.gyro_bias[2]);
-          cJSON_AddNumberToObject(bias, "ax", cd.accel_bias[0]);
-          cJSON_AddNumberToObject(bias, "ay", cd.accel_bias[1]);
-          cJSON_AddNumberToObject(bias, "az", cd.accel_bias[2]);
-        }
-        cJSON* gravity = cJSON_AddArrayToObject(calib, "gravity_vec");
-        if (gravity) {
-          cJSON_AddItemToArray(gravity, cJSON_CreateNumber(cd.gravity_vec[0]));
-          cJSON_AddItemToArray(gravity, cJSON_CreateNumber(cd.gravity_vec[1]));
-          cJSON_AddItemToArray(gravity, cJSON_CreateNumber(cd.gravity_vec[2]));
-        }
-        cJSON* forward = cJSON_AddArrayToObject(calib, "forward_vec");
-        if (forward) {
-          cJSON_AddItemToArray(forward,
-                               cJSON_CreateNumber(cd.accel_forward_vec[0]));
-          cJSON_AddItemToArray(forward,
-                               cJSON_CreateNumber(cd.accel_forward_vec[1]));
-          cJSON_AddItemToArray(forward,
-                               cJSON_CreateNumber(cd.accel_forward_vec[2]));
-        }
-      }
+    w.BeginObject("calib");
+    const char* status_str = "unknown";
+    switch (snap.calib_status) {
+      case CalibStatus::Idle:
+        status_str = "idle";
+        break;
+      case CalibStatus::Collecting:
+        status_str = "collecting";
+        break;
+      case CalibStatus::Done:
+        status_str = "done";
+        break;
+      case CalibStatus::Failed:
+        status_str = "failed";
+        break;
     }
+    w.RawStr("status", status_str);
+    w.Int("stage", snap.calib_stage);
+    w.Bool("valid", snap.calib_valid);
+
+    if (snap.calib_valid) {
+      const auto& cd = snap.calib_data;
+      w.BeginObject("bias");
+      w.Fixed("gx", cd.gyro_bias[0], 4);
+      w.Fixed("gy", cd.gyro_bias[1], 4);
+      w.Fixed("gz", cd.gyro_bias[2], 4);
+      w.Fixed("ax", cd.accel_bias[0], 4);
+      w.Fixed("ay", cd.accel_bias[1], 4);
+      w.Fixed("az", cd.accel_bias[2], 4);
+      w.EndObject();
+
+      w.BeginArray("gravity_vec");
+      w.FixedElem(cd.gravity_vec[0], 4);
+      w.FixedElem(cd.gravity_vec[1], 4);
+      w.FixedElem(cd.gravity_vec[2], 4);
+      w.EndArray();
+
+      w.BeginArray("forward_vec");
+      w.FixedElem(cd.accel_forward_vec[0], 4);
+      w.FixedElem(cd.accel_forward_vec[1], 4);
+      w.FixedElem(cd.accel_forward_vec[2], 4);
+      w.EndArray();
+    }
+    w.EndObject();  // calib
 
     // Магнетометр
     if (snap.mag_enabled) {
-      cJSON* mag = cJSON_AddObjectToObject(root, "mag");
-      if (mag) {
-        cJSON_AddNumberToObject(mag, "mx", snap.mag_data.mx);
-        cJSON_AddNumberToObject(mag, "my", snap.mag_data.my);
-        cJSON_AddNumberToObject(mag, "mz", snap.mag_data.mz);
-        cJSON_AddNumberToObject(mag, "heading_deg", snap.heading_deg);
-        cJSON_AddNumberToObject(mag, "heading_rel_deg", snap.heading_rel_deg);
-      }
+      w.BeginObject("mag");
+      w.Fixed("mx", snap.mag_data.mx, 1);
+      w.Fixed("my", snap.mag_data.my, 1);
+      w.Fixed("mz", snap.mag_data.mz, 1);
+      w.Fixed("heading_deg", snap.heading_deg, 2);
+      w.Fixed("heading_rel_deg", snap.heading_rel_deg, 2);
+      w.EndObject();
     }
 
     // EKF: динамическое состояние (vx, vy, r, slip angle)
     if (snap.ekf_available) {
-      cJSON* ekf = cJSON_AddObjectToObject(root, "ekf");
-      if (ekf) {
-        cJSON_AddNumberToObject(ekf, "vx", snap.ekf_vx);
-        cJSON_AddNumberToObject(ekf, "vy", snap.ekf_vy);
-        cJSON_AddNumberToObject(ekf, "yaw_rate", snap.ekf_yaw_rate);
-        cJSON_AddNumberToObject(ekf, "slip_deg", snap.ekf_slip_deg);
-        cJSON_AddNumberToObject(ekf, "speed_ms", snap.ekf_speed_ms);
-        cJSON_AddNumberToObject(ekf, "vx_var", snap.ekf_vx_var);
-        cJSON_AddNumberToObject(ekf, "vy_var", snap.ekf_vy_var);
-        cJSON_AddNumberToObject(ekf, "r_var", snap.ekf_r_var);
-        cJSON_AddStringToObject(ekf, "zupt_status",
-                                ZuptStatusToString(snap.ekf_zupt_status));
-        cJSON_AddNumberToObject(ekf, "speed_meas", snap.ekf_speed_meas);
-        cJSON_AddBoolToObject(ekf, "diverged", snap.ekf_diverged);
-      }
+      w.BeginObject("ekf");
+      w.Fixed("vx", snap.ekf_vx, 3);
+      w.Fixed("vy", snap.ekf_vy, 3);
+      w.Fixed("yaw_rate", snap.ekf_yaw_rate, 3);
+      w.Fixed("slip_deg", snap.ekf_slip_deg, 2);
+      w.Fixed("speed_ms", snap.ekf_speed_ms, 3);
+      w.Sci("vx_var", snap.ekf_vx_var);
+      w.Sci("vy_var", snap.ekf_vy_var);
+      w.Sci("r_var", snap.ekf_r_var);
+      w.RawStr("zupt_status", ZuptStatusToString(snap.ekf_zupt_status));
+      w.Fixed("speed_meas", snap.ekf_speed_meas, 3);
+      w.Bool("diverged", snap.ekf_diverged);
+      w.EndObject();
     }
 
     // Oversteer warning (Phase 4.2)
     if (snap.oversteer_available) {
-      cJSON* warn = cJSON_AddObjectToObject(root, "warn");
-      if (warn) {
-        cJSON_AddBoolToObject(warn, "oversteer", snap.oversteer_active);
-      }
+      w.BeginObject("warn");
+      w.Bool("oversteer", snap.oversteer_active);
+      w.EndObject();
     }
   }
 
   // Kids Mode status
   if (snap.kids_mode_active) {
-    cJSON* kids = cJSON_AddObjectToObject(root, "kids_mode");
-    if (kids) {
-      cJSON_AddBoolToObject(kids, "active", true);
-      cJSON_AddBoolToObject(kids, "anti_spin_active",
-                            snap.kids_anti_spin_active);
-      cJSON_AddNumberToObject(kids, "throttle_limit", snap.kids_throttle_limit);
-    }
+    w.BeginObject("kids_mode");
+    w.Bool("active", true);
+    w.Bool("anti_spin_active", snap.kids_anti_spin_active);
+    w.Fixed("throttle_limit", snap.kids_throttle_limit, 3);
+    w.EndObject();
   }
 
   // RC input (сырые значения с пульта)
   if (snap.rc_ok) {
-    cJSON* rc = cJSON_AddObjectToObject(root, "rc");
-    if (rc) {
-      cJSON_AddNumberToObject(rc, "throttle", snap.rc_throttle);
-      cJSON_AddNumberToObject(rc, "steering", snap.rc_steering);
-    }
+    w.BeginObject("rc");
+    w.Fixed("throttle", snap.rc_throttle, 3);
+    w.Fixed("steering", snap.rc_steering, 3);
+    w.EndObject();
   }
 
   // Commanded (до trim/slew)
-  cJSON* cmd = cJSON_AddObjectToObject(root, "cmd");
-  if (cmd) {
-    cJSON_AddNumberToObject(cmd, "throttle", snap.cmd_throttle);
-    cJSON_AddNumberToObject(cmd, "steering", snap.cmd_steering);
-  }
+  w.BeginObject("cmd");
+  w.Fixed("throttle", snap.cmd_throttle, 3);
+  w.Fixed("steering", snap.cmd_steering, 3);
+  w.EndObject();
 
   // Actuators (после trim/slew)
-  cJSON* act = cJSON_AddObjectToObject(root, "act");
-  if (act) {
-    cJSON_AddNumberToObject(act, "throttle", snap.throttle);
-    cJSON_AddNumberToObject(act, "steering", snap.steering);
-  }
+  w.BeginObject("act");
+  w.Fixed("throttle", snap.throttle, 3);
+  w.Fixed("steering", snap.steering, 3);
+  w.EndObject();
 
-  char* str = cJSON_PrintUnformatted(root);
-  cJSON_Delete(root);
-  if (!str) return "{}";
-  std::string result(str);
-  free(str);
+  w.EndObject();  // root
   return result;
 }
 
