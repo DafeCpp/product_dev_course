@@ -128,7 +128,8 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 #ifdef RC_PROFILE_LOOP
     const uint32_t prof_loops = diag_loop_count_;
 #endif
-    PrintDiagnostics(dctx, input.config, now, diag_loop_count_, diag_start_ms_);
+    MaybePublishDiagnostics(dctx, input.config, now, diag_loop_count_,
+                            diag_start_ms_);
 #ifdef RC_PROFILE_LOOP
     // PROF_LAP/PROF_END — ДО EmitProfile() (код-ревью PR #297): EmitProfile()
     // печатает текущее окно и тут же обнуляет аккумуляторы (diag/step_iter/
@@ -138,13 +139,13 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
     // от неё же ушли бы в СЛЕДУЮЩИЙ отчёт — рассинхронизация, из-за которой
     // редкий stall на пограничной итерации давал бы противоречивые max по
     // стадиям vs по итерации целиком. Не идеально — PROF_LAP(diag) меряет
-    // только PrintDiagnostics() (не может измерить время самого EmitProfile()
-    // до его вызова), но так хотя бы step_iter/period/outliers этой итерации
-    // попадают в ТОТ ЖЕ отчёт, что и её per-stage максимумы.
+    // только MaybePublishDiagnostics() (не может измерить время самого
+    // EmitProfile() до его вызова), но так хотя бы step_iter/period/outliers
+    // этой итерации попадают в ТОТ ЖЕ отчёт, что и её per-stage максимумы.
     PROF_LAP(prof_diag_us_, prof_diag_max_us_);
     PROF_END();
-    // diag_loop_count_ обнуляется в PrintDiagnostics, когда сработал интервал —
-    // это и есть сигнал напечатать средние и сбросить аккумуляторы.
+    // diag_loop_count_ обнуляется в MaybePublishDiagnostics, когда сработал
+    // интервал — это и есть сигнал напечатать средние и сбросить аккумуляторы.
     if (diag_loop_count_ == 0) {
       EmitProfile(prof_loops);
       // Код-ревью PR #297: сами Log()-вызовы EmitProfile() занимают время,

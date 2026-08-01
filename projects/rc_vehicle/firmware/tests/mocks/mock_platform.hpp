@@ -5,7 +5,8 @@
 #include <array>
 #include <vector>
 
-#include "control_components.hpp"  // TelemetrySnapshot, BuildTelemJson
+#include "control_components.hpp"    // TelemetrySnapshot, BuildTelemJson
+#include "diagnostics_reporter.hpp"  // DiagnosticsSnapshot
 #include "vehicle_control_platform.hpp"
 
 namespace rc_vehicle {
@@ -110,6 +111,13 @@ class MockPlatform : public VehicleControlPlatform {
   MOCK_METHOD(void, PublishTelem, (const TelemetrySnapshot& snap), (override));
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Диагностика
+  // ─────────────────────────────────────────────────────────────────────────
+
+  MOCK_METHOD(void, PublishDiagnostics, (const DiagnosticsSnapshot& snap),
+              (override));
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Wi-Fi команды
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -187,6 +195,11 @@ class FakePlatform : public VehicleControlPlatform {
     return logged_messages_;
   }
   void ClearLoggedMessages() { logged_messages_.clear(); }
+
+  // LOS-252: чтобы тесты EmitDiagnostics могли проверить, что LogCoreLoad()
+  // действительно вызывается (по умолчанию в базовом классе — no-op).
+  void LogCoreLoad() const override { log_core_load_count_++; }
+  int GetLogCoreLoadCount() const { return log_core_load_count_; }
 
   // ─────────────────────────────────────────────────────────────────────────
   // IMU
@@ -361,6 +374,18 @@ class FakePlatform : public VehicleControlPlatform {
   int GetTelemSendCount() const { return telem_send_count_; }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Диагностика
+  // ─────────────────────────────────────────────────────────────────────────
+
+  void PublishDiagnostics(const DiagnosticsSnapshot& snap) override {
+    last_diag_snap_ = snap;
+    diag_publish_count_++;
+  }
+
+  const DiagnosticsSnapshot& GetLastDiagSnap() const { return last_diag_snap_; }
+  int GetDiagPublishCount() const { return diag_publish_count_; }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Wi-Fi команды
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -394,8 +419,9 @@ class FakePlatform : public VehicleControlPlatform {
   // Time
   uint32_t time_ms_{0};
 
-  // Log() — const override, поэтому mutable.
+  // Log()/LogCoreLoad() — const override, поэтому mutable.
   mutable std::vector<std::string> logged_messages_;
+  mutable int log_core_load_count_{0};
 
   // IMU
   std::optional<ImuData> imu_data_;
@@ -429,6 +455,10 @@ class FakePlatform : public VehicleControlPlatform {
   std::string last_telem_;
   TelemetrySnapshot last_snap_{};
   int telem_send_count_{0};
+
+  // Диагностика
+  DiagnosticsSnapshot last_diag_snap_{};
+  int diag_publish_count_{0};
 
   // Wi-Fi
   std::optional<RcCommand> wifi_command_;

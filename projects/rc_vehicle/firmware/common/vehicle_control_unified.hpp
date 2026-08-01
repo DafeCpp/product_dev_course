@@ -517,7 +517,7 @@ class VehicleControlUnified : public IVehicleControl {
   bool imu_enabled_{false};
   bool inited_{false};
 
-  // Последнее измерение частоты loop (обновляется в PrintDiagnostics)
+  // Последнее измерение частоты loop (обновляется в MaybePublishDiagnostics)
   std::atomic<uint32_t> last_loop_hz_{0};
 
   // Флаг готовности control task (init-ready barrier)

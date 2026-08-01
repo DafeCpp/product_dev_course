@@ -123,6 +123,7 @@ add_executable(unit_tests
     unit/test_slew_rate.cpp
     unit/test_control_source.cpp
     unit/test_telemetry_handler.cpp
+    unit/test_diagnostics_reporter.cpp
     unit/test_drive_mode_registry.cpp
     unit/test_auto_drive_coordinator.cpp
     unit/test_drive_modes.cpp

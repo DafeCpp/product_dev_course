@@ -7,6 +7,7 @@
 #include "config.hpp"
 #include "control_components.hpp"  // rc_vehicle::TelemetrySnapshot, BuildTelemJson
 #include "crash_logger.hpp"
+#include "diagnostics_reporter.hpp"  // rc_vehicle::DiagnosticsSnapshot, EmitDiagnostics
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
@@ -36,6 +37,66 @@ static firmware_common::esp32::WsTelemChannel<TelemetrySnapshot> g_ws_telem;
 
 esp_err_t RcWsTelemStart() { return g_ws_telem.Start(&BuildTelemJson); }
 
+/**
+ * LOS-252: очередь длины 1 (xQueueOverwrite) + низкоприоритетная задача,
+ * форматирующая и печатающая диагностику (DIAG/IMU/EKF-строки, LogCoreLoad())
+ * из POD-снимка — тот же паттерн, что WsTelemChannel для телеметрии (FW-RF8),
+ * но без шаблона: единственный потребитель (DiagnosticsSnapshot), не общая
+ * ESP32-инфраструктура — не тянем rc_vehicle-типы в firmware_common/esp32/.
+ *
+ * В отличие от WS-телеметрии не требует готовности httpd/WS (Log()/
+ * LogCoreLoad() работают с самого старта) — запускается прямо в конструкторе
+ * VehicleControlPlatformEsp32, без отдельного Start()-вызова из main.cpp.
+ */
+class DiagLogTask {
+ public:
+  esp_err_t Start(VehicleControlPlatform& platform,
+                  const char* task_name = "diag_log", UBaseType_t prio = 3,
+                  uint32_t stack = 8192) {
+    if (queue_ != nullptr) {
+      return ESP_OK;
+    }
+    platform_ = &platform;
+    queue_ = xQueueCreate(1, sizeof(DiagnosticsSnapshot));
+    if (queue_ == nullptr) {
+      return ESP_ERR_NO_MEM;
+    }
+    if (xTaskCreate(&DiagLogTask::TaskEntry, task_name, stack, this, prio,
+                    nullptr) != pdPASS) {
+      vQueueDelete(queue_);
+      queue_ = nullptr;
+      return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+  }
+
+  /** Не блокирует вызывающий поток; безопасно вызывать из control loop. */
+  void Enqueue(const DiagnosticsSnapshot& snap) {
+    if (queue_ == nullptr) {
+      return;
+    }
+    xQueueOverwrite(queue_, &snap);
+  }
+
+ private:
+  static void TaskEntry(void* arg) { static_cast<DiagLogTask*>(arg)->Run(); }
+
+  void Run() {
+    DiagnosticsSnapshot snap{};
+    for (;;) {
+      if (xQueueReceive(queue_, &snap, portMAX_DELAY) != pdTRUE) {
+        continue;
+      }
+      EmitDiagnostics(*platform_, snap);
+    }
+  }
+
+  QueueHandle_t queue_ = nullptr;
+  VehicleControlPlatform* platform_ = nullptr;
+};
+
+static DiagLogTask g_diag_log_task;
+
 // ─────────────────────────────────────────────────────────────────────────
 // Конструктор / Деструктор
 // ─────────────────────────────────────────────────────────────────────────
@@ -43,6 +104,12 @@ esp_err_t RcWsTelemStart() { return g_ws_telem.Start(&BuildTelemJson); }
 VehicleControlPlatformEsp32::VehicleControlPlatformEsp32()
     : failsafe_(FAILSAFE_TIMEOUT_MS) {
   cmd_queue_ = xQueueCreate(1, sizeof(WifiCmd));
+  // LOS-252: диагностика не зависит от httpd/WS (в отличие от g_ws_telem,
+  // запускаемого явно из main.cpp после WebSocketRegisterUri()) — можно
+  // стартовать сразу здесь.
+  if (g_diag_log_task.Start(*this) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to start diagnostics log task");
+  }
 }
 
 VehicleControlPlatformEsp32::~VehicleControlPlatformEsp32() {
@@ -355,6 +422,17 @@ void VehicleControlPlatformEsp32::PublishTelem(const TelemetrySnapshot& snap) {
   // FW-RF8: из control loop — только публикация POD-снимка в очередь (memcpy,
   // без аллокаций). Построение JSON и отправку по WS делает telem-задача.
   g_ws_telem.Enqueue(snap);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Диагностика
+// ─────────────────────────────────────────────────────────────────────────
+
+void VehicleControlPlatformEsp32::PublishDiagnostics(
+    const DiagnosticsSnapshot& snap) {
+  // LOS-252: как PublishTelem — из control loop только публикация снимка.
+  // Форматирование (LogFormat/iostream) и LogCoreLoad() делает diag-задача.
+  g_diag_log_task.Enqueue(snap);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

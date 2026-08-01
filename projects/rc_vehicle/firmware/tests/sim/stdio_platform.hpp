@@ -5,10 +5,11 @@
 #include <string>
 #include <string_view>
 
-#include "control_components.hpp"  // TelemetrySnapshot
-#include "imu_calibration.hpp"     // ImuCalibData
-#include "imu_sensor.hpp"          // ImuData
-#include "mag_sensor.hpp"          // MagData
+#include "control_components.hpp"    // TelemetrySnapshot
+#include "diagnostics_reporter.hpp"  // DiagnosticsSnapshot
+#include "imu_calibration.hpp"       // ImuCalibData
+#include "imu_sensor.hpp"            // ImuData
+#include "mag_sensor.hpp"            // MagData
 #include "stabilization_config.hpp"
 #include "vehicle_control_platform.hpp"
 
@@ -154,6 +155,9 @@ class StdioPlatform : public VehicleControlPlatform {
   void PublishTelem(const TelemetrySnapshot& snap) override {
     last_snap_ = snap;
   }
+
+  // ── Диагностика ──────────────────────────────────────────────────────────
+  void PublishDiagnostics(const DiagnosticsSnapshot&) override {}
 
   // ── Задачи (поток не плодим) ─────────────────────────────────────────────
   std::expected<void, PlatformError> CreateTask(void (*)(void*),
