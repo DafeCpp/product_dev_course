@@ -1,8 +1,10 @@
 #pragma once
 
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace firmware_common {
 
@@ -34,7 +36,7 @@ class JsonWriter {
     PushLevel();
   }
 
-  void BeginObject(const char* key) {
+  void BeginObject(std::string_view key) {
     WriteKey(key);
     out_ += '{';
     PushLevel();
@@ -45,7 +47,7 @@ class JsonWriter {
     PopLevel();
   }
 
-  void BeginArray(const char* key) {
+  void BeginArray(std::string_view key) {
     WriteKey(key);
     out_ += '[';
     PushLevel();
@@ -56,12 +58,12 @@ class JsonWriter {
     PopLevel();
   }
 
-  void Bool(const char* key, bool v) {
+  void Bool(std::string_view key, bool v) {
     WriteKey(key);
     out_ += v ? "true" : "false";
   }
 
-  void Int(const char* key, int64_t v) {
+  void Int(std::string_view key, int64_t v) {
     WriteKey(key);
     AppendInt(v);
   }
@@ -70,7 +72,7 @@ class JsonWriter {
    * Строковое значение как есть, без экранирования.
    * Только для ASCII-литералов без спецсимволов (статусы, "telem" и т.п.).
    */
-  void RawStr(const char* key, const char* value) {
+  void RawStr(std::string_view key, std::string_view value) {
     WriteKey(key);
     out_ += '"';
     out_ += value;
@@ -84,7 +86,7 @@ class JsonWriter {
    * (как у cJSON). Хвостовые нули дробной части обрезаются: 0.000 -> "0", 0.120
    * -> "0.12".
    */
-  void Fixed(const char* key, float v, int decimals) {
+  void Fixed(std::string_view key, float v, int decimals) {
     WriteKey(key);
     AppendFixedValue(v, decimals);
   }
@@ -102,7 +104,7 @@ class JsonWriter {
    * того, как число записано на проводе), так что смешанное представление
    * на проводе не проблема.
    */
-  void Sci(const char* key, float v) {
+  void Sci(std::string_view key, float v) {
     WriteKey(key);
     AppendSciValue(v);
   }
@@ -130,34 +132,27 @@ class JsonWriter {
     }
   }
 
-  void WriteKey(const char* key) {
+  void WriteKey(std::string_view key) {
     CommaIfNeeded();
     out_ += '"';
     out_ += key;
     out_ += "\":";
   }
 
+  // std::to_chars: noexcept, без аллокаций, не зависит от locale — не
+  // hand-rolled digit-loop, а стандартная реализация (в отличие от
+  // AppendFixedValue/AppendSciValue, где нужна конкретная точность и
+  // научная нотация, которые to_chars(float) сам не даёт).
   void AppendUInt(uint64_t v) {
-    if (v == 0) {
-      out_ += '0';
-      return;
-    }
-    char buf[20];
-    int len = 0;
-    while (v > 0) {
-      buf[len++] = static_cast<char>('0' + (v % 10));
-      v /= 10;
-    }
-    while (len > 0) out_ += buf[--len];
+    char buf[24];
+    const auto r = std::to_chars(buf, buf + sizeof(buf), v);
+    out_.append(buf, r.ptr);
   }
 
   void AppendInt(int64_t v) {
-    if (v < 0) {
-      out_ += '-';
-      AppendUInt(static_cast<uint64_t>(-v));
-    } else {
-      AppendUInt(static_cast<uint64_t>(v));
-    }
+    char buf[24];
+    const auto r = std::to_chars(buf, buf + sizeof(buf), v);
+    out_.append(buf, r.ptr);
   }
 
   void AppendFixedValue(float v, int decimals) {

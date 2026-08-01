@@ -321,8 +321,11 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   // LOS-252: firmware_common::JsonWriter вместо cJSON — целочисленное
   // форматирование чисел (без printf/sscanf round-trip) и без malloc на
   // узел дерева. Один reserve() на кадр вместо ~160 аллокаций cJSON.
+  // Полностью заполненный кадр (все опциональные блоки) — ~950 байт
+  // (см. BuildTelemJsonTest.FullSnapshotProducesValidJsonWithAllKeys), 1024
+  // с запасом, чтобы не было повторной аллокации+копии на полном кадре.
   std::string result;
-  result.reserve(768);
+  result.reserve(1024);
   firmware_common::JsonWriter w(result);
 
   w.BeginObject();
