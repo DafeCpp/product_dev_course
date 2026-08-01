@@ -1,5 +1,6 @@
 #include "control_loop_processor.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "config.hpp"
@@ -343,6 +344,14 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
     const uint32_t pwm_dt_ms = input.now_ms - persistent_.last_pwm_update;
     const bool pwm_updated = pwm_dt_ms >= config::PwmConfig::kUpdateIntervalMs;
     float effective_slew_thr = input.config.slew_throttle;
+    float effective_slew_steer = input.config.slew_steering;
+    if (drive_mode == DriveMode::Kids) {
+      effective_slew_thr =
+          std::min(effective_slew_thr, input.config.kids_mode.slew_throttle);
+      effective_slew_steer = std::min(effective_slew_steer,
+                                      input.config.kids_mode.slew_steering);
+    }
+    const float base_slew_thr = effective_slew_thr;
     if (input.config.braking_mode == BrakingMode::Brake &&
         std::abs(state.command.throttle) <
             std::abs(persistent_.applied.throttle)) {
@@ -352,14 +361,14 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
                           state.command.steering, persistent_.applied.throttle,
                           persistent_.applied.steering,
                           persistent_.last_pwm_update, thr_trim, steer_trim,
-                          effective_slew_thr, input.config.slew_steering);
+                          effective_slew_thr, effective_slew_steer);
 
     if (drive_mode == DriveMode::Kids &&
         input.config.kids_mode.speed_limit_enabled && pwm_updated) {
       // UpdatePwmWithSlewRate обновил реальный PWM на этом тике. Повторяем
       // только его математическую slew-ступень для counterfactual цели, не
       // включая speed limiter. Условие использует уже обновлённый timestamp.
-      float model_slew_thr = input.config.slew_throttle;
+      float model_slew_thr = base_slew_thr;
       if (input.config.braking_mode == BrakingMode::Brake &&
           std::abs(state.motor_model_target_throttle) <
               std::abs(persistent_.motor_model_throttle)) {

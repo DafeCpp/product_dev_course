@@ -275,8 +275,6 @@ StabilizationOutput StabilizationPipeline::Process(
   }
 
   if (policy.apply_input_limits) {
-    kids_processor_.ApplyCounterfactualSlew(cfg, output.command.throttle,
-                                            input.dt_ms);
     output.motor_model_target_throttle = output.command.throttle;
     kids_processor_.ApplySpeedLimit(cfg, output.command.throttle, input);
   }

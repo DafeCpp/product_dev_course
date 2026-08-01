@@ -1070,6 +1070,16 @@ function applyStabConfig(cfg) {
         if (tEl) tEl.textContent = tPct;
         if (sEl) sEl.textContent = sPct;
 
+        const kidsSlewSteering = km.slew_steering ?? 3.0;
+        const kidsSlewThrottle = km.slew_throttle ?? 0.3;
+        set('kids-slew-steering', kidsSlewSteering);
+        set('kids-slew-throttle', kidsSlewThrottle);
+        const kidsSteerEl = $('kids-slew-steering-value');
+        const kidsThrottleEl = $('kids-slew-throttle-value');
+        if (kidsSteerEl) kidsSteerEl.textContent = kidsSlewSteering.toFixed(1);
+        if (kidsThrottleEl) kidsThrottleEl.textContent = kidsSlewThrottle.toFixed(1);
+        updateKidsEffectiveSlew();
+
         const speedEnabled = km.speed_limit_enabled ?? false;
         const maxSpeedMs = km.max_speed_ms ?? 1.5;
         const chk = $('kids-speed-limit-enabled');
@@ -1152,6 +1162,8 @@ function saveStabConfig() {
             throttle_limit: kidsThrottleLimit,
             reverse_limit: kidsThrottleLimit,
             steering_limit: kidsSteeringLimit,
+            slew_steering: getF('kids-slew-steering'),
+            slew_throttle: getF('kids-slew-throttle'),
             speed_limit_enabled: $('kids-speed-limit-enabled')?.checked ?? false,
             max_speed_ms: ($('kids-max-speed') ? parseInt($('kids-max-speed').value) / 10.0 : 1.5),
         },
@@ -1881,6 +1893,34 @@ if (kidsSpeedSliderEl) kidsSpeedSliderEl.addEventListener('input', (e) => {
     if (kidsSpeedValueEl) kidsSpeedValueEl.textContent = ms.toFixed(1);
 });
 
+function updateKidsEffectiveSlew() {
+    const kidsSteer = parseFloat($('kids-slew-steering')?.value);
+    const kidsThrottle = parseFloat($('kids-slew-throttle')?.value);
+    const globalSteer = parseFloat($('slew-steering')?.value);
+    const globalThrottle = parseFloat($('slew-throttle')?.value);
+    const effectiveSteer = Math.min(kidsSteer, globalSteer);
+    const effectiveThrottle = Math.min(kidsThrottle, globalThrottle);
+    const el = $('kids-effective-slew');
+    if (el && Number.isFinite(effectiveSteer) && Number.isFinite(effectiveThrottle)) {
+        el.textContent = `Эффективно: руль ${effectiveSteer.toFixed(1)}/с, газ ${effectiveThrottle.toFixed(1)}/с`;
+    }
+}
+
+const kidsSlewSteeringSliderEl = $('kids-slew-steering');
+const kidsSlewThrottleSliderEl = $('kids-slew-throttle');
+if (kidsSlewSteeringSliderEl) kidsSlewSteeringSliderEl.addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    const el = $('kids-slew-steering-value');
+    if (el) el.textContent = v.toFixed(1);
+    updateKidsEffectiveSlew();
+});
+if (kidsSlewThrottleSliderEl) kidsSlewThrottleSliderEl.addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    const el = $('kids-slew-throttle-value');
+    if (el) el.textContent = v.toFixed(1);
+    updateKidsEffectiveSlew();
+});
+
 // Slew rate sliders
 const slewSteeringSliderEl = $('slew-steering');
 const slewThrottleSliderEl = $('slew-throttle');
@@ -1888,11 +1928,13 @@ if (slewSteeringSliderEl) slewSteeringSliderEl.addEventListener('input', (e) => 
     const v = parseFloat(e.target.value);
     const el = $('slew-steering-value');
     if (el) el.textContent = v.toFixed(1);
+    updateKidsEffectiveSlew();
 });
 if (slewThrottleSliderEl) slewThrottleSliderEl.addEventListener('input', (e) => {
     const v = parseFloat(e.target.value);
     const el = $('slew-throttle-value');
     if (el) el.textContent = v.toFixed(1);
+    updateKidsEffectiveSlew();
 });
 
 // Braking controls

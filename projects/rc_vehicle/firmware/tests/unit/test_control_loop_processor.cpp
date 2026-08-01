@@ -241,7 +241,7 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
   cfg.kids_mode.speed_limit_gain = 1.0f;
   cfg.kids_mode.anti_spin_enabled = false;
   cfg.kids_mode.accel_limit_enabled = false;
-  cfg.slew_throttle = 100.0f;  // не тестируем внешний PWM slew здесь
+  cfg.slew_throttle = 100.0f;  // Kids-предел 2.0/с остаётся единственным slew
   cfg.filter.motor_deadzone = 0.0f;
   cfg.filter.motor_speed_gain = 8.0f;
   stab_mgr_->SetConfig(cfg);
@@ -251,7 +251,7 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
   platform_.SetImuData(level);
   platform_.SetWifiCommand({1.0f, 0.0f});
 
-  RunSteps(100);  // внутренний Kids slew (максимум 2.0/с) доходит до 0.3
+  RunSteps(100);  // единый PWM slew (Kids-предел 2.0/с) доходит до 0.3
   cfg.kids_mode.speed_limit_enabled = true;
   stab_mgr_->SetConfig(cfg);
   ekf_.SetState(2.0f, 0.0f, 0.0f);
@@ -387,7 +387,7 @@ TEST_F(ProcessorTest, SlewRate_EventuallyReachesTarget) {
   EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 0.01f);
 }
 
-TEST_F(ProcessorTest, KidsModeSteeringReachesThreePerSecondSlewRate) {
+TEST_F(ProcessorTest, KidsModeCapsGlobalSteeringSlewRate) {
   auto cfg = stab_mgr_->GetConfig();
   cfg.mode = DriveMode::Kids;
   ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
@@ -395,9 +395,50 @@ TEST_F(ProcessorTest, KidsModeSteeringReachesThreePerSecondSlewRate) {
   platform_.SetWifiCommand({0.0f, 1.0f});
   RunSteps(10);  // Первый PWM update через 20 ms.
 
-  // Kids processor и PWM slew limiter оба допускают 3.0 /с:
-  // 3.0 * 0.020 = 0.06. При старом top-level лимите 1.5 было бы 0.03.
+  // Единственный PWM slew выбирает min(global=3.0, kids=3.0) = 3.0 /с.
   EXPECT_NEAR(platform_.GetLastSteering(), 0.06f, 0.005f);
+}
+
+TEST_F(ProcessorTest, KidsModeUsesLowerGlobalSteeringSlewRate) {
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  cfg = stab_mgr_->GetConfig();
+  cfg.slew_steering = 1.0f;
+  cfg.kids_mode.slew_steering = 3.0f;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.0f, 1.0f});
+  RunSteps(10);
+
+  // min(global=1.0, kids=3.0) * 20 ms = 0.02.
+  EXPECT_NEAR(platform_.GetLastSteering(), 0.02f, 0.005f);
+}
+
+TEST_F(ProcessorTest, KidsModeBrakeUsesEffectiveThrottleSlewRate) {
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  cfg = stab_mgr_->GetConfig();
+  cfg.kids_mode.throttle_limit = 0.3f;
+  cfg.kids_mode.slew_throttle = 0.3f;
+  cfg.slew_throttle = 1.0f;
+  cfg.kids_mode.anti_spin_enabled = false;
+  cfg.kids_mode.accel_limit_enabled = false;
+  cfg.braking_mode = BrakingMode::Brake;
+  cfg.brake_slew_multiplier = 4.0f;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.3f, 0.0f});
+  RunSteps(1000);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.3f, 0.02f);
+
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  // min(global=1.0, kids=0.3) * 4 = 1.2 /с; 0.3 reaches zero in 250 ms.
+  RunSteps(130);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.0f, 0.05f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -87,6 +87,19 @@
                         <input type="range" id="kids-steering-limit" min="10" max="100" step="5" value="70" class="mini-slider">
                         <span id="kids-steering-value" class="mini-val">70</span>
                     </div>
+                    <div class="mini-slider-row">
+                        <label for="kids-slew-steering">Предел отзывчивости руля</label>
+                        <input type="range" id="kids-slew-steering" min="0.2" max="3" step="0.1" value="3.0" class="mini-slider">
+                        <span id="kids-slew-steering-value" class="mini-val">3.0</span>
+                    </div>
+                    <div class="mini-slider-row">
+                        <label for="kids-slew-throttle">Предел отзывчивости газа</label>
+                        <input type="range" id="kids-slew-throttle" min="0.1" max="2" step="0.1" value="0.3" class="mini-slider">
+                        <span id="kids-slew-throttle-value" class="mini-val">0.3</span>
+                    </div>
+                    <div class="field-row" id="kids-effective-slew" style="font-size:0.85em">
+                        Эффективно: руль 3.0/с, газ 0.3/с
+                    </div>
                     <div class="field-row" style="margin-top:6px">
                         <label class="chk"><input type="checkbox" id="kids-speed-limit-enabled"> Ограничение скорости (EKF)</label>
                     </div>
