@@ -1261,6 +1261,60 @@ function eventParamDesc(typeId, param) {
     return param ? String(param) : '';
 }
 
+function parseConfigSnapshot(view, base, size) {
+    const n = view.getUint16(base + 6, true);
+    if (view.getUint16(base + 4, true) !== 1 || n !== 63 || size < 8 + n * 4) return null;
+    const v = Array.from({length: n}, (_, i) => view.getFloat32(base + 8 + i * 4, true));
+    const b = i => v[i] !== 0;
+    const pid = i => ({kp: v[i], ki: v[i + 1], kd: v[i + 2], max_integral: v[i + 3], max_correction: v[i + 4]});
+    return {enabled: b(0), mode: v[1], fade_ms: v[2],
+        filter: {madgwick_beta: v[3], lpf_cutoff_hz: v[4], imu_sample_rate_hz: v[5], madgwick_enabled: b(6), ekf_enabled: b(7), adaptive_beta_enabled: b(8), adaptive_accel_threshold_g: v[9], motor_model_enabled: b(10), motor_speed_gain: v[11], motor_deadzone: v[12], speed_meas_noise: v[13], nhc_enabled: b(14), nhc_noise: v[15], tilt_comp_enabled: b(16), tilt_corr_gain_hz: v[17], tilt_accel_gate_band_g: v[18]},
+        yaw_rate: {pid: pid(19), steer_to_yaw_rate_dps: v[24]}, slip_angle: {pid: pid(25), target_deg: v[30]},
+        adaptive: {enabled: b(31), speed_ref_ms: v[32], scale_min: v[33], scale_max: v[34]},
+        oversteer: {warn_enabled: b(35), slip_thresh_deg: v[36], rate_thresh_deg_s: v[37], throttle_reduction: v[38]},
+        pitch_comp: {enabled: b(39), gain: v[40], max_correction: v[41]},
+        kids_mode: {throttle_limit: v[42], reverse_limit: v[43], steering_limit: v[44], slew_throttle: v[45], slew_steering: v[46], anti_spin_enabled: b(47), anti_spin_threshold_deg: v[48], anti_spin_reduction: v[49], accel_limit_enabled: b(50), accel_threshold_g: v[51], accel_limit_gain: v[52], accel_max_reduction: v[53], speed_limit_enabled: b(54), max_speed_ms: v[55], speed_limit_gain: v[56]},
+        slew_throttle: v[57], slew_steering: v[58], steering_trim: v[59], throttle_trim: v[60], braking_mode: v[61], brake_slew_multiplier: v[62]};
+}
+
+function csvCell(value) {
+    const text = String(value ?? '');
+    return /[",\n\r]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
+
+function mergeFrameEvent(existing, added) {
+    if (!existing) return added;
+    return {
+        name: existing.name + '|' + added.name,
+        desc: existing.desc + '|' + added.desc,
+        v1: existing.v1 + '|' + added.v1,
+        v2: existing.v2 + '|' + added.v2,
+        configs: (existing.configs || []).concat(added.configs || []),
+    };
+}
+
+// Timestamp values are uint32_t milliseconds. All compared points belong to
+// one retained telemetry window (far shorter than 2^31 ms), so the signed
+// delta preserves their chronological ordering across uint32 rollover.
+function timestampDelta(lhs, rhs) {
+    return (lhs - rhs) | 0;
+}
+
+function timestampAtOrBefore(lhs, rhs) {
+    return timestampDelta(lhs, rhs) <= 0;
+}
+
+// Unlike config snapshots, sparse events are not guaranteed to share a
+// signed-delta horizon with the frame ring. Keep only timestamps that fit the
+// concrete retained frame window, including its small lead/tail allowances.
+function timestampInFrameWindow(ts, firstTs, lastTs, leadMs, tailMs) {
+    const forwardFromFirst = (ts - firstTs) >>> 0;
+    const backwardFromFirst = (firstTs - ts) >>> 0;
+    const frameSpan = (lastTs - firstTs) >>> 0;
+    return backwardFromFirst <= leadMs ||
+           forwardFromFirst <= frameSpan + tailMs;
+}
+
 /**
  * Разложить события по кадрам телеметрии.
  *
@@ -1297,21 +1351,30 @@ function assignEventsToFrames(events, frameTs) {
     // изменится. Всё, что старше, — из прошлых прогонов (кольца кадров и
     // событий переполняются независимо).
     const gaps = [];
-    for (let i = 1; i < frameTs.length; i++) gaps.push(frameTs[i] - frameTs[i - 1]);
+    for (let i = 1; i < frameTs.length; i++) {
+        gaps.push((frameTs[i] - frameTs[i - 1]) >>> 0);
+    }
     gaps.sort((a, b) => a - b);
     const medianGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 10;
     const leadTolerance = 3 * medianGap;
+    const tailTolerance = 3 * medianGap;
+    const firstFrameTs = frameTs[0];
+    const lastFrameTs = frameTs[frameTs.length - 1];
 
-    const sorted = events.filter(ev => ev.ts >= frameTs[0] - leadTolerance)
-                         .sort((a, b) => a.ts - b.ts);
+    const sorted = events
+        .filter(ev => timestampInFrameWindow(
+            ev.ts, firstFrameTs, lastFrameTs, leadTolerance, tailTolerance))
+        .sort((a, b) => timestampDelta(a.ts, b.ts));
     let frameIdx = 0;
 
     for (const ev of sorted) {
         // Первый кадр с меткой >= метки события; иначе — последний кадр
-        while (frameIdx < frameTs.length - 1 && frameTs[frameIdx] < ev.ts) {
+        while (frameIdx < frameTs.length - 1 &&
+               timestampDelta(frameTs[frameIdx], ev.ts) < 0) {
             frameIdx++;
         }
-        const target = frameTs[frameIdx] < ev.ts ? frameTs.length - 1 : frameIdx;
+        const target = timestampDelta(frameTs[frameIdx], ev.ts) < 0
+            ? frameTs.length - 1 : frameIdx;
 
         const prev = byFrame.get(target);
         if (prev) {
@@ -1320,10 +1383,11 @@ function assignEventsToFrames(events, frameTs) {
                 desc: prev.desc + '|' + ev.desc,
                 v1:   prev.v1   + '|' + ev.v1,
                 v2:   prev.v2   + '|' + ev.v2,
+                configs: (prev.configs || []).concat(ev.configs || []),
             });
         } else {
             byFrame.set(target, { name: ev.name, desc: ev.desc,
-                                  v1: ev.v1, v2: ev.v2 });
+                                  v1: ev.v1, v2: ev.v2, configs: ev.configs || [] });
         }
     }
     return byFrame;
@@ -1423,9 +1487,12 @@ async function downloadBinaryLog() {
         // кадров (10 мс), поэтому раскладываем их по кадрам интервалом —
         // см. assignEventsToFrames() (LOS-226).
         const events = [];
+        const snapshots = [];
+        let eventCount = 0;
+        let eventSize = 0;
         if (framesEnd + 8 <= buf.byteLength) {
-            const eventCount = view.getUint32(framesEnd,     true);
-            const eventSize  = view.getUint32(framesEnd + 4, true);
+            eventCount = view.getUint32(framesEnd,     true);
+            eventSize  = view.getUint32(framesEnd + 4, true);
             if (eventSize < 8) {
                 console.warn('Ignoring telemetry events with invalid size: ' + eventSize);
             } else {
@@ -1447,9 +1514,24 @@ async function downloadBinaryLog() {
             }
         }
 
+        const eventsEnd = framesEnd + 8 + eventCount * eventSize;
+        if (eventSize >= 8 && eventsEnd + 8 <= buf.byteLength) {
+            const count = view.getUint32(eventsEnd, true);
+            const size = view.getUint32(eventsEnd + 4, true);
+            for (let i = 0; i < count; i++) {
+                const base = eventsEnd + 8 + i * size;
+                if (base + size > buf.byteLength) break;
+                const config = parseConfigSnapshot(view, base, size);
+                if (config) snapshots.push({ts: view.getUint32(base, true),
+                    frameIndex: size >= 264 ? view.getUint32(base + 260, true) : null,
+                    name: 'StabilizationConfigSnapshot', desc: 'schema1',
+                    v1: '', v2: '', configs: [config]});
+            }
+        }
+
         // ── Build single combined CSV ──────────────────────────────────────
         const header = FIELD_OFFSETS.map(f => f.name).join(',') +
-                       ',event_type,event_param,event_value1,event_value2';
+                       ',event_type,event_param,event_value1,event_value2,event_config';
         // Первый проход: разобрать кадры (события раскладываются по ним ниже,
         // поэтому нужны все метки сразу)
         const frames = [];
@@ -1464,13 +1546,32 @@ async function downloadBinaryLog() {
             }));
         }
 
+        // The binary export always starts the snapshot section with its
+        // baseline record. Its timestamp may predate the retained frames by
+        // more than the signed uint32 horizon, so do not infer it from time.
+        const baseline = snapshots.length ? snapshots[0] : null;
+        const orderedSnapshots = snapshots.slice(1)
+            .filter(snapshot => snapshot.frameIndex !== null);
+        events.push(...snapshots.slice(1)
+            .filter(snapshot => snapshot.frameIndex === null));
+
         const eventByFrame = assignEventsToFrames(
             events, frames.map(vals => vals[0]));  // ts_ms — первое поле
+        if (baseline) {
+            eventByFrame.set(0, mergeFrameEvent(eventByFrame.get(0), baseline));
+        }
+        for (const snapshot of orderedSnapshots) {
+            if (snapshot.frameIndex >= frames.length) continue;
+            eventByFrame.set(snapshot.frameIndex,
+                mergeFrameEvent(eventByFrame.get(snapshot.frameIndex), snapshot));
+        }
 
         const frameLines = frames.map((vals, i) => {
             const ev = eventByFrame.get(i);
             return vals.concat([ev ? ev.name : '', ev ? ev.desc : '',
-                                ev ? ev.v1   : '', ev ? ev.v2   : '']).join(',');
+                                ev ? ev.v1 : '', ev ? ev.v2 : '',
+                                ev && ev.configs.length ? JSON.stringify(ev.configs) : ''])
+                       .map(csvCell).join(',');
         });
         const csv = header + '\n' + frameLines.join('\n');
         triggerDownload(csv, 'telemetry_log.csv', 'text/csv');

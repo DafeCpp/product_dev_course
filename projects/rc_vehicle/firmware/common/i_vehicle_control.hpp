@@ -9,6 +9,7 @@
 #include "speed_calibration.hpp"
 #include "stabilization_config.hpp"
 #include "steering_trim_calibration.hpp"
+#include "telemetry_config_snapshot.hpp"
 #include "telemetry_event_log.hpp"
 #include "telemetry_log.hpp"
 #include "test_runner.hpp"
@@ -159,6 +160,16 @@ class IVehicleControl {
   virtual void GetLogInfo(size_t& count_out, size_t& cap_out) const = 0;
   [[nodiscard]] virtual bool GetLogFrame(size_t idx,
                                          TelemetryLogFrame& out) const = 0;
+  [[nodiscard]] virtual bool BeginLogExport(size_t& count_out) = 0;
+  [[nodiscard]] virtual bool BeginLogAndConfigExport(
+      size_t& frame_count_out, TelemetryLogFrame& tail_out,
+      size_t& snapshot_count_out) = 0;
+  [[nodiscard]] virtual bool FinalizeConfigSnapshotExport(
+      size_t& snapshot_count_out) = 0;
+  [[nodiscard]] virtual size_t CopyLogExportFrames(size_t start_idx,
+                                                   TelemetryLogFrame* out,
+                                                   size_t max_count) const = 0;
+  virtual void EndLogExport() = 0;
   virtual void ClearLog() = 0;
 
   // Лог событий (старт/стоп режимов и калибровок)
@@ -166,6 +177,17 @@ class IVehicleControl {
   [[nodiscard]] virtual bool GetEvent(size_t idx,
                                       TelemetryEvent& out) const = 0;
   virtual void ClearEventLog() = 0;
+
+  [[nodiscard]] virtual size_t GetConfigSnapshotCount() const = 0;
+  [[nodiscard]] virtual bool GetConfigSnapshot(
+      size_t idx, TelemetryConfigSnapshot& out) const = 0;
+  [[nodiscard]] virtual size_t CopyConfigSnapshots(TelemetryConfigSnapshot* out,
+                                                   size_t max_count) const = 0;
+  [[nodiscard]] virtual bool BeginConfigSnapshotExport(uint32_t max_ts_ms,
+                                                       size_t& count_out) = 0;
+  [[nodiscard]] virtual bool GetNextConfigSnapshotExport(
+      TelemetryConfigSnapshot& out) = 0;
+  virtual void EndConfigSnapshotExport() = 0;
 
   // Диагностика
   [[nodiscard]] virtual std::vector<SelfTestItem> RunSelfTest() const = 0;

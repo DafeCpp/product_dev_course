@@ -49,6 +49,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/vehicle_state_estimator.cpp
     ${COMMON_DIR}/telemetry_log.cpp
     ${COMMON_DIR}/telemetry_event_log.cpp
+    ${COMMON_DIR}/telemetry_config_snapshot.cpp
     ${COMMON_DIR}/motion_driver.cpp
     ${COMMON_DIR}/stabilization_config.cpp
     ${COMMON_DIR}/stabilization_pipeline.cpp

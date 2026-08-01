@@ -8,6 +8,7 @@
 #include "drive_mode_registry.hpp"
 #include "esp_log.h"
 #include "log_format.hpp"
+#include "telemetry_config_snapshot.hpp"
 
 namespace rc_vehicle {
 
@@ -51,12 +52,30 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     return false;
   }
 
-  // Читаем текущий mode под локом для корректного сравнения
-  DriveMode current_mode;
-  {
-    std::lock_guard<std::mutex> lock(config_mutex_);
+  // Determine whether this is a mode switch while holding the publication
+  // lock, then load a target profile outside it. Recheck after the load: a
+  // concurrent update may have changed the active mode meanwhile.
+  std::unique_lock<std::mutex> lock(config_mutex_);
+  DriveMode current_mode = config_.mode;
+  const bool requested_mode_change = validated_config.mode != current_mode;
+  std::optional<StabilizationConfig> saved_target;
+  while (validated_config.mode != current_mode) {
+    lock.unlock();
+    saved_target = platform_.LoadStabilizationConfig(validated_config.mode);
+    lock.lock();
+    if (config_.mode == current_mode) break;
     current_mode = config_.mode;
   }
+
+  // A concurrent request may already have completed this mode switch. The
+  // fields in this request then still belong to the old mode and must not
+  // overwrite the profile that has just been published.
+  if (requested_mode_change && validated_config.mode == current_mode) {
+    return true;
+  }
+
+  // Apply configuration, publish it and write its snapshot as one serialized
+  // transition. The potentially slow NVS write below remains outside it.
 
   // При смене режима восстановить ранее сохранённую настройку нового режима
   // (per-mode persistence): кастомизация режима не должна теряться при
@@ -66,10 +85,9 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
   // сохранённой конфигурацией, а не «довеском» к переключению.
   if (validated_config.mode != current_mode) {
     const DriveMode target_mode = validated_config.mode;
-    auto saved = platform_.LoadStabilizationConfig(target_mode);
     bool restored = false;
-    if (saved.has_value()) {
-      validated_config = *saved;
+    if (saved_target.has_value()) {
+      validated_config = *saved_target;
       validated_config.mode = target_mode;  // на всякий случай
       validated_config.Clamp();
       restored = validated_config.IsValid();
@@ -106,12 +124,16 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
     stab_weight_ = 0.0f;
   }
 
-  // Сохранить конфигурацию под локом
-  {
-    std::lock_guard<std::mutex> lock(config_mutex_);
-    config_ = validated_config;
+  config_ = validated_config;
+  // Configuration is live before the potentially slow NVS write. Record the
+  // transition now so frames during persistence and failed saves remain
+  // attributable to the configuration that was actually applied.
+  if (config_snapshot_log_) {
+    config_snapshot_log_->Push(TelemetryConfigSnapshot::FromConfig(
+        platform_.GetTimeMs(), validated_config));
   }
 
+  lock.unlock();
   if (save_to_nvs) {
     auto result = platform_.SaveStabilizationConfig(validated_config);
     if (result.has_value()) {
@@ -124,6 +146,14 @@ bool StabilizationManager::SetConfig(const StabilizationConfig& config,
   }
 
   return true;
+}
+
+void StabilizationManager::ClearAndSeedConfigSnapshots(uint32_t ts_ms) {
+  std::lock_guard<std::mutex> lock(config_mutex_);
+  if (!config_snapshot_log_) return;
+  config_snapshot_log_->Clear();
+  config_snapshot_log_->Push(
+      TelemetryConfigSnapshot::FromConfig(ts_ms, config_));
 }
 
 bool StabilizationManager::LoadFromNvs() {

@@ -30,6 +30,7 @@ idf_component_register(
         "../../common/telemetry_manager.cpp"
         "../../common/telemetry_log.cpp"
         "../../common/telemetry_event_log.cpp"
+        "../../common/telemetry_config_snapshot.cpp"
         "../../common/motion_driver.cpp"
         "../../common/vehicle_ekf.cpp"
         "../../common/vehicle_state_estimator.cpp"

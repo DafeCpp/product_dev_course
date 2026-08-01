@@ -98,6 +98,7 @@ void VehicleControlUnified::InitImuSubsystem() {
 
   stab_mgr_->LoadFromNvs();
   stab_mgr_->ApplyConfig();
+  stab_mgr_->SetConfigSnapshotLog(telem_mgr_->GetConfigSnapshotLog());
   calib_mgr_->StartAutoCalibration();
 }
 
@@ -117,6 +118,10 @@ void VehicleControlUnified::InitTelemetryLog() {
       << static_cast<unsigned>(config::TelemetryLogConfig::kCapacityFrames)
       << " frames";
   platform_->Log(LogLevel::Info, fmt.str());
+  if (stab_mgr_) {
+    telem_mgr_->PushConfigSnapshot(platform_->GetTimeMs(),
+                                   stab_mgr_->GetConfig());
+  }
 }
 
 bool VehicleControlUnified::InitializeComponents() {
@@ -136,6 +141,7 @@ bool VehicleControlUnified::InitializeComponents() {
                                              slip_ctrl_, imu_handler_.get()));
     stab_mgr_->LoadFromNvs();
     stab_mgr_->ApplyConfig();
+    stab_mgr_->SetConfigSnapshotLog(telem_mgr_->GetConfigSnapshotLog());
 
     // Загрузить калибровку магнитометра из NVS
     MagCalibData mag_calib_data{};

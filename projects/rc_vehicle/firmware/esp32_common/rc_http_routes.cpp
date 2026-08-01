@@ -3,6 +3,7 @@
 #include "crash_logger.hpp"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "telemetry_config_snapshot.hpp"
 #include "telemetry_event_log.hpp"
 #include "telemetry_log.hpp"
 #include "vehicle_control.hpp"
@@ -542,13 +543,45 @@ static esp_err_t crash_json_delete_handler(httpd_req_t* req) {
 //     [4] uint32_t event_count
 //     [4] uint32_t event_size   (sizeof(TelemetryEvent))
 //     [event_count × event_size] raw TelemetryEvent[]
+//   Section 3 — snapshots StabilizationConfig:
+//     [4] uint32_t snapshot_count
+//     [4] uint32_t snapshot_size
+//     [snapshot_count × snapshot_size] raw TelemetryConfigSnapshot[]
 // ─────────────────────────────────────────────────────────────────────────────
 
 static esp_err_t log_bin_handler(httpd_req_t* req) {
+  struct ConfigSnapshotExportGuard {
+    bool active{false};
+    ~ConfigSnapshotExportGuard() {
+      if (active) VehicleControlEndConfigSnapshotExport();
+    }
+  } snapshot_export;
+
   size_t frame_count = 0;
-  size_t cap = 0;
-  VehicleControlGetLogInfo(&frame_count, &cap);
+  TelemetryLogFrame tail_frame{};
+  size_t snapshot_count = 0;
+  if (!VehicleControlBeginLogAndConfigExport(&frame_count, &tail_frame,
+                                             &snapshot_count)) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  snapshot_export.active = true;
   const size_t event_count = VehicleControlGetEventCount();
+
+  // The first frozen frames have no overwrite slack in a full ring. Copy them
+  // before snapshot scanning or any network operation.
+  constexpr size_t kFrameBatch = 32;
+  TelemetryLogFrame frame_batch[kFrameBatch];
+  const size_t initial_frame_count = std::min(frame_count, kFrameBatch);
+  if (initial_frame_count > 0 &&
+      VehicleControlCopyLogExportFrames(0, frame_batch, initial_frame_count) !=
+          initial_frame_count) {
+    VehicleControlEndLogExport();
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (!VehicleControlFinalizeConfigSnapshotExport(&snapshot_count)) {
+    VehicleControlEndLogExport();
+    return ESP_ERR_INVALID_STATE;
+  }
 
   httpd_resp_set_type(req, "application/octet-stream");
   httpd_resp_set_hdr(req, "Content-Disposition",
@@ -562,28 +595,37 @@ static esp_err_t log_bin_handler(httpd_req_t* req) {
   };
   esp_err_t err = httpd_resp_send_chunk(
       req, reinterpret_cast<const char*>(frame_header), sizeof(frame_header));
-  if (err != ESP_OK) return err;
+  if (err != ESP_OK) {
+    VehicleControlEndLogExport();
+    return err;
+  }
 
   // ── Section 1 data: frames in batches ────────────────────────────────────
-  constexpr size_t kFrameBatch = 32;
-  TelemetryLogFrame frame_batch[kFrameBatch];
-
-  for (size_t sent = 0; sent < frame_count;) {
-    size_t n = std::min(kFrameBatch, frame_count - sent);
-    size_t filled = 0;
-    for (size_t i = 0; i < n; ++i) {
-      if (VehicleControlGetLogFrame(sent + i, &frame_batch[filled])) {
-        ++filled;
-      }
+  if (initial_frame_count > 0) {
+    err =
+        httpd_resp_send_chunk(req, reinterpret_cast<const char*>(frame_batch),
+                              initial_frame_count * sizeof(TelemetryLogFrame));
+    if (err != ESP_OK) {
+      VehicleControlEndLogExport();
+      return err;
     }
-    if (filled > 0) {
-      err =
-          httpd_resp_send_chunk(req, reinterpret_cast<const char*>(frame_batch),
-                                filled * sizeof(TelemetryLogFrame));
-      if (err != ESP_OK) return err;
-    }
-    sent += n;
   }
+  for (size_t sent = initial_frame_count; sent < frame_count;
+       sent += kFrameBatch) {
+    const size_t n =
+        VehicleControlCopyLogExportFrames(sent, frame_batch, kFrameBatch);
+    if (n == 0) {
+      VehicleControlEndLogExport();
+      return ESP_ERR_INVALID_STATE;
+    }
+    err = httpd_resp_send_chunk(req, reinterpret_cast<const char*>(frame_batch),
+                                n * sizeof(TelemetryLogFrame));
+    if (err != ESP_OK) {
+      VehicleControlEndLogExport();
+      return err;
+    }
+  }
+  VehicleControlEndLogExport();
 
   // ── Section 2 header: event_count + event_size ───────────────────────────
   const uint32_t event_header[2] = {
@@ -615,13 +657,29 @@ static esp_err_t log_bin_handler(httpd_req_t* req) {
     sent += n;
   }
 
+  const uint32_t snapshot_header[2] = {
+      static_cast<uint32_t>(snapshot_count),
+      static_cast<uint32_t>(sizeof(rc_vehicle::TelemetryConfigSnapshot)),
+  };
+  err =
+      httpd_resp_send_chunk(req, reinterpret_cast<const char*>(snapshot_header),
+                            sizeof(snapshot_header));
+  if (err != ESP_OK) return err;
+
+  for (size_t i = 0; i < snapshot_count; ++i) {
+    rc_vehicle::TelemetryConfigSnapshot snapshot{};
+    if (!VehicleControlGetNextConfigSnapshotExport(&snapshot)) {
+      return ESP_ERR_INVALID_STATE;
+    }
+    err = httpd_resp_send_chunk(req, reinterpret_cast<const char*>(&snapshot),
+                                sizeof(snapshot));
+    if (err != ESP_OK) return err;
+  }
+
   // End chunked response
   httpd_resp_send_chunk(req, nullptr, 0);
-  ESP_LOGI(TAG, "Binary log download: %zu frames + %zu events, %zu bytes total",
-           frame_count, event_count,
-           frame_count * sizeof(TelemetryLogFrame) +
-               event_count * sizeof(rc_vehicle::TelemetryEvent) +
-               sizeof(frame_header) + sizeof(event_header));
+  ESP_LOGI(TAG, "Binary log download: %zu frames + %zu events + %zu snapshots",
+           frame_count, event_count, snapshot_count);
   return ESP_OK;
 }
 
