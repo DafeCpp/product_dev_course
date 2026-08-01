@@ -35,9 +35,18 @@ class WsTelemChannel {
  public:
   using JsonBuilder = std::string (*)(const T&);
 
-  /** Идемпотентен: повторный вызов после успешного старта — не-op. */
+  /**
+   * Идемпотентен: повторный вызов после успешного старта — не-op.
+   *
+   * LOS-252: core_id по умолчанию 0 — httpd-сервер тоже не закреплён
+   * (HTTPD_DEFAULT_CONFIG → tskNO_AFFINITY) и делает блокирующий
+   * httpd_ws_send_data() внутри отправки; не даём этому таску (и его
+   * ожиданию httpd-воркера) конкурировать за core1 с control loop'ом,
+   * явно закреплённым за core1 (CreateTask).
+   */
   esp_err_t Start(JsonBuilder build, const char* task_name = "ws_telem",
-                  UBaseType_t prio = 5, uint32_t stack = 8192) {
+                  UBaseType_t prio = 5, uint32_t stack = 8192,
+                  BaseType_t core_id = 0) {
     if (queue_ != nullptr) {
       return ESP_OK;
     }
@@ -46,8 +55,8 @@ class WsTelemChannel {
     if (queue_ == nullptr) {
       return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreate(&WsTelemChannel::TaskEntry, task_name, stack, this, prio,
-                    nullptr) != pdPASS) {
+    if (xTaskCreatePinnedToCore(&WsTelemChannel::TaskEntry, task_name, stack,
+                                this, prio, nullptr, core_id) != pdPASS) {
       vQueueDelete(queue_);
       queue_ = nullptr;
       return ESP_ERR_NO_MEM;

@@ -50,9 +50,12 @@ esp_err_t RcWsTelemStart() { return g_ws_telem.Start(&BuildTelemJson); }
  */
 class DiagLogTask {
  public:
+  // LOS-252: core_id по умолчанию 0 — см. аналогичный комментарий у
+  // WsTelemChannel::Start(); не даём низкоприоритетным таскам конкурировать
+  // за core1 с control loop'ом (закреплён за core1 в CreateTask).
   esp_err_t Start(VehicleControlPlatform& platform,
                   const char* task_name = "diag_log", UBaseType_t prio = 3,
-                  uint32_t stack = 8192) {
+                  uint32_t stack = 8192, BaseType_t core_id = 0) {
     if (queue_ != nullptr) {
       return ESP_OK;
     }
@@ -61,8 +64,8 @@ class DiagLogTask {
     if (queue_ == nullptr) {
       return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreate(&DiagLogTask::TaskEntry, task_name, stack, this, prio,
-                    nullptr) != pdPASS) {
+    if (xTaskCreatePinnedToCore(&DiagLogTask::TaskEntry, task_name, stack, this,
+                                prio, nullptr, core_id) != pdPASS) {
       vQueueDelete(queue_);
       queue_ = nullptr;
       return ESP_ERR_NO_MEM;
