@@ -348,8 +348,8 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
     if (drive_mode == DriveMode::Kids) {
       effective_slew_thr =
           std::min(effective_slew_thr, input.config.kids_mode.slew_throttle);
-      effective_slew_steer = std::min(effective_slew_steer,
-                                      input.config.kids_mode.slew_steering);
+      effective_slew_steer =
+          std::min(effective_slew_steer, input.config.kids_mode.slew_steering);
     }
     const float base_slew_thr = effective_slew_thr;
     if (input.config.braking_mode == BrakingMode::Brake &&

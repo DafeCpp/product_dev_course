@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+
 #include "stabilization_pipeline.hpp"
 
 namespace rc_vehicle {
@@ -168,7 +169,6 @@ void KidsModeProcessor::ApplySpeedLimit(
   } else {
     speed_limit_active_ = false;
   }
-
 }
 
 void KidsModeProcessor::Reset() noexcept {
