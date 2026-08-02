@@ -59,7 +59,6 @@ void ApplyKidsYawSafetyPreset(StabilizationConfig& config) {
   config.yaw_rate.pid.ki = 0.0f;
   config.yaw_rate.pid.kd = 0.0f;
   config.yaw_rate.pid.max_correction = 0.15f;
-  config.yaw_rate.steer_to_yaw_rate_dps = 75.0f;
   config.adaptive.scale_max = 1.0f;
 }
 
