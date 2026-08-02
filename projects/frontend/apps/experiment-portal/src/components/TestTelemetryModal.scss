@@ -10,7 +10,7 @@
 .telemetry-modal .btn-link {
     background: none;
     border: none;
-    color: var(--primary);
+    color: var(--lp-primary);
     cursor: pointer;
     text-decoration: underline;
     padding: 0;
@@ -19,7 +19,7 @@
 }
 
 .telemetry-modal .btn-link:hover:not(:disabled) {
-    color: var(--primary-hover);
+    color: var(--lp-primary-hover);
 }
 
 .telemetry-modal .btn-link:disabled {
@@ -28,10 +28,10 @@
 }
 
 .telemetry-modal .success {
-    background-color: var(--success-container);
-    color: var(--success);
+    background-color: var(--lp-success-container);
+    color: var(--lp-success);
     padding: 12px 16px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--lp-radii-sm);
     margin-bottom: 20px;
     font-size: 14px;
 }

@@ -51,7 +51,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,7 +62,7 @@
   font-weight: 700;
   font-family: var(--font-display);
   letter-spacing: -0.03em;
-  color: var(--text);
+  color: var(--lp-text);
   line-height: 1;
 }
 
@@ -71,11 +71,11 @@
   flex-wrap: wrap;
   gap: 6px 12px;
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
 }
 
 .run-metrics__summary-card-stats strong {
-  color: var(--text);
+  color: var(--lp-text);
   font-weight: 600;
 }
 
@@ -84,7 +84,7 @@
 .run-metrics__agg-notice {
   margin: 0;
   font-size: 0.8125rem;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   padding: 6px 12px;
   background: rgba(217, 119, 6, 0.06);
   border-radius: 8px;

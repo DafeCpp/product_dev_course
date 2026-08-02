@@ -163,7 +163,7 @@ describe('Webhooks', () => {
         expect(await screen.findByLabelText(/target url/i)).toBeInTheDocument()
 
         // Use fireEvent.change to avoid jsdom cssstyle bug with
-        // border: 1px solid var(--outline) in form-group elements on focus
+        // border: 1px solid var(--lp-border) in form-group elements on focus
         fireEvent.change(screen.getByLabelText(/target url/i), {
             target: { value: 'https://example.com/hook' },
         })
@@ -196,7 +196,7 @@ describe('Webhooks', () => {
         await screen.findByLabelText(/target url/i)
 
         // Use fireEvent.change to avoid jsdom cssstyle bug with
-        // border: 1px solid var(--outline) in form-group elements on focus
+        // border: 1px solid var(--lp-border) in form-group elements on focus
         fireEvent.change(screen.getByLabelText(/target url/i), {
             target: { value: 'not-a-url' },
         })

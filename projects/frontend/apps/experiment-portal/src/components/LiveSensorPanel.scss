@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .lsp {
   display: flex;
@@ -7,7 +8,7 @@
   padding: 14px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.62);
-  border: 1px solid $overlay-ink-08;
+  border: 1px solid var(--portal-overlay-ink-08);
   max-height: calc(100vh - 200px);
   overflow-y: auto;
   position: sticky;
@@ -26,7 +27,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: $text-secondary;
+  color: lp.$lp-color-text-secondary;
 }
 
 .lsp__summary {
@@ -48,15 +49,15 @@
 }
 
 .lsp__summary-chip--online {
-  background: $success;
+  background: lp.$lp-color-success;
 }
 
 .lsp__summary-chip--delayed {
-  background: $warning;
+  background: lp.$lp-color-warning;
 }
 
 .lsp__summary-chip--offline {
-  background: $text-secondary;
+  background: lp.$lp-color-text-secondary;
 }
 
 .lsp__list {
@@ -72,12 +73,12 @@
   padding: 8px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.7);
-  border: 1px solid $overlay-ink-08;
+  border: 1px solid var(--portal-overlay-ink-08);
   transition: border-color 0.15s ease;
 }
 
 .lsp__card:hover {
-  border-color: $overlay-ink-12;
+  border-color: var(--portal-overlay-ink-12);
 }
 
 .lsp__card-top {
@@ -119,7 +120,7 @@
 .lsp__name {
   font-size: 0.78rem;
   font-weight: 700;
-  color: $text;
+  color: lp.$lp-color-text;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -129,7 +130,7 @@
 
 .lsp__type {
   font-size: 0.65rem;
-  color: $text-hint;
+  color: var(--portal-text-hint);
   flex-shrink: 0;
 }
 
@@ -142,11 +143,11 @@
 .lsp__sparkline {
   width: 100%;
   height: 20px;
-  color: $primary;
+  color: lp.$lp-color-primary;
 }
 
 .lsp__sparkline--empty {
-  background: $overlay-ink-02;
+  background: var(--portal-overlay-ink-02);
   border-radius: 4px;
   height: 20px;
 }
@@ -167,14 +168,14 @@
 
 .lsp__value-sparkline-last {
   font-size: 0.75rem;
-  color: $text-hint;
+  color: var(--portal-text-hint);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .lsp__value-sparkline-range {
   font-size: 0.6rem;
-  color: $text-dim;
+  color: var(--portal-text-dim);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -190,14 +191,14 @@
 .lsp__last-value {
   font-size: 0.7rem;
   font-weight: 700;
-  color: $text;
+  color: lp.$lp-color-text;
   white-space: nowrap;
   margin-right: auto;
 }
 
 .lsp__heartbeat {
   font-size: 0.65rem;
-  color: $text-hint;
+  color: var(--portal-text-hint);
 }
 
 // Latency badge
@@ -214,18 +215,18 @@
 }
 
 .lsp__latency--green {
-  background: rgba($success, 0.12);
-  color: $success;
+  background: rgba(lp.$lp-color-success, 0.12);
+  color: lp.$lp-color-success;
 }
 
 .lsp__latency--amber {
-  background: rgba($warning, 0.12);
-  color: $warning;
+  background: rgba(lp.$lp-color-warning, 0.12);
+  color: lp.$lp-color-warning;
 }
 
 .lsp__latency--gray {
-  background: $overlay-ink-08;
-  color: $text-secondary;
+  background: var(--portal-overlay-ink-08);
+  color: lp.$lp-color-text-secondary;
 }
 
 .lsp__status {
@@ -236,20 +237,20 @@
 }
 
 .lsp__status--online {
-  color: $success;
+  color: lp.$lp-color-success;
 }
 
 .lsp__status--delayed {
-  color: $warning;
+  color: lp.$lp-color-warning;
 }
 
 .lsp__status--offline {
-  color: $text-secondary;
+  color: lp.$lp-color-text-secondary;
 }
 
 .lsp__error-badge {
   margin-left: auto;
-  background: $error;
+  background: lp.$lp-color-error;
   color: #fff;
   font-size: 10px;
   font-weight: 700;

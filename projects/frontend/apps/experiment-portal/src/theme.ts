@@ -1,28 +1,31 @@
 import { createTheme } from '@mui/material/styles'
+import { palette, themes } from '@lostpointer/web-tokens'
+
+const colors = themes.light
 
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#4f46e5',
-      dark: '#4338ca',
-      light: '#818cf8',
-      contrastText: '#fff',
+      main: colors.primary,
+      dark: colors.primaryHover,
+      light: palette.indigo[300],
+      contrastText: colors.onPrimary,
     },
     error: {
-      main: '#dc2626',
-      contrastText: '#fff',
+      main: colors.error,
+      contrastText: colors.onPrimary,
     },
     warning: {
-      main: '#d97706',
-      contrastText: '#fff',
+      main: colors.warning,
+      contrastText: colors.onPrimary,
     },
     success: {
-      main: '#16a34a',
-      contrastText: '#fff',
+      main: colors.success,
+      contrastText: colors.onPrimary,
     },
     info: {
-      main: '#0284c7',
-      contrastText: '#fff',
+      main: colors.info,
+      contrastText: colors.onPrimary,
     },
   },
 })

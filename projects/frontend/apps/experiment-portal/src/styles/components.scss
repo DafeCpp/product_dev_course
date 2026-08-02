@@ -1,4 +1,5 @@
-@import './colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 // ── Badges ──
 .badge {
@@ -6,14 +7,14 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--lp-radii-pill);
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border: 1px solid transparent;
-  background-color: var(--surface-variant);
-  color: var(--text-secondary);
+  background-color: var(--lp-surface-variant);
+  color: var(--lp-text-secondary);
 }
 
 .badge::before {
@@ -26,38 +27,38 @@
 
 .badge-primary {
   background-color: rgba(79, 70, 229, 0.08);
-  color: var(--primary);
+  color: var(--lp-primary);
   border-color: rgba(79, 70, 229, 0.12);
 }
 
 .badge-success {
   background-color: rgba(22, 163, 74, 0.08);
-  color: var(--success);
+  color: var(--lp-success);
   border-color: rgba(22, 163, 74, 0.12);
 }
 
 .badge-warning {
   background-color: rgba(217, 119, 6, 0.08);
-  color: var(--warning);
+  color: var(--lp-warning);
   border-color: rgba(217, 119, 6, 0.12);
 }
 
 .badge-danger {
   background-color: rgba(220, 38, 38, 0.08);
-  color: var(--error);
+  color: var(--lp-error);
   border-color: rgba(220, 38, 38, 0.12);
 }
 
 .badge-info {
   background-color: rgba(2, 132, 199, 0.08);
-  color: var(--info);
+  color: var(--lp-info);
   border-color: rgba(2, 132, 199, 0.12);
 }
 
 .badge-secondary {
-  background-color: var(--surface-variant);
-  color: var(--text-secondary);
-  border-color: var(--outline);
+  background-color: var(--lp-surface-variant);
+  color: var(--lp-text-secondary);
+  border-color: var(--lp-border);
 }
 
 .btn-sm {
@@ -67,7 +68,7 @@
 }
 
 .text-muted {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.9rem;
 }
 
@@ -82,7 +83,7 @@
 
 .section-header h3 {
   margin: 0;
-  color: var(--text);
+  color: var(--lp-text);
   font-size: clamp(1.05rem, 1.5vw, 1.25rem);
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -95,7 +96,7 @@
   align-items: flex-start;
   gap: 16px;
   padding: 10px 0;
-  border-bottom: 1px solid var(--outline);
+  border-bottom: 1px solid var(--lp-border);
 }
 
 .info-row:last-child {
@@ -103,7 +104,7 @@
 }
 
 .info-row strong {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-weight: 600;
   min-width: 140px;
   text-transform: uppercase;
@@ -112,12 +113,12 @@
 }
 
 .info-row span {
-  color: var(--text);
+  color: var(--lp-text);
   text-align: right;
 }
 
 .mono {
-  font-family: var(--font-mono);
+  font-family: var(--lp-typography-font-family-mono);
   font-size: 0.82rem;
 }
 
@@ -138,10 +139,10 @@
   align-items: center;
   gap: 6px;
   padding: 6px;
-  background: var(--surface);
-  border: 1px solid var(--outline);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--elevation-1);
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radii-pill);
+  box-shadow: var(--lp-shadows-1);
   width: 100%;
 }
 
@@ -162,27 +163,27 @@
   gap: 8px;
   height: 40px;
   padding: 0 12px;
-  border: 1px solid $input-border;
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  border: 1px solid lp.$lp-color-border-input;
+  border-radius: var(--lp-radii-pill);
+  background: var(--lp-surface);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 
-  &:hover { border-color: $outline-muted; background: var(--surface-variant); }
-  &:focus-within { border-color: $primary; box-shadow: var(--focus-ring); background: var(--surface); }
+  &:hover { border-color: var(--portal-outline-muted); background: var(--lp-surface-variant); }
+  &:focus-within { border-color: lp.$lp-color-primary; box-shadow: var(--focus-ring); background: var(--lp-surface); }
 
-  svg { color: $text-secondary; flex: none; }
+  svg { color: lp.$lp-color-text-secondary; flex: none; }
 
   input {
     border: none;
     outline: none;
     background: transparent;
     font-size: 0.87rem;
-    color: $text;
+    color: lp.$lp-color-text;
     flex: 1;
     min-width: 0;
     font-family: inherit;
 
-    &::placeholder { color: $text-hint; }
+    &::placeholder { color: var(--portal-text-hint); }
   }
 }
 
@@ -199,27 +200,27 @@
   display: inline-flex;
   gap: 4px;
   padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--outline);
-  border-radius: var(--radius-pill);
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radii-pill);
   flex: 0 0 auto;
 }
 
 .filter-capsule__chip {
   height: 32px;
   padding: 0 12px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--lp-radii-pill);
   border: none;
   background: transparent;
-  color: $text-secondary;
+  color: lp.$lp-color-text-secondary;
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
   transition: background 0.15s ease, color 0.15s ease;
 
-  &:hover { background: $surface-variant; color: $text; }
-  &.is-active { background: $primary; color: #fff; }
+  &:hover { background: lp.$lp-color-surface-variant; color: lp.$lp-color-text; }
+  &.is-active { background: lp.$lp-color-primary; color: #fff; }
 }
 
 // Login pill input (taller, with icon)
@@ -229,27 +230,27 @@
   gap: 10px;
   height: 52px;
   padding: 0 16px;
-  border: 1px solid $input-border;
+  border: 1px solid lp.$lp-color-border-input;
   border-radius: 14px;
-  background: var(--surface);
+  background: var(--lp-surface);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
-  &:hover { border-color: $outline-muted; }
-  &:focus-within { border-color: $primary; box-shadow: var(--focus-ring); }
+  &:hover { border-color: var(--portal-outline-muted); }
+  &:focus-within { border-color: lp.$lp-color-primary; box-shadow: var(--focus-ring); }
 
-  svg { color: $text-secondary; flex: none; }
+  svg { color: lp.$lp-color-text-secondary; flex: none; }
 
   input {
     border: none;
     outline: none;
     background: transparent;
     font-size: 0.95rem;
-    color: $text;
+    color: lp.$lp-color-text;
     flex: 1;
     min-width: 0;
     font-family: inherit;
     height: 100%;
 
-    &::placeholder { color: $text-hint; }
+    &::placeholder { color: var(--portal-text-hint); }
   }
 }

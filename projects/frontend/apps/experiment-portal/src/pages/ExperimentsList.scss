@@ -33,14 +33,14 @@
   bottom: 16px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: var(--primary);
+  background: var(--lp-primary);
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
 .experiment-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--elevation-2);
+  box-shadow: var(--lp-shadows-2);
   border-color: rgba(79, 70, 229, 0.15);
 }
 
@@ -59,11 +59,11 @@
   font-size: clamp(1.25rem, 2vw, 1.5rem);
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--text);
+  color: var(--lp-text);
 }
 
 .experiment-description {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   line-height: 1.6;
   font-size: 0.9rem;
 }
@@ -75,7 +75,7 @@
   gap: 16px;
   margin-top: auto;
   padding-top: 14px;
-  border-top: 1px solid var(--outline);
+  border-top: 1px solid var(--lp-border);
 }
 
 .experiment-card__meta {
@@ -84,7 +84,7 @@
 }
 
 .experiment-card__meta span {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -92,12 +92,12 @@
 }
 
 .experiment-card__meta strong {
-  color: var(--text);
+  color: var(--lp-text);
   font-size: 0.9rem;
 }
 
 .experiment-card__cta {
-  color: var(--primary);
+  color: var(--lp-primary);
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -106,7 +106,7 @@
 }
 
 .experiment-card:hover .experiment-card__cta {
-  color: var(--primary-hover);
+  color: var(--lp-primary-hover);
 }
 
 .experiments-filter-row {

@@ -3,9 +3,9 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    border: 1px solid var(--outline);
-    background: var(--surface);
-    color: var(--text-secondary);
+    border: 1px solid var(--lp-border);
+    background: var(--lp-surface);
+    color: var(--lp-text-secondary);
     user-select: none;
     pointer-events: none;
 }
@@ -27,6 +27,6 @@
     right: 24px;
     width: 56px;
     height: 56px;
-    box-shadow: var(--elevation-2);
+    box-shadow: var(--lp-shadows-2);
     z-index: 1000;
 }

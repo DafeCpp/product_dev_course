@@ -80,7 +80,7 @@ export default function SensorErrorLog({
               >
                 ← Назад
               </button>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--lp-text-secondary)' }}>
                 {errorLogPage * errorLogLimit + 1}–{Math.min((errorLogPage + 1) * errorLogLimit, errorLogData.total)} из {errorLogData.total}
               </span>
               <button

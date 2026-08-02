@@ -1,6 +1,6 @@
 .rate-limit-form {
-  background-color: var(--bg-primary, #fff);
-  border: 1px solid var(--border-color, #ddd);
+  background-color: var(--lp-surface);
+  border: 1px solid var(--lp-border);
   border-radius: 8px;
   padding: 24px;
   margin-bottom: 24px;
@@ -12,14 +12,14 @@
       margin: 0 0 8px 0;
       font-size: 18px;
       font-weight: 600;
-      color: var(--text-primary, #1a1a1a);
+      color: var(--lp-text);
     }
   }
 
   &__description {
     margin: 0;
     font-size: 14px;
-    color: var(--text-secondary, #666);
+    color: var(--lp-text-secondary);
   }
 
   &__content {
@@ -38,10 +38,10 @@
     margin: 0 0 16px 0;
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-primary, #1a1a1a);
+    color: var(--lp-text);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border-color, #ddd);
+    border-bottom: 1px solid var(--lp-border);
     padding-bottom: 12px;
   }
 
@@ -49,24 +49,24 @@
     width: 100%;
     padding: 8px 12px;
     font-size: 14px;
-    border: 1px solid var(--border-color, #ddd);
+    border: 1px solid var(--lp-border);
     border-radius: 4px;
-    background-color: var(--input-bg, #fff);
-    color: var(--text-primary, #1a1a1a);
+    background-color: var(--lp-surface);
+    color: var(--lp-text);
 
     &:focus {
       outline: none;
-      border-color: var(--primary, #0066cc);
+      border-color: var(--lp-primary);
       box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
     }
 
     &[aria-invalid='true'] {
-      border-color: var(--error-color, #cc0000);
+      border-color: var(--lp-error);
     }
 
     &:disabled {
-      background-color: var(--input-disabled-bg, #f5f5f5);
-      color: var(--text-disabled, #999);
+      background-color: var(--lp-surface-muted);
+      color: var(--portal-text-dim);
       cursor: not-allowed;
     }
   }
@@ -75,7 +75,7 @@
     display: block;
     margin-top: 4px;
     font-size: 12px;
-    color: var(--text-tertiary, #999);
+    color: var(--portal-text-dim);
   }
 }
 
@@ -83,6 +83,6 @@
   display: block;
   margin-top: 6px;
   font-size: 12px;
-  color: var(--error-color, #cc0000);
+  color: var(--lp-error);
   font-weight: 500;
 }

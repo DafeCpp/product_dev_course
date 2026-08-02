@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 @import '../styles/components';
 @import '../styles/tables';
 @import './Modal';
@@ -20,11 +21,11 @@
     margin: 0 0 1rem 0;
     font-size: 1.125rem;
     font-weight: 600;
-    color: var(--text);
+    color: var(--lp-text);
 }
 
 .empty-message {
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     font-style: italic;
     padding: 1rem;
     text-align: center;
@@ -39,13 +40,13 @@
 }
 
 .btn-danger {
-    background-color: var(--error);
-    color: $surface-base;
+    background-color: var(--lp-error);
+    color: lp.$lp-color-surface;
     border: none;
 }
 
 .btn-danger:hover:not(:disabled) {
-    background-color: $danger-hover;
+    background-color: var(--portal-danger-hover);
 }
 
 .btn-danger:disabled {
@@ -56,14 +57,14 @@
 .add-member-form {
     margin-top: 2rem;
     padding-top: 2rem;
-    border-top: 2px solid var(--outline);
+    border-top: 2px solid var(--lp-border);
 }
 
 .add-member-form h3 {
     margin: 0 0 1rem 0;
     font-size: 1.125rem;
     font-weight: 600;
-    color: var(--text);
+    color: var(--lp-text);
 }
 
 .project-card-header {
@@ -93,11 +94,11 @@
     margin: 0 0 16px 0;
     font-size: 18px;
     font-weight: 600;
-    color: var(--text);
+    color: var(--lp-text);
 }
 
 .user-projects-section {
-    border-top: 1px solid var(--outline);
+    border-top: 1px solid var(--lp-border);
 }
 
 .info-grid {
@@ -114,19 +115,19 @@
 
 .info-label {
     font-weight: 500;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     min-width: 150px;
 }
 
 .info-value {
-    color: var(--text);
+    color: var(--lp-text);
     flex: 1;
 }
 
 .info-value.mono {
     font-family: 'Courier New', monospace;
     font-size: 14px;
-    background-color: var(--surface-variant);
+    background-color: var(--lp-surface-variant);
     padding: 4px 8px;
     border-radius: 4px;
 }
@@ -145,13 +146,13 @@
 .user-profile-modal .projects-list td {
     padding: 12px 16px;
     text-align: left;
-    border-bottom: 1px solid var(--outline);
+    border-bottom: 1px solid var(--lp-border);
 }
 
 .user-profile-modal .projects-list th {
-    background-color: var(--surface-variant);
+    background-color: var(--lp-surface-variant);
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     font-size: 14px;
     position: sticky;
     top: 0;
@@ -159,9 +160,9 @@
 }
 
 .user-profile-modal .projects-list tr:nth-child(even) {
-    background-color: $surface-row-alt;
+    background-color: lp.$lp-color-background;
 }
 
 .user-profile-modal .projects-list tr:hover {
-    background-color: var(--surface-variant);
+    background-color: var(--lp-surface-variant);
 }

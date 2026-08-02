@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .run-detail__hero {
   margin-bottom: 0;
@@ -61,10 +62,10 @@
 
 .telemetry-hints .mono {
   padding: 8px 12px;
-  border-radius: var(--radius-pill);
-  background: rgba(12, 74, 110, 0.08);
-  color: var(--info);
-  border: 1px solid rgba(12, 74, 110, 0.12);
+  border-radius: var(--lp-radii-pill);
+  background: color-mix(in srgb, var(--lp-info) 8%, transparent);
+  color: var(--lp-info);
+  border: 1px solid color-mix(in srgb, var(--lp-info) 12%, transparent);
 }
 
 .sessions-list {
@@ -83,8 +84,8 @@
 }
 
 .session-card.active {
-  background: linear-gradient(135deg, rgba(15, 118, 110, 0.1), rgba(12, 74, 110, 0.08));
-  border-color: rgba(15, 118, 110, 0.18);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--lp-primary) 10%, transparent), color-mix(in srgb, var(--lp-info) 8%, transparent));
+  border-color: color-mix(in srgb, var(--lp-primary) 18%, transparent);
 }
 
 .session-header {
@@ -133,7 +134,7 @@
   padding: 8px 14px;
   cursor: pointer;
   font-size: 0.86rem;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -141,14 +142,14 @@
 }
 
 .run-metrics__tab.active {
-  color: var(--text);
+  color: var(--lp-text);
   font-weight: 700;
   background: rgba(255, 255, 255, 0.82);
 }
 
 .run-metrics__tab:hover {
   transform: translateY(-1px);
-  border-color: rgba(15, 118, 110, 0.18);
+  border-color: color-mix(in srgb, var(--lp-primary) 18%, transparent);
 }
 
 .run-metrics__tab-count {
@@ -159,36 +160,36 @@
   height: 26px;
   padding: 0 8px;
   border-radius: 999px;
-  background: rgba(15, 118, 110, 0.08);
-  color: var(--primary);
+  background: color-mix(in srgb, var(--lp-primary) 8%, transparent);
+  color: var(--lp-primary);
   font-size: 0.75rem;
   font-weight: 700;
 }
 
 .run-metrics__summary {
   margin-top: 12px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.9rem;
 }
 
 .run-metrics__summary strong {
-  color: var(--text);
+  color: var(--lp-text);
 }
 
 .run-countdown {
   margin-top: 10px;
   padding: 8px 14px;
-  border-radius: var(--radius-pill);
-  background: rgba(15, 118, 110, 0.08);
-  color: var(--primary);
-  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: var(--lp-radii-pill);
+  background: color-mix(in srgb, var(--lp-primary) 8%, transparent);
+  color: var(--lp-primary);
+  border: 1px solid color-mix(in srgb, var(--lp-primary) 18%, transparent);
   font-size: 0.9rem;
   font-weight: 600;
   display: inline-block;
 
   &.countdown-warning {
     background: rgba(217, 119, 6, 0.1);
-    color: var(--warning);
+    color: var(--lp-warning);
     border-color: rgba(217, 119, 6, 0.25);
   }
 }

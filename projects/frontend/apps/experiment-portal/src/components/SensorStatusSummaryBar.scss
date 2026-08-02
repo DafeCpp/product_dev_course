@@ -11,7 +11,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   flex-shrink: 0;
 }
 
@@ -27,7 +27,7 @@
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: var(--radius-pill, 9999px);
+  border-radius: var(--lp-radii-pill);
   font-size: 0.82rem;
   font-weight: 600;
 }
@@ -41,32 +41,32 @@
 
 .status-chip--online {
   background: rgba(22, 163, 74, 0.1);
-  color: var(--success);
+  color: var(--lp-success);
 }
 
 .status-chip--online .status-chip__dot {
-  background: var(--success);
+  background: var(--lp-success);
 }
 
 .status-chip--delayed {
   background: rgba(217, 119, 6, 0.1);
-  color: var(--warning);
+  color: var(--lp-warning);
 }
 
 .status-chip--delayed .status-chip__dot {
-  background: var(--warning);
+  background: var(--lp-warning);
 }
 
 .status-chip--offline {
   background: rgba(107, 114, 128, 0.1);
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
 }
 
 .status-chip--offline .status-chip__dot {
-  background: var(--text-secondary);
+  background: var(--lp-text-secondary);
 }
 
 .status-chip--total {
   background: rgba(91, 105, 118, 0.08);
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
 }

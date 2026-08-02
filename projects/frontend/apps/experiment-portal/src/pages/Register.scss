@@ -11,12 +11,12 @@
   font-size: clamp(2rem, 3vw, 2.6rem);
   font-weight: 700;
   letter-spacing: -0.05em;
-  color: var(--text);
+  color: var(--lp-text);
 }
 
 .register-subtitle {
   margin-top: 10px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.98rem;
 }
 
@@ -26,11 +26,11 @@
   gap: 8px;
   padding: 10px 14px;
   margin-bottom: 16px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--lp-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lp-primary) 30%, transparent);
   border-radius: 8px;
   font-size: 0.9rem;
-  color: var(--text);
+  color: var(--lp-text);
 
   &__icon {
     font-size: 1rem;

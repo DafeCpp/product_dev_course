@@ -218,7 +218,7 @@ describe('SystemRoles', () => {
         await screen.findByRole('heading', { name: /создать роль/i })
 
         // Use fireEvent.change to avoid jsdom cssstyle bug with
-        // border: 1px solid var(--outline) in form-group inputs on focus.
+        // border: 1px solid var(--lp-border) in form-group inputs on focus.
         // Surrounding whitespace is trimmed by handleSubmit.
         fireEvent.change(screen.getByLabelText(/название \*/i), {
             target: { value: '  New Role  ' },
@@ -255,7 +255,7 @@ describe('SystemRoles', () => {
         )
 
         // Use fireEvent.change to avoid jsdom cssstyle bug with
-        // border: 1px solid var(--outline) in form-group inputs on focus.
+        // border: 1px solid var(--lp-border) in form-group inputs on focus.
         fireEvent.change(nameInput, { target: { value: 'Renamed Role' } })
         await user.click(screen.getByRole('button', { name: /сохранить/i }))
 

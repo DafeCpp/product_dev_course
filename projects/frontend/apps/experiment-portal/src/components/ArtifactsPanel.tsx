@@ -547,7 +547,7 @@ export default function ArtifactsPanel({ runId, projectId, isOwner = false }: Pr
                     <TableCell sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {artifact.uri.startsWith('s3://') ? (
                         <Tooltip title={artifact.uri}>
-                          <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#64748b' }}>
+                          <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--lp-text-secondary)' }}>
                             {artifact.uri.split('/').pop() ?? artifact.uri}
                           </span>
                         </Tooltip>

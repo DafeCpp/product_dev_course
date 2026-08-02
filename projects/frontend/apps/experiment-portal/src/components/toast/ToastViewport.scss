@@ -1,4 +1,5 @@
-@import '../../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .toast-viewport {
   position: fixed;
@@ -14,19 +15,19 @@
 
 .toast-card {
   pointer-events: auto;
-  background: $surface-base;
+  background: lp.$lp-color-surface;
   border-radius: 10px;
-  box-shadow: 0 6px 22px $shadow-toast;
-  border: 1px solid $border-toast;
+  box-shadow: 0 6px 22px var(--portal-shadow-toast);
+  border: 1px solid var(--portal-border-toast);
   overflow: hidden;
 }
 
 .toast-card.toast-error {
-  border-left: 4px solid $toast-danger;
+  border-left: 4px solid lp.$lp-color-error;
 }
 
 .toast-card.toast-success {
-  border-left: 4px solid $toast-success;
+  border-left: 4px solid lp.$lp-color-success;
 }
 
 .toast-card-header {
@@ -35,22 +36,22 @@
   gap: 12px;
   align-items: flex-start;
   padding: 10px 12px 8px 12px;
-  border-bottom: 1px solid $border-subtle;
+  border-bottom: 1px solid lp.$lp-color-surface-variant;
 }
 
 .toast-title {
   font-size: 13px;
   font-weight: 600;
-  color: $text-title;
+  color: lp.$lp-color-text;
   line-height: 1.25;
 }
 
 .toast-card.toast-error .toast-title {
-  color: $toast-danger-text;
+  color: var(--portal-danger-hover);
 }
 
 .toast-card.toast-success .toast-title {
-  color: $toast-success-text;
+  color: var(--portal-success-hover);
 }
 
 .toast-close {
@@ -58,7 +59,7 @@
   border: none;
   font-size: 18px;
   line-height: 1;
-  color: $text-dim;
+  color: var(--portal-text-dim);
   padding: 0;
   width: 24px;
   height: 24px;
@@ -66,7 +67,7 @@
 }
 
 .toast-close:hover {
-  background-color: $surface-soft;
+  background-color: lp.$lp-color-surface-variant;
 }
 
 .toast-body {
@@ -75,7 +76,7 @@
 
 .toast-message {
   font-size: 13px;
-  color: $text-body;
+  color: var(--portal-text-body);
   line-height: 1.35;
   white-space: pre-wrap;
   word-break: break-word;

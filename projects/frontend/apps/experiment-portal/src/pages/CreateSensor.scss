@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .create-sensor {
     max-width: 800px;
@@ -15,12 +16,12 @@
 }
 
 .warning {
-    background-color: $surface-warning;
-    border: 1px solid $warning-border;
+    background-color: lp.$lp-color-warning-container;
+    border: 1px solid var(--portal-warning-border);
     border-radius: 8px;
     padding: 12px 16px;
     margin: 20px 0;
-    color: $text-warning-strong;
+    color: var(--portal-text-warning-strong);
     font-weight: 500;
 }
 
@@ -33,15 +34,15 @@
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: $text-body;
+    color: var(--portal-text-body);
 }
 
 .token-value {
     display: flex;
     gap: 12px;
     align-items: center;
-    background-color: $surface-muted-alt;
-    border: 1px solid $border-soft;
+    background-color: lp.$lp-color-surface-muted;
+    border: 1px solid lp.$lp-color-border;
     border-radius: 8px;
     padding: 16px;
 }
@@ -51,11 +52,11 @@
     font-family: 'Courier New', monospace;
     font-size: 14px;
     word-break: break-all;
-    color: $text-body;
+    color: var(--portal-text-body);
 }
 
 .redirect-info {
-    color: $text-dim;
+    color: var(--portal-text-dim);
     font-size: 14px;
     margin: 16px 0;
 }
@@ -72,7 +73,7 @@
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: $text-body;
+    color: var(--portal-text-body);
 }
 
 .form-group input,
@@ -80,7 +81,7 @@
 .form-group textarea {
     width: 100%;
     padding: 12px 16px;
-    border: 1px solid $border-input;
+    border: 1px solid lp.$lp-color-border-input;
     border-radius: 8px;
     font-size: 16px;
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -90,19 +91,19 @@
 .form-group select:focus,
 .form-group textarea:focus {
     outline: none;
-    border-color: $accent-blue-legacy;
-    box-shadow: 0 0 0 3px $accent-blue-ring;
+    border-color: lp.$lp-color-primary;
+    box-shadow: 0 0 0 3px var(--portal-accent-blue-ring);
 }
 
 .form-hint {
     display: block;
     margin-top: 4px;
     font-size: 12px;
-    color: $text-dim;
+    color: var(--portal-text-dim);
 }
 
 .required {
-    color: $toast-danger;
+    color: lp.$lp-color-error;
 }
 
 .form-actions {
@@ -111,5 +112,5 @@
     justify-content: flex-end;
     margin-top: 32px;
     padding-top: 24px;
-    border-top: 1px solid $border-subtle;
+    border-top: 1px solid lp.$lp-color-surface-variant;
 }

@@ -6,6 +6,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import App from './App.tsx'
 import ToastProvider from './components/toast/ToastProvider.tsx'
 import theme from './theme.ts'
+import '@lostpointer/web-styles/index.css'
 import './index.scss'
 
 const queryClient = new QueryClient({
@@ -30,4 +31,3 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ThemeProvider>
   </React.StrictMode>,
 )
-

@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .cs-timeline {
   display: flex;
@@ -10,8 +11,8 @@
   position: relative;
   height: 22px;
   border-radius: 6px;
-  background: $overlay-ink-02;
-  border: 1px solid $overlay-ink-08;
+  background: var(--portal-overlay-ink-02);
+  border: 1px solid var(--portal-overlay-ink-08);
   overflow: hidden;
 }
 
@@ -36,7 +37,7 @@
 }
 
 .cs-timeline__bar:focus-visible {
-  outline: 2px solid $border-focus;
+  outline: 2px solid lp.$lp-color-primary;
   outline-offset: 1px;
   opacity: 1;
 }
@@ -64,7 +65,7 @@
   align-items: center;
   gap: 4px;
   font-size: 0.68rem;
-  color: $text-secondary;
+  color: lp.$lp-color-text-secondary;
   font-weight: 600;
 }
 

@@ -327,7 +327,7 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
                 )}
 
                 {/* Live preview */}
-                <div className="form-group" style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '12px', borderRadius: '6px' }}>
+                <div className="form-group" style={{ background: 'var(--lp-surface-muted)', padding: '12px', borderRadius: '6px' }}>
                     <label>Предпросмотр</label>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <span>raw =</span>

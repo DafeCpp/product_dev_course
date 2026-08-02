@@ -1,63 +1,50 @@
-@import './styles/colors';
-@import './styles/effects';
-@import './styles/tokens';
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-:root {
-  color-scheme: light;
-  --primary: #{$primary};
-  --primary-hover: #{$primary-hover};
-  --primary-container: #{$primary-container};
-  --secondary: #{$secondary};
-  --secondary-container: #{$secondary-container};
-  --surface: #{$surface};
-  --surface-variant: #{$surface-variant};
-  --background: #{$background};
-  --outline: #{$outline};
-  --text: #{$text};
-  --text-secondary: #{$text-secondary};
-  --error: #{$error};
-  --error-container: #{$error-container};
-  --success: #{$success};
-  --success-container: #{$success-container};
-  --warning: #{$warning};
-  --warning-container: #{$warning-container};
-  --info: #{$info};
-  --info-container: #{$info-container};
-  --elevation-1: #{$elevation-1};
-  --elevation-2: #{$elevation-2};
-  --elevation-3: #{$elevation-3};
-  --radius-sm: #{$radius-sm};
-  --radius-md: #{$radius-md};
-  --radius-lg: #{$radius-lg};
-  --radius-pill: #{$radius-pill};
-  --surface-raised: rgba(255, 255, 255, 0.88);
-  --surface-panel: rgba(241, 245, 249, 0.72);
-  --border-soft: rgba(15, 23, 42, 0.06);
-  --border-strong: rgba(15, 23, 42, 0.12);
-  --shadow-soft: 0 2px 8px rgba(15, 23, 42, 0.06);
-  --shadow-strong: 0 4px 16px rgba(15, 23, 42, 0.1);
-  --focus-ring: 0 0 0 3px rgba(79, 70, 229, 0.2);
-  --page-max: 1360px;
-  --font-sans: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-display: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  --button-gradient: linear-gradient(135deg, #4f46e5 0%, #6366f1 60%, #818cf8 140%);
-  --card-gradient: linear-gradient(160deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.88) 50%, rgba(241, 245, 249, 0.92) 100%);
-  --sidebar-gradient: linear-gradient(180deg, #0f172a 0%, #1e293b 52%, #312e81 100%);
+@layer app-overrides {
+  [data-app='experiment-portal'] {
+    color-scheme: light;
+    --surface-raised: rgba(255, 255, 255, 0.88);
+    --surface-panel: rgba(241, 245, 249, 0.72);
+    --border-soft: rgba(15, 23, 42, 0.06);
+    --border-strong: rgba(15, 23, 42, 0.12);
+    --shadow-soft: 0 2px 8px rgba(15, 23, 42, 0.06);
+    --shadow-strong: 0 4px 16px rgba(15, 23, 42, 0.1);
+    --focus-ring: 0 0 0 3px var(--lp-focus-ring);
+    --page-max: 1360px;
+    --font-display: var(--lp-typography-font-family);
+    --button-gradient: linear-gradient(135deg, #4f46e5 0%, #6366f1 60%, #818cf8 140%);
+    --card-gradient: linear-gradient(160deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.88) 50%, rgba(241, 245, 249, 0.92) 100%);
+    --sidebar-gradient: linear-gradient(180deg, #0f172a 0%, #1e293b 52%, #312e81 100%);
+    --portal-outline-muted: #94a3b8;
+    --portal-text-hint: #94a3b8;
+    --portal-text-body: #1e293b;
+    --portal-text-dim: #94a3b8;
+    --portal-text-warning: #b45309;
+    --portal-text-warning-strong: #92400e;
+    --portal-accent-blue-ring: rgba(79, 70, 229, 0.14);
+    --portal-accent-primary-ring-20: rgba(79, 70, 229, 0.2);
+    --portal-overlay-strong-bg: rgba(15, 23, 42, 0.04);
+    --portal-overlay-strong-text: rgba(15, 23, 42, 0.56);
+    --portal-overlay-modal: rgba(15, 23, 42, 0.6);
+    --portal-overlay-ink-02: rgba(15, 23, 42, 0.02);
+    --portal-overlay-ink-08: rgba(15, 23, 42, 0.08);
+    --portal-overlay-ink-12: rgba(15, 23, 42, 0.12);
+    --portal-overlay-ink-70: rgba(15, 23, 42, 0.7);
+    --portal-sparkline-area: rgba(79, 70, 229, 0.14);
+    --portal-sparkline-point-stroke: rgba(254, 254, 254, 0.92);
+    --portal-border-shadow: rgba(15, 23, 42, 0.06);
+    --portal-border-toast: rgba(15, 23, 42, 0.08);
+    --portal-shadow-toast: rgba(15, 23, 42, 0.18);
+    --portal-warning-border: #f59e0b;
+    --portal-danger-hover: #b91c1c;
+    --portal-success-hover: #15803d;
+  }
 }
 
 @media (min-width: 1920px) {
-  :root { --page-max: 1760px; }
+  [data-app='experiment-portal'] { --page-max: 1760px; }
 }
 
 @media (min-width: 2560px) {
-  :root { --page-max: 2280px; }
+  [data-app='experiment-portal'] { --page-max: 2280px; }
 }
 
 html, body, #root {
@@ -71,11 +58,11 @@ html {
 body {
   position: relative;
   min-height: 100vh;
-  font-family: var(--font-sans);
+  font-family: var(--lp-typography-font-family);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: $surface-muted;
-  color: var(--text);
+  background: var(--lp-surface-muted);
+  color: var(--lp-text);
   line-height: 1.6;
   font-size: 15px;
   overflow-x: hidden;
@@ -107,7 +94,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 code {
-  font-family: var(--font-mono);
+  font-family: var(--lp-typography-font-family-mono);
 }
 
 img, svg {

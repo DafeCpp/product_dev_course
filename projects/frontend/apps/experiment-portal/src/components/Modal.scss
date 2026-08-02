@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .modal-overlay {
     position: fixed;
@@ -6,7 +7,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: $overlay-modal;
+    background-color: var(--portal-overlay-modal);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -16,13 +17,13 @@
 }
 
 .modal-content {
-    background: var(--surface);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--elevation-3);
+    background: var(--lp-surface);
+    border-radius: var(--lp-radii-lg);
+    box-shadow: var(--lp-shadows-3);
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
-    border: 1px solid var(--outline);
+    border: 1px solid var(--lp-border);
 }
 
 .modal-header {
@@ -30,14 +31,14 @@
     justify-content: space-between;
     align-items: center;
     padding: 20px 24px;
-    border-bottom: 1px solid var(--outline);
+    border-bottom: 1px solid var(--lp-border);
 }
 
 .modal-header h2 {
     margin: 0;
     font-size: 1.125rem;
     font-weight: 700;
-    color: var(--text);
+    color: var(--lp-text);
     letter-spacing: -0.02em;
 }
 
@@ -46,7 +47,7 @@
     border: none;
     font-size: 24px;
     line-height: 1;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     cursor: pointer;
     padding: 0;
     width: 32px;
@@ -54,12 +55,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--radius-sm);
+    border-radius: var(--lp-radii-sm);
     transition: background-color 0.15s;
 }
 
 .modal-close:hover:not(:disabled) {
-    background-color: var(--surface-variant);
+    background-color: var(--lp-surface-variant);
 }
 
 .modal-close:disabled {
@@ -79,7 +80,7 @@
     display: block;
     margin-bottom: 6px;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     font-size: 0.75rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -90,17 +91,17 @@
 .modal-form .form-group select {
     width: 100%;
     padding: 10px 14px;
-    border: 1px solid var(--outline);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--lp-border);
+    border-radius: var(--lp-radii-sm);
     font-size: 0.9rem;
     transition: border-color 0.15s, box-shadow 0.15s;
     font-family: inherit;
-    background: var(--surface);
-    color: var(--text);
+    background: var(--lp-surface);
+    color: var(--lp-text);
 }
 
 .modal-form .form-group textarea {
-    font-family: var(--font-mono);
+    font-family: var(--lp-typography-font-family-mono);
     font-size: 0.84rem;
     resize: vertical;
 }
@@ -109,14 +110,14 @@
 .modal-form .form-group textarea:focus,
 .modal-form .form-group select:focus {
     outline: none;
-    border-color: var(--primary);
+    border-color: var(--lp-primary);
     box-shadow: var(--focus-ring);
 }
 
 .modal-form .form-group input:disabled,
 .modal-form .form-group textarea:disabled,
 .modal-form .form-group select:disabled {
-    background-color: var(--surface-variant);
+    background-color: var(--lp-surface-variant);
     cursor: not-allowed;
 }
 
@@ -124,11 +125,11 @@
     display: block;
     margin-top: 4px;
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
 }
 
 .modal-form .required {
-    color: var(--error);
+    color: var(--lp-error);
 }
 
 .modal-actions {
@@ -137,14 +138,14 @@
     justify-content: flex-end;
     margin-top: 20px;
     padding-top: 18px;
-    border-top: 1px solid var(--outline);
+    border-top: 1px solid var(--lp-border);
 }
 
 .modal-form .error {
-    background-color: var(--error-container);
-    color: var(--error);
+    background-color: var(--lp-error-container);
+    color: var(--lp-error);
     padding: 10px 14px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--lp-radii-sm);
     margin-bottom: 18px;
     font-size: 0.875rem;
 }
@@ -153,7 +154,7 @@
     display: block;
     margin-top: 4px;
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
 }
 
 // TelemetryExportModal

@@ -1,5 +1,6 @@
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 @import '../styles/components';
-@import '../styles/colors';
 
 .sensors-list {
   display: flex;
@@ -29,8 +30,8 @@
 .sensor-card:hover,
 .sensor-card:focus-visible {
   transform: translateY(-4px);
-  box-shadow: var(--elevation-2);
-  border-color: rgba(15, 118, 110, 0.18);
+  box-shadow: var(--lp-shadows-2);
+  border-color: color-mix(in srgb, var(--lp-primary) 18%, transparent);
   outline: none;
 }
 
@@ -46,7 +47,7 @@
   font-size: clamp(1.55rem, 2.3vw, 1.95rem);
   font-weight: 700;
   letter-spacing: -0.04em;
-  color: var(--text);
+  color: var(--lp-text);
 }
 
 .sensor-card__heartbeat {
@@ -55,9 +56,9 @@
   gap: 10px;
   align-self: flex-start;
   padding: 8px 12px;
-  border-radius: var(--radius-pill);
-  background: rgba(12, 74, 110, 0.08);
-  color: var(--info);
+  border-radius: var(--lp-radii-pill);
+  background: color-mix(in srgb, var(--lp-info) 8%, transparent);
+  color: var(--lp-info);
   font-size: 0.82rem;
   font-weight: 700;
 }
@@ -70,7 +71,7 @@
 }
 
 .sensor-card__pulse.is-live {
-  background: var(--success);
+  background: var(--lp-success);
   box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.14);
 }
 
@@ -103,7 +104,7 @@
 }
 
 .sensor-meta__item span {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -111,12 +112,12 @@
 }
 
 .sensor-meta__item strong {
-  color: var(--text);
+  color: var(--lp-text);
   font-size: 0.95rem;
 }
 
 .sensor-meta__cta {
-  color: var(--primary);
+  color: var(--lp-primary);
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.12em;

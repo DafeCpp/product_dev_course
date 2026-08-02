@@ -1,5 +1,5 @@
-@import '../styles/colors';
-@import '../styles/tokens';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .system-roles-page {
   display: flex;
@@ -23,15 +23,15 @@
     padding: 0.6rem 1rem;
     text-align: left;
     font-weight: 600;
-    color: $text-quiet;
-    border-bottom: 1px solid $border-soft;
+    color: lp.$lp-color-text-secondary;
+    border-bottom: 1px solid lp.$lp-color-border;
     white-space: nowrap;
-    background: $surface-variant;
+    background: lp.$lp-color-surface-variant;
   }
 
   td {
     padding: 0.6rem 1rem;
-    border-bottom: 1px solid $border-muted;
+    border-bottom: 1px solid lp.$lp-color-surface-variant;
     vertical-align: top;
   }
 
@@ -40,7 +40,7 @@
   }
 
   tr:hover td {
-    background: $surface-hover;
+    background: lp.$lp-color-surface-variant;
   }
 }
 
@@ -50,11 +50,11 @@
 
 .role-name {
   font-weight: 600;
-  color: $text-strong;
+  color: lp.$lp-color-text;
 }
 
 .role-desc-cell {
-  color: $text-quiet;
+  color: lp.$lp-color-text-secondary;
   font-size: 0.8125rem;
   max-width: 280px;
 }
@@ -62,19 +62,19 @@
 .role-type-badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: $radius-pill;
+  border-radius: lp.$lp-radii-pill;
   font-size: 0.7rem;
   font-weight: 600;
   white-space: nowrap;
 
   &--builtin {
-    background: $secondary-container;
-    color: $secondary;
+    background: lp.$lp-color-border;
+    color: lp.$lp-color-text-secondary;
   }
 
   &--custom {
-    background: $primary-container;
-    color: $primary;
+    background: lp.$lp-color-primary-container;
+    color: lp.$lp-color-primary;
   }
 }
 
@@ -95,13 +95,13 @@
   font-size: 0.7rem;
   font-weight: 500;
   font-family: 'Courier New', monospace;
-  background: $primary-container;
-  color: $primary;
+  background: lp.$lp-color-primary-container;
+  color: lp.$lp-color-primary;
   white-space: nowrap;
 }
 
 .text-muted {
-  color: $text-dim;
+  color: var(--portal-text-dim);
 }
 
 // Access denied stub
@@ -123,13 +123,13 @@
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
-    color: $text-strong;
+    color: lp.$lp-color-text;
   }
 
   p {
     margin: 0;
     font-size: 0.875rem;
-    color: $text-quiet;
+    color: lp.$lp-color-text-secondary;
   }
 }
 
@@ -137,7 +137,7 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: $overlay-modal;
+  background: var(--portal-overlay-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -146,14 +146,14 @@
 }
 
 .modal {
-  background: $surface;
-  border-radius: $radius-md;
+  background: lp.$lp-color-surface;
+  border-radius: lp.$lp-radii-md;
   width: 100%;
   max-width: 640px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px $border-shadow;
+  box-shadow: 0 8px 32px var(--portal-border-shadow);
 }
 
 .modal-header {
@@ -161,14 +161,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid $border-soft;
+  border-bottom: 1px solid lp.$lp-color-border;
   flex-shrink: 0;
 
   h3 {
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
-    color: $text-strong;
+    color: lp.$lp-color-text;
   }
 }
 
@@ -177,14 +177,14 @@
   border: none;
   cursor: pointer;
   font-size: 1rem;
-  color: $text-quiet;
+  color: lp.$lp-color-text-secondary;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   line-height: 1;
 
   &:hover {
-    background: $surface-hover;
-    color: $text-strong;
+    background: lp.$lp-color-surface-variant;
+    color: lp.$lp-color-text;
   }
 }
 
@@ -199,7 +199,7 @@
 
 .modal-footer {
   padding: 1rem 1.25rem;
-  border-top: 1px solid $border-soft;
+  border-top: 1px solid lp.$lp-color-border;
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
@@ -215,21 +215,21 @@
   label {
     font-size: 0.8rem;
     font-weight: 500;
-    color: $text-quiet;
+    color: lp.$lp-color-text-secondary;
   }
 
   input[type='text'] {
     padding: 0.4rem 0.75rem;
-    border: 1px solid $border-input;
+    border: 1px solid lp.$lp-color-border-input;
     border-radius: 6px;
     font-size: 0.875rem;
-    background: $surface;
-    color: $text-body;
+    background: lp.$lp-color-surface;
+    color: var(--portal-text-body);
 
     &:focus {
       outline: none;
-      border-color: $primary;
-      box-shadow: 0 0 0 2px $accent-primary-ring-20;
+      border-color: lp.$lp-color-primary;
+      box-shadow: 0 0 0 2px var(--portal-accent-primary-ring-20);
     }
 
     &:disabled {

@@ -36,7 +36,7 @@ function ProjectRolesSection({ projectId }: ProjectRolesSectionProps) {
     return (
         <PermissionGate permission="project.roles.manage">
             <div className="project-roles-section">
-                <div style={{ border: '1px solid var(--border-color, #e0e0e0)', borderRadius: 4 }}>
+                <div style={{ border: '1px solid var(--lp-border)', borderRadius: 4 }}>
                     <button
                         type="button"
                         className="btn btn-ghost"
