@@ -89,8 +89,8 @@ class YawRateController {
    */
   void SetGains(const StabilizationConfig& cfg) noexcept;
 
-  /** @brief Сбросить интегратор и историю PID. */
-  void Reset() noexcept { pid_.Reset(); }
+  /** @brief Сбросить PID, фильтр ошибки и состояние скоростного гейта. */
+  void Reset() noexcept;
 
   /** @brief Доступ к PID (для тестирования). */
   [[nodiscard]] const firmware_common::PidController& GetPid() const noexcept {
@@ -101,6 +101,9 @@ class YawRateController {
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
   firmware_common::PidController pid_;
+  float filtered_error_dps_{0.0f};
+  float activation_weight_{0.0f};
+  bool speed_gate_active_{false};
 };
 
 // ═════════════════════════════════════════════════════════════════════════════

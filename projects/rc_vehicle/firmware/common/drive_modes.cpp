@@ -89,11 +89,11 @@ void DriftModeStrategy::ApplyDefaults(
 
 void KidsModeStrategy::ApplyDefaults(
     StabilizationConfig& cfg) const noexcept {
-  cfg.yaw_rate.pid.kp = 0.15f;
-  cfg.yaw_rate.pid.ki = 0.005f;
-  cfg.yaw_rate.pid.kd = 0.008f;
+  cfg.yaw_rate.pid.kp = 0.005f;
+  cfg.yaw_rate.pid.ki = 0.0f;
+  cfg.yaw_rate.pid.kd = 0.0f;
   cfg.yaw_rate.pid.max_integral = 0.8f;
-  cfg.yaw_rate.pid.max_correction = 0.35f;
+  cfg.yaw_rate.pid.max_correction = 0.15f;
   cfg.yaw_rate.steer_to_yaw_rate_dps = 75.0f;
 
   cfg.pitch_comp.enabled = true;
@@ -115,7 +115,7 @@ void KidsModeStrategy::ApplyDefaults(
   cfg.adaptive.enabled = true;
   cfg.adaptive.speed_ref_ms = 1.0f;
   cfg.adaptive.scale_min = 0.6f;
-  cfg.adaptive.scale_max = 1.5f;
+  cfg.adaptive.scale_max = 1.0f;
 
   cfg.slew_throttle = 0.3f;
   cfg.slew_steering = 3.0f;
