@@ -30,7 +30,7 @@
 }
 
 .runs-table thead {
-  background: rgba(15, 118, 110, 0.08);
+  background: color-mix(in srgb, var(--lp-primary) 8%, transparent);
 }
 
 .runs-table th {
@@ -40,7 +40,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   border-bottom: 1px solid rgba(16, 34, 58, 0.08);
 }
 
@@ -51,12 +51,12 @@
 }
 
 .runs-table tbody tr:hover {
-  background: rgba(15, 118, 110, 0.04);
+  background: color-mix(in srgb, var(--lp-primary) 4%, transparent);
 }
 
 .run-link {
   font-weight: 700;
-  color: var(--primary);
+  color: var(--lp-primary);
 }
 
 .parameters-preview {
@@ -69,9 +69,9 @@
 .param-more {
   padding: 5px 8px;
   background-color: rgba(16, 34, 58, 0.06);
-  border-radius: var(--radius-pill);
+  border-radius: var(--lp-radii-pill);
   font-size: 0.72rem;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
 }
 
 @media (max-width: 720px) {

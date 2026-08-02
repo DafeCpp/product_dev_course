@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .telemetry-view {
   display: flex;
@@ -38,13 +39,13 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
 }
 
 .telemetry-view__menu-value {
   font-size: 0.88rem;
   font-weight: 700;
-  color: var(--text);
+  color: var(--lp-text);
 }
 
 .telemetry-view__collapse {
@@ -54,7 +55,7 @@
   border: 1px solid rgba(16, 34, 58, 0.08);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.58);
-  color: var(--text);
+  color: var(--lp-text);
   font-weight: 700;
   padding: 0 14px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.64);
@@ -88,13 +89,13 @@
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.54);
   border: 1px solid rgba(16, 34, 58, 0.08);
-  color: var(--text);
+  color: var(--lp-text);
   font-size: 0.8rem;
 }
 
 .telemetry-view__mode-toggle input,
 .telemetry-view__checkbox input {
-  accent-color: var(--primary);
+  accent-color: var(--lp-primary);
 }
 
 .telemetry-view__capture-actions,
@@ -124,13 +125,13 @@
   border-radius: 16px;
   font-size: 0.88rem;
   background: rgba(255, 255, 255, 0.82);
-  color: var(--text);
+  color: var(--lp-text);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .telemetry-view__text-input:focus {
   outline: none;
-  border-color: rgba(15, 118, 110, 0.42);
+  border-color: color-mix(in srgb, var(--lp-primary) 42%, transparent);
   box-shadow: var(--focus-ring);
 }
 
@@ -164,7 +165,7 @@
 .telemetry-view__sensor-filter label {
   display: block;
   margin-bottom: 8px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -173,7 +174,7 @@
 
 .telemetry-view__sensor-meta,
 .telemetry-view__history-summary {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.82rem;
 }
 
@@ -189,9 +190,9 @@
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(15, 118, 110, 0.08);
-  border: 1px solid rgba(15, 118, 110, 0.12);
-  color: var(--primary);
+  background: color-mix(in srgb, var(--lp-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lp-primary) 12%, transparent);
+  color: var(--lp-primary);
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -206,7 +207,7 @@
 }
 
 .telemetry-view__hint {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.82rem;
 }
 
@@ -236,20 +237,20 @@
 }
 
 .telemetry-view__empty {
-  color: $text-hint;
+  color: var(--portal-text-hint);
   font-size: 0.95rem;
   background: rgba(255, 253, 248, 0.85);
 }
 
 .telemetry-view__history-loading {
-  color: var(--text);
+  color: var(--lp-text);
   font-size: 0.95rem;
   font-weight: 700;
   background: rgba(255, 253, 248, 0.78);
 }
 
 .telemetry-view__error {
-  color: var(--error);
+  color: var(--lp-error);
   font-size: 0.92rem;
 }
 
@@ -271,7 +272,7 @@
 }
 
 .telemetry-view__panel-item--over {
-  outline: 2px dashed rgba(15, 118, 110, 0.34);
+  outline: 2px dashed color-mix(in srgb, var(--lp-primary) 34%, transparent);
   outline-offset: 6px;
   border-radius: 28px;
 }
@@ -553,7 +554,7 @@
   // bleed to card edges (card has padding: 20px)
   margin: -20px -20px 0;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--outline);
+  border-bottom: 1px solid var(--lp-border);
   position: relative;
   z-index: 10;
 }
@@ -566,7 +567,7 @@
 }
 
 .history-panel-header__sub {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.75rem;
   margin-top: 2px;
 }
@@ -586,10 +587,10 @@
   gap: 6px;
   height: 34px;
   padding: 0 14px;
-  border: 1px solid var(--outline);
+  border: 1px solid var(--lp-border);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--lp-surface);
+  color: var(--lp-text);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -603,8 +604,8 @@
   }
 
   &:hover {
-    background: var(--surface-variant);
-    border-color: $input-border;
+    background: var(--lp-surface-variant);
+    border-color: lp.$lp-color-border-input;
   }
 
   &:disabled {
@@ -614,13 +615,13 @@
 }
 
 .history-panel-header__actions .pill-btn--primary {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--lp-primary);
+  border-color: var(--lp-primary);
   color: #fff;
 
   &:hover:not(:disabled) {
-    background: var(--primary-hover);
-    border-color: var(--primary-hover);
+    background: var(--lp-primary-hover);
+    border-color: var(--lp-primary-hover);
   }
 }
 
@@ -636,8 +637,8 @@
   z-index: 100;
   width: 360px;
   padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--outline);
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-border);
   border-radius: 16px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.10);
   display: grid;
@@ -650,9 +651,9 @@
   right: 20px;
   width: 12px;
   height: 12px;
-  background: var(--surface);
-  border-left: 1px solid var(--outline);
-  border-top: 1px solid var(--outline);
+  background: var(--lp-surface);
+  border-left: 1px solid var(--lp-border);
+  border-top: 1px solid var(--lp-border);
   transform: rotate(45deg);
   pointer-events: none;
 }
@@ -662,7 +663,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   margin-bottom: -4px;
 }
 
@@ -675,11 +676,11 @@
 
 .hsp-name {
   font-size: 0.8125rem;
-  color: var(--text);
+  color: var(--lp-text);
 }
 
 .hsp-hint {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.6875rem;
 }
 
@@ -687,17 +688,17 @@
   width: 90px;
   height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--outline);
+  border: 1px solid var(--lp-border);
   border-radius: 999px;
-  background: var(--surface-variant);
+  background: var(--lp-surface-variant);
   font: inherit;
   font-size: 0.8125rem;
-  color: var(--text);
+  color: var(--lp-text);
   text-align: right;
 
   &:focus {
     outline: none;
-    border-color: var(--primary);
+    border-color: var(--lp-primary);
     box-shadow: var(--focus-ring);
   }
 }
@@ -714,7 +715,7 @@
     -webkit-appearance: none;
     width: 32px;
     height: 18px;
-    background: $input-border;
+    background: lp.$lp-color-border-input;
     border-radius: 999px;
     position: relative;
     cursor: pointer;
@@ -739,7 +740,7 @@
     }
 
     &:checked {
-      background: var(--primary);
+      background: var(--lp-primary);
     }
 
     &:checked::after {
@@ -757,16 +758,16 @@
 .history-seg {
   display: inline-flex;
   padding: 3px;
-  background: var(--surface-variant);
+  background: var(--lp-surface-variant);
   border-radius: 999px;
-  border: 1px solid var(--outline);
+  border: 1px solid var(--lp-border);
   flex-shrink: 0;
 
   label {
     padding: 5px 12px;
     font-size: 0.75rem;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     border-radius: 999px;
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
@@ -775,8 +776,8 @@
     align-items: center;
 
     &.on {
-      background: var(--surface);
-      color: var(--text);
+      background: var(--lp-surface);
+      color: var(--lp-text);
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
     }
 

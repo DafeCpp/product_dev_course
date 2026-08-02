@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .create-experiment h2 {
   margin-bottom: 24px;
@@ -11,12 +12,12 @@
 .form-hint {
   display: block;
   margin-top: 4px;
-  color: $text-dim;
+  color: var(--portal-text-dim);
   font-size: 12px;
 }
 
 .required {
-  color: $toast-danger;
+  color: lp.$lp-color-error;
 }
 
 .form-actions {
@@ -25,7 +26,7 @@
   gap: 12px;
   margin-top: 24px;
   padding-top: 24px;
-  border-top: 1px solid $border-subtle;
+  border-top: 1px solid lp.$lp-color-surface-variant;
 }
 
 .form-actions button:disabled {

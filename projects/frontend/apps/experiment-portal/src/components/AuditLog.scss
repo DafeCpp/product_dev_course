@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .audit-log {
   display: grid;
@@ -14,7 +15,7 @@
     cursor: pointer;
     padding: 10px 14px;
     border-radius: 999px;
-    color: var(--text);
+    color: var(--lp-text);
     font-size: 0.86rem;
     font-weight: 700;
   }
@@ -64,33 +65,33 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background-color: $primary;
+    background-color: lp.$lp-color-primary;
     flex-shrink: 0;
     margin-top: 6px;
     position: relative;
     z-index: 1;
-    border: 3px solid $surface;
-    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18);
+    border: 3px solid lp.$lp-color-surface;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--lp-primary) 18%, transparent);
 
     &--status {
-      background-color: $info;
-      box-shadow: 0 0 0 3px rgba(12, 74, 110, 0.16);
+      background-color: lp.$lp-color-info;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--lp-info) 16%, transparent);
     }
 
     &--create {
-      background-color: $success;
-      box-shadow: 0 0 0 3px rgba(22, 101, 52, 0.16);
+      background-color: lp.$lp-color-success;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--lp-success) 16%, transparent);
     }
 
     &--delete,
     &--error {
-      background-color: $error;
-      box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.16);
+      background-color: lp.$lp-color-error;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--lp-error) 16%, transparent);
     }
 
     &--tag {
-      background-color: $warning;
-      box-shadow: 0 0 0 3px rgba(154, 77, 2, 0.16);
+      background-color: lp.$lp-color-warning;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--lp-warning) 16%, transparent);
     }
   }
 
@@ -114,7 +115,7 @@
   &__event-type {
     font-size: 0.94rem;
     font-weight: 700;
-    color: var(--text);
+    color: var(--lp-text);
 
     .event-badge {
       display: inline-block;
@@ -125,19 +126,19 @@
       font-weight: 700;
       font-family: 'IBM Plex Mono', 'SFMono-Regular', 'Consolas', monospace;
       background-color: rgba(16, 34, 58, 0.06);
-      color: $text-secondary;
+      color: lp.$lp-color-text-secondary;
     }
   }
 
   &__time {
     font-size: 0.78rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     white-space: nowrap;
   }
 
   &__actor {
     font-size: 0.8rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     margin-top: 8px;
 
     .role-badge {
@@ -146,8 +147,8 @@
       border-radius: 999px;
       font-size: 0.72rem;
       font-weight: 700;
-      background-color: rgba(15, 118, 110, 0.08);
-      color: $primary;
+      background-color: color-mix(in srgb, var(--lp-primary) 8%, transparent);
+      color: lp.$lp-color-primary;
       margin-left: 6px;
     }
   }
@@ -160,7 +161,7 @@
     border: 1px solid rgba(16, 34, 58, 0.06);
     font-size: 0.8rem;
     font-family: 'IBM Plex Mono', 'SFMono-Regular', 'Consolas', monospace;
-    color: $text-body;
+    color: var(--portal-text-body);
     max-height: 220px;
     overflow: auto;
     white-space: pre-wrap;
@@ -172,11 +173,11 @@
   &__loading {
     padding: 18px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
   }
 
   &__error {
-    color: $error;
+    color: lp.$lp-color-error;
   }
 
   &__pagination {
@@ -186,14 +187,14 @@
     gap: 12px;
     margin-top: 16px;
     font-size: 0.82rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
 
     button {
       padding: 8px 12px;
       border: 1px solid rgba(16, 34, 58, 0.08);
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.72);
-      color: var(--text);
+      color: var(--lp-text);
       cursor: pointer;
       font-size: 0.82rem;
       font-weight: 700;

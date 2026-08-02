@@ -12,7 +12,7 @@
   &__no-access {
     padding: 48px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     font-size: 1rem;
   }
 }
@@ -24,7 +24,7 @@
 .scripts-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--outline);
+  border-bottom: 1px solid var(--lp-border);
   padding-bottom: 0;
 
   &__tab {
@@ -34,18 +34,18 @@
     padding: 8px 20px;
     font-size: 0.9rem;
     font-weight: 500;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     cursor: pointer;
     transition: color 0.12s, border-color 0.12s;
     margin-bottom: -1px;
 
     &:hover {
-      color: var(--text);
+      color: var(--lp-text);
     }
 
     &--active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
+      color: var(--lp-primary);
+      border-bottom-color: var(--lp-primary);
     }
   }
 }
@@ -77,7 +77,7 @@
       label {
         font-size: 0.75rem;
         font-weight: 500;
-        color: var(--text-secondary);
+        color: var(--lp-text-secondary);
         text-transform: uppercase;
         letter-spacing: 0.05em;
       }
@@ -86,15 +86,15 @@
       input[type='number'],
       select {
         padding: 6px 10px;
-        border: 1px solid var(--outline);
-        border-radius: var(--radius-sm);
-        background: var(--surface);
-        color: var(--text);
+        border: 1px solid var(--lp-border);
+        border-radius: var(--lp-radii-sm);
+        background: var(--lp-surface);
+        color: var(--lp-text);
         font-size: 0.875rem;
 
         &:focus {
           outline: none;
-          border-color: var(--primary);
+          border-color: var(--lp-primary);
           box-shadow: var(--focus-ring);
         }
       }
@@ -144,16 +144,16 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--text-secondary);
-    border-bottom: 1px solid var(--outline);
+    color: var(--lp-text-secondary);
+    border-bottom: 1px solid var(--lp-border);
     white-space: nowrap;
   }
 
   td {
     padding: 10px 14px;
-    border-bottom: 1px solid var(--outline);
+    border-bottom: 1px solid var(--lp-border);
     vertical-align: middle;
-    color: var(--text);
+    color: var(--lp-text);
   }
 
   &__row {
@@ -161,7 +161,7 @@
     transition: background 0.12s;
 
     &:hover {
-      background: var(--surface-variant);
+      background: var(--lp-surface-variant);
     }
 
     &:last-child td {
@@ -169,7 +169,7 @@
     }
 
     &:focus {
-      outline: 2px solid var(--primary);
+      outline: 2px solid var(--lp-primary);
       outline-offset: -2px;
     }
   }
@@ -180,7 +180,7 @@
   }
 
   &__desc {
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     max-width: 240px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -193,15 +193,15 @@
     padding: 2px 6px;
     border-radius: 3px;
     background: rgba(79, 70, 229, 0.08);
-    color: var(--primary);
+    color: var(--lp-primary);
   }
 
   &__type {
     font-size: 0.8rem;
     padding: 2px 8px;
     border-radius: 3px;
-    background: var(--surface-variant);
-    color: var(--text-secondary);
+    background: var(--lp-surface-variant);
+    color: var(--lp-text-secondary);
   }
 
   &__active {
@@ -211,13 +211,13 @@
     border-radius: 10px;
 
     &--yes {
-      background: var(--success-container);
-      color: var(--success);
+      background: var(--lp-success-container);
+      color: var(--lp-success);
     }
 
     &--no {
-      background: var(--surface-variant);
-      color: var(--text-secondary);
+      background: var(--lp-surface-variant);
+      color: var(--lp-text-secondary);
     }
   }
 
@@ -230,7 +230,7 @@
   &__time {
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
   }
 }
 
@@ -246,28 +246,28 @@
   border-radius: 10px;
 
   &--completed {
-    background: var(--success-container);
-    color: var(--success);
+    background: var(--lp-success-container);
+    color: var(--lp-success);
   }
 
   &--failed {
-    background: var(--error-container);
-    color: var(--error);
+    background: var(--lp-error-container);
+    color: var(--lp-error);
   }
 
   &--running {
-    background: var(--info-container);
-    color: var(--info);
+    background: var(--lp-info-container);
+    color: var(--lp-info);
   }
 
   &--pending {
-    background: var(--surface-variant);
-    color: var(--text-secondary);
+    background: var(--lp-surface-variant);
+    color: var(--lp-text-secondary);
   }
 
   &--cancelled {
-    background: var(--warning-container);
-    color: var(--warning);
+    background: var(--lp-warning-container);
+    color: var(--lp-warning);
   }
 }
 
@@ -308,7 +308,7 @@
     label {
       font-size: 0.75rem;
       font-weight: 500;
-      color: var(--text-secondary);
+      color: var(--lp-text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -317,15 +317,15 @@
     select,
     textarea {
       padding: 6px 10px;
-      border: 1px solid var(--outline);
-      border-radius: var(--radius-sm);
-      background: var(--surface);
-      color: var(--text);
+      border: 1px solid var(--lp-border);
+      border-radius: var(--lp-radii-sm);
+      background: var(--lp-surface);
+      color: var(--lp-text);
       font-size: 0.875rem;
 
       &:focus {
         outline: none;
-        border-color: var(--primary);
+        border-color: var(--lp-primary);
         box-shadow: var(--focus-ring);
       }
     }
@@ -371,27 +371,27 @@
     justify-content: center;
     font-size: 0.8rem;
     font-weight: 700;
-    background: var(--surface-variant);
-    color: var(--text-secondary);
-    border: 1px solid var(--outline);
+    background: var(--lp-surface-variant);
+    color: var(--lp-text-secondary);
+    border: 1px solid var(--lp-border);
     transition: background 0.15s, color 0.15s;
 
     &--active {
-      background: var(--primary);
+      background: var(--lp-primary);
       color: #fff;
-      border-color: var(--primary);
+      border-color: var(--lp-primary);
     }
 
     &--done {
-      background: var(--success-container);
-      color: var(--success);
-      border-color: var(--success);
+      background: var(--lp-success-container);
+      color: var(--lp-success);
+      border-color: var(--lp-success);
     }
   }
 
   &__no-params {
     font-size: 0.875rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     margin: 0;
     padding: 12px 0;
   }
@@ -410,7 +410,7 @@
     label {
       font-size: 0.75rem;
       font-weight: 500;
-      color: var(--text-secondary);
+      color: var(--lp-text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -418,15 +418,15 @@
     select,
     textarea {
       padding: 6px 10px;
-      border: 1px solid var(--outline);
-      border-radius: var(--radius-sm);
-      background: var(--surface);
-      color: var(--text);
+      border: 1px solid var(--lp-border);
+      border-radius: var(--lp-radii-sm);
+      background: var(--lp-surface);
+      color: var(--lp-text);
       font-size: 0.875rem;
 
       &:focus {
         outline: none;
-        border-color: var(--primary);
+        border-color: var(--lp-primary);
         box-shadow: var(--focus-ring);
       }
     }
@@ -453,7 +453,7 @@
     align-items: center;
     gap: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid var(--outline);
+    border-bottom: 1px solid var(--lp-border);
   }
 
   &__name {
@@ -473,14 +473,14 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     min-width: 100px;
     flex-shrink: 0;
   }
 
   &__value {
     font-size: 0.875rem;
-    color: var(--text);
+    color: var(--lp-text);
     word-break: break-all;
   }
 
@@ -495,10 +495,10 @@
     padding: 12px;
     border-radius: 4px;
     background: #0f172a;
-    border: 1px solid var(--outline);
+    border: 1px solid var(--lp-border);
     font-family: monospace;
     font-size: 0.8rem;
-    color: var(--text);
+    color: var(--lp-text);
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-all;
@@ -506,7 +506,7 @@
     overflow-y: auto;
 
     &--error {
-      color: var(--error);
+      color: var(--lp-error);
       background: rgba(220, 38, 38, 0.06);
       border-color: rgba(220, 38, 38, 0.2);
     }
@@ -522,7 +522,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 16px;
-  border-top: 1px solid var(--outline);
+  border-top: 1px solid var(--lp-border);
   margin-top: 4px;
 }
 
@@ -531,7 +531,7 @@
 // ---------------------------------------------------------------------------
 
 .field-error {
-  color: var(--error);
+  color: var(--lp-error);
   font-size: 0.75rem;
   margin-top: 2px;
 }

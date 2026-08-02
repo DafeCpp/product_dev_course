@@ -12,7 +12,7 @@
   &__no-access {
     padding: 48px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     font-size: 1rem;
   }
 }
@@ -26,9 +26,9 @@
     gap: 6px;
     height: 40px;
     padding: 0 12px;
-    border: 1px solid var(--outline);
-    border-radius: var(--radius-pill);
-    background: var(--surface);
+    border: 1px solid var(--lp-border);
+    border-radius: var(--lp-radii-pill);
+    background: var(--lp-surface);
     flex: 0 0 auto;
 
     input[type='date'] {
@@ -36,7 +36,7 @@
       outline: none;
       background: transparent;
       font-size: 0.82rem;
-      color: var(--text);
+      color: var(--lp-text);
       width: 120px;
       cursor: pointer;
 
@@ -49,7 +49,7 @@
 
   &__date-sep {
     font-size: 0.82rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     flex: none;
   }
 }
@@ -71,16 +71,16 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--text-secondary);
-    border-bottom: 1px solid var(--outline);
+    color: var(--lp-text-secondary);
+    border-bottom: 1px solid var(--lp-border);
     white-space: nowrap;
   }
 
   td {
     padding: 10px 14px;
-    border-bottom: 1px solid var(--outline);
+    border-bottom: 1px solid var(--lp-border);
     vertical-align: middle;
-    color: var(--text);
+    color: var(--lp-text);
   }
 
   &__row {
@@ -88,7 +88,7 @@
     transition: background 0.12s;
 
     &:hover {
-      background: var(--surface-variant);
+      background: var(--lp-surface-variant);
     }
 
     &:last-child td {
@@ -96,7 +96,7 @@
     }
 
     &:focus {
-      outline: 2px solid var(--primary);
+      outline: 2px solid var(--lp-primary);
       outline-offset: -2px;
     }
   }
@@ -104,7 +104,7 @@
   &__time {
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
   }
 
   &__action {
@@ -113,7 +113,7 @@
     padding: 2px 6px;
     border-radius: 3px;
     background: rgba(79, 70, 229, 0.08);
-    color: var(--primary);
+    color: var(--lp-primary);
   }
 }
 
@@ -134,20 +134,20 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     min-width: 100px;
     flex-shrink: 0;
   }
 
   &__value {
     font-size: 0.875rem;
-    color: var(--text);
+    color: var(--lp-text);
     word-break: break-all;
   }
 
   &__sub {
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
   }
 
   &__details {
@@ -162,10 +162,10 @@
     padding: 12px;
     border-radius: 4px;
     background: #0f172a;
-    border: 1px solid var(--outline);
+    border: 1px solid var(--lp-border);
     font-family: monospace;
     font-size: 0.8rem;
-    color: var(--text);
+    color: var(--lp-text);
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-all;

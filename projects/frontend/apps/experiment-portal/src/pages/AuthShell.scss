@@ -5,7 +5,7 @@
   justify-content: center;
   padding: 24px;
   position: relative;
-  background: var(--background);
+  background: var(--lp-background);
 }
 
 .auth-shell {
@@ -21,9 +21,9 @@
   position: relative;
   overflow: hidden;
   padding: 40px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--lp-radii-lg);
   color: #f8fafc;
-  box-shadow: var(--elevation-3);
+  box-shadow: var(--lp-shadows-3);
 }
 
 .auth-showcase::before {
@@ -85,7 +85,7 @@
 
 .auth-showcase__metric {
   padding: 16px 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--lp-radii-md);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -122,7 +122,7 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -133,7 +133,7 @@
   content: '';
   width: 20px;
   height: 1px;
-  background: var(--outline);
+  background: var(--lp-border);
 }
 
 .auth-form {
@@ -152,44 +152,44 @@
 .error-message {
   padding: 12px 14px;
   margin-bottom: 16px;
-  border-radius: var(--radius-sm);
-  background: var(--error-container);
+  border-radius: var(--lp-radii-sm);
+  background: var(--lp-error-container);
   border: 1px solid rgba(220, 38, 38, 0.12);
-  color: var(--error);
+  color: var(--lp-error);
   font-size: 0.9rem;
 }
 
 .auth-success-message {
   padding: 12px 14px;
   margin-bottom: 16px;
-  border-radius: var(--radius-sm);
-  background: var(--success-container);
+  border-radius: var(--lp-radii-sm);
+  background: var(--lp-success-container);
   border: 1px solid rgba(22, 163, 74, 0.2);
-  color: var(--success);
+  color: var(--lp-success);
   font-size: 0.9rem;
   line-height: 1.5;
 }
 
 .auth-note {
   margin-top: 14px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.85rem;
   line-height: 1.5;
 }
 
 .auth-switch {
   margin-top: 16px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.85rem;
 }
 
 .auth-switch a {
-  color: var(--primary);
+  color: var(--lp-primary);
   font-weight: 600;
 }
 
 .auth-switch a:hover {
-  color: var(--primary-hover);
+  color: var(--lp-primary-hover);
 }
 
 @media (max-width: 960px) {

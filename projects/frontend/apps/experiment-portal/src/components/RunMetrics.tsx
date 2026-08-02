@@ -241,7 +241,7 @@ export default function RunMetrics({ runId }: Props) {
 
   if (summaryError) {
     return (
-      <p style={{ color: 'var(--color-danger, #e11d48)', fontSize: '0.875rem' }}>
+      <p style={{ color: 'var(--lp-error)', fontSize: '0.875rem' }}>
         Не удалось загрузить метрики
       </p>
     )

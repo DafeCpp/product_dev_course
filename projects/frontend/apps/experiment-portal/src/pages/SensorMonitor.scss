@@ -26,7 +26,7 @@
 
 .sensor-monitor__card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--elevation-2);
+  box-shadow: var(--lp-shadows-2);
 }
 
 .sensor-monitor__card-header {
@@ -41,7 +41,7 @@
   font-size: clamp(1.1rem, 1.8vw, 1.4rem);
   font-weight: 700;
   letter-spacing: -0.03em;
-  color: var(--text);
+  color: var(--lp-text);
   margin: 0;
 }
 

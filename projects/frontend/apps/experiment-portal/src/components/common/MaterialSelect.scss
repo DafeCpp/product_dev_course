@@ -1,4 +1,5 @@
-@import '../../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .md-select {
   margin-bottom: 0;
@@ -7,7 +8,7 @@
 .md-select__label {
   display: block;
   margin-bottom: 8px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -33,7 +34,7 @@
   min-height: 48px;
   padding: 12px 42px 12px 16px;
   font-size: 0.95rem;
-  color: var(--text);
+  color: var(--lp-text);
   width: 100%;
   outline: none;
 }
@@ -45,7 +46,7 @@
   min-height: 48px;
   padding: 12px 42px 12px 16px;
   font-size: 0.95rem;
-  color: var(--text);
+  color: var(--lp-text);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -70,7 +71,7 @@
   right: 14px;
   width: 18px;
   height: 18px;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   pointer-events: none;
   transition: transform 0.2s ease;
 }
@@ -87,7 +88,7 @@
   background: rgba(255, 253, 248, 0.96);
   border: 1px solid rgba(16, 34, 58, 0.1);
   border-radius: 18px;
-  box-shadow: var(--elevation-2);
+  box-shadow: var(--lp-shadows-2);
   backdrop-filter: blur(16px);
   padding: 8px;
   display: none;
@@ -107,7 +108,7 @@
   padding: 12px 14px;
   text-align: left;
   font-size: 0.92rem;
-  color: var(--text);
+  color: var(--lp-text);
   cursor: pointer;
   border-radius: 14px;
   transition: background-color 0.18s ease, color 0.18s ease;
@@ -115,16 +116,16 @@
 
 .md-select__option:hover,
 .md-select__option:focus-visible {
-  background: rgba(15, 118, 110, 0.08);
+  background: color-mix(in srgb, var(--lp-primary) 8%, transparent);
 }
 
 .md-select__option.is-selected {
-  color: var(--primary);
+  color: var(--lp-primary);
   font-weight: 700;
 }
 
 .md-select__option.is-placeholder {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   cursor: not-allowed;
 }
 
@@ -137,7 +138,7 @@
 }
 
 .md-select__control:focus-within {
-  border-color: rgba(15, 118, 110, 0.42);
+  border-color: color-mix(in srgb, var(--lp-primary) 42%, transparent);
   box-shadow: var(--focus-ring);
   background: rgba(255, 255, 255, 0.94);
 }
@@ -155,7 +156,7 @@
 .md-select__helper {
   margin-top: 6px;
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
 }
 
 .md-select--compact .md-select__field,
@@ -173,25 +174,25 @@
 
 .md-select--pill .md-select__control {
   min-height: 40px;
-  border-radius: var(--radius-pill);
-  border-color: $input-border;
-  background: var(--surface);
+  border-radius: var(--lp-radii-pill);
+  border-color: lp.$lp-color-border-input;
+  background: var(--lp-surface);
 }
 
 .md-select--pill .md-select__control:hover {
-  border-color: $outline-muted;
-  background: var(--surface-variant);
+  border-color: var(--portal-outline-muted);
+  background: var(--lp-surface-variant);
 }
 
 .md-select--pill .md-select__control--open {
-  border-color: $primary;
+  border-color: lp.$lp-color-primary;
   box-shadow: var(--focus-ring);
-  background: var(--surface);
+  background: var(--lp-surface);
 }
 
 .md-select--pill .md-select__control--disabled {
   opacity: 0.62;
-  background: $surface-variant;
+  background: lp.$lp-color-surface-variant;
 }
 
 .md-select--pill .md-select__trigger {
@@ -199,7 +200,7 @@
   min-height: 40px;
   padding: 0 28px 0 12px;
   font-size: 0.85rem;
-  border-radius: var(--radius-pill);
+  border-radius: var(--lp-radii-pill);
   gap: 6px;
 }
 
@@ -208,7 +209,7 @@
 }
 
 .md-select__pill-icon {
-  color: $text-secondary;
+  color: lp.$lp-color-text-secondary;
   flex: none;
   display: flex;
   align-items: center;
@@ -216,19 +217,19 @@
 }
 
 .md-select--pill .md-select__control--open .md-select__pill-icon {
-  color: $primary;
+  color: lp.$lp-color-primary;
 }
 
 .md-select--pill .md-select__icon {
   right: 10px;
   width: 14px;
   height: 14px;
-  color: $text-secondary;
+  color: lp.$lp-color-text-secondary;
   transition: transform 0.2s ease, color 0.15s ease;
 }
 
 .md-select--pill .md-select__control--open .md-select__icon {
-  color: $primary;
+  color: lp.$lp-color-primary;
 }
 
 .md-select__float-label {
@@ -237,9 +238,9 @@
   top: 50%;
   transform: translateY(-50%);
   font-size: 0.85rem;
-  color: $text-secondary;
+  color: lp.$lp-color-text-secondary;
   pointer-events: none;
-  background: var(--surface);
+  background: var(--lp-surface);
   padding: 0 3px;
   transition: top 0.15s ease, font-size 0.15s ease, color 0.15s ease, left 0.15s ease, transform 0.15s ease;
   white-space: nowrap;
@@ -255,7 +256,7 @@
   font-size: 0.63rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: $primary;
+  color: lp.$lp-color-primary;
   left: 10px;
 }
 
@@ -265,7 +266,7 @@
   font-size: 0.63rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: $primary;
+  color: lp.$lp-color-primary;
   left: 10px;
 }
 

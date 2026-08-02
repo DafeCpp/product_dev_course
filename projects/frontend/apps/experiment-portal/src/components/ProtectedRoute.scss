@@ -1,4 +1,5 @@
-@import '../styles/colors';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .loading-container {
     display: flex;
@@ -9,5 +10,5 @@
 
 .loading {
     font-size: 16px;
-    color: $text-dim;
+    color: var(--portal-text-dim);
 }

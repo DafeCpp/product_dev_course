@@ -1,8 +1,4 @@
-@import '../styles/colors';
-
-.experiment-detail__hero {
-  margin-bottom: 0;
-}
+@use '@lostpointer/web-tokens/variables.scss' as lp;
 
 .experiment-detail__grid {
   align-items: stretch;

@@ -84,7 +84,7 @@ export default function SensorBackfillSection({
                             <div style={{
                               flex: 1,
                               height: '8px',
-                              background: 'var(--border-color, #e0e0e0)',
+                              background: 'var(--lp-border)',
                               borderRadius: '4px',
                               overflow: 'hidden',
                             }}>
@@ -92,8 +92,8 @@ export default function SensorBackfillSection({
                                 width: `${progress}%`,
                                 height: '100%',
                                 background: task.status === 'failed'
-                                  ? 'var(--color-danger, #dc3545)'
-                                  : 'var(--color-primary, #1976d2)',
+                                  ? 'var(--lp-error)'
+                                  : 'var(--lp-primary)',
                                 borderRadius: '4px',
                                 transition: 'width 0.3s',
                               }} />

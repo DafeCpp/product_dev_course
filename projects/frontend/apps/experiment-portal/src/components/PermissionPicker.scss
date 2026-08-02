@@ -1,5 +1,5 @@
-@import '../styles/colors';
-@import '../styles/tokens';
+@use '@lostpointer/web-tokens/variables.scss' as lp;
+
 
 .permission-picker {
   display: flex;
@@ -9,20 +9,20 @@
   &__loading,
   &__empty {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--lp-text-secondary);
     padding: 8px 0;
   }
 
   &__group {
-    border: 1px solid $border-soft;
-    border-radius: $radius-sm;
+    border: 1px solid lp.$lp-color-border;
+    border-radius: lp.$lp-radii-sm;
     overflow: hidden;
   }
 
   &__group-header {
     padding: 8px 12px;
-    background: $surface-variant;
-    border-bottom: 1px solid $border-soft;
+    background: lp.$lp-color-surface-variant;
+    border-bottom: 1px solid lp.$lp-color-border;
   }
 
   &__group-label {
@@ -36,7 +36,7 @@
       cursor: pointer;
       width: 15px;
       height: 15px;
-      accent-color: $primary;
+      accent-color: lp.$lp-color-primary;
 
       &:disabled {
         cursor: not-allowed;
@@ -48,7 +48,7 @@
   &__group-name {
     font-size: 13px;
     font-weight: 600;
-    color: $text-strong;
+    color: lp.$lp-color-text;
     text-transform: capitalize;
   }
 
@@ -64,7 +64,7 @@
     gap: 10px;
     padding: 8px 12px;
     cursor: pointer;
-    border-bottom: 1px solid $border-muted;
+    border-bottom: 1px solid lp.$lp-color-surface-variant;
     transition: background 0.1s;
 
     &:last-child {
@@ -72,7 +72,7 @@
     }
 
     &:hover {
-      background: $surface-hover;
+      background: lp.$lp-color-surface-variant;
     }
 
     input[type='checkbox'] {
@@ -81,7 +81,7 @@
       cursor: pointer;
       width: 14px;
       height: 14px;
-      accent-color: $primary;
+      accent-color: lp.$lp-color-primary;
 
       &:disabled {
         cursor: not-allowed;
@@ -100,12 +100,12 @@
     font-size: 13px;
     font-weight: 500;
     font-family: 'Courier New', monospace;
-    color: $text-body;
+    color: var(--portal-text-body);
   }
 
   &__item-desc {
     font-size: 11px;
-    color: $text-quiet;
+    color: lp.$lp-color-text-secondary;
     line-height: 1.4;
   }
 }

@@ -26,12 +26,12 @@
 
 .meta-chip--owner {
   background: rgba(217, 119, 6, 0.1);
-  color: var(--secondary);
+  color: var(--lp-text-secondary);
   border-color: rgba(217, 119, 6, 0.14);
 }
 
 .project-card__date {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -49,13 +49,13 @@
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--text);
+  color: var(--lp-text);
   text-wrap: pretty;
 }
 
 .project-card__supporting-text {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.875rem;
 }
 
@@ -75,10 +75,10 @@
   padding: 0 14px;
   border-width: 1px;
   border-style: solid;
-  border-color: var(--outline);
+  border-color: var(--lp-border);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--lp-surface);
+  color: var(--lp-text);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -93,8 +93,8 @@
   }
 
   &:hover {
-    background: var(--surface-variant);
-    border-color: var(--outline);
+    background: var(--lp-surface-variant);
+    border-color: var(--lp-border);
   }
 
   &:active {
@@ -108,7 +108,7 @@
 }
 
 .project-description {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   line-height: 1.65;
   font-size: 0.97rem;
 }
@@ -132,7 +132,7 @@
 }
 
 .project-card__meta-item span {
-  color: var(--text-secondary);
+  color: var(--lp-text-secondary);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -140,7 +140,7 @@
 }
 
 .project-card__meta-item strong {
-  color: var(--text);
+  color: var(--lp-text);
   font-size: 0.94rem;
 }
 

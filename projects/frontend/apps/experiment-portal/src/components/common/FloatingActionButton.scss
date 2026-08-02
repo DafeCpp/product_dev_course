@@ -1,28 +1,28 @@
 .fab {
-  position: fixed !important;
-  right: 28px !important;
-  bottom: 28px !important;
-  width: 68px !important;
-  height: 68px !important;
-  min-width: 68px !important;
-  min-height: 68px !important;
-  border-radius: 24px !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
-  background: var(--button-gradient) !important;
-  color: #fffdf8 !important;
-  box-shadow: var(--elevation-3) !important;
-  backdrop-filter: blur(16px) !important;
-  font-size: 42px !important;
-  font-weight: 300 !important;
-  line-height: 1 !important;
-  cursor: pointer !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  transition: transform 0.24s ease, box-shadow 0.24s ease, filter 0.24s ease !important;
-  z-index: 1000 !important;
-  padding: 0 !important;
-  margin: 0 !important;
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  width: 68px;
+  height: 68px;
+  min-width: 68px;
+  min-height: 68px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--button-gradient);
+  color: #fffdf8;
+  box-shadow: var(--lp-shadows-3);
+  backdrop-filter: blur(16px);
+  font-size: 42px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, filter 0.24s ease;
+  z-index: 1000;
+  padding: 0;
+  margin: 0;
 }
 
 .fab::before {
@@ -41,29 +41,29 @@
 }
 
 .fab:hover:not(:disabled) {
-  transform: translateY(-3px) scale(1.03) !important;
-  box-shadow: 0 34px 82px rgba(13, 27, 42, 0.2) !important;
-  filter: saturate(1.06) !important;
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 34px 82px rgba(13, 27, 42, 0.2);
+  filter: saturate(1.06);
 }
 
 .fab:active:not(:disabled) {
-  transform: translateY(0) scale(0.98) !important;
+  transform: translateY(0) scale(0.98);
 }
 
 .fab:disabled {
-  opacity: 0.55 !important;
-  cursor: not-allowed !important;
-  box-shadow: none !important;
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 @media (max-width: 720px) {
   .fab {
-    right: 18px !important;
-    bottom: 18px !important;
-    width: 60px !important;
-    height: 60px !important;
-    min-width: 60px !important;
-    min-height: 60px !important;
-    border-radius: 20px !important;
+    right: 18px;
+    bottom: 18px;
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    min-height: 60px;
+    border-radius: 20px;
   }
 }
