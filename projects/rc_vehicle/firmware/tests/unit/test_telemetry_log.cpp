@@ -140,6 +140,24 @@ TEST(TelemetryLogTest, GetFrame_EmptyLog_ReturnsFalse) {
   EXPECT_FALSE(log.GetFrame(0, out));
 }
 
+TEST(TelemetryLogTest, Export_RejectsOverwrittenUnsentFrames) {
+  TelemetryLog log;
+  ASSERT_TRUE(log.Init(3));
+  for (uint32_t ts = 1; ts <= 3; ++ts) log.Push({.ts_ms = ts});
+
+  size_t count = 0;
+  ASSERT_TRUE(log.BeginExport(count));
+  ASSERT_EQ(count, 3u);
+  log.Push({.ts_ms = 4});
+
+  TelemetryLogFrame frames[3]{};
+  EXPECT_EQ(log.CopyExportFrames(0, frames, 3), 0u);
+  ASSERT_EQ(log.CopyExportFrames(1, frames, 2), 2u);
+  EXPECT_EQ(frames[0].ts_ms, 2u);
+  EXPECT_EQ(frames[1].ts_ms, 3u);
+  log.EndExport();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Clear
 // ═══════════════════════════════════════════════════════════════════════════

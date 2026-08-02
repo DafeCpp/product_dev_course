@@ -36,7 +36,8 @@ FRAME_COLUMNS = [
 
 # Event columns are stitched in by the exporter, are sparse, and `event_type`
 # holds a symbolic name rather than a number — they are never parsed as floats.
-EVENT_COLUMNS = ["event_type", "event_param", "event_value1", "event_value2"]
+EVENT_COLUMNS = ["event_type", "event_param", "event_value1", "event_value2",
+                 "event_config"]
 
 # Columns that must be present for the analyzer to say anything useful.
 REQUIRED_COLUMNS = ["ts_ms", "throttle", "steering", "speed_ms"]
@@ -44,7 +45,7 @@ REQUIRED_COLUMNS = ["ts_ms", "throttle", "steering", "speed_ms"]
 EXPECTED_COLUMNS = FRAME_COLUMNS + EVENT_COLUMNS
 
 # Columns kept as raw strings (everything else is coerced to float/NaN).
-TEXT_COLUMNS = {"event_type", "event_param"}
+TEXT_COLUMNS = {"event_type", "event_param", "event_config"}
 
 # DriveMode enum (firmware/common/stabilization_config.hpp).
 DRIVE_MODE_NAMES = {

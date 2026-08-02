@@ -312,6 +312,30 @@ class VehicleControlUnified : public IVehicleControl {
                                  TelemetryLogFrame& out) const override {
     return telem_mgr_ && telem_mgr_->GetLogFrame(idx, out);
   }
+  [[nodiscard]] bool BeginLogExport(size_t& count_out) override {
+    return telem_mgr_ && telem_mgr_->BeginLogExport(count_out);
+  }
+  [[nodiscard]] bool BeginLogAndConfigExport(
+      size_t& frame_count_out, TelemetryLogFrame& tail_out,
+      size_t& snapshot_count_out) override {
+    return telem_mgr_ && telem_mgr_->BeginLogAndConfigExport(
+                             frame_count_out, tail_out, snapshot_count_out);
+  }
+  [[nodiscard]] bool FinalizeConfigSnapshotExport(
+      size_t& snapshot_count_out) override {
+    return telem_mgr_ &&
+           telem_mgr_->FinalizeConfigSnapshotExport(snapshot_count_out);
+  }
+  [[nodiscard]] size_t CopyLogExportFrames(size_t start_idx,
+                                           TelemetryLogFrame* out,
+                                           size_t max_count) const override {
+    return telem_mgr_
+               ? telem_mgr_->CopyLogExportFrames(start_idx, out, max_count)
+               : 0;
+  }
+  void EndLogExport() override {
+    if (telem_mgr_) telem_mgr_->EndLogExport();
+  }
 
   /**
    * @brief Очистить буфер телеметрии — кадры и события
@@ -323,6 +347,13 @@ class VehicleControlUnified : public IVehicleControl {
    */
   void ClearLog() override {
     if (telem_mgr_) {
+      if (stab_mgr_ && platform_) {
+        stab_mgr_->ClearAndSeedConfigSnapshots(platform_->GetTimeMs());
+      } else {
+        telem_mgr_->ClearConfigSnapshots();
+      }
+      // Seed before dropping frames: a concurrent telemetry update between
+      // these calls is discarded, so every retained frame follows a baseline.
       telem_mgr_->Clear();
       telem_mgr_->ClearEvents();
     }
@@ -338,6 +369,29 @@ class VehicleControlUnified : public IVehicleControl {
   }
   void ClearEventLog() override {
     if (telem_mgr_) telem_mgr_->ClearEvents();
+  }
+  [[nodiscard]] size_t GetConfigSnapshotCount() const override {
+    return telem_mgr_ ? telem_mgr_->GetConfigSnapshotCount() : 0;
+  }
+  [[nodiscard]] bool GetConfigSnapshot(
+      size_t idx, TelemetryConfigSnapshot& out) const override {
+    return telem_mgr_ && telem_mgr_->GetConfigSnapshot(idx, out);
+  }
+  [[nodiscard]] size_t CopyConfigSnapshots(TelemetryConfigSnapshot* out,
+                                           size_t max_count) const override {
+    return telem_mgr_ ? telem_mgr_->CopyConfigSnapshots(out, max_count) : 0;
+  }
+  [[nodiscard]] bool BeginConfigSnapshotExport(uint32_t max_ts_ms,
+                                               size_t& count_out) override {
+    return telem_mgr_ &&
+           telem_mgr_->BeginConfigSnapshotExport(max_ts_ms, count_out);
+  }
+  [[nodiscard]] bool GetNextConfigSnapshotExport(
+      TelemetryConfigSnapshot& out) override {
+    return telem_mgr_ && telem_mgr_->GetNextConfigSnapshotExport(out);
+  }
+  void EndConfigSnapshotExport() override {
+    if (telem_mgr_) telem_mgr_->EndConfigSnapshotExport();
   }
 
   // ── Калибровка магнитометра ───────────────────────────────────────────────

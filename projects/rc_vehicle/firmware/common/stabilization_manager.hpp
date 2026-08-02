@@ -11,6 +11,8 @@
 
 namespace rc_vehicle {
 
+class TelemetryConfigSnapshotLog;
+
 /**
  * @brief Менеджер конфигурации стабилизации
  *
@@ -51,6 +53,13 @@ class StabilizationManager {
    * @return true при успехе
    */
   bool SetConfig(const StabilizationConfig& config, bool save_to_nvs = true);
+
+  void SetConfigSnapshotLog(TelemetryConfigSnapshotLog* log) {
+    config_snapshot_log_ = log;
+  }
+
+  /** Clear the snapshot log and seed it with the current config atomically. */
+  void ClearAndSeedConfigSnapshots(uint32_t ts_ms);
 
   /**
    * @brief Загрузить конфигурацию из NVS при инициализации
@@ -98,6 +107,7 @@ class StabilizationManager {
   MadgwickFilter& madgwick_;
   YawRateController& yaw_ctrl_;
   SlipAngleController& slip_ctrl_;
+  TelemetryConfigSnapshotLog* config_snapshot_log_{nullptr};
   ImuHandler* imu_handler_;
 
   mutable std::mutex config_mutex_;

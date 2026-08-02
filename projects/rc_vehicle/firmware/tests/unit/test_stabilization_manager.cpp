@@ -2,6 +2,7 @@
 
 #include "mock_platform.hpp"
 #include "stabilization_manager.hpp"
+#include "telemetry_config_snapshot.hpp"
 
 using namespace rc_vehicle;
 using namespace rc_vehicle::testing;
@@ -73,6 +74,34 @@ TEST_F(StabilizationManagerTest, SetConfig_NoSaveToNvs_DoesNotPersist) {
   // Platform should not have the config
   auto saved = platform_.LoadStabilizationConfig();
   EXPECT_FALSE(saved.has_value());
+}
+
+TEST_F(StabilizationManagerTest, SetConfig_SameModeDoesNotLoadTargetProfile) {
+  StabilizationConfig cfg;
+  cfg.Reset();
+  cfg.enabled = true;
+
+  EXPECT_TRUE(mgr_->SetConfig(cfg, false));
+  EXPECT_EQ(platform_.PerModeLoadCount(), 0u);
+}
+
+TEST_F(StabilizationManagerTest,
+       ClearAndSeedConfigSnapshots_UsesCurrentConfig) {
+  TelemetryConfigSnapshotLog snapshots;
+  mgr_->SetConfigSnapshotLog(&snapshots);
+
+  StabilizationConfig cfg;
+  cfg.Reset();
+  cfg.filter.madgwick_beta = 0.42f;
+  ASSERT_TRUE(mgr_->SetConfig(cfg, false));
+
+  mgr_->ClearAndSeedConfigSnapshots(1234);
+
+  ASSERT_EQ(snapshots.Count(), 1u);
+  TelemetryConfigSnapshot snapshot{};
+  ASSERT_TRUE(snapshots.GetSnapshot(0, snapshot));
+  EXPECT_EQ(snapshot.ts_ms, 1234u);
+  EXPECT_FLOAT_EQ(snapshot.values[3], 0.42f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -164,7 +193,8 @@ TEST_F(StabilizationManagerTest, UpdateWeights_ZeroDt_NoChange) {
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 0.0f);
 }
 
-TEST_F(StabilizationManagerTest, UpdateWeights_EnabledWithZeroFade_ImmediateWeight) {
+TEST_F(StabilizationManagerTest,
+       UpdateWeights_EnabledWithZeroFade_ImmediateWeight) {
   StabilizationConfig cfg;
   cfg.Reset();
   cfg.enabled = true;
@@ -175,7 +205,8 @@ TEST_F(StabilizationManagerTest, UpdateWeights_EnabledWithZeroFade_ImmediateWeig
   EXPECT_FLOAT_EQ(mgr_->GetStabilizationWeight(), 1.0f);
 }
 
-TEST_F(StabilizationManagerTest, UpdateWeights_EnabledWithFade_GradualIncrease) {
+TEST_F(StabilizationManagerTest,
+       UpdateWeights_EnabledWithFade_GradualIncrease) {
   StabilizationConfig cfg;
   cfg.Reset();
   cfg.enabled = true;

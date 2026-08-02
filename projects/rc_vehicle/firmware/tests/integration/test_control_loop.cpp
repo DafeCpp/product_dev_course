@@ -248,6 +248,18 @@ TEST_F(ControlLoopTest, ClearLog_AlsoClearsEvents) {
   EXPECT_EQ(vc_.GetEventCount(), 0u) << "события пережили очистку лога";
 }
 
+TEST_F(ControlLoopTest, ClearLog_SeedsCurrentConfigSnapshot) {
+  RunLoop(1);
+  ASSERT_GT(vc_.GetConfigSnapshotCount(), 0u);
+
+  vc_.ClearLog();
+
+  EXPECT_EQ(vc_.GetConfigSnapshotCount(), 1u);
+  TelemetryConfigSnapshot snapshot{};
+  ASSERT_TRUE(vc_.GetConfigSnapshot(0, snapshot));
+  EXPECT_EQ(snapshot.schema_version, TelemetryConfigSnapshot::kSchemaVersion);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TestRunner (Task 6): взаимное исключение, старт/стоп
 // ─────────────────────────────────────────────────────────────────────────────

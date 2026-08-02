@@ -294,6 +294,7 @@ class FakePlatform : public VehicleControlPlatform {
 
   std::optional<StabilizationConfig> LoadStabilizationConfig(
       DriveMode mode) override {
+    ++per_mode_load_count_;
     return stab_configs_[static_cast<size_t>(mode)];
   }
 
@@ -308,6 +309,8 @@ class FakePlatform : public VehicleControlPlatform {
     stab_configs_[static_cast<size_t>(config.mode)] = config;
     active_mode_ = config.mode;
   }
+
+  [[nodiscard]] size_t PerModeLoadCount() const { return per_mode_load_count_; }
 
   // ─────────────────────────────────────────────────────────────────────────
   // RC Input
@@ -438,6 +441,7 @@ class FakePlatform : public VehicleControlPlatform {
   // Stabilization (per-mode: один слот на каждый DriveMode 0..4)
   std::array<std::optional<StabilizationConfig>, 5> stab_configs_{};
   std::optional<DriveMode> active_mode_;
+  size_t per_mode_load_count_{0};
 
   // RC Input
   std::optional<RcCommand> rc_command_;
