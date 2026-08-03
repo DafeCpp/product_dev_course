@@ -203,8 +203,12 @@ TEST(KidsModeDefaultsTest, EnablesPitchCompAndAdaptive) {
   EXPECT_TRUE(cfg.pitch_comp.enabled);
   EXPECT_TRUE(cfg.oversteer.warn_enabled);
   EXPECT_TRUE(cfg.adaptive.enabled);
-  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.15f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.005f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.ki, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, 0.0f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_correction, 0.15f);
   EXPECT_FLOAT_EQ(cfg.yaw_rate.steer_to_yaw_rate_dps, 75.0f);
+  EXPECT_FLOAT_EQ(cfg.adaptive.scale_max, 1.0f);
   EXPECT_FLOAT_EQ(cfg.slew_steering, 3.0f);
 }
 

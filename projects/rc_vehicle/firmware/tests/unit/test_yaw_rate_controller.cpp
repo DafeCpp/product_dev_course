@@ -90,14 +90,16 @@ TEST_F(YawRateControllerTest, NoCorrection_WhenSteeringZero_AndGyroZero) {
   EXPECT_NEAR(steering, 0.0f, 0.01f);
 }
 
-TEST_F(YawRateControllerTest, PositiveCorrection_WhenDesiredOmegaExceedsActual) {
+TEST_F(YawRateControllerTest,
+       PositiveCorrection_WhenDesiredOmegaExceedsActual) {
   // steering=0.5 → desired omega = 90 * 0.5 = 45 dps
   // actual omega ≈ 0 (gyro Z = 0)
-  // error = 45 → PID output = kp * 45 = 4.5, clamped to max_correction=0.3
-  // steering += 0.3 * stab_w * mode_w = 0.3
+  // Error LPF and ramp-in limit the first correction, but its sign stays
+  // positive and the final steering remains bounded.
   float steering = 0.5f;
   ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
-  EXPECT_GT(steering, 0.5f) << "Steering should increase when desired > actual yaw rate";
+  EXPECT_GT(steering, 0.5f)
+      << "Steering should increase when desired > actual yaw rate";
   EXPECT_LE(steering, 1.0f) << "Steering clamped to [-1, 1]";
 }
 
@@ -106,7 +108,8 @@ TEST_F(YawRateControllerTest, NegativeCorrection_WhenActualExceedsDesired) {
   SetGyroZ(90.0f);
   float steering = 0.0f;
   ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
-  EXPECT_LT(steering, 0.0f) << "Steering should decrease when actual > desired yaw rate";
+  EXPECT_LT(steering, 0.0f)
+      << "Steering should decrease when actual > desired yaw rate";
 }
 
 TEST_F(YawRateControllerTest, NoEffect_WhenStabWeightZero) {
@@ -124,15 +127,16 @@ TEST_F(YawRateControllerTest, NoEffect_WhenModeWeightZero) {
   EXPECT_NEAR(steering, 0.5f, 0.01f);
 }
 
-TEST_F(YawRateControllerTest, WorksRegardlessOfMode_ModeFilteringIsDoneByTraits) {
+TEST_F(YawRateControllerTest,
+       WorksRegardlessOfMode_ModeFilteringIsDoneByTraits) {
   // After Strategy refactoring, mode filtering is done by ModeTraits in
   // control loop, not inside the controller. Controller is mode-agnostic.
   cfg_.mode = DriveMode::Drift;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
   float steering = 0.5f;
   ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
-  EXPECT_NE(steering, 0.5f)
-      << "Controller processes regardless of mode; filtering is in control loop";
+  EXPECT_NE(steering, 0.5f) << "Controller processes regardless of mode; "
+                               "filtering is in control loop";
 }
 
 TEST_F(YawRateControllerTest, NoEffect_WhenImuDisabled) {
@@ -252,6 +256,105 @@ TEST_F(YawRateControllerTest, BaseSteeringPassesThrough_BelowSpeedThreshold) {
   float steering = 0.4f;
   ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
   EXPECT_FLOAT_EQ(steering, 0.4f);
+}
+
+TEST_F(YawRateControllerTest, DoesNotEngageInsideSpeedHysteresisBand) {
+  ekf_.SetState(0.2f, 0.0f, 0.0f);
+  float steering = 0.4f;
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(steering, 0.4f);
+}
+
+TEST_F(YawRateControllerTest, RampsCorrectionInAfterEngaging) {
+  ekf_.SetState(0.3f, 0.0f, 0.0f);
+  float first_steering = 0.5f;
+  ctrl_.Process(cfg_, first_steering, 1.0f, 1.0f, 2);
+  const float first_correction = first_steering - 0.5f;
+
+  float full_steering = 0.5f;
+  for (int i = 0; i < 125; ++i) {
+    full_steering = 0.5f;
+    ctrl_.Process(cfg_, full_steering, 1.0f, 1.0f, 2);
+  }
+  const float full_correction = full_steering - 0.5f;
+
+  EXPECT_GT(first_correction, 0.0f);
+  EXPECT_LT(first_correction, 0.01f);
+  EXPECT_GT(full_correction, first_correction * 10.0f);
+}
+
+TEST_F(YawRateControllerTest, StaysActiveUntilDisengageThreshold) {
+  ekf_.SetState(0.3f, 0.0f, 0.0f);
+  float steering = 0.5f;
+  for (int i = 0; i < 125; ++i) {
+    steering = 0.5f;
+    ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  }
+
+  ekf_.SetState(0.2f, 0.0f, 0.0f);
+  steering = 0.5f;
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_GT(steering, 0.5f);
+
+  ekf_.SetState(0.15f, 0.0f, 0.0f);
+  steering = 0.5f;
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(steering, 0.5f);
+
+  ekf_.SetState(0.2f, 0.0f, 0.0f);
+  ctrl_.Process(cfg_, steering, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(steering, 0.5f);
+}
+
+TEST_F(YawRateControllerTest, FiltersSingleYawRateImpulse) {
+  cfg_.yaw_rate.pid.kp = 0.005f;
+  cfg_.yaw_rate.pid.max_correction = 1.0f;
+  ctrl_.SetGains(cfg_);
+
+  StabilizationInput input{
+      .dt_ms = 2,
+      .speed_ms = 1.0f,
+      .stabilization_weight = 1.0f,
+      .mode_transition_weight = 1.0f,
+      .imu_enabled = true,
+  };
+  float steering = 0.0f;
+  for (int i = 0; i < 125; ++i) {
+    ctrl_.Process(cfg_, steering, input);
+  }
+
+  input.filtered_gyro_z_dps = 90.0f;
+  steering = 0.0f;
+  ctrl_.Process(cfg_, steering, input);
+
+  EXPECT_LT(std::abs(steering), 0.1f);
+  EXPECT_GT(std::abs(steering), 0.01f);
+}
+
+TEST_F(YawRateControllerTest, AdaptiveScaleCannotExceedMaxCorrection) {
+  cfg_.yaw_rate.pid.kp = 1.0f;
+  cfg_.yaw_rate.pid.max_correction = 0.2f;
+  cfg_.adaptive.enabled = true;
+  cfg_.adaptive.speed_ref_ms = 1.0f;
+  cfg_.adaptive.scale_min = 0.5f;
+  cfg_.adaptive.scale_max = 2.0f;
+  ctrl_.SetGains(cfg_);
+
+  StabilizationInput input{
+      .dt_ms = 2,
+      .speed_ms = 2.0f,
+      .filtered_gyro_z_dps = -90.0f,
+      .stabilization_weight = 1.0f,
+      .mode_transition_weight = 1.0f,
+      .imu_enabled = true,
+  };
+  float steering = 0.0f;
+  for (int i = 0; i < 125; ++i) {
+    steering = 0.0f;
+    ctrl_.Process(cfg_, steering, input);
+  }
+
+  EXPECT_NEAR(steering, 0.2f, 1e-5f);
 }
 
 TEST_F(YawRateControllerTest, ResetsPid_BelowSpeedThreshold) {

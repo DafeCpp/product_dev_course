@@ -7,12 +7,13 @@
 namespace rc_vehicle {
 
 namespace {
-// FW-R17: рулевая yaw-rate-стабилизация осмысленна только в движении. Ниже этой
-// скорости (EKF) руль не влияет на рысканье, поэтому контур не подмешивается —
-// иначе он гоняется за шумом гироскопа (дрожание руля) и срывается в упор ±1.0
-// на толчок. Порог с запасом над дрейфом оценки скорости; при нужде вынести в
-// конфиг. См. tasks/FW-R17-phantom-steering-after-boot.md.
-constexpr float kMinStabSpeedMs = 0.2f;
+// LOS-284: hysteresis prevents EKF noise from repeatedly toggling yaw assist
+// near standstill. A separate ramp removes the correction step at engagement.
+constexpr float kStabEngageSpeedMs = 0.30f;
+constexpr float kStabDisengageSpeedMs = 0.15f;
+constexpr float kStabRampInSec = 0.25f;
+constexpr float kYawErrorCutoffHz = 10.0f;
+constexpr float kTwoPi = 6.28318530717958647692f;
 }  // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +26,7 @@ void YawRateController::Init(const StabilizationConfig& cfg,
   ekf_ = &ekf;
   imu_ = imu;
   SetGains(cfg);
+  Reset();
 }
 
 void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
@@ -45,16 +47,11 @@ void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
 void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
                                 const StabilizationInput& input,
                                 bool reversing) noexcept {
-  if (input.stabilization_weight <= 0.0f) return;
-  if (!input.imu_enabled) return;
-  if (input.dt_ms == 0) return;
-
-  // FW-R17: на стоянке/околонулевой скорости не подмешиваем коррекцию (руль
-  // проходит как есть) и держим PID в сбросе — анти-windup при остановках.
-  if (input.speed_ms < kMinStabSpeedMs) {
-    pid_.Reset();
+  if (input.stabilization_weight <= 0.0f || !input.imu_enabled) {
+    Reset();
     return;
   }
+  if (input.dt_ms == 0) return;
 
   // FW-R22: в реверсе связь руль→рыскание инвертируется, и yaw-rate обратная
   // связь становится положительной → автоколебания руля (hunting) при том, что
@@ -62,14 +59,32 @@ void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
   // проходит как есть, PID в сбросе. Направление берём по знаку команды газа,
   // т.к. EKF vx ненадёжен (IMU-only, дрейф: vx_var в логах доходит до 193).
   if (reversing) {
-    pid_.Reset();
+    Reset();
     return;
   }
 
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
+
+  if (speed_gate_active_) {
+    if (input.speed_ms <= kStabDisengageSpeedMs) {
+      Reset();
+      return;
+    }
+  } else {
+    if (input.speed_ms < kStabEngageSpeedMs) return;
+    speed_gate_active_ = true;
+  }
+
+  activation_weight_ =
+      std::min(1.0f, activation_weight_ + dt_sec / kStabRampInSec);
+
   const float omega_desired = cfg.yaw_rate.steer_to_yaw_rate_dps * steering;
   const float omega_actual = input.filtered_gyro_z_dps;
-  const float pid_out = pid_.Step(omega_desired - omega_actual, dt_sec);
+  const float error_dps = omega_desired - omega_actual;
+  const float filter_alpha =
+      1.0f - std::exp(-kTwoPi * kYawErrorCutoffHz * dt_sec);
+  filtered_error_dps_ += filter_alpha * (error_dps - filtered_error_dps_);
+  const float pid_out = pid_.Step(filtered_error_dps_, dt_sec);
 
   // Adaptive PID: масштабирование выхода ПИД по скорости из EKF (Phase 4.1)
   float adaptive_scale = 1.0f;
@@ -78,16 +93,28 @@ void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
                                 cfg.adaptive.scale_min, cfg.adaptive.scale_max);
   }
 
-  steering =
-      std::clamp(steering + pid_out * input.stabilization_weight *
-                                input.mode_transition_weight * adaptive_scale,
-                 -1.0f, 1.0f);
+  // max_correction is a hard safety limit. Adaptive scaling must not raise the
+  // effective ceiling above the value shown in config and telemetry.
+  const float correction =
+      std::clamp(pid_out * adaptive_scale, -cfg.yaw_rate.pid.max_correction,
+                 cfg.yaw_rate.pid.max_correction);
+  steering = std::clamp(steering + correction * input.stabilization_weight *
+                                       input.mode_transition_weight *
+                                       activation_weight_,
+                        -1.0f, 1.0f);
 }
 
 void YawRateController::SetGains(const StabilizationConfig& cfg) noexcept {
   pid_.SetGains({cfg.yaw_rate.pid.kp, cfg.yaw_rate.pid.ki, cfg.yaw_rate.pid.kd,
                  cfg.yaw_rate.pid.max_integral,
                  cfg.yaw_rate.pid.max_correction});
+}
+
+void YawRateController::Reset() noexcept {
+  pid_.Reset();
+  filtered_error_dps_ = 0.0f;
+  activation_weight_ = 0.0f;
+  speed_gate_active_ = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
