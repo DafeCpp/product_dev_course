@@ -28,6 +28,14 @@ struct TelemetryConfigSnapshot {
 };
 static_assert(sizeof(TelemetryConfigSnapshot) == 268,
               "TelemetryConfigSnapshot size mismatch");
+// Раскладка, на которую опирается JS-декодер (parseConfigSnapshot и разбор
+// frame_index в app.js): ts_ms, schema_version, value_count, values[],
+// frame_index — вплотную, без внутреннего паддинга.
+static_assert(offsetof(TelemetryConfigSnapshot, values) == 8,
+              "values[] must start right after the 8-byte header");
+static_assert(offsetof(TelemetryConfigSnapshot, frame_index) ==
+                  8 + TelemetryConfigSnapshot::kValueCount * sizeof(float),
+              "frame_index must follow values[] with no padding");
 // changed_mask дельты — uint64_t, по биту на значение. 64 значения занимают
 // маску целиком: следующее поле потребует расширения маски, а не только
 // инкремента kValueCount.

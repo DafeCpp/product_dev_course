@@ -1546,9 +1546,15 @@ async function downloadBinaryLog() {
                 const base = eventsEnd + 8 + i * size;
                 if (base + size > buf.byteLength) break;
                 const config = parseConfigSnapshot(view, base, size);
+                // frame_index лежит сразу за values[], поэтому смещение
+                // выводим из value_count, а не зашиваем: рост схемы его
+                // сдвигает (v1: 260, v2: 264), и константа молча начинала бы
+                // читать последнее значение как индекс кадра (LOS-286).
+                const schemaVersion = view.getUint16(base + 4, true);
+                const frameIndexOffset = 8 + view.getUint16(base + 6, true) * 4;
                 if (config) snapshots.push({ts: view.getUint32(base, true),
-                    frameIndex: size >= 264 ? view.getUint32(base + 260, true) : null,
-                    name: 'StabilizationConfigSnapshot', desc: 'schema1',
+                    frameIndex: size >= frameIndexOffset + 4 ? view.getUint32(base + frameIndexOffset, true) : null,
+                    name: 'StabilizationConfigSnapshot', desc: 'schema' + schemaVersion,
                     v1: '', v2: '', configs: [config]});
             }
         }

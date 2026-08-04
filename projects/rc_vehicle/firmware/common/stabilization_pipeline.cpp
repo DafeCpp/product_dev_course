@@ -297,8 +297,18 @@ StabilizationOutput StabilizationPipeline::Process(
     slip_ctrl_.Process(cfg, output.command.throttle, input);
   }
   if (policy.oversteer_guard_active) {
-    oversteer_guard_.Process(cfg, output.command.throttle, input,
-                             policy.oversteer_reduces_throttle);
+    // В Kids oversteer-гард сконфигурирован из kids_mode.anti_spin_*
+    // (KidsModeStrategy::ApplyDefaults) и фактически дублирует anti-spin
+    // процессора, то есть является частью защиты Kids. Поэтому снятый
+    // мастер-выключатель ограничителей снимает и это срезание газа — иначе
+    // «сырой проход команды» им бы всё равно нарушался (LOS-286). Детекция
+    // заноса продолжает работать: IsOversteerActive() остаётся для
+    // предупреждения в телеметрии.
+    const bool kids_limiters_off =
+        cfg.mode == DriveMode::Kids && !cfg.kids_mode.limiters_enabled;
+    oversteer_guard_.Process(
+        cfg, output.command.throttle, input,
+        policy.oversteer_reduces_throttle && !kids_limiters_off);
   }
 
   if (policy.apply_input_limits) {
