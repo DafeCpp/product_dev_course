@@ -43,12 +43,19 @@ TelemetrySnapshot BuildTelemetrySnapshot(
     float applied_throttle, float applied_steering, float commanded_throttle,
     float commanded_steering, float forward_accel_g);
 
-/** Построить кадр для кольцевого буфера телеметрии. */
+/**
+ * Построить кадр для кольцевого буфера телеметрии.
+ *
+ * kids_limiters_enabled — kids_mode.limiters_enabled из конфига; сюда он
+ * передаётся аргументом, потому что StabilizationConfig в билдер кадра не
+ * приходит, а бит kKidsLimitersEnabled нужен для разбора логов (LOS-286:
+ * лимитеры Kids живут независимо от stabilization.enabled).
+ */
 TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
                                 const SensorSnapshot& sensors,
                                 float applied_throttle, float applied_steering,
                                 float commanded_throttle,
                                 float commanded_steering, DriveMode drive_mode,
-                                bool stab_enabled);
+                                bool stab_enabled, bool kids_limiters_enabled);
 
 }  // namespace rc_vehicle

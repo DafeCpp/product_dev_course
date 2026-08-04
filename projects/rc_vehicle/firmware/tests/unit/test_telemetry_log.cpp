@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "telemetry_builder.hpp"
 #include "telemetry_log.hpp"
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -195,3 +196,116 @@ TEST(TelemetryLogTest, Clear_ThenPush_Works) {
   ASSERT_TRUE(log.GetFrame(0, out));
   EXPECT_EQ(out.ts_ms, 42u);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// kids_flags: упаковка статусов лимитеров Kids в кадр (LOS-13)
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+using namespace rc_vehicle;
+
+/**
+ * Кадр строится из живого KidsModeProcessor, а не из подставных булей:
+ * тест должен ломаться и тогда, когда лимитер перестанет выставлять свой флаг.
+ */
+class BuildLogFrameKidsTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    cfg_.mode = DriveMode::Kids;
+    cfg_.kids_mode.limiters_enabled = true;
+    cfg_.kids_mode.throttle_limit = 0.3f;
+    cfg_.kids_mode.anti_spin_enabled = true;
+    cfg_.kids_mode.anti_spin_threshold_deg = 10.0f;
+    cfg_.kids_mode.anti_spin_reduction = 0.7f;
+    cfg_.kids_mode.accel_limit_enabled = true;
+    cfg_.kids_mode.accel_threshold_g = 0.15f;
+    cfg_.kids_mode.accel_limit_gain = 3.0f;
+    cfg_.kids_mode.accel_max_reduction = 0.5f;
+    cfg_.kids_mode.speed_limit_enabled = false;
+
+    kids_.Init(ekf_, nullptr);
+  }
+
+  /** Прогнать лимитеры с заданными заносом и продольным ускорением. */
+  void RunKids(float slip_deg, float forward_accel_g) {
+    const StabilizationInput input{
+        .dt_ms = 10,
+        .slip_angle_deg = slip_deg,
+        .forward_accel_g = forward_accel_g,
+        .imu_enabled = true,
+    };
+    float throttle = 0.3f;
+    float steering = 0.0f;
+    kids_.Process(cfg_, throttle, steering, input);
+  }
+
+  uint8_t Flags(bool limiters_enabled = true) {
+    const TelemetryContext ctx{ekf_,   madgwick_, imu_calib_,
+                               guard_, kids_,     auto_drive_};
+    return BuildLogFrame(ctx, /*now=*/100, sensors_, 0.2f, 0.0f, 0.3f, 0.0f,
+                         DriveMode::Kids, /*stab_enabled=*/true,
+                         limiters_enabled)
+        .kids_flags;
+  }
+
+  StabilizationConfig cfg_;
+  SensorSnapshot sensors_;
+  VehicleEkf ekf_;
+  MadgwickFilter madgwick_;
+  ImuCalibration imu_calib_;
+  OversteerGuard guard_;
+  KidsModeProcessor kids_;
+  AutoDriveCoordinator auto_drive_;
+};
+
+TEST_F(BuildLogFrameKidsTest, NoLimiterTripped_OnlyEnabledBitSet) {
+  RunKids(/*slip_deg=*/0.0f, /*forward_accel_g=*/0.05f);
+  EXPECT_EQ(Flags(), kKidsLimitersEnabled);
+}
+
+TEST_F(BuildLogFrameKidsTest, AntiSpinSetsOwnBit) {
+  RunKids(/*slip_deg=*/25.0f, /*forward_accel_g=*/0.05f);
+
+  const uint8_t flags = Flags();
+  EXPECT_TRUE(flags & kKidsAntiSpinActive);
+  EXPECT_FALSE(flags & kKidsAccelLimitActive);
+  EXPECT_FALSE(flags & kKidsSpeedLimitActive);
+}
+
+TEST_F(BuildLogFrameKidsTest, AccelLimitSetsOwnBit) {
+  RunKids(/*slip_deg=*/0.0f, /*forward_accel_g=*/0.25f);
+
+  const uint8_t flags = Flags();
+  EXPECT_TRUE(flags & kKidsAccelLimitActive);
+  EXPECT_FALSE(flags & kKidsAntiSpinActive);
+  EXPECT_FALSE(flags & kKidsSpeedLimitActive);
+}
+
+// Лимитеры независимы — маска должна показывать оба, а не «первый сработавший».
+TEST_F(BuildLogFrameKidsTest, AntiSpinAndAccelLimitCombine) {
+  RunKids(/*slip_deg=*/25.0f, /*forward_accel_g=*/0.25f);
+
+  const uint8_t flags = Flags();
+  EXPECT_EQ(flags & (kKidsAntiSpinActive | kKidsAccelLimitActive),
+            kKidsAntiSpinActive | kKidsAccelLimitActive);
+}
+
+// LOS-286: мастер-выключатель снят — по логу это должно быть видно отдельно от
+// drive_mode, иначе срез газа не отличить от «ограничители выключены».
+TEST_F(BuildLogFrameKidsTest, LimitersDisabled_ClearsEnabledBit) {
+  cfg_.kids_mode.limiters_enabled = false;
+  RunKids(/*slip_deg=*/25.0f, /*forward_accel_g=*/0.25f);
+
+  EXPECT_EQ(Flags(/*limiters_enabled=*/false), 0u);
+}
+
+TEST_F(BuildLogFrameKidsTest, ResetClearsMask) {
+  RunKids(/*slip_deg=*/25.0f, /*forward_accel_g=*/0.25f);
+  ASSERT_NE(Flags() & kKidsAntiSpinActive, 0);
+
+  kids_.Reset();
+  EXPECT_EQ(Flags(), kKidsLimitersEnabled);
+}
+
+}  // namespace

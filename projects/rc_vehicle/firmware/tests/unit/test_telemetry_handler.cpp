@@ -190,6 +190,8 @@ TEST_F(TelemetryHandlerTest, JsonContainsEkf_WhenAvailable) {
 TEST_F(TelemetryHandlerTest, JsonContainsKidsMode) {
   auto snap = MakeSnap();
   snap.kids_mode_active = true;
+  snap.kids_accel_limit_active = true;
+  snap.kids_limiters_enabled = true;
   snap.kids_throttle_limit = 0.15f;
 
   handler_->SendTelemetry(50, snap);
@@ -199,6 +201,12 @@ TEST_F(TelemetryHandlerTest, JsonContainsKidsMode) {
   cJSON* kids = cJSON_GetObjectItem(root, "kids_mode");
   ASSERT_NE(kids, nullptr);
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "active")));
+  // Каждый лимитер отдаётся отдельным ключом: по одному active нельзя понять,
+  // какой именно ограничитель режет газ (LOS-13).
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "accel_limit_active")));
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "limiters_enabled")));
+  EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(kids, "anti_spin_active")));
+  EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(kids, "speed_limit_active")));
   EXPECT_NEAR(cJSON_GetObjectItem(kids, "throttle_limit")->valuedouble, 0.15,
               0.01);
 
@@ -340,6 +348,9 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
 
   snap.kids_mode_active = true;
   snap.kids_anti_spin_active = true;
+  snap.kids_accel_limit_active = true;
+  snap.kids_speed_limit_active = true;
+  snap.kids_limiters_enabled = true;
   snap.kids_throttle_limit = 0.3f;
 
   snap.rc_throttle = 0.7f;
@@ -414,6 +425,9 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
   cJSON* kids = cJSON_GetObjectItem(root, "kids_mode");
   ASSERT_NE(kids, nullptr);
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "anti_spin_active")));
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "accel_limit_active")));
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "speed_limit_active")));
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "limiters_enabled")));
   EXPECT_NEAR(cJSON_GetObjectItem(kids, "throttle_limit")->valuedouble, 0.3,
               0.001);
 
@@ -433,7 +447,7 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
 
   // Регресс-гейт: полный кадр должен оставаться заметно короче старого
   // cJSON-вывода (тот легко уходил за 2 КБ из-за 17-значных double).
-  EXPECT_LT(json.size(), 1024u) << "frame: " << json;
+  EXPECT_LT(json.size(), 1152u) << "frame: " << json;
 }
 
 // Все блоки imu/calib/mag/ekf/warn сгруппированы под imu_enabled — при

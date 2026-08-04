@@ -32,6 +32,10 @@ FRAME_COLUMNS = [
     "ekf_vx_var", "ekf_vy_var", "ekf_r_var", "ekf_yaw_deg",
     "mx", "my", "mz", "heading_deg", "heading_rel_deg",
     "test_marker", "zupt_status", "ekf_diverged", "drive_mode", "stab_enabled",
+    # Разложенная экспортёром маска kids_flags (LOS-13); в логах до LOS-13
+    # этих колонок нет — отсутствие даёт предупреждение, но не ошибку.
+    "kids_anti_spin_active", "kids_accel_limit_active",
+    "kids_speed_limit_active", "kids_limiters_enabled",
 ]
 
 # Event columns are stitched in by the exporter, are sparse, and `event_type`
