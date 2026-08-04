@@ -891,7 +891,7 @@ TEST_F(KidsModeSpeedLimitTest, CanDeferSpeedLimitUntilAfterOtherModifiers) {
 
   // Имитирует throttle-модификатор поздней стабилизации (pitch/oversteer).
   throttle = 0.5f;
-  processor_.ApplySpeedLimit(cfg_, throttle);
+  processor_.ApplySpeedLimit(cfg_, throttle, 10);
   EXPECT_LT(throttle, 0.5f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
