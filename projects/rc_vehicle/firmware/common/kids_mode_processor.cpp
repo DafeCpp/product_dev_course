@@ -25,9 +25,13 @@ namespace {
 // поэтому дополнительно гейтим по !ekf_->IsDiverged().
 constexpr float kSpeedTrustVarMax = 4.0f;
 
-// Верхний предел пропорционального снижения. 50% оставляет водителю
-// управляемую тягу вместо почти полного обрыва команды.
-constexpr float kSpeedReductionMax = 0.5f;
+// Минимальный "пол" итогового газа относительно команды водителя (LOS-247).
+// Раньше это был единственный механизм ограничения (пропорциональное снижение
+// упиралось в этот потолок почти сразу — LOS-285). Теперь это лишь страховка
+// на случай рассинхрона детерминированного потолка мотор-модели с реальностью
+// (неоткалиброванный motor_speed_gain, деградировавшая EKF-подстройка) — не
+// даёт лимитеру вырождаться в почти полный обрыв газа.
+constexpr float kMaxThrottleReductionFraction = 0.5f;
 
 // Speed limiter включается выше max_speed_ms, а выключается только после
 // возврата на эту величину ниже порога. Это исключает переключение на каждом
@@ -72,6 +76,7 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     anti_spin_active_ = false;
     accel_limit_active_ = false;
     speed_limit_active_ = false;
+    speed_trim_ = 1.0f;
     return;
   }
 
@@ -152,35 +157,82 @@ void KidsModeProcessor::ApplySpeedLimit(
     const StabilizationInput& input) noexcept {
   if (!IsActive(cfg)) {
     speed_limit_active_ = false;
+    speed_trim_ = 1.0f;
     return;
   }
 
   const auto& km = cfg.kids_mode;
-  if (km.speed_limit_enabled && input.imu_enabled && throttle > 0.0f &&
-      !input.ekf_diverged && input.vx_variance <= kSpeedTrustVarMax) {
-    const float speed = input.speed_ms;
-    const float release_speed = km.max_speed_ms - kSpeedLimitHysteresisMs;
-    if (speed_limit_active_) {
-      speed_limit_active_ = speed >= release_speed;
-    } else {
-      speed_limit_active_ = speed > km.max_speed_ms;
-    }
-
-    if (speed_limit_active_) {
-      const float excess = std::max(speed - release_speed, 0.0f);
-      const float reduction =
-          std::min(excess * km.speed_limit_gain, kSpeedReductionMax);
-      throttle *= (1.0f - reduction);
-    }
-  } else {
+  if (!(km.speed_limit_enabled && input.imu_enabled && throttle > 0.0f &&
+        !input.ekf_diverged && input.vx_variance <= kSpeedTrustVarMax)) {
     speed_limit_active_ = false;
+    speed_trim_ = 1.0f;
+    return;
   }
+
+  const float speed = input.speed_ms;
+  const float release_speed = km.max_speed_ms - kSpeedLimitHysteresisMs;
+  if (speed_limit_active_) {
+    speed_limit_active_ = speed >= release_speed;
+  } else {
+    speed_limit_active_ = speed > km.max_speed_ms;
+  }
+
+  if (!speed_limit_active_) {
+    // В полосе гистерезиса, но не сработал — speed_trim_ не трогаем: он
+    // сохраняет ранее подобранное значение до следующего срабатывания.
+    return;
+  }
+
+  const bool model_available = cfg.filter.motor_model_enabled &&
+                                cfg.filter.motor_deadzone < 1.0f &&
+                                cfg.filter.motor_speed_gain > 0.0f;
+
+  float cap;
+  if (model_available) {
+    // Детерминированный потолок: обращаем формулу мотор-модели, чтобы сам
+    // потолок целился в max_speed_ms напрямую (LOS-285). speed_trim_
+    // намеренно НЕ используется здесь как поправка поверх этого потолка:
+    // пока мотор-модельный якорь активен, EKF speed_ms отслеживает
+    // ДО-лимитерную команду газа (motor_model_target_throttle снимается до
+    // ApplySpeedLimit, LOS-246), а не то, что реально получилось после
+    // среза. Поэтому speed_ms никогда не отражает, сработал ли этот лимитер
+    // — использовать её как корректирующий сигнал здесь означает воссоздать
+    // ту же круговую зависимость в завуалированном виде: подтверждено на
+    // closed-loop симуляции — при удержании газа adaptive trim стабильно
+    // сползал к своему пределу и стирал model_cap независимо от результата
+    // среза, просто чуть медленнее старой формулы.
+    cap = cfg.filter.motor_deadzone +
+          km.max_speed_ms * (1.0f - cfg.filter.motor_deadzone) /
+              cfg.filter.motor_speed_gain;
+  } else {
+    // Без мотор-модельного якоря speed_ms — честная IMU-интеграция (пусть и
+    // дрейфующая), реальный, а не циклический сигнал. Медленно интегрируем
+    // ошибку в speed_trim_ вместо мгновенной коррекции текущего тика:
+    // speed_trim_ на входе в этот вызов не зависит от throttle этого же
+    // тика, поэтому std::min(throttle, cap) ниже монотонен по стику —
+    // "нажал сильнее" никогда не даёт меньше газа.
+    const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
+    if (dt_sec > 0.0f) {
+      const float error = release_speed - speed;  // <= 0, пока активен
+      speed_trim_ = std::clamp(
+          speed_trim_ + error * km.speed_limit_gain * dt_sec, 0.0f, 1.0f);
+    }
+    cap = speed_trim_;
+  }
+
+  const float commanded = throttle;
+  const float limited = std::min(commanded, cap);
+  // Минимальный пол (LOS-247): не срезать больше
+  // kMaxThrottleReductionFraction от команды водителя.
+  throttle =
+      std::max(limited, commanded * (1.0f - kMaxThrottleReductionFraction));
 }
 
 void KidsModeProcessor::Reset() noexcept {
   anti_spin_active_ = false;
   accel_limit_active_ = false;
   speed_limit_active_ = false;
+  speed_trim_ = 1.0f;
 }
 
 }  // namespace rc_vehicle

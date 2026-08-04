@@ -119,6 +119,16 @@ class KidsModeProcessor {
   bool anti_spin_active_{false};
   bool accel_limit_active_{false};
   bool speed_limit_active_{false};
+
+  /**
+   * Адаптивный потолок газа speed limiter'а [0..1], 1.0 = не ограничен.
+   * Используется только когда мотор-модель выключена (filter
+   * .motor_model_enabled == false) — тогда EKF speed_ms честная (пусть и
+   * дрейфующая) IMU-интеграция, и есть смысл медленно подстраивать под неё
+   * потолок (LOS-285). Пока мотор-модель включена, ограничение целиком
+   * детерминированное (см. ApplySpeedLimit()) и это поле не трогается.
+   */
+  float speed_trim_{1.0f};
 };
 
 }  // namespace rc_vehicle

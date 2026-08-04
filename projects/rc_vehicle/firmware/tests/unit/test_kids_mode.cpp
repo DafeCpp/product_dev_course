@@ -897,15 +897,82 @@ TEST_F(KidsModeSpeedLimitTest, CanDeferSpeedLimitUntilAfterOtherModifiers) {
 }
 
 TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_ReducesThrottleButNotToZero) {
-  // LOS-215: снижение — пропорциональное, но не полный обрыв в ноль.
-  // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.1 with hysteresis,
-  // reduction=min(10.5, kSpeedReductionMax=0.5)=0.5 → throttle=0.4*0.5=0.2
+  // LOS-285: с default motor_speed_gain=8.0/deadzone=0.05 и max_speed_ms=1.0
+  // детерминированный потолок мотор-модели (0.05+1.0*0.95/8=0.16875) ниже
+  // страховочного пола kMaxThrottleReductionFraction=0.5 → пол оказывается
+  // строже и определяет итог: throttle=0.4*(1-0.5)=0.2. Значение совпадает с
+  // цифрой из старого теста (LOS-215/247) случайно — при других
+  // max_speed_ms/gain пол может не участвовать вовсе (см. тесты ниже).
   ekf_.SetState(3.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
   processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_NEAR(throttle, 0.2f, 0.005f);
   EXPECT_GT(throttle, 0.0f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
+}
+
+TEST_F(KidsModeSpeedLimitTest, ModelCapTargetsConfiguredMaxSpeedNotFloor) {
+  // Когда потолок мотор-модели выше страховочного пола, ограничивать должен
+  // именно он — а не фиксированные 50% команды (LOS-285: старая формула
+  // всегда сходилась к произвольным 50%, независимо от max_speed_ms).
+  cfg_.kids_mode.max_speed_ms = 2.0f;  // потолок модели: 0.05+2*0.95/8=0.2875
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_NEAR(throttle, 0.2875f, 0.005f);
+  EXPECT_GT(throttle, 0.4f * 0.5f)
+      << "потолок модели (0.2875) выше страховочного пола (0.2) — должен "
+         "победить именно он";
+}
+
+TEST_F(KidsModeSpeedLimitTest, Monotonic_HigherStickNeverReducesOutput) {
+  // LOS-285: воспроизводим параметры реального заезда (gain=1.5,
+  // motor_speed_gain=8.0, max_speed_ms=1.5). При старой формуле
+  // throttle*(1-min(excess*gain,0.5)) в узком окне стика (~0.23-0.26)
+  // reduction рос быстрее throttle, и итоговый газ ПАДАЛ при более сильном
+  // нажатии. Мелким шагом стика по всему диапазону проверяем, что новый
+  // потолок (min(throttle, cap), где cap не зависит от throttle этого же
+  // тика) нигде не даёт такого провала.
+  cfg_.kids_mode.max_speed_ms = 1.5f;
+  cfg_.kids_mode.speed_limit_gain = 1.5f;
+  const float dz = cfg_.filter.motor_deadzone;
+  const float gain = cfg_.filter.motor_speed_gain;
+
+  float prev_output = -1.0f;
+  for (float stick = 0.15f; stick <= 0.5f; stick += 0.005f) {
+    // Свежий процессор на каждую точку: изолируем свойство "потолок этого
+    // тика не зависит от текущего throttle" от медленной адаптации
+    // speed_trim_ между тиками.
+    KidsModeProcessor proc;
+    proc.Init(ekf_, imu_handler_.get());
+    const float speed = gain * std::max(stick - dz, 0.0f) / (1.0f - dz);
+    ekf_.SetState(speed, 0.0f, 0.0f);
+
+    float throttle = stick, steering = 0.0f;
+    proc.Process(cfg_, throttle, steering, 10);
+    EXPECT_GE(throttle, prev_output - 1e-5f)
+        << "выход упал при стике=" << stick << " (был " << prev_output
+        << ", стал " << throttle << ")";
+    prev_output = throttle;
+  }
+}
+
+TEST_F(KidsModeSpeedLimitTest, MotorModelDisabled_FallsBackToAdaptiveTrim) {
+  // Когда мотор-модель выключена, детерминированный потолок недоступен
+  // (нет формулы для его вычисления) — единственным ограничителем остаётся
+  // адаптивный speed_trim_, набирающий значение за несколько тиков.
+  cfg_.filter.motor_model_enabled = false;
+  ekf_.SetState(3.0f, 0.0f, 0.0f);  // стабильно выше max_speed_ms=1.0
+
+  float throttle = 0.4f, steering = 0.0f;
+  for (int i = 0; i < 50; ++i) {
+    throttle = 0.4f;
+    processor_.Process(cfg_, throttle, steering, 10);
+  }
+  EXPECT_TRUE(processor_.IsSpeedLimitActive());
+  EXPECT_LT(throttle, 0.4f)
+      << "speed_trim_ должен ужесточить потолок за несколько тиков даже без "
+         "мотор-модели";
 }
 
 TEST_F(KidsModeSpeedLimitTest, DivergedEkf_NoReductionEvenAboveLimit) {
