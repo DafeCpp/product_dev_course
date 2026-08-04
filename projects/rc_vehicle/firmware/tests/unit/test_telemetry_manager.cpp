@@ -179,6 +179,40 @@ TEST(TelemetryManagerTest, CombinedExportExcludesSnapshotsAfterFrameFreeze) {
   mgr.EndLogExport();
 }
 
+// LOS-286: дельта-лог пишет снапшот только при изменившихся значениях
+// (Push() выходит при value_count == 0). Если бы limiters_enabled не попал в
+// схему, переключение мастер-выключателя ограничителей не оставляло бы следа в
+// бинарном логе — ровно та слепота, из-за которой заводилась задача.
+TEST(TelemetryManagerTest, LimitersToggleAloneIsRecordedInSnapshot) {
+  TelemetryManager mgr;
+  ASSERT_TRUE(mgr.Init(3));
+
+  rc_vehicle::StabilizationConfig cfg{};
+  cfg.mode = rc_vehicle::DriveMode::Kids;
+  ASSERT_TRUE(cfg.kids_mode.limiters_enabled);
+  mgr.PushConfigSnapshot(10, cfg);
+
+  // Единственное изменение во всём конфиге.
+  cfg.kids_mode.limiters_enabled = false;
+  mgr.PushConfigSnapshot(20, cfg);
+
+  size_t snapshot_count = 0;
+  ASSERT_TRUE(mgr.BeginConfigSnapshotExport(/*max_ts_ms=*/20, snapshot_count));
+  ASSERT_EQ(snapshot_count, 2u);
+
+  rc_vehicle::TelemetryConfigSnapshot first{};
+  rc_vehicle::TelemetryConfigSnapshot second{};
+  ASSERT_TRUE(mgr.GetNextConfigSnapshotExport(first));
+  ASSERT_TRUE(mgr.GetNextConfigSnapshotExport(second));
+  mgr.EndConfigSnapshotExport();
+
+  EXPECT_EQ(first.schema_version,
+            rc_vehicle::TelemetryConfigSnapshot::kSchemaVersion);
+  EXPECT_NE(first.values[63], second.values[63]);
+  EXPECT_FLOAT_EQ(first.values[63], 1.0f);
+  EXPECT_FLOAT_EQ(second.values[63], 0.0f);
+}
+
 TEST(TelemetryManagerTest, CombinedExportOrdersSameTimestampTransitions) {
   TelemetryManager mgr;
   ASSERT_TRUE(mgr.Init(3));

@@ -13,8 +13,9 @@ namespace rc_vehicle {
 
 /** Versioned, fixed wire representation of a stabilization configuration. */
 struct TelemetryConfigSnapshot {
-  static constexpr uint16_t kSchemaVersion = 1;
-  static constexpr size_t kValueCount = 63;
+  // v2: добавлен kids_mode.limiters_enabled как values[63] (LOS-286)
+  static constexpr uint16_t kSchemaVersion = 2;
+  static constexpr size_t kValueCount = 64;
 
   uint32_t ts_ms{0};
   uint16_t schema_version{kSchemaVersion};
@@ -25,8 +26,13 @@ struct TelemetryConfigSnapshot {
   [[nodiscard]] static TelemetryConfigSnapshot FromConfig(
       uint32_t ts_ms, const StabilizationConfig& cfg) noexcept;
 };
-static_assert(sizeof(TelemetryConfigSnapshot) == 264,
+static_assert(sizeof(TelemetryConfigSnapshot) == 268,
               "TelemetryConfigSnapshot size mismatch");
+// changed_mask дельты — uint64_t, по биту на значение. 64 значения занимают
+// маску целиком: следующее поле потребует расширения маски, а не только
+// инкремента kValueCount.
+static_assert(TelemetryConfigSnapshot::kValueCount <= 64,
+              "changed_mask (uint64_t) cannot address more than 64 values");
 
 /** Sparse configuration snapshots aligned to the retained frame history. */
 class TelemetryConfigSnapshotLog {

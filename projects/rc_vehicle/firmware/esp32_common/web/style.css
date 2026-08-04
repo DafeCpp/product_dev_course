@@ -112,6 +112,9 @@ body {
 .banner-warn   { background: var(--warn); color: #000; animation: pulse 2s infinite; }
 .banner-danger { background: var(--danger); color: #fff; animation: pulse 1s infinite; }
 
+/* Несохранённое изменение: прошивка ещё работает по прежнему состоянию. */
+.hint-pending { color: var(--warn); font-weight: 600; }
+
 /* ── Sliders ── */
 .slider-group { margin: var(--gap) 0; }
 .slider-group.compact { margin: 8px 0; }
