@@ -218,6 +218,12 @@ function connectWebSocket() {
                 } else if (data.type === 'toggle_kids_mode_ack') {
                     kidsMode = data.active;
                     updateKidsModeUI();
+                    // SetKidsModeActive() меняет режим, а StabilizationManager
+                    // при смене режима перезагружает сохранённый профиль — все
+                    // локальные копии (limiters_enabled, лимиты газа/руля)
+                    // устаревают. Без перечитывания баннер мог бы утверждать,
+                    // что защита включена, когда прошивка её сняла.
+                    loadStabConfig();
                 } else if (data.type === 'start_speed_calib_ack') {
                     updateSpeedCalibStatus(data);
                 } else if (data.type === 'speed_calib_status') {
@@ -281,7 +287,9 @@ function sendCommand() {
     let throttle = parseFloat(throttleSlider.value);
     let steering = parseFloat(steeringSlider.value);
 
-    if (kidsMode) {
+    // Предварительный клэмп на клиенте зеркалит прошивку: при снятом
+    // мастер-выключателе ограничителей она команду не режет (LOS-286).
+    if (kidsMode && kidsLimitersEnabled) {
         throttle = Math.max(-kidsThrottleLimit, Math.min(kidsThrottleLimit, throttle));
         steering = Math.max(-kidsSteeringLimit, Math.min(kidsSteeringLimit, steering));
     }
@@ -997,6 +1005,9 @@ let currentMode = 0;
 let kidsThrottleLimit = 0.50;
 let kidsSteeringLimit = 0.70;
 let kidsMode = false;
+// Мастер-выключатель ограничителей Kids (LOS-286). Не связан с stab-enabled:
+// тот управляет только контурами стабилизации.
+let kidsLimitersEnabled = true;
 
 function applyStabConfig(cfg) {
     const set = (id, val) => { const el = $(id); if (el) el.value = val; };
@@ -1059,6 +1070,10 @@ function applyStabConfig(cfg) {
 
     const km = cfg.kids_mode;
     if (km) {
+        kidsLimitersEnabled = km.limiters_enabled ?? true;
+        setChk('kids-limiters-enabled', kidsLimitersEnabled);
+        updateKidsLimitersHint();
+
         const tPct = Math.round((km.throttle_limit ?? 0.5) * 100);
         const sPct = Math.round((km.steering_limit ?? 0.7) * 100);
         kidsThrottleLimit = km.throttle_limit ?? 0.5;
@@ -1091,6 +1106,7 @@ function applyStabConfig(cfg) {
         const speedRow = $('kids-speed-row');
         if (speedRow) speedRow.style.display = speedEnabled ? 'flex' : 'none';
     }
+    updateKidsModeUI();
 }
 
 function updateModeButtons(mode) {
@@ -1122,7 +1138,14 @@ function updateKidsModeUI() {
 
     const active = kidsMode || currentMode === 3;
     if (kidsSettings) kidsSettings.style.display = active ? 'block' : 'none';
-    if (kidsBanner) kidsBanner.style.display = active ? 'block' : 'none';
+    if (kidsBanner) {
+        kidsBanner.style.display = active ? 'block' : 'none';
+        kidsBanner.textContent = kidsLimitersEnabled
+            ? 'Детский режим активен'
+            : 'Детский режим: ОГРАНИЧИТЕЛИ СНЯТЫ';
+        kidsBanner.classList.toggle('banner-danger', !kidsLimitersEnabled);
+        kidsBanner.classList.toggle('banner-warn', kidsLimitersEnabled);
+    }
     if (controlPanel) controlPanel.classList.toggle('kids-active', active);
     if (toggleBtn) {
         toggleBtn.textContent = 'Детский режим: ' + (active ? 'ВКЛ' : 'ВЫКЛ');
@@ -1159,6 +1182,7 @@ function saveStabConfig() {
             throttle_reduction: getF('ow-throttle-red'),
         },
         kids_mode: {
+            limiters_enabled: getChk('kids-limiters-enabled'),
             throttle_limit: kidsThrottleLimit,
             reverse_limit: kidsThrottleLimit,
             steering_limit: kidsSteeringLimit,
@@ -1263,7 +1287,7 @@ function eventParamDesc(typeId, param) {
 
 function parseConfigSnapshot(view, base, size) {
     const n = view.getUint16(base + 6, true);
-    if (view.getUint16(base + 4, true) !== 1 || n !== 63 || size < 8 + n * 4) return null;
+    if (view.getUint16(base + 4, true) !== 2 || n !== 64 || size < 8 + n * 4) return null;
     const v = Array.from({length: n}, (_, i) => view.getFloat32(base + 8 + i * 4, true));
     const b = i => v[i] !== 0;
     const pid = i => ({kp: v[i], ki: v[i + 1], kd: v[i + 2], max_integral: v[i + 3], max_correction: v[i + 4]});
@@ -1273,7 +1297,7 @@ function parseConfigSnapshot(view, base, size) {
         adaptive: {enabled: b(31), speed_ref_ms: v[32], scale_min: v[33], scale_max: v[34]},
         oversteer: {warn_enabled: b(35), slip_thresh_deg: v[36], rate_thresh_deg_s: v[37], throttle_reduction: v[38]},
         pitch_comp: {enabled: b(39), gain: v[40], max_correction: v[41]},
-        kids_mode: {throttle_limit: v[42], reverse_limit: v[43], steering_limit: v[44], slew_throttle: v[45], slew_steering: v[46], anti_spin_enabled: b(47), anti_spin_threshold_deg: v[48], anti_spin_reduction: v[49], accel_limit_enabled: b(50), accel_threshold_g: v[51], accel_limit_gain: v[52], accel_max_reduction: v[53], speed_limit_enabled: b(54), max_speed_ms: v[55], speed_limit_gain: v[56]},
+        kids_mode: {limiters_enabled: b(63), throttle_limit: v[42], reverse_limit: v[43], steering_limit: v[44], slew_throttle: v[45], slew_steering: v[46], anti_spin_enabled: b(47), anti_spin_threshold_deg: v[48], anti_spin_reduction: v[49], accel_limit_enabled: b(50), accel_threshold_g: v[51], accel_limit_gain: v[52], accel_max_reduction: v[53], speed_limit_enabled: b(54), max_speed_ms: v[55], speed_limit_gain: v[56]},
         slew_throttle: v[57], slew_steering: v[58], steering_trim: v[59], throttle_trim: v[60], braking_mode: v[61], brake_slew_multiplier: v[62]};
 }
 
@@ -1522,9 +1546,15 @@ async function downloadBinaryLog() {
                 const base = eventsEnd + 8 + i * size;
                 if (base + size > buf.byteLength) break;
                 const config = parseConfigSnapshot(view, base, size);
+                // frame_index лежит сразу за values[], поэтому смещение
+                // выводим из value_count, а не зашиваем: рост схемы его
+                // сдвигает (v1: 260, v2: 264), и константа молча начинала бы
+                // читать последнее значение как индекс кадра (LOS-286).
+                const schemaVersion = view.getUint16(base + 4, true);
+                const frameIndexOffset = 8 + view.getUint16(base + 6, true) * 4;
                 if (config) snapshots.push({ts: view.getUint32(base, true),
-                    frameIndex: size >= 264 ? view.getUint32(base + 260, true) : null,
-                    name: 'StabilizationConfigSnapshot', desc: 'schema1',
+                    frameIndex: size >= frameIndexOffset + 4 ? view.getUint32(base + frameIndexOffset, true) : null,
+                    name: 'StabilizationConfigSnapshot', desc: 'schema' + schemaVersion,
                     v1: '', v2: '', configs: [config]});
             }
         }
@@ -1971,6 +2001,16 @@ if (btnKidsToggle) btnKidsToggle.addEventListener('click', () => {
     wsSend({ type: 'toggle_kids_mode', active: kidsMode });
 });
 
+const kidsLimitersChkEl = $('kids-limiters-enabled');
+if (kidsLimitersChkEl) kidsLimitersChkEl.addEventListener('change', () => {
+    // Намеренно НЕ трогаем kidsLimitersEnabled: он отражает применённое
+    // состояние прошивки и меняется только из applyStabConfig(). Если вести от
+    // галочки баннер и клиентский клэмп, то между кликом и «Сохранить» UI
+    // объявлял бы защиту включённой, пока прошивка её не применила, а RC-вход
+    // оставался бы неограниченным (LOS-286).
+    updateKidsLimitersHint();
+});
+
 if (kidsThrottleSliderEl) kidsThrottleSliderEl.addEventListener('input', (e) => {
     const pct = parseInt(e.target.value);
     kidsThrottleLimit = pct / 100;
@@ -1993,6 +2033,24 @@ if (kidsSpeedSliderEl) kidsSpeedSliderEl.addEventListener('input', (e) => {
     const ms = parseInt(e.target.value) / 10.0;
     if (kidsSpeedValueEl) kidsSpeedValueEl.textContent = ms.toFixed(1);
 });
+
+// Подсказка под галочкой ограничителей: пока изменение не сохранено, явно
+// говорим, что прошивка работает по прежнему состоянию (LOS-286).
+function updateKidsLimitersHint() {
+    const el = $('kids-limiters-hint');
+    if (!el) return;
+    const pending = ($('kids-limiters-enabled')?.checked ?? true) !== kidsLimitersEnabled;
+    if (pending) {
+        el.textContent = kidsLimitersEnabled
+            ? 'Не сохранено: ограничители пока действуют. Нажмите «Сохранить», чтобы снять их.'
+            : 'Не сохранено: ограничители пока сняты. Нажмите «Сохранить», чтобы вернуть их.';
+    } else {
+        el.textContent = kidsLimitersEnabled
+            ? 'Снятие убирает лимит газа/руля, anti-spin и ограничение скорости — только для диагностики.'
+            : 'Ограничители сняты: лимит газа/руля, anti-spin и ограничение скорости не действуют.';
+    }
+    el.classList.toggle('hint-pending', pending);
+}
 
 function updateKidsEffectiveSlew() {
     const kidsSteer = parseFloat($('kids-slew-steering')?.value);

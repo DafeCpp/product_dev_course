@@ -399,6 +399,44 @@ TEST_F(ProcessorTest, KidsModeCapsGlobalSteeringSlewRate) {
   EXPECT_NEAR(platform_.GetLastSteering(), 0.06f, 0.005f);
 }
 
+// LOS-286: снятый мастер-выключатель снимает и Kids-потолок slew, иначе руль
+// остался бы зажат при формально выключенных ограничителях.
+TEST_F(ProcessorTest, KidsSlewCapSkippedWhenLimitersDisabled) {
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  cfg = stab_mgr_->GetConfig();
+  cfg.slew_steering = 3.0f;
+  cfg.kids_mode.slew_steering = 0.5f;
+  cfg.kids_mode.limiters_enabled = false;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.0f, 1.0f});
+  RunSteps(10);  // Первый PWM update через 20 ms.
+
+  // Kids-потолок 0.5 /с проигнорирован: работает global=3.0 → 0.06 за 20 ms.
+  EXPECT_NEAR(platform_.GetLastSteering(), 0.06f, 0.005f);
+}
+
+TEST_F(ProcessorTest, KidsSlewCapAppliedWhenLimitersEnabled) {
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  cfg = stab_mgr_->GetConfig();
+  cfg.slew_steering = 3.0f;
+  cfg.kids_mode.slew_steering = 0.5f;
+  cfg.kids_mode.limiters_enabled = true;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.0f, 1.0f});
+  RunSteps(10);
+
+  // min(global=3.0, kids=0.5) * 20 ms = 0.01.
+  EXPECT_NEAR(platform_.GetLastSteering(), 0.01f, 0.005f);
+}
+
 TEST_F(ProcessorTest, KidsModeUsesLowerGlobalSteeringSlewRate) {
   auto cfg = stab_mgr_->GetConfig();
   cfg.mode = DriveMode::Kids;

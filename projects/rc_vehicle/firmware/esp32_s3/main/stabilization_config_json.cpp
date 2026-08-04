@@ -125,6 +125,8 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
                             cfg.kids_mode.slew_throttle);
     cJSON_AddNumberToObject(kids_mode, "slew_steering",
                             cfg.kids_mode.slew_steering);
+    cJSON_AddBoolToObject(kids_mode, "limiters_enabled",
+                          cfg.kids_mode.limiters_enabled);
     cJSON_AddBoolToObject(kids_mode, "anti_spin_enabled",
                           cfg.kids_mode.anti_spin_enabled);
     cJSON_AddNumberToObject(kids_mode, "anti_spin_threshold_deg",
@@ -278,6 +280,7 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_float(kids_mode, "steering_limit", cfg.kids_mode.steering_limit);
     get_float(kids_mode, "slew_throttle", cfg.kids_mode.slew_throttle);
     get_float(kids_mode, "slew_steering", cfg.kids_mode.slew_steering);
+    get_bool(kids_mode, "limiters_enabled", cfg.kids_mode.limiters_enabled);
     get_bool(kids_mode, "anti_spin_enabled", cfg.kids_mode.anti_spin_enabled);
     get_float(kids_mode, "anti_spin_threshold_deg",
               cfg.kids_mode.anti_spin_threshold_deg);

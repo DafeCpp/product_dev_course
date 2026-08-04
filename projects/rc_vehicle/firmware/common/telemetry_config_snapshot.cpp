@@ -81,6 +81,8 @@ TelemetryConfigSnapshot TelemetryConfigSnapshot::FromConfig(
   v[60] = cfg.throttle_trim;
   v[61] = static_cast<uint8_t>(cfg.braking_mode);
   v[62] = cfg.brake_slew_multiplier;
+  // Дописано в конец, чтобы не сдвигать индексы v[0..62] схемы v1 (LOS-286).
+  v[63] = cfg.kids_mode.limiters_enabled;
   return out;
 }
 

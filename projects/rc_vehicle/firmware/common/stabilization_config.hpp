@@ -14,7 +14,8 @@ static constexpr uint32_t kStabilizationConfigMagic = 0x53544232;
  * 1 = Sport     — агрессивные параметры, высокая отзывчивость
  * 2 = Drift     — мягкий контроль, управление заносом
  * 3 = Kids      — детский режим с ограничениями скорости и усиленной помощью
- * 4 = DirectLaw — прямое управление без стабилизации и ограничения скорости изменения
+ * 4 = DirectLaw — прямое управление без стабилизации и ограничения скорости
+ * изменения
  */
 enum class DriveMode : uint8_t {
   Normal = 0,
@@ -428,6 +429,23 @@ struct KidsModeConfig {
   /** Включить защиту от заноса */
   bool anti_spin_enabled{true};
 
+  /**
+   * @brief Мастер-выключатель всех ограничителей Kids
+   *
+   * Охватывает лимиты газа/руля, anti-spin, accel limiter, speed limiter и
+   * Kids-потолок slew rate. По умолчанию включён.
+   *
+   * НЕ зависит от StabilizationConfig::enabled: тот управляет только контурами
+   * стабилизации (yaw/slip/pitch), которые гаснут через stabilization_weight.
+   * Ограничители Kids — отдельная подсистема защиты, снимаемая осознанно
+   * (диагностика), а не побочным эффектом выключения стабилизации (LOS-286).
+   *
+   * Поле намеренно стоит вплотную к anti_spin_enabled: так оно попадает в уже
+   * существующий padding, sizeof и смещения остальных полей не меняются, и
+   * NVS-миграция v10→v11 сохраняет пользовательские настройки побайтово.
+   */
+  bool limiters_enabled{true};
+
   /** Порог угла заноса для anti-spin [градусы] */
   float anti_spin_threshold_deg{10.0f};
 
@@ -449,10 +467,12 @@ struct KidsModeConfig {
   /** Включить ограничение по скорости (EKF) */
   bool speed_limit_enabled{false};
 
-  /** Максимальная скорость [м/с]; при превышении throttle снижается [0.3..5.0] */
+  /** Максимальная скорость [м/с]; при превышении throttle снижается [0.3..5.0]
+   */
   float max_speed_ms{1.5f};
 
-  /** P-коэффициент регулятора скорости: excess_ms * gain → снижение [0.5..10.0] */
+  /** P-коэффициент регулятора скорости: excess_ms * gain → снижение [0.5..10.0]
+   */
   float speed_limit_gain{1.5f};
 
   /**
@@ -466,12 +486,12 @@ struct KidsModeConfig {
            slew_steering >= 0.2f && slew_steering <= 3.0f &&
            anti_spin_threshold_deg >= 5.0f &&
            anti_spin_threshold_deg <= 45.0f && anti_spin_reduction >= 0.0f &&
-           anti_spin_reduction <= 1.0f &&
-           accel_threshold_g >= 0.05f && accel_threshold_g <= 0.5f &&
-           accel_limit_gain >= 0.5f && accel_limit_gain <= 10.0f &&
-           accel_max_reduction >= 0.0f && accel_max_reduction <= 1.0f &&
-           max_speed_ms >= 0.3f && max_speed_ms <= 5.0f &&
-           speed_limit_gain >= 0.5f && speed_limit_gain <= 10.0f;
+           anti_spin_reduction <= 1.0f && accel_threshold_g >= 0.05f &&
+           accel_threshold_g <= 0.5f && accel_limit_gain >= 0.5f &&
+           accel_limit_gain <= 10.0f && accel_max_reduction >= 0.0f &&
+           accel_max_reduction <= 1.0f && max_speed_ms >= 0.3f &&
+           max_speed_ms <= 5.0f && speed_limit_gain >= 0.5f &&
+           speed_limit_gain <= 10.0f;
   }
 
   /**
@@ -485,6 +505,13 @@ struct KidsModeConfig {
    */
   void ApplyPreset(KidsPreset preset) noexcept;
 };
+
+// Страховка layout: limiters_enabled должен помещаться в padding рядом с
+// anti_spin_enabled. Если размер изменился, NVS-миграция v10→v11
+// (MigrateV10Profiles) больше не побайтово совместима — см. LOS-286.
+static_assert(sizeof(KidsModeConfig) == 60,
+              "KidsModeConfig layout changed - bump NVS config version and "
+              "revisit MigrateV10Profiles");
 
 /**
  * @brief Описатель возрастного пресета Kids Mode — единый источник истины.
@@ -572,7 +599,8 @@ struct StabilizationConfig {
    */
   float slew_steering{3.0f};
 
-  /** Трим руля [-0.1..0.1] — смещение нейтрали (компенсация механического сдвига) */
+  /** Трим руля [-0.1..0.1] — смещение нейтрали (компенсация механического
+   * сдвига) */
   float steering_trim{0.0f};
 
   /** Трим газа [-0.1..0.1] — смещение нейтрали */
@@ -587,8 +615,8 @@ struct StabilizationConfig {
 
   /**
    * Множитель ускорения деселерации в режиме Brake [1..10].
-   * Эффективный slew rate при торможении = slew_throttle * brake_slew_multiplier.
-   * Диапазон: 1.0–10.0, по умолчанию 4.0.
+   * Эффективный slew rate при торможении = slew_throttle *
+   * brake_slew_multiplier. Диапазон: 1.0–10.0, по умолчанию 4.0.
    */
   float brake_slew_multiplier{4.0f};
 
@@ -603,6 +631,29 @@ struct StabilizationConfig {
    * @return true если конфигурация валидна
    */
   [[nodiscard]] bool IsValid() const noexcept;
+
+  /**
+   * @brief Активны ли ограничители Kids на этом тике
+   *
+   * Единственный источник истины для всех точек применения ограничителей:
+   * KidsModeProcessor::Process()/ApplySpeedLimit() и Kids-потолок slew rate в
+   * ControlLoopProcessor::UpdatePwm(). Намеренно не смотрит на enabled —
+   * см. комментарий у KidsModeConfig::limiters_enabled (LOS-286).
+   */
+  [[nodiscard]] bool KidsLimitersActive() const noexcept {
+    return mode == DriveMode::Kids && kids_mode.limiters_enabled;
+  }
+
+  /**
+   * @brief Работает ли feedback speed limiter Kids
+   *
+   * Пока он активен, motor-модель EKF ведётся по counterfactual-цели (до
+   * speed limiter), см. LOS-246. Отдельный предикат нужен, потому что снятие
+   * мастер-выключателя ограничителей выключает и speed limiter.
+   */
+  [[nodiscard]] bool KidsSpeedLimiterActive() const noexcept {
+    return KidsLimitersActive() && kids_mode.speed_limit_enabled;
+  }
 
   /**
    * @brief Сбросить конфигурацию к значениям по умолчанию
