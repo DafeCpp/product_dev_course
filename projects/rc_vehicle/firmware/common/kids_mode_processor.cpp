@@ -66,7 +66,13 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
                                 float* throttle_before_speed_limit,
                                 bool apply_speed_limit) noexcept {
   if (!IsActive(cfg)) {
-    return;  // Kids Mode не активен
+    // Ограничители не применяются — сбрасываем статусы, иначе телеметрия
+    // продолжила бы показывать сработавший лимитер после выхода из Kids или
+    // снятия мастер-выключателя (LOS-286).
+    anti_spin_active_ = false;
+    accel_limit_active_ = false;
+    speed_limit_active_ = false;
+    return;
   }
 
   const auto& km = cfg.kids_mode;

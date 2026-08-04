@@ -20,7 +20,10 @@ struct StabilizationInput;
  * режим обычно ещё не Kids, а переключение режима/пресета происходит в
  * рантайме, поэтому единственный корректный источник — снимок текущей итерации.
  * Control loop вызывает Process() только когда ModeTraits.apply_input_limits ==
- * true, но внутренняя проверка IsActive(cfg) остаётся как safety guard.
+ * true, но внутренняя проверка IsActive(cfg) несёт собственную семантику:
+ * ModeTraits статичны по режиму и не видят рантайм-флаг
+ * kids_mode.limiters_enabled, поэтому именно IsActive() отключает ограничители
+ * при снятом мастер-выключателе (LOS-286).
  */
 class KidsModeProcessor {
  public:
@@ -67,11 +70,17 @@ class KidsModeProcessor {
                        const StabilizationInput& input) noexcept;
 
   /**
-   * @brief Проверить, активен ли Kids Mode для переданного конфига
-   * @return true если cfg.mode == DriveMode::Kids
+   * @brief Проверить, применяются ли ограничители Kids для переданного конфига
+   *
+   * Делегирует единому предикату StabilizationConfig::KidsLimitersActive():
+   * нужен и режим Kids, и включённый мастер-выключатель kids_mode
+   * .limiters_enabled. Проверка НЕ смотрит на cfg.enabled — тот гасит только
+   * контуры стабилизации (LOS-286).
+   *
+   * @return true если ограничители Kids должны применяться
    */
   [[nodiscard]] bool IsActive(const StabilizationConfig& cfg) const noexcept {
-    return cfg.mode == DriveMode::Kids;
+    return cfg.KidsLimitersActive();
   }
 
   /**

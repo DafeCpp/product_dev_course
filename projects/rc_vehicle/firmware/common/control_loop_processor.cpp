@@ -84,7 +84,7 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   // тика, до UpdateSensorsAndEkf(), иначе EKF получает один лишний
   // counterfactual-снимок на границе переключения (LOS-246).
   if (input.config.mode == DriveMode::Kids &&
-      !input.config.kids_mode.speed_limit_enabled) {
+      !input.config.KidsSpeedLimiterActive()) {
     persistent_.motor_model_throttle = persistent_.applied.throttle;
   }
   // Отдельный лап ДО UpdateComponents() (код-ревью PR #297): без него
@@ -339,13 +339,17 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
 
   const DriveMode drive_mode = input.config.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
+  // Тот же предикат, что и в KidsModeProcessor: снятый мастер-выключатель
+  // ограничителей снимает и Kids-потолок slew rate (LOS-286).
+  const bool kids_limiters = input.config.KidsLimitersActive();
+  const bool kids_speed_limiter = input.config.KidsSpeedLimiterActive();
 
   if (traits.use_slew_rate) {
     const uint32_t pwm_dt_ms = input.now_ms - persistent_.last_pwm_update;
     const bool pwm_updated = pwm_dt_ms >= config::PwmConfig::kUpdateIntervalMs;
     float effective_slew_thr = input.config.slew_throttle;
     float effective_slew_steer = input.config.slew_steering;
-    if (drive_mode == DriveMode::Kids) {
+    if (kids_limiters) {
       effective_slew_thr =
           std::min(effective_slew_thr, input.config.kids_mode.slew_throttle);
       effective_slew_steer =
@@ -363,8 +367,7 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
                           persistent_.last_pwm_update, thr_trim, steer_trim,
                           effective_slew_thr, effective_slew_steer);
 
-    if (drive_mode == DriveMode::Kids &&
-        input.config.kids_mode.speed_limit_enabled && pwm_updated) {
+    if (kids_speed_limiter && pwm_updated) {
       // UpdatePwmWithSlewRate обновил реальный PWM на этом тике. Повторяем
       // только его математическую slew-ступень для counterfactual цели, не
       // включая speed limiter. Условие использует уже обновлённый timestamp.
@@ -377,8 +380,7 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
       persistent_.motor_model_throttle = firmware_common::ApplySlewRate(
           state.motor_model_target_throttle, persistent_.motor_model_throttle,
           model_slew_thr, pwm_dt_ms / 1000.0f);
-    } else if (drive_mode != DriveMode::Kids ||
-               !input.config.kids_mode.speed_limit_enabled) {
+    } else if (!kids_speed_limiter) {
       persistent_.motor_model_throttle = persistent_.applied.throttle;
     }
   } else {
@@ -387,10 +389,8 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
     ctx_.platform.SetPwm(persistent_.applied.throttle,
                          persistent_.applied.steering);
     persistent_.motor_model_throttle =
-        drive_mode == DriveMode::Kids &&
-                input.config.kids_mode.speed_limit_enabled
-            ? state.motor_model_target_throttle + thr_trim
-            : persistent_.applied.throttle;
+        kids_speed_limiter ? state.motor_model_target_throttle + thr_trim
+                           : persistent_.applied.throttle;
   }
 }
 

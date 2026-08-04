@@ -40,6 +40,11 @@ TEST(KidsModeConfigTest, DefaultSteeringSlewRateIsThreePerSecond) {
   KidsModeConfig cfg;
   EXPECT_FLOAT_EQ(cfg.slew_steering, 3.0f);
 }
+TEST(KidsModeConfigTest, LimitersEnabledByDefault) {
+  KidsModeConfig cfg;
+  EXPECT_TRUE(cfg.limiters_enabled);
+}
+
 TEST(KidsModeConfigTest, AntiSpinEnabledByDefault) {
   KidsModeConfig cfg;
   EXPECT_TRUE(cfg.anti_spin_enabled);
@@ -200,6 +205,24 @@ TEST(KidsModeConfigTest, ApplyPresetCustomDoesNotChangeValues) {
   EXPECT_FLOAT_EQ(cfg.steering_limit, 0.88f);
 }
 
+// LOS-286: осознанное применение возрастного пресета возвращает защиту.
+TEST(KidsModeConfigTest, ApplyPresetReenablesLimiters) {
+  for (KidsPreset preset :
+       {KidsPreset::Toddler, KidsPreset::Child, KidsPreset::Preteen}) {
+    KidsModeConfig cfg;
+    cfg.limiters_enabled = false;
+    cfg.ApplyPreset(preset);
+    EXPECT_TRUE(cfg.limiters_enabled) << "preset=" << static_cast<int>(preset);
+  }
+}
+
+TEST(KidsModeConfigTest, ApplyPresetCustomKeepsLimitersDisabled) {
+  KidsModeConfig cfg;
+  cfg.limiters_enabled = false;
+  cfg.ApplyPreset(KidsPreset::Custom);
+  EXPECT_FALSE(cfg.limiters_enabled);
+}
+
 TEST(KidsModeConfigTest, ApplyPresetResultIsValid) {
   KidsModeConfig cfg;
   cfg.ApplyPreset(KidsPreset::Toddler);
@@ -277,6 +300,48 @@ TEST_F(KidsModeProcessorTest, IsActiveReturnsFalseWhenModeIsNormal) {
   cfg_.mode = DriveMode::Normal;
   processor_.Init(ekf_, nullptr);
   EXPECT_FALSE(processor_.IsActive(cfg_));
+}
+
+// LOS-286: мастер-выключатель ограничителей независим от stabilization.enabled.
+TEST_F(KidsModeProcessorTest, IsActiveReturnsFalseWhenLimitersDisabled) {
+  cfg_.kids_mode.limiters_enabled = false;
+  EXPECT_FALSE(processor_.IsActive(cfg_));
+}
+
+TEST_F(KidsModeProcessorTest, IsActiveIgnoresStabilizationEnabledFlag) {
+  cfg_.enabled = false;
+  EXPECT_TRUE(processor_.IsActive(cfg_));
+
+  cfg_.enabled = true;
+  EXPECT_TRUE(processor_.IsActive(cfg_));
+}
+
+TEST_F(KidsModeProcessorTest, ProcessDoesNothingWhenLimitersDisabled) {
+  cfg_.kids_mode.limiters_enabled = false;
+  processor_.Init(ekf_, nullptr);
+
+  float throttle = 0.9f;
+  float steering = 0.9f;
+
+  processor_.Process(cfg_, throttle, steering, 10);
+
+  EXPECT_FLOAT_EQ(throttle, 0.9f);
+  EXPECT_FLOAT_EQ(steering, 0.9f);
+}
+
+// Ограничители продолжают работать при выключенной стабилизации — именно эта
+// семантика и вводила в заблуждение при диагностике, теперь она закреплена.
+TEST_F(KidsModeProcessorTest, ProcessStillLimitsWhenStabilizationDisabled) {
+  cfg_.enabled = false;
+  processor_.Init(ekf_, nullptr);
+
+  float throttle = 1.0f;
+  float steering = 1.0f;
+
+  processor_.Process(cfg_, throttle, steering, 10);
+
+  EXPECT_FLOAT_EQ(throttle, cfg_.kids_mode.throttle_limit);
+  EXPECT_FLOAT_EQ(steering, cfg_.kids_mode.steering_limit);
 }
 
 TEST_F(KidsModeProcessorTest, ThrottleLimitAppliedToForwardThrottle) {
@@ -613,6 +678,58 @@ TEST(StabilizationConfigTest, IsValidAcceptsKidsMode) {
   EXPECT_TRUE(cfg.IsValid());
 }
 
+TEST(StabilizationConfigTest, ResetRestoresKidsLimitersFlag) {
+  StabilizationConfig cfg;
+  cfg.kids_mode.limiters_enabled = false;
+
+  cfg.Reset();
+
+  EXPECT_TRUE(cfg.kids_mode.limiters_enabled);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS-286: единый предикат ограничителей Kids. `enabled` управляет только
+// контурами стабилизации и на ограничители не влияет — это и есть та
+// семантика, которая раньше нигде не была зафиксирована.
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(StabilizationConfigTest, KidsLimitersActiveRequiresKidsMode) {
+  StabilizationConfig cfg;
+  cfg.mode = DriveMode::Normal;
+  EXPECT_FALSE(cfg.KidsLimitersActive());
+
+  cfg.mode = DriveMode::Kids;
+  EXPECT_TRUE(cfg.KidsLimitersActive());
+}
+
+TEST(StabilizationConfigTest, KidsLimitersActiveRequiresLimitersFlag) {
+  StabilizationConfig cfg;
+  cfg.mode = DriveMode::Kids;
+  cfg.kids_mode.limiters_enabled = false;
+  EXPECT_FALSE(cfg.KidsLimitersActive());
+}
+
+TEST(StabilizationConfigTest, KidsLimitersActiveIgnoresStabilizationEnabled) {
+  StabilizationConfig cfg;
+  cfg.mode = DriveMode::Kids;
+
+  cfg.enabled = false;
+  EXPECT_TRUE(cfg.KidsLimitersActive());
+
+  cfg.enabled = true;
+  EXPECT_TRUE(cfg.KidsLimitersActive());
+}
+
+TEST(StabilizationConfigTest, KidsSpeedLimiterActiveFollowsMasterSwitch) {
+  StabilizationConfig cfg;
+  cfg.mode = DriveMode::Kids;
+  cfg.kids_mode.speed_limit_enabled = true;
+  EXPECT_TRUE(cfg.KidsSpeedLimiterActive());
+
+  cfg.kids_mode.limiters_enabled = false;
+  EXPECT_FALSE(cfg.KidsSpeedLimiterActive());
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FW-R21: IsActive(cfg) и лимиты читают конфиг из аргумента (живой per-tick
 // снимок), процессор НЕ хранит указатель на конфиг. Так смена режима/пресета
@@ -715,6 +832,31 @@ TEST_F(KidsModeSpeedLimitTest, BelowLimit_NoReduction) {
   float throttle = 0.4f, steering = 0.0f;
   processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_NEAR(throttle, 0.4f, 0.01f);
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+}
+
+TEST_F(KidsModeSpeedLimitTest, LimitersDisabled_NoReductionAndFlagCleared) {
+  ekf_.SetState(1.5f, 0.0f, 0.0f);  // 1.5 m/s > 1.0 m/s
+  float throttle = 0.4f, steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  ASSERT_TRUE(processor_.IsSpeedLimitActive());
+
+  cfg_.kids_mode.limiters_enabled = false;
+  throttle = 0.4f;
+  processor_.Process(cfg_, throttle, steering, 10);
+
+  EXPECT_FLOAT_EQ(throttle, 0.4f);
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+}
+
+TEST_F(KidsModeSpeedLimitTest, LimitersDisabled_ApplySpeedLimitIsNoop) {
+  ekf_.SetState(1.5f, 0.0f, 0.0f);
+  cfg_.kids_mode.limiters_enabled = false;
+
+  float throttle = 0.4f;
+  processor_.ApplySpeedLimit(cfg_, throttle, 10);
+
+  EXPECT_FLOAT_EQ(throttle, 0.4f);
   EXPECT_FALSE(processor_.IsSpeedLimitActive());
 }
 

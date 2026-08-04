@@ -77,6 +77,12 @@
                 </div>
 
                 <div id="kids-mode-settings" class="sub-card sub-card-warn" style="display:none">
+                    <div class="field-row">
+                        <label class="chk"><input type="checkbox" id="kids-limiters-enabled" checked> Ограничители Kids включены</label>
+                    </div>
+                    <div class="field-row" id="kids-limiters-hint" style="font-size:0.85em">
+                        Снятие убирает лимит газа/руля, anti-spin и ограничение скорости — только для диагностики.
+                    </div>
                     <div class="mini-slider-row">
                         <label for="kids-throttle-limit">Макс. газ %</label>
                         <input type="range" id="kids-throttle-limit" min="10" max="100" step="5" value="50" class="mini-slider">
@@ -111,7 +117,10 @@
                 </div>
 
                 <div class="field-row">
-                    <label class="chk"><input type="checkbox" id="stab-enabled"> Стабилизация включена</label>
+                    <label class="chk"><input type="checkbox" id="stab-enabled"> Контуры стабилизации (PID)</label>
+                </div>
+                <div class="field-row" style="font-size:0.85em">
+                    Управляет только yaw/slip/pitch. Ограничители Kids не зависят от этой галочки.
                 </div>
 
                 <fieldset class="param-set">

@@ -120,5 +120,64 @@ TEST_F(StabilizationPipelineTest, KidsPolicyExportsPreSpeedLimitMotorTarget) {
   EXPECT_FLOAT_EQ(output.motor_model_target_throttle, 0.4f);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS-286: разделение семантики `enabled` и ограничителей Kids.
+//
+// Выключение стабилизации гасит только аддитивные контуры (через
+// stabilization_weight). Ограничители Kids — отдельная подсистема защиты и
+// продолжают работать; снимаются они собственным мастер-выключателем.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class KidsLimitersSemanticsTest : public StabilizationPipelineTest {
+ protected:
+  KidsLimitersSemanticsTest() {
+    cfg_.mode = DriveMode::Kids;
+    cfg_.kids_mode.throttle_limit = 0.4f;
+    cfg_.kids_mode.steering_limit = 0.5f;
+    cfg_.kids_mode.speed_limit_enabled = false;
+    input_.command = {.throttle = 0.9f, .steering = 0.9f};
+    input_.dt_ms = 0;
+  }
+
+  static constexpr ModeTraits kKidsPolicy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = false,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+};
+
+TEST_F(KidsLimitersSemanticsTest, LimitsStillApplyWhenStabilizationDisabled) {
+  cfg_.enabled = false;
+  input_.stabilization_weight = 0.0f;
+
+  const auto output = pipeline_.Process(cfg_, kKidsPolicy, input_);
+
+  EXPECT_FLOAT_EQ(output.command.throttle, 0.4f);
+  EXPECT_FLOAT_EQ(output.command.steering, 0.5f);
+}
+
+TEST_F(KidsLimitersSemanticsTest, LimitsSkippedWhenMasterSwitchOff) {
+  cfg_.kids_mode.limiters_enabled = false;
+
+  const auto output = pipeline_.Process(cfg_, kKidsPolicy, input_);
+
+  EXPECT_FLOAT_EQ(output.command.throttle, 0.9f);
+  EXPECT_FLOAT_EQ(output.command.steering, 0.9f);
+  EXPECT_FLOAT_EQ(output.motor_model_target_throttle, 0.9f);
+}
+
+TEST_F(KidsLimitersSemanticsTest, MasterSwitchOffWinsOverEnabledStabilization) {
+  cfg_.enabled = true;
+  input_.stabilization_weight = 1.0f;
+  cfg_.kids_mode.limiters_enabled = false;
+
+  const auto output = pipeline_.Process(cfg_, kKidsPolicy, input_);
+
+  EXPECT_FLOAT_EQ(output.command.throttle, 0.9f);
+  EXPECT_FLOAT_EQ(output.command.steering, 0.9f);
+}
+
 }  // namespace
 }  // namespace rc_vehicle

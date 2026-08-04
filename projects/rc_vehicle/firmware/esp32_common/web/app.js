@@ -281,7 +281,9 @@ function sendCommand() {
     let throttle = parseFloat(throttleSlider.value);
     let steering = parseFloat(steeringSlider.value);
 
-    if (kidsMode) {
+    // Предварительный клэмп на клиенте зеркалит прошивку: при снятом
+    // мастер-выключателе ограничителей она команду не режет (LOS-286).
+    if (kidsMode && kidsLimitersEnabled) {
         throttle = Math.max(-kidsThrottleLimit, Math.min(kidsThrottleLimit, throttle));
         steering = Math.max(-kidsSteeringLimit, Math.min(kidsSteeringLimit, steering));
     }
@@ -997,6 +999,9 @@ let currentMode = 0;
 let kidsThrottleLimit = 0.50;
 let kidsSteeringLimit = 0.70;
 let kidsMode = false;
+// Мастер-выключатель ограничителей Kids (LOS-286). Не связан с stab-enabled:
+// тот управляет только контурами стабилизации.
+let kidsLimitersEnabled = true;
 
 function applyStabConfig(cfg) {
     const set = (id, val) => { const el = $(id); if (el) el.value = val; };
@@ -1059,6 +1064,9 @@ function applyStabConfig(cfg) {
 
     const km = cfg.kids_mode;
     if (km) {
+        kidsLimitersEnabled = km.limiters_enabled ?? true;
+        setChk('kids-limiters-enabled', kidsLimitersEnabled);
+
         const tPct = Math.round((km.throttle_limit ?? 0.5) * 100);
         const sPct = Math.round((km.steering_limit ?? 0.7) * 100);
         kidsThrottleLimit = km.throttle_limit ?? 0.5;
@@ -1091,6 +1099,7 @@ function applyStabConfig(cfg) {
         const speedRow = $('kids-speed-row');
         if (speedRow) speedRow.style.display = speedEnabled ? 'flex' : 'none';
     }
+    updateKidsModeUI();
 }
 
 function updateModeButtons(mode) {
@@ -1122,7 +1131,14 @@ function updateKidsModeUI() {
 
     const active = kidsMode || currentMode === 3;
     if (kidsSettings) kidsSettings.style.display = active ? 'block' : 'none';
-    if (kidsBanner) kidsBanner.style.display = active ? 'block' : 'none';
+    if (kidsBanner) {
+        kidsBanner.style.display = active ? 'block' : 'none';
+        kidsBanner.textContent = kidsLimitersEnabled
+            ? 'Детский режим активен'
+            : 'Детский режим: ОГРАНИЧИТЕЛИ СНЯТЫ';
+        kidsBanner.classList.toggle('banner-danger', !kidsLimitersEnabled);
+        kidsBanner.classList.toggle('banner-warn', kidsLimitersEnabled);
+    }
     if (controlPanel) controlPanel.classList.toggle('kids-active', active);
     if (toggleBtn) {
         toggleBtn.textContent = 'Детский режим: ' + (active ? 'ВКЛ' : 'ВЫКЛ');
@@ -1159,6 +1175,7 @@ function saveStabConfig() {
             throttle_reduction: getF('ow-throttle-red'),
         },
         kids_mode: {
+            limiters_enabled: getChk('kids-limiters-enabled'),
             throttle_limit: kidsThrottleLimit,
             reverse_limit: kidsThrottleLimit,
             steering_limit: kidsSteeringLimit,
@@ -1969,6 +1986,12 @@ if (btnKidsToggle) btnKidsToggle.addEventListener('click', () => {
     kidsMode = !kidsMode;
     updateKidsModeUI();
     wsSend({ type: 'toggle_kids_mode', active: kidsMode });
+});
+
+const kidsLimitersChkEl = $('kids-limiters-enabled');
+if (kidsLimitersChkEl) kidsLimitersChkEl.addEventListener('change', (e) => {
+    kidsLimitersEnabled = e.target.checked;
+    updateKidsModeUI();
 });
 
 if (kidsThrottleSliderEl) kidsThrottleSliderEl.addEventListener('input', (e) => {

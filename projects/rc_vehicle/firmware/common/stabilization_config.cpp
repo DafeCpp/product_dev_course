@@ -136,6 +136,12 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
     }
   }
 
+  // Осознанное применение возрастного пресета всегда возвращает ограничители
+  // во включённое состояние: снятие защиты — только явное действие (LOS-286).
+  if (preset != KidsPreset::Custom) {
+    limiters_enabled = true;
+  }
+
   switch (preset) {
     case KidsPreset::Toddler:
       reverse_limit = 0.10f;
@@ -195,12 +201,11 @@ bool StabilizationConfig::IsValid() const noexcept {
   return magic == kStabilizationConfigMagic && filter.IsValid() &&
          yaw_rate.IsValid() && slip_angle.IsValid() && adaptive.IsValid() &&
          oversteer.IsValid() && pitch_comp.IsValid() && kids_mode.IsValid() &&
-         static_cast<uint8_t>(mode) <= 4 &&
-         slew_throttle >= 0.1f && slew_throttle <= 10.0f &&
-         slew_steering >= 0.5f && slew_steering <= 10.0f &&
-         steering_trim >= -0.1f && steering_trim <= 0.1f &&
-         throttle_trim >= -0.1f && throttle_trim <= 0.1f &&
-         static_cast<uint8_t>(braking_mode) <= 1 &&
+         static_cast<uint8_t>(mode) <= 4 && slew_throttle >= 0.1f &&
+         slew_throttle <= 10.0f && slew_steering >= 0.5f &&
+         slew_steering <= 10.0f && steering_trim >= -0.1f &&
+         steering_trim <= 0.1f && throttle_trim >= -0.1f &&
+         throttle_trim <= 0.1f && static_cast<uint8_t>(braking_mode) <= 1 &&
          brake_slew_multiplier >= 1.0f && brake_slew_multiplier <= 10.0f;
 }
 
