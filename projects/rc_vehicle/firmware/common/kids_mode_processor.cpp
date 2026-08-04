@@ -27,10 +27,13 @@ constexpr float kSpeedTrustVarMax = 4.0f;
 
 // Минимальный "пол" итогового газа относительно команды водителя (LOS-247).
 // Раньше это был единственный механизм ограничения (пропорциональное снижение
-// упиралось в этот потолок почти сразу — LOS-285). Теперь это лишь страховка
-// на случай рассинхрона детерминированного потолка мотор-модели с реальностью
-// (неоткалиброванный motor_speed_gain, деградировавшая EKF-подстройка) — не
-// даёт лимитеру вырождаться в почти полный обрыв газа.
+// упиралось в этот потолок почти сразу — LOS-285). Теперь это страховка
+// только от ЧРЕЗМЕРНОГО СРЕЗА: если детерминированный потолок мотор-модели
+// или адаптивный speed_trim_ (fallback без модели) окажутся ниже разумного —
+// например, motor_speed_gain завышен и model_cap занижен, — лимитер не
+// обрубит газ почти в ноль. От обратного рассинхрона (motor_speed_gain
+// занижен, машина реально едет быстрее, чем предсказывает модель) этот пол
+// не защищает: он пропускает газ, а не режет его (код-ревью PR #323).
 constexpr float kMaxThrottleReductionFraction = 0.5f;
 
 // Speed limiter включается выше max_speed_ms, а выключается только после
@@ -177,15 +180,37 @@ void KidsModeProcessor::ApplySpeedLimit(
     speed_limit_active_ = speed > km.max_speed_ms;
   }
 
-  if (!speed_limit_active_) {
-    // В полосе гистерезиса, но не сработал — speed_trim_ не трогаем: он
-    // сохраняет ранее подобранное значение до следующего срабатывания.
-    return;
-  }
-
   const bool model_available = cfg.filter.motor_model_enabled &&
                                cfg.filter.motor_deadzone < 1.0f &&
                                cfg.filter.motor_speed_gain > 0.0f;
+
+  if (!model_available) {
+    // Без мотор-модельного якоря speed_ms — честная IMU-интеграция (пусть и
+    // дрейфующая), реальный, а не циклический сигнал. Медленно интегрируем
+    // ошибку в speed_trim_ вместо мгновенной коррекции текущего тика:
+    // speed_trim_ на входе в этот вызов не зависит от throttle этого же
+    // тика, поэтому std::min(throttle, cap) ниже монотонен по стику —
+    // "нажал сильнее" никогда не даёт меньше газа.
+    //
+    // Обновляем ВСЕГДА, пока открыт внешний гейт — а не только пока
+    // speed_limit_active_ (гистерезис). Иначе это односторонняя трещотка:
+    // error <= 0 всё время, пока лимитер активен, поэтому trim только падает;
+    // без обновления вне активной фазы он никогда не восстановится к 1.0,
+    // пока не случится полный выход из гейта (throttle<=0, EKF diverged и
+    // т.п.) — затяжное превышение навсегда прижимает газ к страховочному
+    // полу, даже когда скорость давно упала намного ниже max_speed_ms
+    // (код-ревью PR #323). Ниже порога error > 0, и trim восстанавливается.
+    const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
+    if (dt_sec > 0.0f) {
+      const float error = release_speed - speed;
+      speed_trim_ = std::clamp(
+          speed_trim_ + error * km.speed_limit_gain * dt_sec, 0.0f, 1.0f);
+    }
+  }
+
+  if (!speed_limit_active_) {
+    return;
+  }
 
   float cap;
   if (model_available) {
@@ -205,18 +230,6 @@ void KidsModeProcessor::ApplySpeedLimit(
                                           (1.0f - cfg.filter.motor_deadzone) /
                                           cfg.filter.motor_speed_gain;
   } else {
-    // Без мотор-модельного якоря speed_ms — честная IMU-интеграция (пусть и
-    // дрейфующая), реальный, а не циклический сигнал. Медленно интегрируем
-    // ошибку в speed_trim_ вместо мгновенной коррекции текущего тика:
-    // speed_trim_ на входе в этот вызов не зависит от throttle этого же
-    // тика, поэтому std::min(throttle, cap) ниже монотонен по стику —
-    // "нажал сильнее" никогда не даёт меньше газа.
-    const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
-    if (dt_sec > 0.0f) {
-      const float error = release_speed - speed;  // <= 0, пока активен
-      speed_trim_ = std::clamp(
-          speed_trim_ + error * km.speed_limit_gain * dt_sec, 0.0f, 1.0f);
-    }
     cap = speed_trim_;
   }
 

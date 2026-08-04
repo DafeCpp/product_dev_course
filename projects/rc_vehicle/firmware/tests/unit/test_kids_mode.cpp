@@ -975,6 +975,43 @@ TEST_F(KidsModeSpeedLimitTest, MotorModelDisabled_FallsBackToAdaptiveTrim) {
          "мотор-модели";
 }
 
+TEST_F(KidsModeSpeedLimitTest, MotorModelDisabled_TrimRecoversAfterSpeedDrops) {
+  // Код-ревью PR #323: speed_trim_ раньше ратчетил только вниз и
+  // восстанавливался лишь при полном выходе из гейта (throttle<=0, EKF
+  // diverged и т.п.), а не просто когда скорость упала ниже release_speed
+  // (IsSpeedLimitActive()==false) — без восстановления затяжное превышение
+  // навсегда прижимало бы газ к страховочному полу до конца поездки.
+  cfg_.filter.motor_model_enabled = false;
+
+  // 1. Ратчетим trim к нижнему пределу устойчивым превышением.
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f;
+  for (int i = 0; i < 50; ++i) {
+    throttle = 0.4f;
+    processor_.Process(cfg_, throttle, steering, 10);
+  }
+  ASSERT_NEAR(throttle, 0.2f, 0.02f)
+      << "sanity: trim должен был провалиться до страховочного пола";
+
+  // 2. "Едем" заметно ниже release_speed долго, не отпуская газ и не выходя
+  // из Kids/лимитеров — только это должно вернуть trim к 1.0.
+  ekf_.SetState(0.3f, 0.0f, 0.0f);
+  for (int i = 0; i < 60; ++i) {
+    throttle = 0.4f;
+    processor_.Process(cfg_, throttle, steering, 10);
+  }
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+
+  // 3. Новый заход на превышение: если trim восстановился к 1.0, первый тик
+  // почти не режет газ — как при самом первом включении лимитера.
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+  throttle = 0.4f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_NEAR(throttle, 0.4f, 0.01f)
+      << "trim не восстановился — газ сразу упал к страховочному полу, как "
+         "будто предыдущее превышение никогда не заканчивалось";
+}
+
 TEST_F(KidsModeSpeedLimitTest, DivergedEkf_NoReductionEvenAboveLimit) {
   // LOS-215: первопричина найденного бага — speed limiter доверял разошедшейся
   // оценке EKF (LOS-217) и рубил throttle почти до нуля независимо от силы
