@@ -184,8 +184,8 @@ void KidsModeProcessor::ApplySpeedLimit(
   }
 
   const bool model_available = cfg.filter.motor_model_enabled &&
-                                cfg.filter.motor_deadzone < 1.0f &&
-                                cfg.filter.motor_speed_gain > 0.0f;
+                               cfg.filter.motor_deadzone < 1.0f &&
+                               cfg.filter.motor_speed_gain > 0.0f;
 
   float cap;
   if (model_available) {
@@ -201,9 +201,9 @@ void KidsModeProcessor::ApplySpeedLimit(
     // closed-loop симуляции — при удержании газа adaptive trim стабильно
     // сползал к своему пределу и стирал model_cap независимо от результата
     // среза, просто чуть медленнее старой формулы.
-    cap = cfg.filter.motor_deadzone +
-          km.max_speed_ms * (1.0f - cfg.filter.motor_deadzone) /
-              cfg.filter.motor_speed_gain;
+    cap = cfg.filter.motor_deadzone + km.max_speed_ms *
+                                          (1.0f - cfg.filter.motor_deadzone) /
+                                          cfg.filter.motor_speed_gain;
   } else {
     // Без мотор-модельного якоря speed_ms — честная IMU-интеграция (пусть и
     // дрейфующая), реальный, а не циклический сигнал. Медленно интегрируем
