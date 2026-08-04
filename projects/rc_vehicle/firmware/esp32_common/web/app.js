@@ -218,6 +218,12 @@ function connectWebSocket() {
                 } else if (data.type === 'toggle_kids_mode_ack') {
                     kidsMode = data.active;
                     updateKidsModeUI();
+                    // SetKidsModeActive() меняет режим, а StabilizationManager
+                    // при смене режима перезагружает сохранённый профиль — все
+                    // локальные копии (limiters_enabled, лимиты газа/руля)
+                    // устаревают. Без перечитывания баннер мог бы утверждать,
+                    // что защита включена, когда прошивка её сняла.
+                    loadStabConfig();
                 } else if (data.type === 'start_speed_calib_ack') {
                     updateSpeedCalibStatus(data);
                 } else if (data.type === 'speed_calib_status') {
