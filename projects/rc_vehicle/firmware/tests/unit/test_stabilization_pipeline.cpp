@@ -247,5 +247,61 @@ TEST_F(KidsOversteerCutTest, NonKidsModeUnaffectedByLimitersFlag) {
   EXPECT_NEAR(RunTwoTicks(drift_policy), 0.5f * (1.0f - 0.7f), 1e-5f);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS-13: статусы лимитеров не должны переживать выход из Kids
+//
+// Process() чистит их сам только в ветке !IsActive, но вне Kids он не
+// вызывается вовсе — сброс обязан делать пайплайн, иначе телеметрия весь
+// остаток заезда приписывает срез газа лимитеру, который давно не работает.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class KidsStatusLifetimeTest : public StabilizationPipelineTest {
+ protected:
+  KidsStatusLifetimeTest() {
+    cfg_.mode = DriveMode::Kids;
+    cfg_.kids_mode.throttle_limit = 0.4f;
+    cfg_.kids_mode.anti_spin_enabled = true;
+    cfg_.kids_mode.anti_spin_threshold_deg = 10.0f;
+    cfg_.kids_mode.anti_spin_reduction = 0.7f;
+    cfg_.kids_mode.accel_limit_enabled = true;
+    cfg_.kids_mode.accel_threshold_g = 0.15f;
+    cfg_.kids_mode.accel_limit_gain = 3.0f;
+    cfg_.kids_mode.accel_max_reduction = 0.5f;
+    cfg_.kids_mode.speed_limit_enabled = false;
+    input_.command = {.throttle = 0.9f, .steering = 0.0f};
+    input_.slip_angle_deg = 25.0f;
+    input_.forward_accel_g = 0.25f;
+  }
+
+  static constexpr ModeTraits kKidsPolicy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = false,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+
+  static constexpr ModeTraits kNormalPolicy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = false,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = false,
+  };
+};
+
+TEST_F(KidsStatusLifetimeTest, LeavingKidsClearsLimiterStatuses) {
+  pipeline_.Process(cfg_, kKidsPolicy, input_);
+  ASSERT_TRUE(kids_.IsAntiSpinActive());
+  ASSERT_TRUE(kids_.IsAccelLimitActive());
+
+  cfg_.mode = DriveMode::Normal;
+  pipeline_.Process(cfg_, kNormalPolicy, input_);
+
+  EXPECT_FALSE(kids_.IsAntiSpinActive());
+  EXPECT_FALSE(kids_.IsAccelLimitActive());
+  EXPECT_FALSE(kids_.IsSpeedLimitActive());
+}
+
 }  // namespace
 }  // namespace rc_vehicle

@@ -240,6 +240,23 @@ class BuildLogFrameKidsTest : public ::testing::Test {
     kids_.Process(cfg_, throttle, steering, input);
   }
 
+  /**
+   * Прогнать feedback speed limiter отдельным вызовом — в проде он живёт не в
+   * Process(), а во втором шаге пайплайна (StabilizationPipeline::Process,
+   * apply_speed_limit=false + ApplySpeedLimit), поэтому и здесь вызывается так.
+   */
+  void RunSpeedLimit(float speed_ms) {
+    const StabilizationInput input{
+        .dt_ms = 10,
+        .speed_ms = speed_ms,
+        .vx_variance = 0.1f,  // много ниже порога доверия скорости (LOS-285)
+        .imu_enabled = true,
+        .ekf_diverged = false,
+    };
+    float throttle = 0.3f;
+    kids_.ApplySpeedLimit(cfg_, throttle, input);
+  }
+
   uint8_t Flags(bool limiters_enabled = true) {
     const TelemetryContext ctx{ekf_,   madgwick_, imu_calib_,
                                guard_, kids_,     auto_drive_};
@@ -280,6 +297,36 @@ TEST_F(BuildLogFrameKidsTest, AccelLimitSetsOwnBit) {
   EXPECT_TRUE(flags & kKidsAccelLimitActive);
   EXPECT_FALSE(flags & kKidsAntiSpinActive);
   EXPECT_FALSE(flags & kKidsSpeedLimitActive);
+}
+
+// Бит speed limiter'а (LOS-285) проверяется положительно отдельно: остальные
+// тесты гоняют фикстуру со speed_limit_enabled = false, и на них перепутанная
+// константа маски прошла бы незамеченной.
+TEST_F(BuildLogFrameKidsTest, SpeedLimitSetsOwnBit) {
+  cfg_.kids_mode.speed_limit_enabled = true;
+  cfg_.kids_mode.max_speed_ms = 1.5f;
+  cfg_.kids_mode.speed_limit_gain = 1.5f;
+
+  RunSpeedLimit(/*speed_ms=*/3.0f);
+
+  const uint8_t flags = Flags();
+  EXPECT_TRUE(flags & kKidsSpeedLimitActive);
+  EXPECT_FALSE(flags & kKidsAntiSpinActive);
+  EXPECT_FALSE(flags & kKidsAccelLimitActive);
+}
+
+// Гистерезис: пока скорость не упала ниже release_speed, бит держится, а после
+// падения — снимается. Иначе по логу нельзя отличить «лимитер держит» от
+// «лимитер отпустил».
+TEST_F(BuildLogFrameKidsTest, SpeedLimitBitClearsWhenSpeedDrops) {
+  cfg_.kids_mode.speed_limit_enabled = true;
+  cfg_.kids_mode.max_speed_ms = 1.5f;
+
+  RunSpeedLimit(/*speed_ms=*/3.0f);
+  ASSERT_NE(Flags() & kKidsSpeedLimitActive, 0);
+
+  RunSpeedLimit(/*speed_ms=*/0.5f);
+  EXPECT_EQ(Flags() & kKidsSpeedLimitActive, 0);
 }
 
 // Лимитеры независимы — маска должна показывать оба, а не «первый сработавший».
