@@ -551,6 +551,68 @@ TEST_F(ProcessorTest, WithImu_TelemLogPopulated) {
   EXPECT_EQ(frame.zupt_status, static_cast<uint8_t>(ZuptStatus::Applied));
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// LOS-13: бит kKidsLimitersEnabled в лог-кадре
+//
+// BuildLogFrame получает признак аргументом, поэтому упаковку бита стерегут
+// тесты билдера, а вот выбор источника на стороне вызывающего
+// (KidsLimitersActive(), а не голый kids_mode.limiters_enabled) — только эти
+// два теста. Без них откат до голого флага проходит незамеченным, и лог в
+// Normal утверждает, что ограничители Kids работают.
+// ───────────────────────────────────────────────────────────────────────────
+
+TEST_F(ProcessorTest, KidsFlagsEnabledBit_SetInKidsMode) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  platform_.SetImuData(ImuData{.az = 1.0f});
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Kids;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+  cfg = stab_mgr_->GetConfig();
+  cfg.kids_mode.limiters_enabled = true;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  RunSteps(100);
+
+  size_t count = 0, cap = 0;
+  telem_mgr_->GetLogInfo(count, cap);
+  ASSERT_GT(count, 0u);
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+
+  EXPECT_TRUE(frame.kids_flags & kKidsLimitersEnabled);
+}
+
+TEST_F(ProcessorTest, KidsFlagsEnabledBit_ClearInNormalModeDespiteConfigFlag) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  platform_.SetImuData(ImuData{.az = 1.0f});
+  ctx_->imu_handler = &imu_handler;
+
+  // Режим Normal, но мастер-выключатель Kids в конфиге взведён: ограничители
+  // всё равно не применяются, и лог не должен утверждать обратное.
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Normal;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+  cfg = stab_mgr_->GetConfig();
+  cfg.kids_mode.limiters_enabled = true;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  RunSteps(100);
+
+  size_t count = 0, cap = 0;
+  telem_mgr_->GetLogInfo(count, cap);
+  ASSERT_GT(count, 0u);
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+
+  EXPECT_EQ(frame.kids_flags, 0u);
+}
+
 TEST_F(ProcessorTest, WithoutImu_TelemLogEmpty) {
   // Без IMU-хендлера imu_enabled=false → лог не пишется
   platform_.SetWifiCommand({0.0f, 0.0f});
