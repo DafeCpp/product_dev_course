@@ -24,6 +24,9 @@ TelemetrySnapshot BuildTelemetrySnapshot(
 
   snap.kids_mode_active = (drive_mode == DriveMode::Kids);
   snap.kids_anti_spin_active = ctx.kids_processor.IsAntiSpinActive();
+  snap.kids_accel_limit_active = ctx.kids_processor.IsAccelLimitActive();
+  snap.kids_speed_limit_active = ctx.kids_processor.IsSpeedLimitActive();
+  snap.kids_limiters_enabled = stab_cfg.KidsLimitersActive();
   snap.kids_throttle_limit = stab_cfg.kids_mode.throttle_limit;
 
   if (sensors.mag_enabled) {
@@ -68,7 +71,7 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
                                 float applied_throttle, float applied_steering,
                                 float commanded_throttle,
                                 float commanded_steering, DriveMode drive_mode,
-                                bool stab_enabled) {
+                                bool stab_enabled, bool kids_limiters_active) {
   TelemetryLogFrame frame;
   frame.ts_ms = now;
   frame.ax = sensors.imu_data.ax;
@@ -108,6 +111,11 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
   frame.ekf_diverged = ctx.ekf.IsDiverged() ? 1 : 0;
   frame.drive_mode = static_cast<uint8_t>(drive_mode);
   frame.stab_enabled = stab_enabled ? 1 : 0;
+  frame.kids_flags = static_cast<uint8_t>(
+      (ctx.kids_processor.IsAntiSpinActive() ? kKidsAntiSpinActive : 0) |
+      (ctx.kids_processor.IsAccelLimitActive() ? kKidsAccelLimitActive : 0) |
+      (ctx.kids_processor.IsSpeedLimitActive() ? kKidsSpeedLimitActive : 0) |
+      (kids_limiters_active ? kKidsLimitersEnabled : 0));
   return frame;
 }
 

@@ -321,11 +321,12 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   // LOS-252: firmware_common::JsonWriter вместо cJSON — целочисленное
   // форматирование чисел (без printf/sscanf round-trip) и без malloc на
   // узел дерева. Один reserve() на кадр вместо ~160 аллокаций cJSON.
-  // Полностью заполненный кадр (все опциональные блоки) — ~950 байт
-  // (см. BuildTelemJsonTest.FullSnapshotProducesValidJsonWithAllKeys), 1024
+  // Полностью заполненный кадр (все опциональные блоки) — 1023 байта
+  // (см. BuildTelemJsonTest.FullSnapshotProducesValidJsonWithAllKeys), 1152
   // с запасом, чтобы не было повторной аллокации+копии на полном кадре.
+  // Флаги лимитеров Kids (LOS-13) съели прежний запас до 1024 почти целиком.
   std::string result;
-  result.reserve(1024);
+  result.reserve(1152);
   firmware_common::JsonWriter w(result);
 
   w.BeginObject();
@@ -448,6 +449,9 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
     w.BeginObject("kids_mode");
     w.Bool("active", true);
     w.Bool("anti_spin_active", snap.kids_anti_spin_active);
+    w.Bool("accel_limit_active", snap.kids_accel_limit_active);
+    w.Bool("speed_limit_active", snap.kids_speed_limit_active);
+    w.Bool("limiters_enabled", snap.kids_limiters_enabled);
     w.Fixed("throttle_limit", snap.kids_throttle_limit, 3);
     w.EndObject();
   }

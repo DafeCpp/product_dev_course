@@ -62,7 +62,10 @@ std::string OutputHeader() {
          "heading_deg,heading_rel_deg,ekf_vx,ekf_vy,ekf_yaw_rate,ekf_slip_deg,"
          "ekf_speed_ms,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_speed_meas,"
          "ekf_diverged,oversteer_active,"
-         "kids_mode_active,kids_throttle_limit,forward_accel,test_active";
+         "kids_mode_active,kids_throttle_limit,"
+         "kids_anti_spin_active,kids_accel_limit_active,"
+         "kids_speed_limit_active,kids_limiters_enabled,"
+         "forward_accel,test_active";
 }
 
 std::string FormatOutputLine(const TelemetrySnapshot& s, float throttle,
@@ -79,7 +82,11 @@ std::string FormatOutputLine(const TelemetrySnapshot& s, float throttle,
      << s.ekf_r_var << ',' << s.ekf_speed_meas << ','
      << (s.ekf_diverged ? 1 : 0) << ',' << (s.oversteer_active ? 1 : 0) << ','
      << (s.kids_mode_active ? 1 : 0) << ',' << s.kids_throttle_limit << ','
-     << s.forward_accel << ',' << (test_active ? 1 : 0);
+     << (s.kids_anti_spin_active ? 1 : 0) << ','
+     << (s.kids_accel_limit_active ? 1 : 0) << ','
+     << (s.kids_speed_limit_active ? 1 : 0) << ','
+     << (s.kids_limiters_enabled ? 1 : 0) << ',' << s.forward_accel << ','
+     << (test_active ? 1 : 0);
   return os.str();
 }
 

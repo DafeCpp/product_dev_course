@@ -438,6 +438,9 @@ struct TelemetrySnapshot {
   // Kids Mode
   bool kids_mode_active{false};
   bool kids_anti_spin_active{false};
+  bool kids_accel_limit_active{false};
+  bool kids_speed_limit_active{false};
+  bool kids_limiters_enabled{false};
   float kids_throttle_limit{0.0f};
 
   // RC input (сырые значения с пульта, до стабилизации)

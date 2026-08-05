@@ -284,6 +284,13 @@ StabilizationOutput StabilizationPipeline::Process(
     kids_processor_.Process(cfg, output.command.throttle,
                             output.command.steering, input, nullptr,
                             /*apply_speed_limit=*/false);
+  } else {
+    // apply_input_limits есть только у Kids, поэтому в остальных режимах
+    // Process() не вызывается вовсе — и его собственный сброс статусов (ветка
+    // !IsActive) не отрабатывает. Без явного Reset() флаги лимитеров остались
+    // бы в том состоянии, в каком их застал последний тик Kids, и телеметрия
+    // приписывала бы срез газа всему остатку заезда (LOS-13).
+    kids_processor_.Reset();
   }
 
   if (policy.yaw_rate_active) {

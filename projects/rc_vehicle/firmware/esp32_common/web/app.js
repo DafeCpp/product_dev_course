@@ -995,6 +995,46 @@ function updateTelem(data) {
             owStatus.className = 'badge badge-oversteer-ok';
         }
     }
+
+    updateKidsLimiterIndicator(data.kids_mode);
+}
+
+/**
+ * Живой статус лимитеров Kids из телеметрии (LOS-13).
+ *
+ * Отдельно от updateKidsModeUI(), которая рисует баннер по конфигу: здесь
+ * показывается, какой ограничитель режет газ прямо сейчас. Блок kids_mode
+ * приходит только когда активен режим Kids — иначе индикатор скрыт.
+ */
+function updateKidsLimiterIndicator(kids) {
+    const indicator = $('kids-limiter-indicator');
+    const status = $('kids-limiter-status');
+    if (!indicator || !status) return;
+
+    if (kids === undefined) {
+        indicator.style.display = 'none';
+        return;
+    }
+    indicator.style.display = 'flex';
+
+    if (!kids.limiters_enabled) {
+        status.textContent = 'СНЯТЫ';
+        status.className = 'badge badge-off';
+        return;
+    }
+
+    const active = [];
+    if (kids.anti_spin_active) active.push('ЗАНОС');
+    if (kids.accel_limit_active) active.push('РАЗГОН');
+    if (kids.speed_limit_active) active.push('СКОРОСТЬ');
+
+    if (active.length === 0) {
+        status.textContent = 'OK';
+        status.className = 'badge badge-on';
+    } else {
+        status.textContent = active.join(' + ');
+        status.className = 'badge badge-warn badge-pulse';
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1491,6 +1531,12 @@ async function downloadBinaryLog() {
             { name: 'ekf_diverged',   off: 126, type: 'u8'  },
             { name: 'drive_mode',     off: 127, type: 'u8'  },
             { name: 'stab_enabled',   off: 128, type: 'u8'  },
+            // Лимитеры Kids упакованы битами в один байт kids_flags (LOS-13),
+            // в CSV раскладываются обратно по отдельным колонкам.
+            { name: 'kids_anti_spin_active',   off: 129, type: 'u8', bit: 0 },
+            { name: 'kids_accel_limit_active', off: 129, type: 'u8', bit: 1 },
+            { name: 'kids_speed_limit_active', off: 129, type: 'u8', bit: 2 },
+            { name: 'kids_limiters_enabled',   off: 129, type: 'u8', bit: 3 },
         ];
 
         const maxFieldEnd = FIELD_OFFSETS.reduce((maxEnd, f) => {
@@ -1571,7 +1617,10 @@ async function downloadBinaryLog() {
             frames.push(FIELD_OFFSETS.map(f => {
                 const o = base + f.off;
                 if (f.type === 'u32') return view.getUint32(o, true);
-                if (f.type === 'u8')  return view.getUint8(o);
+                if (f.type === 'u8') {
+                    const byte = view.getUint8(o);
+                    return f.bit === undefined ? byte : (byte >> f.bit) & 1;
+                }
                 return view.getFloat32(o, true);
             }));
         }

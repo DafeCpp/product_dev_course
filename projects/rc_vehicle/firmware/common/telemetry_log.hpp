@@ -5,9 +5,28 @@
 #include <mutex>
 
 /**
+ * @brief Биты маски TelemetryLogFrame::kids_flags
+ *
+ * Флаги лимитеров Kids Mode: по одному лишь drive_mode нельзя понять, какой
+ * именно ограничитель срезал газ в конкретном кадре (LOS-13).
+ *
+ * Порядок битов зафиксирован: esp32_common/web/app.js раскладывает маску по
+ * колонкам CSV через жёстко зашитые номера (`bit: 0..3` в FIELD_OFFSETS), и
+ * связать их с этим enum'ом компилятору нечем — в отличие от смещения байта,
+ * которое ловит static_assert ниже. Перестановка значений здесь молча
+ * переименует колонки в выгрузке; менять биты — только вместе с app.js.
+ */
+enum KidsFlag : uint8_t {
+  kKidsAntiSpinActive = 1u << 0,    // KidsModeProcessor::IsAntiSpinActive()
+  kKidsAccelLimitActive = 1u << 1,  // KidsModeProcessor::IsAccelLimitActive()
+  kKidsSpeedLimitActive = 1u << 2,  // KidsModeProcessor::IsSpeedLimitActive()
+  kKidsLimitersEnabled = 1u << 3,   // kids_mode.limiters_enabled (LOS-286)
+};
+
+/**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 132 байта (30 × float + uint32_t + 5 × uint8_t + padding).
+ * Размер: 132 байта (30 × float + uint32_t + 6 × uint8_t + padding).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
  *
  * Буфер 52000 кадров × 132 байта ≈ 6.5 МБ; remaining PSRAM is reserved for
@@ -47,12 +66,18 @@ struct TelemetryLogFrame {
   uint8_t ekf_diverged{0};   // EKF: 1 = сработал guard расходимости (LOS-233)
   uint8_t drive_mode{0};     // Активный DriveMode (0=Normal..4=DirectLaw)
   uint8_t stab_enabled{0};   // Стабилизация включена (1) / выключена (0)
-  uint8_t _pad[3]{};         // Выравнивание до 4 байт
-};  // sizeof == 132 bytes (30 × float + uint32_t + 5 × uint8_t + 3 pad)
+  uint8_t kids_flags{0};     // Маска активных лимитеров Kids (см. KidsFlag)
+  uint8_t _pad[2]{};         // Выравнивание до 4 байт (запас под новые флаги)
+};  // sizeof == 132 bytes (30 × float + uint32_t + 6 × uint8_t + 2 pad)
 
 // Compile-time проверка размера структуры
 static_assert(sizeof(TelemetryLogFrame) == 132,
               "TelemetryLogFrame size mismatch");
+
+// Веб-парсер лога (esp32_common/web/app.js, FIELD_OFFSETS) читает кадр по
+// жёстко зашитым смещениям — сдвиг kids_flags молча испортит выгрузку CSV.
+static_assert(offsetof(TelemetryLogFrame, kids_flags) == 129,
+              "kids_flags offset must match web/app.js FIELD_OFFSETS");
 
 /**
  * @brief Потокобезопасный кольцевой буфер кадров телеметрии
