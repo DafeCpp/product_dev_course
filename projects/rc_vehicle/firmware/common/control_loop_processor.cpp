@@ -289,6 +289,7 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
       .mode_transition_weight = ctx_.stab_mgr->GetModeTransitionWeight(),
       .imu_enabled = input.sensors.imu_enabled,
       .ekf_diverged = state.estimate.ekf_diverged,
+      .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
   };
   const StabilizationOutput output = stabilization_pipeline_.Process(
       input.config, policy, stabilization_input);

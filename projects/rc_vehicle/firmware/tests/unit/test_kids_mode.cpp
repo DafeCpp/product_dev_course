@@ -1012,6 +1012,36 @@ TEST_F(KidsModeSpeedLimitTest, MotorModelDisabled_TrimRecoversAfterSpeedDrops) {
          "будто предыдущее превышение никогда не заканчивалось";
 }
 
+TEST_F(KidsModeSpeedLimitTest, SpeedCalibrationActive_FallsBackToAdaptiveTrim) {
+  // Код-ревью PR #323: пока активна калибровка скорости
+  // (AutoDriveCoordinator::StartSpeedCalib), EKF speed_ms перестаёт быть
+  // заякорен на мотор-модель (vehicle_state_estimator.cpp гасит
+  // motor_model_active при speed_calibration_active) — детерминированный
+  // потолок модели в этот момент целится в скорость, которую EKF больше не
+  // измеряет. model_available должен учитывать это и откатываться на
+  // адаптивный speed_trim_, как и при выключенной мотор-модели.
+  cfg_.kids_mode.max_speed_ms = 2.0f;  // потолок модели: 0.05+2*0.95/8=0.2875
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+
+  const StabilizationInput input{
+      .dt_ms = 10,
+      .speed_ms = ekf_.GetSpeedMs(),
+      .vx_variance = ekf_.GetVxVariance(),
+      .imu_enabled = true,
+      .ekf_diverged = false,
+      .speed_calibration_active = true,
+  };
+
+  float throttle = 0.4f;
+  processor_.ApplySpeedLimit(cfg_, throttle, input);
+
+  // На первом тике адаптивный speed_trim_ ещё не успел просесть (стартует с
+  // 1.0) — газ проходит почти без среза. Если бы model_available игнорировал
+  // speed_calibration_active, детерминированный потолок мгновенно срезал бы
+  // throttle до 0.2875 уже на этом тике.
+  EXPECT_NEAR(throttle, 0.4f, 0.01f);
+}
+
 TEST_F(KidsModeSpeedLimitTest, DivergedEkf_NoReductionEvenAboveLimit) {
   // LOS-215: первопричина найденного бага — speed limiter доверял разошедшейся
   // оценке EKF (LOS-217) и рубил throttle почти до нуля независимо от силы

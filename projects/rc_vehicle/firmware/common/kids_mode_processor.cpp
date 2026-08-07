@@ -180,9 +180,18 @@ void KidsModeProcessor::ApplySpeedLimit(
     speed_limit_active_ = speed > km.max_speed_ms;
   }
 
-  const bool model_available = cfg.filter.motor_model_enabled &&
-                               cfg.filter.motor_deadzone < 1.0f &&
-                               cfg.filter.motor_speed_gain > 0.0f;
+  // motor_model_enabled одного недостаточно: пока активна калибровка
+  // скорости (AutoDriveCoordinator::StartSpeedCalib), VehicleStateEstimator
+  // гасит мотор-модельный якорь EKF (motor_model_active в
+  // vehicle_state_estimator.cpp), и speed_ms там — честная IMU-интеграция, а
+  // не эхо мотор-модели. Детерминированный потолок целится в формулу модели,
+  // а не в то, что реально измеряет EKF в этот момент — тот же класс
+  // рассинхрона, который этот PR устраняет для основного сценария (LOS-285;
+  // код-ревью PR #323). Поэтому во время калибровки откатываемся на
+  // адаптивный speed_trim_, как и при выключенной мотор-модели.
+  const bool model_available =
+      cfg.filter.motor_model_enabled && !input.speed_calibration_active &&
+      cfg.filter.motor_deadzone < 1.0f && cfg.filter.motor_speed_gain > 0.0f;
 
   if (!model_available) {
     // Без мотор-модельного якоря speed_ms — честная IMU-интеграция (пусть и
