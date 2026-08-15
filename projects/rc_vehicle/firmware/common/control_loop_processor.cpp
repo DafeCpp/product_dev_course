@@ -95,7 +95,7 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
 
   UpdateComponents(now, dt_ms);  // RC/WiFi/IMU read + Madgwick + LPF
   PROF_LAP(prof_components_us_, prof_components_max_us_);
-  ControlTickState state{.command = persistent_.command};
+  ControlTickState state{.command = persistent_.base_command};
   UpdateSensorsAndEkf(input, state);
   PROF_LAP(prof_sensors_us_, prof_sensors_max_us_);
 
@@ -104,6 +104,10 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   SelectControlSource(input.sensors, state.command.throttle,
                       state.command.steering);
   UpdateAutoDrive(input, state);
+  // Preserve the command before stabilization. If RC/Wi-Fi disappears during
+  // the failsafe grace period, the next tick must reapply stabilization to
+  // this base command, not to the previous stabilized output (LOS-283).
+  persistent_.base_command = state.command;
   // Базовая цель для не-Kids режимов. В Kids она ниже уточняется после всех
   // не-speed стабилизаторов, но до speed limiter (LOS-246).
   state.motor_model_target_throttle = state.command.throttle;
@@ -308,6 +312,7 @@ bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
 
   state.failsafe_active = true;
   state.command = {};
+  persistent_.base_command = {};
   state.motor_model_target_throttle = 0.0f;
   persistent_.motor_model_throttle = 0.0f;
   persistent_.applied = {};
