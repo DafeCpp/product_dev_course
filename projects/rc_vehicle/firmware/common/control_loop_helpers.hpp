@@ -21,12 +21,26 @@ namespace rc_vehicle {
 // SelectControlSource
 // ═════════════════════════════════════════════════════════════════════════
 
+/**
+ * RC throttle has a measured neutral offset/noise of up to 8% (LOS-231).
+ * Collapse that input-only dead zone to zero and rescale the remaining range
+ * continuously. Wi-Fi and autonomous commands must not pass through this
+ * correction: their small non-zero values are deliberate motion commands.
+ */
+inline float ApplyRcThrottleDeadzone(float throttle) {
+  constexpr float kDeadzone = 0.08f;
+  const float magnitude = std::abs(throttle);
+  if (magnitude <= kDeadzone) return 0.0f;
+  const float corrected = (magnitude - kDeadzone) / (1.0f - kDeadzone);
+  return std::copysign(corrected, throttle);
+}
+
 /** Выбор источника управления (RC приоритетнее Wi-Fi). */
 inline bool SelectControlSource(const SensorSnapshot& sensors,
                                 float& commanded_throttle,
                                 float& commanded_steering) {
   if (sensors.rc_active && sensors.rc_cmd) {
-    commanded_throttle = sensors.rc_cmd->throttle;
+    commanded_throttle = ApplyRcThrottleDeadzone(sensors.rc_cmd->throttle);
     commanded_steering = sensors.rc_cmd->steering;
     return true;
   }

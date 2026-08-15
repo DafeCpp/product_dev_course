@@ -700,7 +700,7 @@ TEST_F(ProcessorTest, TiltComp_LevelAccel_VxTracksTrueSpeed) {
   cfg.filter.motor_model_enabled = false;
   stab_mgr_->SetConfig(cfg);
 
-  // throttle > 8% отключает ZUPT; машина «едет прямо» с постоянным
+  // Ненулевая команда throttle отключает ZUPT; машина «едет прямо» с постоянным
   // продольным ускорением 0.2g на ровном месте (ay=0, gx=gy=gz=0).
   platform_.SetWifiCommand({0.5f, 0.0f});
   ImuData imu{};
@@ -727,7 +727,8 @@ TEST_F(ProcessorTest, TiltComp_StaticTilt_NoDivergence) {
   // через grav_x/grav_y в этом же UpdateFromImu) — feedback через него
   // самоподтверждается на любом уровне остаточной ошибки. Раньше a_lin в
   // этом случае всё равно брался из EKF vx — на статике 20° без якоря при
-  // throttle>8% (ZUPT выключен) это уводило vx в клемп kMaxSpeedMs=-15
+  // При ненулевом throttle (ZUPT выключен) это уводило vx в клемп
+  // kMaxSpeedMs=-15
   // (проверено эмпирически). Фикс: без якоря a_lin принудительно 0 —
   // TiltEstimator деградирует до гиро + негейтированной accel-коррекции,
   // vx получает СТАБИЛЬНОЕ (не нулевое — нет якоря, тянущего к 0) смещение
@@ -744,7 +745,7 @@ TEST_F(ProcessorTest, TiltComp_StaticTilt_NoDivergence) {
   cfg.filter.motor_model_enabled = false;
   stab_mgr_->SetConfig(cfg);
 
-  // throttle > 8% отключает ZUPT — иначе тест грав-компенсации был бы
+  // Ненулевой throttle отключает ZUPT — иначе тест грав-компенсации был бы
   // вакуумным (ZUPT сам обнулил бы vx независимо от корректности тангажа).
   platform_.SetWifiCommand({0.5f, 0.0f});
   constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
@@ -823,7 +824,7 @@ TEST_F(ProcessorTest, TiltComp_ReEnabled_ResetsStaleState) {
   stab_mgr_->SetConfig(cfg);
 
   // Фаза 1: статический наклон 20° — даём tilt_est_ сойтись близко к 20°.
-  platform_.SetWifiCommand({0.5f, 0.0f});  // throttle>8% отключает ZUPT
+  platform_.SetWifiCommand({0.5f, 0.0f});  // ненулевой throttle отключает ZUPT
   constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
   ImuData tilted{};
   tilted.ax = -std::sin(kPitch);
