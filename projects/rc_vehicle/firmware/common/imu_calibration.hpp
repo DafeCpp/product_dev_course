@@ -133,6 +133,19 @@ class ImuCalibration {
    */
   void RotateToVehicleFrame(ImuData& data) const;
 
+  /**
+   * Проецировать bias-corrected гироскоп на ось Z машины [dps].
+   *
+   * Для yaw-rate нужна только Z-компонента полного поворота, поэтому
+   * достаточно скалярного произведения gyro на нормализованный gravity_vec.
+   * Это та же ось Z, которую использует RotateToVehicleFrame(), но без
+   * построения X/Y-базиса на каждом 500-Гц тике. При вырожденной опоре
+   * сохраняется прежнее поведение: возвращается sensor-frame data.gz.
+   *
+   * Вызывать ПОСЛЕ Apply().
+   */
+  [[nodiscard]] float GetVehicleYawRateDps(const ImuData& data) const noexcept;
+
   /** Текущий статус калибровки. */
   CalibStatus GetStatus() const { return status_; }
 

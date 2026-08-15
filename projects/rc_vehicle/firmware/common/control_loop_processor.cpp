@@ -236,6 +236,9 @@ void ControlLoopProcessor::ProcessCalibration(uint32_t now_ms,
 
   const CalibrationEffects effects = ctx_.calib_mgr->ConsumeEffects();
   if (effects.reference_frame_changed) {
+    if (ctx_.imu_handler) {
+      ctx_.imu_handler->OnReferenceFrameChanged();
+    }
     state_estimator_.OnReferenceFrameChanged();
   }
   if (effects.ekf_reset) {

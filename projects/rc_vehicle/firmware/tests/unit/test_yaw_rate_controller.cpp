@@ -112,6 +112,33 @@ TEST_F(YawRateControllerTest, NegativeCorrection_WhenActualExceedsDesired) {
       << "Steering should decrease when actual > desired yaw rate";
 }
 
+TEST_F(YawRateControllerTest,
+       TiltedMountUsesVehicleYawSignInsteadOfSensorZSign) {
+  ImuCalibData mounted{};
+  mounted.valid = true;
+  mounted.gravity_valid = true;
+  mounted.gravity_vec[0] = 0.f;
+  mounted.gravity_vec[1] = 0.6f;
+  mounted.gravity_vec[2] = -0.8f;
+  mounted.accel_forward_vec[0] = 1.f;
+  calib_.SetData(mounted);
+  imu_handler_.OnReferenceFrameChanged();
+
+  ImuData sensor{};
+  sensor.az = 1.f;
+  // Чистый левый yaw машины +30 dps, хотя sensor gz отрицателен.
+  sensor.gy = 18.f;
+  sensor.gz = -24.f;
+  platform_.SetImuData(sensor);
+  WarmUpImu(500);
+  ASSERT_NEAR(imu_handler_.GetFilteredGyroZ(), 30.f, 0.05f);
+
+  float steering = 0.f;
+  ctrl_.Process(cfg_, steering, 1.f, 1.f, 2);
+  EXPECT_LT(steering, 0.f)
+      << "Positive vehicle yaw must be corrected with negative steering";
+}
+
 TEST_F(YawRateControllerTest, NoEffect_WhenStabWeightZero) {
   float steering = 0.5f;
   ctrl_.Process(cfg_, steering, 0.0f, 1.0f, 2);

@@ -166,6 +166,16 @@ class ImuHandler : public ControlComponent {
   void SetLpfCutoff(float cutoff_hz);
 
   /**
+   * Сбросить историю yaw-rate LPF после смены sensor→vehicle базиса.
+   * Иначе первый участок после Full/Forward-калибровки смешивал бы значения
+   * из старой и новой систем координат.
+   */
+  void OnReferenceFrameChanged() noexcept {
+    lpf_gyro_z_.Reset();
+    filtered_gz_ = 0.0f;
+  }
+
+  /**
    * @brief Получить последние данные IMU
    * @return Данные акселерометра и гироскопа
    */
@@ -373,8 +383,8 @@ struct SensorSnapshot {
 
   // IMU
   bool imu_enabled{false};
-  ImuData imu_data{};
-  float filtered_gz{0.0f};
+  ImuData imu_data{};  ///< Bias-corrected данные в СК датчика
+  float filtered_gz{0.0f};  ///< Gyro Z в СК машины после LPF [dps]
 
   // Магнетометр
   bool mag_enabled{false};

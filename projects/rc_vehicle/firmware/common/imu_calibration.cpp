@@ -341,6 +341,20 @@ void ImuCalibration::RotateToVehicleFrame(ImuData& data) const {
   data.gz = z[0] * sgx + z[1] * sgy + z[2] * sgz;
 }
 
+float ImuCalibration::GetVehicleYawRateDps(const ImuData& data) const noexcept {
+  const double z2 =
+      static_cast<double>(data_.gravity_vec[0]) * data_.gravity_vec[0] +
+      static_cast<double>(data_.gravity_vec[1]) * data_.gravity_vec[1] +
+      static_cast<double>(data_.gravity_vec[2]) * data_.gravity_vec[2];
+  constexpr double kMinNorm2 = 1e-12;
+  if (z2 < kMinNorm2) return data.gz;
+
+  const float inv_norm = static_cast<float>(1.0 / std::sqrt(z2));
+  return (data_.gravity_vec[0] * data.gx + data_.gravity_vec[1] * data.gy +
+          data_.gravity_vec[2] * data.gz) *
+         inv_norm;
+}
+
 void ImuCalibration::SetForwardDirection(float fx, float fy, float fz) {
   double n2 = static_cast<double>(fx) * fx + static_cast<double>(fy) * fy +
               static_cast<double>(fz) * fz;

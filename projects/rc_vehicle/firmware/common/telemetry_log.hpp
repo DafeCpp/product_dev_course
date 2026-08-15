@@ -35,7 +35,7 @@ enum KidsFlag : uint8_t {
 struct TelemetryLogFrame {
   uint32_t ts_ms{0};          // Метка времени [мс]
   float ax{0}, ay{0}, az{0};  // Ускорение IMU (откалиброванное, в g)
-  float gx{0}, gy{0}, gz{0};  // Угловая скорость IMU (dps)
+  float gx{0}, gy{0}, gz{0};  // IMU gyro в СК датчика (dps)
   float vx{0}, vy{0};         // EKF: скорость [м/с]
   float slip_deg{0};          // EKF: угол заноса [градусы]
   float speed_ms{0};          // EKF: полная скорость |v| [м/с]
@@ -44,7 +44,7 @@ struct TelemetryLogFrame {
   float pitch_deg{0};         // Madgwick: pitch [градусы]
   float roll_deg{0};          // Madgwick: roll [градусы]
   float yaw_deg{0};           // Madgwick: yaw [градусы]
-  float yaw_rate_dps{0};      // Отфильтрованный gyro Z [дпс]
+  float yaw_rate_dps{0};      // Vehicle-frame yaw rate после LPF [dps]
   float oversteer_active{0};  // OversteerGuard: 1.0 = занос, 0.0 = нет
   float rc_throttle{0};       // Сырой газ с RC-приёмника [-1..1]
   float rc_steering{0};       // Сырой руль с RC-приёмника [-1..1]

@@ -119,8 +119,12 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Применить компенсацию bias (если калибровка валидна)
   calib_.Apply(data_);
 
-  // LPF инициализирован в конструкторе — горячий путь без проверок
-  filtered_gz_ = lpf_gyro_z_.Step(data_.gz);
+  // LOS-241: все потребители filtered_gz работают в СК машины. Проецируем
+  // bias-corrected gyro на vehicle Z ДО LPF, чтобы состояние фильтра никогда
+  // не смешивало оси датчика. Сам data_ оставляем в СК датчика: Madgwick
+  // получает sensor-frame вектор, а vehicle frame применяет к кватерниону.
+  const float vehicle_gz_dps = calib_.GetVehicleYawRateDps(data_);
+  filtered_gz_ = lpf_gyro_z_.Step(vehicle_gz_dps);
 
   const float dt_sec =
       first_read_ ? (read_interval_ms_ / 1000.0f)
