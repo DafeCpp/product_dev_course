@@ -519,6 +519,43 @@ TEST_F(ImuCalibrationForwardTest, RotateToVehicleFrame_RotatesGyroToo) {
   EXPECT_NEAR(d.gz, 0.0f, 1e-3f);
 }
 
+TEST_F(ImuCalibrationForwardTest,
+       VehicleYawRateProjection_MatchesFullRotationForTiltedMount) {
+  // Vehicle Z в СК датчика: (0, 0.6, -0.8). Чистый левый yaw +30 dps
+  // поэтому в СК датчика читается как 30 * Z_vehicle.
+  Load(1.f, 0.f, 0.f, 0.f, 0.6f, -0.8f);
+  ImuData sensor{};
+  sensor.gy = 18.f;
+  sensor.gz = -24.f;
+
+  ImuData fully_rotated = sensor;
+  calib.RotateToVehicleFrame(fully_rotated);
+
+  EXPECT_NEAR(fully_rotated.gz, 30.f, 1e-4f);
+  EXPECT_NEAR(calib.GetVehicleYawRateDps(sensor), fully_rotated.gz, 1e-4f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       VehicleYawRateProjection_RejectsRollPitchLeakage) {
+  Load(1.f, 0.f, 0.f, 0.f, 0.6f, -0.8f);
+  ImuData sensor{};
+  // (0, 0.8, 0.6) перпендикулярен vehicle Z: это не yaw машины.
+  sensor.gy = 32.f;
+  sensor.gz = 24.f;
+
+  EXPECT_NEAR(calib.GetVehicleYawRateDps(sensor), 0.f, 1e-4f);
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       VehicleYawRateProjection_DefaultFrameKeepsSensorGz) {
+  ImuData sensor{};
+  sensor.gx = 11.f;
+  sensor.gy = -7.f;
+  sensor.gz = 23.f;
+
+  EXPECT_NEAR(calib.GetVehicleYawRateDps(sensor), sensor.gz, 1e-6f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Forward-калибровка целиком
 // ═══════════════════════════════════════════════════════════════════════════

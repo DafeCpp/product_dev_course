@@ -296,6 +296,8 @@ class ImuHandler : public ControlComponent {
 #endif
 
  private:
+  /// Синхронизировать LPF с осью vehicle Z до обработки текущего семпла.
+  void UpdateYawRateAxis();
   /// Опорная СК фильтра — обновляется при смене состояния калибровки
   void UpdateVehicleFrame();
   /// Чтение mag (100 Гц), калибровка, PCA-heading, опорный курс
@@ -316,6 +318,8 @@ class ImuHandler : public ControlComponent {
   bool madgwick_enabled_{true};
   LpfButterworth2 lpf_gyro_z_{};
   float filtered_gz_{0.f};
+  float yaw_rate_axis_[3]{0.f, 0.f, 1.f};
+  bool yaw_rate_axis_initialized_{false};
   bool veh_frame_set_{false};  ///< Vehicle frame уже передан в фильтр
 
   // Магнетометр (опционален)
@@ -373,8 +377,8 @@ struct SensorSnapshot {
 
   // IMU
   bool imu_enabled{false};
-  ImuData imu_data{};
-  float filtered_gz{0.0f};
+  ImuData imu_data{};       ///< Bias-corrected данные в СК датчика
+  float filtered_gz{0.0f};  ///< Gyro Z в СК машины после LPF [dps]
 
   // Магнетометр
   bool mag_enabled{false};
