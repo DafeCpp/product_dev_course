@@ -44,8 +44,16 @@ def test_kids_speed_limiter_reduces_output_without_changing_motor_anchor():
     unlimited = _full_throttle(drive_mode="kids")
     limited = _full_throttle(drive_mode="kids", speed_limit=1.0)
 
-    # После LOS-247 limiter удерживает не более половины обычной Kids-команды.
-    assert limited["thr"] <= 0.5 * unlimited["thr"]
+    # LOS-285: потолок — throttle, на котором сама мотор-модель предсказывает
+    # ровно speed_limit (deadzone/motor_speed_gain — дефолты прошивки,
+    # common/stabilization_config.hpp: FilterConfig::motor_deadzone=0.05,
+    # motor_speed_gain=8.0). До фикса limiter сходился к фиксированным 50%
+    # команды независимо от speed_limit — теперь целится в настроенный
+    # предел напрямую, поэтому и потолок предсказуем по формуле, а не по
+    # произвольной доле unlimited["thr"].
+    deadzone, motor_speed_gain, speed_limit = 0.05, 8.0, 1.0
+    expected_cap = deadzone + speed_limit * (1 - deadzone) / motor_speed_gain
+    assert limited["thr"] == pytest.approx(expected_cap, abs=0.01)
 
     # Моторный якорь получает исходную команду до лимитеров. Если подать сюда
     # урезанный PWM, как до LOS-246, speed_meas и EKF начнут следовать за

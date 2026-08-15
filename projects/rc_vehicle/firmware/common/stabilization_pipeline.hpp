@@ -27,6 +27,7 @@ struct StabilizationInput {
   float mode_transition_weight{0.0f};
   bool imu_enabled{false};
   bool ekf_diverged{false};
+  bool speed_calibration_active{false};
 };
 
 /** Command and motor-model target produced by stabilization for this tick. */

@@ -891,21 +891,155 @@ TEST_F(KidsModeSpeedLimitTest, CanDeferSpeedLimitUntilAfterOtherModifiers) {
 
   // Имитирует throttle-модификатор поздней стабилизации (pitch/oversteer).
   throttle = 0.5f;
-  processor_.ApplySpeedLimit(cfg_, throttle);
+  processor_.ApplySpeedLimit(cfg_, throttle, 10);
   EXPECT_LT(throttle, 0.5f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
 }
 
 TEST_F(KidsModeSpeedLimitTest, FarAboveLimit_ReducesThrottleButNotToZero) {
-  // LOS-215: снижение — пропорциональное, но не полный обрыв в ноль.
-  // speed = 3.0 m/s, max = 1.0, gain = 5 → excess=2.1 with hysteresis,
-  // reduction=min(10.5, kSpeedReductionMax=0.5)=0.5 → throttle=0.4*0.5=0.2
+  // LOS-285: с default motor_speed_gain=8.0/deadzone=0.05 и max_speed_ms=1.0
+  // детерминированный потолок мотор-модели (0.05+1.0*0.95/8=0.16875) ниже
+  // страховочного пола kMaxThrottleReductionFraction=0.5 → пол оказывается
+  // строже и определяет итог: throttle=0.4*(1-0.5)=0.2. Значение совпадает с
+  // цифрой из старого теста (LOS-215/247) случайно — при других
+  // max_speed_ms/gain пол может не участвовать вовсе (см. тесты ниже).
   ekf_.SetState(3.0f, 0.0f, 0.0f);
   float throttle = 0.4f, steering = 0.0f;
   processor_.Process(cfg_, throttle, steering, 10);
   EXPECT_NEAR(throttle, 0.2f, 0.005f);
   EXPECT_GT(throttle, 0.0f);
   EXPECT_TRUE(processor_.IsSpeedLimitActive());
+}
+
+TEST_F(KidsModeSpeedLimitTest, ModelCapTargetsConfiguredMaxSpeedNotFloor) {
+  // Когда потолок мотор-модели выше страховочного пола, ограничивать должен
+  // именно он — а не фиксированные 50% команды (LOS-285: старая формула
+  // всегда сходилась к произвольным 50%, независимо от max_speed_ms).
+  cfg_.kids_mode.max_speed_ms = 2.0f;  // потолок модели: 0.05+2*0.95/8=0.2875
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_NEAR(throttle, 0.2875f, 0.005f);
+  EXPECT_GT(throttle, 0.4f * 0.5f)
+      << "потолок модели (0.2875) выше страховочного пола (0.2) — должен "
+         "победить именно он";
+}
+
+TEST_F(KidsModeSpeedLimitTest, Monotonic_HigherStickNeverReducesOutput) {
+  // LOS-285: воспроизводим параметры реального заезда (gain=1.5,
+  // motor_speed_gain=8.0, max_speed_ms=1.5). При старой формуле
+  // throttle*(1-min(excess*gain,0.5)) в узком окне стика (~0.23-0.26)
+  // reduction рос быстрее throttle, и итоговый газ ПАДАЛ при более сильном
+  // нажатии. Мелким шагом стика по всему диапазону проверяем, что новый
+  // потолок (min(throttle, cap), где cap не зависит от throttle этого же
+  // тика) нигде не даёт такого провала.
+  cfg_.kids_mode.max_speed_ms = 1.5f;
+  cfg_.kids_mode.speed_limit_gain = 1.5f;
+  const float dz = cfg_.filter.motor_deadzone;
+  const float gain = cfg_.filter.motor_speed_gain;
+
+  float prev_output = -1.0f;
+  for (float stick = 0.15f; stick <= 0.5f; stick += 0.005f) {
+    // Свежий процессор на каждую точку: изолируем свойство "потолок этого
+    // тика не зависит от текущего throttle" от медленной адаптации
+    // speed_trim_ между тиками.
+    KidsModeProcessor proc;
+    proc.Init(ekf_, imu_handler_.get());
+    const float speed = gain * std::max(stick - dz, 0.0f) / (1.0f - dz);
+    ekf_.SetState(speed, 0.0f, 0.0f);
+
+    float throttle = stick, steering = 0.0f;
+    proc.Process(cfg_, throttle, steering, 10);
+    EXPECT_GE(throttle, prev_output - 1e-5f)
+        << "выход упал при стике=" << stick << " (был " << prev_output
+        << ", стал " << throttle << ")";
+    prev_output = throttle;
+  }
+}
+
+TEST_F(KidsModeSpeedLimitTest, MotorModelDisabled_FallsBackToAdaptiveTrim) {
+  // Когда мотор-модель выключена, детерминированный потолок недоступен
+  // (нет формулы для его вычисления) — единственным ограничителем остаётся
+  // адаптивный speed_trim_, набирающий значение за несколько тиков.
+  cfg_.filter.motor_model_enabled = false;
+  ekf_.SetState(3.0f, 0.0f, 0.0f);  // стабильно выше max_speed_ms=1.0
+
+  float throttle = 0.4f, steering = 0.0f;
+  for (int i = 0; i < 50; ++i) {
+    throttle = 0.4f;
+    processor_.Process(cfg_, throttle, steering, 10);
+  }
+  EXPECT_TRUE(processor_.IsSpeedLimitActive());
+  EXPECT_LT(throttle, 0.4f)
+      << "speed_trim_ должен ужесточить потолок за несколько тиков даже без "
+         "мотор-модели";
+}
+
+TEST_F(KidsModeSpeedLimitTest, MotorModelDisabled_TrimRecoversAfterSpeedDrops) {
+  // Код-ревью PR #323: speed_trim_ раньше ратчетил только вниз и
+  // восстанавливался лишь при полном выходе из гейта (throttle<=0, EKF
+  // diverged и т.п.), а не просто когда скорость упала ниже release_speed
+  // (IsSpeedLimitActive()==false) — без восстановления затяжное превышение
+  // навсегда прижимало бы газ к страховочному полу до конца поездки.
+  cfg_.filter.motor_model_enabled = false;
+
+  // 1. Ратчетим trim к нижнему пределу устойчивым превышением.
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+  float throttle = 0.4f, steering = 0.0f;
+  for (int i = 0; i < 50; ++i) {
+    throttle = 0.4f;
+    processor_.Process(cfg_, throttle, steering, 10);
+  }
+  ASSERT_NEAR(throttle, 0.2f, 0.02f)
+      << "sanity: trim должен был провалиться до страховочного пола";
+
+  // 2. "Едем" заметно ниже release_speed долго, не отпуская газ и не выходя
+  // из Kids/лимитеров — только это должно вернуть trim к 1.0.
+  ekf_.SetState(0.3f, 0.0f, 0.0f);
+  for (int i = 0; i < 60; ++i) {
+    throttle = 0.4f;
+    processor_.Process(cfg_, throttle, steering, 10);
+  }
+  EXPECT_FALSE(processor_.IsSpeedLimitActive());
+
+  // 3. Новый заход на превышение: если trim восстановился к 1.0, первый тик
+  // почти не режет газ — как при самом первом включении лимитера.
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+  throttle = 0.4f;
+  processor_.Process(cfg_, throttle, steering, 10);
+  EXPECT_NEAR(throttle, 0.4f, 0.01f)
+      << "trim не восстановился — газ сразу упал к страховочному полу, как "
+         "будто предыдущее превышение никогда не заканчивалось";
+}
+
+TEST_F(KidsModeSpeedLimitTest, SpeedCalibrationActive_FallsBackToAdaptiveTrim) {
+  // Код-ревью PR #323: пока активна калибровка скорости
+  // (AutoDriveCoordinator::StartSpeedCalib), EKF speed_ms перестаёт быть
+  // заякорен на мотор-модель (vehicle_state_estimator.cpp гасит
+  // motor_model_active при speed_calibration_active) — детерминированный
+  // потолок модели в этот момент целится в скорость, которую EKF больше не
+  // измеряет. model_available должен учитывать это и откатываться на
+  // адаптивный speed_trim_, как и при выключенной мотор-модели.
+  cfg_.kids_mode.max_speed_ms = 2.0f;  // потолок модели: 0.05+2*0.95/8=0.2875
+  ekf_.SetState(3.0f, 0.0f, 0.0f);
+
+  const StabilizationInput input{
+      .dt_ms = 10,
+      .speed_ms = ekf_.GetSpeedMs(),
+      .vx_variance = ekf_.GetVxVariance(),
+      .imu_enabled = true,
+      .ekf_diverged = false,
+      .speed_calibration_active = true,
+  };
+
+  float throttle = 0.4f;
+  processor_.ApplySpeedLimit(cfg_, throttle, input);
+
+  // На первом тике адаптивный speed_trim_ ещё не успел просесть (стартует с
+  // 1.0) — газ проходит почти без среза. Если бы model_available игнорировал
+  // speed_calibration_active, детерминированный потолок мгновенно срезал бы
+  // throttle до 0.2875 уже на этом тике.
+  EXPECT_NEAR(throttle, 0.4f, 0.01f);
 }
 
 TEST_F(KidsModeSpeedLimitTest, DivergedEkf_NoReductionEvenAboveLimit) {
