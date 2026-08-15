@@ -20,6 +20,8 @@ namespace rc_vehicle {
 struct VehicleStateEstimatorInput {
   FilterConfig filter{};
   uint32_t dt_ms{0};
+  // Post-stabilization command; ZUPT treats values inside motor_deadzone as
+  // non-motion-capable residuals.
   float commanded_throttle{0.0f};
   float motor_model_throttle{0.0f};
   bool ekf_available{false};

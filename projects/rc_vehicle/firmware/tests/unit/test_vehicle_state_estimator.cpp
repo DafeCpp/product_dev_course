@@ -66,6 +66,24 @@ TEST_F(VehicleStateEstimatorTest, LevelStationaryProducesStableState) {
   EXPECT_FALSE(estimate.ekf_diverged);
 }
 
+TEST_F(VehicleStateEstimatorTest, SubDeadzoneThrottleResidualAllowsZupt) {
+  input_.filter.motor_deadzone = 0.05f;
+  input_.commanded_throttle = 0.049f;
+
+  const auto estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_EQ(estimate.zupt_status, ZuptStatus::Applied);
+}
+
+TEST_F(VehicleStateEstimatorTest, MotionCapableThrottleRejectsZupt) {
+  input_.filter.motor_deadzone = 0.05f;
+  input_.commanded_throttle = 0.051f;
+
+  const auto estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_EQ(estimate.zupt_status, ZuptStatus::ThrottleRejected);
+}
+
 TEST_F(VehicleStateEstimatorTest, TiltRunsWhenEkfIsDisabled) {
   input_.filter.ekf_enabled = false;
   sensors_.imu_data.ax = -0.17364818f;
