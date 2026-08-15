@@ -23,10 +23,15 @@ enum KidsFlag : uint8_t {
   kKidsLimitersEnabled = 1u << 3,   // kids_mode.limiters_enabled (LOS-286)
 };
 
+enum MagFlag : uint8_t {
+  kMagRejected = 1u << 0,
+  kMagGateActive = 1u << 1,
+};
+
 /**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 132 байта (30 × float + uint32_t + 6 × uint8_t + padding).
+ * Размер: 132 байта (30 × float + uint32_t + 7 × uint8_t + padding).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
  *
  * Буфер 52000 кадров × 132 байта ≈ 6.5 МБ; remaining PSRAM is reserved for
@@ -67,8 +72,9 @@ struct TelemetryLogFrame {
   uint8_t drive_mode{0};     // Активный DriveMode (0=Normal..4=DirectLaw)
   uint8_t stab_enabled{0};   // Стабилизация включена (1) / выключена (0)
   uint8_t kids_flags{0};     // Маска активных лимитеров Kids (см. KidsFlag)
-  uint8_t _pad[2]{};         // Выравнивание до 4 байт (запас под новые флаги)
-};  // sizeof == 132 bytes (30 × float + uint32_t + 6 × uint8_t + 2 pad)
+  uint8_t mag_flags{0};      // Состояние quality gate (см. MagFlag)
+  uint8_t _pad[1]{};         // Выравнивание до 4 байт
+};  // sizeof == 132 bytes (30 × float + uint32_t + 7 × uint8_t + 1 pad)
 
 // Compile-time проверка размера структуры
 static_assert(sizeof(TelemetryLogFrame) == 132,
@@ -78,6 +84,8 @@ static_assert(sizeof(TelemetryLogFrame) == 132,
 // жёстко зашитым смещениям — сдвиг kids_flags молча испортит выгрузку CSV.
 static_assert(offsetof(TelemetryLogFrame, kids_flags) == 129,
               "kids_flags offset must match web/app.js FIELD_OFFSETS");
+static_assert(offsetof(TelemetryLogFrame, mag_flags) == 130,
+              "mag_flags offset must match web/app.js FIELD_OFFSETS");
 
 /**
  * @brief Потокобезопасный кольцевой буфер кадров телеметрии

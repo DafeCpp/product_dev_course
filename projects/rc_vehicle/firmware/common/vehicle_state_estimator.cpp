@@ -95,8 +95,11 @@ VehicleStateEstimate VehicleStateEstimator::Update(
                              tilt_est_.GetPitchRad(), tilt_active_this_tick);
   }
 
-  if (ekf_active && sensors.imu_enabled && sensors.mag_enabled) {
+  if (ekf_active && sensors.imu_enabled && sensors.mag_enabled &&
+      !sensors.mag_rejected &&
+      sensors.mag_sample_sequence != last_mag_sample_sequence_) {
     ekf_.UpdateHeading(sensors.heading_deg * kDegToRad);
+    last_mag_sample_sequence_ = sensors.mag_sample_sequence;
   }
 
   return BuildEstimate(sensors.imu_enabled, tilt_active_this_tick, pitch_rad,
@@ -107,6 +110,7 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
   tilt_est_.Reset();
   prev_vx_ = ekf_.GetVx();
   a_lin_prev_g_ = 0.0f;
+  last_mag_sample_sequence_ = 0;
   tilt_was_enabled_ = false;
 }
 

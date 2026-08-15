@@ -4,7 +4,8 @@
 
 #include "mag_calibration.hpp"
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers
+// ──────────────────────────────────────────────────────────────────
 
 static constexpr float kPi = 3.14159265358979323846f;
 
@@ -13,10 +14,11 @@ static constexpr float kPi = 3.14159265358979323846f;
  * Simulates a yaw rotation with sensor mounted horizontally (normal ≈ Z).
  */
 static void FeedCircleSamplesXY(MagCalibration& cal, int count,
-                                 float radius = 400.f,
-                                 float cx = 0.f, float cy = 0.f, float cz = 0.f) {
+                                float radius = 400.f, float cx = 0.f,
+                                float cy = 0.f, float cz = 0.f) {
   for (int i = 0; i < count; ++i) {
-    const float angle = 2.f * kPi * static_cast<float>(i) / static_cast<float>(count);
+    const float angle =
+        2.f * kPi * static_cast<float>(i) / static_cast<float>(count);
     MagData m;
     m.mx = cx + radius * std::cos(angle);
     m.my = cy + radius * std::sin(angle);
@@ -31,31 +33,36 @@ static void FeedCircleSamplesXY(MagCalibration& cal, int count,
  * Simulates a yaw rotation with sensor mounted at arbitrary angle.
  */
 static void FeedCircleSamplesTilted(MagCalibration& cal, int count,
-                                     float radius, float cx, float cy, float cz,
-                                     float nx, float ny, float nz) {
+                                    float radius, float cx, float cy, float cz,
+                                    float nx, float ny, float nz) {
   // Build orthonormal basis in the plane perpendicular to (nx, ny, nz)
   float aux[3] = {0.f, 0.f, 1.f};
   const float dot = nx * aux[0] + ny * aux[1] + nz * aux[2];
   if (std::fabs(dot) > 0.9f) {
-    aux[0] = 1.f; aux[1] = 0.f; aux[2] = 0.f;
+    aux[0] = 1.f;
+    aux[1] = 0.f;
+    aux[2] = 0.f;
   }
   // e1 = normalize(n × aux)
   float e1[3] = {
-    ny * aux[2] - nz * aux[1],
-    nz * aux[0] - nx * aux[2],
-    nx * aux[1] - ny * aux[0],
+      ny * aux[2] - nz * aux[1],
+      nz * aux[0] - nx * aux[2],
+      nx * aux[1] - ny * aux[0],
   };
-  const float len1 = std::sqrt(e1[0]*e1[0] + e1[1]*e1[1] + e1[2]*e1[2]);
-  e1[0] /= len1; e1[1] /= len1; e1[2] /= len1;
+  const float len1 = std::sqrt(e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]);
+  e1[0] /= len1;
+  e1[1] /= len1;
+  e1[2] /= len1;
   // e2 = n × e1
   float e2[3] = {
-    ny * e1[2] - nz * e1[1],
-    nz * e1[0] - nx * e1[2],
-    nx * e1[1] - ny * e1[0],
+      ny * e1[2] - nz * e1[1],
+      nz * e1[0] - nx * e1[2],
+      nx * e1[1] - ny * e1[0],
   };
 
   for (int i = 0; i < count; ++i) {
-    const float angle = 2.f * kPi * static_cast<float>(i) / static_cast<float>(count);
+    const float angle =
+        2.f * kPi * static_cast<float>(i) / static_cast<float>(count);
     const float c = std::cos(angle);
     const float s = std::sin(angle);
     MagData m;
@@ -70,11 +77,10 @@ static void FeedCircleSamplesTilted(MagCalibration& cal, int count,
  * Feed 3D sphere samples (all axes vary equally) — NOT planar.
  */
 static void FeedSphereSamples(MagCalibration& cal, int count,
-                               float amplitude = 400.f) {
+                              float amplitude = 400.f) {
   const MagData faces[6] = {
-      {amplitude, 0.f, 0.f},  {-amplitude, 0.f, 0.f},
-      {0.f, amplitude, 0.f},  {0.f, -amplitude, 0.f},
-      {0.f, 0.f, amplitude},  {0.f, 0.f, -amplitude},
+      {amplitude, 0.f, 0.f},  {-amplitude, 0.f, 0.f}, {0.f, amplitude, 0.f},
+      {0.f, -amplitude, 0.f}, {0.f, 0.f, amplitude},  {0.f, 0.f, -amplitude},
   };
   for (int i = 0; i < count; ++i) {
     cal.FeedSample(faces[i % 6]);
@@ -196,11 +202,68 @@ TEST(MagCalibration, FinishSucceedsWithCircleXY) {
   EXPECT_NEAR(d.offset[1], cy, 5.f);
   // Z offset: cz (constant), min/max approach matches
   EXPECT_NEAR(d.offset[2], cz, 5.f);
+  EXPECT_NEAR(d.field_strength_mgauss, 400.f, 1.f);
 
   // Normal should be close to ±Z (circle in XY plane)
   EXPECT_NEAR(std::fabs(d.normal[2]), 1.f, 0.05f);
   EXPECT_NEAR(d.normal[0], 0.f, 0.05f);
   EXPECT_NEAR(d.normal[1], 0.f, 0.05f);
+}
+
+TEST(MagQualityGate, LegacyCalibrationAcceptsFiniteNonzeroSamples) {
+  MagQualityGate gate;
+
+  EXPECT_TRUE(gate.Update(400.f, 0.f));
+  EXPECT_FALSE(gate.IsActive());
+  EXPECT_FALSE(gate.IsRejected());
+  EXPECT_FALSE(gate.Update(0.f, 0.f));
+  EXPECT_TRUE(gate.IsRejected());
+  EXPECT_TRUE(gate.Update(400.f, 0.f));
+  EXPECT_FALSE(gate.IsRejected());
+}
+
+TEST(MagQualityGate, RejectThresholdIsExclusiveAtBoundary) {
+  MagQualityGate gate;
+
+  EXPECT_TRUE(gate.Update(500.f, 400.f));
+  EXPECT_TRUE(gate.IsActive());
+  EXPECT_TRUE(gate.Update(300.f, 400.f));
+  EXPECT_FALSE(gate.Update(299.f, 400.f));
+  EXPECT_TRUE(gate.IsRejected());
+}
+
+TEST(MagQualityGate, RequiresFiveConsecutiveSamplesInsideRecoveryBand) {
+  MagQualityGate gate;
+  ASSERT_TRUE(gate.Update(400.f, 400.f));
+  ASSERT_FALSE(gate.Update(600.f, 400.f));
+
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_FALSE(gate.Update(460.f, 400.f));
+  }
+  EXPECT_TRUE(gate.IsRejected());
+  EXPECT_FALSE(gate.Update(461.f, 400.f));
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_FALSE(gate.Update(340.f, 400.f));
+  }
+  EXPECT_TRUE(gate.Update(340.f, 400.f));
+  EXPECT_FALSE(gate.IsRejected());
+}
+
+TEST(MagQualityGate, NewReferenceResetsRejectedState) {
+  MagQualityGate gate;
+  ASSERT_TRUE(gate.Update(400.f, 400.f));
+  ASSERT_FALSE(gate.Update(600.f, 400.f));
+
+  EXPECT_TRUE(gate.Update(600.f, 600.f));
+  EXPECT_TRUE(gate.IsActive());
+  EXPECT_FALSE(gate.IsRejected());
+}
+
+TEST(MagQualityGate, RejectsNonFiniteSamplesEvenWithoutReference) {
+  MagQualityGate gate;
+  EXPECT_FALSE(gate.Update(std::nanf(""), 0.f));
+  EXPECT_FALSE(gate.Update(INFINITY, 0.f));
+  EXPECT_TRUE(gate.IsRejected());
 }
 
 TEST(MagCalibration, NormalCorrectForTiltedSensor) {
@@ -220,7 +283,7 @@ TEST(MagCalibration, NormalCorrectForTiltedSensor) {
 
   const auto& d = cal.GetData();
   // Normal may be ±(nx,ny,nz) — sign ambiguity from eigenvector
-  const float dot = d.normal[0]*nx + d.normal[1]*ny + d.normal[2]*nz;
+  const float dot = d.normal[0] * nx + d.normal[1] * ny + d.normal[2] * nz;
   EXPECT_NEAR(std::fabs(dot), 1.f, 0.05f);
 }
 
@@ -236,7 +299,7 @@ TEST(MagCalibration, NormalCorrectForVerticalSensor) {
   EXPECT_EQ(cal.GetStatus(), MagCalibStatus::Done);
 
   const auto& d = cal.GetData();
-  const float dot = d.normal[0]*nx + d.normal[1]*ny + d.normal[2]*nz;
+  const float dot = d.normal[0] * nx + d.normal[1] * ny + d.normal[2] * nz;
   EXPECT_NEAR(std::fabs(dot), 1.f, 0.05f);
 
   // Hard iron offset
@@ -257,23 +320,30 @@ TEST(MagCalibration, BasisIsOrthonormal) {
   const auto& d = cal.GetData();
 
   // basis1 · basis2 ≈ 0
-  const float b1b2 = d.basis1[0]*d.basis2[0] + d.basis1[1]*d.basis2[1] + d.basis1[2]*d.basis2[2];
+  const float b1b2 = d.basis1[0] * d.basis2[0] + d.basis1[1] * d.basis2[1] +
+                     d.basis1[2] * d.basis2[2];
   EXPECT_NEAR(b1b2, 0.f, 1e-5f);
 
   // basis1 · normal ≈ 0
-  const float b1n = d.basis1[0]*d.normal[0] + d.basis1[1]*d.normal[1] + d.basis1[2]*d.normal[2];
+  const float b1n = d.basis1[0] * d.normal[0] + d.basis1[1] * d.normal[1] +
+                    d.basis1[2] * d.normal[2];
   EXPECT_NEAR(b1n, 0.f, 1e-5f);
 
   // basis2 · normal ≈ 0
-  const float b2n = d.basis2[0]*d.normal[0] + d.basis2[1]*d.normal[1] + d.basis2[2]*d.normal[2];
+  const float b2n = d.basis2[0] * d.normal[0] + d.basis2[1] * d.normal[1] +
+                    d.basis2[2] * d.normal[2];
   EXPECT_NEAR(b2n, 0.f, 1e-5f);
 
   // |basis1| ≈ 1
-  const float len1 = std::sqrt(d.basis1[0]*d.basis1[0] + d.basis1[1]*d.basis1[1] + d.basis1[2]*d.basis1[2]);
+  const float len1 =
+      std::sqrt(d.basis1[0] * d.basis1[0] + d.basis1[1] * d.basis1[1] +
+                d.basis1[2] * d.basis1[2]);
   EXPECT_NEAR(len1, 1.f, 1e-5f);
 
   // |basis2| ≈ 1
-  const float len2 = std::sqrt(d.basis2[0]*d.basis2[0] + d.basis2[1]*d.basis2[1] + d.basis2[2]*d.basis2[2]);
+  const float len2 =
+      std::sqrt(d.basis2[0] * d.basis2[0] + d.basis2[1] * d.basis2[1] +
+                d.basis2[2] * d.basis2[2]);
   EXPECT_NEAR(len2, 1.f, 1e-5f);
 }
 
@@ -336,7 +406,8 @@ TEST(MagCalibration, SetDataRecomputesBasis) {
   EXPECT_NEAR(d.basis1[0], 0.f, 1e-5f);
   EXPECT_NEAR(d.basis2[0], 0.f, 1e-5f);
   // And be orthonormal
-  const float b1b2 = d.basis1[0]*d.basis2[0] + d.basis1[1]*d.basis2[1] + d.basis1[2]*d.basis2[2];
+  const float b1b2 = d.basis1[0] * d.basis2[0] + d.basis1[1] * d.basis2[1] +
+                     d.basis1[2] * d.basis2[2];
   EXPECT_NEAR(b1b2, 0.f, 1e-5f);
 }
 
@@ -356,24 +427,28 @@ TEST(MagCalibration, HeadingViaProjection) {
   MagData m0{400.f, 0.f, 0.f};
   cal.Apply(m0);
 
-  const float dot_n0 = m0.mx*d.normal[0] + m0.my*d.normal[1] + m0.mz*d.normal[2];
-  const float px0 = m0.mx - dot_n0*d.normal[0];
-  const float py0 = m0.my - dot_n0*d.normal[1];
-  const float pz0 = m0.mz - dot_n0*d.normal[2];
-  const float c1_0 = px0*d.basis1[0] + py0*d.basis1[1] + pz0*d.basis1[2];
-  const float c2_0 = px0*d.basis2[0] + py0*d.basis2[1] + pz0*d.basis2[2];
+  const float dot_n0 =
+      m0.mx * d.normal[0] + m0.my * d.normal[1] + m0.mz * d.normal[2];
+  const float px0 = m0.mx - dot_n0 * d.normal[0];
+  const float py0 = m0.my - dot_n0 * d.normal[1];
+  const float pz0 = m0.mz - dot_n0 * d.normal[2];
+  const float c1_0 = px0 * d.basis1[0] + py0 * d.basis1[1] + pz0 * d.basis1[2];
+  const float c2_0 = px0 * d.basis2[0] + py0 * d.basis2[1] + pz0 * d.basis2[2];
   const float h0 = std::atan2(c2_0, c1_0) * 180.f / kPi;
 
   // Simulate a mag reading at 90° (rotated 90° CCW in XY)
   MagData m90{0.f, 400.f, 0.f};
   cal.Apply(m90);
 
-  const float dot_n90 = m90.mx*d.normal[0] + m90.my*d.normal[1] + m90.mz*d.normal[2];
-  const float px90 = m90.mx - dot_n90*d.normal[0];
-  const float py90 = m90.my - dot_n90*d.normal[1];
-  const float pz90 = m90.mz - dot_n90*d.normal[2];
-  const float c1_90 = px90*d.basis1[0] + py90*d.basis1[1] + pz90*d.basis1[2];
-  const float c2_90 = px90*d.basis2[0] + py90*d.basis2[1] + pz90*d.basis2[2];
+  const float dot_n90 =
+      m90.mx * d.normal[0] + m90.my * d.normal[1] + m90.mz * d.normal[2];
+  const float px90 = m90.mx - dot_n90 * d.normal[0];
+  const float py90 = m90.my - dot_n90 * d.normal[1];
+  const float pz90 = m90.mz - dot_n90 * d.normal[2];
+  const float c1_90 =
+      px90 * d.basis1[0] + py90 * d.basis1[1] + pz90 * d.basis1[2];
+  const float c2_90 =
+      px90 * d.basis2[0] + py90 * d.basis2[1] + pz90 * d.basis2[2];
   const float h90 = std::atan2(c2_90, c1_90) * 180.f / kPi;
 
   // Difference should be ~90°

@@ -204,6 +204,85 @@ TEST(ImuHandlerTest, MagDisabledAfterProlongedReadFailure) {
       << "Затянувшийся сбой чтения должен откатить в 6DOF";
 }
 
+TEST(ImuHandlerTest, RejectedMagIsTelemeteredButNotConsumed) {
+  FakePlatform platform;
+  ImuCalibration imu_calib;
+  MadgwickFilter filter;
+  MagCalibration mag_calib;
+  ImuHandler imu(platform, imu_calib, filter, /*read_interval_ms=*/2);
+  imu.SetMagCalibration(&mag_calib);
+  imu.SetEnabled(true);
+  platform.SetImuData(LevelImu());
+
+  MagCalibData calibration{};
+  calibration.valid = true;
+  calibration.field_strength_mgauss = 100.f;
+  mag_calib.SetData(calibration);
+
+  platform.SetMagData({100.f, 0.f, 0.f});
+  imu.Update(10, 10);
+  ASSERT_TRUE(imu.IsMagEnabled());
+  ASSERT_FALSE(imu.IsMagRejected());
+  ASSERT_TRUE(imu.IsMagGateActive());
+  ASSERT_EQ(imu.GetMagSampleSequence(), 1u);
+  const float accepted_heading = imu.GetHeadingDeg();
+
+  float pitch = 0.f, roll = 0.f, yaw_before = 0.f;
+  filter.GetEulerDeg(pitch, roll, yaw_before);
+
+  platform.SetMagData({0.f, 300.f, 0.f});
+  uint32_t now_ms = 10;
+  for (int i = 0; i < 100; ++i) {
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+
+  EXPECT_TRUE(imu.IsMagEnabled());
+  EXPECT_TRUE(imu.IsMagRejected());
+  EXPECT_FLOAT_EQ(imu.GetMagData().my, 300.f);
+  EXPECT_NEAR(imu.GetMagNormMGauss(), 300.f, 1e-5f);
+  EXPECT_EQ(imu.GetMagSampleSequence(), 1u);
+  EXPECT_FLOAT_EQ(imu.GetHeadingDeg(), accepted_heading);
+
+  float yaw_after = 0.f;
+  filter.GetEulerDeg(pitch, roll, yaw_after);
+  EXPECT_NEAR(yaw_after, yaw_before, 0.1f)
+      << "Rejected magnetic field must run Madgwick in 6DOF";
+}
+
+TEST(ImuHandlerTest, MagGateRecoversOnFifthConsecutiveGoodNewSample) {
+  FakePlatform platform;
+  ImuCalibration imu_calib;
+  MadgwickFilter filter;
+  MagCalibration mag_calib;
+  ImuHandler imu(platform, imu_calib, filter, /*read_interval_ms=*/2);
+  imu.SetMagCalibration(&mag_calib);
+  imu.SetEnabled(true);
+  platform.SetImuData(LevelImu());
+
+  MagCalibData calibration{};
+  calibration.valid = true;
+  calibration.field_strength_mgauss = 100.f;
+  mag_calib.SetData(calibration);
+
+  platform.SetMagData({100.f, 0.f, 0.f});
+  imu.Update(10, 10);
+  platform.SetMagData({200.f, 0.f, 0.f});
+  imu.Update(20, 10);
+  ASSERT_TRUE(imu.IsMagRejected());
+  ASSERT_EQ(imu.GetMagSampleSequence(), 1u);
+
+  platform.SetMagData({115.f, 0.f, 0.f});
+  for (uint32_t now_ms : {30u, 40u, 50u, 60u}) {
+    imu.Update(now_ms, 10);
+    EXPECT_TRUE(imu.IsMagRejected());
+    EXPECT_EQ(imu.GetMagSampleSequence(), 1u);
+  }
+  imu.Update(70, 10);
+  EXPECT_FALSE(imu.IsMagRejected());
+  EXPECT_EQ(imu.GetMagSampleSequence(), 2u);
+}
+
 TEST(ImuHandlerTest,
      StaleMagDropoutDoesNotPreserveYawOnRecalibrationAfterwards) {
   // Полный сценарий из ревью: курс сходится по магнитометру, датчик

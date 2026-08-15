@@ -117,6 +117,11 @@ inline SensorSnapshot BuildSensorSnapshot(
     s.imu_data = imu_handler->GetData();
     s.filtered_gz = imu_handler->GetFilteredGyroZ();
     s.mag_enabled = imu_handler->IsMagEnabled();
+    s.mag_rejected = imu_handler->IsMagRejected();
+    s.mag_gate_active = imu_handler->IsMagGateActive();
+    s.mag_norm_mgauss = imu_handler->GetMagNormMGauss();
+    s.expected_mag_norm_mgauss = imu_handler->GetExpectedMagNormMGauss();
+    s.mag_sample_sequence = imu_handler->GetMagSampleSequence();
     if (s.mag_enabled) {
       s.mag_data = imu_handler->GetMagData();
       s.heading_deg = imu_handler->GetHeadingDeg();

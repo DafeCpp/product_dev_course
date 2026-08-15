@@ -88,10 +88,39 @@ TEST_F(VehicleStateEstimatorTest, MagnetometerHeadingUpdatesEkfYaw) {
 
   VehicleStateEstimate estimate;
   for (int i = 0; i < 20; ++i) {
+    sensors_.mag_sample_sequence = static_cast<uint32_t>(i + 1);
     estimate = estimator_.Update(sensors_, input_);
   }
 
   EXPECT_NEAR(estimate.yaw_rad, 3.14159265f / 2.0f, 0.05f);
+}
+
+TEST_F(VehicleStateEstimatorTest, AppliesEachMagSampleOnlyOnce) {
+  sensors_.mag_enabled = true;
+  sensors_.heading_deg = 90.0f;
+  sensors_.mag_sample_sequence = 1;
+
+  const auto first = estimator_.Update(sensors_, input_);
+  VehicleStateEstimate duplicate = first;
+  for (int i = 0; i < 20; ++i) {
+    duplicate = estimator_.Update(sensors_, input_);
+  }
+  EXPECT_NEAR(duplicate.yaw_rad, first.yaw_rad, 1e-5f);
+
+  sensors_.mag_sample_sequence = 2;
+  const auto fresh = estimator_.Update(sensors_, input_);
+  EXPECT_GT(fresh.yaw_rad, duplicate.yaw_rad);
+}
+
+TEST_F(VehicleStateEstimatorTest, RejectedMagSampleDoesNotUpdateEkfYaw) {
+  sensors_.mag_enabled = true;
+  sensors_.mag_rejected = true;
+  sensors_.heading_deg = 90.0f;
+  sensors_.mag_sample_sequence = 1;
+
+  const auto estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_NEAR(estimate.yaw_rad, 0.0f, 1e-6f);
 }
 
 TEST_F(VehicleStateEstimatorTest, MotorModelAnchorsForwardSpeed) {

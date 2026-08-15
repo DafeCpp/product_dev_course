@@ -8,14 +8,44 @@
  * Содержит:
  *  - hard iron offset (центр окружности)
  *  - normal: нормаль к плоскости вращения = ось «вверх» в СК датчика
- *  - basis1, basis2: ортобазис в горизонтальной плоскости для вычисления heading
+ *  - basis1, basis2: ортобазис в горизонтальной плоскости для вычисления
+ * heading
  */
 struct MagCalibData {
-  float offset[3]{0.f, 0.f, 0.f};  ///< Hard iron offset [мГс] (X, Y, Z)
-  float normal[3]{0.f, 0.f, 1.f};  ///< Нормаль к плоскости вращения (единичный вектор)
+  float offset[3]{0.f, 0.f, 0.f};    ///< Hard iron offset [мГс] (X, Y, Z)
+  float field_strength_mgauss{0.f};  ///< RMS |B-offset| [мГс], 0 = неизвестно
+  float normal[3]{0.f, 0.f,
+                  1.f};  ///< Нормаль к плоскости вращения (единичный вектор)
   float basis1[3]{1.f, 0.f, 0.f};  ///< Ортобазис 1 в горизонтальной плоскости
   float basis2[3]{0.f, 1.f, 0.f};  ///< Ортобазис 2 в горизонтальной плоскости
   bool valid{false};
+};
+
+/**
+ * @brief Гистерезисный фильтр магнитных помех по величине поля.
+ *
+ * Без сохранённой эталонной величины поля пропускает конечные ненулевые
+ * семплы для совместимости со старыми калибровками. После выброса требует
+ * несколько подряд хороших новых семплов, прежде чем снова доверять mag.
+ */
+class MagQualityGate {
+ public:
+  [[nodiscard]] bool Update(float norm_mgauss,
+                            float expected_norm_mgauss) noexcept;
+
+  [[nodiscard]] bool IsActive() const noexcept { return active_; }
+  [[nodiscard]] bool IsRejected() const noexcept { return rejected_; }
+  void Reset() noexcept;
+
+  static constexpr float kRejectRelativeDeviation = 0.25f;
+  static constexpr float kRecoveryRelativeDeviation = 0.15f;
+  static constexpr uint8_t kRecoverySamples = 5;
+
+ private:
+  float expected_norm_mgauss_{0.f};
+  uint8_t recovery_count_{0};
+  bool active_{false};
+  bool rejected_{false};
 };
 
 /**
@@ -27,11 +57,11 @@ enum class MagCalibStatus { Idle, Collecting, Done, Failed };
  * @brief Причина неудачи калибровки магнитометра.
  */
 enum class MagCalibFailReason {
-  None,           ///< Нет ошибки (или калибровка ещё не завершена)
-  TooFewSamples,  ///< Мало семплов — нажали Finish слишком быстро
-  RadiusTooSmall, ///< Мало вращения — min/max по осям почти совпали
-  RadiusTooLarge, ///< Сильные помехи — аномально большой разброс
-  NotPlanar,      ///< Данные не образуют плоскость — вращение не в одной оси
+  None,            ///< Нет ошибки (или калибровка ещё не завершена)
+  TooFewSamples,   ///< Мало семплов — нажали Finish слишком быстро
+  RadiusTooSmall,  ///< Мало вращения — min/max по осям почти совпали
+  RadiusTooLarge,  ///< Сильные помехи — аномально большой разброс
+  NotPlanar,       ///< Данные не образуют плоскость — вращение не в одной оси
 };
 
 /**
@@ -102,10 +132,10 @@ class MagCalibration {
   /** Строковое описание причины неудачи (для UI/логов). */
   [[nodiscard]] const char* GetFailReasonStr() const noexcept;
 
-
   // ─── Валидационные границы ───────────────────────────────────────────────
 
-  /** Минимальный средний радиус сферы [мГс]. Меньше → недостаточное вращение. */
+  /** Минимальный средний радиус сферы [мГс]. Меньше → недостаточное вращение.
+   */
   static constexpr float kMinRadius = 20.f;
 
   /** Максимальный средний радиус сферы [мГс]. Больше → сильные помехи. */
@@ -118,11 +148,14 @@ class MagCalibration {
   static constexpr float kPlanarityThreshold = 0.3f;
 
  private:
-  /** Якоби-итерация для 3×3 симметричной матрицы → собственные значения/вектора. */
+  /** Якоби-итерация для 3×3 симметричной матрицы → собственные
+   * значения/вектора. */
   static void Jacobi3x3(float A[3][3], float V[3][3], int max_iter = 30);
 
-  /** Вычислить ортобазис (basis1, basis2) в плоскости, перпендикулярной normal. */
-  static void ComputeBasis(const float normal[3], float basis1[3], float basis2[3]);
+  /** Вычислить ортобазис (basis1, basis2) в плоскости, перпендикулярной normal.
+   */
+  static void ComputeBasis(const float normal[3], float basis1[3],
+                           float basis2[3]);
 
   MagCalibStatus status_{MagCalibStatus::Idle};
   MagCalibFailReason fail_reason_{MagCalibFailReason::None};
@@ -132,6 +165,6 @@ class MagCalibration {
   int sample_count_{0};
 
   // Онлайн-накопление ковариации для PCA
-  float sum_[3]{};       ///< Σ(x, y, z)
-  float cov_sum_[6]{};   ///< Σ(xx, xy, xz, yy, yz, zz) — верхний треугольник
+  float sum_[3]{};      ///< Σ(x, y, z)
+  float cov_sum_[6]{};  ///< Σ(xx, xy, xz, yy, yz, zz) — верхний треугольник
 };

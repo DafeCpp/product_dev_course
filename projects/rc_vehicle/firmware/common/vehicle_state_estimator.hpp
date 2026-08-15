@@ -83,6 +83,7 @@ class VehicleStateEstimator {
   float prev_gz_rad_s_{0.0f};
   float prev_vx_{0.0f};
   float a_lin_prev_g_{0.0f};
+  uint32_t last_mag_sample_sequence_{0};
   bool tilt_was_enabled_{false};
 };
 

@@ -4,6 +4,60 @@
 #include <cmath>
 #include <cstring>
 
+bool MagQualityGate::Update(float norm_mgauss,
+                            float expected_norm_mgauss) noexcept {
+  constexpr float kMinUsableNorm = 1e-3f;
+  const bool next_active = std::isfinite(expected_norm_mgauss) &&
+                           expected_norm_mgauss > kMinUsableNorm;
+  if (next_active != active_ ||
+      (next_active && expected_norm_mgauss != expected_norm_mgauss_)) {
+    active_ = next_active;
+    expected_norm_mgauss_ = next_active ? expected_norm_mgauss : 0.f;
+    rejected_ = false;
+    recovery_count_ = 0;
+  }
+
+  if (!std::isfinite(norm_mgauss) || norm_mgauss <= kMinUsableNorm) {
+    rejected_ = true;
+    recovery_count_ = 0;
+    return false;
+  }
+  if (!active_) {
+    rejected_ = false;
+    return true;
+  }
+
+  const float deviation =
+      std::fabs(norm_mgauss - expected_norm_mgauss_) / expected_norm_mgauss_;
+  if (!rejected_) {
+    if (deviation > kRejectRelativeDeviation) {
+      rejected_ = true;
+      recovery_count_ = 0;
+      return false;
+    }
+    return true;
+  }
+
+  if (deviation <= kRecoveryRelativeDeviation) {
+    ++recovery_count_;
+    if (recovery_count_ >= kRecoverySamples) {
+      rejected_ = false;
+      recovery_count_ = 0;
+      return true;
+    }
+  } else {
+    recovery_count_ = 0;
+  }
+  return false;
+}
+
+void MagQualityGate::Reset() noexcept {
+  expected_norm_mgauss_ = 0.f;
+  recovery_count_ = 0;
+  active_ = false;
+  rejected_ = false;
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // Jacobi iteration for 3×3 symmetric matrix
 // ═════════════════════════════════════════════════════════════════════════
@@ -11,8 +65,7 @@
 void MagCalibration::Jacobi3x3(float A[3][3], float V[3][3], int max_iter) {
   // V = I
   for (int i = 0; i < 3; ++i)
-    for (int j = 0; j < 3; ++j)
-      V[i][j] = (i == j) ? 1.f : 0.f;
+    for (int j = 0; j < 3; ++j) V[i][j] = (i == j) ? 1.f : 0.f;
 
   for (int iter = 0; iter < max_iter; ++iter) {
     // Найти наибольший |A[p][q]|, p != q
@@ -88,8 +141,7 @@ void MagCalibration::ComputeBasis(const float n[3], float e1[3], float e2[3]) {
   e1[0] = n[1] * aux[2] - n[2] * aux[1];
   e1[1] = n[2] * aux[0] - n[0] * aux[2];
   e1[2] = n[0] * aux[1] - n[1] * aux[0];
-  const float len1 =
-      std::sqrt(e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]);
+  const float len1 = std::sqrt(e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]);
   if (len1 > 1e-9f) {
     e1[0] /= len1;
     e1[1] /= len1;
@@ -178,6 +230,20 @@ void MagCalibration::Finish() {
   // ── PCA: матрица ковариации ─────────────────────────────────────────────
   const float n_inv = 1.f / static_cast<float>(sample_count_);
   const float mean[3] = {sum_[0] * n_inv, sum_[1] * n_inv, sum_[2] * n_inv};
+
+  // RMS-величина поля после hard-iron компенсации. Используем уже накопленные
+  // моменты, поэтому дополнительный проход по калибровочным семплам не нужен:
+  // E|m-o|² = E|m|² - 2 o·E[m] + |o|².
+  const float mean_norm_sq = (cov_sum_[0] + cov_sum_[3] + cov_sum_[5]) * n_inv;
+  const float offset_dot_mean =
+      offsets[0] * mean[0] + offsets[1] * mean[1] + offsets[2] * mean[2];
+  const float offset_norm_sq = offsets[0] * offsets[0] +
+                               offsets[1] * offsets[1] +
+                               offsets[2] * offsets[2];
+  const float centered_mean_norm_sq =
+      mean_norm_sq - 2.f * offset_dot_mean + offset_norm_sq;
+  data_.field_strength_mgauss =
+      std::sqrt(std::fmax(centered_mean_norm_sq, 0.f));
 
   // cov_sum хранит: [xx, xy, xz, yy, yz, zz]
   // C[i][j] = cov_sum[k]/N - mean[i]*mean[j]

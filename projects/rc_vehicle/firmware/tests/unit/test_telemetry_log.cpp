@@ -87,6 +87,8 @@ TEST(TelemetryLogTest, GetFrame_TailByteFieldsRoundTrip_DoNotAlias) {
   frame.ekf_diverged = 1;
   frame.drive_mode = static_cast<uint8_t>(4);  // DriveMode::DirectLaw
   frame.stab_enabled = 1;
+  frame.kids_flags = kKidsAccelLimitActive;
+  frame.mag_flags = kMagRejected | kMagGateActive;
   log.Push(frame);
 
   TelemetryLogFrame out;
@@ -96,6 +98,8 @@ TEST(TelemetryLogTest, GetFrame_TailByteFieldsRoundTrip_DoNotAlias) {
   EXPECT_EQ(out.ekf_diverged, 1);
   EXPECT_EQ(out.drive_mode, 4);
   EXPECT_EQ(out.stab_enabled, 1);
+  EXPECT_EQ(out.kids_flags, kKidsAccelLimitActive);
+  EXPECT_EQ(out.mag_flags, kMagRejected | kMagGateActive);
 }
 
 TEST(TelemetryLogTest, GetFrame_AfterWrap_OldestFirst) {
@@ -257,13 +261,16 @@ class BuildLogFrameKidsTest : public ::testing::Test {
     kids_.ApplySpeedLimit(cfg_, throttle, input);
   }
 
-  uint8_t Flags(bool limiters_enabled = true) {
+  TelemetryLogFrame Frame(bool limiters_enabled = true) {
     const TelemetryContext ctx{ekf_,   madgwick_, imu_calib_,
                                guard_, kids_,     auto_drive_};
     return BuildLogFrame(ctx, /*now=*/100, sensors_, 0.2f, 0.0f, 0.3f, 0.0f,
                          DriveMode::Kids, /*stab_enabled=*/true,
-                         limiters_enabled)
-        .kids_flags;
+                         limiters_enabled);
+  }
+
+  uint8_t Flags(bool limiters_enabled = true) {
+    return Frame(limiters_enabled).kids_flags;
   }
 
   StabilizationConfig cfg_;
@@ -279,6 +286,14 @@ class BuildLogFrameKidsTest : public ::testing::Test {
 TEST_F(BuildLogFrameKidsTest, NoLimiterTripped_OnlyEnabledBitSet) {
   RunKids(/*slip_deg=*/0.0f, /*forward_accel_g=*/0.05f);
   EXPECT_EQ(Flags(), kKidsLimitersEnabled);
+}
+
+TEST_F(BuildLogFrameKidsTest, MagQualityFlagsArePackedWithoutChangingFrame) {
+  sensors_.mag_rejected = true;
+  sensors_.mag_gate_active = true;
+
+  EXPECT_EQ(Frame().mag_flags, kMagRejected | kMagGateActive);
+  EXPECT_EQ(sizeof(TelemetryLogFrame), 132u);
 }
 
 TEST_F(BuildLogFrameKidsTest, AntiSpinSetsOwnBit) {

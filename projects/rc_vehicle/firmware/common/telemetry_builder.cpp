@@ -31,7 +31,11 @@ TelemetrySnapshot BuildTelemetrySnapshot(
 
   if (sensors.mag_enabled) {
     snap.mag_enabled = true;
+    snap.mag_rejected = sensors.mag_rejected;
+    snap.mag_gate_active = sensors.mag_gate_active;
     snap.mag_data = sensors.mag_data;
+    snap.mag_norm_mgauss = sensors.mag_norm_mgauss;
+    snap.expected_mag_norm_mgauss = sensors.expected_mag_norm_mgauss;
     snap.heading_deg = sensors.heading_deg;
     snap.heading_rel_deg = sensors.heading_rel_deg;
   }
@@ -116,6 +120,9 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
       (ctx.kids_processor.IsAccelLimitActive() ? kKidsAccelLimitActive : 0) |
       (ctx.kids_processor.IsSpeedLimitActive() ? kKidsSpeedLimitActive : 0) |
       (kids_limiters_active ? kKidsLimitersEnabled : 0));
+  frame.mag_flags =
+      static_cast<uint8_t>((sensors.mag_rejected ? kMagRejected : 0) |
+                           (sensors.mag_gate_active ? kMagGateActive : 0));
   return frame;
 }
 

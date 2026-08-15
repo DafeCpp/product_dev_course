@@ -1283,9 +1283,9 @@ function handleLogData(frames) {
 
 function exportLogCsv(frames) {
     if (!frames || !frames.length) { alert('Нет данных'); return; }
-    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_yaw_deg,mx,my,mz,heading_deg,heading_rel_deg,test_marker,zupt_status,ekf_diverged,drive_mode,stab_enabled\n';
+    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_yaw_deg,mx,my,mz,heading_deg,heading_rel_deg,test_marker,zupt_status,ekf_diverged,drive_mode,stab_enabled,mag_rejected,mag_gate_active\n';
     const rows = frames.map(f =>
-        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.ekf_yaw_deg??0},${f.mx??0},${f.my??0},${f.mz??0},${f.heading_deg??0},${f.heading_rel_deg??0},${f.test_marker??0},${f.zupt_status??0},${f.ekf_diverged??0},${f.drive_mode??0},${f.stab_enabled??0}`
+        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.ekf_yaw_deg??0},${f.mx??0},${f.my??0},${f.mz??0},${f.heading_deg??0},${f.heading_rel_deg??0},${f.test_marker??0},${f.zupt_status??0},${f.ekf_diverged??0},${f.drive_mode??0},${f.stab_enabled??0},${f.mag_rejected??0},${f.mag_gate_active??0}`
     ).join('\n');
     triggerDownload(hdr + rows, 'telemetry_log.csv', 'text/csv');
 }
@@ -1537,6 +1537,8 @@ async function downloadBinaryLog() {
             { name: 'kids_accel_limit_active', off: 129, type: 'u8', bit: 1 },
             { name: 'kids_speed_limit_active', off: 129, type: 'u8', bit: 2 },
             { name: 'kids_limiters_enabled',   off: 129, type: 'u8', bit: 3 },
+            { name: 'mag_rejected',            off: 130, type: 'u8', bit: 0 },
+            { name: 'mag_gate_active',         off: 130, type: 'u8', bit: 1 },
         ];
 
         const maxFieldEnd = FIELD_OFFSETS.reduce((maxEnd, f) => {

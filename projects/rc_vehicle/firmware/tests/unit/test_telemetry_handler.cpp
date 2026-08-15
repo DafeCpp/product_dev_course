@@ -310,7 +310,11 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
   snap.yaw_deg = 179.99f;
 
   snap.mag_enabled = true;
+  snap.mag_rejected = true;
+  snap.mag_gate_active = true;
   snap.mag_data = {.mx = 123.4f, .my = -56.7f, .mz = 8.9f};
+  snap.mag_norm_mgauss = 136.1f;
+  snap.expected_mag_norm_mgauss = 100.f;
   snap.heading_deg = 45.5f;
   snap.heading_rel_deg = -10.25f;
 
@@ -408,6 +412,11 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
   cJSON* mag = cJSON_GetObjectItem(root, "mag");
   ASSERT_NE(mag, nullptr);
   EXPECT_NEAR(cJSON_GetObjectItem(mag, "mx")->valuedouble, 123.4, 0.1);
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(mag, "rejected")));
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(mag, "gate_active")));
+  EXPECT_NEAR(cJSON_GetObjectItem(mag, "norm_mgauss")->valuedouble, 136.1, 0.1);
+  EXPECT_NEAR(cJSON_GetObjectItem(mag, "expected_norm_mgauss")->valuedouble,
+              100.0, 0.1);
   EXPECT_NEAR(cJSON_GetObjectItem(mag, "heading_deg")->valuedouble, 45.5, 0.01);
 
   cJSON* ekf = cJSON_GetObjectItem(root, "ekf");
