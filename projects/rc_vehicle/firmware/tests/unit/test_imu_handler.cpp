@@ -84,7 +84,7 @@ TEST(ImuHandlerTest, FiltersVehicleYawRateButKeepsRawGyroInSensorFrame) {
       << "Raw/Madgwick gyro must stay in the sensor frame";
 }
 
-TEST(ImuHandlerTest, ReferenceFrameChangeResetsYawRateFilter) {
+TEST(ImuHandlerTest, FullCalibrationResetsYawRateFilterBeforeCurrentStep) {
   FakePlatform platform;
   ImuCalibration calib;
   MadgwickFilter filter;
@@ -101,15 +101,50 @@ TEST(ImuHandlerTest, ReferenceFrameChangeResetsYawRateFilter) {
   }
   ASSERT_NEAR(imu.GetFilteredGyroZ(), 30.f, 0.05f);
 
-  imu.OnReferenceFrameChanged();
-  EXPECT_FLOAT_EQ(imu.GetFilteredGyroZ(), 0.f);
-
+  // Full завершается внутри следующего Update(): vehicle Z меняется с
+  // sensor Z на sensor Y, а текущий bias-corrected gyro становится нулевым.
+  // LPF обязан сброситься ДО Step(0), не после публикации snapshot.
+  calib.StartCalibration(CalibMode::Full, 1);
+  sensor.ay = 1.f;
+  sensor.az = 0.f;
   sensor.gz = 0.f;
   platform.SetImuData(sensor);
   now_ms += 2;
   imu.Update(now_ms, 2);
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+  ASSERT_NEAR(calib.GetData().gravity_vec[1], 1.f, 1e-6f);
   EXPECT_FLOAT_EQ(imu.GetFilteredGyroZ(), 0.f)
-      << "Old-basis LPF history must not leak after recalibration";
+      << "Old-basis LPF history must not leak into the completion tick";
+}
+
+TEST(ImuHandlerTest, ForwardAxisChangePreservesYawRateFilterHistory) {
+  FakePlatform platform;
+  ImuCalibration calib;
+  MadgwickFilter filter;
+  ImuHandler imu(platform, calib, filter, /*read_interval_ms=*/2);
+
+  ImuCalibData mounted{};
+  mounted.valid = true;
+  mounted.gravity_valid = true;
+  calib.SetData(mounted);
+
+  ImuData sensor = LevelImu();
+  sensor.gz = 30.f;
+  platform.SetImuData(sensor);
+  imu.SetEnabled(true);
+
+  uint32_t now_ms = 0;
+  for (int i = 0; i < 500; ++i) {
+    now_ms += 2;
+    imu.Update(now_ms, 2);
+  }
+  ASSERT_NEAR(imu.GetFilteredGyroZ(), 30.f, 0.05f);
+
+  calib.SetForwardDirection(0.f, 1.f, 0.f);
+  now_ms += 2;
+  imu.Update(now_ms, 2);
+  EXPECT_NEAR(imu.GetFilteredGyroZ(), 30.f, 0.05f)
+      << "Changing vehicle X must not reset a vehicle-Z-only filter";
 }
 
 TEST(ImuHandlerTest, MagEnabledStaysTrueThroughBriefReadBlip) {

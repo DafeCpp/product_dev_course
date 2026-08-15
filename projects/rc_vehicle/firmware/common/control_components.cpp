@@ -109,6 +109,13 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Подача семпла в калибровку (если идёт сбор)
   calib_.FeedSample(data_);
 
+  // Full-калибровка может завершиться прямо в FeedSample() и изменить
+  // gravity_vec. Сбрасываем LPF здесь, ДО Step() первого семпла в новой СК;
+  // поздний callback из ControlLoopProcessor уже оставлял mixed-frame
+  // значение в snapshot текущего тика. Forward-only изменения axis X на
+  // yaw-rate не влияют и сброса не вызывают.
+  UpdateYawRateAxis();
+
   // Сохранить сырые данные акселерометра ДО коррекции bias.
   // Madgwick-фильтр должен видеть истинное направление гравитации в СК датчика,
   // совпадающее с gravity_vec из калибровки. Accel bias включает компоненты
@@ -151,6 +158,28 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
     if (_rest_d > prof_rest_max_us_) prof_rest_max_us_ = _rest_d;
   }
 #endif
+}
+
+void ImuHandler::UpdateYawRateAxis() {
+  const auto& calib_data = calib_.GetData();
+  const float* axis = calib_data.gravity_vec;
+
+  if (yaw_rate_axis_initialized_) {
+    constexpr float kAxisChangeEpsilon = 1e-6f;
+    const bool changed =
+        std::fabs(axis[0] - yaw_rate_axis_[0]) > kAxisChangeEpsilon ||
+        std::fabs(axis[1] - yaw_rate_axis_[1]) > kAxisChangeEpsilon ||
+        std::fabs(axis[2] - yaw_rate_axis_[2]) > kAxisChangeEpsilon;
+    if (changed) {
+      lpf_gyro_z_.Reset();
+      filtered_gz_ = 0.f;
+    }
+  }
+
+  yaw_rate_axis_[0] = axis[0];
+  yaw_rate_axis_[1] = axis[1];
+  yaw_rate_axis_[2] = axis[2];
+  yaw_rate_axis_initialized_ = true;
 }
 
 void ImuHandler::UpdateVehicleFrame() {

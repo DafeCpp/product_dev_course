@@ -122,7 +122,6 @@ TEST_F(YawRateControllerTest,
   mounted.gravity_vec[2] = -0.8f;
   mounted.accel_forward_vec[0] = 1.f;
   calib_.SetData(mounted);
-  imu_handler_.OnReferenceFrameChanged();
 
   ImuData sensor{};
   sensor.az = 1.f;
