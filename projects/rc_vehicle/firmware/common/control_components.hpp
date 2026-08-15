@@ -207,9 +207,29 @@ class ImuHandler : public ControlComponent {
   [[nodiscard]] const MagData& GetMagData() const noexcept { return mag_data_; }
 
   /**
-   * @brief Доступен ли магнитометр (инициализирован и есть данные).
+   * @brief Доступен ли свежий семпл магнитометра.
+   *
+   * Это признак присутствия/свежести датчика, не качества поля. Для допуска
+   * в heading/Madgwick/EKF дополнительно проверяется IsMagRejected().
    */
   [[nodiscard]] bool IsMagEnabled() const noexcept { return mag_enabled_; }
+  [[nodiscard]] bool IsMagRejected() const noexcept {
+    return mag_quality_gate_.IsRejected();
+  }
+  [[nodiscard]] bool IsMagGateActive() const noexcept {
+    return mag_quality_gate_.IsActive();
+  }
+  [[nodiscard]] float GetMagNormMGauss() const noexcept {
+    return mag_norm_mgauss_;
+  }
+  [[nodiscard]] float GetExpectedMagNormMGauss() const noexcept {
+    return mag_calib_ && mag_calib_->IsValid()
+               ? mag_calib_->GetData().field_strength_mgauss
+               : 0.f;
+  }
+  [[nodiscard]] uint32_t GetMagSampleSequence() const noexcept {
+    return mag_sample_sequence_;
+  }
 
   /**
    * @brief Установить объект калибровки магнитометра.
@@ -237,13 +257,13 @@ class ImuHandler : public ControlComponent {
 
   /**
    * @brief Tilt-compensated magnetic heading [°, 0=N, 90=E].
-   * Валиден только если IsMagEnabled() == true.
+   * Обновляется только если IsMagEnabled() && !IsMagRejected().
    */
   [[nodiscard]] float GetHeadingDeg() const noexcept { return heading_deg_; }
 
   /**
    * @brief Относительный курс [°, -180..180]: Δ = heading_deg_ - heading_ref_.
-   * Валиден только если IsMagEnabled() == true.
+   * Обновляется только если IsMagEnabled() && !IsMagRejected().
    */
   [[nodiscard]] float GetRelativeHeadingDeg() const noexcept;
 
@@ -304,7 +324,7 @@ class ImuHandler : public ControlComponent {
   void UpdateMagAndHeading(uint32_t now_ms);
   /// Heading через проекцию на калибровочную плоскость (PCA)
   [[nodiscard]] float ComputePcaHeadingDeg(const MagData& mag_cal) const;
-  /// Шаг Madgwick: 9DOF при наличии mag, иначе 6DOF
+  /// Шаг Madgwick: 9DOF при принятом mag, иначе 6DOF
   void FeedMadgwick(float raw_ax, float raw_ay, float raw_az, float dt_sec);
 
   VehicleControlPlatform& platform_;
@@ -325,6 +345,9 @@ class ImuHandler : public ControlComponent {
   // Магнетометр (опционален)
   MagData mag_data_{};
   MagData mag_calibrated_{};  ///< Последний семпл после Apply() калибровки
+  MagQualityGate mag_quality_gate_{};
+  float mag_norm_mgauss_{0.f};
+  uint32_t mag_sample_sequence_{0};  ///< Растёт только для принятых семплов
   bool mag_enabled_{false};
   uint32_t last_mag_read_ms_{0};
   uint32_t last_mag_success_ms_{0};
@@ -382,7 +405,12 @@ struct SensorSnapshot {
 
   // Магнетометр
   bool mag_enabled{false};
+  bool mag_rejected{false};
+  bool mag_gate_active{false};
   MagData mag_data{};
+  float mag_norm_mgauss{0.f};
+  float expected_mag_norm_mgauss{0.f};
+  uint32_t mag_sample_sequence{0};
   float heading_deg{0.f};      ///< Tilt-compensated heading [°, 0=N, 90=E]
   float heading_rel_deg{0.f};  ///< Относительный курс [°, -180..180]
 };
@@ -416,7 +444,11 @@ struct TelemetrySnapshot {
 
   // Магнетометр
   bool mag_enabled{false};
+  bool mag_rejected{false};
+  bool mag_gate_active{false};
   MagData mag_data{};
+  float mag_norm_mgauss{0.f};
+  float expected_mag_norm_mgauss{0.f};
   float heading_deg{0.f};      ///< Tilt-compensated heading [°, 0=N, 90=E]
   float heading_rel_deg{0.f};  ///< Относительный курс [°, -180..180]
 

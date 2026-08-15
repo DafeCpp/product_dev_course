@@ -36,6 +36,8 @@ FRAME_COLUMNS = [
     # этих колонок нет — отсутствие даёт предупреждение, но не ошибку.
     "kids_anti_spin_active", "kids_accel_limit_active",
     "kids_speed_limit_active", "kids_limiters_enabled",
+    # Quality-gate flags occupy the former byte 130 padding (LOS-234).
+    "mag_rejected", "mag_gate_active",
 ]
 
 # Event columns are stitched in by the exporter, are sparse, and `event_type`
@@ -718,6 +720,27 @@ def print_dataset_info(
     if extra:
         print(f"  Unknown cols : {', '.join(extra)}")
 
+    if has_col(rows, "mag_rejected"):
+        rejected = [v > 0.0 for v in col_raw(rows, "mag_rejected")]
+        rejected_count = sum(rejected)
+        segments_count = sum(
+            1
+            for i, flag in enumerate(rejected)
+            if flag and (i == 0 or not rejected[i - 1])
+        )
+        gate_active = col(rows, "mag_gate_active")
+        gate_active_count = sum(1 for v in gate_active if v > 0.0)
+        print(
+            f"  Mag rejected : {rejected_count}/{n} "
+            f"({100.0 * rejected_count / n:.2f}%), {segments_count} segments"
+        )
+        print(
+            f"  Mag gate     : active {gate_active_count}/{len(gate_active)} "
+            f"({100.0 * gate_active_count / len(gate_active):.2f}%)"
+            if gate_active
+            else "  Mag gate     : no data"
+        )
+
     segments = mode_segments(rows)
     if len(segments) > 1 or (segments and segments[0][0] != 0):
         print("  Drive modes  :")
@@ -958,6 +981,59 @@ def generate_plots(rows: list[Row], csv_path: str) -> None:
 
         fig.tight_layout()
         out = output_dir / "08_log_cadence.png"
+        fig.savefig(out, dpi=150)
+        plt.close(fig)
+        print(f"  [plots] saved {out}")
+
+    # ------------------------------------------------------------------
+    # 9. Heading sources and magnetometer quality gate
+    # ------------------------------------------------------------------
+    if all(has_col(rows, name) for name in ("yaw_deg", "ekf_yaw_deg", "heading_deg", "mx", "my", "mz")):
+        fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+        fig.suptitle("Heading and Magnetometer Quality", fontsize=14)
+
+        axes[0].plot(ts_s, col_raw(rows, "yaw_deg"), label="Madgwick yaw", linewidth=0.8)
+        axes[0].plot(ts_s, col_raw(rows, "ekf_yaw_deg"), label="EKF yaw", linewidth=0.8)
+        axes[0].plot(ts_s, col_raw(rows, "heading_deg"), label="mag heading", linewidth=0.8)
+        axes[0].set_ylabel("Heading (degrees)")
+        axes[0].legend(loc="upper right")
+        axes[0].grid(True, alpha=0.4)
+
+        mx = col_raw(rows, "mx")
+        my = col_raw(rows, "my")
+        mz = col_raw(rows, "mz")
+        mag_norm = [
+            math.sqrt(x * x + y * y + z * z)
+            if not any(math.isnan(v) for v in (x, y, z)) else math.nan
+            for x, y, z in zip(mx, my, mz)
+        ]
+        axes[1].plot(ts_s, mag_norm, label="raw |mag|", color="steelblue", linewidth=0.8)
+        axes[1].set_ylabel("Raw field norm (mG)")
+        axes[1].set_xlabel("Time (s)")
+        axes[1].grid(True, alpha=0.4)
+
+        flags_ax = axes[1].twinx()
+        rejected = (
+            [0.0 if math.isnan(v) else v for v in col_raw(rows, "mag_rejected")]
+            if has_col(rows, "mag_rejected") else [0.0] * len(rows)
+        )
+        gate_active = (
+            [0.0 if math.isnan(v) else v for v in col_raw(rows, "mag_gate_active")]
+            if has_col(rows, "mag_gate_active") else [0.0] * len(rows)
+        )
+        flags_ax.fill_between(ts_s, gate_active, step="post", alpha=0.12,
+                              color="darkorange", label="gate active")
+        flags_ax.fill_between(ts_s, rejected, step="post", alpha=0.28,
+                              color="crimson", label="rejected")
+        flags_ax.set_ylim(0.0, 1.05)
+        flags_ax.set_ylabel("Gate flags")
+
+        lines1, labels1 = axes[1].get_legend_handles_labels()
+        lines2, labels2 = flags_ax.get_legend_handles_labels()
+        axes[1].legend(lines1 + lines2, labels1 + labels2, loc="upper right")
+
+        fig.tight_layout()
+        out = output_dir / "09_heading_mag.png"
         fig.savefig(out, dpi=150)
         plt.close(fig)
         print(f"  [plots] saved {out}")

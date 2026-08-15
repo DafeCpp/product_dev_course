@@ -239,14 +239,25 @@ void ImuHandler::UpdateMagAndHeading(uint32_t now_ms) {
     mag_calib_->FeedSample(mag_data_);
   }
 
-  // Калиброванное значение кэшируется: FeedMadgwick использует его на
-  // каждом тике 500 Гц до следующего mag-семпла (Apply детерминирован —
-  // результат тот же, что пересчёт каждые 2 мс).
-  mag_calibrated_ = mag_data_;
+  MagData candidate = mag_data_;
   const bool have_calib = mag_calib_ && mag_calib_->IsValid();
   if (have_calib) {
-    mag_calib_->Apply(mag_calibrated_);
+    mag_calib_->Apply(candidate);
   }
+
+  mag_norm_mgauss_ =
+      std::sqrt(candidate.mx * candidate.mx + candidate.my * candidate.my +
+                candidate.mz * candidate.mz);
+  const float expected_norm =
+      have_calib ? mag_calib_->GetData().field_strength_mgauss : 0.f;
+  if (!mag_quality_gate_.Update(mag_norm_mgauss_, expected_norm)) {
+    return;
+  }
+
+  // Только принятый новый семпл заменяет кэш для Madgwick/heading и получает
+  // новый sequence id. Отклонённый raw-вектор остаётся доступен телеметрии.
+  mag_calibrated_ = candidate;
+  ++mag_sample_sequence_;
 
   if (have_calib) {
     heading_deg_ = ComputePcaHeadingDeg(mag_calibrated_);
@@ -296,7 +307,7 @@ void ImuHandler::FeedMadgwick(float raw_ax, float raw_ay, float raw_az,
     return;
   }
 
-  if (mag_enabled_) {
+  if (mag_enabled_ && !mag_quality_gate_.IsRejected()) {
     // 9DOF: полный калиброванный mag-вектор в СК датчика (FW-R3).
     // Подаётся каждый тик (включая тики без нового семпла) — предотвращает
     // дрейф yaw между обновлениями магнитометра. Madgwick сам устраняет
@@ -447,6 +458,10 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
       w.Fixed("mx", snap.mag_data.mx, 1);
       w.Fixed("my", snap.mag_data.my, 1);
       w.Fixed("mz", snap.mag_data.mz, 1);
+      w.Bool("rejected", snap.mag_rejected);
+      w.Bool("gate_active", snap.mag_gate_active);
+      w.Fixed("norm_mgauss", snap.mag_norm_mgauss, 1);
+      w.Fixed("expected_norm_mgauss", snap.expected_mag_norm_mgauss, 1);
       w.Fixed("heading_deg", snap.heading_deg, 2);
       w.Fixed("heading_rel_deg", snap.heading_rel_deg, 2);
       w.EndObject();
