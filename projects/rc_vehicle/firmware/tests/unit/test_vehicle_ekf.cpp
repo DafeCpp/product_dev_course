@@ -394,17 +394,19 @@ TEST(VehicleEkfTest, ZUPT_PreventsStationaryDrift) {
 TEST(VehicleEkfTest, ZuptStatus_ReportsAllGateOutcomes) {
   VehicleEkf ekf;
 
-  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f, 0.03f);
+  // Значение непосредственно выше 8% означает намерение двигаться.
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f, 0.081f);
   EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::ThrottleRejected);
 
-  ekf.UpdateFromImu(0.0f, 0.0f, 0.8f, 0.0f, 0.002f);
+  // Граница 8% включена в нейтраль: дальше решение принимают IMU-гейты.
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f, 0.08f);
+  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::Applied);
+
+  ekf.UpdateFromImu(0.0f, 0.0f, 0.8f, 0.0f, 0.002f, 0.08f);
   EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::AccelRejected);
 
-  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 3.0f, 0.002f);
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 3.0f, 0.002f, 0.08f);
   EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::GyroRejected);
-
-  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f);
-  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::Applied);
 }
 
 TEST(VehicleEkfTest, SetNoiseParams_AffectsConvergence) {

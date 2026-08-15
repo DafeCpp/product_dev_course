@@ -261,7 +261,7 @@ void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g, float gz_dps,
 
   // ZUPT: применяем только если машина реально стоит (throttle ≈ 0).
   // При throttle > порога машина пытается ехать — ZUPT обнулит скорость.
-  constexpr float kZuptThrottleThresh = 0.02f;  // 2% throttle
+  constexpr float kZuptThrottleThresh = 0.08f;  // RC neutral noise/dead zone
   if (throttle_abs > kZuptThrottleThresh) {
     zupt_status_ = ZuptStatus::ThrottleRejected;
     return;
