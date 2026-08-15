@@ -162,6 +162,31 @@ TEST(MagCalibration, FinishFailsIfNotPlanar) {
   EXPECT_EQ(cal.GetFailReason(), MagCalibFailReason::NotPlanar);
 }
 
+TEST(MagCalibration, FailedRecalibrationPreservesPreviousFieldNormAndOffset) {
+  MagCalibration cal;
+  MagCalibData previous{};
+  previous.offset[0] = 25.f;
+  previous.offset[1] = -15.f;
+  previous.offset[2] = 5.f;
+  previous.field_strength_mgauss = 321.f;
+  previous.valid = true;
+  cal.SetData(previous);
+
+  cal.Start();
+  FeedSphereSamples(cal, MagCalibration::kMinSamples + 30);
+  cal.Finish();
+
+  ASSERT_EQ(cal.GetStatus(), MagCalibStatus::Failed);
+  ASSERT_EQ(cal.GetFailReason(), MagCalibFailReason::NotPlanar);
+  const auto& preserved = cal.GetData();
+  EXPECT_TRUE(preserved.valid);
+  EXPECT_FLOAT_EQ(preserved.offset[0], previous.offset[0]);
+  EXPECT_FLOAT_EQ(preserved.offset[1], previous.offset[1]);
+  EXPECT_FLOAT_EQ(preserved.offset[2], previous.offset[2]);
+  EXPECT_FLOAT_EQ(preserved.field_strength_mgauss,
+                  previous.field_strength_mgauss);
+}
+
 TEST(MagCalibration, FailReasonStrings) {
   MagCalibration cal;
 

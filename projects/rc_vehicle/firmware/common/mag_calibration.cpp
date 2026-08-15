@@ -242,7 +242,7 @@ void MagCalibration::Finish() {
                                offsets[2] * offsets[2];
   const float centered_mean_norm_sq =
       mean_norm_sq - 2.f * offset_dot_mean + offset_norm_sq;
-  data_.field_strength_mgauss =
+  const float field_strength_mgauss =
       std::sqrt(std::fmax(centered_mean_norm_sq, 0.f));
 
   // cov_sum хранит: [xx, xy, xz, yy, yz, zz]
@@ -289,6 +289,7 @@ void MagCalibration::Finish() {
     data_.offset[i] = offsets[i];
     data_.normal[i] = V[i][idx_min];  // столбец V с наименьшим λ
   }
+  data_.field_strength_mgauss = field_strength_mgauss;
 
   // Нормализовать normal (Якоби должен дать единичный, но на всякий случай)
   const float nlen = std::sqrt(data_.normal[0] * data_.normal[0] +
