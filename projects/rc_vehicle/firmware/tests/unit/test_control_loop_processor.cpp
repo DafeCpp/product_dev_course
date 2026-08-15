@@ -951,6 +951,22 @@ TEST_F(ProcessorTest, CalibMgr_Null_NoCrash) {
 // собран без ImuHandler (imu_enabled=false), а здесь нужен живой IMU-путь.
 // ═══════════════════════════════════════════════════════════════════════════
 
+class GracePeriodPlatform : public FakePlatform {
+ public:
+  void HoldFailsafeInactive(bool hold) { hold_failsafe_inactive_ = hold; }
+
+  bool FailsafeUpdate(bool rc_active, bool wifi_active) override {
+    if (hold_failsafe_inactive_) {
+      SetFailsafeActive(false);
+      return false;
+    }
+    return FakePlatform::FailsafeUpdate(rc_active, wifi_active);
+  }
+
+ private:
+  bool hold_failsafe_inactive_{false};
+};
+
 class KidsAccelLimitTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -999,7 +1015,7 @@ class KidsAccelLimitTest : public ::testing::Test {
     return d;
   }
 
-  FakePlatform platform_;
+  GracePeriodPlatform platform_;
   ImuCalibration imu_calib_;
   MadgwickFilter madgwick_;
   VehicleEkf ekf_;
@@ -1044,6 +1060,42 @@ TEST_F(KidsAccelLimitTest, StaticNoseDownTilt_DoesNotTriggerAccelLimit) {
 
   EXPECT_FALSE(kids_processor_.IsAccelLimitActive())
       << "accel-лимитер сработал на статическом наклоне без ускорения";
+}
+
+TEST_F(KidsAccelLimitTest,
+       LostSourceDuringFailsafeGraceDoesNotAccumulatePitchCorrection) {
+  wifi_handler_ = std::make_unique<WifiCommandHandler>(platform_, 4);
+  ctx_->wifi_handler = wifi_handler_.get();
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Normal;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+  cfg = stab_mgr_->GetConfig();
+  cfg.enabled = true;
+  cfg.pitch_comp.enabled = true;
+  cfg.slew_throttle = 10.0f;
+  ASSERT_TRUE(stab_mgr_->SetConfig(cfg));
+
+  constexpr float kPitchRad = 18.f * 3.14159265358979f / 180.f;
+  platform_.SetImuData(AtRestWithPitch(kPitchRad));
+  platform_.SetWifiCommand(RcCommand{0.1f, 0.0f});
+  RunSteps(3000);  // Madgwick и вес стабилизации сходятся.
+
+  const float with_source = platform_.GetLastSnap().cmd_throttle;
+  ASSERT_GT(std::abs(with_source - 0.1f), 0.05f)
+      << "тесту нужна заметная pitch-коррекция";
+
+  platform_.ClearWifiCommand();
+  platform_.HoldFailsafeInactive(true);
+  RunSteps(2);  // Истекает Wi-Fi timeout, но failsafe ещё в grace period.
+  const float first_without_source = platform_.GetLastSnap().cmd_throttle;
+
+  RunSteps(20);
+  const float after_grace_ticks = platform_.GetLastSnap().cmd_throttle;
+
+  EXPECT_NEAR(first_without_source, with_source, 1e-2f);
+  EXPECT_NEAR(after_grace_ticks, with_source, 1e-2f)
+      << "стабилизация не должна интегрировать свой выход прошлого тика";
 }
 
 TEST_F(KidsAccelLimitTest, RealAccelerationOnSlope_StillTriggersAccelLimit) {

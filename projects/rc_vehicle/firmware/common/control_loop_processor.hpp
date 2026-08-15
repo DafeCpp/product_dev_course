@@ -91,6 +91,10 @@ class ControlLoopProcessor {
 
   /** State that intentionally survives between 500 Hz ticks. */
   struct PersistentState {
+    // Last command produced by an actual control source, before stabilization.
+    // Kept separately so the failsafe grace period cannot feed the previous
+    // tick's stabilization output back into the pipeline (LOS-283).
+    ControlSetpoint base_command{};
     ControlSetpoint command{};
     ControlSetpoint applied{};
     // Final motor-model input from the previous tick. In Kids this is the
