@@ -24,6 +24,8 @@ SCHEMA_VERSION: Final = 1
 CATEGORIES: Final = ("baseline", "measured", "synthetic")
 
 _PARAM_NAMES: Final = frozenset(f.name for f in fields(SimParams))
+_ROAD_PARAM_NAMES: Final = frozenset(
+    name for name in _PARAM_NAMES if name.startswith("road_"))
 _TOP_LEVEL_KEYS: Final = frozenset(
     {"schema_version", "name", "description", "provenance", "recommended_dynamic",
      "params"})
@@ -101,9 +103,9 @@ def _parse_provenance(raw: Any, origin: str) -> Provenance:
 def parse_profile(data: Any, origin: str) -> Profile:
     """Разобрать словарь JSON → `Profile`. `origin` попадает в тексты ошибок.
 
-    Частичный `params` допускается — недостающие поля берутся из `SimParams()`
-    (удобно для ручных экспериментов). Шиппимые профили обязаны быть полными,
-    это проверяет отдельный тест.
+    Частичный `params` допускается — недостающие поля берутся из `SimParams()`,
+    кроме road_*: отсутствующие road-поля означают clean signal для совместимости
+    со schema-1 профилями до LOS-287. Шиппимые профили обязаны быть полными.
     """
     if not isinstance(data, dict):
         raise ProfileError(f"{origin}: ожидался JSON-объект")
@@ -122,7 +124,13 @@ def parse_profile(data: Any, origin: str) -> Profile:
     if not isinstance(raw_params, dict):
         raise ProfileError(f"{origin}: 'params' должен быть объектом")
     _check_keys(raw_params, _PARAM_NAMES, "в params", origin)
-    params = SimParams(**{k: _number(v, k, origin) for k, v in raw_params.items()})
+    parsed_params = {k: _number(v, k, origin) for k, v in raw_params.items()}
+    # До LOS-287 schema-1 профили не знали про road_* и означали чистые
+    # сенсоры. Не позволять новым ненулевым SimParams defaults молча менять
+    # исторические эксперименты при загрузке старого частичного JSON.
+    for key in _ROAD_PARAM_NAMES - raw_params.keys():
+        parsed_params[key] = 0.0
+    params = SimParams(**parsed_params)
 
     dynamic = data.get("recommended_dynamic", False)
     if not isinstance(dynamic, bool):

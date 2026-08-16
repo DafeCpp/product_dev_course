@@ -14,7 +14,8 @@
 - `simlib/vehicle_model.py` — `VehicleModel`: кинематический велосипед
   (`ψ̇ = v·tan(δ)/L`) + опциональный динамический (боковой увод Caf/Car); мотор
   первого порядка, серво со slew.
-- `simlib/sensors.py` — синтез accel/gyro/mag из состояния модели.
+- `simlib/sensors.py` — синтез accel/gyro/mag и детерминированная модель
+  дорожного возбуждения IMU (LOS-287).
 - `simlib/frame.py` — `SensorFrame.to_csv()`: формат кадра **совпадает** с
   протоколом `sim_host` (FW-S2.1, `ParseInputLine`). Бинд к exe — в FW-S2.5.
 
@@ -38,8 +39,10 @@ cd projects/rc_vehicle/firmware/tests && cmake -B build && cmake --build build
 
 `simlib/closed_loop.py` — `ClosedLoopSim`: замыкает Python-модель ↔ `sim_host`
 (interactive). На тик: сценарий задаёт RC-команду → прошивка считает applied PWM
-→ модель интегрирует шаг → синтезирует сырые сенсоры → обратно. Детерминированно,
-полный тракт прошивки в контуре.
+→ модель интегрирует шаг → синтезирует сырые сенсоры → обратно. Дорожный шум
+включён по умолчанию и детерминирован (`noise_seed=0`); для идеализированного
+сигнала используется `sensor_noise=False`. Полный тракт прошивки остаётся в
+контуре.
 
 ```python
 from simlib import ClosedLoopSim, find_sim_host
@@ -61,6 +64,8 @@ RMSE/корреляция на канал + подгонка `SimParams` (scipy,
 ```bash
 python validate_logs.py path/to/telemetry_log.csv            # подгонка + метрики
 python validate_logs.py path/to/telemetry_log.csv --plot out.png --dynamic
+python validate_logs.py --fit-road-noise --road-logs log1.csv log2.csv \
+  --profile fitted_2026_07_18 --save-profile road.json
 ```
 Тесты (`tests/test_validation.py`) — round-trip: «запись» из модели с известными
 параметрами → подгонка восстанавливает их (детерминированно, без реальных логов).
@@ -84,18 +89,22 @@ with ClosedLoopSim(find_sim_host(), params=get_profile("heavy")) as sim:
     sim.run(600, rc_throttle=0.4)
 ```
 `--profile` принимает имя встроенного профиля **или** путь к JSON; при коллизии
-имён выигрывает встроенный. Загрузка допускает частичный `params` (недостающее —
-из дефолтов), `save_profile` всегда пишет полный дамп.
+имён выигрывает встроенный. Загрузка допускает частичный `params`: обычные поля
+берутся из дефолтов, а отсутствующие `road_*` остаются нулевыми для совместимости
+со старыми clean-signal профилями. `save_profile` всегда пишет полный дамп.
 
-Измерен только `fitted_2026_07_18` (FW-S2.6); `light`/`heavy`/`drift` — расчётные
-из него, ни одно шасси не взвешивалось. `light` — **не** «детский режим»: лёгкая
+`fitted_2026_07_18` содержит измеренную динамику с чистыми историческими
+сенсорами; `fitted_2026_08_02` добавляет измеренную дорожную модель LOS-287.
+`light`/`heavy`/`drift` — расчётные из старого профиля, ни одно шасси не
+взвешивалось. `light` — **не** «детский режим»: лёгкая
 машина с тем же мотором разгоняется резче; лимиты для детей живут в прошивке
 (`KidsMode`). `drift` требует `dynamic=True` (иначе `Caf`/`Car` не участвуют) и
 осмысленен ниже критической скорости 6.0 м/с — выше линейная модель шин расходится.
 
-**Дефолты не изменились:** `VehicleModel()`/`ClosedLoopSim()` без явных `params`
-по-прежнему берут `SimParams()`. Переключение дефолта на измеренный профиль —
-отдельная задача (LOS-224).
+`VehicleModel()`/`ClosedLoopSim()` без явных `params` по-прежнему берут
+`SimParams()`: динамика не переключалась на измеренный профиль (LOS-224), но
+`ClosedLoopSim` теперь применяет дорожные параметры `SimParams` по умолчанию.
+Чистые `synth_*`/`make_frame` и replay golden-фикстур шум не получают.
 
 ## Запуск тестов
 

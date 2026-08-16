@@ -28,6 +28,19 @@
     "imu_roll_deg": 0.0,
     "gravity_ms2": 9.80665,
     "mag_field_mga": 500.0,
-    "gyro_bias_dps": 0.0
+    "gyro_bias_dps": 0.0,
+    "road_ax_sigma_0_g": 0.0,
+    "road_ax_sigma_per_ms": 0.0,
+    "road_ay_sigma_0_g": 0.0,
+    "road_ay_sigma_per_ms": 0.0,
+    "road_az_sigma_0_g": 0.0,
+    "road_az_sigma_per_ms": 0.0,
+    "road_roll_rate_sigma_0_dps": 0.0,
+    "road_roll_rate_sigma_per_ms": 0.0,
+    "road_pitch_rate_sigma_0_dps": 0.0,
+    "road_pitch_rate_sigma_per_ms": 0.0,
+    "road_roll_frequency_hz": 10.7,
+    "road_pitch_frequency_hz": 6.7,
+    "road_attitude_damping": 0.28
   }
 }

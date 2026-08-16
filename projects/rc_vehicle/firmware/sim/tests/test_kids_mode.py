@@ -17,6 +17,9 @@ pytestmark = pytest.mark.skipif(
 
 def _full_throttle(**kw) -> dict:
     """Прогнать полный газ; вернуть сводку (последняя строка + пик/модель)."""
+    # Эти проверки изолируют speed limiter и его motor-model anchor. Дорожный
+    # accel limiter проверяется отдельно ниже.
+    kw.setdefault("sensor_noise", False)
     with ClosedLoopSim(BIN, **kw) as sim:
         rows = sim.run(2500, dt_ms=2, rc_throttle=1.0, rc_steering=0.0)
     return {
@@ -61,3 +64,23 @@ def test_kids_speed_limiter_reduces_output_without_changing_motor_anchor():
     assert limited["speed_meas"] == pytest.approx(
         unlimited["speed_meas"], rel=0.01)
     assert limited["final_ekf"] == pytest.approx(limited["speed_meas"], rel=0.01)
+
+
+def test_road_noise_reproduces_frequent_kids_accel_limiter_switching():
+    """LOS-287: ровный газ на дороге больше не выглядит идеально чистым."""
+    def run(noisy: bool):
+        with ClosedLoopSim(
+                BIN, drive_mode="kids", speed_limit=2.0,
+                sensor_noise=noisy, noise_seed=0) as sim:
+            rows = sim.run(15_000, dt_ms=2, rc_throttle=1.0,
+                           rc_steering=0.0)
+        # Первые 10 секунд — разгон/сход фильтров; метрика только steady state.
+        active = [bool(r["kids_accel_limit_active"]) for r in rows[5000:]]
+        transitions = sum(a != b for a, b in zip(active, active[1:]))
+        return sum(active) / len(active), transitions
+
+    clean_ratio, clean_transitions = run(False)
+    noisy_ratio, noisy_transitions = run(True)
+    assert clean_ratio == 0.0 and clean_transitions == 0
+    assert 0.20 <= noisy_ratio <= 0.45
+    assert noisy_transitions >= 1000

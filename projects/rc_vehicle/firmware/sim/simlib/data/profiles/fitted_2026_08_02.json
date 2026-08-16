@@ -1,10 +1,13 @@
 {
   "schema_version": 1,
-  "name": "default",
-  "description": "Дефолты динамики SimParams (FW-S2.4) плюс измеренный дорожный шум LOS-287.",
+  "name": "fitted_2026_08_02",
+  "description": "Измеренный профиль: динамика шасси из fitted_2026_07_18 плюс дорожное возбуждение IMU по 17 логам до 2026-08-02.",
   "provenance": {
-    "category": "baseline",
-    "source": "динамика SimParams — прикидка на глаз; road_* — округлённая калибровка по test_runs за 2026-08-02 (LOS-287)"
+    "category": "measured",
+    "source": "динамика: joint-фит LOS-213; дорожный шум: σ(v) и ACF по 17 CSV из test_runs, LOS-287",
+    "date": "2026-08-02",
+    "firmware": "v1.2.0-140-g45f9bb8",
+    "report": "reports/validation-2026-08-02-road-noise.md"
   },
   "recommended_dynamic": false,
   "params": {
@@ -15,11 +18,11 @@
     "Iz": 0.05,
     "Caf": 60.0,
     "Car": 60.0,
-    "max_accel": 8.0,
-    "motor_tau": 0.15,
+    "max_accel": 8.94,
+    "motor_tau": 0.0376,
     "motor_deadzone": 0.05,
-    "drag_coeff": 0.8,
-    "servo_max_deg": 25.0,
+    "drag_coeff": 1.128,
+    "servo_max_deg": 20.4,
     "servo_slew_dps": 600.0,
     "imu_pitch_deg": 0.0,
     "imu_roll_deg": 0.0,

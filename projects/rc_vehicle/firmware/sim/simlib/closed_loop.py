@@ -9,7 +9,7 @@
 
 import subprocess
 
-from .sensors import make_frame
+from .sensors import RoadNoiseModel, make_frame
 from .sim_params import SimParams
 from .vehicle_model import StepOutput, VehicleModel
 
@@ -24,11 +24,14 @@ class ClosedLoopSim:
                  target_accel: float | None = None,
                  test_duration: float | None = None,
                  test_steering: float | None = None,
-                 wifi_keepalive: bool = False):
+                 wifi_keepalive: bool = False,
+                 sensor_noise: bool = True,
+                 noise_seed: int = 0):
         self.p = params or SimParams()
         self.model = VehicleModel(self.p, dynamic=dynamic)
         # StepOutput предыдущего тика → сенсоры текущего кадра (на старте — покой).
         self.last_out = StepOutput(0.0, 0.0, 0.0, 0.0, 0.0)
+        self.road_noise = RoadNoiseModel(self.p, noise_seed) if sensor_noise else None
 
         args = [sim_host_bin, "--interactive"]
         if identity_calib:
@@ -67,7 +70,8 @@ class ClosedLoopSim:
         frame = make_frame(self.last_out, self.model.state.psi, self.p,
                            dt_ms=dt_ms, rc_throttle=rc_throttle,
                            rc_steering=rc_steering, with_mag=with_mag,
-                           wifi_keepalive=self.wifi_keepalive)
+                           wifi_keepalive=self.wifi_keepalive,
+                           road_noise=self.road_noise)
         self.proc.stdin.write(frame.to_csv() + "\n")
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()

@@ -5,7 +5,15 @@ import numpy as np
 import pytest
 
 import simlib.validation as val
-from simlib import SimParams, channel_metrics, fit_params, fit_params_multi, simulate
+from simlib import (
+    RoadNoiseModel,
+    SimParams,
+    channel_metrics,
+    fit_params,
+    fit_params_multi,
+    fit_road_noise_params,
+    simulate,
+)
 
 
 def _synthetic_drive(params: SimParams, n: int = 400, dt: float = 0.01) -> dict:
@@ -87,3 +95,42 @@ def test_real_log_metrics_finite():
     m = channel_metrics(pred, drive["rec"])
     for ch in val.CHANNELS:
         assert math.isfinite(m[ch]["rmse"])
+
+
+def test_fit_road_noise_recovers_synthetic_sigma_and_spectrum():
+    true = SimParams(
+        road_ax_sigma_0_g=0.02, road_ax_sigma_per_ms=0.08,
+        road_ay_sigma_0_g=0.03, road_ay_sigma_per_ms=0.12,
+        road_az_sigma_0_g=0.04, road_az_sigma_per_ms=0.15,
+        road_roll_rate_sigma_0_dps=5.0,
+        road_roll_rate_sigma_per_ms=9.0,
+        road_pitch_rate_sigma_0_dps=4.0,
+        road_pitch_rate_sigma_per_ms=7.0,
+        road_roll_frequency_hz=11.0,
+        road_pitch_frequency_hz=7.0,
+        road_attitude_damping=0.3,
+    )
+    noise = RoadNoiseModel(true, seed=31)
+    speed = np.repeat([0.0, 1.0, 2.5], 5000)
+    samples = [noise.sample(float(v), 10) for v in speed]
+    residual = {
+        "ax": np.asarray([s.accel_g[0] for s in samples]),
+        "ay": np.asarray([s.accel_g[1] for s in samples]),
+        "az": np.asarray([s.accel_g[2] for s in samples]),
+        "gx": np.asarray([s.gyro_dps[0] for s in samples]),
+        "gy": np.asarray([s.gyro_dps[1] for s in samples]),
+    }
+    fitted, diagnostics = fit_road_noise_params(
+        [{"path": "synthetic", "speed_ms": speed,
+          "residual": residual, "dt_s": 0.01}],
+        SimParams(), min_samples=500)
+
+    assert fitted.road_ax_sigma_0_g == pytest.approx(
+        true.road_ax_sigma_0_g, rel=0.12)
+    assert fitted.road_ax_sigma_per_ms == pytest.approx(
+        true.road_ax_sigma_per_ms, rel=0.08)
+    assert fitted.road_roll_frequency_hz == pytest.approx(
+        true.road_roll_frequency_hz, abs=1.0)
+    assert fitted.road_pitch_frequency_hz == pytest.approx(
+        true.road_pitch_frequency_hz, abs=1.0)
+    assert diagnostics["channels"]["ax"]["bins"] == 3
