@@ -60,9 +60,17 @@ VehicleStateEstimate VehicleStateEstimator::Update(
       madgwick_.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
     }
 
+    // Match the motor model's definition of motion-capable output. The caller
+    // supplies the last value actually sent to the motor, including slew and
+    // trim, so ZUPT cannot engage while a stale higher PWM is still applied.
+    const float applied_throttle_abs = std::abs(input.applied_throttle);
+    const float zupt_throttle_abs =
+        applied_throttle_abs > input.filter.motor_deadzone
+            ? applied_throttle_abs
+            : 0.0f;
     ekf_.UpdateFromImu(vehicle_imu.ax, vehicle_imu.ay, vehicle_imu.az,
-                       sensors.filtered_gz, dt_sec,
-                       std::abs(input.commanded_throttle), pitch_rad, roll_rad);
+                       sensors.filtered_gz, dt_sec, zupt_throttle_abs,
+                       pitch_rad, roll_rad);
 
     if (motor_model_active) {
       const float throttle = input.motor_model_throttle;

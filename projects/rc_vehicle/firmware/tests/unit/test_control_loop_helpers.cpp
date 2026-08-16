@@ -44,8 +44,34 @@ TEST(SelectControlSourceTest, RcActive_SetsCommands) {
   s.rc_cmd = RcCommand{0.8f, -0.4f};
   float thr = 0.0f, steer = 0.0f;
   EXPECT_TRUE(SelectControlSource(s, thr, steer));
-  EXPECT_FLOAT_EQ(thr, 0.8f);
+  EXPECT_NEAR(thr, (0.8f - 0.08f) / 0.92f, 1e-6f);
   EXPECT_FLOAT_EQ(steer, -0.4f);
+}
+
+TEST(SelectControlSourceTest, RcNeutralNoise_IsCollapsedToZero) {
+  SensorSnapshot s;
+  s.rc_active = true;
+  s.rc_cmd = RcCommand{0.08f, 0.0f};
+  float thr = 1.0f, steer = 0.0f;
+  EXPECT_TRUE(SelectControlSource(s, thr, steer));
+  EXPECT_FLOAT_EQ(thr, 0.0f);
+
+  s.rc_cmd = RcCommand{-0.08f, 0.0f};
+  EXPECT_TRUE(SelectControlSource(s, thr, steer));
+  EXPECT_FLOAT_EQ(thr, 0.0f);
+}
+
+TEST(SelectControlSourceTest, RcAboveDeadzone_IsRescaledContinuously) {
+  SensorSnapshot s;
+  s.rc_active = true;
+  s.rc_cmd = RcCommand{0.081f, 0.0f};
+  float thr = 0.0f, steer = 0.0f;
+  EXPECT_TRUE(SelectControlSource(s, thr, steer));
+  EXPECT_NEAR(thr, (0.081f - 0.08f) / 0.92f, 1e-6f);
+
+  s.rc_cmd = RcCommand{-0.081f, 0.0f};
+  EXPECT_TRUE(SelectControlSource(s, thr, steer));
+  EXPECT_NEAR(thr, -(0.081f - 0.08f) / 0.92f, 1e-6f);
 }
 
 TEST(SelectControlSourceTest, WifiActive_SetsCommands) {
@@ -58,6 +84,15 @@ TEST(SelectControlSourceTest, WifiActive_SetsCommands) {
   EXPECT_FLOAT_EQ(steer, 0.6f);
 }
 
+TEST(SelectControlSourceTest, LowWifiThrottle_IsPreserved) {
+  SensorSnapshot s;
+  s.wifi_active = true;
+  s.wifi_cmd = RcCommand{0.03f, 0.0f};
+  float thr = 0.0f, steer = 0.0f;
+  EXPECT_TRUE(SelectControlSource(s, thr, steer));
+  EXPECT_FLOAT_EQ(thr, 0.03f);
+}
+
 TEST(SelectControlSourceTest, RcPriorityOverWifi) {
   SensorSnapshot s;
   s.rc_active = true;
@@ -66,7 +101,7 @@ TEST(SelectControlSourceTest, RcPriorityOverWifi) {
   s.wifi_cmd = RcCommand{-1.0f, -1.0f};
   float thr = 0.0f, steer = 0.0f;
   EXPECT_TRUE(SelectControlSource(s, thr, steer));
-  EXPECT_FLOAT_EQ(thr, 1.0f);  // RC wins
+  EXPECT_FLOAT_EQ(thr, 1.0f);  // RC wins; full scale stays full scale
   EXPECT_FLOAT_EQ(steer, 0.0f);
 }
 

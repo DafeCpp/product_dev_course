@@ -167,9 +167,10 @@ class VehicleEkf {
    * @param az_g Ускорение по Z в g
    * @param gz_dps Угловая скорость Z в °/с
    * @param dt_sec Шаг времени в секундах
-   * @param throttle_abs Абсолютное значение throttle [0..1] для ZUPT gating.
-   *        Если > kZuptThrottleThresh, ZUPT пропускается (машина пытается
-   * ехать). По умолчанию 0 — ZUPT всегда активен (обратная совместимость).
+   * @param throttle_abs Абсолютное значение команды throttle [0..1] после
+   *        source-specific dead zone. Любое значение > 0 пропускает ZUPT:
+   *        машина пытается ехать. По умолчанию 0 — ZUPT всегда активен
+   *        (обратная совместимость).
    * @param pitch_rad Тангаж от фильтра ориентации [рад] (ZYX: вокруг оси Y).
    * @param roll_rad  Крен от фильтра ориентации [рад] (ZYX: вокруг оси X).
    *

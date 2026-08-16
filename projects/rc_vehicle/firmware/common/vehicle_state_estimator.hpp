@@ -20,7 +20,9 @@ namespace rc_vehicle {
 struct VehicleStateEstimatorInput {
   FilterConfig filter{};
   uint32_t dt_ms{0};
-  float commanded_throttle{0.0f};
+  // Last throttle actually sent to the motor, including slew and trim. ZUPT
+  // treats values inside motor_deadzone as non-motion-capable residuals.
+  float applied_throttle{0.0f};
   float motor_model_throttle{0.0f};
   bool ekf_available{false};
   bool speed_calibration_active{false};

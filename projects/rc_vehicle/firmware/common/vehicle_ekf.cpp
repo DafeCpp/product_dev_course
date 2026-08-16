@@ -259,10 +259,10 @@ void VehicleEkf::UpdateFromImu(float ax_g, float ay_g, float az_g, float gz_dps,
   Predict((ax_g - grav_x) * kG, (ay_g - grav_y) * kG, dt_sec);
   UpdateGyroZ(gz_dps * kDegToRad);
 
-  // ZUPT: применяем только если машина реально стоит (throttle ≈ 0).
-  // При throttle > порога машина пытается ехать — ZUPT обнулит скорость.
-  constexpr float kZuptThrottleThresh = 0.02f;  // 2% throttle
-  if (throttle_abs > kZuptThrottleThresh) {
+  // ZUPT: применяем только без намерения двигаться. Шум нейтрали конкретного
+  // источника должен быть убран до этого слоя (RC — в SelectControlSource),
+  // поэтому любая оставшаяся ненулевая команда блокирует обнуление скорости.
+  if (throttle_abs > 0.0f) {
     zupt_status_ = ZuptStatus::ThrottleRejected;
     return;
   }

@@ -394,17 +394,19 @@ TEST(VehicleEkfTest, ZUPT_PreventsStationaryDrift) {
 TEST(VehicleEkfTest, ZuptStatus_ReportsAllGateOutcomes) {
   VehicleEkf ekf;
 
-  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f, 0.03f);
+  // После source-specific dead zone любая ненулевая команда означает движение.
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f, 0.001f);
   EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::ThrottleRejected);
 
-  ekf.UpdateFromImu(0.0f, 0.0f, 0.8f, 0.0f, 0.002f);
+  // Нулевая скорректированная команда передаёт решение IMU-гейтам.
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f, 0.0f);
+  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::Applied);
+
+  ekf.UpdateFromImu(0.0f, 0.0f, 0.8f, 0.0f, 0.002f, 0.0f);
   EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::AccelRejected);
 
-  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 3.0f, 0.002f);
+  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 3.0f, 0.002f, 0.0f);
   EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::GyroRejected);
-
-  ekf.UpdateFromImu(0.0f, 0.0f, 1.0f, 0.0f, 0.002f);
-  EXPECT_EQ(ekf.GetZuptStatus(), ZuptStatus::Applied);
 }
 
 TEST(VehicleEkfTest, SetNoiseParams_AffectsConvergence) {

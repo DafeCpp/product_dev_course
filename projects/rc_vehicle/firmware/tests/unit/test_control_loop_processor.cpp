@@ -524,6 +524,57 @@ TEST_F(ProcessorTest, CoastMode_DeceleratesSlowly) {
   EXPECT_GT(platform_.GetLastThrottle(), 0.2f);  // всё ещё далеко от нуля
 }
 
+TEST_F(ProcessorTest, ZuptUsesAppliedThrottleWhileSlewDecelerates) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Normal;
+  cfg.filter.motor_deadzone = 0.05f;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  RunSteps(200);  // PWM успел подняться заметно выше motor_deadzone
+  ASSERT_GT(platform_.GetLastThrottle(), cfg.filter.motor_deadzone);
+
+  // Новая цель уже внутри dead zone, но до следующего 20-ms PWM update
+  // фактический slew-limited выход остаётся прежним и всё ещё движет машину.
+  platform_.SetWifiCommand({0.04f, 0.0f});
+  Step();  // сохранить новую target-команду
+  Step();  // EKF должен по-прежнему увидеть прошлый фактический PWM
+
+  ASSERT_GT(platform_.GetLastThrottle(), cfg.filter.motor_deadzone);
+  EXPECT_EQ(ekf_.GetZuptStatus(), ZuptStatus::ThrottleRejected);
+}
+
+TEST_F(ProcessorTest, ZuptUsesAppliedThrottleIncludingTrim) {
+  SetDirectLaw();
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.throttle_trim = 0.1f;
+  cfg.filter.motor_deadzone = 0.05f;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  Step();  // SetPwm получает один только trim
+  Step();  // EKF видит фактически применённый trim прошлого тика
+
+  ASSERT_NEAR(platform_.GetLastThrottle(), 0.1f, 1e-6f);
+  EXPECT_EQ(ekf_.GetZuptStatus(), ZuptStatus::ThrottleRejected);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Телеметрия
 // ═══════════════════════════════════════════════════════════════════════════
@@ -700,7 +751,7 @@ TEST_F(ProcessorTest, TiltComp_LevelAccel_VxTracksTrueSpeed) {
   cfg.filter.motor_model_enabled = false;
   stab_mgr_->SetConfig(cfg);
 
-  // throttle > 2% отключает ZUPT; машина «едет прямо» с постоянным
+  // Ненулевая команда throttle отключает ZUPT; машина «едет прямо» с постоянным
   // продольным ускорением 0.2g на ровном месте (ay=0, gx=gy=gz=0).
   platform_.SetWifiCommand({0.5f, 0.0f});
   ImuData imu{};
@@ -727,7 +778,8 @@ TEST_F(ProcessorTest, TiltComp_StaticTilt_NoDivergence) {
   // через grav_x/grav_y в этом же UpdateFromImu) — feedback через него
   // самоподтверждается на любом уровне остаточной ошибки. Раньше a_lin в
   // этом случае всё равно брался из EKF vx — на статике 20° без якоря при
-  // throttle>2% (ZUPT выключен) это уводило vx в клемп kMaxSpeedMs=-15
+  // При ненулевом throttle (ZUPT выключен) это уводило vx в клемп
+  // kMaxSpeedMs=-15
   // (проверено эмпирически). Фикс: без якоря a_lin принудительно 0 —
   // TiltEstimator деградирует до гиро + негейтированной accel-коррекции,
   // vx получает СТАБИЛЬНОЕ (не нулевое — нет якоря, тянущего к 0) смещение
@@ -744,7 +796,7 @@ TEST_F(ProcessorTest, TiltComp_StaticTilt_NoDivergence) {
   cfg.filter.motor_model_enabled = false;
   stab_mgr_->SetConfig(cfg);
 
-  // throttle > 2% отключает ZUPT — иначе тест грав-компенсации был бы
+  // Ненулевой throttle отключает ZUPT — иначе тест грав-компенсации был бы
   // вакуумным (ZUPT сам обнулил бы vx независимо от корректности тангажа).
   platform_.SetWifiCommand({0.5f, 0.0f});
   constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
@@ -823,7 +875,7 @@ TEST_F(ProcessorTest, TiltComp_ReEnabled_ResetsStaleState) {
   stab_mgr_->SetConfig(cfg);
 
   // Фаза 1: статический наклон 20° — даём tilt_est_ сойтись близко к 20°.
-  platform_.SetWifiCommand({0.5f, 0.0f});  // throttle>2% отключает ZUPT
+  platform_.SetWifiCommand({0.5f, 0.0f});  // ненулевой throttle отключает ZUPT
   constexpr float kPitch = 20.0f * 3.14159265358979f / 180.0f;
   ImuData tilted{};
   tilted.ax = -std::sin(kPitch);
