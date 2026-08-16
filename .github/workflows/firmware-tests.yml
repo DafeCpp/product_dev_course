@@ -70,6 +70,37 @@ jobs:
           path: projects/rc_vehicle/firmware/tests/test-results.xml
           if-no-files-found: ignore
 
+  firmware-coverage:
+    name: Firmware Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/rc_vehicle/firmware/tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install coverage tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lcov
+
+      - name: Configure coverage build
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
+
+      - name: Generate coverage report
+        run: cmake --build build --target coverage --parallel
+
+      - name: Check coverage baseline
+        run: lcov --summary build/lcov.info --fail-under-lines 92
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-coverage-report
+          path: projects/rc_vehicle/firmware/tests/build/lcov-report
+          if-no-files-found: error
+
   sil-sim:
     name: SIL (sim_host + pytest)
     runs-on: ubuntu-latest
