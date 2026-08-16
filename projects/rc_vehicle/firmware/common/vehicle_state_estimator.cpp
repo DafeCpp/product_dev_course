@@ -60,13 +60,13 @@ VehicleStateEstimate VehicleStateEstimator::Update(
       madgwick_.GetEulerRad(pitch_rad, roll_rad, yaw_rad);
     }
 
-    // Stabilization can leave a small non-zero throttle while stationary.
-    // Match the motor model's definition of motion-capable command so those
-    // sub-deadzone residuals do not suppress ZUPT indefinitely.
-    const float commanded_throttle_abs = std::abs(input.commanded_throttle);
+    // Match the motor model's definition of motion-capable output. The caller
+    // supplies the last value actually sent to the motor, including slew and
+    // trim, so ZUPT cannot engage while a stale higher PWM is still applied.
+    const float applied_throttle_abs = std::abs(input.applied_throttle);
     const float zupt_throttle_abs =
-        commanded_throttle_abs > input.filter.motor_deadzone
-            ? commanded_throttle_abs
+        applied_throttle_abs > input.filter.motor_deadzone
+            ? applied_throttle_abs
             : 0.0f;
     ekf_.UpdateFromImu(vehicle_imu.ax, vehicle_imu.ay, vehicle_imu.az,
                        sensors.filtered_gz, dt_sec, zupt_throttle_abs,

@@ -524,6 +524,57 @@ TEST_F(ProcessorTest, CoastMode_DeceleratesSlowly) {
   EXPECT_GT(platform_.GetLastThrottle(), 0.2f);  // всё ещё далеко от нуля
 }
 
+TEST_F(ProcessorTest, ZuptUsesAppliedThrottleWhileSlewDecelerates) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.mode = DriveMode::Normal;
+  cfg.filter.motor_deadzone = 0.05f;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  RunSteps(200);  // PWM успел подняться заметно выше motor_deadzone
+  ASSERT_GT(platform_.GetLastThrottle(), cfg.filter.motor_deadzone);
+
+  // Новая цель уже внутри dead zone, но до следующего 20-ms PWM update
+  // фактический slew-limited выход остаётся прежним и всё ещё движет машину.
+  platform_.SetWifiCommand({0.04f, 0.0f});
+  Step();  // сохранить новую target-команду
+  Step();  // EKF должен по-прежнему увидеть прошлый фактический PWM
+
+  ASSERT_GT(platform_.GetLastThrottle(), cfg.filter.motor_deadzone);
+  EXPECT_EQ(ekf_.GetZuptStatus(), ZuptStatus::ThrottleRejected);
+}
+
+TEST_F(ProcessorTest, ZuptUsesAppliedThrottleIncludingTrim) {
+  SetDirectLaw();
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.throttle_trim = 0.1f;
+  cfg.filter.motor_deadzone = 0.05f;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  Step();  // SetPwm получает один только trim
+  Step();  // EKF видит фактически применённый trim прошлого тика
+
+  ASSERT_NEAR(platform_.GetLastThrottle(), 0.1f, 1e-6f);
+  EXPECT_EQ(ekf_.GetZuptStatus(), ZuptStatus::ThrottleRejected);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Телеметрия
 // ═══════════════════════════════════════════════════════════════════════════

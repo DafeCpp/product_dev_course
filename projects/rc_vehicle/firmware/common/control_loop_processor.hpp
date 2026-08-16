@@ -97,6 +97,9 @@ class ControlLoopProcessor {
     ControlSetpoint base_command{};
     ControlSetpoint command{};
     ControlSetpoint applied{};
+    // Exact throttle passed to SetPwm on the last actuator update, including
+    // slew and trim. ZUPT must follow this value, not the current target.
+    float applied_motor_throttle{0.0f};
     // Final motor-model input from the previous tick. In Kids this is the
     // counterfactual PWM without speed limiting (LOS-246).
     float motor_model_throttle{0.0f};

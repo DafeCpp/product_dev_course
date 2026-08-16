@@ -68,7 +68,7 @@ TEST_F(VehicleStateEstimatorTest, LevelStationaryProducesStableState) {
 
 TEST_F(VehicleStateEstimatorTest, SubDeadzoneThrottleResidualAllowsZupt) {
   input_.filter.motor_deadzone = 0.05f;
-  input_.commanded_throttle = 0.049f;
+  input_.applied_throttle = 0.049f;
 
   const auto estimate = estimator_.Update(sensors_, input_);
 
@@ -77,7 +77,7 @@ TEST_F(VehicleStateEstimatorTest, SubDeadzoneThrottleResidualAllowsZupt) {
 
 TEST_F(VehicleStateEstimatorTest, MotionCapableThrottleRejectsZupt) {
   input_.filter.motor_deadzone = 0.05f;
-  input_.commanded_throttle = 0.051f;
+  input_.applied_throttle = 0.051f;
 
   const auto estimate = estimator_.Update(sensors_, input_);
 
@@ -146,7 +146,7 @@ TEST_F(VehicleStateEstimatorTest, MotorModelAnchorsForwardSpeed) {
   input_.filter.motor_deadzone = 0.1f;
   input_.filter.motor_speed_gain = 5.0f;
   input_.filter.speed_meas_noise = 0.1f;
-  input_.commanded_throttle = 0.5f;
+  input_.applied_throttle = 0.5f;
   input_.motor_model_throttle = 0.5f;
 
   VehicleStateEstimate estimate;

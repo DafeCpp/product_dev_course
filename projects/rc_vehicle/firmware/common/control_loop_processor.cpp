@@ -209,7 +209,7 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(ControlTickInput& input,
   const VehicleStateEstimatorInput estimator_input{
       .filter = input.config.filter,
       .dt_ms = input.dt_ms,
-      .commanded_throttle = persistent_.command.throttle,
+      .applied_throttle = persistent_.applied_motor_throttle,
       .motor_model_throttle = persistent_.motor_model_throttle,
       .ekf_available = ctx_.stab_mgr != nullptr,
       .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
@@ -316,6 +316,7 @@ bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
   state.motor_model_target_throttle = 0.0f;
   persistent_.motor_model_throttle = 0.0f;
   persistent_.applied = {};
+  persistent_.applied_motor_throttle = 0.0f;
 
   // Сброс подсистем — однократно на переходе Inactive→Active.
   // Повторять каждые 2 мс бессмысленно (EKF/ПИД и так пусты), а EKF
@@ -372,6 +373,10 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
                           persistent_.applied.steering,
                           persistent_.last_pwm_update, thr_trim, steer_trim,
                           effective_slew_thr, effective_slew_steer);
+    if (pwm_updated) {
+      persistent_.applied_motor_throttle =
+          persistent_.applied.throttle + thr_trim;
+    }
 
     if (kids_speed_limiter && pwm_updated) {
       // UpdatePwmWithSlewRate обновил реальный PWM на этом тике. Повторяем
@@ -394,6 +399,7 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
     persistent_.applied.steering = state.command.steering + steer_trim;
     ctx_.platform.SetPwm(persistent_.applied.throttle,
                          persistent_.applied.steering);
+    persistent_.applied_motor_throttle = persistent_.applied.throttle;
     persistent_.motor_model_throttle =
         kids_speed_limiter ? state.motor_model_target_throttle + thr_trim
                            : persistent_.applied.throttle;
