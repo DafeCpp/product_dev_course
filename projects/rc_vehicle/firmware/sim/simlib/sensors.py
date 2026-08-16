@@ -117,6 +117,20 @@ class RoadNoiseModel:
             tuple(float(v) for v in attitude))
 
 
+def _road_rot(attitude_rad: tuple[float, float] | None) -> np.ndarray:
+    """Ротация текущей road-attitude (roll, pitch) относительно level body."""
+    if attitude_rad is None:
+        return np.eye(3)
+    roll, pitch = attitude_rad
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cr, sr = math.cos(roll), math.sin(roll)
+    return np.array([
+        [cp, 0.0, sp],
+        [sr * sp, cr, -sr * cp],
+        [-cr * sp, sr, cr * cp],
+    ])
+
+
 def _mount_rot(p: SimParams) -> np.ndarray:
     """Матрица ориентации IMU (pitch вокруг Y, roll вокруг X)."""
     cp, sp = math.cos(math.radians(p.imu_pitch_deg)), math.sin(
@@ -139,27 +153,19 @@ def synth_accel(long_accel: float, lat_accel: float,
     body = np.array([long_accel / g, lat_accel / g, 1.0])
     if road_accel_g is not None:
         body += np.asarray(road_accel_g)
-    if road_attitude_rad is not None:
-        roll, pitch = road_attitude_rad
-        cp, sp = math.cos(pitch), math.sin(pitch)
-        cr, sr = math.cos(roll), math.sin(roll)
-        road_rot = np.array([
-            [cp, 0.0, sp],
-            [sr * sp, cr, -sr * cp],
-            [-cr * sp, sr, cr * cp],
-        ])
-        body = road_rot.T @ body
+    body = _road_rot(road_attitude_rad).T @ body
     meas = _mount_rot(p).T @ body
     return float(meas[0]), float(meas[1]), float(meas[2])
 
 
 def synth_gyro(yaw_rate_rad: float,
                p: SimParams,
-               road_gyro_dps: tuple[float, float, float] | None = None
+               road_gyro_dps: tuple[float, float, float] | None = None,
+               road_attitude_rad: tuple[float, float] | None = None
                ) -> tuple[float, float, float]:
     """Гироскоп (dps): вектор (0,0,r) в СК корпуса, спроецированный по IMU."""
     r_dps = math.degrees(yaw_rate_rad)
-    body = np.array([0.0, 0.0, r_dps])
+    body = _road_rot(road_attitude_rad).T @ np.array([0.0, 0.0, r_dps])
     if road_gyro_dps is not None:
         body += np.asarray(road_gyro_dps)
     meas = _mount_rot(p).T @ body
@@ -170,14 +176,18 @@ def synth_gyro(yaw_rate_rad: float,
     )
 
 
-def synth_mag(psi_rad: float, p: SimParams) -> tuple[float, float, float]:
+def synth_mag(psi_rad: float, p: SimParams,
+              road_attitude_rad: tuple[float, float] | None = None
+              ) -> tuple[float, float, float]:
     """Магнитометр (мГс): горизонтальное поле Земли (North) в СК корпуса."""
     f = p.mag_field_mga
     # Поле в мире: North = +X. Поворот корпуса по курсу psi (вокруг Z).
     cz, sz = math.cos(psi_rad), math.sin(psi_rad)
     rz_t = np.array([[cz, sz, 0.0], [-sz, cz, 0.0], [0.0, 0.0, 1.0]])
     world = np.array([f, 0.0, 0.0])
-    meas = _mount_rot(p).T @ (rz_t @ world)
+    level_body = rz_t @ world
+    body = _road_rot(road_attitude_rad).T @ level_body
+    meas = _mount_rot(p).T @ body
     return float(meas[0]), float(meas[1]), float(meas[2])
 
 
@@ -199,11 +209,13 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
         excitation.accel_g if excitation else None,
         excitation.attitude_rad if excitation else None)
     gx, gy, gz = synth_gyro(
-        out.yaw_rate, p, excitation.gyro_dps if excitation else None)
+        out.yaw_rate, p, excitation.gyro_dps if excitation else None,
+        excitation.attitude_rad if excitation else None)
     f = SensorFrame(dt_ms=dt_ms, ax=ax, ay=ay, az=az, gx=gx, gy=gy, gz=gz)
     if with_mag:
         f.mag_present = True
-        f.mx, f.my, f.mz = synth_mag(psi_rad, p)
+        f.mx, f.my, f.mz = synth_mag(
+            psi_rad, p, excitation.attitude_rad if excitation else None)
     if rc_throttle is not None or rc_steering is not None:
         f.rc_present = True
         f.rc_throttle = rc_throttle or 0.0

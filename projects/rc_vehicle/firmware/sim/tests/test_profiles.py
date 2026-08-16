@@ -242,6 +242,20 @@ def test_partial_profile_fills_defaults(tmp_path):
     params = load_profile(_write(tmp_path, _valid(params={"mass": 5.0})))
     assert params.mass == 5.0
     assert params.max_accel == SimParams().max_accel
+    # Schema-1 partial profiles predate LOS-287 and historically meant clean
+    # sensors; new nonzero defaults must not silently change their replay.
+    assert params.road_ax_sigma_0_g == 0.0
+    assert params.road_pitch_rate_sigma_per_ms == 0.0
+
+
+def test_partial_profile_keeps_explicit_road_noise(tmp_path):
+    params = load_profile(_write(tmp_path, _valid(params={
+        "road_ax_sigma_0_g": 0.12,
+        "road_ax_sigma_per_ms": 0.07,
+    })))
+    assert params.road_ax_sigma_0_g == 0.12
+    assert params.road_ax_sigma_per_ms == 0.07
+    assert params.road_ay_sigma_0_g == 0.0
 
 
 def test_round_trip_preserves_metadata(tmp_path):

@@ -53,6 +53,24 @@ def test_mag_magnitude_preserved_and_heading_varies():
     assert not math.isclose(m0[0], m90[0], abs_tol=1.0)  # курс меняет проекцию
 
 
+def test_road_attitude_is_consistent_across_accel_gyro_and_mag():
+    p = SimParams()
+    attitude = (math.radians(8.0), math.radians(12.0))
+    accel = synth_accel(0.0, 0.0, p, road_attitude_rad=attitude)
+    gyro = synth_gyro(math.radians(90.0), p,
+                      road_attitude_rad=attitude)
+    mag = synth_mag(0.0, p, road_attitude_rad=attitude)
+
+    # Одна attitude наклоняет gravity/world-Z, yaw axis и magnetic world-X;
+    # ортогональная ротация сохраняет длины всех трёх векторов.
+    assert not math.isclose(accel[0], 0.0, abs_tol=1e-3)
+    assert not math.isclose(gyro[0], 0.0, abs_tol=1e-3)
+    assert not math.isclose(mag[2], 0.0, abs_tol=1e-3)
+    assert np.linalg.norm(accel) == pytest.approx(1.0)
+    assert np.linalg.norm(gyro) == pytest.approx(90.0)
+    assert np.linalg.norm(mag) == pytest.approx(p.mag_field_mga)
+
+
 def test_make_frame_csv_has_17_fields():
     out = StepOutput(long_accel=1.0, lat_accel=0.2, yaw_rate=0.1, speed=2.0,
                      delta_rad=0.05)
