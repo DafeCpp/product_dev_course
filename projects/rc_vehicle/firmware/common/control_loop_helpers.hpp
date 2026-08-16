@@ -149,17 +149,25 @@ inline SensorSnapshot BuildSensorSnapshot(
 // BuildAutoDriveInput
 // ═════════════════════════════════════════════════════════════════════════
 
-/** Построить входные данные для авто-процедур из снимка датчиков. */
+/**
+ * Построить входные данные для авто-процедур из снимка датчиков.
+ *
+ * @param forward_accel_g Продольное линейное ускорение после компенсации
+ *                        гравитации в VehicleStateEstimator. Не вычислять
+ *                        повторно через ImuCalibration::GetForwardAccel():
+ *                        тот снимает только статический RestDownVec и при
+ *                        изменении тангажа принимает гравитацию за ускорение.
+ */
 inline AutoDriveInput BuildAutoDriveInput(const SensorSnapshot& sensors,
-                                          const ImuCalibration& imu_calib,
-                                          uint32_t dt_ms, uint32_t now_ms = 0) {
+                                          float forward_accel_g, uint32_t dt_ms,
+                                          uint32_t now_ms = 0) {
   AutoDriveInput ad;
   ad.rc_active = sensors.rc_active;
   ad.imu_enabled = sensors.imu_enabled;
   ad.dt_sec = static_cast<float>(dt_ms) * 0.001f;
   ad.ts_ms = now_ms;
   if (sensors.imu_enabled) {
-    ad.fwd_accel = imu_calib.GetForwardAccel(sensors.imu_data);
+    ad.fwd_accel = forward_accel_g;
     ad.accel_mag = std::sqrt(sensors.imu_data.ax * sensors.imu_data.ax +
                              sensors.imu_data.ay * sensors.imu_data.ay +
                              sensors.imu_data.az * sensors.imu_data.az);

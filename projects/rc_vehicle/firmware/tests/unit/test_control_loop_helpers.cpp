@@ -7,6 +7,7 @@
 #include "control_loop_helpers.hpp"
 #include "imu_calibration.hpp"
 #include "mock_platform.hpp"
+#include "motion_driver.hpp"
 #include "stabilization_manager.hpp"
 
 using namespace rc_vehicle;
@@ -212,9 +213,7 @@ TEST(BuildAutoDriveInputTest, ImuDisabled_ZeroAccel) {
   SensorSnapshot s;
   s.imu_enabled = false;
   s.rc_active = true;
-  ImuCalibration calib;
-
-  auto ad = BuildAutoDriveInput(s, calib, 2);
+  auto ad = BuildAutoDriveInput(s, 0.25f, 2);
   EXPECT_TRUE(ad.rc_active);
   EXPECT_FALSE(ad.imu_enabled);
   EXPECT_FLOAT_EQ(ad.fwd_accel, 0.0f);
@@ -229,10 +228,9 @@ TEST(BuildAutoDriveInputTest, ImuEnabled_AccelMagComputed) {
   s.imu_data.ay = 0.0f;
   s.imu_data.az = 1.0f;
   s.filtered_gz = 5.0f;
-  ImuCalibration calib;
-
-  auto ad = BuildAutoDriveInput(s, calib, 4);
+  auto ad = BuildAutoDriveInput(s, 0.125f, 4);
   EXPECT_TRUE(ad.imu_enabled);
+  EXPECT_FLOAT_EQ(ad.fwd_accel, 0.125f);
   EXPECT_NEAR(ad.accel_mag, 1.0f, 1e-5f);
   EXPECT_FLOAT_EQ(ad.gyro_z, 5.0f);
   EXPECT_FLOAT_EQ(ad.cal_ax, 0.0f);
@@ -246,10 +244,72 @@ TEST(BuildAutoDriveInputTest, AccelMagDiagonal) {
   s.imu_data.ax = 1.0f;
   s.imu_data.ay = 1.0f;
   s.imu_data.az = 1.0f;
-  ImuCalibration calib;
-
-  auto ad = BuildAutoDriveInput(s, calib, 2);
+  auto ad = BuildAutoDriveInput(s, 0.0f, 2);
   EXPECT_NEAR(ad.accel_mag, std::sqrt(3.0f), 1e-5f);
+}
+
+TEST_F(ForwardAccelTest, PitchChangeWithoutAccelerationKeepsBreakawayRamp) {
+  MotionDriver driver;
+  driver.Start(MotionDriver::Config{});
+
+  SensorSnapshot sensors;
+  sensors.imu_enabled = true;
+  sensors.imu_data.az = 1.0f;
+
+  // Settle замеряется на горизонтали, как перед началом авто-процедуры.
+  for (int i = 0; i < 50; ++i) {
+    const auto input = BuildAutoDriveInput(
+        sensors, Compute(sensors.imu_data, 0.0f, /*tilt_valid=*/true), 2);
+    driver.Update(input.fwd_accel, input.accel_mag, input.gyro_z, input.dt_sec);
+  }
+  ASSERT_EQ(driver.GetPhase(), MotionPhase::Accelerate);
+  EXPECT_NEAR(driver.GetAccelBaseline(), 0.0f, 1e-5f);
+
+  // Уже после baseline кузов меняет тангаж на 5 градусов. Старый путь через
+  // GetForwardAccel() видит здесь sin(5 deg)=0.087g > 0.03g и после 25 тиков
+  // ложно подтверждает breakaway. Компенсированный сигнал остаётся нулевым,
+  // поэтому open-loop ramp должен продолжить линейный рост до 0.1 throttle.
+  constexpr float kPitch = -5.f * 3.14159265358979f / 180.f;
+  sensors.imu_data = AtRestWithPitch(kPitch);
+  ASSERT_GT(calib.GetForwardAccel(sensors.imu_data), 0.03f);
+
+  float throttle = 0.0f;
+  for (int i = 0; i < 100; ++i) {
+    const auto input = BuildAutoDriveInput(
+        sensors, Compute(sensors.imu_data, kPitch, /*tilt_valid=*/true), 2);
+    throttle = driver.Update(input.fwd_accel, input.accel_mag, input.gyro_z,
+                             input.dt_sec);
+  }
+  EXPECT_NEAR(throttle, 0.1f, 1e-4f)
+      << "изменение тангажа было принято за отрыв";
+}
+
+TEST_F(ForwardAccelTest, RealAccelerationOnSlopeStillTriggersBreakaway) {
+  MotionDriver driver;
+  driver.Start(MotionDriver::Config{});
+
+  SensorSnapshot sensors;
+  sensors.imu_enabled = true;
+  sensors.imu_data.az = 1.0f;
+  for (int i = 0; i < 50; ++i) {
+    const auto input = BuildAutoDriveInput(
+        sensors, Compute(sensors.imu_data, 0.0f, /*tilt_valid=*/true), 2);
+    driver.Update(input.fwd_accel, input.accel_mag, input.gyro_z, input.dt_sec);
+  }
+
+  constexpr float kPitch = -5.f * 3.14159265358979f / 180.f;
+  sensors.imu_data = AtRestWithPitch(kPitch);
+  sensors.imu_data.ax += 0.1f;
+
+  float throttle = 0.0f;
+  for (int i = 0; i < 100; ++i) {
+    const auto input = BuildAutoDriveInput(
+        sensors, Compute(sensors.imu_data, kPitch, /*tilt_valid=*/true), 2);
+    ASSERT_NEAR(input.fwd_accel, 0.1f, 1e-4f);
+    throttle = driver.Update(input.fwd_accel, input.accel_mag, input.gyro_z,
+                             input.dt_sec);
+  }
+  EXPECT_LT(throttle, 0.04f) << "реальное ускорение 0.1g не подтвердило отрыв";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
