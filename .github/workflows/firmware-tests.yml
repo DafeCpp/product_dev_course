@@ -22,6 +22,28 @@ permissions:
   contents: read
 
 jobs:
+  firmware-web-tests:
+    name: Web UI (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/rc_vehicle/firmware/esp32_common/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: projects/rc_vehicle/firmware/esp32_common/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run web UI tests
+        run: npm test
+
   firmware-tests:
     name: GTest (host)
     runs-on: ubuntu-latest

@@ -2,6 +2,328 @@
 // RC Vehicle — Web UI
 // ═══════════════════════════════════════════════════════════════════
 
+// Binary telemetry-log parsing is kept in this file because app.js is embedded
+// as one firmware resource.  The named exports are side-effect free so Vitest
+// can verify the wire format without booting the browser UI (LOS-228).
+
+// TelemetryEventType names (must match telemetry_event_log.hpp)
+export const EVENT_TYPE_NAMES = Object.freeze({
+    1:  'ImuCalibStart',     2:  'ImuCalibDone',      3:  'ImuCalibFailed',
+    4:  'TrimCalibStart',    5:  'TrimCalibDone',      6:  'TrimCalibFailed',
+    7:  'ComCalibStart',     8:  'ComCalibDone',       9:  'ComCalibFailed',
+    10: 'SpeedCalibStart',   11: 'SpeedCalibDone',     12: 'SpeedCalibFailed',
+    13: 'TestStart',         14: 'TestDone',           15: 'TestFailed',
+    16: 'TestStopped',
+    17: 'MagCalibStart',     18: 'MagCalibDone',       19: 'MagCalibFailed',
+    20: 'MagCalibCancelled',
+});
+
+const FIELD_OFFSETS = Object.freeze([
+    { name: 'ts_ms',                    off: 0,   type: 'u32' },
+    { name: 'ax',                       off: 4,   type: 'f32' },
+    { name: 'ay',                       off: 8,   type: 'f32' },
+    { name: 'az',                       off: 12,  type: 'f32' },
+    { name: 'gx',                       off: 16,  type: 'f32' },
+    { name: 'gy',                       off: 20,  type: 'f32' },
+    { name: 'gz',                       off: 24,  type: 'f32' },
+    { name: 'vx',                       off: 28,  type: 'f32' },
+    { name: 'vy',                       off: 32,  type: 'f32' },
+    { name: 'slip_deg',                 off: 36,  type: 'f32' },
+    { name: 'speed_ms',                 off: 40,  type: 'f32' },
+    { name: 'throttle',                 off: 44,  type: 'f32' },
+    { name: 'steering',                 off: 48,  type: 'f32' },
+    { name: 'pitch_deg',                 off: 52,  type: 'f32' },
+    { name: 'roll_deg',                  off: 56,  type: 'f32' },
+    { name: 'yaw_deg',                   off: 60,  type: 'f32' },
+    { name: 'yaw_rate_dps',              off: 64,  type: 'f32' },
+    { name: 'oversteer_active',          off: 68,  type: 'f32' },
+    { name: 'rc_throttle',               off: 72,  type: 'f32' },
+    { name: 'rc_steering',               off: 76,  type: 'f32' },
+    { name: 'cmd_throttle',              off: 80,  type: 'f32' },
+    { name: 'cmd_steering',              off: 84,  type: 'f32' },
+    { name: 'ekf_vx_var',                off: 88,  type: 'f32' },
+    { name: 'ekf_vy_var',                off: 92,  type: 'f32' },
+    { name: 'ekf_r_var',                 off: 96,  type: 'f32' },
+    { name: 'ekf_yaw_deg',               off: 100, type: 'f32' },
+    { name: 'mx',                        off: 104, type: 'f32' },
+    { name: 'my',                        off: 108, type: 'f32' },
+    { name: 'mz',                        off: 112, type: 'f32' },
+    { name: 'heading_deg',               off: 116, type: 'f32' },
+    { name: 'heading_rel_deg',           off: 120, type: 'f32' },
+    { name: 'test_marker',               off: 124, type: 'u8'  },
+    { name: 'zupt_status',               off: 125, type: 'u8'  },
+    { name: 'ekf_diverged',              off: 126, type: 'u8'  },
+    { name: 'drive_mode',                off: 127, type: 'u8'  },
+    { name: 'stab_enabled',              off: 128, type: 'u8'  },
+    { name: 'kids_anti_spin_active',     off: 129, type: 'u8', bit: 0 },
+    { name: 'kids_accel_limit_active',   off: 129, type: 'u8', bit: 1 },
+    { name: 'kids_speed_limit_active',   off: 129, type: 'u8', bit: 2 },
+    { name: 'kids_limiters_enabled',     off: 129, type: 'u8', bit: 3 },
+    { name: 'mag_rejected',              off: 130, type: 'u8', bit: 0 },
+    { name: 'mag_gate_active',           off: 130, type: 'u8', bit: 1 },
+]);
+
+const MAX_FIELD_END = FIELD_OFFSETS.reduce((maxEnd, field) => {
+    const size = (field.type === 'u32' || field.type === 'f32') ? 4 : 1;
+    return Math.max(maxEnd, field.off + size);
+}, 0);
+
+export class LogParseError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'LogParseError';
+    }
+}
+
+export function eventParamDesc(typeId, param) {
+    if (typeId >= 13 && typeId <= 16) {
+        return ['', 'Straight', 'Circle', 'Step'][param] || String(param);
+    }
+    if (typeId === 1) {
+        return ['gyro_only', 'full', 'auto_forward'][param] || String(param);
+    }
+    if (typeId === 2 || typeId === 3) {
+        return param ? 'stage' + param : '';
+    }
+    return param ? String(param) : '';
+}
+
+function parseConfigSnapshot(view, base, size) {
+    if (size < 8) return null;
+    const schemaVersion = view.getUint16(base + 4, true);
+    const valueCount = view.getUint16(base + 6, true);
+    if (schemaVersion !== 2 || valueCount !== 64 || size < 8 + valueCount * 4) {
+        return null;
+    }
+    const values = Array.from(
+        {length: valueCount},
+        (_, index) => view.getFloat32(base + 8 + index * 4, true));
+    const booleanAt = index => values[index] !== 0;
+    const pidAt = index => ({
+        kp: values[index], ki: values[index + 1], kd: values[index + 2],
+        max_integral: values[index + 3], max_correction: values[index + 4],
+    });
+    return {enabled: booleanAt(0), mode: values[1], fade_ms: values[2],
+        filter: {madgwick_beta: values[3], lpf_cutoff_hz: values[4], imu_sample_rate_hz: values[5], madgwick_enabled: booleanAt(6), ekf_enabled: booleanAt(7), adaptive_beta_enabled: booleanAt(8), adaptive_accel_threshold_g: values[9], motor_model_enabled: booleanAt(10), motor_speed_gain: values[11], motor_deadzone: values[12], speed_meas_noise: values[13], nhc_enabled: booleanAt(14), nhc_noise: values[15], tilt_comp_enabled: booleanAt(16), tilt_corr_gain_hz: values[17], tilt_accel_gate_band_g: values[18]},
+        yaw_rate: {pid: pidAt(19), steer_to_yaw_rate_dps: values[24]}, slip_angle: {pid: pidAt(25), target_deg: values[30]},
+        adaptive: {enabled: booleanAt(31), speed_ref_ms: values[32], scale_min: values[33], scale_max: values[34]},
+        oversteer: {warn_enabled: booleanAt(35), slip_thresh_deg: values[36], rate_thresh_deg_s: values[37], throttle_reduction: values[38]},
+        pitch_comp: {enabled: booleanAt(39), gain: values[40], max_correction: values[41]},
+        kids_mode: {limiters_enabled: booleanAt(63), throttle_limit: values[42], reverse_limit: values[43], steering_limit: values[44], slew_throttle: values[45], slew_steering: values[46], anti_spin_enabled: booleanAt(47), anti_spin_threshold_deg: values[48], anti_spin_reduction: values[49], accel_limit_enabled: booleanAt(50), accel_threshold_g: values[51], accel_limit_gain: values[52], accel_max_reduction: values[53], speed_limit_enabled: booleanAt(54), max_speed_ms: values[55], speed_limit_gain: values[56]},
+        slew_throttle: values[57], slew_steering: values[58], steering_trim: values[59], throttle_trim: values[60], braking_mode: values[61], brake_slew_multiplier: values[62]};
+}
+
+function csvCell(value) {
+    const cell = String(value ?? '');
+    return /[",\n\r]/.test(cell) ? '"' + cell.replace(/"/g, '""') + '"' : cell;
+}
+
+function mergeFrameEvent(existing, added) {
+    if (!existing) return added;
+    return {
+        name: existing.name + '|' + added.name,
+        desc: existing.desc + '|' + added.desc,
+        v1: existing.v1 + '|' + added.v1,
+        v2: existing.v2 + '|' + added.v2,
+        configs: (existing.configs || []).concat(added.configs || []),
+    };
+}
+
+function timestampDelta(lhs, rhs) {
+    return (lhs - rhs) | 0;
+}
+
+function timestampInFrameWindow(ts, firstTs, lastTs, leadMs, tailMs) {
+    const forwardFromFirst = (ts - firstTs) >>> 0;
+    const backwardFromFirst = (firstTs - ts) >>> 0;
+    const frameSpan = (lastTs - firstTs) >>> 0;
+    return backwardFromFirst <= leadMs || forwardFromFirst <= frameSpan + tailMs;
+}
+
+export function assignEventsToFrames(events, frameTs) {
+    const byFrame = new Map();
+    if (frameTs.length === 0 || events.length === 0) return byFrame;
+
+    const gaps = [];
+    for (let index = 1; index < frameTs.length; index++) {
+        gaps.push((frameTs[index] - frameTs[index - 1]) >>> 0);
+    }
+    gaps.sort((left, right) => left - right);
+    const medianGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 10;
+    const leadTolerance = 3 * medianGap;
+    const tailTolerance = 3 * medianGap;
+    const firstFrameTs = frameTs[0];
+    const lastFrameTs = frameTs[frameTs.length - 1];
+
+    const sorted = events
+        .filter(event => timestampInFrameWindow(
+            event.ts, firstFrameTs, lastFrameTs, leadTolerance, tailTolerance))
+        .sort((left, right) => timestampDelta(left.ts, right.ts));
+    let frameIndex = 0;
+
+    for (const event of sorted) {
+        while (frameIndex < frameTs.length - 1 &&
+               timestampDelta(frameTs[frameIndex], event.ts) < 0) {
+            frameIndex++;
+        }
+        const target = timestampDelta(frameTs[frameIndex], event.ts) < 0
+            ? frameTs.length - 1 : frameIndex;
+        byFrame.set(target, mergeFrameEvent(byFrame.get(target), {
+            name: event.name, desc: event.desc, v1: event.v1, v2: event.v2,
+            configs: event.configs || [],
+        }));
+    }
+    return byFrame;
+}
+
+function sectionEnd(bufferLength, dataStart, count, itemSize, sectionName) {
+    if (count > 0 && itemSize === 0) {
+        throw new LogParseError(`Повреждённый лог: нулевой размер ${sectionName}`);
+    }
+    const available = bufferLength - dataStart;
+    if (available < 0 || count > Math.floor(available / Math.max(itemSize, 1))) {
+        throw new LogParseError(`Повреждённый лог: усечена секция ${sectionName}`);
+    }
+    return dataStart + count * itemSize;
+}
+
+function requireSectionHeader(bufferLength, offset, sectionName) {
+    if (bufferLength - offset < 8) {
+        throw new LogParseError(`Повреждённый лог: усечён заголовок ${sectionName}`);
+    }
+}
+
+/**
+ * Parse the binary /api/log.bin payload into its downloadable CSV form.
+ * Optional event and config-snapshot sections may be absent, but any declared
+ * section must be complete; partial CSV output would silently corrupt analysis.
+ */
+export function parseBinaryLog(buffer) {
+    if (!(buffer instanceof ArrayBuffer)) {
+        throw new TypeError('parseBinaryLog expects an ArrayBuffer');
+    }
+    if (buffer.byteLength < 8) throw new LogParseError('Нет данных');
+
+    const view = new DataView(buffer);
+    const frameCount = view.getUint32(0, true);
+    const frameSize = view.getUint32(4, true);
+    if (frameCount === 0) throw new LogParseError('Нет данных телеметрии');
+    if (frameSize < MAX_FIELD_END) {
+        throw new LogParseError('Неподдерживаемый размер кадра: ' + frameSize);
+    }
+    const framesEnd = sectionEnd(buffer.byteLength, 8, frameCount, frameSize, 'кадров');
+
+    const events = [];
+    const snapshots = [];
+    const warnings = [];
+    let cursor = framesEnd;
+
+    if (cursor < buffer.byteLength) {
+        requireSectionHeader(buffer.byteLength, cursor, 'событий');
+        const eventCount = view.getUint32(cursor, true);
+        const eventSize = view.getUint32(cursor + 4, true);
+        if (eventSize < 8) {
+            throw new LogParseError('Повреждённый лог: размер события меньше 8 байт');
+        }
+        const eventsStart = cursor + 8;
+        cursor = sectionEnd(buffer.byteLength, eventsStart, eventCount, eventSize, 'событий');
+        for (let index = 0; index < eventCount; index++) {
+            const base = eventsStart + index * eventSize;
+            const ts = view.getUint32(base, true);
+            const typeId = view.getUint8(base + 4);
+            const param = view.getUint8(base + 5);
+            const value1 = eventSize >= 16 ? view.getFloat32(base + 8, true) : NaN;
+            const value2 = eventSize >= 16 ? view.getFloat32(base + 12, true) : NaN;
+            events.push({
+                ts,
+                name: EVENT_TYPE_NAMES[typeId] || 'Unknown_' + typeId,
+                desc: eventParamDesc(typeId, param),
+                v1: Number.isNaN(value1) || value1 === 0 ? '' : value1.toFixed(4),
+                v2: Number.isNaN(value2) || value2 === 0 ? '' : value2.toFixed(4),
+            });
+        }
+    }
+
+    if (cursor < buffer.byteLength) {
+        requireSectionHeader(buffer.byteLength, cursor, 'снапшотов конфигурации');
+        const snapshotCount = view.getUint32(cursor, true);
+        const snapshotSize = view.getUint32(cursor + 4, true);
+        if (snapshotSize < 8) {
+            throw new LogParseError('Повреждённый лог: размер снапшота меньше 8 байт');
+        }
+        const snapshotsStart = cursor + 8;
+        cursor = sectionEnd(buffer.byteLength, snapshotsStart, snapshotCount,
+                            snapshotSize, 'снапшотов конфигурации');
+        for (let index = 0; index < snapshotCount; index++) {
+            const base = snapshotsStart + index * snapshotSize;
+            const config = parseConfigSnapshot(view, base, snapshotSize);
+            if (!config) {
+                warnings.push(`Пропущен неподдерживаемый снапшот конфигурации ${index}`);
+                continue;
+            }
+            const schemaVersion = view.getUint16(base + 4, true);
+            const valueCount = view.getUint16(base + 6, true);
+            const frameIndexOffset = 8 + valueCount * 4;
+            snapshots.push({
+                ts: view.getUint32(base, true),
+                frameIndex: snapshotSize >= frameIndexOffset + 4
+                    ? view.getUint32(base + frameIndexOffset, true) : null,
+                name: 'StabilizationConfigSnapshot',
+                desc: 'schema' + schemaVersion,
+                v1: '', v2: '', configs: [config],
+            });
+        }
+    }
+
+    if (cursor !== buffer.byteLength) {
+        throw new LogParseError('Повреждённый лог: неожиданные данные в конце файла');
+    }
+
+    const frames = [];
+    for (let index = 0; index < frameCount; index++) {
+        const base = 8 + index * frameSize;
+        frames.push(FIELD_OFFSETS.map(field => {
+            const offset = base + field.off;
+            if (field.type === 'u32') return view.getUint32(offset, true);
+            if (field.type === 'u8') {
+                const byte = view.getUint8(offset);
+                return field.bit === undefined ? byte : (byte >> field.bit) & 1;
+            }
+            return view.getFloat32(offset, true);
+        }));
+    }
+
+    const baseline = snapshots.length ? snapshots[0] : null;
+    const indexedSnapshots = snapshots.slice(1)
+        .filter(snapshot => snapshot.frameIndex !== null);
+    events.push(...snapshots.slice(1)
+        .filter(snapshot => snapshot.frameIndex === null));
+
+    const eventByFrame = assignEventsToFrames(events, frames.map(values => values[0]));
+    if (baseline) eventByFrame.set(0, mergeFrameEvent(eventByFrame.get(0), baseline));
+    for (const snapshot of indexedSnapshots) {
+        if (snapshot.frameIndex >= frames.length) continue;
+        eventByFrame.set(snapshot.frameIndex,
+            mergeFrameEvent(eventByFrame.get(snapshot.frameIndex), snapshot));
+    }
+
+    const header = FIELD_OFFSETS.map(field => field.name).join(',') +
+        ',event_type,event_param,event_value1,event_value2,event_config';
+    const lines = frames.map((values, index) => {
+        const event = eventByFrame.get(index);
+        return values.concat([
+            event ? event.name : '', event ? event.desc : '',
+            event ? event.v1 : '', event ? event.v2 : '',
+            event && event.configs.length ? JSON.stringify(event.configs) : '',
+        ]).map(csvCell).join(',');
+    });
+    return {csv: header + '\n' + lines.join('\n'), warnings};
+}
+
+// Browser UI is intentionally isolated from the pure exports above. Importing
+// this module in Node must not create timers, touch the DOM, or open WebSockets.
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+
 // ── WebSocket ──
 let ws = null;
 let wsReconnectTimer = null;
@@ -1297,166 +1619,6 @@ function exportLogCsv(frames) {
 //   Section 2: [4B event_count][4B event_size][event_count × event_size bytes]
 // ─────────────────────────────────────────────────────────────
 
-// TelemetryEventType names (must match telemetry_event_log.hpp)
-const EVENT_TYPE_NAMES = {
-    1:  'ImuCalibStart',     2:  'ImuCalibDone',      3:  'ImuCalibFailed',
-    4:  'TrimCalibStart',    5:  'TrimCalibDone',      6:  'TrimCalibFailed',
-    7:  'ComCalibStart',     8:  'ComCalibDone',       9:  'ComCalibFailed',
-    10: 'SpeedCalibStart',   11: 'SpeedCalibDone',     12: 'SpeedCalibFailed',
-    13: 'TestStart',         14: 'TestDone',           15: 'TestFailed',
-    16: 'TestStopped',
-    17: 'MagCalibStart',     18: 'MagCalibDone',       19: 'MagCalibFailed',
-    20: 'MagCalibCancelled',
-};
-
-function eventParamDesc(typeId, param) {
-    // Test events: param = TestType
-    if (typeId >= 13 && typeId <= 16) {
-        return ['', 'Straight', 'Circle', 'Step'][param] || String(param);
-    }
-    // ImuCalibStart: param = mode
-    if (typeId === 1) {
-        return ['gyro_only', 'full', 'auto_forward'][param] || String(param);
-    }
-    // ImuCalibDone/Failed: param = stage number
-    if (typeId === 2 || typeId === 3) {
-        return param ? 'stage' + param : '';
-    }
-    return param ? String(param) : '';
-}
-
-function parseConfigSnapshot(view, base, size) {
-    const n = view.getUint16(base + 6, true);
-    if (view.getUint16(base + 4, true) !== 2 || n !== 64 || size < 8 + n * 4) return null;
-    const v = Array.from({length: n}, (_, i) => view.getFloat32(base + 8 + i * 4, true));
-    const b = i => v[i] !== 0;
-    const pid = i => ({kp: v[i], ki: v[i + 1], kd: v[i + 2], max_integral: v[i + 3], max_correction: v[i + 4]});
-    return {enabled: b(0), mode: v[1], fade_ms: v[2],
-        filter: {madgwick_beta: v[3], lpf_cutoff_hz: v[4], imu_sample_rate_hz: v[5], madgwick_enabled: b(6), ekf_enabled: b(7), adaptive_beta_enabled: b(8), adaptive_accel_threshold_g: v[9], motor_model_enabled: b(10), motor_speed_gain: v[11], motor_deadzone: v[12], speed_meas_noise: v[13], nhc_enabled: b(14), nhc_noise: v[15], tilt_comp_enabled: b(16), tilt_corr_gain_hz: v[17], tilt_accel_gate_band_g: v[18]},
-        yaw_rate: {pid: pid(19), steer_to_yaw_rate_dps: v[24]}, slip_angle: {pid: pid(25), target_deg: v[30]},
-        adaptive: {enabled: b(31), speed_ref_ms: v[32], scale_min: v[33], scale_max: v[34]},
-        oversteer: {warn_enabled: b(35), slip_thresh_deg: v[36], rate_thresh_deg_s: v[37], throttle_reduction: v[38]},
-        pitch_comp: {enabled: b(39), gain: v[40], max_correction: v[41]},
-        kids_mode: {limiters_enabled: b(63), throttle_limit: v[42], reverse_limit: v[43], steering_limit: v[44], slew_throttle: v[45], slew_steering: v[46], anti_spin_enabled: b(47), anti_spin_threshold_deg: v[48], anti_spin_reduction: v[49], accel_limit_enabled: b(50), accel_threshold_g: v[51], accel_limit_gain: v[52], accel_max_reduction: v[53], speed_limit_enabled: b(54), max_speed_ms: v[55], speed_limit_gain: v[56]},
-        slew_throttle: v[57], slew_steering: v[58], steering_trim: v[59], throttle_trim: v[60], braking_mode: v[61], brake_slew_multiplier: v[62]};
-}
-
-function csvCell(value) {
-    const text = String(value ?? '');
-    return /[",\n\r]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
-}
-
-function mergeFrameEvent(existing, added) {
-    if (!existing) return added;
-    return {
-        name: existing.name + '|' + added.name,
-        desc: existing.desc + '|' + added.desc,
-        v1: existing.v1 + '|' + added.v1,
-        v2: existing.v2 + '|' + added.v2,
-        configs: (existing.configs || []).concat(added.configs || []),
-    };
-}
-
-// Timestamp values are uint32_t milliseconds. All compared points belong to
-// one retained telemetry window (far shorter than 2^31 ms), so the signed
-// delta preserves their chronological ordering across uint32 rollover.
-function timestampDelta(lhs, rhs) {
-    return (lhs - rhs) | 0;
-}
-
-function timestampAtOrBefore(lhs, rhs) {
-    return timestampDelta(lhs, rhs) <= 0;
-}
-
-// Unlike config snapshots, sparse events are not guaranteed to share a
-// signed-delta horizon with the frame ring. Keep only timestamps that fit the
-// concrete retained frame window, including its small lead/tail allowances.
-function timestampInFrameWindow(ts, firstTs, lastTs, leadMs, tailMs) {
-    const forwardFromFirst = (ts - firstTs) >>> 0;
-    const backwardFromFirst = (firstTs - ts) >>> 0;
-    const frameSpan = (lastTs - firstTs) >>> 0;
-    return backwardFromFirst <= leadMs ||
-           forwardFromFirst <= frameSpan + tailMs;
-}
-
-/**
- * Разложить события по кадрам телеметрии.
- *
- * Кадр пишется раз в kLogIntervalMs (10 мс), а события ставят метку времени
- * тика (2 мс), поэтому точное совпадение меток случается примерно в одном
- * случае из пяти — раньше остальные события просто терялись при экспорте
- * (LOS-226). Каждому кадру достаются события из интервала
- * (метка предыдущего кадра, метка текущего].
- *
- * События сильно старше первого кадра отбрасываются: кольца кадров и
- * событий переполняются независимо, поэтому в буфере легко оказываются
- * события прошлых прогонов. Прижимать их к нулевому кадру нельзя: свежий
- * CSV начинался бы с чужого TestStart. Небольшой зазор перед первым кадром
- * при этом сохраняется — сразу после «Очистить лог» событие старта успевает
- * записаться раньше первого кадра, и оно законное.
- *
- * События позже последнего кадра прижимаются к нему: кадры пишутся
- * непрерывно, так что отставание тут в пределах одного интервала.
- *
- * @param {Array<{ts:number,name:string,desc:string,v1:string,v2:string}>} events
- * @param {Array<number>} frameTs метки кадров, по возрастанию
- * @returns {Map<number, {name:string,desc:string,v1:string,v2:string}>}
- *          индекс кадра → склеенное событие ('|' между несколькими)
- */
-function assignEventsToFrames(events, frameTs) {
-    const byFrame = new Map();
-    if (frameTs.length === 0 || events.length === 0) return byFrame;
-
-    // Допуск на события, легшие чуть раньше первого кадра. Такое законно
-    // сразу после «Очистить лог»: событие старта может успеть записаться
-    // до того, как будет записан первый кадр (кадры пишутся раз в
-    // kLogIntervalMs). Берём не константу, а несколько реальных шагов
-    // сетки — чтобы допуск сам подстроился, если интервал логирования
-    // изменится. Всё, что старше, — из прошлых прогонов (кольца кадров и
-    // событий переполняются независимо).
-    const gaps = [];
-    for (let i = 1; i < frameTs.length; i++) {
-        gaps.push((frameTs[i] - frameTs[i - 1]) >>> 0);
-    }
-    gaps.sort((a, b) => a - b);
-    const medianGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 10;
-    const leadTolerance = 3 * medianGap;
-    const tailTolerance = 3 * medianGap;
-    const firstFrameTs = frameTs[0];
-    const lastFrameTs = frameTs[frameTs.length - 1];
-
-    const sorted = events
-        .filter(ev => timestampInFrameWindow(
-            ev.ts, firstFrameTs, lastFrameTs, leadTolerance, tailTolerance))
-        .sort((a, b) => timestampDelta(a.ts, b.ts));
-    let frameIdx = 0;
-
-    for (const ev of sorted) {
-        // Первый кадр с меткой >= метки события; иначе — последний кадр
-        while (frameIdx < frameTs.length - 1 &&
-               timestampDelta(frameTs[frameIdx], ev.ts) < 0) {
-            frameIdx++;
-        }
-        const target = timestampDelta(frameTs[frameIdx], ev.ts) < 0
-            ? frameTs.length - 1 : frameIdx;
-
-        const prev = byFrame.get(target);
-        if (prev) {
-            byFrame.set(target, {
-                name: prev.name + '|' + ev.name,
-                desc: prev.desc + '|' + ev.desc,
-                v1:   prev.v1   + '|' + ev.v1,
-                v2:   prev.v2   + '|' + ev.v2,
-                configs: (prev.configs || []).concat(ev.configs || []),
-            });
-        } else {
-            byFrame.set(target, { name: ev.name, desc: ev.desc,
-                                  v1: ev.v1, v2: ev.v2, configs: ev.configs || [] });
-        }
-    }
-    return byFrame;
-}
-
 function triggerDownload(content, filename, mime) {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -1484,181 +1646,13 @@ async function downloadBinaryLog() {
         const resp = await fetch('/api/log.bin', { cache: 'no-store' });
         if (!resp.ok) { alert('Ошибка: ' + resp.status); return; }
         const buf = await resp.arrayBuffer();
-        const view = new DataView(buf);
-        if (buf.byteLength < 8) { alert('Нет данных'); return; }
-
-        // ── Section 1: frames ──────────────────────────────────────────────
-        const frameCount = view.getUint32(0, true);
-        const frameSize  = view.getUint32(4, true);
-        const framesEnd  = 8 + frameCount * frameSize;
-
-        if (frameCount === 0) { alert('Нет данных телеметрии'); return; }
-
-        const FIELD_OFFSETS = [
-            { name: 'ts_ms',           off: 0,   type: 'u32' },
-            { name: 'ax',              off: 4,   type: 'f32' },
-            { name: 'ay',              off: 8,   type: 'f32' },
-            { name: 'az',              off: 12,  type: 'f32' },
-            { name: 'gx',              off: 16,  type: 'f32' },
-            { name: 'gy',              off: 20,  type: 'f32' },
-            { name: 'gz',              off: 24,  type: 'f32' },
-            { name: 'vx',              off: 28,  type: 'f32' },
-            { name: 'vy',              off: 32,  type: 'f32' },
-            { name: 'slip_deg',        off: 36,  type: 'f32' },
-            { name: 'speed_ms',        off: 40,  type: 'f32' },
-            { name: 'throttle',        off: 44,  type: 'f32' },
-            { name: 'steering',        off: 48,  type: 'f32' },
-            { name: 'pitch_deg',       off: 52,  type: 'f32' },
-            { name: 'roll_deg',        off: 56,  type: 'f32' },
-            { name: 'yaw_deg',         off: 60,  type: 'f32' },
-            { name: 'yaw_rate_dps',    off: 64,  type: 'f32' },
-            { name: 'oversteer_active',off: 68,  type: 'f32' },
-            { name: 'rc_throttle',     off: 72,  type: 'f32' },
-            { name: 'rc_steering',     off: 76,  type: 'f32' },
-            { name: 'cmd_throttle',    off: 80,  type: 'f32' },
-            { name: 'cmd_steering',    off: 84,  type: 'f32' },
-            { name: 'ekf_vx_var',      off: 88,  type: 'f32' },
-            { name: 'ekf_vy_var',      off: 92,  type: 'f32' },
-            { name: 'ekf_r_var',       off: 96,  type: 'f32' },
-            { name: 'ekf_yaw_deg',     off: 100, type: 'f32' },
-            { name: 'mx',             off: 104, type: 'f32' },
-            { name: 'my',             off: 108, type: 'f32' },
-            { name: 'mz',             off: 112, type: 'f32' },
-            { name: 'heading_deg',    off: 116, type: 'f32' },
-            { name: 'heading_rel_deg',off: 120, type: 'f32' },
-            { name: 'test_marker',    off: 124, type: 'u8'  },
-            { name: 'zupt_status',    off: 125, type: 'u8'  },
-            { name: 'ekf_diverged',   off: 126, type: 'u8'  },
-            { name: 'drive_mode',     off: 127, type: 'u8'  },
-            { name: 'stab_enabled',   off: 128, type: 'u8'  },
-            // Лимитеры Kids упакованы битами в один байт kids_flags (LOS-13),
-            // в CSV раскладываются обратно по отдельным колонкам.
-            { name: 'kids_anti_spin_active',   off: 129, type: 'u8', bit: 0 },
-            { name: 'kids_accel_limit_active', off: 129, type: 'u8', bit: 1 },
-            { name: 'kids_speed_limit_active', off: 129, type: 'u8', bit: 2 },
-            { name: 'kids_limiters_enabled',   off: 129, type: 'u8', bit: 3 },
-            { name: 'mag_rejected',            off: 130, type: 'u8', bit: 0 },
-            { name: 'mag_gate_active',         off: 130, type: 'u8', bit: 1 },
-        ];
-
-        const maxFieldEnd = FIELD_OFFSETS.reduce((maxEnd, f) => {
-            const size = (f.type === 'u32' || f.type === 'f32') ? 4 : 1;
-            return Math.max(maxEnd, f.off + size);
-        }, 0);
-        if (frameSize < maxFieldEnd) {
-            alert('Неподдерживаемый размер кадра: ' + frameSize);
-            return;
-        }
-        if (framesEnd > buf.byteLength) {
-            alert('Повреждённый лог: ожидалось ' + framesEnd + ' байт, получено ' + buf.byteLength);
-            return;
-        }
-
-        // ── Section 2: parse events ───────────────────────────────────────
-        // Метки событий (тик, 2 мс) почти никогда не совпадают с метками
-        // кадров (10 мс), поэтому раскладываем их по кадрам интервалом —
-        // см. assignEventsToFrames() (LOS-226).
-        const events = [];
-        const snapshots = [];
-        let eventCount = 0;
-        let eventSize = 0;
-        if (framesEnd + 8 <= buf.byteLength) {
-            eventCount = view.getUint32(framesEnd,     true);
-            eventSize  = view.getUint32(framesEnd + 4, true);
-            if (eventSize < 8) {
-                console.warn('Ignoring telemetry events with invalid size: ' + eventSize);
-            } else {
-                for (let i = 0; i < eventCount; i++) {
-                    const base = framesEnd + 8 + i * eventSize;
-                    if (base + eventSize > buf.byteLength) break;
-                    const ts     = view.getUint32(base,     true);
-                    const typeId = view.getUint8 (base + 4);
-                    const param  = view.getUint8 (base + 5);
-                    // value1/value2 at bytes 8-15 (present if eventSize >= 16)
-                    const value1 = eventSize >= 16 ? view.getFloat32(base + 8,  true) : NaN;
-                    const value2 = eventSize >= 16 ? view.getFloat32(base + 12, true) : NaN;
-                    const name   = EVENT_TYPE_NAMES[typeId] || 'Unknown_' + typeId;
-                    const desc   = eventParamDesc(typeId, param);
-                    const v1str  = isNaN(value1) || value1 === 0 ? '' : value1.toFixed(4);
-                    const v2str  = isNaN(value2) || value2 === 0 ? '' : value2.toFixed(4);
-                    events.push({ ts, name, desc, v1: v1str, v2: v2str });
-                }
-            }
-        }
-
-        const eventsEnd = framesEnd + 8 + eventCount * eventSize;
-        if (eventSize >= 8 && eventsEnd + 8 <= buf.byteLength) {
-            const count = view.getUint32(eventsEnd, true);
-            const size = view.getUint32(eventsEnd + 4, true);
-            for (let i = 0; i < count; i++) {
-                const base = eventsEnd + 8 + i * size;
-                if (base + size > buf.byteLength) break;
-                const config = parseConfigSnapshot(view, base, size);
-                // frame_index лежит сразу за values[], поэтому смещение
-                // выводим из value_count, а не зашиваем: рост схемы его
-                // сдвигает (v1: 260, v2: 264), и константа молча начинала бы
-                // читать последнее значение как индекс кадра (LOS-286).
-                const schemaVersion = view.getUint16(base + 4, true);
-                const frameIndexOffset = 8 + view.getUint16(base + 6, true) * 4;
-                if (config) snapshots.push({ts: view.getUint32(base, true),
-                    frameIndex: size >= frameIndexOffset + 4 ? view.getUint32(base + frameIndexOffset, true) : null,
-                    name: 'StabilizationConfigSnapshot', desc: 'schema' + schemaVersion,
-                    v1: '', v2: '', configs: [config]});
-            }
-        }
-
-        // ── Build single combined CSV ──────────────────────────────────────
-        const header = FIELD_OFFSETS.map(f => f.name).join(',') +
-                       ',event_type,event_param,event_value1,event_value2,event_config';
-        // Первый проход: разобрать кадры (события раскладываются по ним ниже,
-        // поэтому нужны все метки сразу)
-        const frames = [];
-        for (let i = 0; i < frameCount; i++) {
-            const base = 8 + i * frameSize;
-            if (base + frameSize > framesEnd) break;
-            frames.push(FIELD_OFFSETS.map(f => {
-                const o = base + f.off;
-                if (f.type === 'u32') return view.getUint32(o, true);
-                if (f.type === 'u8') {
-                    const byte = view.getUint8(o);
-                    return f.bit === undefined ? byte : (byte >> f.bit) & 1;
-                }
-                return view.getFloat32(o, true);
-            }));
-        }
-
-        // The binary export always starts the snapshot section with its
-        // baseline record. Its timestamp may predate the retained frames by
-        // more than the signed uint32 horizon, so do not infer it from time.
-        const baseline = snapshots.length ? snapshots[0] : null;
-        const orderedSnapshots = snapshots.slice(1)
-            .filter(snapshot => snapshot.frameIndex !== null);
-        events.push(...snapshots.slice(1)
-            .filter(snapshot => snapshot.frameIndex === null));
-
-        const eventByFrame = assignEventsToFrames(
-            events, frames.map(vals => vals[0]));  // ts_ms — первое поле
-        if (baseline) {
-            eventByFrame.set(0, mergeFrameEvent(eventByFrame.get(0), baseline));
-        }
-        for (const snapshot of orderedSnapshots) {
-            if (snapshot.frameIndex >= frames.length) continue;
-            eventByFrame.set(snapshot.frameIndex,
-                mergeFrameEvent(eventByFrame.get(snapshot.frameIndex), snapshot));
-        }
-
-        const frameLines = frames.map((vals, i) => {
-            const ev = eventByFrame.get(i);
-            return vals.concat([ev ? ev.name : '', ev ? ev.desc : '',
-                                ev ? ev.v1 : '', ev ? ev.v2 : '',
-                                ev && ev.configs.length ? JSON.stringify(ev.configs) : ''])
-                       .map(csvCell).join(',');
-        });
-        const csv = header + '\n' + frameLines.join('\n');
+        const {csv, warnings} = parseBinaryLog(buf);
+        warnings.forEach(message => console.warn(message));
         triggerDownload(csv, 'telemetry_log.csv', 'text/csv');
-
     } catch (e) {
-        alert('Ошибка скачивания: ' + e.message);
+        alert(e instanceof LogParseError
+            ? e.message
+            : 'Ошибка скачивания: ' + e.message);
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'CSV'; }
     }
@@ -2206,3 +2200,4 @@ window.addEventListener('beforeunload', () => {
     if (wifiStatusInterval) { clearInterval(wifiStatusInterval); wifiStatusInterval = null; }
     if (ws) ws.close();
 });
+}
