@@ -20,14 +20,16 @@ from simlib import (
     ProfileError,
     channel_metrics,
     fit_params,
+    fit_road_noise_params,
     format_report,
+    format_road_noise_report,
     list_profile_infos,
     resolve_profile,
     save_profile,
     simulate,
 )
 from simlib.profiles import Provenance
-from simlib.validation import load_drive_log
+from simlib.validation import load_drive_log, load_road_noise_log
 
 
 def main() -> None:
@@ -48,13 +50,19 @@ def main() -> None:
     ap.add_argument("--save-profile", metavar="PATH",
                     help="сохранить подогнанные SimParams в JSON-профиль")
     ap.add_argument("--profile-name", help="name для --save-profile")
+    ap.add_argument("--fit-road-noise", action="store_true",
+                    help="подогнать дорожный шум вместо динамики")
+    ap.add_argument("--road-logs", nargs="+", metavar="CSV",
+                    help="логи для --fit-road-noise (каждый лог имеет равный вес)")
     args = ap.parse_args()
 
     if args.list_profiles:
         for info in list_profile_infos():
             print(f"{info.name:20s} {info.provenance.category:10s} {info.description}")
         return
-    if not args.log:
+    if args.fit_road_noise and not args.road_logs:
+        ap.error("--fit-road-noise требует --road-logs CSV [CSV ...]")
+    if not args.log and not args.fit_road_noise:
         ap.error("нужен путь к логу (или --list-profiles)")
 
     try:
@@ -64,6 +72,23 @@ def main() -> None:
     # Явный --dynamic/--no-dynamic перебивает рекомендацию профиля.
     dynamic = args.dynamic if args.dynamic is not None else prof.recommended_dynamic
     print(f"profile: {prof.name} ({prof.provenance.category}), dynamic={dynamic}")
+
+    if args.fit_road_noise:
+        logs = [load_road_noise_log(path) for path in args.road_logs]
+        fitted, diagnostics = fit_road_noise_params(logs, prof.params)
+        print(format_road_noise_report(diagnostics))
+        if args.save_profile:
+            provenance = Provenance(
+                category="measured",
+                source=(f"fit_road_noise_params({len(logs)} logs), "
+                        f"база={prof.name}"),
+                date=datetime.date.today().isoformat())
+            save_profile(
+                fitted, args.save_profile, name=args.profile_name,
+                description=f"дорожный шум по {len(logs)} логам",
+                provenance=provenance, recommended_dynamic=dynamic)
+            print(f"profile → {args.save_profile}")
+        return
 
     drive = load_drive_log(args.log)
     base = prof.params

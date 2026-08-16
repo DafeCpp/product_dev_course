@@ -21,15 +21,25 @@ from .profiles import (
     save_profile,
 )
 from .replay import find_invariant_violations, load_telemetry_csv
-from .sensors import synth_accel, synth_gyro, synth_mag, make_frame
+from .sensors import (
+    RoadExcitation,
+    RoadNoiseModel,
+    make_frame,
+    synth_accel,
+    synth_gyro,
+    synth_mag,
+)
 from .sim_host_runner import find_sim_host, run_batch
 from .sim_params import SimParams, fitted_params_2026_07_18
 from .validation import (
     channel_metrics,
     fit_params,
     fit_params_multi,
+    fit_road_noise_params,
     format_report,
+    format_road_noise_report,
     load_drive_log,
+    load_road_noise_log,
     simulate,
 )
 from .vehicle_model import StepOutput, VehicleModel, VehicleState
@@ -39,6 +49,8 @@ __all__ = [
     "Profile",
     "ProfileError",
     "Provenance",
+    "RoadExcitation",
+    "RoadNoiseModel",
     "SensorFrame",
     "SimParams",
     "StepOutput",
@@ -48,13 +60,16 @@ __all__ = [
     "find_invariant_violations",
     "fit_params",
     "fit_params_multi",
+    "fit_road_noise_params",
     "fitted_params_2026_07_18",
     "format_report",
+    "format_road_noise_report",
     "get_profile",
     "get_profile_info",
     "list_profile_infos",
     "list_profiles",
     "load_drive_log",
+    "load_road_noise_log",
     "load_profile",
     "load_profile_info",
     "resolve_profile",

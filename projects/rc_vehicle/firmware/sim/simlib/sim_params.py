@@ -39,6 +39,26 @@ class SimParams:
     mag_field_mga: float = 500.0  # мГс, горизонтальная компонента поля Земли
     gyro_bias_dps: float = 0.0  # смещение гироскопа (опц.)
 
+    # ── Дорожное возбуждение IMU (LOS-287) ─────────────────────────────────
+    # sigma(v) = sigma_0 + sigma_per_ms * abs(v). Акселерометр на логах почти
+    # декоррелирован уже через один тик телеметрии, поэтому его шум — белый.
+    road_ax_sigma_0_g: float = 0.03
+    road_ax_sigma_per_ms: float = 0.09
+    road_ay_sigma_0_g: float = 0.045
+    road_ay_sigma_per_ms: float = 0.19
+    road_az_sigma_0_g: float = 0.05
+    road_az_sigma_per_ms: float = 0.18
+
+    # gx/gy в дорожных логах имеют короткую колебательную автокорреляцию.
+    # Амплитуда также растёт со скоростью, частота/damping задают AR(2)-спектр.
+    road_roll_rate_sigma_0_dps: float = 8.0
+    road_roll_rate_sigma_per_ms: float = 15.0
+    road_pitch_rate_sigma_0_dps: float = 6.0
+    road_pitch_rate_sigma_per_ms: float = 12.0
+    road_roll_frequency_hz: float = 10.7
+    road_pitch_frequency_hz: float = 6.7
+    road_attitude_damping: float = 0.28
+
 
 def fitted_params_2026_07_18() -> SimParams:
     """SimParams, подогнанные под реальные заезды 2026-07-18 (FW-S2.6).

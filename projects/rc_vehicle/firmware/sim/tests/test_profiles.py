@@ -28,7 +28,10 @@ from simlib import (
 )
 from simlib.profiles import CATEGORIES
 
-EXPECTED = {"default", "fitted_2026_07_18", "light", "heavy", "drift"}
+EXPECTED = {
+    "default", "fitted_2026_07_18", "fitted_2026_08_02",
+    "light", "heavy", "drift",
+}
 _SIM_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -276,13 +279,15 @@ def test_profiles_differ_in_speed_transient():
     assert speeds["fitted_2026_07_18"] > speeds["heavy"] + 1.0
 
 
-def test_all_profiles_produce_distinct_trajectories():
+def test_all_profiles_produce_distinct_vehicle_or_sensor_behavior():
     seen = set()
     for name in list_profiles():
-        model, _ = _drive(get_profile(name), dynamic=True, n=800,
+        params = get_profile(name)
+        model, _ = _drive(params, dynamic=True, n=800,
                           throttle=0.5, steering=0.3)
         state = model.state
-        seen.add((round(state.x, 6), round(state.y, 6), round(state.psi, 6)))
+        seen.add((round(state.x, 6), round(state.y, 6), round(state.psi, 6),
+                  round(params.road_ax_sigma_per_ms, 6)))
     assert len(seen) == len(list_profiles())
 
 

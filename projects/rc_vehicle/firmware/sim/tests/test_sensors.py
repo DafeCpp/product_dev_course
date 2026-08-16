@@ -1,6 +1,17 @@
 import math
 
-from simlib import SimParams, StepOutput, make_frame, synth_accel, synth_gyro, synth_mag
+import numpy as np
+import pytest
+
+from simlib import (
+    RoadNoiseModel,
+    SimParams,
+    StepOutput,
+    make_frame,
+    synth_accel,
+    synth_gyro,
+    synth_mag,
+)
 
 
 def test_level_rest_accel_is_gravity_z():
@@ -51,3 +62,57 @@ def test_make_frame_csv_has_17_fields():
     assert len(parts) == 17
     assert parts[0] == "2"  # dt_ms
     assert f.mag_present and f.rc_present
+
+
+def test_road_noise_same_seed_is_exactly_deterministic():
+    p = SimParams()
+
+    def sequence(seed):
+        noise = RoadNoiseModel(p, seed)
+        return [noise.sample(2.0, 2) for _ in range(100)]
+
+    assert sequence(17) == sequence(17)
+    assert sequence(17) != sequence(18)
+
+
+def test_road_accel_sigma_grows_with_speed():
+    p = SimParams()
+
+    def samples(speed):
+        noise = RoadNoiseModel(p, seed=4)
+        return np.asarray([noise.sample(speed, 2).accel_g
+                           for _ in range(20_000)])
+
+    stationary = np.std(samples(0.0), axis=0)
+    moving = np.std(samples(2.5), axis=0)
+    expected = np.asarray([
+        p.road_ax_sigma_0_g + 2.5 * p.road_ax_sigma_per_ms,
+        p.road_ay_sigma_0_g + 2.5 * p.road_ay_sigma_per_ms,
+        p.road_az_sigma_0_g + 2.5 * p.road_az_sigma_per_ms,
+    ])
+    assert stationary[0] == pytest.approx(p.road_ax_sigma_0_g, rel=0.03)
+    assert moving == pytest.approx(expected, rel=0.03)
+
+
+def test_road_attitude_rate_is_colored_and_finite():
+    noise = RoadNoiseModel(SimParams(), seed=9)
+    rates = np.asarray([noise.sample(2.5, 10).gyro_dps[:2]
+                        for _ in range(20_000)])[500:]
+    assert np.isfinite(rates).all()
+    acf1 = [np.corrcoef(rates[:-1, i], rates[1:, i])[0, 1]
+            for i in range(2)]
+    assert 0.25 < acf1[0] < 0.7
+    assert 0.5 < acf1[1] < 0.9
+
+    disabled = RoadNoiseModel(SimParams(
+        road_roll_frequency_hz=0.0, road_pitch_frequency_hz=0.0), seed=9)
+    sample = disabled.sample(2.5, 10)
+    assert sample.gyro_dps == (0.0, 0.0, 0.0)
+    assert sample.attitude_rad == (0.0, 0.0)
+
+
+def test_make_frame_without_noise_remains_clean():
+    out = StepOutput(0.0, 0.0, 0.0, 2.5, 0.0)
+    frame = make_frame(out, 0.0, SimParams())
+    assert (frame.ax, frame.ay, frame.az) == (0.0, 0.0, 1.0)
+    assert (frame.gx, frame.gy, frame.gz) == (0.0, 0.0, 0.0)
