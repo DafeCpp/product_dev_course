@@ -249,8 +249,8 @@ void ControlLoopProcessor::ProcessCalibration(uint32_t now_ms,
 
 void ControlLoopProcessor::UpdateAutoDrive(const ControlTickInput& input,
                                            ControlTickState& state) {
-  auto ad_input = BuildAutoDriveInput(input.sensors, ctx_.imu_calib,
-                                      input.dt_ms, input.now_ms);
+  auto ad_input = BuildAutoDriveInput(
+      input.sensors, state.estimate.forward_accel_g, input.dt_ms, input.now_ms);
   if (input.sensors.imu_enabled) {
     ad_input.speed_ms = state.estimate.speed_ms;
   }
