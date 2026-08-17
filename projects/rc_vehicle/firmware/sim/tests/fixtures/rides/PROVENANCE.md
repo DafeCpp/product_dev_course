@@ -6,7 +6,7 @@
 | `golden_real_tilt_2026_08_02.csv` | `test_runs/telemetry_log_day_02_08_26.csv`, строки 26400:27300, запись 2026-08-02 | статический наклон около 20°, 9.6 с | circular σ PCA `heading_deg` |
 | `golden_real_failsafe_reconstructed.csv` | `test_runs/telemetry_log_auto_forward_2.csv`, строки 0:300; извлечено 2026-08-18 | неподвижная машина, источники управления отсутствуют | failsafe и нейтраль PWM |
 | `golden_real_oversteer_2026_08_02.csv` | `test_runs/telemetry_log_day_02_08_26.csv`, строки 19300:19650, запись 2026-08-02, `drive_mode=2` | реальный Drift-манёвр, исходное срабатывание 209346–209721 мс | `oversteer_active` внутри размеченной фазы |
-| `golden_real_straight_marker.csv` | `test_runs/telemetry_log_auto_forward_2.csv`, строки 1214:1532, `test_marker=1`; извлечено 2026-08-18 | автоматическая прямая, 3.5 с | ограниченный дрейф курса |
+| `golden_real_straight_marker.csv` | `test_runs/telemetry_log_auto_forward_2.csv`, строки 2535:2763, `test_marker=1`; извлечено 2026-08-18 | движущаяся автоматическая прямая, 2.5 с | команда газа авто-теста и ограниченный дрейф курса |
 | `golden_real_reverse_2026_07_18.csv` | `test_runs/telemetry_log_forward_back.csv`, строки 1800:2200, запись 2026-07-18 | задний ход с почти нулевым рулевым вводом | отсутствие внесённого стабилизатором руля |
 
 Синтетическая фикстура использует динамику, откалиброванную по реальным заездам
@@ -30,7 +30,10 @@ bias-корректированы). `RotateToVehicleFrame()` приводит ac
 использует реальные сенсоры неподвижного эпизода, но состояние отсутствующих
 источников управления реконструировано колонками `rc_present=0` и
 `wifi_present=0`. Для oversteer из записанного config snapshot воспроизводятся
-`warn_enabled=true`, пороги 10°/30°·с⁻¹ и снижение газа 0.7. Эти дополнения
-явно относятся к replay и не выдаются за поля исходной телеметрии.
+`warn_enabled=true`, пороги 10°/30°·с⁻¹ и снижение газа 0.7.
+Для straight replay по записанному `test_marker=1` восстанавливается auto-test
+`straight` с target acceleration 0.1 g и duration 3 с, а также WebSocket keepalive
+без ручной Wi-Fi команды. Эти дополнения явно относятся к replay и не
+выдаются за поля исходной телеметрии.
 
 Решение о хранении полных логов и Git LFS остаётся в FW-S2.7.

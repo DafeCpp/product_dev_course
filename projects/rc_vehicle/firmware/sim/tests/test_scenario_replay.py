@@ -123,8 +123,18 @@ def test_recorded_oversteer_episode_triggers_guard():
 
 
 def test_marked_straight_does_not_drift():
-    raw, _, output = _replay("golden_real_straight_marker.csv")
+    raw, frames, output = _replay(
+        "golden_real_straight_marker.csv",
+        start_test="straight",
+        target_accel=0.1,
+        test_duration=3.0,
+    )
     assert all(_f(row, "test_marker") == 1.0 for row in raw)
+    assert all(not frame.rc_present and frame.wifi_present for frame in frames)
+    assert statistics.mean(_f(row, "speed_ms") for row in raw) > 0.01
+    assert all(row["test_active"] == 1.0 for row in output)
+    assert statistics.mean(row["throttle"] for row in output) > 0.02
+    assert all(abs(row["steering"]) < 1.0e-6 for row in output)
     # Первый HostStep публикует bootstrap snapshot с heading=0.
     assert _unwrapped_span_deg([row["heading_deg"] for row in output[1:]]) < 2.0
 

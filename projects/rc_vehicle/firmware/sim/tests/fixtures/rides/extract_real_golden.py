@@ -47,8 +47,8 @@ EPISODES = (
     Episode(
         "golden_real_straight_marker.csv",
         "test_runs/telemetry_log_auto_forward_2.csv",
-        1214,
-        1532,
+        2535,
+        2763,
         "straight",
     ),
     Episode(
@@ -86,8 +86,9 @@ def _number(row: dict[str, str], key: str) -> float:
 def _phase(episode: Episode, row: dict[str, str], index: int) -> str:
     if episode.scenario == "oversteer":
         # Внутри большой Drift-вырезки фиксируем один устойчивый эпизод:
-        # чистый pre-roll 100:145 и записанное срабатывание 151:181.
-        if 100 <= index < 145:
+        # чистый recorded-inactive pre-roll 64:92 и записанное
+        # срабатывание 151:181.
+        if 64 <= index < 92:
             return "pre"
         if 151 <= index < 181:
             return "assert"
@@ -114,8 +115,12 @@ def extract(episode: Episode) -> None:
 
     for index, row in enumerate(rows):
         row["mag_present"] = "1"
-        row["rc_present"] = "0" if episode.scenario == "failsafe" else "1"
-        row["wifi_present"] = "0"
+        row["rc_present"] = (
+            "0" if episode.scenario in {"failsafe", "straight"} else "1"
+        )
+        # Auto-test получал тики от WebSocket; в replay восстанавливаем
+        # keepalive без ручной Wi-Fi команды.
+        row["wifi_present"] = "1" if episode.scenario == "straight" else "0"
         row["wifi_throttle"] = "0"
         row["wifi_steering"] = "0"
         row["replay_phase"] = _phase(episode, row, index)
@@ -124,6 +129,10 @@ def extract(episode: Episode) -> None:
         _number(row, "test_marker") == 1.0 for row in rows
     ):
         raise RuntimeError("straight selector must contain only test_marker=1")
+    if episode.scenario == "straight" and sum(
+        _number(row, "speed_ms") for row in rows
+    ) / len(rows) <= 0.01:
+        raise RuntimeError("straight selector must contain a moving episode")
     if episode.scenario == "oversteer" and not any(
         row["replay_phase"] == "assert"
         and row.get("drive_mode") == "2"
@@ -131,6 +140,12 @@ def extract(episode: Episode) -> None:
         for row in rows
     ):
         raise RuntimeError("oversteer selector lost the recorded Drift event")
+    if episode.scenario == "oversteer" and not all(
+        _number(row, "oversteer_active") < 0.5
+        for row in rows
+        if row["replay_phase"] == "pre"
+    ):
+        raise RuntimeError("oversteer pre-roll must be inactive in the source")
 
     target = HERE / episode.output
     with target.open("w", newline="") as fh:

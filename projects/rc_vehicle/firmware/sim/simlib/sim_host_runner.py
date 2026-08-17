@@ -38,7 +38,11 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
               timeout: float = 120.0, *, drive_mode: str | None = None,
               stabilize: bool = False,
               oversteer: OversteerReplayConfig | None = None,
-              inverted_z_calib: bool = False) -> list[dict]:
+              inverted_z_calib: bool = False,
+              start_test: str | None = None,
+              target_accel: float | None = None,
+              test_duration: float | None = None,
+              test_steering: float | None = None) -> list[dict]:
     """Прогнать кадры через sim_host в batch-режиме → список выходных строк.
 
     Каждая выходная строка — dict {имя_колонки: float} по заголовку sim_host.
@@ -60,6 +64,14 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
             "--oversteer-throttle-reduction",
             repr(float(oversteer.throttle_reduction)),
         ]
+    if start_test:
+        args += ["--start-test", start_test]
+        if target_accel is not None:
+            args += ["--target-accel", repr(float(target_accel))]
+        if test_duration is not None:
+            args += ["--test-duration", repr(float(test_duration))]
+        if test_steering is not None:
+            args += ["--test-steering", repr(float(test_steering))]
     payload = "".join(f.to_csv() + "\n" for f in frames)
     proc = subprocess.run(args, input=payload, capture_output=True, text=True,
                           timeout=timeout)
