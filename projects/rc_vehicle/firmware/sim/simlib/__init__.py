@@ -30,8 +30,13 @@ from .sensors import (
     synth_mag,
 )
 from .sim_host_runner import find_sim_host, run_batch
-from .sim_params import SimParams, fitted_params_2026_07_18
+from .sim_params import (
+    SimParams,
+    fitted_dynamic_params_2026_07_18,
+    fitted_params_2026_07_18,
+)
 from .validation import (
+    SLIP_CHANNELS,
     channel_metrics,
     fit_params,
     fit_params_multi,
@@ -51,6 +56,7 @@ __all__ = [
     "Provenance",
     "RoadExcitation",
     "RoadNoiseModel",
+    "SLIP_CHANNELS",
     "SensorFrame",
     "SimParams",
     "StepOutput",
@@ -61,6 +67,7 @@ __all__ = [
     "fit_params",
     "fit_params_multi",
     "fit_road_noise_params",
+    "fitted_dynamic_params_2026_07_18",
     "fitted_params_2026_07_18",
     "format_report",
     "format_road_noise_report",

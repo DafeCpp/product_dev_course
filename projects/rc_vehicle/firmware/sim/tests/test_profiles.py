@@ -16,6 +16,7 @@ from simlib import (
     SimParams,
     VehicleModel,
     find_sim_host,
+    fitted_dynamic_params_2026_07_18,
     fitted_params_2026_07_18,
     get_profile,
     get_profile_info,
@@ -29,7 +30,8 @@ from simlib import (
 from simlib.profiles import CATEGORIES
 
 EXPECTED = {
-    "default", "fitted_2026_07_18", "fitted_2026_08_02",
+    "default", "fitted_2026_07_18", "fitted_dynamic_2026_07_18",
+    "fitted_2026_08_02",
     "light", "heavy", "drift",
 }
 _SIM_DIR = Path(__file__).resolve().parent.parent
@@ -136,6 +138,13 @@ def test_fitted_wrapper_delegates_to_registry():
     assert fitted.servo_max_deg == 20.4
     assert fitted.motor_tau == 0.0376
     assert get_profile_info("fitted_2026_07_18").provenance.category == "measured"
+
+    dynamic = fitted_dynamic_params_2026_07_18()
+    assert dynamic == get_profile("fitted_dynamic_2026_07_18")
+    assert dynamic.Caf == pytest.approx(49.0702)
+    assert dynamic.Car == pytest.approx(36.6666)
+    assert dynamic.Iz == pytest.approx(0.175858, abs=1e-6)
+    assert get_profile_info("fitted_dynamic_2026_07_18").recommended_dynamic
 
 
 # ── Ошибки ───────────────────────────────────────────────────────────────────
@@ -342,9 +351,10 @@ def test_drift_requires_dynamic():
     assert a.yaw_rate == b.yaw_rate
 
 
-def test_only_drift_recommends_dynamic():
+def test_only_dynamic_profiles_recommend_dynamic():
     for info in list_profile_infos():
-        assert info.recommended_dynamic == (info.name == "drift")
+        assert info.recommended_dynamic == (
+            info.name in {"drift", "fitted_dynamic_2026_07_18"})
 
 
 # ── Интеграция ───────────────────────────────────────────────────────────────
