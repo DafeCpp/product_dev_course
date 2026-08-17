@@ -66,6 +66,28 @@ def test_dynamic_model_runs_and_turns():
     assert math.isfinite(out.lat_accel)
 
 
+def test_dynamic_model_stays_finite_on_aggressive_coarse_steps():
+    """Fitting logs use ~10 ms ticks and may contain gaps clipped to 100 ms."""
+    p = SimParams(Caf=49.07, Car=36.67, Iz=0.176, max_accel=4.0,
+                  drag_coeff=1.0)
+    m = VehicleModel(p, dynamic=True)
+    for i in range(800):
+        steering = 1.0 if (i // 20) % 2 == 0 else -1.0
+        out = m.step(0.1, throttle=0.5, steering=steering)
+        assert all(math.isfinite(v) for v in (
+            m.state.vy, m.state.r, out.lat_accel, out.yaw_rate))
+
+
+def test_dynamic_model_uses_kinematics_in_reverse():
+    dynamic = VehicleModel(SimParams(), dynamic=True)
+    kinematic = VehicleModel(SimParams(), dynamic=False)
+    for _ in range(300):
+        a = dynamic.step(DT, throttle=-0.5, steering=0.6)
+        b = kinematic.step(DT, throttle=-0.5, steering=0.6)
+    assert a == b
+    assert dynamic.state.vy == 0.0
+
+
 def _DYN_MIN():
     from simlib.vehicle_model import _DYNAMIC_MIN_SPEED
 

@@ -72,3 +72,14 @@ def fitted_params_2026_07_18() -> SimParams:
     from .profiles import get_profile
 
     return get_profile("fitted_2026_07_18")
+
+
+def fitted_dynamic_params_2026_07_18() -> SimParams:
+    """Dynamic SimParams, подогнанные по yaw реальных заездов 2026-07-18.
+
+    Продольная динамика и серво унаследованы от `fitted_2026_07_18`, а
+    `Caf`/`Car`/`Iz` идентифицированы LOS-223 по snake и двум кругам.
+    """
+    from .profiles import get_profile
+
+    return get_profile("fitted_dynamic_2026_07_18")

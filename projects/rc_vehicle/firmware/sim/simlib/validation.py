@@ -19,6 +19,7 @@ _G = 9.80665
 
 # Каналы сравнения: yaw rate (dps), скорость (м/с), продольное ускорение (м/с²).
 CHANNELS = ("yaw_rate_dps", "speed_ms", "long_accel_ms2")
+SLIP_CHANNELS = ("slip_deg",)
 ROAD_CHANNELS = ("ax", "ay", "az", "gx", "gy")
 
 
@@ -37,13 +38,17 @@ def _maybe_fix_legacy_signs(ts, yaw_rate, yaw_deg, speed_ms, long_accel):
     ретро-валидации, поэтому детектируем их по физическим связям внутри лога и
     компенсируем только при явно отрицательной корреляции.
     """
-    if yaw_deg:
+    if len(yaw_deg):
         ts_arr = np.asarray(ts, float)
-        yaw_deg_arr = np.asarray(yaw_deg, float)
+        # yaw_deg обёрнут в [-180, 180]. Производная без unwrap содержит
+        # импульсы ±360° и маскирует инверсию старых LOS-213 логов.
+        yaw_deg_arr = np.rad2deg(np.unwrap(np.deg2rad(yaw_deg)))
         dt = np.diff(ts_arr, prepend=ts_arr[0] - 2.0) / 1000.0
         dt = np.clip(dt, 1e-3, 0.1)
         yaw_from_deg = np.diff(yaw_deg_arr, prepend=yaw_deg_arr[0]) / dt
-        if _corr(yaw_from_deg, yaw_rate) < -0.5:
+        # На заездах с сильной вибрацией связь слабее, чем на чистых кругах;
+        # запас до нуля всё ещё однозначно отделяет legacy-инверсию.
+        if _corr(yaw_from_deg, yaw_rate) < -0.3:
             yaw_rate = [-v for v in yaw_rate]
 
     if len(speed_ms) >= 3:
@@ -64,7 +69,7 @@ def load_drive_log(path: str, use_applied: bool = True) -> dict:
     `use_applied=True` — кормить модель ПРИМЕНЁННЫМ выходом (`throttle`/`steering`,
     физический вход актуаторов); False — сырыми командами пульта (`rc_*`).
     """
-    ts, thr, steer, yaw, yaw_deg, spd, lon = [], [], [], [], [], [], []
+    ts, thr, steer, yaw, yaw_deg, spd, slip, lon = [], [], [], [], [], [], [], []
     with open(path, newline="") as fh:
         for row in csv.DictReader(fh):
             def f(key: str) -> float:
@@ -81,6 +86,7 @@ def load_drive_log(path: str, use_applied: bool = True) -> dict:
             if "yaw_deg" in row:
                 yaw_deg.append(f("yaw_deg"))
             spd.append(f("speed_ms"))
+            slip.append(f("slip_deg"))
             lon.append(f("ax") * _G)
 
     yaw, lon = _maybe_fix_legacy_signs(ts, yaw, yaw_deg, spd, lon)
@@ -95,6 +101,7 @@ def load_drive_log(path: str, use_applied: bool = True) -> dict:
         "rec": {
             "yaw_rate_dps": np.asarray(yaw, float),
             "speed_ms": np.asarray(spd, float),
+            "slip_deg": np.asarray(slip, float),
             "long_accel_ms2": np.asarray(lon, float),
         },
     }
@@ -276,6 +283,7 @@ def simulate(params: SimParams, throttle, steering, dt,
     m = VehicleModel(params, dynamic=dynamic)
     yaw = np.empty(n)
     spd = np.empty(n)
+    slip = np.empty(n)
     lon = np.empty(n)
     for i in range(n):
         o = m.step(float(dt[i]), float(throttle[i]), float(steering[i]))
@@ -283,8 +291,17 @@ def simulate(params: SimParams, throttle, steering, dt,
         # Записанный speed_ms — модуль (EKF √(vx²+vy²)); модель даёт знаковую
         # скорость, на реверсе сравниваем магнитуды.
         spd[i] = abs(o.speed)
+        # Боковая динамика идентифицирована только для forward-ветки; на
+        # реверсе VehicleModel сбрасывает vy и slip считается нулевым.
+        slip[i] = math.degrees(math.atan2(m.state.vy, m.state.v)) \
+            if m.state.v >= 1e-9 else 0.0
         lon[i] = o.long_accel
-    return {"yaw_rate_dps": yaw, "speed_ms": spd, "long_accel_ms2": lon}
+    return {
+        "yaw_rate_dps": yaw,
+        "speed_ms": spd,
+        "slip_deg": slip,
+        "long_accel_ms2": lon,
+    }
 
 
 def rmse(a, b) -> float:

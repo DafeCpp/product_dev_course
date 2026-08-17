@@ -16,13 +16,14 @@ from simlib import (
 )
 
 
-def _synthetic_drive(params: SimParams, n: int = 400, dt: float = 0.01) -> dict:
+def _synthetic_drive(params: SimParams, n: int = 400, dt: float = 0.01,
+                     dynamic: bool = False) -> dict:
     """«Записанная» поездка = выход модели при known params (round-trip)."""
     i = np.arange(n)
     throttle = 0.45 + 0.1 * np.sin(i * 0.02)
     steering = 0.5 * np.sin(i * 0.04)
     dts = np.full(n, dt)
-    rec = simulate(params, throttle, steering, dts)
+    rec = simulate(params, throttle, steering, dts, dynamic=dynamic)
     return {"dt": dts, "throttle": throttle, "steering": steering, "rec": rec}
 
 
@@ -64,6 +65,58 @@ def test_fit_multi_recovers_known_params():
     fitted, _ = fit_params_multi([d1, d2], base, ["max_accel", "drag_coeff"])
     assert math.isclose(fitted.max_accel, 8.0, rel_tol=0.05)
     assert math.isclose(fitted.drag_coeff, 0.8, rel_tol=0.05)
+
+
+def test_dynamic_fit_recovers_cornering_params():
+    true = SimParams(Caf=45.0, Car=35.0, Iz=0.12)
+    d = _synthetic_drive(true, n=600, dynamic=True)
+    base = SimParams(Caf=60.0, Car=60.0, Iz=0.05)
+    fitted, _ = fit_params_multi(
+        [d], base, ["Caf", "Car", "Iz"],
+        channels=("yaw_rate_dps",), dynamic=True)
+    assert fitted.Caf == pytest.approx(true.Caf, rel=0.08)
+    assert fitted.Car == pytest.approx(true.Car, rel=0.08)
+    assert fitted.Iz == pytest.approx(true.Iz, rel=0.08)
+
+
+def test_simulate_exposes_dynamic_slip():
+    p = SimParams()
+    d = _synthetic_drive(p, n=200, dynamic=True)
+    assert "slip_deg" in d["rec"]
+    assert np.all(np.isfinite(d["rec"]["slip_deg"]))
+    assert np.max(np.abs(d["rec"]["slip_deg"])) > 0.0
+
+
+def test_legacy_yaw_sign_detection_unwraps_heading():
+    ts = np.arange(200, dtype=float) * 10.0
+    current_rate = 50.0 + 20.0 * np.sin(np.arange(200) * 0.08)
+    unwrapped = 170.0 + np.cumsum(current_rate * 0.01)
+    yaw_deg = ((unwrapped + 180.0) % 360.0) - 180.0
+    legacy_rate = -current_rate
+    fixed, _ = val._maybe_fix_legacy_signs(
+        ts, legacy_rate, yaw_deg, np.ones(200), np.zeros(200))
+    assert fixed == pytest.approx(current_rate)
+
+
+def test_current_yaw_sign_detection_leaves_sign_unchanged():
+    ts = np.arange(200, dtype=float) * 10.0
+    current_rate = 50.0 + 20.0 * np.sin(np.arange(200) * 0.08)
+    unwrapped = 170.0 + np.cumsum(current_rate * 0.01)
+    yaw_deg = ((unwrapped + 180.0) % 360.0) - 180.0
+    fixed, _ = val._maybe_fix_legacy_signs(
+        ts, current_rate, yaw_deg, np.ones(200), np.zeros(200))
+    assert fixed == pytest.approx(current_rate)
+
+
+def test_load_drive_log_exposes_recorded_slip(tmp_path):
+    path = tmp_path / "drive.csv"
+    path.write_text(
+        "ts_ms,throttle,steering,yaw_rate_dps,speed_ms,slip_deg,ax\n"
+        "0,0.2,0.1,5.0,1.0,3.5,0.0\n"
+        "10,0.2,0.1,5.0,1.1,4.5,0.0\n",
+        encoding="utf-8")
+    drive = val.load_drive_log(path)
+    assert drive["rec"]["slip_deg"] == pytest.approx([3.5, 4.5])
 
 
 def test_fit_keeps_params_positive():

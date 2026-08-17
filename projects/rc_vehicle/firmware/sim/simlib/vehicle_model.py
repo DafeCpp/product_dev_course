@@ -78,7 +78,11 @@ class VehicleModel:
 
         delta = self._servo_angle(steering, dt)
 
-        if self.dynamic and abs(s.v) >= _DYNAMIC_MIN_SPEED:
+        # Линеаризация боковой динамики ниже выведена для движения вперёд.
+        # На малой скорости она вырождается (1/v), а на реверсе меняются роли
+        # управляемой/неуправляемой осей. Пока reverse-ветка не идентифицирована,
+        # используем там устойчивую кинематику.
+        if self.dynamic and s.v >= _DYNAMIC_MIN_SPEED:
             lat_accel = self._step_dynamic(dt, delta)
         else:
             lat_accel = self._step_kinematic(dt, delta)
@@ -105,13 +109,31 @@ class VehicleModel:
         p = self.p
         s = self.state
         v = s.v
-        # Углы увода (малые углы): перед/зад.
-        alpha_f = delta - (s.vy + p.com_a * s.r) / v
-        alpha_r = -(s.vy - p.com_b * s.r) / v
-        fyf = p.Caf * alpha_f
-        fyr = p.Car * alpha_r
-        vy_dot = (fyf + fyr) / p.mass - v * s.r
-        r_dot = (p.com_a * fyf - p.com_b * fyr) / p.Iz
-        s.vy += vy_dot * dt
-        s.r += r_dot * dt
-        return vy_dot + v * s.r  # боковая specific force
+
+        # Линейный велосипед имеет вид x_dot = A*x + B*delta, x=[vy, r].
+        # Явный Euler расходится при больших dt и около нижнего порога скорости,
+        # особенно во время тысяч прогонов fitting. Backward Euler требует лишь
+        # решения 2x2 и A-stable для затухающей forward-динамики.
+        a11 = -(p.Caf + p.Car) / (p.mass * v)
+        a12 = (-p.com_a * p.Caf + p.com_b * p.Car) / (p.mass * v) - v
+        a21 = (-p.com_a * p.Caf + p.com_b * p.Car) / (p.Iz * v)
+        a22 = -(p.com_a**2 * p.Caf + p.com_b**2 * p.Car) / (p.Iz * v)
+
+        q1 = s.vy + dt * p.Caf / p.mass * delta
+        q2 = s.r + dt * p.com_a * p.Caf / p.Iz * delta
+        m11 = 1.0 - dt * a11
+        m12 = -dt * a12
+        m21 = -dt * a21
+        m22 = 1.0 - dt * a22
+        det = m11 * m22 - m12 * m21
+
+        vy = (q1 * m22 - m12 * q2) / det
+        r = (m11 * q2 - m21 * q1) / det
+        s.vy = vy
+        s.r = r
+
+        # Боковая specific force равна сумме сил шин / mass. Силы считаются по
+        # состоянию в конце неявного шага, согласованно с интегратором.
+        alpha_f = delta - (vy + p.com_a * r) / v
+        alpha_r = -(vy - p.com_b * r) / v
+        return (p.Caf * alpha_f + p.Car * alpha_r) / p.mass
