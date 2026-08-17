@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "control_components.hpp"    // TelemetrySnapshot
 #include "diagnostics_reporter.hpp"  // DiagnosticsSnapshot
@@ -49,6 +50,10 @@ class StdioPlatform : public VehicleControlPlatform {
   void SetInvertedZCalib(bool on) {
     inverted_z_calib_ = on;
     if (on) identity_calib_ = false;
+  }
+  /** Сохранённая калибровка магнитометра для real-data replay. */
+  void SetMagCalib(std::optional<MagCalibData> calib) {
+    mag_calib_ = std::move(calib);
   }
 
   /** Режим вождения (по умолчанию Normal). */
@@ -103,6 +108,11 @@ class StdioPlatform : public VehicleControlPlatform {
   bool InitMag() override { return true; }
   std::optional<MagData> ReadMag() override { return mag_data_; }
   const char* GetMagSensorName() const noexcept override { return "sim"; }
+  bool LoadMagCalib(MagCalibData& data) override {
+    if (!mag_calib_) return false;
+    data = *mag_calib_;
+    return true;
+  }
 
   // ── Калибровка IMU (NVS-заглушки) ────────────────────────────────────────
   std::optional<ImuCalibData> LoadCalib() override {
@@ -211,6 +221,7 @@ class StdioPlatform : public VehicleControlPlatform {
   uint32_t time_ms_{0};
   std::optional<ImuData> imu_data_;
   std::optional<MagData> mag_data_;
+  std::optional<MagCalibData> mag_calib_;
   std::optional<RcCommand> rc_command_;
   std::optional<RcCommand> wifi_command_;
   bool identity_calib_{false};

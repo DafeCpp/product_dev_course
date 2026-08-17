@@ -12,6 +12,8 @@ from simlib import (
 GOLDEN = Path(__file__).parent / "fixtures" / "rides" / "golden_synth_drive.csv"
 FAILSAFE = (Path(__file__).parent / "fixtures" / "rides" /
             "golden_real_failsafe_reconstructed.csv")
+STATIC_TILT = (Path(__file__).parent / "fixtures" / "rides" /
+               "golden_real_static_tilt.csv")
 
 
 def test_loader_reads_golden():
@@ -26,6 +28,11 @@ def test_loader_dt_from_timestamps():
     frames = load_telemetry_csv(str(GOLDEN))
     # 100 Гц лог → dt ≈ 10 мс (первый кадр = 2 мс по умолчанию)
     assert all(fr.dt_ms == 10 for fr in frames[1:])
+
+
+def test_loader_prefers_explicit_fixture_dt():
+    frames = load_telemetry_csv(str(STATIC_TILT))
+    assert frames[0].dt_ms == 12
 
 
 def test_loader_reads_explicit_source_presence():

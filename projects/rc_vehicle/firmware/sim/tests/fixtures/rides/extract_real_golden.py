@@ -5,6 +5,7 @@
 """
 
 import csv
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,10 +25,10 @@ class Episode:
 
 EPISODES = (
     Episode(
-        "golden_real_tilt_2026_08_02.csv",
-        "test_runs/telemetry_log_day_02_08_26.csv",
-        26400,
-        27300,
+        "golden_real_static_tilt.csv",
+        "test_runs/telemetry_log_night_test_2.csv",
+        11000,
+        11800,
         "tilt",
     ),
     Episode(
@@ -105,15 +106,23 @@ def extract(episode: Episode) -> None:
     with source.open(newline="") as fh:
         reader = csv.DictReader(fh)
         source_fieldnames = set(reader.fieldnames or [])
-        rows = list(reader)[episode.start:episode.stop]
+        source_rows = list(reader)
+        rows = source_rows[episode.start:episode.stop]
 
     if len(rows) != episode.stop - episode.start:
         raise RuntimeError(f"{source}: expected {episode.stop - episode.start} rows")
 
     fieldnames = [name for name in SOURCE_FIELDS if name in source_fieldnames]
+    if episode.scenario == "tilt":
+        fieldnames.append("dt_ms")
     fieldnames.extend(REPLAY_FIELDS)
 
     for index, row in enumerate(rows):
+        if episode.scenario == "tilt":
+            previous = source_rows[episode.start + index - 1]
+            row["dt_ms"] = str(max(
+                1, round(_number(row, "ts_ms") - _number(previous, "ts_ms"))
+            ))
         row["mag_present"] = "1"
         row["rc_present"] = (
             "0" if episode.scenario in {"failsafe", "straight"} else "1"
@@ -133,6 +142,17 @@ def extract(episode: Episode) -> None:
         _number(row, "speed_ms") for row in rows
     ) / len(rows) <= 0.01:
         raise RuntimeError("straight selector must contain a moving episode")
+    if episode.scenario == "tilt":
+        tilt_deg = [
+            math.degrees(math.atan2(
+                math.hypot(_number(row, "ax"), -_number(row, "ay")),
+                -_number(row, "az"),
+            ))
+            for row in rows
+        ]
+        mean_tilt = sum(tilt_deg) / len(tilt_deg)
+        if not 15.0 <= mean_tilt <= 30.0:
+            raise RuntimeError("tilt selector must contain a real 15–30 degree tilt")
     if episode.scenario == "oversteer" and not any(
         row["replay_phase"] == "assert"
         and row.get("drive_mode") == "2"

@@ -14,6 +14,8 @@
 //   точки»).
 //   --inverted-z-calib — replay реальных логов с перевёрнутым IMU:
 //       gravity=(0,0,-1), forward=(1,0,0), нулевые bias.
+//   --mag-calib ox oy oz field nx ny nz b1x b1y b1z b2x b2y b2z
+//       — загрузить saved magnetometer calibration до Init().
 //   --oversteer [--oversteer-slip-thresh deg]
 //       [--oversteer-rate-thresh deg/s] [--oversteer-throttle-reduction 0..1]
 //       — воспроизвести oversteer-конфиг, записанный в provenance эпизода.
@@ -27,6 +29,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -82,6 +85,7 @@ int main(int argc, char** argv) {
   bool batch = false;
   bool identity_calib = false;
   bool inverted_z_calib = false;
+  std::optional<MagCalibData> mag_calib;
   rc_vehicle::DriveMode drive_mode = rc_vehicle::DriveMode::Normal;
   float speed_limit = 0.0f;
   bool stabilize = false;
@@ -103,6 +107,15 @@ int main(int argc, char** argv) {
     } else if (a == "--inverted-z-calib") {
       inverted_z_calib = true;
       identity_calib = false;
+    } else if (a == "--mag-calib" && i + 13 < argc) {
+      MagCalibData data;
+      for (float& value : data.offset) value = std::strtof(argv[++i], nullptr);
+      data.field_strength_mgauss = std::strtof(argv[++i], nullptr);
+      for (float& value : data.normal) value = std::strtof(argv[++i], nullptr);
+      for (float& value : data.basis1) value = std::strtof(argv[++i], nullptr);
+      for (float& value : data.basis2) value = std::strtof(argv[++i], nullptr);
+      data.valid = true;
+      mag_calib = data;
     } else if (a == "--drive-mode" && i + 1 < argc)
       drive_mode = ParseDriveMode(argv[++i]);
     else if (a == "--speed-limit" && i + 1 < argc)
@@ -137,6 +150,7 @@ int main(int argc, char** argv) {
     p->SetInvertedZCalib(true);
   else
     p->SetIdentityCalib(identity_calib);
+  p->SetMagCalib(mag_calib);
   p->SetDriveMode(drive_mode);
   p->SetSpeedLimit(speed_limit);
   p->SetStabilize(stabilize);

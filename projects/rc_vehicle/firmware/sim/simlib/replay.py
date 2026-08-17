@@ -40,7 +40,8 @@ def load_telemetry_csv(path: str) -> list[SensorFrame]:
 
     Используются: `ts_ms` (→ dt), калиброванный IMU `ax..gz`, сырой mag
     `mx/my/mz`, команды `rc_throttle/rc_steering`. Golden-вырезки могут явно
-    задавать `mag_present`, `rc_present`, `wifi_present` и Wi-Fi-команды.
+    задавать `dt_ms`, `mag_present`, `rc_present`, `wifi_present` и
+    Wi-Fi-команды. Явный `dt_ms` имеет приоритет над разницей `ts_ms`.
     Старые логи без этих колонок сохраняют прежний контракт: mag/RC доступны,
     Wi-Fi отсутствует. Разбор по именам колонок устойчив к порядку/доп. полям.
     """
@@ -50,7 +51,9 @@ def load_telemetry_csv(path: str) -> list[SensorFrame]:
         prev_ts: float | None = None
         for row in reader:
             ts = _f(row, "ts_ms")
-            if prev_ts is None:
+            if row.get("dt_ms", "") != "":
+                dt_ms = max(1, int(round(_f(row, "dt_ms"))))
+            elif prev_ts is None:
                 dt_ms = 2
             else:
                 dt_ms = max(1, int(round(ts - prev_ts)))

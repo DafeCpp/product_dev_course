@@ -29,7 +29,8 @@
   `sim_host` (FW-S2.1) в batch-режиме, фиделити «со средней точки»
   (`--identity-calib`); реальные LOS-31 вырезки используют калибровку
   перевёрнутого монтажа (`--inverted-z-calib`, gravity=(0,0,-1),
-  forward=(1,0,0)). Для сценариев также можно восстановить drive mode,
+  forward=(1,0,0)) и при необходимости saved hard-iron/PCA mag calibration
+  (`--mag-calib`). Для сценариев также можно восстановить drive mode,
   стабилизацию и записанные пороги oversteer.
 - `tests/fixtures/rides/` — golden-фикстуры, provenance и воспроизводимая
   нарезка реальных эпизодов.

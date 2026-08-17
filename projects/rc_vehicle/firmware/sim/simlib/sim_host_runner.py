@@ -19,6 +19,17 @@ class OversteerReplayConfig:
     throttle_reduction: float = 0.7
 
 
+@dataclass(frozen=True)
+class MagReplayCalibration:
+    """Saved hard-iron/PCA calibration supplied to a real-data replay."""
+
+    offset: tuple[float, float, float]
+    field_strength_mgauss: float
+    normal: tuple[float, float, float]
+    basis1: tuple[float, float, float]
+    basis2: tuple[float, float, float]
+
+
 def find_sim_host() -> str | None:
     """Найти бинарь sim_host.
 
@@ -39,6 +50,7 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
               stabilize: bool = False,
               oversteer: OversteerReplayConfig | None = None,
               inverted_z_calib: bool = False,
+              mag_calib: MagReplayCalibration | None = None,
               start_test: str | None = None,
               target_accel: float | None = None,
               test_duration: float | None = None,
@@ -52,6 +64,15 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
         args.append("--inverted-z-calib")
     elif identity_calib:
         args.append("--identity-calib")
+    if mag_calib is not None:
+        values = (
+            *mag_calib.offset,
+            mag_calib.field_strength_mgauss,
+            *mag_calib.normal,
+            *mag_calib.basis1,
+            *mag_calib.basis2,
+        )
+        args += ["--mag-calib", *(repr(float(value)) for value in values)]
     if drive_mode:
         args += ["--drive-mode", drive_mode]
     if stabilize:

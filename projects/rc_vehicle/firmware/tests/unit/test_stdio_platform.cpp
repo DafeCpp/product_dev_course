@@ -196,3 +196,20 @@ TEST(StdioPlatformConfig, InvertedZReplayCalibCanonicalizesVehicleFrame) {
   EXPECT_NEAR(sample.gy, -3.0f, 1.0e-6f);
   EXPECT_NEAR(sample.gz, 4.0f, 1.0e-6f);
 }
+
+TEST(StdioPlatformConfig, LoadsReplayMagCalibration) {
+  StdioPlatform platform;
+  MagCalibData expected;
+  expected.offset[0] = 12.0f;
+  expected.field_strength_mgauss = 208.5f;
+  expected.normal[2] = -1.0f;
+  expected.valid = true;
+  platform.SetMagCalib(expected);
+
+  MagCalibData loaded;
+  ASSERT_TRUE(platform.LoadMagCalib(loaded));
+  EXPECT_TRUE(loaded.valid);
+  EXPECT_FLOAT_EQ(loaded.offset[0], 12.0f);
+  EXPECT_FLOAT_EQ(loaded.field_strength_mgauss, 208.5f);
+  EXPECT_FLOAT_EQ(loaded.normal[2], -1.0f);
+}

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from simlib import (
+    MagReplayCalibration,
     OversteerReplayConfig,
     find_invariant_violations,
     find_sim_host,
@@ -20,6 +21,16 @@ RIDES = Path(__file__).parent / "fixtures" / "rides"
 BIN = find_sim_host()
 pytestmark = pytest.mark.skipif(
     BIN is None, reason="sim_host не собран (cmake build tests/), см. FW-S2.1")
+
+# Получено тем же hard-iron/PCA алгоритмом, что и в прошивке,
+# из планарного поворота того же source log, строки 9800:11800.
+NIGHT_TEST_2_MAG_CALIB = MagReplayCalibration(
+    offset=(335.906982421875, 56.915283203125, 447.906494140625),
+    field_strength_mgauss=208.5050188695924,
+    normal=(0.25123528632217335, 0.22182468130702923, 0.9421648696855823),
+    basis1=(0.0, 0.9733851810139181, -0.2291752372803436),
+    basis2=(-0.9679260461970303, 0.05757690635607914, 0.24454870465379225),
+)
 
 
 def _raw(name: str) -> list[dict[str, str]]:
@@ -71,13 +82,53 @@ def _max_true_run(values) -> int:
     return longest
 
 
+def _pca_heading_deg(frame, calib: MagReplayCalibration) -> float:
+    mag = tuple(
+        value - offset
+        for value, offset in zip(
+            (frame.mx, frame.my, frame.mz), calib.offset
+        )
+    )
+    dot_normal = sum(value * normal for value, normal in zip(mag, calib.normal))
+    projected = tuple(
+        value - dot_normal * normal
+        for value, normal in zip(mag, calib.normal)
+    )
+    component1 = sum(value * basis for value, basis in zip(projected, calib.basis1))
+    component2 = sum(value * basis for value, basis in zip(projected, calib.basis2))
+    return math.degrees(math.atan2(component2, component1)) % 360.0
+
+
 def test_static_tilt_keeps_pca_heading_stable():
-    raw, _, output = _replay("golden_real_tilt_2026_08_02.csv")
-    recorded_tilt = [
-        max(abs(_f(row, "pitch_deg")), abs(_f(row, "roll_deg")))
-        for row in raw
+    _, frames, output = _replay(
+        "golden_real_static_tilt.csv", mag_calib=NIGHT_TEST_2_MAG_CALIB
+    )
+    settled = output[-200:]
+    replayed_tilt = [
+        math.hypot(row["pitch_deg"], row["roll_deg"]) for row in settled
     ]
-    assert 15.0 <= statistics.mean(recorded_tilt) <= 30.0
+    assert 15.0 <= statistics.mean(replayed_tilt) <= 30.0
+    assert all(row["mag_rejected"] == 0.0 for row in output)
+    assert all(
+        row["expected_mag_norm_mgauss"]
+        == pytest.approx(NIGHT_TEST_2_MAG_CALIB.field_strength_mgauss, abs=0.01)
+        for row in output
+    )
+    expected_heading = [
+        _pca_heading_deg(frame, NIGHT_TEST_2_MAG_CALIB) for frame in frames
+    ]
+    pca_error = [
+        abs(_angle_delta(row["heading_deg"], expected))
+        for row, expected in zip(output[1:], expected_heading[1:])
+    ]
+    assert max(pca_error) < 0.01
+    fallback_heading = [
+        math.degrees(math.atan2(frame.my, frame.mx)) % 360.0 for frame in frames
+    ]
+    assert statistics.mean(
+        abs(_angle_delta(pca, fallback))
+        for pca, fallback in zip(expected_heading, fallback_heading)
+    ) > 5.0
     # Первый HostStep публикует bootstrap snapshot с heading=0.
     assert _circular_std_deg([row["heading_deg"] for row in output[1:]]) < 1.0
 
