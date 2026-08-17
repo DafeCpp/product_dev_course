@@ -101,10 +101,15 @@ with ClosedLoopSim(find_sim_host(), params=get_profile("heavy")) as sim:
 (`KidsMode`). `drift` требует `dynamic=True` (иначе `Caf`/`Car` не участвуют) и
 осмысленен ниже критической скорости 6.0 м/с — выше линейная модель шин расходится.
 
-`VehicleModel()`/`ClosedLoopSim()` без явных `params` по-прежнему берут
-`SimParams()`: динамика не переключалась на измеренный профиль (LOS-224), но
-`ClosedLoopSim` теперь применяет дорожные параметры `SimParams` по умолчанию.
-Чистые `synth_*`/`make_frame` и replay golden-фикстур шум не получают.
+`SimParams()` и `VehicleModel()` без явных `params` остаются generic RC-car
+baseline: это удобно для unit-тестов формул и синтетических экспериментов.
+`ClosedLoopSim()` без явных `params` моделирует реальную машинку на последнем
+полностью измеренном профиле `fitted_2026_08_02` (динамика LOS-32 + дорожный шум
+LOS-287). Чтобы получить старый baseline, передайте `params=SimParams()` явно.
+
+Golden replay-фикстура генерируется на clean-signal профиле
+`fitted_2026_07_18`: динамика откалибрована, но `road_*` равны нулю. Чистые
+`synth_*`/`make_frame` также не добавляют шум без явного `RoadNoiseModel`.
 
 ## Запуск тестов
 

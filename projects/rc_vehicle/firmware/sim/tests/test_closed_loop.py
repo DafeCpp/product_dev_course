@@ -2,7 +2,8 @@ import math
 
 import pytest
 
-from simlib import ClosedLoopSim, find_sim_host
+from simlib import ClosedLoopSim, find_sim_host, get_profile
+from simlib.closed_loop import DEFAULT_CLOSED_LOOP_PROFILE
 
 BIN = find_sim_host()
 pytestmark = pytest.mark.skipif(
@@ -11,6 +12,7 @@ pytestmark = pytest.mark.skipif(
 
 def test_throttle_ramp_increases_speed():
     with ClosedLoopSim(BIN) as sim:
+        assert sim.p == get_profile(DEFAULT_CLOSED_LOOP_PROFILE)
         rows = sim.run(600, rc_throttle=0.5, rc_steering=0.0)
     assert sim.model.state.v > 0.5
     assert rows[-1]["failsafe"] == 0.0

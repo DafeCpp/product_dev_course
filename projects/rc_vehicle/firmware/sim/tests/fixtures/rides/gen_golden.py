@@ -15,7 +15,7 @@
 import math
 import sys
 
-from simlib import SimParams, VehicleModel, make_frame
+from simlib import VehicleModel, get_profile, make_frame
 
 HEADER = [
     "ts_ms", "ax", "ay", "az", "gx", "gy", "gz", "vx", "vy", "slip_deg",
@@ -28,10 +28,13 @@ HEADER = [
 
 DT_S = 0.01  # 100 Гц, как реальный лог
 N = 400
+GOLDEN_PROFILE = "fitted_2026_07_18"
 
 
 def main(path: str) -> None:
-    p = SimParams()
+    # Golden намеренно остаётся clean-signal (LOS-287): параметры road_* этого
+    # профиля нулевые, а динамика откалибрована по реальным заездам LOS-32.
+    p = get_profile(GOLDEN_PROFILE)
     m = VehicleModel(p)
     rows = []
     ts = 1000

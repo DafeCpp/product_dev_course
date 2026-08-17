@@ -353,7 +353,9 @@ def test_closed_loop_accepts_profile():
     binary = find_sim_host()
     if binary is None:
         pytest.skip("sim_host не собран (см. SIM_HOST_BIN)")
-    with ClosedLoopSim(binary, params=get_profile("heavy")) as sim:
+    profile = get_profile("heavy")
+    with ClosedLoopSim(binary, params=profile) as sim:
+        assert sim.p is profile  # явный params не заменяется SIL-дефолтом
         rows = sim.run(200, rc_throttle=0.5, rc_steering=0.0)
     assert rows
     assert math.isfinite(sim.model.state.v)
