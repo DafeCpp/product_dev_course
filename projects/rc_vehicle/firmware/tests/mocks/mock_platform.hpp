@@ -176,11 +176,17 @@ class FakePlatform : public VehicleControlPlatform {
 
   uint32_t GetTimeMs() const noexcept override { return time_ms_; }
   uint64_t GetTimeUs() const noexcept override {
-    return static_cast<uint64_t>(time_ms_) * 1000;
+    const uint64_t now_us =
+        static_cast<uint64_t>(time_ms_) * 1000 + time_us_read_offset_;
+    time_us_read_offset_ += time_us_read_increment_;
+    return now_us;
   }
 
   void SetTimeMs(uint32_t time_ms) { time_ms_ = time_ms; }
   void AdvanceTimeMs(uint32_t delta_ms) { time_ms_ += delta_ms; }
+  void SetTimeUsReadIncrement(uint64_t increment_us) {
+    time_us_read_increment_ = increment_us;
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Логирование
@@ -421,6 +427,8 @@ class FakePlatform : public VehicleControlPlatform {
  private:
   // Time
   uint32_t time_ms_{0};
+  mutable uint64_t time_us_read_offset_{0};
+  uint64_t time_us_read_increment_{0};
 
   // Log()/LogCoreLoad() — const override, поэтому mutable.
   mutable std::vector<std::string> logged_messages_;

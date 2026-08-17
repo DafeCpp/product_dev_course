@@ -11,6 +11,34 @@
 
 namespace rc_vehicle {
 
+#ifdef RC_PROFILE_LOOP
+class VehicleControlPlatform;
+
+/** Accumulated timing for one estimator stage in a profiling window. */
+struct VehicleStateEstimatorStageProfile {
+  uint64_t total_us{0};
+  uint64_t max_us{0};
+  uint32_t calls{0};
+
+  void Record(uint64_t elapsed_us) noexcept {
+    total_us += elapsed_us;
+    if (elapsed_us > max_us) max_us = elapsed_us;
+    ++calls;
+  }
+};
+
+/** Profiling-only breakdown of the vehicle state-estimation pipeline. */
+struct VehicleStateEstimatorProfile {
+  VehicleStateEstimatorStageProfile com_offset;
+  VehicleStateEstimatorStageProfile rotate;
+  VehicleStateEstimatorStageProfile tilt;
+  VehicleStateEstimatorStageProfile imu;
+  VehicleStateEstimatorStageProfile speed;
+  VehicleStateEstimatorStageProfile nhc;
+  VehicleStateEstimatorStageProfile heading;
+};
+#endif
+
 /**
  * Inputs that can change for one state-estimation tick.
  *
@@ -63,14 +91,26 @@ class VehicleStateEstimator {
    * Update the estimate and apply CoM correction to this tick's sensor data.
    */
   [[nodiscard]] VehicleStateEstimate Update(
-      SensorSnapshot& sensors,
-      const VehicleStateEstimatorInput& input) noexcept;
+      SensorSnapshot& sensors, const VehicleStateEstimatorInput& input
+#ifdef RC_PROFILE_LOOP
+      ,
+      const VehicleControlPlatform* profile_clock = nullptr
+#endif
+      ) noexcept;
 
   /** Reset state tied to the calibrated vehicle reference frame. */
   void OnReferenceFrameChanged() noexcept;
 
   /** Refresh only EKF-backed fields after an external EKF reset. */
   void RefreshEkfFields(VehicleStateEstimate& estimate) const noexcept;
+
+#ifdef RC_PROFILE_LOOP
+  [[nodiscard]] const VehicleStateEstimatorProfile& GetProfileStats()
+      const noexcept {
+    return profile_;
+  }
+  void ResetProfileStats() noexcept { profile_ = {}; }
+#endif
 
  private:
   [[nodiscard]] VehicleStateEstimate BuildEstimate(
@@ -87,6 +127,9 @@ class VehicleStateEstimator {
   float a_lin_prev_g_{0.0f};
   uint32_t last_mag_sample_sequence_{0};
   bool tilt_was_enabled_{false};
+#ifdef RC_PROFILE_LOOP
+  VehicleStateEstimatorProfile profile_;
+#endif
 };
 
 }  // namespace rc_vehicle

@@ -3,6 +3,9 @@
 #include <cmath>
 
 #include "control_loop_helpers.hpp"
+#ifdef RC_PROFILE_LOOP
+#include "vehicle_control_platform.hpp"
+#endif
 
 namespace rc_vehicle {
 
@@ -13,9 +16,31 @@ constexpr float kNhcMaxYawRateRps = 1.0f;
 }  // namespace
 
 VehicleStateEstimate VehicleStateEstimator::Update(
-    SensorSnapshot& sensors, const VehicleStateEstimatorInput& input) noexcept {
-  prev_gz_rad_s_ =
-      CorrectImuForComOffset(sensors, imu_calib_, prev_gz_rad_s_, input.dt_ms);
+    SensorSnapshot& sensors, const VehicleStateEstimatorInput& input
+#ifdef RC_PROFILE_LOOP
+    ,
+    const VehicleControlPlatform* profile_clock
+#endif
+    ) noexcept {
+#ifdef RC_PROFILE_LOOP
+  const auto profile_call = [profile_clock](
+                                VehicleStateEstimatorStageProfile& stage,
+                                auto&& operation) noexcept {
+    if (!profile_clock) {
+      operation();
+      return;
+    }
+    const uint64_t start_us = profile_clock->GetTimeUs();
+    operation();
+    stage.Record(profile_clock->GetTimeUs() - start_us);
+  };
+  profile_call(profile_.com_offset, [&] {
+#endif
+    prev_gz_rad_s_ = CorrectImuForComOffset(sensors, imu_calib_, prev_gz_rad_s_,
+                                            input.dt_ms);
+#ifdef RC_PROFILE_LOOP
+  });
+#endif
 
   const bool ekf_active = input.ekf_available && input.filter.ekf_enabled;
   const bool imu_tick_valid = sensors.imu_enabled && input.dt_ms > 0;
@@ -24,7 +49,12 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 
   ImuData vehicle_imu = sensors.imu_data;
   if (sensors.imu_enabled) {
+#ifdef RC_PROFILE_LOOP
+    profile_call(profile_.rotate,
+                 [&] { imu_calib_.RotateToVehicleFrame(vehicle_imu); });
+#else
     imu_calib_.RotateToVehicleFrame(vehicle_imu);
+#endif
   }
 
   bool tilt_active_this_tick = false;
@@ -45,7 +75,13 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 
     tilt_est_.SetParams(
         {input.filter.tilt_corr_gain_hz, input.filter.tilt_accel_gate_band_g});
+#ifdef RC_PROFILE_LOOP
+    profile_call(profile_.tilt, [&] {
+      tilt_est_.Update(vehicle_imu, a_lin_g, a_lin_lat_g, dt_sec);
+    });
+#else
     tilt_est_.Update(vehicle_imu, a_lin_g, a_lin_lat_g, dt_sec);
+#endif
     pitch_rad = tilt_est_.GetPitchRad();
     roll_rad = tilt_est_.GetRollRad();
   }
@@ -68,9 +104,15 @@ VehicleStateEstimate VehicleStateEstimator::Update(
         applied_throttle_abs > input.filter.motor_deadzone
             ? applied_throttle_abs
             : 0.0f;
-    ekf_.UpdateFromImu(vehicle_imu.ax, vehicle_imu.ay, vehicle_imu.az,
-                       sensors.filtered_gz, dt_sec, zupt_throttle_abs,
-                       pitch_rad, roll_rad);
+#ifdef RC_PROFILE_LOOP
+    profile_call(profile_.imu, [&] {
+#endif
+      ekf_.UpdateFromImu(vehicle_imu.ax, vehicle_imu.ay, vehicle_imu.az,
+                         sensors.filtered_gz, dt_sec, zupt_throttle_abs,
+                         pitch_rad, roll_rad);
+#ifdef RC_PROFILE_LOOP
+    });
+#endif
 
     if (motor_model_active) {
       const float throttle = input.motor_model_throttle;
@@ -83,12 +125,24 @@ VehicleStateEstimate VehicleStateEstimator::Update(
                          (throttle_abs - input.filter.motor_deadzone) /
                          (1.0f - input.filter.motor_deadzone);
       }
-      ekf_.UpdateSpeed(expected_speed, input.filter.speed_meas_noise);
+#ifdef RC_PROFILE_LOOP
+      profile_call(profile_.speed, [&] {
+#endif
+        ekf_.UpdateSpeed(expected_speed, input.filter.speed_meas_noise);
+#ifdef RC_PROFILE_LOOP
+      });
+#endif
     }
 
     if (input.filter.nhc_enabled &&
         std::abs(ekf_.GetYawRate()) < kNhcMaxYawRateRps) {
-      ekf_.UpdateNonHolonomic(input.filter.nhc_noise);
+#ifdef RC_PROFILE_LOOP
+      profile_call(profile_.nhc, [&] {
+#endif
+        ekf_.UpdateNonHolonomic(input.filter.nhc_noise);
+#ifdef RC_PROFILE_LOOP
+      });
+#endif
     }
 
     const float vx_now = ekf_.GetVx();
@@ -106,7 +160,13 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   if (ekf_active && sensors.imu_enabled && sensors.mag_enabled &&
       !sensors.mag_rejected &&
       sensors.mag_sample_sequence != last_mag_sample_sequence_) {
-    ekf_.UpdateHeading(sensors.heading_deg * kDegToRad);
+#ifdef RC_PROFILE_LOOP
+    profile_call(profile_.heading, [&] {
+#endif
+      ekf_.UpdateHeading(sensors.heading_deg * kDegToRad);
+#ifdef RC_PROFILE_LOOP
+    });
+#endif
     last_mag_sample_sequence_ = sensors.mag_sample_sequence;
   }
 
