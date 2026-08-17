@@ -214,7 +214,12 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(ControlTickInput& input,
       .ekf_available = ctx_.stab_mgr != nullptr,
       .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
   };
-  state.estimate = state_estimator_.Update(input.sensors, estimator_input);
+  state.estimate = state_estimator_.Update(input.sensors, estimator_input
+#ifdef RC_PROFILE_LOOP
+                                           ,
+                                           &ctx_.platform
+#endif
+  );
 
 #ifdef RC_PROFILE_LOOP
   {
@@ -504,6 +509,35 @@ void ControlLoopProcessor::EmitProfile(uint32_t loops) {
         << " ekf_max=" << prof_ekf_max_us_;
     ctx_.platform.Log(LogLevel::Info, fmt.str());
   }
+  {
+    // LOS-256: вклад каждого алгоритмического шага в estimator pipeline.
+    // Средние делятся на число control-loop итераций, чтобы показывать
+    // реальный вклад условных обновлений (speed/nhc/heading) в бюджет тика.
+    const auto& profile = state_estimator_.GetProfileStats();
+    LogFormat fmt;
+    fmt << "PROF(est us/iter): com=" << (profile.com_offset.total_us / loops)
+        << " rotate=" << (profile.rotate.total_us / loops)
+        << " tilt=" << (profile.tilt.total_us / loops)
+        << " imu=" << (profile.imu.total_us / loops)
+        << " speed=" << (profile.speed.total_us / loops)
+        << " nhc=" << (profile.nhc.total_us / loops)
+        << " heading=" << (profile.heading.total_us / loops);
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
+  {
+    const auto& profile = state_estimator_.GetProfileStats();
+    LogFormat fmt;
+    fmt << "PROF(est max/calls): com=" << profile.com_offset.max_us << "/"
+        << profile.com_offset.calls << " rotate=" << profile.rotate.max_us
+        << "/" << profile.rotate.calls << " tilt=" << profile.tilt.max_us << "/"
+        << profile.tilt.calls << " imu=" << profile.imu.max_us << "/"
+        << profile.imu.calls << " speed=" << profile.speed.max_us << "/"
+        << profile.speed.calls << " nhc=" << profile.nhc.max_us << "/"
+        << profile.nhc.calls << " heading=" << profile.heading.max_us << "/"
+        << profile.heading.calls;
+    ctx_.platform.Log(LogLevel::Info, fmt.str());
+  }
+  state_estimator_.ResetProfileStats();
   prof_cfg_us_ = 0;
   prof_components_us_ = 0;
   prof_sensors_us_ = 0;

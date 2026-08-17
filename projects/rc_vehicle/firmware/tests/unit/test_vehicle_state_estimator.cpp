@@ -3,6 +3,9 @@
 #include <cmath>
 
 #include "vehicle_state_estimator.hpp"
+#ifdef RC_PROFILE_LOOP
+#include "mock_platform.hpp"
+#endif
 
 namespace rc_vehicle {
 namespace {
@@ -192,6 +195,52 @@ TEST_F(VehicleStateEstimatorTest, RefreshEkfFieldsDropsPreResetState) {
   EXPECT_FLOAT_EQ(estimate.pitch_rad, 0.25f);
   EXPECT_FLOAT_EQ(estimate.forward_accel_g, 0.4f);
 }
+
+#ifdef RC_PROFILE_LOOP
+TEST_F(VehicleStateEstimatorTest, ProfileRecordsConditionalStagesAndResets) {
+  testing::FakePlatform clock;
+  clock.SetTimeUsReadIncrement(1);
+  input_.filter.motor_model_enabled = true;
+  input_.filter.nhc_enabled = true;
+  sensors_.mag_enabled = true;
+  sensors_.mag_sample_sequence = 1;
+
+  (void)estimator_.Update(sensors_, input_, &clock);
+
+  const auto& profile = estimator_.GetProfileStats();
+  EXPECT_EQ(profile.com_offset.calls, 1u);
+  EXPECT_EQ(profile.rotate.calls, 1u);
+  EXPECT_EQ(profile.tilt.calls, 1u);
+  EXPECT_EQ(profile.imu.calls, 1u);
+  EXPECT_EQ(profile.speed.calls, 1u);
+  EXPECT_EQ(profile.nhc.calls, 1u);
+  EXPECT_EQ(profile.heading.calls, 1u);
+  EXPECT_EQ(profile.com_offset.total_us, 1u);
+  EXPECT_EQ(profile.heading.max_us, 1u);
+
+  estimator_.ResetProfileStats();
+
+  EXPECT_EQ(estimator_.GetProfileStats().com_offset.calls, 0u);
+  EXPECT_EQ(estimator_.GetProfileStats().heading.total_us, 0u);
+}
+
+TEST_F(VehicleStateEstimatorTest, ProfileDoesNotCountSkippedStages) {
+  testing::FakePlatform clock;
+  clock.SetTimeUsReadIncrement(1);
+  sensors_.imu_enabled = false;
+
+  (void)estimator_.Update(sensors_, input_, &clock);
+
+  const auto& profile = estimator_.GetProfileStats();
+  EXPECT_EQ(profile.com_offset.calls, 1u);
+  EXPECT_EQ(profile.rotate.calls, 0u);
+  EXPECT_EQ(profile.tilt.calls, 0u);
+  EXPECT_EQ(profile.imu.calls, 0u);
+  EXPECT_EQ(profile.speed.calls, 0u);
+  EXPECT_EQ(profile.nhc.calls, 0u);
+  EXPECT_EQ(profile.heading.calls, 0u);
+}
+#endif
 
 }  // namespace
 }  // namespace rc_vehicle

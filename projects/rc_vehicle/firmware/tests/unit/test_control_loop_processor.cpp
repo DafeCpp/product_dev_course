@@ -1330,6 +1330,15 @@ class ProfilerTest : public ProcessorTest {
     return result;
   }
 
+  std::optional<std::string> FindLastProfileLine(
+      std::string_view prefix) const {
+    std::optional<std::string> result;
+    for (const auto& msg : platform_.GetLoggedMessages()) {
+      if (msg.find(prefix) != std::string::npos) result = msg;
+    }
+    return result;
+  }
+
   /** Гонять до гарантированного пересечения границы диаг-интервала. */
   void RunUntilDiagIntervalCrossed() {
     while (time_ms_ < config::DiagnosticsConfig::kIntervalMs + 10) {
@@ -1378,6 +1387,24 @@ TEST_F(ProfilerTest, FirstStep_DoesNotFalselyReportOutlier) {
   auto line = FindLastProfMaxLine();
   ASSERT_TRUE(line.has_value());
   EXPECT_NE(line->find("outliers=0/"), std::string::npos) << *line;
+}
+
+TEST_F(ProfilerTest, EmitsEstimatorStageBreakdown) {
+  platform_.SetTimeUsReadIncrement(1);
+
+  RunUntilDiagIntervalCrossed();
+
+  const auto averages = FindLastProfileLine("PROF(est us/iter)");
+  ASSERT_TRUE(averages.has_value());
+  for (std::string_view stage :
+       {"com=", "rotate=", "tilt=", "imu=", "speed=", "nhc=", "heading="}) {
+    EXPECT_NE(averages->find(stage), std::string::npos) << *averages;
+  }
+
+  const auto maxima = FindLastProfileLine("PROF(est max/calls)");
+  ASSERT_TRUE(maxima.has_value());
+  EXPECT_NE(maxima->find("com=1/"), std::string::npos) << *maxima;
+  EXPECT_NE(maxima->find("rotate=0/0"), std::string::npos) << *maxima;
 }
 
 #endif  // RC_PROFILE_LOOP
