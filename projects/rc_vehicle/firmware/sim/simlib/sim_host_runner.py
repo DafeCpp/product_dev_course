@@ -37,13 +37,16 @@ def find_sim_host() -> str | None:
 def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
               timeout: float = 120.0, *, drive_mode: str | None = None,
               stabilize: bool = False,
-              oversteer: OversteerReplayConfig | None = None) -> list[dict]:
+              oversteer: OversteerReplayConfig | None = None,
+              inverted_z_calib: bool = False) -> list[dict]:
     """Прогнать кадры через sim_host в batch-режиме → список выходных строк.
 
     Каждая выходная строка — dict {имя_колонки: float} по заголовку sim_host.
     """
     args = [sim_host_bin, "--batch"]
-    if identity_calib:
+    if inverted_z_calib:
+        args.append("--inverted-z-calib")
+    elif identity_calib:
         args.append("--identity-calib")
     if drive_mode:
         args += ["--drive-mode", drive_mode]

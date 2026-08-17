@@ -12,6 +12,8 @@
 //   replay).
 //   --identity-calib — заменить калибровку на identity (replay «со средней
 //   точки»).
+//   --inverted-z-calib — replay реальных логов с перевёрнутым IMU:
+//       gravity=(0,0,-1), forward=(1,0,0), нулевые bias.
 //   --oversteer [--oversteer-slip-thresh deg]
 //       [--oversteer-rate-thresh deg/s] [--oversteer-throttle-reduction 0..1]
 //       — воспроизвести oversteer-конфиг, записанный в provenance эпизода.
@@ -79,6 +81,7 @@ rc_vehicle::DriveMode ParseDriveMode(std::string_view s) {
 int main(int argc, char** argv) {
   bool batch = false;
   bool identity_calib = false;
+  bool inverted_z_calib = false;
   rc_vehicle::DriveMode drive_mode = rc_vehicle::DriveMode::Normal;
   float speed_limit = 0.0f;
   bool stabilize = false;
@@ -94,9 +97,13 @@ int main(int argc, char** argv) {
       batch = true;
     else if (a == "--interactive")
       batch = false;
-    else if (a == "--identity-calib")
+    else if (a == "--identity-calib") {
       identity_calib = true;
-    else if (a == "--drive-mode" && i + 1 < argc)
+      inverted_z_calib = false;
+    } else if (a == "--inverted-z-calib") {
+      inverted_z_calib = true;
+      identity_calib = false;
+    } else if (a == "--drive-mode" && i + 1 < argc)
       drive_mode = ParseDriveMode(argv[++i]);
     else if (a == "--speed-limit" && i + 1 < argc)
       speed_limit = std::strtof(argv[++i], nullptr);
@@ -126,7 +133,10 @@ int main(int argc, char** argv) {
 
   auto platform = std::make_unique<StdioPlatform>();
   StdioPlatform* p = platform.get();
-  p->SetIdentityCalib(identity_calib);
+  if (inverted_z_calib)
+    p->SetInvertedZCalib(true);
+  else
+    p->SetIdentityCalib(identity_calib);
   p->SetDriveMode(drive_mode);
   p->SetSpeedLimit(speed_limit);
   p->SetStabilize(stabilize);

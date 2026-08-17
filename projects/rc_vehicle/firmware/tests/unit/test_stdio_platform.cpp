@@ -168,3 +168,31 @@ TEST(StdioPlatformConfig, AppliesReplayOversteerOverrideAfterModeDefaults) {
   EXPECT_FLOAT_EQ(cfg->oversteer.rate_thresh_deg_s, 30.0f);
   EXPECT_FLOAT_EQ(cfg->oversteer.throttle_reduction, 0.7f);
 }
+
+TEST(StdioPlatformConfig, InvertedZReplayCalibCanonicalizesVehicleFrame) {
+  StdioPlatform platform;
+  platform.SetInvertedZCalib(true);
+
+  const auto data = platform.LoadCalib();
+  ASSERT_TRUE(data.has_value());
+  EXPECT_TRUE(data->valid);
+  EXPECT_TRUE(data->gravity_valid);
+  EXPECT_TRUE(data->forward_valid);
+  EXPECT_FLOAT_EQ(data->gravity_vec[2], -1.0f);
+  EXPECT_FLOAT_EQ(data->accel_forward_vec[0], 1.0f);
+
+  rc_vehicle::ImuCalibration calibration;
+  calibration.SetData(*data);
+  ImuData sample{};
+  sample.ay = 0.2f;
+  sample.az = -1.0f;
+  sample.gy = 3.0f;
+  sample.gz = -4.0f;
+  calibration.RotateToVehicleFrame(sample);
+
+  EXPECT_NEAR(sample.ax, 0.0f, 1.0e-6f);
+  EXPECT_NEAR(sample.ay, -0.2f, 1.0e-6f);
+  EXPECT_NEAR(sample.az, 1.0f, 1.0e-6f);
+  EXPECT_NEAR(sample.gy, -3.0f, 1.0e-6f);
+  EXPECT_NEAR(sample.gz, 4.0f, 1.0e-6f);
+}

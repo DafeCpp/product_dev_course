@@ -40,7 +40,16 @@ class StdioPlatform : public VehicleControlPlatform {
   void SetWifi(std::optional<RcCommand> w) { wifi_command_ = w; }
 
   /** Замена реальной калибровки на identity (replay «со средней точки»). */
-  void SetIdentityCalib(bool on) { identity_calib_ = on; }
+  void SetIdentityCalib(bool on) {
+    identity_calib_ = on;
+    if (on) inverted_z_calib_ = false;
+  }
+  /** Калибровка перевёрнутого монтажа: Z датчика направлен вниз,
+   *  X совпадает с направлением движения. */
+  void SetInvertedZCalib(bool on) {
+    inverted_z_calib_ = on;
+    if (on) identity_calib_ = false;
+  }
 
   /** Режим вождения (по умолчанию Normal). */
   void SetDriveMode(DriveMode m) { drive_mode_ = m; }
@@ -97,10 +106,15 @@ class StdioPlatform : public VehicleControlPlatform {
 
   // ── Калибровка IMU (NVS-заглушки) ────────────────────────────────────────
   std::optional<ImuCalibData> LoadCalib() override {
-    if (!identity_calib_) return std::nullopt;
-    ImuCalibData id{};  // нулевой bias, gravity=(0,0,1), forward=(1,0,0)
-    id.valid = true;
-    return id;
+    if (!identity_calib_ && !inverted_z_calib_) return std::nullopt;
+    ImuCalibData calib{};  // нулевой bias, forward=(1,0,0)
+    if (inverted_z_calib_) {
+      calib.gravity_vec[2] = -1.0f;
+      calib.gravity_valid = true;
+      calib.forward_valid = true;
+    }
+    calib.valid = true;
+    return calib;
   }
   std::expected<void, PlatformError> SaveCalib(const ImuCalibData&) override {
     return std::expected<void, PlatformError>{};
@@ -200,6 +214,7 @@ class StdioPlatform : public VehicleControlPlatform {
   std::optional<RcCommand> rc_command_;
   std::optional<RcCommand> wifi_command_;
   bool identity_calib_{false};
+  bool inverted_z_calib_{false};
   bool failsafe_active_{false};
   DriveMode drive_mode_{DriveMode::Normal};
   float speed_limit_ms_{0.0f};

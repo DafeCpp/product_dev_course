@@ -30,7 +30,7 @@ def _raw(name: str) -> list[dict[str, str]]:
 def _replay(name: str, **kwargs):
     path = RIDES / name
     frames = load_telemetry_csv(str(path))
-    output = run_batch(frames, BIN, identity_calib=True, **kwargs)
+    output = run_batch(frames, BIN, inverted_z_calib=True, **kwargs)
     assert len(output) == len(frames)
     violations = find_invariant_violations(output)
     assert not violations, violations[:5]
@@ -85,10 +85,14 @@ def test_static_tilt_keeps_pca_heading_stable():
 def test_failsafe_episode_forces_neutral_pwm():
     _, frames, output = _replay("golden_real_failsafe_reconstructed.csv")
     assert all(not frame.rc_present and not frame.wifi_present for frame in frames)
+    assert statistics.mean(frame.az for frame in frames) < -0.9
     assert all(row["failsafe"] == 1.0 for row in output)
     assert all(row["neutral"] == 1.0 for row in output)
     assert max(abs(row["throttle"]) for row in output) < 1.0e-6
     assert max(abs(row["steering"]) for row in output) < 1.0e-6
+    # Калибровка перевёрнутого монтажа должна убрать ложный roll≈180°.
+    assert max(abs(row["pitch_deg"]) for row in output[1:]) < 10.0
+    assert max(abs(row["roll_deg"]) for row in output[1:]) < 10.0
 
 
 def test_recorded_oversteer_episode_triggers_guard():
