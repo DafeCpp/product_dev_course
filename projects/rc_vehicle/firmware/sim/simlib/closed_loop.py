@@ -9,9 +9,16 @@
 
 import subprocess
 
+from .profiles import get_profile
 from .sensors import RoadNoiseModel, make_frame
 from .sim_params import SimParams
 from .vehicle_model import StepOutput, VehicleModel
+
+
+# Closed-loop SIL моделирует конкретную машинку, поэтому его штатный профиль —
+# последний полностью измеренный. SimParams()/VehicleModel() остаются generic
+# baseline для unit-тестов и синтетических экспериментов.
+DEFAULT_CLOSED_LOOP_PROFILE = "fitted_2026_08_02"
 
 
 class ClosedLoopSim:
@@ -27,7 +34,8 @@ class ClosedLoopSim:
                  wifi_keepalive: bool = False,
                  sensor_noise: bool = True,
                  noise_seed: int = 0):
-        self.p = params or SimParams()
+        self.p = (params if params is not None
+                  else get_profile(DEFAULT_CLOSED_LOOP_PROFILE))
         self.model = VehicleModel(self.p, dynamic=dynamic)
         # StepOutput предыдущего тика → сенсоры текущего кадра (на старте — покой).
         self.last_out = StepOutput(0.0, 0.0, 0.0, 0.0, 0.0)
