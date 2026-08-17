@@ -10,6 +10,8 @@ from simlib import (
 )
 
 GOLDEN = Path(__file__).parent / "fixtures" / "rides" / "golden_synth_drive.csv"
+FAILSAFE = (Path(__file__).parent / "fixtures" / "rides" /
+            "golden_real_failsafe_reconstructed.csv")
 
 
 def test_loader_reads_golden():
@@ -24,6 +26,13 @@ def test_loader_dt_from_timestamps():
     frames = load_telemetry_csv(str(GOLDEN))
     # 100 Гц лог → dt ≈ 10 мс (первый кадр = 2 мс по умолчанию)
     assert all(fr.dt_ms == 10 for fr in frames[1:])
+
+
+def test_loader_reads_explicit_source_presence():
+    frames = load_telemetry_csv(str(FAILSAFE))
+    assert frames
+    assert all(fr.mag_present for fr in frames)
+    assert all(not fr.rc_present and not fr.wifi_present for fr in frames)
 
 
 @pytest.mark.skipif(find_sim_host() is None,

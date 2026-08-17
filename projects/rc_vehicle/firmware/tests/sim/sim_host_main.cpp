@@ -12,6 +12,9 @@
 //   replay).
 //   --identity-calib — заменить калибровку на identity (replay «со средней
 //   точки»).
+//   --oversteer [--oversteer-slip-thresh deg]
+//       [--oversteer-rate-thresh deg/s] [--oversteer-throttle-reduction 0..1]
+//       — воспроизвести oversteer-конфиг, записанный в provenance эпизода.
 //   --start-test <straight|circle|step> [--target-accel g]
 //       [--test-duration s] [--test-steering v] — запустить авто-манёвр
 //       (аналог start_test по WebSocket) до первого кадра; машина едет сама,
@@ -79,6 +82,10 @@ int main(int argc, char** argv) {
   rc_vehicle::DriveMode drive_mode = rc_vehicle::DriveMode::Normal;
   float speed_limit = 0.0f;
   bool stabilize = false;
+  bool oversteer = false;
+  float oversteer_slip_thresh_deg = 10.0f;
+  float oversteer_rate_thresh_deg_s = 30.0f;
+  float oversteer_throttle_reduction = 0.7f;
   bool start_test = false;
   rc_vehicle::TestParams test_params;
   for (int i = 1; i < argc; ++i) {
@@ -95,7 +102,18 @@ int main(int argc, char** argv) {
       speed_limit = std::strtof(argv[++i], nullptr);
     else if (a == "--stabilize")
       stabilize = true;
-    else if (a == "--start-test" && i + 1 < argc) {
+    else if (a == "--oversteer")
+      oversteer = true;
+    else if (a == "--oversteer-slip-thresh" && i + 1 < argc) {
+      oversteer = true;
+      oversteer_slip_thresh_deg = std::strtof(argv[++i], nullptr);
+    } else if (a == "--oversteer-rate-thresh" && i + 1 < argc) {
+      oversteer = true;
+      oversteer_rate_thresh_deg_s = std::strtof(argv[++i], nullptr);
+    } else if (a == "--oversteer-throttle-reduction" && i + 1 < argc) {
+      oversteer = true;
+      oversteer_throttle_reduction = std::strtof(argv[++i], nullptr);
+    } else if (a == "--start-test" && i + 1 < argc) {
       start_test = true;
       test_params.type = ParseTestType(argv[++i]);
     } else if (a == "--target-accel" && i + 1 < argc)
@@ -112,6 +130,15 @@ int main(int argc, char** argv) {
   p->SetDriveMode(drive_mode);
   p->SetSpeedLimit(speed_limit);
   p->SetStabilize(stabilize);
+  if (oversteer) {
+    rc_vehicle::OversteerConfig cfg;
+    cfg.warn_enabled = true;
+    cfg.slip_thresh_deg = oversteer_slip_thresh_deg;
+    cfg.rate_thresh_deg_s = oversteer_rate_thresh_deg_s;
+    cfg.throttle_reduction = oversteer_throttle_reduction;
+    cfg.Clamp();
+    p->SetOversteerConfig(cfg);
+  }
 
   VehicleControlUnified unified;
   unified.SetPlatform(std::move(platform));

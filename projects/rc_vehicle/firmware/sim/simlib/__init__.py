@@ -29,7 +29,7 @@ from .sensors import (
     synth_gyro,
     synth_mag,
 )
-from .sim_host_runner import find_sim_host, run_batch
+from .sim_host_runner import OversteerReplayConfig, find_sim_host, run_batch
 from .sim_params import (
     SimParams,
     fitted_dynamic_params_2026_07_18,
@@ -56,6 +56,7 @@ __all__ = [
     "Provenance",
     "RoadExcitation",
     "RoadNoiseModel",
+    "OversteerReplayConfig",
     "SLIP_CHANNELS",
     "SensorFrame",
     "SimParams",

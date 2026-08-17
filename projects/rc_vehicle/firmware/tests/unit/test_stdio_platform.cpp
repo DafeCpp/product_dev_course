@@ -146,3 +146,25 @@ TEST_F(SimHostTest, FormatOutputLine_NoNaNFromRealSnapshot) {
   EXPECT_EQ(row.find("nan"), std::string::npos);
   EXPECT_EQ(row.find("inf"), std::string::npos);
 }
+
+TEST(StdioPlatformConfig, AppliesReplayOversteerOverrideAfterModeDefaults) {
+  StdioPlatform platform;
+  platform.SetDriveMode(rc_vehicle::DriveMode::Drift);
+  platform.SetStabilize(true);
+
+  rc_vehicle::OversteerConfig expected;
+  expected.warn_enabled = true;
+  expected.slip_thresh_deg = 10.0f;
+  expected.rate_thresh_deg_s = 30.0f;
+  expected.throttle_reduction = 0.7f;
+  platform.SetOversteerConfig(expected);
+
+  const auto cfg = platform.LoadStabilizationConfig();
+  ASSERT_TRUE(cfg.has_value());
+  EXPECT_TRUE(cfg->enabled);
+  EXPECT_EQ(cfg->mode, rc_vehicle::DriveMode::Drift);
+  EXPECT_TRUE(cfg->oversteer.warn_enabled);
+  EXPECT_FLOAT_EQ(cfg->oversteer.slip_thresh_deg, 10.0f);
+  EXPECT_FLOAT_EQ(cfg->oversteer.rate_thresh_deg_s, 30.0f);
+  EXPECT_FLOAT_EQ(cfg->oversteer.throttle_reduction, 0.7f);
+}

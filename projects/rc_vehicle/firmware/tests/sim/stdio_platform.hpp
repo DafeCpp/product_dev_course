@@ -49,6 +49,10 @@ class StdioPlatform : public VehicleControlPlatform {
   /** Включить стабилизацию (cfg.enabled=true) — иначе stab_weight=0 и
    *  yaw/pitch/slip/oversteer не работают. */
   void SetStabilize(bool on) { stabilize_ = on; }
+  /** Явный oversteer-конфиг из provenance replay-эпизода. */
+  void SetOversteerConfig(std::optional<OversteerConfig> cfg) {
+    oversteer_config_ = cfg;
+  }
 
   // ── Выход: читается циклом после HostStep ────────────────────────────────
   [[nodiscard]] float GetLastThrottle() const { return last_throttle_; }
@@ -172,12 +176,14 @@ class StdioPlatform : public VehicleControlPlatform {
   // прошивки). Иначе строим конфиг режима (ApplyModeDefaults) + опц. лимит
   // скорости (Kids) + опц. enabled (--stabilize).
   std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
-    if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_) {
+    if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_ &&
+        !oversteer_config_) {
       return std::nullopt;
     }
     StabilizationConfig cfg{};
     cfg.mode = mode;
     cfg.ApplyModeDefaults();  // тюнинг выбранного режима (gains/slew/лимиты)
+    if (oversteer_config_) cfg.oversteer = *oversteer_config_;
     if (speed_limit_ms_ > 0.0f) {
       cfg.kids_mode.speed_limit_enabled = true;
       cfg.kids_mode.max_speed_ms = speed_limit_ms_;
@@ -198,6 +204,7 @@ class StdioPlatform : public VehicleControlPlatform {
   DriveMode drive_mode_{DriveMode::Normal};
   float speed_limit_ms_{0.0f};
   bool stabilize_{false};
+  std::optional<OversteerConfig> oversteer_config_;
 
   float last_throttle_{0.0f};
   float last_steering_{0.0f};
