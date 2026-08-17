@@ -1223,7 +1223,7 @@ TEST_F(KidsAccelLimitTest, EkfDisabled_TiltCompEnabled_StillCompensatesTilt) {
   // срабатывал на статическом наклоне. Фикс — считать tilt_est_.Update()
   // независимо от ekf_active (см. control_loop_processor.cpp).
   auto cfg = stab_mgr_->GetConfig();
-  cfg.filter.ekf_enabled = false;  // отключено пользователем/оператором
+  cfg.filter.ekf_enabled = false;       // отключено пользователем/оператором
   cfg.filter.tilt_comp_enabled = true;  // но tilt-фильтр формально включён
 
   stab_mgr_->SetConfig(cfg);
