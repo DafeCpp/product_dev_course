@@ -22,12 +22,28 @@ def _f(row: dict, key: str, default: float = 0.0) -> float:
         return default
 
 
+def _b(row: dict, key: str, default: bool) -> bool:
+    """Прочитать необязательный bool из CSV без привязки к формату записи."""
+    value = row.get(key, "")
+    if value is None or value == "":
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def load_telemetry_csv(path: str) -> list[SensorFrame]:
     """Прочитать CSV прошивки → список кадров для sim_host.
 
     Используются: `ts_ms` (→ dt), калиброванный IMU `ax..gz`, сырой mag
-    `mx/my/mz`, команды `rc_throttle/rc_steering`. Разбор по именам колонок
-    (csv.DictReader) — устойчив к порядку/доп. полям.
+    `mx/my/mz`, команды `rc_throttle/rc_steering`. Golden-вырезки могут явно
+    задавать `dt_ms`, `mag_present`, `rc_present`, `wifi_present` и
+    Wi-Fi-команды. Явный `dt_ms` имеет приоритет над разницей `ts_ms`.
+    Старые логи без этих колонок сохраняют прежний контракт: mag/RC доступны,
+    Wi-Fi отсутствует. Разбор по именам колонок устойчив к порядку/доп. полям.
     """
     frames: list[SensorFrame] = []
     with open(path, newline="") as fh:
@@ -35,7 +51,9 @@ def load_telemetry_csv(path: str) -> list[SensorFrame]:
         prev_ts: float | None = None
         for row in reader:
             ts = _f(row, "ts_ms")
-            if prev_ts is None:
+            if row.get("dt_ms", "") != "":
+                dt_ms = max(1, int(round(_f(row, "dt_ms"))))
+            elif prev_ts is None:
                 dt_ms = 2
             else:
                 dt_ms = max(1, int(round(ts - prev_ts)))
@@ -44,11 +62,14 @@ def load_telemetry_csv(path: str) -> list[SensorFrame]:
                 dt_ms=dt_ms,
                 ax=_f(row, "ax"), ay=_f(row, "ay"), az=_f(row, "az"),
                 gx=_f(row, "gx"), gy=_f(row, "gy"), gz=_f(row, "gz"),
-                mag_present=True,
+                mag_present=_b(row, "mag_present", True),
                 mx=_f(row, "mx"), my=_f(row, "my"), mz=_f(row, "mz"),
-                rc_present=True,
+                rc_present=_b(row, "rc_present", True),
                 rc_throttle=_f(row, "rc_throttle"),
                 rc_steering=_f(row, "rc_steering"),
+                wifi_present=_b(row, "wifi_present", False),
+                wifi_throttle=_f(row, "wifi_throttle"),
+                wifi_steering=_f(row, "wifi_steering"),
             ))
     return frames
 

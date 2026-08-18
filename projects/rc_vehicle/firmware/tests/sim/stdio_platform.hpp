@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "control_components.hpp"    // TelemetrySnapshot
 #include "diagnostics_reporter.hpp"  // DiagnosticsSnapshot
@@ -40,7 +41,20 @@ class StdioPlatform : public VehicleControlPlatform {
   void SetWifi(std::optional<RcCommand> w) { wifi_command_ = w; }
 
   /** Замена реальной калибровки на identity (replay «со средней точки»). */
-  void SetIdentityCalib(bool on) { identity_calib_ = on; }
+  void SetIdentityCalib(bool on) {
+    identity_calib_ = on;
+    if (on) inverted_z_calib_ = false;
+  }
+  /** Калибровка перевёрнутого монтажа: Z датчика направлен вниз,
+   *  X совпадает с направлением движения. */
+  void SetInvertedZCalib(bool on) {
+    inverted_z_calib_ = on;
+    if (on) identity_calib_ = false;
+  }
+  /** Сохранённая калибровка магнитометра для real-data replay. */
+  void SetMagCalib(std::optional<MagCalibData> calib) {
+    mag_calib_ = std::move(calib);
+  }
 
   /** Режим вождения (по умолчанию Normal). */
   void SetDriveMode(DriveMode m) { drive_mode_ = m; }
@@ -49,6 +63,10 @@ class StdioPlatform : public VehicleControlPlatform {
   /** Включить стабилизацию (cfg.enabled=true) — иначе stab_weight=0 и
    *  yaw/pitch/slip/oversteer не работают. */
   void SetStabilize(bool on) { stabilize_ = on; }
+  /** Явный oversteer-конфиг из provenance replay-эпизода. */
+  void SetOversteerConfig(std::optional<OversteerConfig> cfg) {
+    oversteer_config_ = cfg;
+  }
 
   // ── Выход: читается циклом после HostStep ────────────────────────────────
   [[nodiscard]] float GetLastThrottle() const { return last_throttle_; }
@@ -90,13 +108,23 @@ class StdioPlatform : public VehicleControlPlatform {
   bool InitMag() override { return true; }
   std::optional<MagData> ReadMag() override { return mag_data_; }
   const char* GetMagSensorName() const noexcept override { return "sim"; }
+  bool LoadMagCalib(MagCalibData& data) override {
+    if (!mag_calib_) return false;
+    data = *mag_calib_;
+    return true;
+  }
 
   // ── Калибровка IMU (NVS-заглушки) ────────────────────────────────────────
   std::optional<ImuCalibData> LoadCalib() override {
-    if (!identity_calib_) return std::nullopt;
-    ImuCalibData id{};  // нулевой bias, gravity=(0,0,1), forward=(1,0,0)
-    id.valid = true;
-    return id;
+    if (!identity_calib_ && !inverted_z_calib_) return std::nullopt;
+    ImuCalibData calib{};  // нулевой bias, forward=(1,0,0)
+    if (inverted_z_calib_) {
+      calib.gravity_vec[2] = -1.0f;
+      calib.gravity_valid = true;
+      calib.forward_valid = true;
+    }
+    calib.valid = true;
+    return calib;
   }
   std::expected<void, PlatformError> SaveCalib(const ImuCalibData&) override {
     return std::expected<void, PlatformError>{};
@@ -172,12 +200,14 @@ class StdioPlatform : public VehicleControlPlatform {
   // прошивки). Иначе строим конфиг режима (ApplyModeDefaults) + опц. лимит
   // скорости (Kids) + опц. enabled (--stabilize).
   std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
-    if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_) {
+    if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_ &&
+        !oversteer_config_) {
       return std::nullopt;
     }
     StabilizationConfig cfg{};
     cfg.mode = mode;
     cfg.ApplyModeDefaults();  // тюнинг выбранного режима (gains/slew/лимиты)
+    if (oversteer_config_) cfg.oversteer = *oversteer_config_;
     if (speed_limit_ms_ > 0.0f) {
       cfg.kids_mode.speed_limit_enabled = true;
       cfg.kids_mode.max_speed_ms = speed_limit_ms_;
@@ -191,13 +221,16 @@ class StdioPlatform : public VehicleControlPlatform {
   uint32_t time_ms_{0};
   std::optional<ImuData> imu_data_;
   std::optional<MagData> mag_data_;
+  std::optional<MagCalibData> mag_calib_;
   std::optional<RcCommand> rc_command_;
   std::optional<RcCommand> wifi_command_;
   bool identity_calib_{false};
+  bool inverted_z_calib_{false};
   bool failsafe_active_{false};
   DriveMode drive_mode_{DriveMode::Normal};
   float speed_limit_ms_{0.0f};
   bool stabilize_{false};
+  std::optional<OversteerConfig> oversteer_config_;
 
   float last_throttle_{0.0f};
   float last_steering_{0.0f};

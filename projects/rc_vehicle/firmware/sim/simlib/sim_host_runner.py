@@ -6,7 +6,118 @@
 
 import os
 import subprocess
+from bisect import bisect_left
+from dataclasses import dataclass
 from pathlib import Path
+
+from .frame import SensorFrame
+
+
+@dataclass(frozen=True)
+class OversteerReplayConfig:
+    """Параметры oversteer guard для воспроизведения записанного конфига."""
+
+    slip_thresh_deg: float = 10.0
+    rate_thresh_deg_s: float = 30.0
+    throttle_reduction: float = 0.7
+
+
+@dataclass(frozen=True)
+class MagReplayCalibration:
+    """Saved hard-iron/PCA calibration supplied to a real-data replay."""
+
+    offset: tuple[float, float, float]
+    field_strength_mgauss: float
+    normal: tuple[float, float, float]
+    basis1: tuple[float, float, float]
+    basis2: tuple[float, float, float]
+
+
+def resample_frames(
+    frames: list[SensorFrame], period_ms: int = 2
+) -> tuple[list[SensorFrame], list[int]]:
+    """Interpolate sparse telemetry onto the firmware control cadence.
+
+    Returns the 500 Hz replay frames and, for every source row, the index of
+    the nearest replay frame. The final short tick preserves exact duration.
+    """
+    if period_ms <= 0:
+        raise ValueError("period_ms must be positive")
+    if not frames:
+        return [], []
+
+    source_times: list[int] = []
+    elapsed_ms = 0
+    for frame in frames:
+        if frame.dt_ms <= 0:
+            raise ValueError("frame dt_ms must be positive")
+        elapsed_ms += frame.dt_ms
+        source_times.append(elapsed_ms)
+
+    tick_times = list(range(period_ms, elapsed_ms + 1, period_ms))
+    if not tick_times or tick_times[-1] != elapsed_ms:
+        tick_times.append(elapsed_ms)
+
+    def lerp(left: float, right: float, alpha: float) -> float:
+        return left + (right - left) * alpha
+
+    replay: list[SensorFrame] = []
+    right_index = 0
+    previous_tick = 0
+    for tick in tick_times:
+        while (
+            right_index < len(source_times)
+            and source_times[right_index] < tick
+        ):
+            right_index += 1
+
+        if right_index == 0:
+            left = right = frames[0]
+            alpha = 0.0
+        elif right_index >= len(frames):
+            left = right = frames[-1]
+            alpha = 0.0
+        else:
+            left = frames[right_index - 1]
+            right = frames[right_index]
+            interval = source_times[right_index] - source_times[right_index - 1]
+            alpha = (tick - source_times[right_index - 1]) / interval
+
+        discrete = left if alpha < 0.5 else right
+        replay.append(SensorFrame(
+            dt_ms=tick - previous_tick,
+            ax=lerp(left.ax, right.ax, alpha),
+            ay=lerp(left.ay, right.ay, alpha),
+            az=lerp(left.az, right.az, alpha),
+            gx=lerp(left.gx, right.gx, alpha),
+            gy=lerp(left.gy, right.gy, alpha),
+            gz=lerp(left.gz, right.gz, alpha),
+            mag_present=discrete.mag_present,
+            mx=lerp(left.mx, right.mx, alpha),
+            my=lerp(left.my, right.my, alpha),
+            mz=lerp(left.mz, right.mz, alpha),
+            rc_present=discrete.rc_present,
+            rc_throttle=lerp(left.rc_throttle, right.rc_throttle, alpha),
+            rc_steering=lerp(left.rc_steering, right.rc_steering, alpha),
+            wifi_present=discrete.wifi_present,
+            wifi_throttle=lerp(left.wifi_throttle, right.wifi_throttle, alpha),
+            wifi_steering=lerp(left.wifi_steering, right.wifi_steering, alpha),
+        ))
+        previous_tick = tick
+
+    source_indices: list[int] = []
+    for source_time in source_times:
+        index = bisect_left(tick_times, source_time)
+        if index == len(tick_times):
+            index -= 1
+        elif index > 0 and (
+            source_time - tick_times[index - 1]
+            <= tick_times[index] - source_time
+        ):
+            index -= 1
+        source_indices.append(index)
+
+    return replay, source_indices
 
 
 def find_sim_host() -> str | None:
@@ -25,14 +136,53 @@ def find_sim_host() -> str | None:
 
 
 def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
-              timeout: float = 120.0) -> list[dict]:
+              timeout: float = 120.0, *, drive_mode: str | None = None,
+              stabilize: bool = False,
+              oversteer: OversteerReplayConfig | None = None,
+              inverted_z_calib: bool = False,
+              mag_calib: MagReplayCalibration | None = None,
+              start_test: str | None = None,
+              target_accel: float | None = None,
+              test_duration: float | None = None,
+              test_steering: float | None = None) -> list[dict]:
     """Прогнать кадры через sim_host в batch-режиме → список выходных строк.
 
     Каждая выходная строка — dict {имя_колонки: float} по заголовку sim_host.
     """
     args = [sim_host_bin, "--batch"]
-    if identity_calib:
+    if inverted_z_calib:
+        args.append("--inverted-z-calib")
+    elif identity_calib:
         args.append("--identity-calib")
+    if mag_calib is not None:
+        values = (
+            *mag_calib.offset,
+            mag_calib.field_strength_mgauss,
+            *mag_calib.normal,
+            *mag_calib.basis1,
+            *mag_calib.basis2,
+        )
+        args += ["--mag-calib", *(repr(float(value)) for value in values)]
+    if drive_mode:
+        args += ["--drive-mode", drive_mode]
+    if stabilize:
+        args.append("--stabilize")
+    if oversteer is not None:
+        args += [
+            "--oversteer",
+            "--oversteer-slip-thresh", repr(float(oversteer.slip_thresh_deg)),
+            "--oversteer-rate-thresh", repr(float(oversteer.rate_thresh_deg_s)),
+            "--oversteer-throttle-reduction",
+            repr(float(oversteer.throttle_reduction)),
+        ]
+    if start_test:
+        args += ["--start-test", start_test]
+        if target_accel is not None:
+            args += ["--target-accel", repr(float(target_accel))]
+        if test_duration is not None:
+            args += ["--test-duration", repr(float(test_duration))]
+        if test_steering is not None:
+            args += ["--test-steering", repr(float(test_steering))]
     payload = "".join(f.to_csv() + "\n" for f in frames)
     proc = subprocess.run(args, input=payload, capture_output=True, text=True,
                           timeout=timeout)

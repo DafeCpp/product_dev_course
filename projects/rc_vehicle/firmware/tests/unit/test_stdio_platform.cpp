@@ -146,3 +146,70 @@ TEST_F(SimHostTest, FormatOutputLine_NoNaNFromRealSnapshot) {
   EXPECT_EQ(row.find("nan"), std::string::npos);
   EXPECT_EQ(row.find("inf"), std::string::npos);
 }
+
+TEST(StdioPlatformConfig, AppliesReplayOversteerOverrideAfterModeDefaults) {
+  StdioPlatform platform;
+  platform.SetDriveMode(rc_vehicle::DriveMode::Drift);
+  platform.SetStabilize(true);
+
+  rc_vehicle::OversteerConfig expected;
+  expected.warn_enabled = true;
+  expected.slip_thresh_deg = 10.0f;
+  expected.rate_thresh_deg_s = 30.0f;
+  expected.throttle_reduction = 0.7f;
+  platform.SetOversteerConfig(expected);
+
+  const auto cfg = platform.LoadStabilizationConfig();
+  ASSERT_TRUE(cfg.has_value());
+  EXPECT_TRUE(cfg->enabled);
+  EXPECT_EQ(cfg->mode, rc_vehicle::DriveMode::Drift);
+  EXPECT_TRUE(cfg->oversteer.warn_enabled);
+  EXPECT_FLOAT_EQ(cfg->oversteer.slip_thresh_deg, 10.0f);
+  EXPECT_FLOAT_EQ(cfg->oversteer.rate_thresh_deg_s, 30.0f);
+  EXPECT_FLOAT_EQ(cfg->oversteer.throttle_reduction, 0.7f);
+}
+
+TEST(StdioPlatformConfig, InvertedZReplayCalibCanonicalizesVehicleFrame) {
+  StdioPlatform platform;
+  platform.SetInvertedZCalib(true);
+
+  const auto data = platform.LoadCalib();
+  ASSERT_TRUE(data.has_value());
+  EXPECT_TRUE(data->valid);
+  EXPECT_TRUE(data->gravity_valid);
+  EXPECT_TRUE(data->forward_valid);
+  EXPECT_FLOAT_EQ(data->gravity_vec[2], -1.0f);
+  EXPECT_FLOAT_EQ(data->accel_forward_vec[0], 1.0f);
+
+  rc_vehicle::ImuCalibration calibration;
+  calibration.SetData(*data);
+  ImuData sample{};
+  sample.ay = 0.2f;
+  sample.az = -1.0f;
+  sample.gy = 3.0f;
+  sample.gz = -4.0f;
+  calibration.RotateToVehicleFrame(sample);
+
+  EXPECT_NEAR(sample.ax, 0.0f, 1.0e-6f);
+  EXPECT_NEAR(sample.ay, -0.2f, 1.0e-6f);
+  EXPECT_NEAR(sample.az, 1.0f, 1.0e-6f);
+  EXPECT_NEAR(sample.gy, -3.0f, 1.0e-6f);
+  EXPECT_NEAR(sample.gz, 4.0f, 1.0e-6f);
+}
+
+TEST(StdioPlatformConfig, LoadsReplayMagCalibration) {
+  StdioPlatform platform;
+  MagCalibData expected;
+  expected.offset[0] = 12.0f;
+  expected.field_strength_mgauss = 208.5f;
+  expected.normal[2] = -1.0f;
+  expected.valid = true;
+  platform.SetMagCalib(expected);
+
+  MagCalibData loaded;
+  ASSERT_TRUE(platform.LoadMagCalib(loaded));
+  EXPECT_TRUE(loaded.valid);
+  EXPECT_FLOAT_EQ(loaded.offset[0], 12.0f);
+  EXPECT_FLOAT_EQ(loaded.field_strength_mgauss, 208.5f);
+  EXPECT_FLOAT_EQ(loaded.normal[2], -1.0f);
+}

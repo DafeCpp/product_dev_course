@@ -23,10 +23,22 @@
 
 - `simlib/replay.py` — `load_telemetry_csv()` (формат прошивки → кадры) +
   `find_invariant_violations()` (нет NaN, throttle/steering ∈ [-1,1], EKF не
-  расходится).
+  расходится). Необязательные колонки `rc_present`/`wifi_present` позволяют
+  воспроизводить потерю источника управления без изменения сенсорных данных.
 - `simlib/sim_host_runner.py` — `find_sim_host()` + `run_batch()`: прогон через
-  `sim_host` (FW-S2.1) в batch-режиме, фиделити «со средней точки» (`--identity-calib`).
-- `tests/fixtures/rides/` — golden-фикстуры (+ `PROVENANCE.md`, генератор синтетики).
+  `sim_host` (FW-S2.1) в batch-режиме, фиделити «со средней точки»
+  (`--identity-calib`); реальные LOS-31 вырезки используют калибровку
+  перевёрнутого монтажа (`--inverted-z-calib`, gravity=(0,0,-1),
+  forward=(1,0,0)) и при необходимости saved hard-iron/PCA mag calibration
+  (`--mag-calib`). Для сценариев также можно восстановить drive mode,
+  стабилизацию и записанные пороги oversteer.
+- `tests/fixtures/rides/` — golden-фикстуры, provenance и воспроизводимая
+  нарезка реальных эпизодов.
+- `tests/test_scenario_replay.py` — LOS-31: наклон, failsafe, oversteer,
+  прямая и задний ход с допусками вместо точного сравнения float.
+  Телеметрийные срезы ≈100 Гц линейно интерполируются на тики
+  2 мс, чтобы `HostStep()` шёл с производственной частотой 500 Гц;
+  сценарные ассерты выбирают выходы, ближайшие к исходным строкам.
 
 Для replay-теста нужен собранный `sim_host`:
 ```bash
