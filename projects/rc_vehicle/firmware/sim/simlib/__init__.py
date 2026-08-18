@@ -33,6 +33,7 @@ from .sim_host_runner import (
     MagReplayCalibration,
     OversteerReplayConfig,
     find_sim_host,
+    resample_frames,
     run_batch,
 )
 from .sim_params import (
@@ -87,6 +88,7 @@ __all__ = [
     "load_profile",
     "load_profile_info",
     "resolve_profile",
+    "resample_frames",
     "save_profile",
     "simulate",
     "find_sim_host",

@@ -27,8 +27,8 @@ EPISODES = (
     Episode(
         "golden_real_static_tilt.csv",
         "test_runs/telemetry_log_night_test_2.csv",
-        11000,
-        11800,
+        9300,
+        10400,
         "tilt",
     ),
     Episode(
@@ -150,8 +150,11 @@ def extract(episode: Episode) -> None:
             ))
             for row in rows
         ]
-        mean_tilt = sum(tilt_deg) / len(tilt_deg)
-        if not 15.0 <= mean_tilt <= 30.0:
+        pre_roll_tilt = sum(tilt_deg[:200]) / 200
+        settled_tilt = sum(tilt_deg[-200:]) / 200
+        if pre_roll_tilt >= 5.0:
+            raise RuntimeError("tilt selector must start with a level pre-roll")
+        if not 15.0 <= settled_tilt <= 30.0:
             raise RuntimeError("tilt selector must contain a real 15–30 degree tilt")
     if episode.scenario == "oversteer" and not any(
         row["replay_phase"] == "assert"

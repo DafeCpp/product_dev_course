@@ -6,8 +6,11 @@
 
 import os
 import subprocess
+from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
+
+from .frame import SensorFrame
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,93 @@ class MagReplayCalibration:
     normal: tuple[float, float, float]
     basis1: tuple[float, float, float]
     basis2: tuple[float, float, float]
+
+
+def resample_frames(
+    frames: list[SensorFrame], period_ms: int = 2
+) -> tuple[list[SensorFrame], list[int]]:
+    """Interpolate sparse telemetry onto the firmware control cadence.
+
+    Returns the 500 Hz replay frames and, for every source row, the index of
+    the nearest replay frame. The final short tick preserves exact duration.
+    """
+    if period_ms <= 0:
+        raise ValueError("period_ms must be positive")
+    if not frames:
+        return [], []
+
+    source_times: list[int] = []
+    elapsed_ms = 0
+    for frame in frames:
+        if frame.dt_ms <= 0:
+            raise ValueError("frame dt_ms must be positive")
+        elapsed_ms += frame.dt_ms
+        source_times.append(elapsed_ms)
+
+    tick_times = list(range(period_ms, elapsed_ms + 1, period_ms))
+    if not tick_times or tick_times[-1] != elapsed_ms:
+        tick_times.append(elapsed_ms)
+
+    def lerp(left: float, right: float, alpha: float) -> float:
+        return left + (right - left) * alpha
+
+    replay: list[SensorFrame] = []
+    right_index = 0
+    previous_tick = 0
+    for tick in tick_times:
+        while (
+            right_index < len(source_times)
+            and source_times[right_index] < tick
+        ):
+            right_index += 1
+
+        if right_index == 0:
+            left = right = frames[0]
+            alpha = 0.0
+        elif right_index >= len(frames):
+            left = right = frames[-1]
+            alpha = 0.0
+        else:
+            left = frames[right_index - 1]
+            right = frames[right_index]
+            interval = source_times[right_index] - source_times[right_index - 1]
+            alpha = (tick - source_times[right_index - 1]) / interval
+
+        discrete = left if alpha < 0.5 else right
+        replay.append(SensorFrame(
+            dt_ms=tick - previous_tick,
+            ax=lerp(left.ax, right.ax, alpha),
+            ay=lerp(left.ay, right.ay, alpha),
+            az=lerp(left.az, right.az, alpha),
+            gx=lerp(left.gx, right.gx, alpha),
+            gy=lerp(left.gy, right.gy, alpha),
+            gz=lerp(left.gz, right.gz, alpha),
+            mag_present=discrete.mag_present,
+            mx=lerp(left.mx, right.mx, alpha),
+            my=lerp(left.my, right.my, alpha),
+            mz=lerp(left.mz, right.mz, alpha),
+            rc_present=discrete.rc_present,
+            rc_throttle=lerp(left.rc_throttle, right.rc_throttle, alpha),
+            rc_steering=lerp(left.rc_steering, right.rc_steering, alpha),
+            wifi_present=discrete.wifi_present,
+            wifi_throttle=lerp(left.wifi_throttle, right.wifi_throttle, alpha),
+            wifi_steering=lerp(left.wifi_steering, right.wifi_steering, alpha),
+        ))
+        previous_tick = tick
+
+    source_indices: list[int] = []
+    for source_time in source_times:
+        index = bisect_left(tick_times, source_time)
+        if index == len(tick_times):
+            index -= 1
+        elif index > 0 and (
+            source_time - tick_times[index - 1]
+            <= tick_times[index] - source_time
+        ):
+            index -= 1
+        source_indices.append(index)
+
+    return replay, source_indices
 
 
 def find_sim_host() -> str | None:

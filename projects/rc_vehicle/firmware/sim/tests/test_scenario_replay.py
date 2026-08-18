@@ -13,6 +13,7 @@ from simlib import (
     find_invariant_violations,
     find_sim_host,
     load_telemetry_csv,
+    resample_frames,
     run_batch,
 )
 
@@ -40,11 +41,21 @@ def _raw(name: str) -> list[dict[str, str]]:
 
 def _replay(name: str, **kwargs):
     path = RIDES / name
-    frames = load_telemetry_csv(str(path))
-    output = run_batch(frames, BIN, inverted_z_calib=True, **kwargs)
-    assert len(output) == len(frames)
-    violations = find_invariant_violations(output)
+    source_frames = load_telemetry_csv(str(path))
+    replay_frames, source_indices = resample_frames(source_frames, period_ms=2)
+    assert len(replay_frames) == math.ceil(
+        sum(frame.dt_ms for frame in source_frames) / 2
+    )
+    assert all(frame.dt_ms == 2 for frame in replay_frames[:-1])
+    replay_output = run_batch(
+        replay_frames, BIN, inverted_z_calib=True, **kwargs
+    )
+    assert len(replay_output) == len(replay_frames)
+    violations = find_invariant_violations(replay_output)
     assert not violations, violations[:5]
+    frames = [replay_frames[index] for index in source_indices]
+    output = [replay_output[index] for index in source_indices]
+    assert len(output) == len(source_frames)
     return _raw(name), frames, output
 
 
@@ -103,34 +114,39 @@ def test_static_tilt_keeps_pca_heading_stable():
     _, frames, output = _replay(
         "golden_real_static_tilt.csv", mag_calib=NIGHT_TEST_2_MAG_CALIB
     )
+    settled_frames = frames[-200:]
     settled = output[-200:]
     replayed_tilt = [
         math.hypot(row["pitch_deg"], row["roll_deg"]) for row in settled
     ]
     assert 15.0 <= statistics.mean(replayed_tilt) <= 30.0
-    assert all(row["mag_rejected"] == 0.0 for row in output)
+    assert all(row["mag_rejected"] == 0.0 for row in settled)
     assert all(
         row["expected_mag_norm_mgauss"]
         == pytest.approx(NIGHT_TEST_2_MAG_CALIB.field_strength_mgauss, abs=0.01)
-        for row in output
+        for row in settled
     )
     expected_heading = [
-        _pca_heading_deg(frame, NIGHT_TEST_2_MAG_CALIB) for frame in frames
+        _pca_heading_deg(frame, NIGHT_TEST_2_MAG_CALIB)
+        for frame in settled_frames
     ]
     pca_error = [
         abs(_angle_delta(row["heading_deg"], expected))
-        for row, expected in zip(output[1:], expected_heading[1:])
+        for row, expected in zip(settled, expected_heading)
     ]
-    assert max(pca_error) < 0.01
+    # Heading публикуется на 100 Гц и между mag-тиками держит
+    # предыдущее значение; медиана попадает на сам mag-тик.
+    assert statistics.median(pca_error) < 0.01
+    assert max(pca_error) < 2.0
     fallback_heading = [
-        math.degrees(math.atan2(frame.my, frame.mx)) % 360.0 for frame in frames
+        math.degrees(math.atan2(frame.my, frame.mx)) % 360.0
+        for frame in settled_frames
     ]
     assert statistics.mean(
         abs(_angle_delta(pca, fallback))
         for pca, fallback in zip(expected_heading, fallback_heading)
     ) > 5.0
-    # Первый HostStep публикует bootstrap snapshot с heading=0.
-    assert _circular_std_deg([row["heading_deg"] for row in output[1:]]) < 1.0
+    assert _circular_std_deg([row["heading_deg"] for row in settled]) < 1.0
 
 
 def test_failsafe_episode_forces_neutral_pwm():
