@@ -5,7 +5,7 @@ import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
 import type { ProjectCreate, ProjectUpdate } from '../types'
 import Modal from './Modal'
-import { Error, InfoRow, Loading } from './common'
+import { Error, InfoRow, Loading, FormActions } from './common'
 import { IS_TEST } from '../utils/env'
 import { notifyError } from '../utils/notify'
 import './CreateRunModal.scss'
@@ -276,7 +276,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
                             </small>
                         )}
 
-                        <div className="modal-actions">
+                        <FormActions className="modal-actions">
                             <button
                                 type="button"
                                 className="btn btn-secondary"
@@ -316,7 +316,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
                                     </button>
                                 </>
                             )}
-                        </div>
+                        </FormActions>
                     </form>
                 </>
             )}

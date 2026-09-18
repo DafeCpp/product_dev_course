@@ -1,12 +1,5 @@
-import './Error.scss'
+import { ErrorState } from '@lostpointer/web-react'
 
-interface ErrorProps {
-    message: string
+export default function Error({ message }: { message: string }) {
+    return <ErrorState message={message} />
 }
-
-function Error({ message }: ErrorProps) {
-    return <div className="error">{message}</div>
-}
-
-export default Error
-

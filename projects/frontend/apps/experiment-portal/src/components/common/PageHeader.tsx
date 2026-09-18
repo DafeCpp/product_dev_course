@@ -1,19 +1,11 @@
-import { ReactNode } from 'react'
-import './PageHeader.scss'
+import type { ReactNode } from 'react'
+import { PageHeader as SharedPageHeader } from '@lostpointer/web-react'
 
 interface PageHeaderProps {
     title: string
     action?: ReactNode
 }
 
-function PageHeader({ title, action }: PageHeaderProps) {
-    return (
-        <div className="page-header">
-            <h2>{title}</h2>
-            {action && <div className="page-header-action">{action}</div>}
-        </div>
-    )
+export default function PageHeader({ title, action }: PageHeaderProps) {
+    return <SharedPageHeader title={title} actions={action} />
 }
-
-export default PageHeader
-

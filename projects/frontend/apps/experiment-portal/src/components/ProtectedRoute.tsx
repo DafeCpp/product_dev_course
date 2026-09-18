@@ -2,6 +2,7 @@ import { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
+import Loading from './common/Loading'
 import './ProtectedRoute.scss'
 
 interface ProtectedRouteProps {
@@ -30,7 +31,7 @@ function ProtectedRoute({ children, requirePasswordChanged = true }: ProtectedRo
     if (isLoading) {
         return (
             <div className="loading-container">
-                <div className="loading">Проверка авторизации...</div>
+                <Loading message="Проверка авторизации..." />
             </div>
         )
     }
