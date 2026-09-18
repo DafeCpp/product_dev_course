@@ -26,16 +26,17 @@ Validated against a locally packed web-platform commit
   loading/empty/error states, sensor page header and project form actions.
   This does not replace backend lifecycle tests.
 
-## Release dependency — keep this PR draft
+## Published dependency
 
-The npm registry currently returns E404 for web-react. Release workflow run
-32781301900 in LostPointer/web-platform failed at npm whoami (E401).
-Publishing is intentionally deferred until after this implementation.
+`@lostpointer/web-react@0.1.1` was published publicly on 2026-09-18 UTC
+from the reviewed tarball. Registry integrity matches the tested artifact.
+The root workspace lockfile now resolves the npm release; no local file
+dependency is committed. Clean npm ci, type-check, production build and
+coverage tests with COVERAGE_ENFORCE_RATCHET=true passed against the registry
+package: 540 tests passed, 2 existing skipped. Coverage: statements 57.24%,
+branches 50.18%, functions 50.77%, lines 59.8%.
 
-The manifest pins the intended registry version, but package-lock.json must
-be regenerated after publication. No local tarball URL or fabricated registry
-integrity is committed. Therefore a clean npm ci cannot yet validate this draft.
-
-Before merge: restore publishing, publish the reviewed version, regenerate
-the root workspace lockfile, run clean npm ci and repeat the checks against
-the registry artifact; run the full backend Cypress lifecycle suite separately.
+The earlier PR #343 install failure was an npm E404 before publication.
+Future automated releases still require repairing the web-platform release
+workflow credentials (its previous npm whoami failed with E401).
+The full backend Cypress lifecycle suite remains a separate validation.
