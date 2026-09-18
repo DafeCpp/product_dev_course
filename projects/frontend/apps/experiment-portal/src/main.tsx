@@ -7,6 +7,7 @@ import App from './App.tsx'
 import ToastProvider from './components/toast/ToastProvider.tsx'
 import theme from './theme.ts'
 import '@lostpointer/web-styles/index.css'
+import '@lostpointer/web-react/styles.css'
 import './index.scss'
 
 const queryClient = new QueryClient({

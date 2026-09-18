@@ -5,7 +5,7 @@ import { useApiMutation } from '../hooks/useApiMutation'
 import { sensorsApi, projectsApi } from '../api/client'
 import type { SensorCreate, SensorRegisterResponse } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
-import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
+import { PageHeader, Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
 import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
 import { createSensorSchema, flatFieldErrors } from '../schemas/forms'
@@ -161,7 +161,7 @@ function CreateSensor() {
 
     return (
         <div className="create-sensor">
-            <h2>Зарегистрировать датчик</h2>
+            <PageHeader title="Зарегистрировать датчик" />
 
             {IS_TEST && error && <Error message={error} />}
 
