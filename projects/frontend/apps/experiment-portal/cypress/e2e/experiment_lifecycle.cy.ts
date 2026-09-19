@@ -6,6 +6,7 @@ describe('experiment-portal happy path — full lifecycle', () => {
   const experimentName = `E2E Test Experiment ${timestamp}`
 
   it('logs in, creates project, creates experiment, creates run, views telemetry, logs out', () => {
+    cy.viewport(1440, 900)
     // Login
     cy.loginAsAdmin()
 
@@ -23,8 +24,17 @@ describe('experiment-portal happy path — full lifecycle', () => {
     // Create project
     cy.createProject(projectName)
 
+    // Confirm the project is persisted by the real backend.
+    cy.reload()
     // Verify project appears in list
     cy.contains(projectName).should('be.visible')
+
+    for (const width of [390, 1440]) {
+      cy.viewport(width, 900)
+      cy.contains(projectName).should('be.visible')
+      cy.document().then((doc) => expect(doc.documentElement.scrollWidth).to.be.at.most(width))
+      cy.screenshot(`backend-projects-${width}`, { capture: 'viewport', scale: true })
+    }
 
     // Open project
     cy.openProject(projectName)
@@ -41,14 +51,17 @@ describe('experiment-portal happy path — full lifecycle', () => {
     // Open experiment to see runs
     cy.openExperiment(experimentName)
 
-    // Verify we're in runs view
-    cy.url().should('include', '/runs')
+    // Verify the experiment detail page is open
+    cy.url().should('match', /\/experiments\/[0-9a-f-]+$/)
 
     // Create a run
     cy.createRun()
 
-    // Verify run appears (might be in a list or table)
-    cy.contains(/run|запуск|execution/i).should('be.visible')
+    // Creating a run opens its detail page; reload verifies server persistence.
+    cy.url().should('match', /\/runs\/[0-9a-f-]+$/)
+    cy.reload()
+    cy.contains(/Run \d+/).should('be.visible')
+    cy.screenshot('backend-run-detail', { capture: 'viewport', scale: true })
 
     // Navigate to telemetry viewer
     cy.get('a, button').contains(/telemetry|телеметрия/i).then(($el) => {
@@ -61,7 +74,7 @@ describe('experiment-portal happy path — full lifecycle', () => {
     cy.url().should('include', '/telemetry', { timeout: 10000 })
 
     // Verify telemetry viewer is loaded (look for key elements)
-    cy.get('body').should('contain', /telemetry|chart|plot|data|sensor/i)
+    cy.contains(/телеметрия|сенсор|панели/i).should('be.visible')
 
     // Logout
     cy.logout()

@@ -9,31 +9,36 @@ Cypress.Commands.add('loginAsAdmin', () => {
 })
 
 Cypress.Commands.add('createProject', (projectName: string) => {
-  cy.contains('button', /\+ create|новый проект|create\s+project/i).click()
+  cy.get('button[aria-label="Создать проект"]').click()
   cy.get('#project_modal_name').type(projectName)
   cy.contains('button', /создать проект|save|create/i).click()
   cy.contains(projectName).should('be.visible')
 })
 
 Cypress.Commands.add('openProject', (projectName: string) => {
-  cy.contains('a, button, div', projectName)
-    .closest('[role="button"], button, a')
-    .click()
+  cy.contains('.project-card', projectName).within(() => {
+    cy.get('button[aria-label="Открыть проект"]').click()
+  })
+  cy.get('#project_modal_name').should('have.value', projectName)
+  cy.contains('.modal-content button', 'Закрыть').click()
+  cy.visit('/experiments')
+  cy.get('#experiment_project_id').click()
+  cy.contains('[role="option"]', projectName).click()
   cy.url().should('include', '/experiments')
 })
 
 Cypress.Commands.add('createExperiment', (experimentName: string) => {
-  cy.contains('button', /\+ create|новый эксперимент|create\s+experiment/i).click()
+  cy.get('button[aria-label="Создать эксперимент"]').click()
   cy.get('#experiment_name').type(experimentName)
   cy.contains('button', /создать эксперимент|create/i).click()
+  cy.url().should('match', /\/experiments\/[0-9a-f-]+$/)
   cy.contains(experimentName).should('be.visible')
 })
 
 Cypress.Commands.add('openExperiment', (experimentName: string) => {
-  cy.contains('a, button, div', experimentName)
-    .closest('[role="button"], button, a')
-    .click()
-  cy.url().should('include', '/runs')
+  cy.visit('/experiments')
+  cy.contains('a.experiment-card', experimentName).click()
+  cy.url().should('match', /\/experiments\/[0-9a-f-]+$/)
 })
 
 Cypress.Commands.add('createRun', () => {

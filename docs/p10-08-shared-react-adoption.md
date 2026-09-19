@@ -24,7 +24,7 @@ Validated against a locally packed web-platform commit
 - Cypress: login.cy.ts (2 tests) and shared_primitives.cy.ts (3 tests).
   The latter intercepts API responses and covers actual pages at 390/1440px,
   loading/empty/error states, sensor page header and project form actions.
-  This does not replace backend lifecycle tests.
+  The real backend lifecycle was subsequently validated; see below.
 
 ## Published dependency
 
@@ -39,4 +39,7 @@ branches 50.18%, functions 50.77%, lines 59.8%.
 The earlier PR #343 install failure was an npm E404 before publication.
 Future automated releases still require repairing the web-platform release
 workflow credentials (its previous npm whoami failed with E401).
-The full backend Cypress lifecycle suite remains a separate validation.
+The backend lifecycle now passes. Setup, seven passing Cypress tests and the
+separate pre-existing system-role failure are recorded in
+[backend validation](testing/p10-08-backend-validation.md).
+Manual VoiceOver validation was moved to P10-10 by agreement.
