@@ -1,0 +1,86 @@
+{
+  "services": {
+    "postgres": {
+      "image": "timescale/timescaledb:2.28.2-pg16",
+      "environment": {
+        "POSTGRES_PASSWORD": "postgres",
+        "POSTGRES_DB": "experiment_db"
+      },
+      "volumes": [
+        "../../docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U postgres"
+        ],
+        "interval": "2s",
+        "retries": 30
+      }
+    },
+    "redis": {
+      "image": "redis:7.4.9-alpine"
+    },
+    "auth": {
+      "image": "p10-auth",
+      "environment": {
+        "DATABASE_URL": "postgresql://auth_user:auth_password@postgres:5432/auth_db",
+        "ENV": "development",
+        "PORT": "8001",
+        "JWT_SECRET": "p10-local-only-test-secret",
+        "ADMIN_BOOTSTRAP_SECRET": "p10-local-bootstrap",
+        "SMTP_ENABLED": "false"
+      },
+      "ports": [
+        "127.0.0.1:18001:8001"
+      ],
+      "build": {
+        "context": "../../projects/backend",
+        "dockerfile": "services/auth-service/Dockerfile",
+        "args": {
+          "BACKEND_BASE_IMAGE": "p10-backend-base"
+        }
+      }
+    },
+    "experiment": {
+      "image": "p10-experiment",
+      "environment": {
+        "DATABASE_URL": "postgresql://experiment_user:experiment_password@postgres:5432/experiment_db",
+        "ENV": "development",
+        "PORT": "8002",
+        "AUTH_SERVICE_URL": "http://auth:8001/api/v1",
+        "TELEMETRY_BROKER_URL": "redis://redis:6379/0"
+      },
+      "ports": [
+        "127.0.0.1:18002:8002"
+      ],
+      "build": {
+        "context": "../../projects/backend",
+        "dockerfile": "services/experiment-service/Dockerfile",
+        "args": {
+          "BACKEND_BASE_IMAGE": "p10-backend-base"
+        }
+      }
+    },
+    "proxy": {
+      "image": "p10-auth-proxy",
+      "environment": {
+        "PORT": "8080",
+        "TARGET_EXPERIMENT_URL": "http://experiment:8002",
+        "AUTH_URL": "http://auth:8001",
+        "COOKIE_SECURE": "false",
+        "COOKIE_DOMAIN": "localhost",
+        "CORS_ORIGINS": "http://localhost:3005",
+        "REDIS_URL": "redis://redis:6379/0",
+        "RATE_LIMIT_MAX": "1000",
+        "NODE_ENV": "development"
+      },
+      "ports": [
+        "127.0.0.1:18080:8080"
+      ],
+      "build": {
+        "context": "../../projects/frontend/apps/auth-proxy"
+      }
+    }
+  }
+}
