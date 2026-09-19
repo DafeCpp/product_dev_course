@@ -1,10 +1,8 @@
 /** API клиент для взаимодействия с бэкендом через Auth Proxy */
-import axios from 'axios'
 import type { AxiosRequestConfig } from 'axios'
 import { getActiveProjectId } from '../utils/activeProject'
-import { maybeEmitHttpErrorToastFromAxiosError } from '../utils/httpDebug'
 import { createAuthProxyClient } from './http/axiosInstance'
-import { AUTH_PROXY_URL } from './http/baseUrl'
+import { attachSessionInterceptors } from './http/session'
 
 export const apiClient = createAuthProxyClient({ timeout: 30000, skipDebugToast: true })
 
@@ -78,51 +76,7 @@ export async function apiDelete<T = any>(url: string, config?: AxiosRequestConfi
   return response.data
 }
 
-// 401-refresh and debug toast — layered on top of the shared createAuthProxyClient interceptors
-apiClient.interceptors.response.use(
-  (response) => {
-    return response
-  },
-  async (error) => {
-    const originalRequest = error.config
-
-    // Если получили 401 и это не повторный запрос.
-    // Флаг `_skipAuthInterceptor` — для запросов с нестандартной авторизацией
-    // (например, отправка телеметрии по sensor-токену): 401 там говорит о
-    // неверном sensor-токене, а не о протухшей user-сессии, поэтому
-    // refresh/logout делать не нужно.
-    if (
-      error.response?.status === 401 &&
-      !originalRequest._retry &&
-      !originalRequest._skipAuthInterceptor
-    ) {
-      originalRequest._retry = true
-
-      try {
-        // Пытаемся обновить токен через Auth Proxy
-        await axios.post(
-          `${AUTH_PROXY_URL}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        )
-
-        // Повторяем оригинальный запрос
-        return apiClient(originalRequest)
-      } catch (refreshError) {
-        // Show debug toast for refresh failure as well (dev-only), then redirect.
-        maybeEmitHttpErrorToastFromAxiosError(refreshError)
-        // Если refresh не удался - перенаправляем на страницу входа
-        window.location.href = '/login'
-        return Promise.reject(refreshError)
-      }
-    }
-
-    // Emit debug toast for any request failure (dev-only; includes network/CORS/timeout).
-    maybeEmitHttpErrorToastFromAxiosError(error)
-
-    return Promise.reject(error)
-  }
-)
+attachSessionInterceptors(apiClient)
 
 // Domain API re-exports — implementations live in focused domain modules.
 // Callers that import from './client' continue to work unchanged.
