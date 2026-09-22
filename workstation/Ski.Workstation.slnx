@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Ski.Workstation.Application/Ski.Workstation.Application.csproj" />
+  <Project Path="tests/Ski.Workstation.Application.Tests/Ski.Workstation.Application.Tests.csproj" />
+</Solution>
