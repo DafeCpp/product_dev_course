@@ -38,6 +38,8 @@ FRAME_COLUMNS = [
     "kids_speed_limit_active", "kids_limiters_enabled",
     # Quality-gate flags occupy the former byte 130 padding (LOS-234).
     "mag_rejected", "mag_gate_active",
+    # Link flags occupy the former byte 131 padding (LOS-216).
+    "rc_ok", "wifi_ok", "failsafe_active", "rc_init_failed",
 ]
 
 # Event columns are stitched in by the exporter, are sparse, and `event_type`

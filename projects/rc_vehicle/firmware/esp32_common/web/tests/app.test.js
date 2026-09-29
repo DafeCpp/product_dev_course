@@ -25,6 +25,7 @@ function setFrame(view, base, frame = {}) {
     view.setUint8(base + 124, frame.testMarker ?? 0);
     view.setUint8(base + 129, frame.kidsFlags ?? 0);
     view.setUint8(base + 130, frame.magFlags ?? 0);
+    view.setUint8(base + 131, frame.linkFlags ?? 0);
 }
 
 function setEvent(view, base, record) {
@@ -151,7 +152,7 @@ describe('parseBinaryLog', () => {
         const buffer = buildLog({
             frames: [
                 {ts: 100, ax: 1.25, speed: 2.5, testMarker: 7,
-                    kidsFlags: 0b1101, magFlags: 0b10},
+                    kidsFlags: 0b1101, magFlags: 0b10, linkFlags: 0b1010},
                 {ts: 110, ax: -0.5},
             ],
             events: [{ts: 105, typeId: 13, param: 2, value1: 4.5, value2: -0.25}],
@@ -170,6 +171,11 @@ describe('parseBinaryLog', () => {
         expect(firstValues[names.indexOf('kids_speed_limit_active')]).toBe('1');
         expect(firstValues[names.indexOf('kids_limiters_enabled')]).toBe('1');
         expect(firstValues[names.indexOf('mag_gate_active')]).toBe('1');
+        expect(firstValues[names.indexOf('rc_ok')]).toBe('0');
+        expect(firstValues[names.indexOf('wifi_ok')]).toBe('1');
+        expect(firstValues[names.indexOf('failsafe_active')]).toBe('0');
+        expect(firstValues[names.indexOf('rc_init_failed')]).toBe('1');
+        expect(secondValues[names.indexOf('rc_ok')]).toBe('0');
         expect(secondValues[names.indexOf('event_type')]).toBe('TestStart');
         expect(secondValues[names.indexOf('event_param')]).toBe('Circle');
         expect(secondValues[names.indexOf('event_value1')]).toBe('4.5000');

@@ -52,6 +52,9 @@ struct ControlLoopContext {
 
   // Атомарный счётчик частоты (читается RunSelfTest из другого потока)
   std::atomic<uint32_t>& last_loop_hz;
+
+  // RcInputInit() упал при старте — в лог-кадр (LinkFlag, LOS-216)
+  bool rc_init_failed{false};
 };
 
 /**
