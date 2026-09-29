@@ -30,7 +30,7 @@ void VehicleControlUnified::BuildProcessor() {
       slip_ctrl_, oversteer_guard_, kids_processor_, auto_drive_,
       calib_mgr_.get(), stab_mgr_.get(), telem_mgr_.get(), rc_handler_.get(),
       wifi_handler_.get(), imu_handler_.get(), telem_handler_.get(),
-      last_loop_hz_, !rc_enabled_});
+      last_loop_hz_, rc_init_failed_});
 
   processor_ = std::make_unique<ControlLoopProcessor>(*loop_ctx_,
                                                       platform_->GetTimeMs());
