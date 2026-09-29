@@ -604,7 +604,8 @@ TEST_F(ProcessorTest, WithImu_TelemLogPopulated) {
 
 // ───────────────────────────────────────────────────────────────────────────
 // LOS-216: link_flags в лог-кадре — источники на стороне вызывающего
-// (state.failsafe_active и ctx.rc_init_failed); упаковку стерегут тесты билдера.
+// (state.failsafe_active и ctx.rc_init_failed); упаковку стерегут тесты
+// билдера.
 // ───────────────────────────────────────────────────────────────────────────
 
 TEST_F(ProcessorTest, LinkFlags_WifiDrivenFrameHasWifiOkOnly) {

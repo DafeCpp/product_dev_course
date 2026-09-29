@@ -88,7 +88,7 @@ struct TelemetryLogFrame {
   uint8_t stab_enabled{0};   // Стабилизация включена (1) / выключена (0)
   uint8_t kids_flags{0};     // Маска активных лимитеров Kids (см. KidsFlag)
   uint8_t mag_flags{0};      // Состояние quality gate (см. MagFlag)
-  uint8_t link_flags{0};     // Состояние RC/WiFi/failsafe (см. LinkFlag)
+  uint8_t link_flags{0};  // Состояние RC/WiFi/failsafe (см. LinkFlag)
 };  // sizeof == 132 bytes (30 × float + uint32_t + 8 × uint8_t)
 
 // Compile-time проверка размера структуры
