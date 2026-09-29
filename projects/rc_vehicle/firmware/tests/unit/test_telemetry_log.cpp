@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
+
 #include "telemetry_builder.hpp"
 #include "telemetry_log.hpp"
 
@@ -368,6 +370,68 @@ TEST_F(BuildLogFrameKidsTest, ResetClearsMask) {
 
   kids_.Reset();
   EXPECT_EQ(Flags(), kKidsLimitersEnabled);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// link_flags (LOS-216): состояние RC/WiFi/failsafe в каждом кадре
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Без этих битов rc_throttle == 0.0 не отличить «приёмник молчит» от «ручки
+// в нейтрали» — ровно так LOS-216 и остался без диагноза.
+class BuildLogFrameLinkTest : public BuildLogFrameKidsTest {
+ protected:
+  TelemetryLogFrame LinkFrame(bool failsafe_active, bool rc_init_failed) {
+    const TelemetryContext ctx{ekf_,   madgwick_, imu_calib_,
+                               guard_, kids_,     auto_drive_};
+    return BuildLogFrame(ctx, /*now=*/100, sensors_, 0.0f, 0.0f, 0.0f, 0.0f,
+                         DriveMode::Kids, /*stab_enabled=*/true,
+                         /*kids_limiters_active=*/true, failsafe_active,
+                         rc_init_failed);
+  }
+};
+
+TEST_F(BuildLogFrameLinkTest, LinkFlagsOccupyFormerPaddingByte) {
+  EXPECT_EQ(offsetof(TelemetryLogFrame, link_flags), 131u);
+  EXPECT_EQ(sizeof(TelemetryLogFrame), 132u);
+}
+
+TEST_F(BuildLogFrameLinkTest, NoLink_AllBitsClear) {
+  EXPECT_EQ(LinkFrame(false, false).link_flags, 0u);
+}
+
+TEST_F(BuildLogFrameLinkTest, RcActive_SetsRcOkAndRawValues) {
+  sensors_.rc_active = true;
+  sensors_.rc_cmd = RcCommand{.throttle = 0.4f, .steering = -0.2f};
+
+  const auto frame = LinkFrame(false, false);
+  EXPECT_EQ(frame.link_flags, kLinkRcOk);
+  EXPECT_FLOAT_EQ(frame.rc_throttle, 0.4f);
+  EXPECT_FLOAT_EQ(frame.rc_steering, -0.2f);
+}
+
+TEST_F(BuildLogFrameLinkTest, RcSilentAtNeutral_DistinguishableFromRcLost) {
+  sensors_.rc_active = true;
+  sensors_.rc_cmd = RcCommand{.throttle = 0.0f, .steering = 0.0f};
+  const auto neutral = LinkFrame(false, false);
+
+  sensors_.rc_active = false;
+  sensors_.rc_cmd.reset();
+  const auto lost = LinkFrame(false, false);
+
+  EXPECT_FLOAT_EQ(neutral.rc_throttle, lost.rc_throttle);
+  EXPECT_NE(neutral.link_flags & kLinkRcOk, 0);
+  EXPECT_EQ(lost.link_flags & kLinkRcOk, 0);
+}
+
+TEST_F(BuildLogFrameLinkTest, WifiFailsafeAndInitFailure_SetOwnBits) {
+  sensors_.wifi_active = true;
+  EXPECT_EQ(LinkFrame(false, false).link_flags, kLinkWifiOk);
+
+  sensors_.wifi_active = false;
+  EXPECT_EQ(LinkFrame(true, false).link_flags, kLinkFailsafe);
+  EXPECT_EQ(LinkFrame(false, true).link_flags, kLinkRcInitFailed);
+  EXPECT_EQ(LinkFrame(true, true).link_flags,
+            kLinkFailsafe | kLinkRcInitFailed);
 }
 
 }  // namespace

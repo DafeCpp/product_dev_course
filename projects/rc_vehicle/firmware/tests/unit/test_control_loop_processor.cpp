@@ -603,6 +603,46 @@ TEST_F(ProcessorTest, WithImu_TelemLogPopulated) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// LOS-216: link_flags в лог-кадре — источники на стороне вызывающего
+// (state.failsafe_active и ctx.rc_init_failed); упаковку стерегут тесты
+// билдера.
+// ───────────────────────────────────────────────────────────────────────────
+
+TEST_F(ProcessorTest, LinkFlags_WifiDrivenFrameHasWifiOkOnly) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  platform_.SetImuData(ImuData{.az = 1.0f});
+  ctx_->imu_handler = &imu_handler;
+
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  RunSteps(100);
+
+  size_t count = 0, cap = 0;
+  telem_mgr_->GetLogInfo(count, cap);
+  ASSERT_GT(count, 0u);
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+  EXPECT_EQ(frame.link_flags, kLinkWifiOk);
+}
+
+TEST_F(ProcessorTest, LinkFlags_NoLinkAndRcInitFailed_LogsFailsafe) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  platform_.SetImuData(ImuData{.az = 1.0f});
+  ctx_->imu_handler = &imu_handler;
+  ctx_->rc_init_failed = true;
+
+  RunSteps(500);  // ни RC, ни WiFi — failsafe должен сработать
+
+  size_t count = 0, cap = 0;
+  telem_mgr_->GetLogInfo(count, cap);
+  ASSERT_GT(count, 0u);
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+  EXPECT_EQ(frame.link_flags, kLinkFailsafe | kLinkRcInitFailed);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // LOS-13: бит kKidsLimitersEnabled в лог-кадре
 //
 // BuildLogFrame получает признак аргументом, поэтому упаковку бита стерегут

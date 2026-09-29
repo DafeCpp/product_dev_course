@@ -161,8 +161,11 @@ class FakePlatform : public VehicleControlPlatform {
     return std::expected<void, PlatformError>{};
   }
   std::expected<void, PlatformError> InitRc() override {
+    if (!init_rc_ok_) return std::unexpected(PlatformError::RcInitFailed);
     return std::expected<void, PlatformError>{};
   }
+  /** Заставить InitRc() вернуть ошибку (LOS-216). */
+  void SetInitRcOk(bool ok) { init_rc_ok_ = ok; }
   std::expected<void, PlatformError> InitImu() override {
     return std::expected<void, PlatformError>{};
   }
@@ -461,6 +464,7 @@ class FakePlatform : public VehicleControlPlatform {
 
   // Failsafe
   bool failsafe_active_{false};
+  bool init_rc_ok_{true};
 
   // WebSocket
   unsigned ws_client_count_{0};

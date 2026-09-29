@@ -52,12 +52,17 @@ TelemetrySnapshot BuildTelemetrySnapshot(
  * лимитеры Kids живут независимо от stabilization.enabled). Именно предикат,
  * а не голый kids_mode.limiters_enabled: вне Kids ограничители не применяются
  * ни при каком значении флага, и лог не должен утверждать обратное.
+ *
+ * failsafe_active / rc_init_failed — вместе с rc_active/wifi_active из
+ * sensors упаковываются в link_flags (LOS-216).
  */
 TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
                                 const SensorSnapshot& sensors,
                                 float applied_throttle, float applied_steering,
                                 float commanded_throttle,
                                 float commanded_steering, DriveMode drive_mode,
-                                bool stab_enabled, bool kids_limiters_active);
+                                bool stab_enabled, bool kids_limiters_active,
+                                bool failsafe_active = false,
+                                bool rc_init_failed = false);
 
 }  // namespace rc_vehicle
