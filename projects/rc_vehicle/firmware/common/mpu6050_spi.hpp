@@ -33,5 +33,4 @@ class Mpu6050Spi : public IImuSensor {
 
   int ReadReg(uint8_t reg, uint8_t &value);
   int WriteReg(uint8_t reg, uint8_t value);
-  int ReadReg16(uint8_t reg, int16_t &value);
 };
