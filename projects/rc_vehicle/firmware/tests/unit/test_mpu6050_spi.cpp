@@ -15,8 +15,7 @@ class FakeSpiDevice : public SpiDevice {
   int Transfer(std::span<const uint8_t> tx, std::span<uint8_t> rx) override {
     ++transfer_count_;
     last_tx_.assign(tx.begin(), tx.end());
-    if (transfer_result_ != 0)
-      return transfer_result_;
+    if (transfer_result_ != 0) return transfer_result_;
 
     std::memset(rx.data(), 0, rx.size());
     if (!responses_.empty()) {
@@ -27,7 +26,9 @@ class FakeSpiDevice : public SpiDevice {
     return 0;
   }
 
-  void PushResponse(std::vector<uint8_t> r) { responses_.push_back(std::move(r)); }
+  void PushResponse(std::vector<uint8_t> r) {
+    responses_.push_back(std::move(r));
+  }
   void SetTransferResult(int r) { transfer_result_ = r; }
   void ResetCounters() { transfer_count_ = 0; }
   int transfer_count() const { return transfer_count_; }
@@ -77,14 +78,13 @@ TEST(Mpu6050SpiTest, ReadParsesAllAxes) {
   InitOk(spi, imu);
 
   // rx[0] — эхо адреса; ax, ay, az, temp, gx, gy, gz (big-endian)
-  spi.PushResponse({0x00,
-                    0x40, 0x00,   // ax = 16384  → 1.0 g
-                    0xC0, 0x00,   // ay = -16384 → -1.0 g
-                    0x20, 0x00,   // az = 8192   → 0.5 g
-                    0x12, 0x34,   // temp (игнорируется)
-                    0x00, 0x83,   // gx = 131    → 1.0 °/s
-                    0xFF, 0x7D,   // gy = -131   → -1.0 °/s
-                    0x01, 0x06}); // gz = 262    → 2.0 °/s
+  spi.PushResponse({0x00, 0x40, 0x00,  // ax = 16384  → 1.0 g
+                    0xC0, 0x00,        // ay = -16384 → -1.0 g
+                    0x20, 0x00,        // az = 8192   → 0.5 g
+                    0x12, 0x34,        // temp (игнорируется)
+                    0x00, 0x83,        // gx = 131    → 1.0 °/s
+                    0xFF, 0x7D,        // gy = -131   → -1.0 °/s
+                    0x01, 0x06});      // gz = 262    → 2.0 °/s
 
   ImuData d;
   ASSERT_EQ(imu.Read(d), 0);
