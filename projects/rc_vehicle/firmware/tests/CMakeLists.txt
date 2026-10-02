@@ -72,6 +72,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/control_loop_helpers.cpp
     ${COMMON_DIR}/control_loop_processor.cpp
     ${COMMON_DIR}/mmc5983_spi.cpp
+    ${COMMON_DIR}/mpu6050_spi.cpp
     ${COMMON_DIR}/mag_calibration.cpp
     ${COMMON_DIR}/tilt_estimator.cpp
 )
@@ -143,6 +144,7 @@ add_executable(unit_tests
     unit/test_control_loop_processor.cpp
     unit/test_imu_handler.cpp
     unit/test_mmc5983.cpp
+    unit/test_mpu6050_spi.cpp
     unit/test_mag_calibration.cpp
     unit/test_stdio_platform.cpp
     sim/stdio_platform.cpp
