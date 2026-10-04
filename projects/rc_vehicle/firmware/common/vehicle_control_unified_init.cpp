@@ -30,6 +30,7 @@ PlatformError VehicleControlUnified::Init() {
 
   rc_enabled_ = platform_->InitRc().has_value();
   if (!rc_enabled_) {
+    rc_init_failed_ = true;
     platform_->Log(LogLevel::Warning,
                    "RC input init failed — continuing without RC-in");
   }

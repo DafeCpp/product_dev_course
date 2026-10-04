@@ -440,7 +440,8 @@ void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
           tctx, input.now_ms, input.sensors, persistent_.applied.throttle,
           persistent_.applied.steering, state.command.throttle,
           state.command.steering, drive_mode, input.config.enabled,
-          input.config.KidsLimitersActive());
+          input.config.KidsLimitersActive(), state.failsafe_active,
+          ctx_.rc_init_failed);
       ctx_.telem_mgr->Push(frame);
       ctx_.telem_mgr->SetLastLogTime(input.now_ms);
 #ifdef ESP_PLATFORM
