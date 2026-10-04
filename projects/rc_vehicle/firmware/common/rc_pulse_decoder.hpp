@@ -82,10 +82,10 @@ class RcPulseDecoder {
   /** Значение [-1..1] или nullopt, если импульсов нет / сигнал потерян. */
   [[nodiscard]] std::optional<float> Read(uint64_t now_us) const {
     if (!IsActive(now_us)) return std::nullopt;
-    return NormalizedFromPulseWidthUs(
-        pulse_width_us_, static_cast<uint16_t>(cfg_.min_us),
-        static_cast<uint16_t>(cfg_.neutral_us),
-        static_cast<uint16_t>(cfg_.max_us));
+    return NormalizedFromPulseWidthUs(pulse_width_us_,
+                                      static_cast<uint16_t>(cfg_.min_us),
+                                      static_cast<uint16_t>(cfg_.neutral_us),
+                                      static_cast<uint16_t>(cfg_.max_us));
   }
 
   /** Был ли валидный импульс не позднее timeout_us назад. */
