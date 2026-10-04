@@ -28,6 +28,7 @@
 #define RC_IN_PULSE_MIN_US 1000         // 1.0 мс
 #define RC_IN_PULSE_MAX_US 2000         // 2.0 мс
 #define RC_IN_PULSE_NEUTRAL_US 1500     // 1.5 мс
+#define RC_IN_PULSE_TOLERANCE_US 200    // Допуск окна приёма вокруг [min, max]
 #define RC_IN_TIMEOUT_MS 250            // Таймаут потери сигнала
 
 // IMU конфигурация (MPU-6050/MPU-6500 по SPI)

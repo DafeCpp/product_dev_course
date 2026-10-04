@@ -9,51 +9,33 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
-#include "rc_vehicle_common.hpp"
+#include "rc_pulse_decoder.hpp"
 
 static const char* TAG = "rc_input";
 
 static portMUX_TYPE s_rc_mux = portMUX_INITIALIZER_UNLOCKED;
 
-static uint32_t s_last_throttle_pulse_time_us = 0;
-static uint32_t s_last_steering_pulse_time_us = 0;
-static uint32_t s_last_throttle_pulse_width_us = 0;
-static uint32_t s_last_steering_pulse_width_us = 0;
-static uint32_t s_last_rise_throttle_us = 0;
-static uint32_t s_last_rise_steering_us = 0;
+static constexpr rc_vehicle::RcPulseConfig kRcPulseConfig{
+    .min_us = RC_IN_PULSE_MIN_US,
+    .neutral_us = RC_IN_PULSE_NEUTRAL_US,
+    .max_us = RC_IN_PULSE_MAX_US,
+    .tolerance_us = RC_IN_PULSE_TOLERANCE_US,
+    .timeout_us = RC_IN_TIMEOUT_MS * 1000u,
+};
+
+static rc_vehicle::RcPulseDecoder s_throttle(kRcPulseConfig);
+static rc_vehicle::RcPulseDecoder s_steering(kRcPulseConfig);
 
 static void gpio_isr_handler(void* arg) {
   const uint32_t gpio_num = (uint32_t)arg;
-  const int level = gpio_get_level((gpio_num_t)gpio_num);
-  const uint32_t now_us = (uint32_t)esp_timer_get_time();
+  const bool level = gpio_get_level((gpio_num_t)gpio_num) != 0;
+  const uint64_t now_us = (uint64_t)esp_timer_get_time();
 
   portENTER_CRITICAL_ISR(&s_rc_mux);
-  if (level) {
-    // RISE
-    if (gpio_num == (uint32_t)RC_IN_THROTTLE_PIN) {
-      s_last_rise_throttle_us = now_us;
-    } else if (gpio_num == (uint32_t)RC_IN_STEERING_PIN) {
-      s_last_rise_steering_us = now_us;
-    }
-  } else {
-    // FALL
-    if (gpio_num == (uint32_t)RC_IN_THROTTLE_PIN &&
-        s_last_rise_throttle_us != 0) {
-      const uint32_t width_us = now_us - s_last_rise_throttle_us;
-      if (width_us >= RC_IN_PULSE_MIN_US && width_us <= RC_IN_PULSE_MAX_US) {
-        s_last_throttle_pulse_width_us = width_us;
-        s_last_throttle_pulse_time_us = now_us;
-      }
-      s_last_rise_throttle_us = 0;
-    } else if (gpio_num == (uint32_t)RC_IN_STEERING_PIN &&
-               s_last_rise_steering_us != 0) {
-      const uint32_t width_us = now_us - s_last_rise_steering_us;
-      if (width_us >= RC_IN_PULSE_MIN_US && width_us <= RC_IN_PULSE_MAX_US) {
-        s_last_steering_pulse_width_us = width_us;
-        s_last_steering_pulse_time_us = now_us;
-      }
-      s_last_rise_steering_us = 0;
-    }
+  if (gpio_num == (uint32_t)RC_IN_THROTTLE_PIN) {
+    s_throttle.OnEdge(level, now_us);
+  } else if (gpio_num == (uint32_t)RC_IN_STEERING_PIN) {
+    s_steering.OnEdge(level, now_us);
   }
   portEXIT_CRITICAL_ISR(&s_rc_mux);
 }
@@ -103,52 +85,26 @@ int RcInputInit(void) {
   return 0;
 }
 
-static std::optional<float> ReadChannel(uint32_t last_time_us,
-                                       uint32_t last_width_us) {
-  if (last_time_us == 0) return std::nullopt;
-
-  const uint32_t now_us = (uint32_t)esp_timer_get_time();
-  const uint32_t dt_ms = (now_us - last_time_us) / 1000;
-  if (dt_ms >= RC_IN_TIMEOUT_MS) return std::nullopt;
-
-  return rc_vehicle::NormalizedFromPulseWidthUs(
-      last_width_us, RC_IN_PULSE_MIN_US, RC_IN_PULSE_NEUTRAL_US,
-      RC_IN_PULSE_MAX_US);
+// Копия декодера (~64 байта) под спинлоком; сам разбор — вне критической
+// секции, чтобы не удерживать ISR дольше необходимого.
+static rc_vehicle::RcPulseDecoder SnapshotDecoder(
+    const rc_vehicle::RcPulseDecoder& src) {
+  portENTER_CRITICAL(&s_rc_mux);
+  const rc_vehicle::RcPulseDecoder copy = src;
+  portEXIT_CRITICAL(&s_rc_mux);
+  return copy;
 }
 
 std::optional<float> RcInputReadThrottle(void) {
-  uint32_t t_us = 0;
-  uint32_t w_us = 0;
-  portENTER_CRITICAL(&s_rc_mux);
-  t_us = s_last_throttle_pulse_time_us;
-  w_us = s_last_throttle_pulse_width_us;
-  portEXIT_CRITICAL(&s_rc_mux);
-  return ReadChannel(t_us, w_us);
+  return SnapshotDecoder(s_throttle).Read((uint64_t)esp_timer_get_time());
 }
 
 std::optional<float> RcInputReadSteering(void) {
-  uint32_t t_us = 0;
-  uint32_t w_us = 0;
-  portENTER_CRITICAL(&s_rc_mux);
-  t_us = s_last_steering_pulse_time_us;
-  w_us = s_last_steering_pulse_width_us;
-  portEXIT_CRITICAL(&s_rc_mux);
-  return ReadChannel(t_us, w_us);
+  return SnapshotDecoder(s_steering).Read((uint64_t)esp_timer_get_time());
 }
 
 bool RcInputIsActive(void) {
-  uint32_t thr_us = 0;
-  uint32_t str_us = 0;
-  portENTER_CRITICAL(&s_rc_mux);
-  thr_us = s_last_throttle_pulse_time_us;
-  str_us = s_last_steering_pulse_time_us;
-  portEXIT_CRITICAL(&s_rc_mux);
-
-  const uint32_t now_us = (uint32_t)esp_timer_get_time();
-  const uint32_t dt_thr = (now_us - thr_us) / 1000;
-  const uint32_t dt_str = (now_us - str_us) / 1000;
-
-  return (thr_us != 0 && str_us != 0 && dt_thr < RC_IN_TIMEOUT_MS &&
-          dt_str < RC_IN_TIMEOUT_MS);
+  const uint64_t now_us = (uint64_t)esp_timer_get_time();
+  return SnapshotDecoder(s_throttle).IsActive(now_us) &&
+         SnapshotDecoder(s_steering).IsActive(now_us);
 }
-
