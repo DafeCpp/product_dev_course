@@ -266,8 +266,8 @@ class StdioPlatform : public VehicleControlPlatform {
     return cfg;
   }
 
-  // Импульсы, у которых спад уже наступил (fall <= now): декодер не должен
-  // видеть фронты из будущего, иначе now - pulse_end уходит в переполнение.
+  // Только импульсы, у которых спад уже наступил (fall <= now): как на
+  // ESP32, где ISR видит фронт не раньше, чем он случился.
   void EmitRcPulses() {
     const uint64_t now_us = GetTimeUs();
     const uint32_t widest = std::max(rc_thr_pulse_us_, rc_str_pulse_us_);
