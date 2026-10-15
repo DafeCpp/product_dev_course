@@ -90,7 +90,12 @@ class RcPulseDecoder {
 
   /** Был ли валидный импульс не позднее timeout_us назад. */
   [[nodiscard]] bool IsActive(uint64_t now_us) const {
-    return has_pulse_ && (now_us - pulse_end_us_) < cfg_.timeout_us;
+    if (!has_pulse_) return false;
+    // Импульс «из будущего»: читатель взял время до снимка декодера, а ISR
+    // успел принять фронт между ними. Канал жив; без этой проверки разность
+    // ушла бы в переполнение uint64 и канал ложно считался бы потерянным.
+    if (pulse_end_us_ >= now_us) return true;
+    return now_us - pulse_end_us_ < cfg_.timeout_us;
   }
 
   [[nodiscard]] const RcPulseStats& Stats() const { return stats_; }
