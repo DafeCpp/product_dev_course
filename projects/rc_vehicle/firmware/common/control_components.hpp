@@ -72,12 +72,21 @@ class RcInputHandler : public ControlComponent {
     return active_ ? last_command_ : std::nullopt;
   }
 
+  /**
+   * @brief Счётчики декодеров RC на последнем опросе (LOS-216)
+   * @return nullopt, если платформа их не ведёт
+   */
+  [[nodiscard]] const std::optional<RcInputStats>& GetStats() const noexcept {
+    return stats_;
+  }
+
  private:
   VehicleControlPlatform& platform_;
   uint32_t poll_interval_ms_;
   uint32_t last_poll_ms_{0};
   bool active_{false};
   std::optional<RcCommand> last_command_;
+  std::optional<RcInputStats> stats_;
 };
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -393,6 +402,7 @@ struct SensorSnapshot {
   // RC input
   bool rc_active{false};
   std::optional<RcCommand> rc_cmd;
+  std::optional<RcInputStats> rc_stats;  ///< Счётчики декодеров (LOS-216)
 
   // Wi-Fi
   bool wifi_active{false};
@@ -432,6 +442,10 @@ struct TelemetrySnapshot {
   bool wifi_ok{false};
   bool failsafe{false};  ///< Снимок failsafe (FW-RF8: чтобы JSON строился вне
                          ///< control loop, без обращения к платформе)
+  // Диагностика RC-входа (LOS-216): счётчики декодеров и число потерь связи
+  bool rc_stats_available{false};
+  RcInputStats rc_stats{};
+  uint32_t rc_loss_count{0};
 
   // IMU
   bool imu_enabled{false};

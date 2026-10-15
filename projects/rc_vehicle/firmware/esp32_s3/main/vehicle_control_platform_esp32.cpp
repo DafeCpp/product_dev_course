@@ -20,6 +20,7 @@
 #include "mag_calibration_nvs.hpp"
 #include "pwm_control.hpp"
 #include "rc_input.hpp"
+#include "rc_link_monitor.hpp"  // rc_vehicle::RcLinkEvent, FormatRcLinkEvent
 #include "rc_vehicle_common.hpp"
 #include "stabilization_config_nvs.hpp"
 
@@ -47,6 +48,12 @@ esp_err_t RcWsTelemStart() { return g_ws_telem.Start(&BuildTelemJson); }
  * В отличие от WS-телеметрии не требует готовности httpd/WS (Log()/
  * LogCoreLoad() работают с самого старта) — запускается прямо в конструкторе
  * VehicleControlPlatformEsp32, без отдельного Start()-вызова из main.cpp.
+ *
+ * LOS-216: та же задача печатает события RC-связи (RcLinkEvent). Это не
+ * «последний снимок», а события — для них отдельная очередь с xQueueSend без
+ * ожидания (переполнение = событие теряется, control loop не блокируется).
+ * Задача ждёт диагностику не дольше kRcPollTicks, чтобы события RC попадали
+ * в serial без задержки до следующего DIAG-интервала.
  */
 class DiagLogTask {
  public:
@@ -64,10 +71,18 @@ class DiagLogTask {
     if (queue_ == nullptr) {
       return ESP_ERR_NO_MEM;
     }
+    rc_queue_ = xQueueCreate(kRcQueueLen, sizeof(RcLinkEvent));
+    if (rc_queue_ == nullptr) {
+      vQueueDelete(queue_);
+      queue_ = nullptr;
+      return ESP_ERR_NO_MEM;
+    }
     if (xTaskCreatePinnedToCore(&DiagLogTask::TaskEntry, task_name, stack, this,
                                 prio, nullptr, core_id) != pdPASS) {
       vQueueDelete(queue_);
+      vQueueDelete(rc_queue_);
       queue_ = nullptr;
+      rc_queue_ = nullptr;
       return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -81,20 +96,37 @@ class DiagLogTask {
     xQueueOverwrite(queue_, &snap);
   }
 
+  /** Не блокирует: при полной очереди событие отбрасывается. */
+  void EnqueueRcLink(const RcLinkEvent& evt) {
+    if (rc_queue_ == nullptr) {
+      return;
+    }
+    xQueueSend(rc_queue_, &evt, 0);
+  }
+
  private:
   static void TaskEntry(void* arg) { static_cast<DiagLogTask*>(arg)->Run(); }
 
   void Run() {
     DiagnosticsSnapshot snap{};
+    RcLinkEvent evt{};
     for (;;) {
-      if (xQueueReceive(queue_, &snap, portMAX_DELAY) != pdTRUE) {
-        continue;
+      if (xQueueReceive(queue_, &snap, kRcPollTicks) == pdTRUE) {
+        EmitDiagnostics(*platform_, snap);
       }
-      EmitDiagnostics(*platform_, snap);
+      while (xQueueReceive(rc_queue_, &evt, 0) == pdTRUE) {
+        platform_->Log(evt.kind == RcLinkEvent::Kind::Lost ? LogLevel::Warning
+                                                           : LogLevel::Info,
+                       FormatRcLinkEvent(evt));
+      }
     }
   }
 
+  static constexpr UBaseType_t kRcQueueLen = 8;
+  static constexpr TickType_t kRcPollTicks = pdMS_TO_TICKS(100);
+
   QueueHandle_t queue_ = nullptr;
+  QueueHandle_t rc_queue_ = nullptr;
   VehicleControlPlatform* platform_ = nullptr;
 };
 
@@ -382,6 +414,15 @@ std::optional<RcCommand> VehicleControlPlatformEsp32::GetRc() {
     return RcCommand{.throttle = *throttle, .steering = *steering};
   }
   return std::nullopt;
+}
+
+std::optional<RcInputStats> VehicleControlPlatformEsp32::GetRcStats() {
+  return RcInputGetStats();
+}
+
+void VehicleControlPlatformEsp32::PublishRcLinkEvent(const RcLinkEvent& evt) {
+  // LOS-216: как PublishDiagnostics — из control loop только очередь.
+  g_diag_log_task.EnqueueRcLink(evt);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

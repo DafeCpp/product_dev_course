@@ -108,3 +108,11 @@ bool RcInputIsActive(void) {
   return SnapshotDecoder(s_throttle).IsActive(now_us) &&
          SnapshotDecoder(s_steering).IsActive(now_us);
 }
+
+rc_vehicle::RcInputStats RcInputGetStats(void) {
+  const uint64_t now_us = (uint64_t)esp_timer_get_time();
+  return rc_vehicle::RcInputStats{
+      .throttle = SnapshotDecoder(s_throttle).Status(now_us),
+      .steering = SnapshotDecoder(s_steering).Status(now_us),
+  };
+}

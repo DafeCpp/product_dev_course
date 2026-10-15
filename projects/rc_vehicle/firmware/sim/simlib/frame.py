@@ -3,6 +3,10 @@
 Порядок полей `to_csv()` ТОЧНО совпадает с `ParseInputLine` в
 tests/sim/stdio_platform.cpp (17 полей). Бинд к exe — в FW-S2.5.
 Единицы: accel g, gyro dps, mag мГс.
+
+LOS-216: если задан `rc_pulse_us` (ширины импульсов газа/руля, мкс; 0 —
+канал молчит), к строке добавляются поля 18-19, и прошивка получает RC через
+настоящий `RcPulseDecoder` вместо готовой команды `rc_throttle/rc_steering`.
 """
 
 from dataclasses import dataclass
@@ -27,6 +31,7 @@ class SensorFrame:
     wifi_present: bool = False
     wifi_throttle: float = 0.0
     wifi_steering: float = 0.0
+    rc_pulse_us: tuple[int, int] | None = None
 
     def to_csv(self) -> str:
         """Строка для stdin sim_host (см. FW-S2.1 ParseInputLine)."""
@@ -41,5 +46,7 @@ class SensorFrame:
             b(self.rc_present), self.rc_throttle, self.rc_steering,
             b(self.wifi_present), self.wifi_throttle, self.wifi_steering,
         ]
+        if self.rc_pulse_us is not None:
+            fields += [int(self.rc_pulse_us[0]), int(self.rc_pulse_us[1])]
         return ",".join(repr(v) if isinstance(v, float) else str(v)
                         for v in fields)

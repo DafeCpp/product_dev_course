@@ -15,37 +15,54 @@ namespace rc_vehicle {
  */
 enum class TelemetryEventType : uint8_t {
   // ── IMU-калибровка (CalibrationManager) ──────────────────────────────
-  ImuCalibStart  = 1,  ///< param: 0=gyro_only  1=full  2=auto_forward(stage2)
-  ImuCalibDone   = 2,  ///< param: stage (1 или 2)
+  ImuCalibStart = 1,   ///< param: 0=gyro_only  1=full  2=auto_forward(stage2)
+  ImuCalibDone = 2,    ///< param: stage (1 или 2)
   ImuCalibFailed = 3,  ///< param: stage
 
   // ── Калибровка trim руля ──────────────────────────────────────────────
-  TrimCalibStart  = 4,
-  TrimCalibDone   = 5,
+  TrimCalibStart = 4,
+  TrimCalibDone = 5,
   TrimCalibFailed = 6,
 
   // ── Калибровка CoM offset ─────────────────────────────────────────────
-  ComCalibStart  = 7,
-  ComCalibDone   = 8,
+  ComCalibStart = 7,
+  ComCalibDone = 8,
   ComCalibFailed = 9,
 
   // ── Калибровка скорости ───────────────────────────────────────────────
-  SpeedCalibStart  = 10,
-  SpeedCalibDone   = 11,
+  SpeedCalibStart = 10,
+  SpeedCalibDone = 11,
   SpeedCalibFailed = 12,
 
   // ── Тестовые манёвры (TestRunner) ─────────────────────────────────────
-  TestStart   = 13,  ///< param: TestType (1=Straight 2=Circle 3=Step)
-  TestDone    = 14,  ///< param: TestType
-  TestFailed  = 15,  ///< param: TestType
+  TestStart = 13,    ///< param: TestType (1=Straight 2=Circle 3=Step)
+  TestDone = 14,     ///< param: TestType
+  TestFailed = 15,   ///< param: TestType
   TestStopped = 16,  ///< param: TestType
 
   // ── Калибровка магнитометра ───────────────────────────────────────────
-  MagCalibStart     = 17,
-  MagCalibDone      = 18,
-  MagCalibFailed    = 19,
+  MagCalibStart = 17,
+  MagCalibDone = 18,
+  MagCalibFailed = 19,
   MagCalibCancelled = 20,
+
+  // ── RC-связь (LOS-216, RcLinkMonitor) ─────────────────────────────────
+  RcLost = 21,      ///< param: RcLostParam(); value1/value2 — ширина последнего
+                    ///< отброшенного импульса thr/str [мкс]
+  RcRestored = 22,  ///< param: 1 = первый захват после старта;
+                    ///< value1 = длительность потери [с], value2 = подавленные
+                    ///< переходы (дребезг)
 };
+
+/**
+ * Упаковка param для RcLost: биты 0-1 — RcLossCause газа, 2-3 — руля,
+ * бит 4 — сигнала не было с момента старта.
+ */
+constexpr uint8_t RcLostParam(uint8_t thr_cause, uint8_t str_cause,
+                              bool since_boot) {
+  return static_cast<uint8_t>((thr_cause & 0x3u) | ((str_cause & 0x3u) << 2) |
+                              (since_boot ? 0x10u : 0u));
+}
 
 /**
  * @brief Одно событие телеметрии (16 байт).

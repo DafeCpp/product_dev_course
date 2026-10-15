@@ -26,6 +26,11 @@ struct RcInputConfig {
       2000;  ///< Максимальная длительность импульса
   static constexpr uint32_t kPulseNeutralUs =
       1500;  ///< Нейтральная длительность
+  /// LOS-216: сколько ждать сигнал после старта, прежде чем сообщить
+  /// «RC: no signal since boot»
+  static constexpr uint32_t kLinkStartupGraceMs = 1000;
+  /// LOS-216: сообщения о потере/восстановлении RC не чаще (дребезг связи)
+  static constexpr uint32_t kLinkReportIntervalMs = 1000;
 };
 
 /**

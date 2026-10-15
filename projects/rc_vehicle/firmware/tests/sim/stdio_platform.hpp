@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,6 +13,8 @@
 #include "imu_calibration.hpp"       // ImuCalibData
 #include "imu_sensor.hpp"            // ImuData
 #include "mag_sensor.hpp"            // MagData
+#include "rc_link_monitor.hpp"       // RcLinkEvent, FormatRcLinkEvent
+#include "rc_pulse_decoder.hpp"      // RcPulseDecoder (LOS-216)
 #include "stabilization_config.hpp"
 #include "vehicle_control_platform.hpp"
 
@@ -38,6 +42,23 @@ class StdioPlatform : public VehicleControlPlatform {
   void SetImuData(const ImuData& d) { imu_data_ = d; }
   void SetMag(std::optional<MagData> m) { mag_data_ = m; }
   void SetRc(std::optional<RcCommand> rc) { rc_command_ = rc; }
+
+  /**
+   * LOS-216: режим сырых RC-импульсов. Вместо готовой RcCommand каналы
+   * идут через настоящий RcPulseDecoder (как ISR на ESP32): каждые
+   * kRcFramePeriodUs выдаётся импульс заданной ширины [мкс], 0 — канал
+   * молчит. GetRc()/GetRcStats() отвечают по декодерам. Режим включается
+   * первым вызовом и действует до конца прогона.
+   */
+  void SetRcPulses(uint32_t throttle_us, uint32_t steering_us) {
+    if (!rc_pulse_mode_) rc_next_pulse_us_ = GetTimeUs();
+    rc_pulse_mode_ = true;
+    rc_thr_pulse_us_ = throttle_us;
+    rc_str_pulse_us_ = steering_us;
+  }
+
+  /** Печатать Log() и события RC-связи в stderr (sim_host --log). */
+  void SetLogToStderr(bool on) { log_to_stderr_ = on; }
   void SetWifi(std::optional<RcCommand> w) { wifi_command_ = w; }
 
   /** Замена реальной калибровки на identity (replay «со средней точки»). */
@@ -83,7 +104,10 @@ class StdioPlatform : public VehicleControlPlatform {
   [[nodiscard]] uint64_t GetTimeUs() const noexcept override {
     return static_cast<uint64_t>(time_ms_) * 1000;
   }
-  void AdvanceTimeMs(uint32_t dt) { time_ms_ += dt; }
+  void AdvanceTimeMs(uint32_t dt) {
+    time_ms_ += dt;
+    if (rc_pulse_mode_) EmitRcPulses();
+  }
   void SetTimeMs(uint32_t t) { time_ms_ = t; }
   // Цикл продвигает время сам (AdvanceTimeMs), поэтому здесь no-op.
   void DelayUntilNextTick(uint32_t) override {}
@@ -151,7 +175,25 @@ class StdioPlatform : public VehicleControlPlatform {
   }
 
   // ── RC / Wi-Fi ───────────────────────────────────────────────────────────
-  std::optional<RcCommand> GetRc() override { return rc_command_; }
+  std::optional<RcCommand> GetRc() override {
+    if (!rc_pulse_mode_) return rc_command_;
+    const uint64_t now_us = GetTimeUs();
+    const auto thr = rc_thr_decoder_.Read(now_us);
+    const auto str = rc_str_decoder_.Read(now_us);
+    if (!thr || !str) return std::nullopt;
+    return RcCommand{.throttle = *thr, .steering = *str};
+  }
+  std::optional<RcInputStats> GetRcStats() override {
+    if (!rc_pulse_mode_) return std::nullopt;
+    const uint64_t now_us = GetTimeUs();
+    return RcInputStats{.throttle = rc_thr_decoder_.Status(now_us),
+                        .steering = rc_str_decoder_.Status(now_us)};
+  }
+  void PublishRcLinkEvent(const RcLinkEvent& evt) override {
+    Log(evt.kind == RcLinkEvent::Kind::Lost ? LogLevel::Warning
+                                            : LogLevel::Info,
+        FormatRcLinkEvent(evt));
+  }
   std::optional<RcCommand> TryReceiveWifiCommand() override {
     return wifi_command_;
   }
@@ -193,7 +235,13 @@ class StdioPlatform : public VehicleControlPlatform {
     return std::expected<void, PlatformError>{};
   }
 
-  void Log(LogLevel, std::string_view) const override {}
+  void Log(LogLevel level, std::string_view msg) const override {
+    if (!log_to_stderr_) return;
+    const char* tag = level == LogLevel::Error     ? "E"
+                      : level == LogLevel::Warning ? "W"
+                                                   : "I";
+    std::cerr << tag << " (" << time_ms_ << ") " << msg << '\n';
+  }
 
  private:
   // Конфиг режима. Normal без лимита и без --stabilize → nullopt (дефолты
@@ -218,7 +266,34 @@ class StdioPlatform : public VehicleControlPlatform {
     return cfg;
   }
 
+  // Импульсы, у которых спад уже наступил (fall <= now): декодер не должен
+  // видеть фронты из будущего, иначе now - pulse_end уходит в переполнение.
+  void EmitRcPulses() {
+    const uint64_t now_us = GetTimeUs();
+    const uint32_t widest = std::max(rc_thr_pulse_us_, rc_str_pulse_us_);
+    while (rc_next_pulse_us_ + widest <= now_us) {
+      if (rc_thr_pulse_us_ > 0) {
+        rc_thr_decoder_.OnEdge(true, rc_next_pulse_us_);
+        rc_thr_decoder_.OnEdge(false, rc_next_pulse_us_ + rc_thr_pulse_us_);
+      }
+      if (rc_str_pulse_us_ > 0) {
+        rc_str_decoder_.OnEdge(true, rc_next_pulse_us_);
+        rc_str_decoder_.OnEdge(false, rc_next_pulse_us_ + rc_str_pulse_us_);
+      }
+      rc_next_pulse_us_ += kRcFramePeriodUs;
+    }
+  }
+
+  static constexpr uint64_t kRcFramePeriodUs = 20'000;  // 50 Гц, как приёмник
+
   uint32_t time_ms_{0};
+  bool rc_pulse_mode_{false};
+  uint32_t rc_thr_pulse_us_{0};
+  uint32_t rc_str_pulse_us_{0};
+  uint64_t rc_next_pulse_us_{0};
+  RcPulseDecoder rc_thr_decoder_{};
+  RcPulseDecoder rc_str_decoder_{};
+  bool log_to_stderr_{false};
   std::optional<ImuData> imu_data_;
   std::optional<MagData> mag_data_;
   std::optional<MagCalibData> mag_calib_;
@@ -252,6 +327,12 @@ struct InputFrame {
   RcCommand rc{};
   bool wifi_present{false};
   RcCommand wifi{};
+  // LOS-216: необязательные поля 18-19 — сырые ширины RC-импульсов [мкс]
+  // (0 = канал молчит). Если заданы, rc_present/rc_thr/rc_str игнорируются:
+  // команда получается из импульсов через RcPulseDecoder.
+  bool rc_pulses_present{false};
+  uint32_t rc_thr_pulse_us{0};
+  uint32_t rc_str_pulse_us{0};
 };
 
 /**
@@ -262,6 +343,8 @@ struct InputFrame {
  *   mag_present,mx,my,mz, rc_present,rc_thr,rc_str,
  * wifi_present,wifi_thr,wifi_str Единицы: accel g, gyro dps, mag мГс (как
  * ImuData/MagData).
+ * Необязательно (LOS-216) ещё 2 поля: rc_thr_pulse_us, rc_str_pulse_us —
+ * режим сырых RC-импульсов (см. StdioPlatform::SetRcPulses).
  *
  * @return true при успешном разборе.
  */

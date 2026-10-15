@@ -53,6 +53,13 @@ bool ParseInputLine(std::string_view line, InputFrame& out) {
   out.wifi_present = ToB(t[14]);
   out.wifi.throttle = ToF(t[15]);
   out.wifi.steering = ToF(t[16]);
+  out.rc_pulses_present = t.size() >= 19;
+  if (out.rc_pulses_present) {
+    out.rc_thr_pulse_us =
+        static_cast<uint32_t>(std::strtoul(t[17].c_str(), nullptr, 10));
+    out.rc_str_pulse_us =
+        static_cast<uint32_t>(std::strtoul(t[18].c_str(), nullptr, 10));
+  }
   return true;
 }
 

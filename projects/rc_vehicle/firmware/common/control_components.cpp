@@ -47,6 +47,7 @@ void RcInputHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   // Получить команду от RC-приёмника
   last_command_ = platform_.GetRc();
   active_ = last_command_.has_value();
+  stats_ = platform_.GetRcStats();
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -361,6 +362,22 @@ void TelemetryHandler::SendTelemetry(uint32_t now_ms,
   platform_.PublishTelem(snap);
 }
 
+namespace {
+
+void WriteRcChannel(firmware_common::JsonWriter& w, const char* key,
+                    const RcChannelStatus& ch) {
+  w.BeginObject(key);
+  w.Bool("ok", ch.active);
+  w.Int("w", ch.stats.last_width_us);
+  w.Int("acc", ch.stats.accepted);
+  w.Int("short", ch.stats.rejected_short);
+  w.Int("long", ch.stats.rejected_long);
+  w.Int("rej_w", ch.stats.last_rejected_width_us);
+  w.EndObject();
+}
+
+}  // namespace
+
 std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   // LOS-252: firmware_common::JsonWriter вместо cJSON — целочисленное
   // форматирование чисел (без printf/sscanf round-trip) и без malloc на
@@ -369,8 +386,10 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   // (см. BuildTelemJsonTest.FullSnapshotProducesValidJsonWithAllKeys), 1152
   // с запасом, чтобы не было повторной аллокации+копии на полном кадре.
   // Флаги лимитеров Kids (LOS-13) съели прежний запас до 1024 почти целиком.
+  // LOS-216: RC-счётчики в "link" — до ~220 байт сверху (счётчики uint32 на
+  // максимуме), отсюда 1344.
   std::string result;
-  result.reserve(1152);
+  result.reserve(1344);
   firmware_common::JsonWriter w(result);
 
   w.BeginObject();
@@ -384,6 +403,13 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   w.Bool("rc_ok", snap.rc_ok);
   w.Bool("wifi_ok", snap.wifi_ok);
   w.Bool("failsafe", snap.failsafe);
+  // LOS-216: диагностика RC-входа — отличить «импульсов нет» от «импульсы
+  // вне окна приёма» прямо по WS, без serial-консоли.
+  w.Int("rc_losses", snap.rc_loss_count);
+  if (snap.rc_stats_available) {
+    WriteRcChannel(w, "rc_thr", snap.rc_stats.throttle);
+    WriteRcChannel(w, "rc_str", snap.rc_stats.steering);
+  }
   w.EndObject();
 
   // IMU data (если включен)

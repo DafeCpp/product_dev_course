@@ -11,6 +11,10 @@ TelemetrySnapshot BuildTelemetrySnapshot(
   snap.uptime_ms = now;
   snap.rc_ok = sensors.rc_active;
   snap.wifi_ok = sensors.wifi_active;
+  if (sensors.rc_stats) {
+    snap.rc_stats_available = true;
+    snap.rc_stats = *sensors.rc_stats;
+  }
   snap.throttle = applied_throttle;
   snap.steering = applied_steering;
 

@@ -23,6 +23,8 @@
 //       [--test-duration s] [--test-steering v] — запустить авто-манёвр
 //       (аналог start_test по WebSocket) до первого кадра; машина едет сама,
 //       RC-команды в сценарии не нужны.
+//   --log — печатать Log() прошивки (в т.ч. события RC-связи LOS-216) в
+//       stderr с логическим временем.
 //
 // Время логическое: реальных пауз нет, dt берётся из кадра.
 
@@ -51,6 +53,7 @@ void ApplyFrame(StdioPlatform& p, const InputFrame& f) {
   p.SetMag(f.mag_present ? std::optional<MagData>{f.mag} : std::nullopt);
   p.SetRc(f.rc_present ? std::optional<rc_vehicle::RcCommand>{f.rc}
                        : std::nullopt);
+  if (f.rc_pulses_present) p.SetRcPulses(f.rc_thr_pulse_us, f.rc_str_pulse_us);
   p.SetWifi(f.wifi_present ? std::optional<rc_vehicle::RcCommand>{f.wifi}
                            : std::nullopt);
   p.AdvanceTimeMs(f.dt_ms);
@@ -94,11 +97,14 @@ int main(int argc, char** argv) {
   float oversteer_rate_thresh_deg_s = 30.0f;
   float oversteer_throttle_reduction = 0.7f;
   bool start_test = false;
+  bool log_to_stderr = false;
   rc_vehicle::TestParams test_params;
   for (int i = 1; i < argc; ++i) {
     const std::string_view a = argv[i];
     if (a == "--batch")
       batch = true;
+    else if (a == "--log")
+      log_to_stderr = true;
     else if (a == "--interactive")
       batch = false;
     else if (a == "--identity-calib") {
@@ -151,6 +157,7 @@ int main(int argc, char** argv) {
   else
     p->SetIdentityCalib(identity_calib);
   p->SetMagCalib(mag_calib);
+  p->SetLogToStderr(log_to_stderr);
   p->SetDriveMode(drive_mode);
   p->SetSpeedLimit(speed_limit);
   p->SetStabilize(stabilize);

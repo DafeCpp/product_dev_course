@@ -22,6 +22,7 @@ idf_component_register(
         "../../common/steering_trim_calibration.cpp"
         "../../common/telemetry_builder.cpp"
         "../../common/diagnostics_reporter.cpp"
+        "../../common/rc_link_monitor.cpp"
         "../../common/control_loop_helpers.cpp"
         "../../common/control_loop_processor.cpp"
         "../../common/self_test.cpp"
