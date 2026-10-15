@@ -87,7 +87,7 @@ export function formatRcChannel(ch) {
     const rejected = (ch.short ?? 0) + (ch.long ?? 0);
     let s = `${state} · acc ${ch.acc ?? 0}`;
     if (rejected > 0) {
-        s += ` · rej ${ch.short ?? 0}/${ch.long ?? 0} (last ${ch.rej_w} µs)`;
+        s += ` · rej ${ch.short ?? 0}/${ch.long ?? 0} (last ${ch.rej_w ?? "?"} µs)`;
     }
     return s;
 }

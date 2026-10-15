@@ -112,9 +112,12 @@ bool RcInputIsActive(void) {
 }
 
 rc_vehicle::RcInputStats RcInputGetStats(void) {
+  // Снимки до чтения времени — как в RcInputIsActive.
+  const rc_vehicle::RcPulseDecoder thr = SnapshotDecoder(s_throttle);
+  const rc_vehicle::RcPulseDecoder str = SnapshotDecoder(s_steering);
   const uint64_t now_us = (uint64_t)esp_timer_get_time();
   return rc_vehicle::RcInputStats{
-      .throttle = SnapshotDecoder(s_throttle).Status(now_us),
-      .steering = SnapshotDecoder(s_steering).Status(now_us),
+      .throttle = thr.Status(now_us),
+      .steering = str.Status(now_us),
   };
 }
