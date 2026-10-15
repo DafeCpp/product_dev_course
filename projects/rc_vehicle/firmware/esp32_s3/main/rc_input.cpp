@@ -104,9 +104,11 @@ std::optional<float> RcInputReadSteering(void) {
 }
 
 bool RcInputIsActive(void) {
+  // Снимки до чтения времени — как в Read*: тогда pulse_end <= now.
+  const rc_vehicle::RcPulseDecoder thr = SnapshotDecoder(s_throttle);
+  const rc_vehicle::RcPulseDecoder str = SnapshotDecoder(s_steering);
   const uint64_t now_us = (uint64_t)esp_timer_get_time();
-  return SnapshotDecoder(s_throttle).IsActive(now_us) &&
-         SnapshotDecoder(s_steering).IsActive(now_us);
+  return thr.IsActive(now_us) && str.IsActive(now_us);
 }
 
 rc_vehicle::RcInputStats RcInputGetStats(void) {

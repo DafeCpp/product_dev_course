@@ -74,6 +74,16 @@ TEST_F(RcPulseDecoderTest, PulsesBeyondToleranceAreRejectedAndCounted) {
   EXPECT_FALSE(dec_.IsActive(t + 250'000));
 }
 
+// Ревью #348: читатель взял now_us раньше, чем ISR записал фронт (время
+// захвачено до снимка декодера). Импульс новее now — канал активен, а не
+// «потерян» из-за переполнения now - pulse_end.
+TEST_F(RcPulseDecoderTest, PulseNewerThanReaderTimeCountsAsActive) {
+  const uint64_t end = Pulse(dec_, 1'000'000, 1500);
+  EXPECT_TRUE(dec_.IsActive(end - 10));
+  EXPECT_FLOAT_EQ(*dec_.Read(end - 10), 0.0f);
+  EXPECT_TRUE(dec_.IsActive(end));
+}
+
 TEST_F(RcPulseDecoderTest, FallWithoutRiseIsIgnored) {
   dec_.OnEdge(false, 5000);
   EXPECT_FALSE(dec_.IsActive(5000));
