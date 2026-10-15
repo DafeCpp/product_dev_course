@@ -144,12 +144,17 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
               start_test: str | None = None,
               target_accel: float | None = None,
               test_duration: float | None = None,
-              test_steering: float | None = None) -> list[dict]:
+              test_steering: float | None = None,
+              log_lines: list[str] | None = None) -> list[dict]:
     """Прогнать кадры через sim_host в batch-режиме → список выходных строк.
 
     Каждая выходная строка — dict {имя_колонки: float} по заголовку sim_host.
+    `log_lines`: если передан список, sim_host запускается с `--log`, и в
+    него дописываются строки Log() прошивки (serial-лог, LOS-216).
     """
     args = [sim_host_bin, "--batch"]
+    if log_lines is not None:
+        args.append("--log")
     if inverted_z_calib:
         args.append("--inverted-z-calib")
     elif identity_calib:
@@ -188,6 +193,8 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
                           timeout=timeout)
     if proc.returncode != 0:
         raise RuntimeError(f"sim_host exit {proc.returncode}: {proc.stderr}")
+    if log_lines is not None:
+        log_lines.extend(ln for ln in proc.stderr.splitlines() if ln.strip())
 
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     if not lines:

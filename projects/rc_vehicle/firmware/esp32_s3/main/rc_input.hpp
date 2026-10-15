@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include "rc_pulse_decoder.hpp"
+
 /**
  * Инициализация RC-in (чтение сигналов с RC приёмника)
  * @return 0 при успехе, -1 при ошибке
@@ -26,3 +28,10 @@ std::optional<float> RcInputReadSteering(void);
  */
 bool RcInputIsActive(void);
 
+/**
+ * Счётчики декодеров и активность обоих каналов (LOS-216): сколько импульсов
+ * принято/отброшено (короткие/длинные), последние ширины. Нужны, чтобы при
+ * потере RC отличить «импульсов нет» (провод, питание, бинд) от «импульсы
+ * есть, но вне окна приёма» (EPA/триммер, помеха).
+ */
+rc_vehicle::RcInputStats RcInputGetStats(void);

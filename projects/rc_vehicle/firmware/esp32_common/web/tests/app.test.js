@@ -7,6 +7,7 @@ import {
     LogParseError,
     assignEventsToFrames,
     eventParamDesc,
+    formatRcChannel,
     parseBinaryLog,
 } from '../app.js';
 
@@ -85,6 +86,19 @@ describe('eventParamDesc and event names', () => {
         expect(eventParamDesc(2, 2)).toBe('stage2');
         expect(eventParamDesc(4, 0)).toBe('');
         expect(eventParamDesc(4, 7)).toBe('7');
+        // LOS-216: RcLost param = thr cause | str cause << 2 | since_boot << 4
+        expect(eventParamDesc(21, 0x09)).toBe('thr=no_pulses str=out_of_range');
+        expect(eventParamDesc(21, 0x15)).toBe('thr=no_pulses str=no_pulses since_boot');
+        expect(eventParamDesc(22, 1)).toBe('first_acquire');
+        expect(eventParamDesc(22, 0)).toBe('');
+    });
+
+    it('formats RC channel diagnostics from WS telemetry', () => {
+        expect(formatRcChannel(undefined)).toBe('N/A');
+        expect(formatRcChannel({ok: true, w: 1502, acc: 900, short: 0, long: 0, rej_w: 0}))
+            .toBe('1502 µs · acc 900');
+        expect(formatRcChannel({ok: false, w: 1990, acc: 900, short: 1, long: 12, rej_w: 2310}))
+            .toBe('LOST · acc 900 · rej 1/12 (last 2310 µs)');
     });
 
     it('matches every TelemetryEventType value in the firmware header', () => {

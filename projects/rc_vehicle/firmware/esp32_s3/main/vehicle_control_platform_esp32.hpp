@@ -103,6 +103,10 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   // Диагностика
   void PublishDiagnostics(const DiagnosticsSnapshot& snap) override;
 
+  // RC Input: диагностика (LOS-216)
+  [[nodiscard]] std::optional<RcInputStats> GetRcStats() override;
+  void PublishRcLinkEvent(const RcLinkEvent& evt) override;
+
   // Wi-Fi команды
   [[nodiscard]] std::optional<RcCommand> TryReceiveWifiCommand() override;
   void SendWifiCommand(float throttle, float steering) override;

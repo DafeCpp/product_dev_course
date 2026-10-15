@@ -31,6 +31,27 @@ struct RcPulseStats {
   uint32_t rejected_long{0};
   uint32_t last_width_us{0};           ///< Последний принятый импульс
   uint32_t last_rejected_width_us{0};  ///< Последний отброшенный импульс
+
+  [[nodiscard]] uint32_t Rejected() const {
+    return rejected_short + rejected_long;
+  }
+};
+
+/** @brief Состояние одного канала: счётчики декодера + активность. */
+struct RcChannelStatus {
+  RcPulseStats stats{};
+  bool active{false};  ///< Был валидный импульс не позднее timeout_us назад
+};
+
+/**
+ * @brief Диагностика RC-входа по обоим каналам (LOS-216).
+ *
+ * Тривиально копируется: идёт в SensorSnapshot/TelemetrySnapshot и через
+ * очереди FreeRTOS без аллокаций.
+ */
+struct RcInputStats {
+  RcChannelStatus throttle{};
+  RcChannelStatus steering{};
 };
 
 /**
@@ -99,6 +120,11 @@ class RcPulseDecoder {
   }
 
   [[nodiscard]] const RcPulseStats& Stats() const { return stats_; }
+
+  /** Счётчики + активность канала на момент now_us. */
+  [[nodiscard]] RcChannelStatus Status(uint64_t now_us) const {
+    return RcChannelStatus{.stats = stats_, .active = IsActive(now_us)};
+  }
 
  private:
   RcPulseConfig cfg_;

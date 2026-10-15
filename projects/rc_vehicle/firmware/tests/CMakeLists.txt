@@ -69,6 +69,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/auto_drive_coordinator.cpp
     ${COMMON_DIR}/telemetry_builder.cpp
     ${COMMON_DIR}/diagnostics_reporter.cpp
+    ${COMMON_DIR}/rc_link_monitor.cpp
     ${COMMON_DIR}/control_loop_helpers.cpp
     ${COMMON_DIR}/control_loop_processor.cpp
     ${COMMON_DIR}/mmc5983_spi.cpp
@@ -125,6 +126,7 @@ add_executable(unit_tests
     unit/test_slew_rate.cpp
     unit/test_control_source.cpp
     unit/test_rc_pulse_decoder.cpp
+    unit/test_rc_link_monitor.cpp
     unit/test_telemetry_handler.cpp
     unit/test_diagnostics_reporter.cpp
     unit/test_drive_mode_registry.cpp

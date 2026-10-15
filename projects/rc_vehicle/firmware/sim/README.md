@@ -47,6 +47,15 @@ cd projects/rc_vehicle/firmware/tests && cmake -B build && cmake --build build
 ```
 Если бинарь не найден — replay-тест помечается skip (загрузчик/инварианты тестируются всё равно).
 
+## Сырые RC-импульсы (LOS-216)
+
+`SensorFrame.rc_pulse_us=(thr_us, str_us)` добавляет к кадру поля 18-19:
+прошивка получает RC через настоящий `RcPulseDecoder` (как ISR на ESP32), а
+не готовую команду; 0 — канал молчит. `run_batch(..., log_lines=[])`
+запускает `sim_host --log` и собирает serial-лог прошивки (сообщения
+`RC LOST`/`RC restored`). Сценарии — `tests/test_rc_link.py`: ручка у упора в
+Kids Mode, пропадание приёмника, импульсы вне окна, приёмник не подключён.
+
 ## Closed-loop SIL (FW-S2.5)
 
 `simlib/closed_loop.py` — `ClosedLoopSim`: замыкает Python-модель ↔ `sim_host`

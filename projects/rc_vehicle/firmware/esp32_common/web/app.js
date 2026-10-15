@@ -16,7 +16,11 @@ export const EVENT_TYPE_NAMES = Object.freeze({
     16: 'TestStopped',
     17: 'MagCalibStart',     18: 'MagCalibDone',       19: 'MagCalibFailed',
     20: 'MagCalibCancelled',
+    21: 'RcLost',            22: 'RcRestored',
 });
+
+// RcLossCause (rc_link_monitor.hpp), упакованы в param события RcLost (LOS-216)
+const RC_LOSS_CAUSES = Object.freeze(['ok', 'no_pulses', 'out_of_range', 'unknown']);
 
 const FIELD_OFFSETS = Object.freeze([
     { name: 'ts_ms',                    off: 0,   type: 'u32' },
@@ -73,6 +77,21 @@ const MAX_FIELD_END = FIELD_OFFSETS.reduce((maxEnd, field) => {
     return Math.max(maxEnd, field.off + size);
 }, 0);
 
+/**
+ * Строка диагностики одного RC-канала из WS-телеметрии (link.rc_thr/rc_str,
+ * LOS-216): ширина последнего импульса и счётчики принятых/отброшенных.
+ */
+export function formatRcChannel(ch) {
+    if (!ch) return 'N/A';
+    const state = ch.ok ? `${ch.w} µs` : 'LOST';
+    const rejected = (ch.short ?? 0) + (ch.long ?? 0);
+    let s = `${state} · acc ${ch.acc ?? 0}`;
+    if (rejected > 0) {
+        s += ` · rej ${ch.short ?? 0}/${ch.long ?? 0} (last ${ch.rej_w ?? "?"} µs)`;
+    }
+    return s;
+}
+
 export class LogParseError extends Error {
     constructor(message) {
         super(message);
@@ -89,6 +108,13 @@ export function eventParamDesc(typeId, param) {
     }
     if (typeId === 2 || typeId === 3) {
         return param ? 'stage' + param : '';
+    }
+    if (typeId === 21) {
+        const desc = `thr=${RC_LOSS_CAUSES[param & 0x3]} str=${RC_LOSS_CAUSES[(param >> 2) & 0x3]}`;
+        return (param & 0x10) ? desc + ' since_boot' : desc;
+    }
+    if (typeId === 22) {
+        return param ? 'first_acquire' : '';
     }
     return param ? String(param) : '';
 }
@@ -1272,6 +1298,13 @@ function updateTelem(data) {
     if (data.rc) {
         html += row('RC Throttle', data.rc.throttle?.toFixed(2) ?? 'N/A');
         html += row('RC Steering', data.rc.steering?.toFixed(2) ?? 'N/A');
+    }
+    if (data.link?.rc_thr) {
+        html += row('RC In (thr)', formatRcChannel(data.link.rc_thr));
+        html += row('RC In (str)', formatRcChannel(data.link.rc_str));
+    }
+    if (data.link?.rc_losses !== undefined) {
+        html += row('RC Losses', String(data.link.rc_losses));
     }
     if (data.cmd) {
         html += row('Cmd Throttle', data.cmd.throttle?.toFixed(2) ?? 'N/A');
