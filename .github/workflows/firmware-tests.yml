@@ -101,18 +101,28 @@ jobs:
           path: projects/rc_vehicle/firmware/tests/build/lcov-report
           if-no-files-found: error
 
+  idf-version:
+    name: Read ESP-IDF version
+    runs-on: ubuntu-latest
+    outputs:
+      idf: ${{ steps.read.outputs.idf }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: projects/rc_vehicle/firmware/esp32_s3/.idf_version
+          sparse-checkout-cone-mode: false
+      - id: read
+        # Единственный источник версии ESP-IDF для прошивки: esp32_s3/.idf_version
+        # (тег образа espressif/idf и git-тег esp-idf). dependencies.lock сверяется
+        # в esp32s3-build, документация ссылается на этот файл.
+        run: echo "idf=$(tr -d '[:space:]' < projects/rc_vehicle/firmware/esp32_s3/.idf_version)" >> "$GITHUB_OUTPUT"
+
   esp32s3-build:
-    name: ESP32-S3 build (ESP-IDF ${{ matrix.idf }})
+    name: ESP32-S3 build (ESP-IDF ${{ needs.idf-version.outputs.idf }})
+    needs: idf-version
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      matrix:
-        # Версия ESP-IDF для прошивки (matrix — потому что в `container:` контекст env
-        # недоступен). Менять вместе с: esp32_s3/dependencies.lock (сверяется ниже),
-        # esp32_s3/README.md, firmware/README.md, docs/esp32s3-setup.md, CLAUDE.md,
-        # подсказкой в firmware/Makefile.
-        idf: ['v6.1']
-    container: espressif/idf:${{ matrix.idf }}
+    container: espressif/idf:${{ needs.idf-version.outputs.idf }}
     env:
       IDF_TARGET: esp32s3
     steps:
@@ -125,10 +135,12 @@ jobs:
           # Та же команда, что у разработчиков (`make build` в projects/rc_vehicle/firmware):
           # wrapper run_idf поднимает окружение IDF и выполняет migrate_cpu_freq_sdkconfig.sh.
           make -C projects/rc_vehicle/firmware build
-          make -C projects/rc_vehicle/firmware size 2>&1 | tee projects/rc_vehicle/firmware/esp32_s3/size.txt
+          # Таблица секций идёт в stdout, итоговый «Total image size» — в stderr.
+          make -C projects/rc_vehicle/firmware size 2>&1 | tee projects/rc_vehicle/firmware/esp32_s3/build/size.txt
 
       - name: Check dependencies.lock matches the ESP-IDF in CI
-        # Запускается и после упавшей сборки, чтобы устаревший lock был виден сразу.
+        # Запускается и после упавшей сборки: если component manager успел переписать
+        # lock, это видно в том же прогоне.
         if: ${{ !cancelled() }}
         shell: bash
         # Component manager переписывает lock, если версия IDF или зависимости
@@ -136,9 +148,9 @@ jobs:
         run: |
           lock=projects/rc_vehicle/firmware/esp32_s3/dependencies.lock
           if ! git diff --exit-code -- "$lock"; then
-            echo "::error file=$lock::dependencies.lock не совпадает с ESP-IDF ${{ matrix.idf }} в CI." \
+            echo "::error file=$lock::dependencies.lock не совпадает с ESP-IDF ${{ needs.idf-version.outputs.idf }} из esp32_s3/.idf_version." \
               "Соберите прошивку локально на этой версии IDF и закоммитьте обновлённый lock" \
-              "(или поменяйте matrix.idf вместе с lock)."
+              "(или поменяйте .idf_version вместе с lock)."
             exit 1
           fi
 
@@ -152,7 +164,7 @@ jobs:
             projects/rc_vehicle/firmware/esp32_s3/build/bootloader/bootloader.bin
             projects/rc_vehicle/firmware/esp32_s3/build/partition_table/partition-table.bin
             projects/rc_vehicle/firmware/esp32_s3/build/flasher_args.json
-            projects/rc_vehicle/firmware/esp32_s3/size.txt
+            projects/rc_vehicle/firmware/esp32_s3/build/size.txt
           if-no-files-found: error
 
   sil-sim:
