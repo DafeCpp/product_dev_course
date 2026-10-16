@@ -9,7 +9,7 @@
 
 ## Технологии
 
-- **Язык**: C++26 (нужен GCC 15+ из ESP‑IDF v6.x: `#embed` в `rc_http_routes.cpp`)
+- **Язык**: C++26 (нужен GCC 15+ из ESP‑IDF v6.1: `#embed` в `rc_http_routes.cpp`)
 - **Фреймворк**: ESP‑IDF v6.1
 - **Цель**: `esp32s3`
 
