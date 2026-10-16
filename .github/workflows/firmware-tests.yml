@@ -101,6 +101,44 @@ jobs:
           path: projects/rc_vehicle/firmware/tests/build/lcov-report
           if-no-files-found: error
 
+  esp32s3-build:
+    name: ESP32-S3 build (ESP-IDF v6.1)
+    runs-on: ubuntu-latest
+    # Версия ESP-IDF для прошивки: менять вместе с dependencies.lock и docs/esp32s3-setup.md.
+    container: espressif/idf:v6.1
+    defaults:
+      run:
+        shell: bash
+        working-directory: projects/rc_vehicle/firmware/esp32_s3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build firmware
+        run: |
+          # В container-job entrypoint образа не запускается — окружение IDF поднимаем сами.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh"
+          idf.py set-target esp32s3
+          idf.py build
+
+      - name: Image size
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py size | tee size.txt
+
+      - name: Upload firmware image
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-vehicle-esp32s3-firmware
+          path: |
+            projects/rc_vehicle/firmware/esp32_s3/build/rc_vehicle_esp32_s3.bin
+            projects/rc_vehicle/firmware/esp32_s3/build/rc_vehicle_esp32_s3.elf
+            projects/rc_vehicle/firmware/esp32_s3/build/bootloader/bootloader.bin
+            projects/rc_vehicle/firmware/esp32_s3/build/partition_table/partition-table.bin
+            projects/rc_vehicle/firmware/esp32_s3/build/flasher_args.json
+            projects/rc_vehicle/firmware/esp32_s3/size.txt
+          if-no-files-found: error
+
   sil-sim:
     name: SIL (sim_host + pytest)
     runs-on: ubuntu-latest

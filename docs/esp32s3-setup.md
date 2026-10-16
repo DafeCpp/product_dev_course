@@ -350,7 +350,7 @@ echo '. ~/esp/esp-idf/export.sh' >> ~/.bashrc
 
 ### 4.1. Установка инструментов разработки
 
-#### ESP-IDF 6.0 (нативный фреймворк Espressif, рекомендуется)
+#### ESP-IDF 6.1 (нативный фреймворк Espressif, рекомендуется)
 
 ESP-IDF даёт полный контроль над железом и производительностью — предпочтительный вариант для production-прошивок.
 
@@ -367,10 +367,10 @@ sudo apt update && sudo apt install -y \
     git wget flex bison gperf python3 python3-pip python3-venv \
     cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
 
-# Клонирование ESP-IDF v6.0
+# Клонирование ESP-IDF v6.1
 mkdir -p ~/esp
 cd ~/esp
-git clone -b v6.0 --recursive https://github.com/espressif/esp-idf.git
+git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git
 
 # Установка инструментов для ESP32-S3
 cd ~/esp/esp-idf
@@ -383,10 +383,10 @@ cd ~/esp/esp-idf
 **Установка в Windows (PowerShell, нативно):**
 
 ```powershell
-# Клонирование ESP-IDF v6.0
+# Клонирование ESP-IDF v6.1
 mkdir $HOME\esp
 cd $HOME\esp
-git clone -b v6.0 --recursive https://github.com/espressif/esp-idf.git
+git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git
 
 # Установка инструментов
 cd $HOME\esp\esp-idf

@@ -51,7 +51,7 @@ help:
 	@echo ""
 	@echo "Переменные: IDF_PATH, ESP32_S3_PORT, IDF_PYTHON"
 	@echo ""
-	@echo "Если при сборке ошибка про idf6.0_py3.*_env: задайте IDF_PYTHON=python3.12"
+	@echo "Если при сборке ошибка про idf6.1_py3.*_env: задайте IDF_PYTHON=python3.12"
 	@echo "  (или тот Python, с которым запускали install.sh) либо выполните ./install.sh в каталоге IDF."
 
 # Подгрузить ESP-IDF (если IDF_PATH задан) и выполнить idf.py

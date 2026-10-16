@@ -158,7 +158,7 @@ make deploy VM_HOST=<ip> REGISTRY_ID=<id>
 |------|-----------|
 | Backend | Python 3.12+, aiohttp, asyncpg, Pydantic v2 |
 | Frontend | TypeScript, React 19, Vite, MUI |
-| Firmware | C++23, ESP-IDF v5.x, ESP32-S3 |
+| Firmware | C++23, ESP-IDF v6.1, ESP32-S3 |
 | БД | PostgreSQL 16, TimescaleDB |
 | Тесты (backend) | pytest, yandex-taxi-testsuite |
 | Тесты (frontend) | Vitest, React Testing Library, Cypress |
@@ -221,7 +221,7 @@ make deploy VM_HOST=<ip> REGISTRY_ID=<id>
 
 - **Node.js:** версия из `.nvmrc` (Node 24 LTS)
 - **Python:** 3.12+ для backend-сервисов, 3.14+ для `telemetry_cli`
-- **ESP-IDF:** v5.x (для firmware)
+- **ESP-IDF:** v6.1 (для firmware; та же версия в CI, job `ESP32-S3 build` в `firmware-tests.yml`)
 - **Docker:** обязателен для запуска всего стека
 
 Переменная `COMPOSE_HTTP_TIMEOUT` задаётся в Makefile (избегает таймаутов при больших образах).
