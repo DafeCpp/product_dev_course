@@ -21,19 +21,20 @@ Validation on Node 24:
 
 ## Release gate
 
-The adoption branch is a draft while its package reference points at a local
-validation tarball. Do not merge it until web-platform publishes version 0.1.0.
-From the repository root, resolve the real public release and regenerate locks:
+`@lostpointer/web-http@0.1.0` was published to npm on 2026-10-16 by the
+web-platform release workflow. The adoption now depends on that exact version
+and the root lockfile resolves it from the public registry. Validation against
+the registry package after merging develop (Node 22, `CYPRESS_INSTALL_BINARY=0`):
+548 tests passed with two existing skips (`TZ=UTC`), type check and production
+build passed. The commands used:
 
 ```sh
-npm install -w projects/frontend/apps/experiment-portal --save-exact @lostpointer/web-http@0.1.0
 npm ci
 TZ=UTC npm test -w projects/frontend/apps/experiment-portal
 npm run type-check -w projects/frontend/apps/experiment-portal
 npm run build -w projects/frontend/apps/experiment-portal
 ```
 
-Commit the manifest and root lockfile with the registry dependency. No local
-package paths belong in the final adoption. Other domains can migrate through
+No local package paths remain in the adoption. Other domains can migrate through
 the same adapter in later changes, with their own contract/recovery tests.
 Rollback reverts the pilot; the legacy client remains available.
