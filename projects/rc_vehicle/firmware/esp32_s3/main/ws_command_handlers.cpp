@@ -203,6 +203,13 @@ void HandleGetLogData(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
                             (frame.mag_flags & kMagRejected) != 0);
       cJSON_AddBoolToObject(f, "mag_gate_active",
                             (frame.mag_flags & kMagGateActive) != 0);
+      cJSON_AddBoolToObject(f, "rc_ok", (frame.link_flags & kLinkRcOk) != 0);
+      cJSON_AddBoolToObject(f, "wifi_ok",
+                            (frame.link_flags & kLinkWifiOk) != 0);
+      cJSON_AddBoolToObject(f, "failsafe_active",
+                            (frame.link_flags & kLinkFailsafe) != 0);
+      cJSON_AddBoolToObject(f, "rc_init_failed",
+                            (frame.link_flags & kLinkRcInitFailed) != 0);
       cJSON_AddItemToArray(frames_arr, f);
     }
     cJSON_AddItemToObject(reply, "frames", frames_arr);

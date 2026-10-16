@@ -11,6 +11,10 @@ TelemetrySnapshot BuildTelemetrySnapshot(
   snap.uptime_ms = now;
   snap.rc_ok = sensors.rc_active;
   snap.wifi_ok = sensors.wifi_active;
+  if (sensors.rc_stats) {
+    snap.rc_stats_available = true;
+    snap.rc_stats = *sensors.rc_stats;
+  }
   snap.throttle = applied_throttle;
   snap.steering = applied_steering;
 
@@ -75,7 +79,8 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
                                 float applied_throttle, float applied_steering,
                                 float commanded_throttle,
                                 float commanded_steering, DriveMode drive_mode,
-                                bool stab_enabled, bool kids_limiters_active) {
+                                bool stab_enabled, bool kids_limiters_active,
+                                bool failsafe_active, bool rc_init_failed) {
   TelemetryLogFrame frame;
   frame.ts_ms = now;
   frame.ax = sensors.imu_data.ax;
@@ -123,6 +128,11 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
   frame.mag_flags =
       static_cast<uint8_t>((sensors.mag_rejected ? kMagRejected : 0) |
                            (sensors.mag_gate_active ? kMagGateActive : 0));
+  frame.link_flags =
+      static_cast<uint8_t>((sensors.rc_active ? kLinkRcOk : 0) |
+                           (sensors.wifi_active ? kLinkWifiOk : 0) |
+                           (failsafe_active ? kLinkFailsafe : 0) |
+                           (rc_init_failed ? kLinkRcInitFailed : 0));
   return frame;
 }
 

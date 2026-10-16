@@ -53,7 +53,8 @@ class ControlLoopTest : public ::testing::Test {
  protected:
   // Запустить control loop на N итераций, возвращая платформу для проверок.
   // IMU enabled по умолчанию (для полного покрытия pipeline).
-  SimPlatform& RunLoop(uint32_t iterations, bool imu_enabled = true) {
+  SimPlatform& RunLoop(uint32_t iterations, bool imu_enabled = true,
+                       bool init_rc_ok = true) {
     auto platform = std::make_unique<SimPlatform>(iterations);
     platform_ = platform.get();
 
@@ -64,9 +65,18 @@ class ControlLoopTest : public ::testing::Test {
       platform_->SetImuData(imu);
     }
 
+    if (!init_rc_ok) platform_->SetInitRcOk(false);
+
     vc_.SetPlatform(std::move(platform));
     (void)vc_.Init();  // Init calls CreateTask → runs loop synchronously
     return *platform_;
+  }
+
+  /** Последний кадр лога; false, если лог пуст. */
+  bool LastLogFrame(TelemetryLogFrame& out) {
+    size_t count = 0, cap = 0;
+    vc_.GetLogInfo(count, cap);
+    return count > 0 && vc_.GetLogFrame(count - 1, out);
   }
 
   VehicleControlUnified vc_;
@@ -80,6 +90,24 @@ class ControlLoopTest : public ::testing::Test {
 TEST_F(ControlLoopTest, LoopRunsRequestedIterations) {
   auto& sim = RunLoop(10);
   EXPECT_EQ(sim.GetIterationCount(), 10u);
+}
+
+// LOS-216: бит kLinkRcInitFailed берётся из факта ошибки InitRc(), а не из
+// «rc не включён» — иначе без Init() он взводился бы ложно.
+TEST_F(ControlLoopTest, RcInitFailed_SetsLinkFlagInLogFrame) {
+  RunLoop(500, /*imu_enabled=*/true, /*init_rc_ok=*/false);
+
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(LastLogFrame(frame));
+  EXPECT_NE(frame.link_flags & kLinkRcInitFailed, 0);
+}
+
+TEST_F(ControlLoopTest, RcInitOk_DoesNotSetRcInitFailedFlag) {
+  RunLoop(500);
+
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(LastLogFrame(frame));
+  EXPECT_EQ(frame.link_flags & kLinkRcInitFailed, 0);
 }
 
 TEST_F(ControlLoopTest, IsReadyAfterInit) {

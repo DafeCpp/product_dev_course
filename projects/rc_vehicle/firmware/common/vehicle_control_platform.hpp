@@ -9,6 +9,7 @@
 #include "mag_calibration.hpp"
 #include "mag_sensor.hpp"
 #include "mpu6050_spi.hpp"
+#include "rc_pulse_decoder.hpp"
 #include "stabilization_config.hpp"
 
 namespace rc_vehicle {
@@ -21,6 +22,10 @@ struct TelemetrySnapshot;
 // LOS-252: тот же приём для PublishDiagnostics — полное определение в
 // diagnostics_reporter.hpp, который сам включает этот заголовок.
 struct DiagnosticsSnapshot;
+
+// LOS-216: тот же приём для PublishRcLinkEvent — определение в
+// rc_link_monitor.hpp.
+struct RcLinkEvent;
 
 /**
  * @brief Ошибки инициализации платформы
@@ -247,6 +252,28 @@ class VehicleControlPlatform {
    * @return Команда управления, если оба канала (throttle, steering) валидны
    */
   [[nodiscard]] virtual std::optional<RcCommand> GetRc() = 0;
+
+  /**
+   * @brief Счётчики декодеров RC-входа (LOS-216)
+   * @return Счётчики и активность каналов; nullopt, если платформа их не
+   * ведёт (тогда причина потери RC в логе — "unknown")
+   *
+   * Вызывается из control loop с частотой опроса RC — реализация не должна
+   * блокироваться дольше короткой критической секции.
+   */
+  [[nodiscard]] virtual std::optional<RcInputStats> GetRcStats() {
+    return std::nullopt;
+  }
+
+  /**
+   * @brief Сообщить о переходе RC-связи (потеря / восстановление, LOS-216)
+   * @param evt POD-событие от RcLinkMonitor
+   *
+   * Вызывается из control loop только на переходах (не чаще раза в секунду).
+   * Как PublishDiagnostics: реализация только ставит событие в очередь, а
+   * FormatRcLinkEvent() и печать в serial — вне горячего 500 Гц пути.
+   */
+  virtual void PublishRcLinkEvent(const RcLinkEvent& evt) = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // PWM Output

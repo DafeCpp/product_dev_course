@@ -69,9 +69,11 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/auto_drive_coordinator.cpp
     ${COMMON_DIR}/telemetry_builder.cpp
     ${COMMON_DIR}/diagnostics_reporter.cpp
+    ${COMMON_DIR}/rc_link_monitor.cpp
     ${COMMON_DIR}/control_loop_helpers.cpp
     ${COMMON_DIR}/control_loop_processor.cpp
     ${COMMON_DIR}/mmc5983_spi.cpp
+    ${COMMON_DIR}/mpu6050_spi.cpp
     ${COMMON_DIR}/mag_calibration.cpp
     ${COMMON_DIR}/tilt_estimator.cpp
 )
@@ -123,6 +125,8 @@ add_executable(unit_tests
     unit/test_stabilization_pipeline.cpp
     unit/test_slew_rate.cpp
     unit/test_control_source.cpp
+    unit/test_rc_pulse_decoder.cpp
+    unit/test_rc_link_monitor.cpp
     unit/test_telemetry_handler.cpp
     unit/test_diagnostics_reporter.cpp
     unit/test_drive_mode_registry.cpp
@@ -143,6 +147,7 @@ add_executable(unit_tests
     unit/test_control_loop_processor.cpp
     unit/test_imu_handler.cpp
     unit/test_mmc5983.cpp
+    unit/test_mpu6050_spi.cpp
     unit/test_mag_calibration.cpp
     unit/test_stdio_platform.cpp
     sim/stdio_platform.cpp

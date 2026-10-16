@@ -16,7 +16,11 @@ export const EVENT_TYPE_NAMES = Object.freeze({
     16: 'TestStopped',
     17: 'MagCalibStart',     18: 'MagCalibDone',       19: 'MagCalibFailed',
     20: 'MagCalibCancelled',
+    21: 'RcLost',            22: 'RcRestored',
 });
+
+// RcLossCause (rc_link_monitor.hpp), упакованы в param события RcLost (LOS-216)
+const RC_LOSS_CAUSES = Object.freeze(['ok', 'no_pulses', 'out_of_range', 'unknown']);
 
 const FIELD_OFFSETS = Object.freeze([
     { name: 'ts_ms',                    off: 0,   type: 'u32' },
@@ -61,12 +65,32 @@ const FIELD_OFFSETS = Object.freeze([
     { name: 'kids_limiters_enabled',     off: 129, type: 'u8', bit: 3 },
     { name: 'mag_rejected',              off: 130, type: 'u8', bit: 0 },
     { name: 'mag_gate_active',           off: 130, type: 'u8', bit: 1 },
+    // LOS-216: состояние каналов управления (LinkFlag в telemetry_log.hpp)
+    { name: 'rc_ok',                     off: 131, type: 'u8', bit: 0 },
+    { name: 'wifi_ok',                   off: 131, type: 'u8', bit: 1 },
+    { name: 'failsafe_active',           off: 131, type: 'u8', bit: 2 },
+    { name: 'rc_init_failed',            off: 131, type: 'u8', bit: 3 },
 ]);
 
 const MAX_FIELD_END = FIELD_OFFSETS.reduce((maxEnd, field) => {
     const size = (field.type === 'u32' || field.type === 'f32') ? 4 : 1;
     return Math.max(maxEnd, field.off + size);
 }, 0);
+
+/**
+ * Строка диагностики одного RC-канала из WS-телеметрии (link.rc_thr/rc_str,
+ * LOS-216): ширина последнего импульса и счётчики принятых/отброшенных.
+ */
+export function formatRcChannel(ch) {
+    if (!ch) return 'N/A';
+    const state = ch.ok ? `${ch.w} µs` : 'LOST';
+    const rejected = (ch.short ?? 0) + (ch.long ?? 0);
+    let s = `${state} · acc ${ch.acc ?? 0}`;
+    if (rejected > 0) {
+        s += ` · rej ${ch.short ?? 0}/${ch.long ?? 0} (last ${ch.rej_w ?? "?"} µs)`;
+    }
+    return s;
+}
 
 export class LogParseError extends Error {
     constructor(message) {
@@ -84,6 +108,13 @@ export function eventParamDesc(typeId, param) {
     }
     if (typeId === 2 || typeId === 3) {
         return param ? 'stage' + param : '';
+    }
+    if (typeId === 21) {
+        const desc = `thr=${RC_LOSS_CAUSES[param & 0x3]} str=${RC_LOSS_CAUSES[(param >> 2) & 0x3]}`;
+        return (param & 0x10) ? desc + ' since_boot' : desc;
+    }
+    if (typeId === 22) {
+        return param ? 'first_acquire' : '';
     }
     return param ? String(param) : '';
 }
@@ -1268,6 +1299,13 @@ function updateTelem(data) {
         html += row('RC Throttle', data.rc.throttle?.toFixed(2) ?? 'N/A');
         html += row('RC Steering', data.rc.steering?.toFixed(2) ?? 'N/A');
     }
+    if (data.link?.rc_thr) {
+        html += row('RC In (thr)', formatRcChannel(data.link.rc_thr));
+        html += row('RC In (str)', formatRcChannel(data.link.rc_str));
+    }
+    if (data.link?.rc_losses !== undefined) {
+        html += row('RC Losses', String(data.link.rc_losses));
+    }
     if (data.cmd) {
         html += row('Cmd Throttle', data.cmd.throttle?.toFixed(2) ?? 'N/A');
         html += row('Cmd Steering', data.cmd.steering?.toFixed(2) ?? 'N/A');
@@ -1605,9 +1643,9 @@ function handleLogData(frames) {
 
 function exportLogCsv(frames) {
     if (!frames || !frames.length) { alert('Нет данных'); return; }
-    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_yaw_deg,mx,my,mz,heading_deg,heading_rel_deg,test_marker,zupt_status,ekf_diverged,drive_mode,stab_enabled,mag_rejected,mag_gate_active\n';
+    const hdr = 'ts_ms,ax,ay,az,gx,gy,gz,vx,vy,slip_deg,speed_ms,throttle,steering,pitch_deg,roll_deg,yaw_deg,yaw_rate_dps,oversteer_active,rc_throttle,rc_steering,cmd_throttle,cmd_steering,ekf_vx_var,ekf_vy_var,ekf_r_var,ekf_yaw_deg,mx,my,mz,heading_deg,heading_rel_deg,test_marker,zupt_status,ekf_diverged,drive_mode,stab_enabled,mag_rejected,mag_gate_active,rc_ok,wifi_ok,failsafe_active,rc_init_failed\n';
     const rows = frames.map(f =>
-        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.ekf_yaw_deg??0},${f.mx??0},${f.my??0},${f.mz??0},${f.heading_deg??0},${f.heading_rel_deg??0},${f.test_marker??0},${f.zupt_status??0},${f.ekf_diverged??0},${f.drive_mode??0},${f.stab_enabled??0},${f.mag_rejected??0},${f.mag_gate_active??0}`
+        `${f.ts_ms},${f.ax},${f.ay},${f.az},${f.gx},${f.gy},${f.gz},${f.vx},${f.vy},${f.slip_deg},${f.speed_ms},${f.throttle},${f.steering},${f.pitch_deg},${f.roll_deg},${f.yaw_deg},${f.yaw_rate_dps},${f.oversteer_active},${f.rc_throttle},${f.rc_steering},${f.cmd_throttle??0},${f.cmd_steering??0},${f.ekf_vx_var??0},${f.ekf_vy_var??0},${f.ekf_r_var??0},${f.ekf_yaw_deg??0},${f.mx??0},${f.my??0},${f.mz??0},${f.heading_deg??0},${f.heading_rel_deg??0},${f.test_marker??0},${f.zupt_status??0},${f.ekf_diverged??0},${f.drive_mode??0},${f.stab_enabled??0},${f.mag_rejected??0},${f.mag_gate_active??0},${f.rc_ok??0},${f.wifi_ok??0},${f.failsafe_active??0},${f.rc_init_failed??0}`
     ).join('\n');
     triggerDownload(hdr + rows, 'telemetry_log.csv', 'text/csv');
 }

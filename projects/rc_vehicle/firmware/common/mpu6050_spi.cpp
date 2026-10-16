@@ -10,7 +10,6 @@ static const char* MPU_TAG = "mpu6050_spi";
 // Регистры MPU-6050
 #define MPU6050_REG_PWR_MGMT_1 0x6B
 #define MPU6050_REG_ACCEL_XOUT_H 0x3B
-#define MPU6050_REG_GYRO_XOUT_H 0x43
 #define MPU6050_REG_WHO_AM_I 0x75
 
 #define MPU6050_WHO_AM_I_VALUE 0x68
@@ -36,15 +35,6 @@ int Mpu6050Spi::WriteReg(uint8_t reg, uint8_t value) {
                  0
              ? 0
              : -1;
-}
-
-int Mpu6050Spi::ReadReg16(uint8_t reg, int16_t &value) {
-  uint8_t tx[3] = {static_cast<uint8_t>(reg | MPU6050_SPI_READ_BIT), 0, 0};
-  uint8_t rx[3] = {0, 0, 0};
-  if (spi_->Transfer(std::span<const uint8_t>(tx), std::span<uint8_t>(rx)) != 0)
-    return -1;
-  value = static_cast<int16_t>((rx[1] << 8) | rx[2]);
-  return 0;
 }
 
 int Mpu6050Spi::Init() {
@@ -93,21 +83,25 @@ int Mpu6050Spi::Read(ImuData &data) {
   if (!initialized_)
     return -1;
 
-  int16_t raw_ax, raw_ay, raw_az;
-  int16_t raw_gx, raw_gy, raw_gz;
+  // Бёрст-чтение 14 байт с 0x3B (auto-increment): accel×3, temp, gyro×3,
+  // big-endian. Одна SPI-транзакция вместо шести.
+  uint8_t tx[15] = {
+      static_cast<uint8_t>(MPU6050_REG_ACCEL_XOUT_H | MPU6050_SPI_READ_BIT)};
+  uint8_t rx[15] = {};
+  if (spi_->Transfer(std::span<const uint8_t>(tx), std::span<uint8_t>(rx)) != 0)
+    return -1;
 
-  if (ReadReg16(MPU6050_REG_ACCEL_XOUT_H, raw_ax) != 0)
-    return -1;
-  if (ReadReg16(MPU6050_REG_ACCEL_XOUT_H + 2, raw_ay) != 0)
-    return -1;
-  if (ReadReg16(MPU6050_REG_ACCEL_XOUT_H + 4, raw_az) != 0)
-    return -1;
-  if (ReadReg16(MPU6050_REG_GYRO_XOUT_H, raw_gx) != 0)
-    return -1;
-  if (ReadReg16(MPU6050_REG_GYRO_XOUT_H + 2, raw_gy) != 0)
-    return -1;
-  if (ReadReg16(MPU6050_REG_GYRO_XOUT_H + 4, raw_gz) != 0)
-    return -1;
+  auto to16 = [&](int i) -> int16_t {
+    return static_cast<int16_t>((rx[i] << 8) | rx[i + 1]);
+  };
+
+  const int16_t raw_ax = to16(1);
+  const int16_t raw_ay = to16(3);
+  const int16_t raw_az = to16(5);
+  // rx[7..8] — температура, не используется
+  const int16_t raw_gx = to16(9);
+  const int16_t raw_gy = to16(11);
+  const int16_t raw_gz = to16(13);
 
   data.ax = static_cast<float>(raw_ax) / MPU6050_ACCEL_SCALE;
   data.ay = static_cast<float>(raw_ay) / MPU6050_ACCEL_SCALE;

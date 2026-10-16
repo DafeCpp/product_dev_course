@@ -98,6 +98,7 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   ControlTickState state{.command = persistent_.base_command};
   UpdateSensorsAndEkf(input, state);
   PROF_LAP(prof_sensors_us_, prof_sensors_max_us_);
+  UpdateRcLink(input);
 
   ProcessCalibration(now, state);
 
@@ -411,6 +412,37 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
   }
 }
 
+void ControlLoopProcessor::UpdateRcLink(const ControlTickInput& input) {
+  // Без RC-обработчика следить не за чем (host-тесты без RC).
+  if (!ctx_.rc_handler) return;
+  const auto evt = rc_link_monitor_.Update(
+      input.now_ms, input.sensors.rc_active, input.sensors.rc_stats);
+  if (!evt) return;
+
+  // Только постановка в очередь: печать в serial — вне 500 Гц пути.
+  ctx_.platform.PublishRcLinkEvent(*evt);
+
+  if (!ctx_.telem_mgr) return;
+  TelemetryEvent te{};
+  te.ts_ms = evt->ts_ms;
+  if (evt->kind == RcLinkEvent::Kind::Lost) {
+    te.type = TelemetryEventType::RcLost;
+    te.param =
+        RcLostParam(static_cast<uint8_t>(evt->throttle_cause),
+                    static_cast<uint8_t>(evt->steering_cause), evt->since_boot);
+    te.value1 =
+        static_cast<float>(evt->stats.throttle.stats.last_rejected_width_us);
+    te.value2 =
+        static_cast<float>(evt->stats.steering.stats.last_rejected_width_us);
+  } else {
+    te.type = TelemetryEventType::RcRestored;
+    te.param = evt->since_boot ? 1 : 0;
+    te.value1 = static_cast<float>(evt->outage_ms) / 1000.0f;
+    te.value2 = static_cast<float>(evt->suppressed);
+  }
+  ctx_.telem_mgr->PushEvent(te);
+}
+
 void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
                                            const ControlTickState& state) {
   const TelemetryContext tctx{ctx_.ekf,
@@ -430,6 +462,7 @@ void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
     // FW-RF8: failsafe в снимок — чтобы JSON строился в задаче телеметрии без
     // обращения к платформе из чужого потока.
     snap.failsafe = ctx_.platform.FailsafeIsActive();
+    snap.rc_loss_count = rc_link_monitor_.LossCount();
     ctx_.telem_handler->SendTelemetry(input.now_ms, snap);
   }
 
@@ -440,7 +473,8 @@ void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
           tctx, input.now_ms, input.sensors, persistent_.applied.throttle,
           persistent_.applied.steering, state.command.throttle,
           state.command.steering, drive_mode, input.config.enabled,
-          input.config.KidsLimitersActive());
+          input.config.KidsLimitersActive(), state.failsafe_active,
+          ctx_.rc_init_failed);
       ctx_.telem_mgr->Push(frame);
       ctx_.telem_mgr->SetLastLogTime(input.now_ms);
 #ifdef ESP_PLATFORM

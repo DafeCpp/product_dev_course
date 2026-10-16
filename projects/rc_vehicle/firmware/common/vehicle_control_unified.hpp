@@ -568,6 +568,9 @@ class VehicleControlUnified : public IVehicleControl {
 
   // Флаги состояния
   bool rc_enabled_{false};
+  // true только если InitRc() вернул ошибку (LinkFlag::kLinkRcInitFailed,
+  // LOS-216). Не `!rc_enabled_`: без Init() rc_enabled_ тоже false.
+  bool rc_init_failed_{false};
   bool imu_enabled_{false};
   bool inited_{false};
 

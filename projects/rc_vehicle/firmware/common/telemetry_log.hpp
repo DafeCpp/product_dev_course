@@ -29,9 +29,24 @@ enum MagFlag : uint8_t {
 };
 
 /**
+ * @brief Биты маски TelemetryLogFrame::link_flags
+ *
+ * Состояние каналов управления в кадре (LOS-216): rc_throttle/rc_steering
+ * пишутся только при активном RC, иначе 0.0 — без этих битов «приёмник молчит»
+ * неотличим от «ручки в нейтрали». Порядок битов зафиксирован так же, как у
+ * KidsFlag: app.js раскладывает маску по колонкам через `bit: 0..3`.
+ */
+enum LinkFlag : uint8_t {
+  kLinkRcOk = 1u << 0,          // RcInputHandler::IsActive()
+  kLinkWifiOk = 1u << 1,        // WifiCommandHandler::IsActive()
+  kLinkFailsafe = 1u << 2,      // Failsafe активен в этом тике
+  kLinkRcInitFailed = 1u << 3,  // RcInputInit() упал при старте
+};
+
+/**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 132 байта (30 × float + uint32_t + 7 × uint8_t + padding).
+ * Размер: 132 байта (30 × float + uint32_t + 8 × uint8_t).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
  *
  * Буфер 52000 кадров × 132 байта ≈ 6.5 МБ; remaining PSRAM is reserved for
@@ -73,8 +88,8 @@ struct TelemetryLogFrame {
   uint8_t stab_enabled{0};   // Стабилизация включена (1) / выключена (0)
   uint8_t kids_flags{0};     // Маска активных лимитеров Kids (см. KidsFlag)
   uint8_t mag_flags{0};      // Состояние quality gate (см. MagFlag)
-  uint8_t _pad[1]{};         // Выравнивание до 4 байт
-};  // sizeof == 132 bytes (30 × float + uint32_t + 7 × uint8_t + 1 pad)
+  uint8_t link_flags{0};     // Состояние RC/WiFi/failsafe (см. LinkFlag)
+};  // sizeof == 132 bytes (30 × float + uint32_t + 8 × uint8_t)
 
 // Compile-time проверка размера структуры
 static_assert(sizeof(TelemetryLogFrame) == 132,
@@ -86,6 +101,8 @@ static_assert(offsetof(TelemetryLogFrame, kids_flags) == 129,
               "kids_flags offset must match web/app.js FIELD_OFFSETS");
 static_assert(offsetof(TelemetryLogFrame, mag_flags) == 130,
               "mag_flags offset must match web/app.js FIELD_OFFSETS");
+static_assert(offsetof(TelemetryLogFrame, link_flags) == 131,
+              "link_flags offset must match web/app.js FIELD_OFFSETS");
 
 /**
  * @brief Потокобезопасный кольцевой буфер кадров телеметрии

@@ -603,6 +603,143 @@ TEST_F(ProcessorTest, WithImu_TelemLogPopulated) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// LOS-216: link_flags в лог-кадре — источники на стороне вызывающего
+// (state.failsafe_active и ctx.rc_init_failed); упаковку стерегут тесты
+// билдера.
+// ───────────────────────────────────────────────────────────────────────────
+
+TEST_F(ProcessorTest, LinkFlags_WifiDrivenFrameHasWifiOkOnly) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  platform_.SetImuData(ImuData{.az = 1.0f});
+  ctx_->imu_handler = &imu_handler;
+
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  RunSteps(100);
+
+  size_t count = 0, cap = 0;
+  telem_mgr_->GetLogInfo(count, cap);
+  ASSERT_GT(count, 0u);
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+  EXPECT_EQ(frame.link_flags, kLinkWifiOk);
+}
+
+TEST_F(ProcessorTest, LinkFlags_NoLinkAndRcInitFailed_LogsFailsafe) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  platform_.SetImuData(ImuData{.az = 1.0f});
+  ctx_->imu_handler = &imu_handler;
+  ctx_->rc_init_failed = true;
+
+  RunSteps(500);  // ни RC, ни WiFi — failsafe должен сработать
+
+  size_t count = 0, cap = 0;
+  telem_mgr_->GetLogInfo(count, cap);
+  ASSERT_GT(count, 0u);
+  TelemetryLogFrame frame{};
+  ASSERT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+  EXPECT_EQ(frame.link_flags, kLinkFailsafe | kLinkRcInitFailed);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// LOS-216 (3/3): переходы RC-связи → платформа (serial) и журнал событий,
+// счётчики декодеров → WS-снимок.
+// ───────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+RcInputStats MakeRcStats(bool thr_active, bool str_active,
+                         uint32_t thr_rejected_long) {
+  RcInputStats s{};
+  s.throttle = {
+      .stats = {.accepted = 100,
+                .rejected_long = thr_rejected_long,
+                .last_width_us = 1500,
+                .last_rejected_width_us = thr_rejected_long ? 2350u : 0u},
+      .active = thr_active};
+  s.steering = {.stats = {.accepted = 100, .last_width_us = 1500},
+                .active = str_active};
+  return s;
+}
+
+}  // namespace
+
+TEST_F(ProcessorTest, RcLink_LossAndRestorePublishedAndLogged) {
+  RcInputHandler rc_handler(platform_, 20);
+  TelemetryHandler telem_handler(platform_, 0);
+  ctx_->rc_handler = &rc_handler;
+  ctx_->telem_handler = &telem_handler;
+
+  platform_.SetRcCommand({0.2f, 0.0f});
+  platform_.SetRcStats(MakeRcStats(true, true, 0));
+  RunSteps(1000);  // 2 с
+
+  // Ручка газа ушла за окно приёма: импульсы есть, но отбрасываются.
+  platform_.ClearRcCommand();
+  platform_.SetRcStats(MakeRcStats(false, true, 12));
+  RunSteps(1000);
+
+  platform_.SetRcCommand({0.0f, 0.0f});
+  platform_.SetRcStats(MakeRcStats(true, true, 12));
+  RunSteps(1000);
+
+  const auto& events = platform_.GetRcLinkEvents();
+  ASSERT_EQ(events.size(), 3u);
+  EXPECT_EQ(events[0].kind, RcLinkEvent::Kind::Restored);
+  EXPECT_TRUE(events[0].since_boot);
+  EXPECT_EQ(events[1].kind, RcLinkEvent::Kind::Lost);
+  EXPECT_EQ(events[1].throttle_cause, RcLossCause::PulsesOutOfRange);
+  EXPECT_EQ(events[1].steering_cause, RcLossCause::None);
+  EXPECT_EQ(events[2].kind, RcLinkEvent::Kind::Restored);
+  EXPECT_FALSE(events[2].since_boot);
+  EXPECT_NEAR(static_cast<double>(events[2].outage_ms), 2000.0, 25.0);
+
+  // Те же переходы — в журнале событий (скачивается вместе с логом).
+  std::vector<TelemetryEvent> log;
+  for (size_t i = 0; i < telem_mgr_->GetEventCount(); ++i) {
+    TelemetryEvent e{};
+    ASSERT_TRUE(telem_mgr_->GetEvent(i, e));
+    if (e.type == TelemetryEventType::RcLost ||
+        e.type == TelemetryEventType::RcRestored) {
+      log.push_back(e);
+    }
+  }
+  ASSERT_EQ(log.size(), 3u);
+  EXPECT_EQ(log[0].type, TelemetryEventType::RcRestored);
+  EXPECT_EQ(log[0].param, 1);
+  EXPECT_EQ(log[1].type, TelemetryEventType::RcLost);
+  EXPECT_EQ(log[1].param,
+            RcLostParam(static_cast<uint8_t>(RcLossCause::PulsesOutOfRange),
+                        static_cast<uint8_t>(RcLossCause::None), false));
+  EXPECT_FLOAT_EQ(log[1].value1, 2350.0f);
+  EXPECT_EQ(log[2].type, TelemetryEventType::RcRestored);
+  EXPECT_NEAR(log[2].value1, 2.0f, 0.03f);
+
+  // WS-снимок: счётчики и число потерь.
+  const TelemetrySnapshot& snap = platform_.GetLastSnap();
+  EXPECT_TRUE(snap.rc_ok);
+  EXPECT_TRUE(snap.rc_stats_available);
+  EXPECT_EQ(snap.rc_stats.throttle.stats.rejected_long, 12u);
+  EXPECT_EQ(snap.rc_loss_count, 1u);
+}
+
+TEST_F(ProcessorTest, RcLink_NoReceiverReportedOnceSinceBoot) {
+  RcInputHandler rc_handler(platform_, 20);
+  ctx_->rc_handler = &rc_handler;
+  platform_.SetWifiCommand({0.0f, 0.0f});  // ездим по Wi-Fi, пульта нет
+
+  RunSteps(2500);  // 5 с
+
+  const auto& events = platform_.GetRcLinkEvents();
+  ASSERT_EQ(events.size(), 1u);
+  EXPECT_EQ(events[0].kind, RcLinkEvent::Kind::Lost);
+  EXPECT_TRUE(events[0].since_boot);
+  // FakePlatform по умолчанию счётчиков не отдаёт.
+  EXPECT_EQ(events[0].throttle_cause, RcLossCause::Unknown);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // LOS-13: бит kKidsLimitersEnabled в лог-кадре
 //
 // BuildLogFrame получает признак аргументом, поэтому упаковку бита стерегут

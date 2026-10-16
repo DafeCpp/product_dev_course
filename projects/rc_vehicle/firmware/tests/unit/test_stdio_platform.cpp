@@ -47,6 +47,40 @@ TEST(SimProtocol, ParseInputLine_ParsesAllFields) {
   EXPECT_FALSE(f.wifi_present);
 }
 
+TEST(SimProtocol, ParseInputLine_OptionalRcPulseFields) {
+  InputFrame f;
+  ASSERT_TRUE(ParseInputLine("2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0", f));
+  EXPECT_FALSE(f.rc_pulses_present);
+  ASSERT_TRUE(ParseInputLine("2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2010,0", f));
+  EXPECT_TRUE(f.rc_pulses_present);
+  EXPECT_EQ(f.rc_thr_pulse_us, 2010u);
+  EXPECT_EQ(f.rc_str_pulse_us, 0u);
+}
+
+// LOS-216: режим сырых импульсов идёт через настоящий RcPulseDecoder.
+TEST(SimProtocol, StdioPlatform_RcPulsesDecodedLikeIsr) {
+  StdioPlatform p;
+  EXPECT_FALSE(p.GetRcStats().has_value());  // без импульсов — как раньше
+
+  p.SetRcPulses(2010, 1250);
+  p.AdvanceTimeMs(50);
+  auto rc = p.GetRc();
+  ASSERT_TRUE(rc.has_value());
+  EXPECT_FLOAT_EQ(rc->throttle, 1.0f);  // за упором — клампится
+  EXPECT_FLOAT_EQ(rc->steering, -0.5f);
+  auto stats = p.GetRcStats();
+  ASSERT_TRUE(stats.has_value());
+  EXPECT_TRUE(stats->throttle.active);
+  EXPECT_GE(stats->throttle.stats.accepted, 2u);
+
+  p.SetRcPulses(0, 1250);  // газ замолчал
+  p.AdvanceTimeMs(300);    // > таймаута декодера 250 мс
+  EXPECT_FALSE(p.GetRc().has_value());
+  stats = p.GetRcStats();
+  EXPECT_FALSE(stats->throttle.active);
+  EXPECT_TRUE(stats->steering.active);
+}
+
 TEST(SimProtocol, ParseInputLine_RejectsTooFewFields) {
   InputFrame f;
   EXPECT_FALSE(ParseInputLine("2,0.1,0.2", f));

@@ -122,6 +122,9 @@ inline SensorSnapshot BuildSensorSnapshot(
   if (s.rc_active) {
     s.rc_cmd = rc_handler->GetCommand();
   }
+  if (rc_handler) {
+    s.rc_stats = rc_handler->GetStats();
+  }
   s.wifi_active = wifi_handler && wifi_handler->IsActive();
   if (s.wifi_active) {
     s.wifi_cmd = wifi_handler->GetCommand();

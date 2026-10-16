@@ -7,6 +7,7 @@ import {
     LogParseError,
     assignEventsToFrames,
     eventParamDesc,
+    formatRcChannel,
     parseBinaryLog,
 } from '../app.js';
 
@@ -25,6 +26,7 @@ function setFrame(view, base, frame = {}) {
     view.setUint8(base + 124, frame.testMarker ?? 0);
     view.setUint8(base + 129, frame.kidsFlags ?? 0);
     view.setUint8(base + 130, frame.magFlags ?? 0);
+    view.setUint8(base + 131, frame.linkFlags ?? 0);
 }
 
 function setEvent(view, base, record) {
@@ -84,6 +86,19 @@ describe('eventParamDesc and event names', () => {
         expect(eventParamDesc(2, 2)).toBe('stage2');
         expect(eventParamDesc(4, 0)).toBe('');
         expect(eventParamDesc(4, 7)).toBe('7');
+        // LOS-216: RcLost param = thr cause | str cause << 2 | since_boot << 4
+        expect(eventParamDesc(21, 0x09)).toBe('thr=no_pulses str=out_of_range');
+        expect(eventParamDesc(21, 0x15)).toBe('thr=no_pulses str=no_pulses since_boot');
+        expect(eventParamDesc(22, 1)).toBe('first_acquire');
+        expect(eventParamDesc(22, 0)).toBe('');
+    });
+
+    it('formats RC channel diagnostics from WS telemetry', () => {
+        expect(formatRcChannel(undefined)).toBe('N/A');
+        expect(formatRcChannel({ok: true, w: 1502, acc: 900, short: 0, long: 0, rej_w: 0}))
+            .toBe('1502 µs · acc 900');
+        expect(formatRcChannel({ok: false, w: 1990, acc: 900, short: 1, long: 12, rej_w: 2310}))
+            .toBe('LOST · acc 900 · rej 1/12 (last 2310 µs)');
     });
 
     it('matches every TelemetryEventType value in the firmware header', () => {
@@ -151,7 +166,7 @@ describe('parseBinaryLog', () => {
         const buffer = buildLog({
             frames: [
                 {ts: 100, ax: 1.25, speed: 2.5, testMarker: 7,
-                    kidsFlags: 0b1101, magFlags: 0b10},
+                    kidsFlags: 0b1101, magFlags: 0b10, linkFlags: 0b1010},
                 {ts: 110, ax: -0.5},
             ],
             events: [{ts: 105, typeId: 13, param: 2, value1: 4.5, value2: -0.25}],
@@ -170,6 +185,11 @@ describe('parseBinaryLog', () => {
         expect(firstValues[names.indexOf('kids_speed_limit_active')]).toBe('1');
         expect(firstValues[names.indexOf('kids_limiters_enabled')]).toBe('1');
         expect(firstValues[names.indexOf('mag_gate_active')]).toBe('1');
+        expect(firstValues[names.indexOf('rc_ok')]).toBe('0');
+        expect(firstValues[names.indexOf('wifi_ok')]).toBe('1');
+        expect(firstValues[names.indexOf('failsafe_active')]).toBe('0');
+        expect(firstValues[names.indexOf('rc_init_failed')]).toBe('1');
+        expect(secondValues[names.indexOf('rc_ok')]).toBe('0');
         expect(secondValues[names.indexOf('event_type')]).toBe('TestStart');
         expect(secondValues[names.indexOf('event_param')]).toBe('Circle');
         expect(secondValues[names.indexOf('event_value1')]).toBe('4.5000');

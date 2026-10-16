@@ -11,6 +11,7 @@
 #include "imu_calibration.hpp"
 #include "kids_mode_processor.hpp"
 #include "madgwick_filter.hpp"
+#include "rc_link_monitor.hpp"
 #include "stabilization_manager.hpp"
 #include "stabilization_pipeline.hpp"
 #include "telemetry_manager.hpp"
@@ -52,6 +53,9 @@ struct ControlLoopContext {
 
   // Атомарный счётчик частоты (читается RunSelfTest из другого потока)
   std::atomic<uint32_t>& last_loop_hz;
+
+  // RcInputInit() упал при старте — в лог-кадр (LinkFlag, LOS-216)
+  bool rc_init_failed{false};
 };
 
 /**
@@ -86,6 +90,8 @@ class ControlLoopProcessor {
   void UpdatePwm(const ControlTickInput& input, ControlTickState& state);
   void UpdateTelemetry(const ControlTickInput& input,
                        const ControlTickState& state);
+  /** LOS-216: переходы RC-связи → serial (через платформу) и журнал событий. */
+  void UpdateRcLink(const ControlTickInput& input);
 
   const ControlLoopContext& ctx_;
 
@@ -110,6 +116,10 @@ class ControlLoopProcessor {
   VehicleStateEstimator state_estimator_;
   StabilizationPipeline stabilization_pipeline_;
   PersistentState persistent_;
+  RcLinkMonitor rc_link_monitor_{RcLinkMonitor::Config{
+      .startup_grace_ms = config::RcInputConfig::kLinkStartupGraceMs,
+      .min_report_interval_ms = config::RcInputConfig::kLinkReportIntervalMs,
+  }};
   uint32_t diag_loop_count_{0};
   uint32_t diag_start_ms_;
 

@@ -266,6 +266,21 @@ TEST(BuildTelemJsonTest, PureFunctionReflectsSnapshot) {
   cJSON_Delete(root);
 }
 
+// LOS-216: без счётчиков от платформы блоков rc_thr/rc_str нет, rc_losses есть.
+TEST(BuildTelemJsonTest, RcStatsOmittedWhenUnavailable) {
+  TelemetrySnapshot snap{};
+  snap.rc_loss_count = 3;
+  const std::string json = BuildTelemJson(snap);
+  cJSON* root = cJSON_Parse(json.c_str());
+  ASSERT_NE(root, nullptr);
+  cJSON* link = cJSON_GetObjectItem(root, "link");
+  ASSERT_NE(link, nullptr);
+  EXPECT_NEAR(cJSON_GetObjectItem(link, "rc_losses")->valuedouble, 3, 0.5);
+  EXPECT_EQ(cJSON_GetObjectItem(link, "rc_thr"), nullptr);
+  EXPECT_EQ(cJSON_GetObjectItem(link, "rc_str"), nullptr);
+  cJSON_Delete(root);
+}
+
 TEST(BuildTelemJsonTest, IncludesZuptStatus) {
   TelemetrySnapshot snap{};
   snap.imu_enabled = true;
@@ -364,6 +379,15 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
   snap.throttle = 0.6f;
   snap.steering = -0.3f;
 
+  // LOS-216: счётчики RC на максимуме uint32 — худший случай по длине.
+  constexpr uint32_t kMax = 0xFFFFFFFFu;
+  snap.rc_loss_count = kMax;
+  snap.rc_stats_available = true;
+  snap.rc_stats.throttle = {.stats = {kMax, kMax, kMax, 2200, kMax},
+                            .active = true};
+  snap.rc_stats.steering = {.stats = {kMax, kMax, kMax, 2200, kMax},
+                            .active = false};
+
   const std::string json = BuildTelemJson(snap);
 
   cJSON* root = cJSON_Parse(json.c_str());
@@ -378,6 +402,15 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(link, "rc_ok")));
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(link, "wifi_ok")));
   EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(link, "failsafe")));
+  EXPECT_NEAR(cJSON_GetObjectItem(link, "rc_losses")->valuedouble, kMax, 0.5);
+  cJSON* rc_thr = cJSON_GetObjectItem(link, "rc_thr");
+  ASSERT_NE(rc_thr, nullptr);
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(rc_thr, "ok")));
+  EXPECT_NEAR(cJSON_GetObjectItem(rc_thr, "w")->valuedouble, 2200, 0.5);
+  EXPECT_NEAR(cJSON_GetObjectItem(rc_thr, "long")->valuedouble, kMax, 0.5);
+  cJSON* rc_str = cJSON_GetObjectItem(link, "rc_str");
+  ASSERT_NE(rc_str, nullptr);
+  EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(rc_str, "ok")));
 
   cJSON* imu = cJSON_GetObjectItem(root, "imu");
   ASSERT_NE(imu, nullptr);
@@ -456,7 +489,8 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
 
   // Регресс-гейт: полный кадр должен оставаться заметно короче старого
   // cJSON-вывода (тот легко уходил за 2 КБ из-за 17-значных double).
-  EXPECT_LT(json.size(), 1152u) << "frame: " << json;
+  // 1344 — reserve() в BuildTelemJson: полный кадр не должен его превышать.
+  EXPECT_LE(json.size(), 1344u) << "frame: " << json;
 }
 
 // Все блоки imu/calib/mag/ekf/warn сгруппированы под imu_enabled — при
