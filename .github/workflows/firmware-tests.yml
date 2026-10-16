@@ -156,9 +156,8 @@ jobs:
         run: |
           lock=projects/rc_vehicle/firmware/esp32_s3/dependencies.lock
           if ! git diff --exit-code -- "$lock"; then
-            echo "::error file=$lock::dependencies.lock не совпадает с ESP-IDF ${{ needs.idf-version.outputs.idf }} из esp32_s3/.idf_version." \
-              "Соберите прошивку локально на этой версии IDF и закоммитьте обновлённый lock" \
-              "(или поменяйте .idf_version вместе с lock)."
+            echo "::error file=$lock::component manager переписал dependencies.lock (зависимости в idf_component.yml или версия idf в lock разошлись с ESP-IDF ${{ needs.idf-version.outputs.idf }})." \
+              "Соберите прошивку локально на ESP-IDF из esp32_s3/.idf_version и закоммитьте обновлённый lock."
             exit 1
           fi
 

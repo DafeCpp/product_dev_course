@@ -31,7 +31,7 @@ help:
 	@echo ""
 	@echo "Сборка:"
 	@echo "  make build   — собрать прошивку (задайте IDF_PATH или . export.sh в shell)"
-	@echo "  make size    — размер образа по секциям (после build)"
+	@echo "  make size    — размер образа по секциям (при необходимости сначала соберёт)"
 	@echo ""
 	@echo "Очистка:"
 	@echo "  make clean   — очистить сборку"
