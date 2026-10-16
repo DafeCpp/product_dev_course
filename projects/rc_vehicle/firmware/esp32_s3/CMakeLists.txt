@@ -4,16 +4,23 @@ cmake_minimum_required(VERSION 3.16)
 # Включаем ESP-IDF
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-# Версия ESP-IDF закреплена в .idf_version (тег вида vX.Y; по нему собирает CI
-# и с ним согласован dependencies.lock). Сборка на другой major.minor переписала
-# бы lock, поэтому останавливаемся сразу с понятной ошибкой.
+# Версия ESP-IDF закреплена в .idf_version тегом esp-idf: vX.Y (= X.Y.0) или
+# vX.Y.Z. По нему собирает CI, с ним согласован dependencies.lock (там версия
+# с патчем). Сборка на любой другой версии, включая другой патч, переписала бы
+# lock, поэтому останавливаемся сразу с понятной ошибкой. Формат проверяется
+# тем же регэкспом в job idf-version (.github/workflows/firmware-tests.yml).
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/.idf_version" RC_IDF_VERSION_TAG LIMIT_COUNT 1)
-string(REGEX MATCH "^v([0-9]+)\\.([0-9]+)" _rc_idf_match "${RC_IDF_VERSION_TAG}")
-if(NOT _rc_idf_match)
-  message(FATAL_ERROR ".idf_version: ожидается тег вида vX.Y, найдено '${RC_IDF_VERSION_TAG}'")
+string(STRIP "${RC_IDF_VERSION_TAG}" RC_IDF_VERSION_TAG)
+if(NOT RC_IDF_VERSION_TAG MATCHES "^v([0-9]+)\\.([0-9]+)(\\.([0-9]+))?$")
+  message(FATAL_ERROR
+    ".idf_version: ожидается тег вида vX.Y или vX.Y.Z, найдено '${RC_IDF_VERSION_TAG}'")
 endif()
-if(NOT "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" STREQUAL
-   "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}")
+set(RC_IDF_VERSION_REQUIRED "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.0")
+if(CMAKE_MATCH_4)
+  set(RC_IDF_VERSION_REQUIRED "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_4}")
+endif()
+if(NOT "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}" STREQUAL
+   "${RC_IDF_VERSION_REQUIRED}")
   message(FATAL_ERROR
     "Прошивка собирается на ESP-IDF ${RC_IDF_VERSION_TAG} (.idf_version), "
     "найден ${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}. "
