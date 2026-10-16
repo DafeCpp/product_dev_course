@@ -15,10 +15,11 @@ if(NOT RC_IDF_VERSION_TAG MATCHES "^v([0-9]+)\\.([0-9]+)(\\.([0-9]+))?$")
   message(FATAL_ERROR
     ".idf_version: ожидается тег вида vX.Y или vX.Y.Z, найдено '${RC_IDF_VERSION_TAG}'")
 endif()
-set(RC_IDF_VERSION_REQUIRED "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.0")
-if(CMAKE_MATCH_4)
-  set(RC_IDF_VERSION_REQUIRED "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_4}")
+set(_rc_idf_patch "${CMAKE_MATCH_4}")
+if(_rc_idf_patch STREQUAL "")
+  set(_rc_idf_patch 0)  # vX.Y — релиз X.Y.0
 endif()
+set(RC_IDF_VERSION_REQUIRED "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${_rc_idf_patch}")
 if(NOT "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}" STREQUAL
    "${RC_IDF_VERSION_REQUIRED}")
   message(FATAL_ERROR

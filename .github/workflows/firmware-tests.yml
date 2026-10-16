@@ -118,7 +118,7 @@ jobs:
         run: |
           # Та же нормализация и тот же формат, что в esp32_s3/CMakeLists.txt:
           # первая строка без пробелов по краям, vX.Y или vX.Y.Z.
-          idf=$(head -n 1 projects/rc_vehicle/firmware/esp32_s3/.idf_version | tr -d '\r' | xargs)
+          idf=$(head -n 1 projects/rc_vehicle/firmware/esp32_s3/.idf_version | sed 's/[[:space:]]*$//; s/^[[:space:]]*//')
           if ! [[ "$idf" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
             echo "::error file=projects/rc_vehicle/firmware/esp32_s3/.idf_version::ожидается тег образа espressif/idf вида vX.Y или vX.Y.Z, найдено '$idf'"
             exit 1
