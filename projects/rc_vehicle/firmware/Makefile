@@ -21,7 +21,7 @@ IDF_PYTHON ?=
 # Каталог с бинарником IDF_PYTHON (для подстановки в PATH)
 IDF_PYTHON_PREFIX := $(if $(IDF_PYTHON),$(dir $(shell which $(IDF_PYTHON) 2>/dev/null)),)
 
-.PHONY: all build clean flash monitor flash-monitor test test-build test-clean help
+.PHONY: all build size clean flash monitor flash-monitor test test-build test-clean help
 
 # По умолчанию — справка
 all: help
@@ -31,6 +31,7 @@ help:
 	@echo ""
 	@echo "Сборка:"
 	@echo "  make build   — собрать прошивку (задайте IDF_PATH или . export.sh в shell)"
+	@echo "  make size    — размер образа по секциям (при необходимости сначала соберёт)"
 	@echo ""
 	@echo "Очистка:"
 	@echo "  make clean   — очистить сборку"
@@ -51,7 +52,7 @@ help:
 	@echo ""
 	@echo "Переменные: IDF_PATH, ESP32_S3_PORT, IDF_PYTHON"
 	@echo ""
-	@echo "Если при сборке ошибка про idf6.0_py3.*_env: задайте IDF_PYTHON=python3.12"
+	@echo "Если при сборке ошибка про idf6.1_py3.*_env: задайте IDF_PYTHON=python3.12"
 	@echo "  (или тот Python, с которым запускали install.sh) либо выполните ./install.sh в каталоге IDF."
 
 # Подгрузить ESP-IDF (если IDF_PATH задан) и выполнить idf.py
@@ -73,6 +74,9 @@ endef
 build:
 	@echo ">>> Сборка ESP32-S3..."
 	@$(call run_idf,build)
+
+size:
+	@$(call run_idf,size)
 
 clean:
 	@echo ">>> Очистка ESP32-S3..."
