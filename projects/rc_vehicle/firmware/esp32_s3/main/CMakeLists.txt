@@ -80,13 +80,8 @@ idf_component_register(
         esp_timer
 )
 
-# C++26 (если поддерживается компилятором), иначе C++23.
-set(RC_VEHICLE_CXX_STANDARD 26)
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
-   CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
-    set(RC_VEHICLE_CXX_STANDARD 26)
-endif()
-
-set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_STANDARD ${RC_VEHICLE_CXX_STANDARD})
+# C++26 обязателен: веб-ресурсы вшиваются через #embed (rc_http_routes.cpp),
+# нужен GCC 15+ из тулчейна ESP-IDF v6.x. Фолбэка на C++23 нет.
+set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_STANDARD 26)
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_EXTENSIONS ON)

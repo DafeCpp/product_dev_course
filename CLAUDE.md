@@ -158,7 +158,7 @@ make deploy VM_HOST=<ip> REGISTRY_ID=<id>
 |------|-----------|
 | Backend | Python 3.12+, aiohttp, asyncpg, Pydantic v2 |
 | Frontend | TypeScript, React 19, Vite, MUI |
-| Firmware | C++23, ESP-IDF v6.1, ESP32-S3 |
+| Firmware | C++26, ESP-IDF v6.1, ESP32-S3 |
 | БД | PostgreSQL 16, TimescaleDB |
 | Тесты (backend) | pytest, yandex-taxi-testsuite |
 | Тесты (frontend) | Vitest, React Testing Library, Cypress |

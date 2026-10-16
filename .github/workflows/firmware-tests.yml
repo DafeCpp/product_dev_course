@@ -102,29 +102,31 @@ jobs:
           if-no-files-found: error
 
   esp32s3-build:
-    name: ESP32-S3 build (ESP-IDF v6.1)
+    name: ESP32-S3 build (ESP-IDF ${{ matrix.idf }})
     runs-on: ubuntu-latest
-    # Версия ESP-IDF для прошивки: менять вместе с dependencies.lock и docs/esp32s3-setup.md.
-    container: espressif/idf:v6.1
-    defaults:
-      run:
-        shell: bash
-        working-directory: projects/rc_vehicle/firmware/esp32_s3
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        # Версия ESP-IDF для прошивки. Менять вместе с: esp32_s3/dependencies.lock,
+        # esp32_s3/README.md, docs/esp32s3-setup.md, CLAUDE.md, подсказкой в firmware/Makefile.
+        idf: ['v6.1']
+    container: espressif/idf:${{ matrix.idf }}
+    env:
+      IDF_TARGET: esp32s3
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build firmware
+      - name: Build firmware (make rc-build path) and report size
+        shell: bash
         run: |
-          # В container-job entrypoint образа не запускается — окружение IDF поднимаем сами.
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          . "$IDF_PATH/export.sh"
-          idf.py set-target esp32s3
-          idf.py build
-
-      - name: Image size
-        run: |
-          . "$IDF_PATH/export.sh"
-          idf.py size | tee size.txt
+          # Та же команда, что у разработчиков (make rc-build): wrapper run_idf
+          # поднимает окружение IDF и выполняет migrate_cpu_freq_sdkconfig.sh.
+          make -C projects/rc_vehicle/firmware build
+          # В container-job entrypoint образа не запускается — для size поднимаем IDF сами.
+          . "$IDF_PATH/export.sh" >/dev/null
+          cd projects/rc_vehicle/firmware/esp32_s3
+          idf.py size 2>&1 | tee size.txt
 
       - name: Upload firmware image
         uses: actions/upload-artifact@v4
