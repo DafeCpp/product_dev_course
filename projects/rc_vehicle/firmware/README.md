@@ -44,7 +44,7 @@ idf.py monitor
 
 ## Стандарты кода
 
-- **C++23 (C++26 при поддержке тулчейна)** — стандарт задан в CMake/IDF.
+- **C++26** — обязателен (веб-ресурсы вшиваются через `#embed`), нужен GCC 15+ из ESP-IDF v6.x; стандарт задан в `esp32_s3/main/CMakeLists.txt`.
 - **Форматирование** — [Google style](https://google.github.io/styleguide/cppguide.html) через clang-format. Конфиг: `firmware/.clang-format`.
 - **Буферы** — по возможности `std::array`, `std::vector`, `std::span`; минимизация сырых указателей.
 

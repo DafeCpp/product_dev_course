@@ -82,6 +82,12 @@ idf_component_register(
 
 # C++26 обязателен: веб-ресурсы вшиваются через #embed (rc_http_routes.cpp),
 # нужен GCC 15+ из тулчейна ESP-IDF v6.x. Фолбэка на C++23 нет.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+    message(FATAL_ERROR
+        "Нужен GCC 15+ (C++26, #embed), найден ${CMAKE_CXX_COMPILER_VERSION}. "
+        "Обновите ESP-IDF до версии из docs/esp32s3-setup.md.")
+endif()
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_STANDARD 26)
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET ${COMPONENT_LIB} PROPERTY CXX_EXTENSIONS ON)
