@@ -1,10 +1,6 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { fileURLToPath } from "node:url";
-
-const reactPath = fileURLToPath(new URL("./node_modules/react", import.meta.url));
-const reactDomPath = fileURLToPath(new URL("./node_modules/react-dom", import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
@@ -12,12 +8,6 @@ export default defineConfig({
     // frontend-common is consumed from its source tree; force one React
     // instance so hooks shared across workspaces use the app dispatcher.
     dedupe: ["react", "react-dom"],
-    alias: [
-      { find: /^react$/, replacement: reactPath },
-      { find: /^react\/(.+)$/, replacement: `${reactPath}/$1` },
-      { find: /^react-dom$/, replacement: reactDomPath },
-      { find: /^react-dom\/(.+)$/, replacement: `${reactDomPath}/$1` },
-    ],
   },
   server: {
     port: 3006,

@@ -12,9 +12,11 @@
 - Проксируемый `/api/*` автоматически подставляет `Authorization: Bearer <access_cookie>` если кука есть.
 
 ## Запуск локально
+Зависимости ставятся один раз из корня репозитория (общий npm workspace и lockfile):
+
 ```bash
+npm ci
 cd projects/frontend/apps/auth-proxy
-npm install
 cp env.example .env
 npm run dev
 ```

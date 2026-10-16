@@ -40,17 +40,19 @@ services:
   # Auth Proxy - BFF
   auth-proxy:
     # Используем development stage из Dockerfile
+    # context — корень репозитория: зависимости ставятся из общего npm-workspace lockfile
     build:
-      context: ./projects/frontend/apps/auth-proxy
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/frontend/apps/auth-proxy/Dockerfile
       target: development
     # Монтируем исходный код для hot-reload
     volumes:
-      - ./projects/frontend/apps/auth-proxy/src:/app/src
-      - ./projects/frontend/apps/auth-proxy/tsconfig.json:/app/tsconfig.json
+      - ./projects/frontend/apps/auth-proxy/src:/app/projects/frontend/apps/auth-proxy/src
+      - ./projects/frontend/apps/auth-proxy/tsconfig.json:/app/projects/frontend/apps/auth-proxy/tsconfig.json
+      - ./projects/frontend/tsconfig.base.json:/app/projects/frontend/tsconfig.base.json
       # Исключаем node_modules и dist для избежания конфликтов
       - /app/node_modules
-      - /app/dist
+      - /app/projects/frontend/apps/auth-proxy/dist
     # Используем dev команду (ts-node-dev с hot-reload)
     command: npm run dev
     environment:

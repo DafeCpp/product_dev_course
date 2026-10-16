@@ -394,8 +394,8 @@ services:
   # Auth Proxy - BFF для фронтенда
   auth-proxy:
     build:
-      context: ./projects/frontend/apps/auth-proxy
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/frontend/apps/auth-proxy/Dockerfile
       target: production
     container_name: auth-proxy
     env_file:

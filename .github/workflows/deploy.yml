@@ -132,8 +132,8 @@ jobs:
             context: ./projects/backend
             dockerfile: services/script-service/Dockerfile
           - service: auth-proxy
-            context: ./projects/frontend/apps/auth-proxy
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: projects/frontend/apps/auth-proxy/Dockerfile
           - service: experiment-portal
             context: .
             dockerfile: projects/frontend/apps/experiment-portal/Dockerfile

@@ -267,9 +267,8 @@ services:
    cd projects/backend/services/experiment-service
    poetry install
 
-   # Для Node.js
-   cd projects/frontend/apps/auth-proxy
-   npm install
+   # Для Node.js (общий npm workspace, из корня репозитория)
+   npm ci
    ```
 3. Проверьте версии в Dockerfile (Node.js, Python)
 

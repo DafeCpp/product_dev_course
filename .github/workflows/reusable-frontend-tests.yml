@@ -54,8 +54,12 @@ jobs:
           echo "$CHANGED_FILES"
           echo ""
 
+          # Shared workspace files (root manifest/lockfile, projects/frontend/*.json|mjs
+          # configs) affect every app, since all apps install from one lockfile.
+          SHARED='^(package(-lock)?\.json|projects/frontend/[^/]+)$|\.github/workflows/(frontend-tests|reusable-frontend-tests)\.yml'
+
           for app in experiment-portal sensor-simulator auth-proxy; do
-            if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "^projects/frontend/(apps/$app|common)/|\.github/workflows/(frontend-tests|reusable-frontend-tests)\.yml" > /dev/null; then
+            if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "^projects/frontend/(apps/$app|common)/|$SHARED" > /dev/null; then
               echo "$app=true" >> $GITHUB_OUTPUT
               echo "✓ $app changed"
             else
@@ -64,7 +68,7 @@ jobs:
             fi
           done
 
-          if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "^(package(-lock)?\.json|projects/frontend/common/)|\.github/workflows/(frontend-tests|reusable-frontend-tests)\.yml" > /dev/null; then
+          if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "^projects/frontend/common/|$SHARED" > /dev/null; then
             echo "frontend-common=true" >> $GITHUB_OUTPUT
             echo "✓ frontend-common changed"
           else
@@ -171,19 +175,19 @@ jobs:
         with:
           node-version-file: ${{ inputs.node-version-file }}
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            projects/frontend/apps/sensor-simulator/package-lock.json
-
-      - name: Install workspace dependencies
-        run: npm ci
-        working-directory: .
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: .
+        env:
+          CYPRESS_INSTALL_BINARY: '0'
 
       - name: Run type check
         run: npm run type-check
+
+      - name: Run lint
+        run: npm run lint
 
       - name: Run tests with coverage
         run: npm run test:coverage
@@ -217,13 +221,19 @@ jobs:
         with:
           node-version-file: ${{ inputs.node-version-file }}
           cache: npm
-          cache-dependency-path: projects/frontend/apps/auth-proxy/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: .
+        env:
+          CYPRESS_INSTALL_BINARY: '0'
 
       - name: Run type check
         run: npm run type-check
+
+      - name: Run lint
+        run: npm run lint
 
       - name: Run tests with coverage
         run: npm run test:coverage

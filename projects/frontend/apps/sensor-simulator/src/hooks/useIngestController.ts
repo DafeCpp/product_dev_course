@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { postTelemetry } from "../api";
 import {
   clamp,
@@ -28,7 +28,9 @@ export function useIngestController(
   const timer = useRef<number | null>(null);
   const running = useRef(false);
   const latest = useRef(sensors);
-  latest.current = sensors;
+  useLayoutEffect(() => {
+    latest.current = sensors;
+  }, [sensors]);
   const runtimes = useRef(new Map<string, GeneratorRuntime>());
   const lastSend = useRef(new Map<string, number>());
 
