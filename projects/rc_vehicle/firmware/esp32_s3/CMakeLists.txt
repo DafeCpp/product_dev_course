@@ -4,6 +4,22 @@ cmake_minimum_required(VERSION 3.16)
 # Включаем ESP-IDF
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
+# Версия ESP-IDF закреплена в .idf_version (тег вида vX.Y; по нему собирает CI
+# и с ним согласован dependencies.lock). Сборка на другой major.minor переписала
+# бы lock, поэтому останавливаемся сразу с понятной ошибкой.
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/.idf_version" RC_IDF_VERSION_TAG LIMIT_COUNT 1)
+string(REGEX MATCH "^v([0-9]+)\\.([0-9]+)" _rc_idf_match "${RC_IDF_VERSION_TAG}")
+if(NOT _rc_idf_match)
+  message(FATAL_ERROR ".idf_version: ожидается тег вида vX.Y, найдено '${RC_IDF_VERSION_TAG}'")
+endif()
+if(NOT "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" STREQUAL
+   "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}")
+  message(FATAL_ERROR
+    "Прошивка собирается на ESP-IDF ${RC_IDF_VERSION_TAG} (.idf_version), "
+    "найден ${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}. "
+    "Установите нужную версию: docs/esp32s3-setup.md.")
+endif()
+
 # Отладочный override интервала отправки телеметрии (мс).
 # Без флага — дефолт из config.hpp (50 мс / 20 Гц), поведение не меняется.
 #   idf.py build -DRC_TELEM_SEND_INTERVAL_MS=10   # 100 Гц
