@@ -33,6 +33,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check shared package pins
+        run: node scripts/check-shared-pins.mjs
+
       - name: Detect changed apps
         id: detect
         run: |
