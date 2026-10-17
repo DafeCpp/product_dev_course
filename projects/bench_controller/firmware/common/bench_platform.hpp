@@ -4,7 +4,18 @@
 #include <expected>
 #include <string_view>
 
+#include "event_journal.hpp"
+
 namespace bench {
+
+/**
+ * @brief Состояние цепи аварийной остановки (P-4)
+ *
+ * Аппаратный e-stop живёт вне MCU; платформа сообщает только то, что
+ * реально может прочитать. kUnknown — источника сигнала нет (честнее,
+ * чем «ok» по умолчанию).
+ */
+enum class EstopChainState : uint8_t { kUnknown = 0, kOk, kOpen };
 
 /**
  * @brief Ошибки платформы
@@ -64,6 +75,23 @@ class BenchPlatform {
 
   /// Сброс task watchdog (no-op по умолчанию)
   virtual void FeedTaskWdt() noexcept {}
+
+  /// Состояние цепи e-stop (читается в тике — без блокировок и аллокаций)
+  [[nodiscard]] virtual EstopChainState EstopChain() const noexcept {
+    return EstopChainState::kUnknown;
+  }
+
+  /**
+   * @brief Хук NVS-спула журнала: сохранить одну запись
+   *
+   * Вызывается ТОЛЬКО из низкоприоритетной задачи (JournalSpool), не из
+   * контура 500 Гц: запись во flash недетерминирована по времени.
+   * @return true, если запись сохранена
+   */
+  virtual bool PersistJournalEntry(const JournalEntry& entry) {
+    (void)entry;
+    return false;
+  }
 };
 
 }  // namespace bench

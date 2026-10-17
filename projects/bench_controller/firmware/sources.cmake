@@ -18,6 +18,7 @@ set(BENCH_PORTABLE_SOURCES
     ${BENCH_COMMON_DIR}/channel_controller.cpp
     ${BENCH_COMMON_DIR}/hydraulic_plant_model.cpp
     ${BENCH_COMMON_DIR}/bench_control_loop.cpp
+    ${BENCH_COMMON_DIR}/snapshot_json.cpp
 )
 
 set(BENCH_PORTABLE_INCLUDE_DIRS
