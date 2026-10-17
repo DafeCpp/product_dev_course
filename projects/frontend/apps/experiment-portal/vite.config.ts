@@ -57,12 +57,12 @@ export default defineConfig(({ mode }) => {
           'src/vite-env.d.ts',
           'src/**/__mocks__/**',
         ],
-        // Initial ratchet from Coverage Baseline run 29654381568.
+        // Ratchet: raised after the LOS-204 scripts/toast/utils coverage PR (measured 65.79/63.13/56.4/57.2).
         thresholds: process.env.COVERAGE_ENFORCE_RATCHET === 'true' ? {
-          lines: 59.76,
-          statements: 50,
-          functions: 43,
-          branches: 50.18,
+          lines: 65.7,
+          statements: 63.1,
+          functions: 56.4,
+          branches: 57.1,
         } : undefined,
       },
     },
