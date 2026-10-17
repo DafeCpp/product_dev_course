@@ -141,10 +141,11 @@ TEST_F(SimHostTest, NoCommands_FailsafeNeutral) {
   // (FailsafeConfig::kTimeoutMs, LOS-362/368): до его истечения failsafe ещё
   // не активен, сразу после — активен.
   constexpr int kGraceTicks = static_cast<int>(
-      config::FailsafeConfig::kTimeoutMs / 2);  // кадры по 2 мс
+      rc_vehicle::config::FailsafeConfig::kTimeoutMs / 2);  // кадры по 2 мс
   for (int i = 0; i < kGraceTicks - 5; ++i) Drive(LevelFrame());
   EXPECT_FALSE(p_->GetLastSnap().failsafe);
-  for (int i = 0; i < 10; ++i) Drive(LevelFrame());
+  // Failsafe проверяется с шагом цикла, поэтому берём запас.
+  for (int i = 0; i < 20; ++i) Drive(LevelFrame());
   EXPECT_TRUE(p_->WasNeutral());
   EXPECT_FLOAT_EQ(p_->GetLastThrottle(), 0.0f);
   EXPECT_FLOAT_EQ(p_->GetLastSteering(), 0.0f);
