@@ -1,4 +1,6 @@
-# Base image for backend services: OS deps + Poetry.
+# Build-base для backend-сервисов: компилятор, заголовки libpq и Poetry.
+# Используется только builder-стадиями сервисов (services/*/Dockerfile): в финальные
+# образы попадает лишь venv с prod-зависимостями, gcc/poetry туда не копируются.
 FROM python:3.14-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -6,9 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies required for building Python packages
+# Системные зависимости для сборки Python-пакетов с C-расширениями
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
     libpq-dev \
     gcc \
     g++ \
