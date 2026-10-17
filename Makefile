@@ -507,13 +507,17 @@ dev-rebuild-changed:
 	if echo "$$changed_files" | grep -q '^projects/backend/services/telemetry-ingest-service/'; then \
 		services="$$services telemetry-ingest-service"; \
 	fi; \
-	if echo "$$changed_files" | grep -q '^projects/frontend/apps/auth-proxy/'; then \
+	frontend_shared=0; \
+	if echo "$$changed_files" | grep -q -E '^(package\.json|package-lock\.json|projects/frontend/common/|projects/frontend/tsconfig[^/]*\.json)'; then \
+		frontend_shared=1; \
+	fi; \
+	if [ "$$frontend_shared" = "1" ] || echo "$$changed_files" | grep -q '^projects/frontend/apps/auth-proxy/'; then \
 		services="$$services auth-proxy"; \
 	fi; \
-	if echo "$$changed_files" | grep -q '^projects/frontend/apps/experiment-portal/'; then \
+	if [ "$$frontend_shared" = "1" ] || echo "$$changed_files" | grep -q '^projects/frontend/apps/experiment-portal/'; then \
 		services="$$services experiment-portal"; \
 	fi; \
-	if echo "$$changed_files" | grep -q '^projects/frontend/apps/sensor-simulator/'; then \
+	if [ "$$frontend_shared" = "1" ] || echo "$$changed_files" | grep -q '^projects/frontend/apps/sensor-simulator/'; then \
 		services="$$services sensor-simulator"; \
 	fi; \
 	services="$$(echo $$services | tr ' ' '\n' | awk 'NF' | sort -u | tr '\n' ' ')"; \
