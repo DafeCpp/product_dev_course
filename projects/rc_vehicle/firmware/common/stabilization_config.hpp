@@ -319,8 +319,12 @@ struct OversteerConfig {
  * @brief Конфигурация yaw rate контроллера
  */
 struct YawRateConfig {
-  /** ПИД-регулятор yaw rate */
-  PidConfig pid;
+  /** ПИД-регулятор yaw rate (по умолчанию — пресет Normal, LOS-366) */
+  PidConfig pid{.kp = 0.02f,
+                .ki = 0.20f,
+                .kd = 0.0004f,
+                .max_integral = 1.0f,
+                .max_correction = 0.30f};
 
   /**
    * Масштаб: steer_command [-1..1] → желаемая угловая скорость (deg/s).
@@ -678,6 +682,17 @@ struct StabilizationConfig {
    * Не изменяет: enabled, filter, fade_ms, magic.
    */
   void ApplyModeDefaults() noexcept;
+
+  /**
+   * @brief Заменить нетронутые прежние yaw-коэффициенты Normal на текущие.
+   *
+   * До LOS-366 Normal использовал 0.10/0.00/0.005 при max_integral 0.5: с
+   * опорной моделью уставки они не подбирались и в SIL держат автоколебания.
+   * Меняются только точные прежние значения, пользовательский тюнинг и другие
+   * режимы остаются как есть.
+   * @return true, если коэффициенты заменены
+   */
+  bool UpgradeLegacyNormalYawGains() noexcept;
 
   /**
    * @brief Применить ограничения к параметрам

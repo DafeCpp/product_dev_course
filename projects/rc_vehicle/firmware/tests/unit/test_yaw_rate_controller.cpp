@@ -458,53 +458,62 @@ TEST_F(YawRateControllerTest, AdaptivePid_Disabled_NoScaling) {
 }
 
 // LOS-366: опорная модель уставки (ModeTraits::yaw_ref_cutoff_hz).
-TEST_F(YawRateControllerTest, ReferenceModel_StartsFromActualYawRate) {
-  StabilizationInput input{
+namespace {
+StabilizationInput MovingInput(float gyro_z_dps) {
+  return StabilizationInput{
       .dt_ms = 2,
       .speed_ms = 1.0f,
-      .filtered_gyro_z_dps = 0.0f,
+      .filtered_gyro_z_dps = gyro_z_dps,
       .stabilization_weight = 1.0f,
       .mode_transition_weight = 1.0f,
       .imu_enabled = true,
   };
-  // Без фильтра ступенька руля сразу даёт полную ошибку 45 dps.
+}
+}  // namespace
+
+TEST_F(YawRateControllerTest, ReferenceModel_StartsFromActualYawRate) {
+  // Машина уже крутится на 30 dps, водитель просит 45 dps.
+  const StabilizationInput input = MovingInput(30.0f);
   float unfiltered = 0.5f;
   ctrl_.Process(cfg_, unfiltered, input, false, 0.0f);
   ctrl_.Reset();
-  // С опорной моделью уставка стартует с фактических 0 dps и за первый тик
-  // уходит лишь на долю ступеньки: поправка заметно меньше.
   float filtered = 0.5f;
   ctrl_.Process(cfg_, filtered, input, false, 1.5f);
 
-  EXPECT_GT(unfiltered - 0.5f, 0.0f);
-  EXPECT_GE(filtered, 0.5f);
-  EXPECT_LT(filtered - 0.5f, 0.1f * (unfiltered - 0.5f));
+  // Без фильтра ошибка сразу 15 dps. Опорная модель стартует с 30 dps и за
+  // тик уходит на ~2 % ступеньки: поправка того же знака, но в разы меньше.
+  // Старт с 0 dps дал бы ошибку около -29 dps и поправку против водителя.
+  ASSERT_GT(unfiltered, 0.5f);
+  EXPECT_GT(filtered, 0.5f);
+  EXPECT_LT(filtered - 0.5f, 0.05f * (unfiltered - 0.5f));
 }
 
 TEST_F(YawRateControllerTest, ReferenceModel_ConvergesToSetpoint) {
-  cfg_.yaw_rate.pid.max_correction = 1.0f;
+  // Поправка ~0.18 < max_correction: выход не насыщается, сравнение честное.
+  cfg_.yaw_rate.pid.kp = 0.01f;
   ctrl_.SetGains(cfg_);
-  StabilizationInput input{
-      .dt_ms = 2,
-      .speed_ms = 1.0f,
-      .filtered_gyro_z_dps = 0.0f,
-      .stabilization_weight = 1.0f,
-      .mode_transition_weight = 1.0f,
-      .imu_enabled = true,
-  };
-  // Через 2 с (3 постоянные времени при 1.5 Гц — с запасом) опорная модель
-  // догоняет уставку, и поправка совпадает с вариантом без фильтра.
-  float steering = 0.0f;
-  for (int i = 0; i < 1000; ++i) {
-    steering = 0.2f;
-    ctrl_.Process(cfg_, steering, input, false, 1.5f);
-  }
   YawRateController reference;
   reference.Init(cfg_, ekf_, &imu_handler_);
-  float expected = 0.0f;
+  const StabilizationInput input = MovingInput(0.0f);
+
+  constexpr float kSteer = 0.2f;  // уставка 18 dps
+  // Постоянная времени опорной модели 1 / (2π · 1.5 Гц) ≈ 106 мс = 53 тика.
+  constexpr int kTauTicks = 53;
+  float filtered = 0.0f;
+  float unfiltered = 0.0f;
   for (int i = 0; i < 1000; ++i) {
-    expected = 0.2f;
-    reference.Process(cfg_, expected, input, false, 0.0f);
+    filtered = kSteer;
+    ctrl_.Process(cfg_, filtered, input, false, 1.5f);
+    unfiltered = kSteer;
+    reference.Process(cfg_, unfiltered, input, false, 0.0f);
+    if (i + 1 == kTauTicks) {
+      // Через τ опорная модель прошла ~63 % ступеньки (чуть меньше из-за
+      // фильтра ошибки 10 Гц), а не застряла и не прыгнула сразу.
+      const float ratio = (filtered - kSteer) / (unfiltered - kSteer);
+      EXPECT_GT(ratio, 0.45f);
+      EXPECT_LT(ratio, 0.70f);
+    }
   }
-  EXPECT_NEAR(steering, expected, 1e-4f);
+  EXPECT_LT(unfiltered - kSteer, cfg_.yaw_rate.pid.max_correction - 0.05f);
+  EXPECT_NEAR(filtered, unfiltered, 1e-4f);
 }

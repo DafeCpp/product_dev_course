@@ -254,3 +254,70 @@ TEST(ModeTraitsTest, DefaultValues) {
   EXPECT_FALSE(traits.apply_input_limits);
   EXPECT_FALSE(traits.anti_spin_active);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LOS-366: миграция нетронутых прежних yaw-коэффициентов Normal
+// ══════════════════════════════════════════════════════════════════════════════
+
+namespace {
+StabilizationConfig LegacyNormal() {
+  StabilizationConfig cfg;
+  cfg.Reset();
+  cfg.mode = DriveMode::Normal;
+  cfg.yaw_rate.pid.kp = 0.10f;
+  cfg.yaw_rate.pid.ki = 0.00f;
+  cfg.yaw_rate.pid.kd = 0.005f;
+  cfg.yaw_rate.pid.max_integral = 0.5f;
+  cfg.yaw_rate.pid.max_correction = 0.25f;
+  return cfg;
+}
+}  // namespace
+
+TEST(NormalYawGainsUpgradeTest, ReplacesUntouchedLegacyDefaults) {
+  StabilizationConfig cfg = LegacyNormal();
+  StabilizationConfig fresh;
+  fresh.Reset();
+  NormalModeStrategy{}.ApplyDefaults(fresh);
+
+  EXPECT_TRUE(cfg.UpgradeLegacyNormalYawGains());
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, fresh.yaw_rate.pid.kp);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.ki, fresh.yaw_rate.pid.ki);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, fresh.yaw_rate.pid.kd);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_integral,
+                  fresh.yaw_rate.pid.max_integral);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_correction, 0.25f);  // не трогаем
+  EXPECT_FALSE(cfg.UpgradeLegacyNormalYawGains());          // повторно — no-op
+}
+
+TEST(NormalYawGainsUpgradeTest, KeepsUserTuning) {
+  StabilizationConfig cfg = LegacyNormal();
+  cfg.yaw_rate.pid.kp = 0.12f;
+  EXPECT_FALSE(cfg.UpgradeLegacyNormalYawGains());
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.12f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, 0.005f);
+}
+
+TEST(NormalYawGainsUpgradeTest, KeepsOtherModes) {
+  StabilizationConfig cfg = LegacyNormal();
+  cfg.mode = DriveMode::Sport;
+  EXPECT_FALSE(cfg.UpgradeLegacyNormalYawGains());
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.10f);
+}
+
+TEST(NormalYawGainsUpgradeTest, FreshConfigMatchesNormalPreset) {
+  StabilizationConfig plain{};
+  StabilizationConfig reset;
+  reset.Reset();
+  StabilizationConfig normal;
+  normal.Reset();
+  NormalModeStrategy{}.ApplyDefaults(normal);
+  for (const StabilizationConfig* cfg : {&plain, &reset}) {
+    EXPECT_FLOAT_EQ(cfg->yaw_rate.pid.kp, normal.yaw_rate.pid.kp);
+    EXPECT_FLOAT_EQ(cfg->yaw_rate.pid.ki, normal.yaw_rate.pid.ki);
+    EXPECT_FLOAT_EQ(cfg->yaw_rate.pid.kd, normal.yaw_rate.pid.kd);
+    EXPECT_FLOAT_EQ(cfg->yaw_rate.pid.max_integral,
+                    normal.yaw_rate.pid.max_integral);
+    EXPECT_FLOAT_EQ(cfg->yaw_rate.pid.max_correction,
+                    normal.yaw_rate.pid.max_correction);
+  }
+}

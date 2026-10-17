@@ -285,6 +285,20 @@ void StabilizationConfig::Reset() noexcept {
   magic = kStabilizationConfigMagic;
 }
 
+bool StabilizationConfig::UpgradeLegacyNormalYawGains() noexcept {
+  PidConfig& pid = yaw_rate.pid;
+  if (mode != DriveMode::Normal || pid.kp != 0.1f || pid.ki != 0.0f ||
+      pid.kd != 0.005f || pid.max_integral != 0.5f) {
+    return false;
+  }
+  const PidConfig current = YawRateConfig{}.pid;
+  pid.kp = current.kp;
+  pid.ki = current.ki;
+  pid.kd = current.kd;
+  pid.max_integral = current.max_integral;
+  return true;
+}
+
 void StabilizationConfig::ApplyModeDefaults() noexcept {
   DriveModeRegistry::Get(mode).ApplyDefaults(*this);
 }
