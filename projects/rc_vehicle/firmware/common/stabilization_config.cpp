@@ -233,10 +233,11 @@ void StabilizationConfig::Reset() noexcept {
   filter.tilt_accel_gate_band_g = 0.1f;
 
   // Yaw rate defaults
-  yaw_rate.pid.kp = 0.1f;
-  yaw_rate.pid.ki = 0.0f;
-  yaw_rate.pid.kd = 0.005f;
-  yaw_rate.pid.max_integral = 0.5f;
+  // Совпадают с NormalModeStrategy::ApplyDefaults (LOS-366).
+  yaw_rate.pid.kp = 0.02f;
+  yaw_rate.pid.ki = 0.20f;
+  yaw_rate.pid.kd = 0.0004f;
+  yaw_rate.pid.max_integral = 1.0f;
   yaw_rate.pid.max_correction = 0.3f;
   yaw_rate.steer_to_yaw_rate_dps = 90.0f;
 

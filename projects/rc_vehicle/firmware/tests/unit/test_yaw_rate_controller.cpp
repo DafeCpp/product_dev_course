@@ -456,3 +456,55 @@ TEST_F(YawRateControllerTest, AdaptivePid_Disabled_NoScaling) {
   EXPECT_FLOAT_EQ(steering1, steering2)
       << "Without adaptive PID, speed should not affect correction";
 }
+
+// LOS-366: опорная модель уставки (ModeTraits::yaw_ref_cutoff_hz).
+TEST_F(YawRateControllerTest, ReferenceModel_StartsFromActualYawRate) {
+  StabilizationInput input{
+      .dt_ms = 2,
+      .speed_ms = 1.0f,
+      .filtered_gyro_z_dps = 0.0f,
+      .stabilization_weight = 1.0f,
+      .mode_transition_weight = 1.0f,
+      .imu_enabled = true,
+  };
+  // Без фильтра ступенька руля сразу даёт полную ошибку 45 dps.
+  float unfiltered = 0.5f;
+  ctrl_.Process(cfg_, unfiltered, input, false, 0.0f);
+  ctrl_.Reset();
+  // С опорной моделью уставка стартует с фактических 0 dps и за первый тик
+  // уходит лишь на долю ступеньки: поправка заметно меньше.
+  float filtered = 0.5f;
+  ctrl_.Process(cfg_, filtered, input, false, 1.5f);
+
+  EXPECT_GT(unfiltered - 0.5f, 0.0f);
+  EXPECT_GE(filtered, 0.5f);
+  EXPECT_LT(filtered - 0.5f, 0.1f * (unfiltered - 0.5f));
+}
+
+TEST_F(YawRateControllerTest, ReferenceModel_ConvergesToSetpoint) {
+  cfg_.yaw_rate.pid.max_correction = 1.0f;
+  ctrl_.SetGains(cfg_);
+  StabilizationInput input{
+      .dt_ms = 2,
+      .speed_ms = 1.0f,
+      .filtered_gyro_z_dps = 0.0f,
+      .stabilization_weight = 1.0f,
+      .mode_transition_weight = 1.0f,
+      .imu_enabled = true,
+  };
+  // Через 2 с (3 постоянные времени при 1.5 Гц — с запасом) опорная модель
+  // догоняет уставку, и поправка совпадает с вариантом без фильтра.
+  float steering = 0.0f;
+  for (int i = 0; i < 1000; ++i) {
+    steering = 0.2f;
+    ctrl_.Process(cfg_, steering, input, false, 1.5f);
+  }
+  YawRateController reference;
+  reference.Init(cfg_, ekf_, &imu_handler_);
+  float expected = 0.0f;
+  for (int i = 0; i < 1000; ++i) {
+    expected = 0.2f;
+    reference.Process(cfg_, expected, input, false, 0.0f);
+  }
+  EXPECT_NEAR(steering, expected, 1e-4f);
+}

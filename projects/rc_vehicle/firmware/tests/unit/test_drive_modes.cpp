@@ -51,6 +51,15 @@ TEST(DriveModeTraitsTest, NormalMode_YawActiveSlipInactive) {
   EXPECT_TRUE(traits.use_slew_rate);
   EXPECT_FALSE(traits.apply_input_limits);
   EXPECT_FALSE(traits.anti_spin_active);
+  EXPECT_FLOAT_EQ(traits.yaw_ref_cutoff_hz, 1.5f);  // LOS-366
+}
+
+TEST(DriveModeTraitsTest, OnlyNormalFiltersYawSetpoint) {
+  for (const DriveMode mode : {DriveMode::Sport, DriveMode::Drift,
+                               DriveMode::Kids, DriveMode::DirectLaw}) {
+    EXPECT_FLOAT_EQ(DriveModeRegistry::Get(mode).GetTraits().yaw_ref_cutoff_hz,
+                    0.0f);
+  }
 }
 
 TEST(DriveModeTraitsTest, SportMode_SameAsNormal) {
@@ -154,9 +163,10 @@ TEST(NormalModeDefaultsTest, HasExpectedPidValues) {
   cfg.Reset();
   NormalModeStrategy{}.ApplyDefaults(cfg);
 
-  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.10f);
-  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.ki, 0.00f);
-  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, 0.005f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.02f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.ki, 0.20f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, 0.0004f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_integral, 1.0f);
   EXPECT_FLOAT_EQ(cfg.yaw_rate.steer_to_yaw_rate_dps, 90.0f);
   EXPECT_FLOAT_EQ(cfg.slip_angle.pid.kp, 0.0f);
   EXPECT_FLOAT_EQ(cfg.slip_angle.pid.max_correction, 0.0f);

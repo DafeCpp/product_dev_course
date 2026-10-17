@@ -23,7 +23,8 @@ class NormalModeStrategy final : public IDriveModeStrategy {
             .oversteer_reduces_throttle = true,
             .use_slew_rate = true,
             .apply_input_limits = false,
-            .anti_spin_active = false};
+            .anti_spin_active = false,
+            .yaw_ref_cutoff_hz = 1.5f};
   }
   void ApplyDefaults(StabilizationConfig& cfg) const noexcept override;
 };

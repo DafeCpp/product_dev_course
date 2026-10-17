@@ -22,6 +22,11 @@ struct ModeTraits {
   bool use_slew_rate{true};
   bool apply_input_limits{false};
   bool anti_spin_active{false};
+  /// Частота среза опорной модели yaw rate [Гц]: уставка PID догоняет
+  /// steer_to_yaw_rate_dps * steering фильтром 1-го порядка, а не прыгает
+  /// ступенькой, которую машина с slew руля не может отработать (LOS-366).
+  /// 0 — уставка без фильтра.
+  float yaw_ref_cutoff_hz{0.0f};
 };
 
 /**

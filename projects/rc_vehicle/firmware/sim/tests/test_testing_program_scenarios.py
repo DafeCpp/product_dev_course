@@ -133,9 +133,7 @@ def _mean_tail(values, n=100):
 
 
 # Шаги, на которых PID не упирается в ограничение коррекции: измеряется
-# регулятор, а не насыщение. Регулятор в SIL не успокаивается, а держит
-# автоколебания (период ~80 мс), поэтому «overshoot» ниже — пик этих
-# колебаний относительно уставки, а не переходного процесса.
+# регулятор, а не насыщение.
 YAW_STEPS = (0.3, 0.35, 0.4, 0.45, 0.5)
 
 
@@ -155,11 +153,18 @@ def test_yaw_rate_pid_tracks_setpoint(steer):
     assert abs(_mean_tail(open_loop) - setpoint) > 0.5 * setpoint
 
 
-@pytest.mark.parametrize("steer", [
-    pytest.param(0.3, marks=pytest.mark.xfail(
-        strict=True, reason="LOS-362: пик автоколебаний 20.5 % от уставки")),
-    *YAW_STEPS[1:],
-])
+@pytest.mark.parametrize("steer", YAW_STEPS)
+def test_yaw_rate_step_no_limit_cycle(steer):
+    """LOS-366: после шага yaw rate успокаивается, а не держит автоколебания."""
+    setpoint = NORMAL_STEER_TO_YAW_DPS * steer
+    rows, yaw = _yaw_step(steer)
+    tail = yaw[-100:]
+    assert (max(tail) - min(tail)) / setpoint < 0.02
+    steer_tail = [r["steering"] for r in rows[-100:]]
+    assert max(steer_tail) - min(steer_tail) < 0.01
+
+
+@pytest.mark.parametrize("steer", YAW_STEPS)
 def test_yaw_rate_step_overshoot_under_20pct(steer):
     """Yaw PID (Normal) по TESTING_PROGRAM.md: overshoot < 20 % от уставки."""
     setpoint = NORMAL_STEER_TO_YAW_DPS * steer
@@ -167,11 +172,6 @@ def test_yaw_rate_step_overshoot_under_20pct(steer):
     assert (max(yaw) - setpoint) / setpoint < 0.20
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="LOS-362: в SIL yaw PID в Normal держит автоколебания с периодом "
-           "~80 мс (yaw rate 0..+16 % от уставки, руль 0.17..0.29) и не "
-           "входит в полосу ±10 % за 200 мс")
 def test_yaw_rate_step_settles_within_200_ms():
     """Yaw PID (Normal) по TESTING_PROGRAM.md: settling < 200 мс (полоса ±10 % от уставки)."""
     steer = 0.4
