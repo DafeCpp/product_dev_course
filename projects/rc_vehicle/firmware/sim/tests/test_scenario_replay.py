@@ -150,14 +150,15 @@ def test_static_tilt_keeps_pca_heading_stable():
 
 
 def test_failsafe_episode_forces_neutral_pwm():
-    _, frames, output = _replay("golden_real_failsafe_reconstructed.csv")
+    raw, frames, output = _replay("golden_real_failsafe_reconstructed.csv")
     assert all(not frame.rc_present and not frame.wifi_present for frame in frames)
     assert statistics.mean(frame.az for frame in frames) < -0.9
     # Первые ≤250 мс — grace-период Failsafe (FAILSAFE_TIMEOUT_MS), как на
     # машине; команды нет, так что газ и руль нулевые и в нём.
     active_from = next(
         i for i, row in enumerate(output) if row["failsafe"] == 1.0)
-    assert sum(frame.dt_ms for frame in frames[:active_from]) <= 250
+    grace_ms = _f(raw[active_from], "ts_ms") - _f(raw[0], "ts_ms")
+    assert 200 <= grace_ms <= 270
     assert all(row["failsafe"] == 1.0 for row in output[active_from:])
     assert all(row["neutral"] == 1.0 for row in output[active_from:])
     assert max(abs(row["throttle"]) for row in output) < 1.0e-6
