@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { notifySuccess } from '../utils/notify'
 import './Login.scss'
-import { getApiErrorMessage } from '../utils/apiError'
+import { getApiErrorMessage, isClientRequestError } from '../utils/apiError'
 
 function ResetPassword() {
   const [searchParams] = useSearchParams()
@@ -40,7 +40,14 @@ function ResetPassword() {
       notifySuccess('Пароль успешно изменён')
       navigate('/login', { replace: true })
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Не удалось сбросить пароль. Возможно, ссылка устарела или недействительна.'))
+      setError(
+        getApiErrorMessage(
+          err,
+          isClientRequestError(err)
+            ? 'Не удалось сбросить пароль. Возможно, ссылка устарела или недействительна.'
+            : 'Не удалось сбросить пароль: сервис недоступен. Попробуйте позже.',
+        ),
+      )
     } finally {
       setIsPending(false)
     }

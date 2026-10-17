@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { getApiErrorMessage, isNotFoundError } from '../utils/apiError'
+import { getApiErrorMessage, isNotFoundError, UserFacingError } from '../utils/apiError'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
@@ -115,7 +115,7 @@ function RunDetail() {
   // Создание capture session
   const createSessionMutation = useApiMutation<unknown, string | undefined>({
     mutationFn: (notes) => {
-      if (!experiment) throw new Error('Experiment not loaded')
+      if (!experiment) throw new UserFacingError('Эксперимент ещё не загружен, попробуйте ещё раз')
       const nextOrdinal = sessions.length > 0
         ? Math.max(...sessions.map((s: CaptureSession) => s.ordinal_number)) + 1
         : 1

@@ -9,7 +9,7 @@ import { AuthQosForm } from './rateLimits/AuthQosForm'
 import { ExperimentQosForm } from './rateLimits/ExperimentQosForm'
 import { TelemetryRateLimitsForm } from './rateLimits/TelemetryRateLimitsForm'
 import './RateLimitsQos.scss'
-import { getApiErrorMessage } from '../utils/apiError'
+import { getApiErrorMessage, isClientRequestError } from '../utils/apiError'
 
 type ServiceType = 'auth' | 'experiment' | 'telemetry'
 
@@ -96,7 +96,8 @@ function RateLimitsQos() {
     onSuccess: (result) => {
       setDryRunPreview(result.preview)
     },
-    errorFallback: 'не удалось проверить конфигурацию',
+    errorFallback: (error) =>
+      isClientRequestError(error) ? 'конфигурация отклонена сервером' : 'сервис недоступен, попробуйте позже',
     inlineError: setDryRunError,
     onError: () => {
       setDryRunPreview(null)
@@ -230,8 +231,8 @@ function RateLimitsQos() {
           )}
 
           {dryRunError && (
-            <div className="rate-limits-page__error-box">
-              <strong>⚠️ Ошибка валидации:</strong> {dryRunError}
+            <div className="rate-limits-page__error-box" role="alert">
+              <strong>⚠️ Проверка не пройдена:</strong> {dryRunError}
             </div>
           )}
         </>

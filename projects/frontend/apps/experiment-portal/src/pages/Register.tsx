@@ -1,3 +1,4 @@
+import { isClientRequestError } from '../utils/apiError'
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/auth'
@@ -26,7 +27,10 @@ function Register() {
       notifySuccess('Регистрация успешна. Войдите в систему.')
       navigate('/login')
     },
-    errorFallback: 'Ошибка регистрации. Проверьте введенные данные.',
+    errorFallback: (error) =>
+      isClientRequestError(error)
+        ? 'Ошибка регистрации. Проверьте введенные данные.'
+        : 'Не удалось зарегистрироваться: сервис недоступен. Попробуйте позже.',
     inlineError: setError,
   })
 

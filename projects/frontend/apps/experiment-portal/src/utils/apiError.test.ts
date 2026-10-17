@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { HttpError } from '@lostpointer/web-http'
-import { UserFacingError, getApiErrorMessage, getResponseBodyMessage, isNotFoundError } from './apiError'
+import { UserFacingError, getApiErrorMessage, getResponseBodyMessage, isClientRequestError, isNotFoundError, responseBodyError } from './apiError'
 
 describe('getApiErrorMessage', () => {
     it('prefers response.data.message, then response.data.error', () => {
@@ -26,15 +26,14 @@ describe('getApiErrorMessage', () => {
         expect(getApiErrorMessage({ isAxiosError: true, response: { data: 'sensor not found' } }, 'fb')).toBe('sensor not found')
     })
 
-    it('hides plain Error messages unless includeClientMessage is set', () => {
+    it('hides plain Error messages', () => {
         expect(getApiErrorMessage(new Error('boom'), 'fb')).toBe('fb')
-        expect(getApiErrorMessage(new Error('boom'), 'fb', { includeClientMessage: true })).toBe('boom')
     })
 
 
     it("skips axios' generic message", () => {
         const err = { isAxiosError: true, message: 'Request failed with status code 500', response: { data: {} } }
-        expect(getApiErrorMessage(err, 'fb', { includeClientMessage: true })).toBe('fb')
+        expect(getApiErrorMessage(err, 'fb')).toBe('fb')
     })
 
     it('ignores non-string payloads', () => {
@@ -130,5 +129,13 @@ describe('isNotFoundError', () => {
         expect(isNotFoundError({ response: { status: 403 } })).toBe(false)
         expect(isNotFoundError(new Error('x'))).toBe(false)
         expect(isNotFoundError(null)).toBe(false)
+    })
+})
+
+describe('getErrorStatus for fetch errors', () => {
+    it('keeps the HTTP status on responseBodyError', () => {
+        expect(isNotFoundError(responseBodyError('{"error":"not_found"}', 404, 'Ошибка запроса'))).toBe(true)
+        expect(isClientRequestError(responseBodyError('', 503, 'Ошибка запроса'))).toBe(false)
+        expect(isClientRequestError(new UserFacingError('x'))).toBe(false)
     })
 })

@@ -29,6 +29,11 @@ function isServerFailure(status: number | undefined): boolean {
 /** An Error whose message is already safe to show the user (e.g. built from a sanitized response body). */
 export class UserFacingError extends Error {
     override name = 'UserFacingError'
+
+    /** HTTP status of the failed response it was built from, if any. */
+    constructor(message: string, readonly status?: number) {
+        super(message)
+    }
 }
 
 /**
@@ -40,14 +45,12 @@ export class UserFacingError extends Error {
  * A shared-transport `HttpError` carries server text in `message` only
  * when `kind === 'api'` and the body had one (not the synthetic `HTTP 500`);
  * other kinds (network, timeout) use the fallback. A `UserFacingError`
- * always shows its message. `includeClientMessage` also accepts `error.message` of a plain Error;
- * off by default so client-side exceptions never reach the user. Axios'
- * own message ("Request failed with status code 500") is always skipped.
+ * always shows its message. A plain Error's message (client-side exception,
+ * axios' "Request failed with status code 500") is never shown.
  */
 export function getApiErrorMessage(
     error: unknown,
     fallback: string,
-    { includeClientMessage = false }: { includeClientMessage?: boolean } = {},
 ): string {
     if (error instanceof UserFacingError) {
         return cleanMessage(error.message) ?? fallback
@@ -58,11 +61,7 @@ export function getApiErrorMessage(
         return (usable ? cleanMessage(error.message) : null) ?? fallback
     }
     if (error && typeof error === 'object') {
-        const e = error as {
-            response?: { data?: unknown; status?: number }
-            message?: unknown
-            isAxiosError?: boolean
-        }
+        const e = error as { response?: { data?: unknown; status?: number } }
         const data = isServerFailure(e.response?.status) ? undefined : e.response?.data
         const body = data && typeof data === 'object' ? (data as { error?: unknown; message?: unknown }) : undefined
         return (
@@ -70,7 +69,6 @@ export function getApiErrorMessage(
             cleanMessage(body?.error) ??
             // `responseType: 'text'` requests get a JSON body as an unparsed string.
             (typeof data === 'string' ? bodyTextMessage(data) : null) ??
-            (includeClientMessage && !e.isAxiosError ? cleanMessage(e.message) : null) ??
             fallback
         )
     }
@@ -103,6 +101,7 @@ function bodyTextMessage(body: string): string | null {
 
 /** HTTP status of a failed request (shared transport or axios), if it got a response. */
 export function getErrorStatus(error: unknown): number | undefined {
+    if (error instanceof UserFacingError) return error.status
     if (error instanceof HttpError) return error.kind === 'api' ? error.status : undefined
     if (error && typeof error === 'object') {
         const status = (error as { response?: { status?: unknown } }).response?.status
@@ -125,5 +124,5 @@ export function isClientRequestError(error: unknown): boolean {
 /** Error for a non-OK fetch response: sanitized 4xx body text, else `${prefix}: HTTP ${status}`. */
 export function responseBodyError(body: string, status: number, prefix: string): UserFacingError {
     const fallback = `${prefix}: HTTP ${status}`
-    return new UserFacingError(isServerFailure(status) ? fallback : getResponseBodyMessage(body, fallback))
+    return new UserFacingError(isServerFailure(status) ? fallback : getResponseBodyMessage(body, fallback), status)
 }
