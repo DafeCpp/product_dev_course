@@ -84,6 +84,11 @@ def test_kids_accel_limiter_smooths_launch():
     with ClosedLoopSim(BIN, drive_mode="kids", speed_limit=3.0,
                        sensor_noise=False) as sim:
         rows = sim.run(2000, rc_throttle=1.0, rc_steering=0.0)
-    assert any(r["kids_accel_limit_active"] == 1.0 for r in rows)
+    limited = [r for r in rows if r["kids_accel_limit_active"] == 1.0]
+    assert limited
     assert max(abs(r["throttle"]) for r in rows) <= 0.31
-    assert max(r["forward_accel"] for r in rows) < 0.3 * 9.81
+    # Лимитер режет газ ниже kids throttle_limit (0.3), пока ускорение выше порога.
+    assert min(r["throttle"] for r in limited) < 0.25
+    # forward_accel в g; порог accel_threshold_g = 0.15, лимитер пропорциональный,
+    # поэтому пик немного выше порога, но далеко от 0.3 g.
+    assert max(r["forward_accel"] for r in rows) < 0.25
