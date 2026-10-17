@@ -35,7 +35,8 @@ class ClosedLoopSim:
                  wifi_keepalive: bool = False,
                  sensor_noise: bool = True,
                  noise_seed: int = 0,
-                 oversteer: OversteerReplayConfig | None = None):
+                 oversteer: OversteerReplayConfig | None = None,
+                 kids_accel_limit: bool = True):
         self.p = (params if params is not None
                   else get_profile(DEFAULT_CLOSED_LOOP_PROFILE))
         self.model = VehicleModel(self.p, dynamic=dynamic)
@@ -52,6 +53,8 @@ class ClosedLoopSim:
             args += ["--speed-limit", repr(float(speed_limit))]
         if stabilize:
             args.append("--stabilize")
+        if not kids_accel_limit:
+            args.append("--no-kids-accel-limit")
         if oversteer is not None:
             args += ["--oversteer",
                      "--oversteer-slip-thresh", repr(float(oversteer.slip_thresh_deg)),

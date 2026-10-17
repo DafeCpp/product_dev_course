@@ -64,8 +64,9 @@ def test_receiver_dropout_reported_with_cause_and_duration():
               + _frames(2000, 1600, 1500))
     rows, log = _run(frames)
 
-    # Во время пропадания (после таймаута декодера 250 мс) — failsafe.
-    dropout = rows[(2000 + 300) // DT_MS:(2000 + 600) // DT_MS]
+    # Во время пропадания — failsafe: таймаут декодера 250 мс, затем
+    # grace-период Failsafe ещё 250 мс (LOS-362).
+    dropout = rows[(2000 + 520) // DT_MS:(2000 + 600) // DT_MS]
     assert all(r["failsafe"] == 1.0 for r in dropout)
     assert all(r["throttle"] == 0.0 for r in dropout)
     assert rows[-1]["failsafe"] == 0.0
