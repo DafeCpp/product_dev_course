@@ -152,6 +152,6 @@ python3 projects/rc_vehicle/tools/analyze_telemetry.py telemetry_log.csv
 | Gyro bias > 5 dps | IMU не откалиброван или физически повреждён | Перекалибровать, проверить подключение |
 | EKF drift на стоянке | ZUPT не срабатывает | Проверить пороги в EKF params |
 | Oversteer ложный | Порог slip_thresh слишком низкий | Увеличить `oversteer.slip_thresh_deg` |
-| Failsafe не срабатывает | Timeout слишком большой | Проверить Failsafe timeout (250 мс) |
+| Failsafe не срабатывает | Timeout слишком большой | Проверить таймауты источника (RC 90 мс, Wi‑Fi 100 мс) и grace failsafe (120 мс), `firmware/common/config.hpp` |
 | Madgwick pitch/roll != 0 | Датчик установлен под углом | Перекалибровать full + проверить монтаж |
 | Kids mode не работает | Config не сохранён в NVS | Нажать `Сохранить на устройстве` |

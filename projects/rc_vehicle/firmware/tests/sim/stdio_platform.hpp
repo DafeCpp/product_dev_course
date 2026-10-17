@@ -8,6 +8,7 @@
 #include <string_view>
 #include <utility>
 
+#include "config.hpp"                // таймауты RC/failsafe (LOS-368)
 #include "control_components.hpp"    // TelemetrySnapshot
 #include "diagnostics_reporter.hpp"  // DiagnosticsSnapshot
 #include "failsafe.hpp"              // Failsafe (LOS-362)
@@ -219,7 +220,7 @@ class StdioPlatform : public VehicleControlPlatform {
   // ── Failsafe ─────────────────────────────────────────────────────────────
   // Тот же Failsafe с тем же таймаутом, что на ESP32 (FAILSAFE_TIMEOUT_MS в
   // esp32_s3/main/config.hpp): без grace-периода SIL показывал бы нейтраль
-  // на 250 мс раньше, чем машина (LOS-362).
+  // раньше, чем машина (LOS-362).
   bool FailsafeUpdate(bool rc_active, bool wifi_active) override {
     return failsafe_.Update(time_ms_, rc_active, wifi_active) ==
            FailsafeState::Active;
@@ -294,15 +295,17 @@ class StdioPlatform : public VehicleControlPlatform {
   }
 
   static constexpr uint64_t kRcFramePeriodUs = 20'000;  // 50 Гц, как приёмник
-  static constexpr uint32_t kFailsafeTimeoutMs = 250;   // = FAILSAFE_TIMEOUT_MS
 
   uint32_t time_ms_{0};
   bool rc_pulse_mode_{false};
   uint32_t rc_thr_pulse_us_{0};
   uint32_t rc_str_pulse_us_{0};
   uint64_t rc_next_pulse_us_{0};
-  RcPulseDecoder rc_thr_decoder_{};
-  RcPulseDecoder rc_str_decoder_{};
+  // Таймаут декодера как на ESP32 (RC_IN_TIMEOUT_MS, LOS-368).
+  static constexpr RcPulseConfig kRcPulseConfig{
+      .timeout_us = config::RcInputConfig::kTimeoutMs * 1000u};
+  RcPulseDecoder rc_thr_decoder_{kRcPulseConfig};
+  RcPulseDecoder rc_str_decoder_{kRcPulseConfig};
   bool log_to_stderr_{false};
   std::optional<ImuData> imu_data_;
   std::optional<MagData> mag_data_;
@@ -311,7 +314,7 @@ class StdioPlatform : public VehicleControlPlatform {
   std::optional<RcCommand> wifi_command_;
   bool identity_calib_{false};
   bool inverted_z_calib_{false};
-  Failsafe failsafe_{kFailsafeTimeoutMs};
+  Failsafe failsafe_{config::FailsafeConfig::kTimeoutMs};
   DriveMode drive_mode_{DriveMode::Normal};
   float speed_limit_ms_{0.0f};
   bool stabilize_{false};

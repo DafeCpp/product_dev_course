@@ -2,6 +2,9 @@
 
 #include "driver/gpio.h"        // GPIO_NUM_*
 #include "driver/spi_common.h"  // SPI2_HOST
+// Платформенно-независимые таймауты: единственный источник значений для
+// прошивки и SIL (в SIL берутся те же константы), LOS-368.
+#include "../../common/config.hpp"
 
 // Wi-Fi конфигурация
 #define WIFI_AP_SSID_PREFIX "RC-Vehicle"
@@ -29,7 +32,9 @@
 #define RC_IN_PULSE_MAX_US 2000         // 2.0 мс
 #define RC_IN_PULSE_NEUTRAL_US 1500     // 1.5 мс
 #define RC_IN_PULSE_TOLERANCE_US 200    // Допуск окна приёма вокруг [min, max]
-#define RC_IN_TIMEOUT_MS 250            // Таймаут потери сигнала
+// Таймаут потери сигнала (общая константа, см. common/config.hpp): вместе с
+// опросом RC и grace-периодом failsafe даёт нейтраль не позже 250 мс (LOS-368).
+#define RC_IN_TIMEOUT_MS (rc_vehicle::config::RcInputConfig::kTimeoutMs)
 
 // IMU конфигурация (MPU-6050/MPU-6500 по SPI)
 #define IMU_SPI_HOST SPI2_HOST
@@ -68,7 +73,10 @@
 #define RC_IN_POLL_INTERVAL_MS 20  // 50 Hz
 #define IMU_READ_INTERVAL_MS 2     // 500 Hz (каждую итерацию control loop)
 #define TELEM_SEND_INTERVAL_MS 50  // 20 Hz
-#define FAILSAFE_TIMEOUT_MS 250    // Таймаут failsafe
+// Grace-период failsafe после потери последнего источника управления (общая
+// константа, см. common/config.hpp; static_assert'ы на сумму таймаутов тоже
+// там, LOS-368).
+#define FAILSAFE_TIMEOUT_MS (rc_vehicle::config::FailsafeConfig::kTimeoutMs)
 
 // Slew-rate limiting (плавность)
 #define SLEW_RATE_THROTTLE_MAX_PER_SEC 0.5f
