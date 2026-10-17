@@ -297,12 +297,14 @@ describe('ProjectMembersModal', () => {
         })
 
         vi.mocked(projectsApi).addMember.mockResolvedValueOnce(
-            createMockProjectMember({
+            {
                 project_id: projectId,
                 user_id: 'new-user-1',
-                roles: ['viewer'],
+                role_id: 'role-viewer',
+                granted_by: 'owner-1',
                 granted_at: '2024-01-04T00:00:00Z',
-            })
+                expires_at: null,
+            }
         )
 
         render(
@@ -341,12 +343,14 @@ describe('ProjectMembersModal', () => {
 
     it('updates member role successfully', async () => {
         const user = userEvent.setup()
-        const updatedMember = createMockProjectMember({
+        const updatedMember = {
             project_id: projectId,
             user_id: 'editor-1',
-            roles: ['owner'],
+            role_id: 'role-owner',
+            granted_by: 'owner-1',
             granted_at: '2024-01-02T00:00:00Z',
-        })
+            expires_at: null,
+        }
         vi.mocked(projectsApi).updateMemberRole.mockResolvedValueOnce(updatedMember)
 
         render(

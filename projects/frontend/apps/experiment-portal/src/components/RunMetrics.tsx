@@ -156,8 +156,10 @@ export default function RunMetrics({ runId }: Props) {
   const namesParam = activeItems.map((s) => s.name).join(',')
 
   // Determine if we need aggregations (based on max count among selected)
+  // The raw query's `limit` is shared by all selected series, so compare the total.
   const maxCount = activeItems.reduce((m, s) => Math.max(m, s.total_steps), 0)
-  const useAgg = maxCount >= AGG_THRESHOLD
+  const totalCount = activeItems.reduce((sum, s) => sum + s.total_steps, 0)
+  const useAgg = totalCount >= AGG_THRESHOLD
 
   // 2a. Raw metrics (when data is small enough)
   const {
