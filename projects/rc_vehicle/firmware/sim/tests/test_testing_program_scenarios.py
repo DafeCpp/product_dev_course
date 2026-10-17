@@ -254,9 +254,13 @@ def _tail_mean(rows, key, n=100):
 
 
 def test_slope_is_seen_as_pitch():
-    """LOS-367: подъём с постоянной скоростью виден Madgwick как тангаж ≈ уклон."""
+    """LOS-367: подъём с постоянной скоростью виден Madgwick как тангаж ≈ уклон.
+
+    Знак фиксирует текущую конвенцию прошивки: подъём даёт pitch_deg < 0
+    (как и разгон) — на это опирается xfail ниже.
+    """
     rows, _ = _climb(pitch_comp=False)
-    assert abs(abs(_tail_mean(rows, "pitch_deg")) - SLOPE_DEG) < 1.5
+    assert abs(_tail_mean(rows, "pitch_deg") + SLOPE_DEG) < 1.5
     flat, _ = _climb(pitch_comp=False, slope_deg=0.0)
     assert abs(_tail_mean(flat, "pitch_deg")) < 1.0
 
@@ -267,6 +271,15 @@ def test_pitch_comp_idle_on_flat():
     without, _ = _climb(pitch_comp=False, slope_deg=0.0)
     assert abs(_tail_mean(with_comp, "cmd_throttle")
                - _tail_mean(without, "cmd_throttle")) < 0.02
+
+
+def test_pitch_comp_acts_on_slope():
+    """LOS-367: --pitch-comp доходит до прошивки — на склоне газ с компенсацией
+    заметно отличается от газа без неё (направление проверяет xfail ниже)."""
+    with_comp, _ = _climb(pitch_comp=True)
+    without, _ = _climb(pitch_comp=False)
+    assert abs(_tail_mean(with_comp, "cmd_throttle")
+               - _tail_mean(without, "cmd_throttle")) > 0.05
 
 
 @pytest.mark.xfail(strict=True, reason=(

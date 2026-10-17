@@ -219,6 +219,8 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
 
     slope_rad — продольный уклон (LOS-367), см. synth_accel; должен совпадать
     с VehicleModel.slope_rad, иначе физика и сенсоры разойдутся.
+    Уклон задан в СК корпуса и не зависит от курса: машина всегда едет прямо
+    вверх/вниз по склону, поворот не переводит уклон в крен.
     """
     excitation = road_noise.sample(out.speed, dt_ms) if road_noise else None
     road_attitude = excitation.attitude_rad if excitation else None
