@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
+import { HttpError } from '@lostpointer/web-http'
 import { projectsApi } from '../api/client'
 import type { ProjectCreate } from '../types'
 import { Error, FormGroup, FormActions } from '../components/common'
@@ -23,8 +24,9 @@ function CreateProject() {
             // Переходим на список проектов после создания
             navigate('/projects')
         },
-        onError: (err: any) => {
-            const msg = err.response?.data?.error || 'Ошибка создания проекта'
+        onError: (err: unknown) => {
+            // Projects uses the shared transport: server text arrives as HttpError.message.
+            const msg = err instanceof HttpError && err.kind === 'api' ? err.message : 'Ошибка создания проекта'
             setError(msg)
             notifyError(msg)
         },

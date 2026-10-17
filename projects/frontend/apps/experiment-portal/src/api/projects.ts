@@ -9,7 +9,8 @@ import type {
   ProjectMemberUpdate,
   ProjectMembersListResponse,
 } from '../types'
-import { apiGet, apiClient } from './client'
+import { apiGet } from './client'
+import { projectsClient } from './http/projectsClient'
 
 export const projectsApi = {
   list: async (params?: {
@@ -18,38 +19,38 @@ export const projectsApi = {
     limit?: number
     offset?: number
   }): Promise<ProjectsListResponse> => {
-    const response = await apiClient.get<{ items: Project[]; total: number }>('/api/v1/projects', { params })
+    const response = await projectsClient.get<{ items: Project[]; total: number }>('/api/v1/projects', { params })
     return { projects: response.data.items ?? [], total: response.data.total }
   },
 
   get: async (id: string): Promise<Project> => {
-    const response = await apiClient.get<Project>(`/api/v1/projects/${id}`)
+    const response = await projectsClient.get<Project>(`/api/v1/projects/${id}`)
     return response.data
   },
 
   create: async (data: ProjectCreate): Promise<Project> => {
-    const response = await apiClient.post<Project>('/api/v1/projects', data)
+    const response = await projectsClient.post<Project>('/api/v1/projects', data)
     return response.data
   },
 
   update: async (id: string, data: ProjectUpdate): Promise<Project> => {
-    const response = await apiClient.put<Project>(`/api/v1/projects/${id}`, data)
+    const response = await projectsClient.put<Project>(`/api/v1/projects/${id}`, data)
     return response.data
   },
 
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/projects/${id}`)
+    await projectsClient.delete(`/api/v1/projects/${id}`)
   },
 
   listMembers: async (projectId: string): Promise<ProjectMembersListResponse> => {
-    const response = await apiClient.get<ProjectMembersListResponse>(
+    const response = await projectsClient.get<ProjectMembersListResponse>(
       `/api/v1/projects/${projectId}/members`
     )
     return response.data
   },
 
   addMember: async (projectId: string, data: ProjectMemberAdd): Promise<ProjectMember> => {
-    const response = await apiClient.post<ProjectMember>(
+    const response = await projectsClient.post<ProjectMember>(
       `/api/v1/projects/${projectId}/members`,
       data
     )
@@ -57,7 +58,7 @@ export const projectsApi = {
   },
 
   removeMember: async (projectId: string, userId: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/projects/${projectId}/members/${userId}`)
+    await projectsClient.delete(`/api/v1/projects/${projectId}/members/${userId}`)
   },
 
   updateMemberRole: async (
@@ -65,7 +66,7 @@ export const projectsApi = {
     userId: string,
     data: ProjectMemberUpdate
   ): Promise<ProjectMember> => {
-    const response = await apiClient.put<ProjectMember>(
+    const response = await projectsClient.put<ProjectMember>(
       `/api/v1/projects/${projectId}/members/${userId}/role`,
       data
     )

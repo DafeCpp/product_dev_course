@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { HttpError } from '@lostpointer/web-http'
 import CreateProject from './CreateProject'
 import { projectsApi } from '../api/client'
 
@@ -117,19 +118,31 @@ describe('CreateProject', () => {
         resolveCreate!({ id: 'p1' })
     })
 
-    it('does not navigate on API error', async () => {
-        vi.mocked(projectsApi.create).mockRejectedValueOnce({
-            response: { data: { error: 'Project name taken' } },
-        })
+    it('does not navigate on API error and shows the server message', async () => {
+        vi.mocked(projectsApi.create).mockRejectedValueOnce(
+            new HttpError('api', 409, 'http_error', 'Project name taken'),
+        )
         const user = userEvent.setup()
         render(<CreateProject />, { wrapper: createWrapper() })
 
         await user.type(screen.getByPlaceholderText(/аэродинамические испытания/i), 'Duplicate')
         await user.click(screen.getByRole('button', { name: /^создать проект$/i }))
 
-        await waitFor(() => {
-            expect(vi.mocked(projectsApi.create)).toHaveBeenCalled()
-        })
+        expect(await screen.findByText('Project name taken')).toBeInTheDocument()
         expect(mockNavigate).not.toHaveBeenCalledWith('/projects')
+    })
+
+    it('shows the Russian fallback for transport failures', async () => {
+        vi.mocked(projectsApi.create).mockRejectedValueOnce(
+            new HttpError('network', undefined, 'network_error', 'Network request failed'),
+        )
+        const user = userEvent.setup()
+        render(<CreateProject />, { wrapper: createWrapper() })
+
+        await user.type(screen.getByPlaceholderText(/аэродинамические испытания/i), 'Offline')
+        await user.click(screen.getByRole('button', { name: /^создать проект$/i }))
+
+        expect(await screen.findByText('Ошибка создания проекта')).toBeInTheDocument()
+        expect(screen.queryByText('Network request failed')).not.toBeInTheDocument()
     })
 })
