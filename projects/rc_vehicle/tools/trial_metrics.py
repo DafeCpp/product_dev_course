@@ -51,6 +51,9 @@ NORMAL_STEER_TO_YAW_DPS = 90.0
 RC_SOURCE_TIMEOUT_MS = 90.0
 WIFI_SOURCE_TIMEOUT_MS = 100.0
 NEUTRAL_EPS = 1e-3
+# Grace-период Failsafe (FailsafeConfig::kTimeoutMs): провал флагов короче —
+# не потеря связи, failsafe в прошивке и не должен сработать.
+FAILSAFE_GRACE_MS = 120.0
 # Шаг руля считается, только если после него команда не меньше этого (не возврат к нулю).
 STEP_MIN_TARGET = 0.1
 # Покой короче этого не годится для тренда bias (программа: 5-10 мин).
@@ -108,6 +111,27 @@ def find_steering_steps(rows: list[Row], min_step: float = 0.2,
     return steps
 
 
+def _clip_at_release(cmd: list[float], start: int, end: int,
+                     release: float = 0.2) -> int:
+    """Последний отсчёт окна до того, как водитель отпустил руль.
+
+    Отпусканием считается откат команды от достигнутого пика на `release` и
+    больше (возврат к нулю или встречный поворот): дальше yaw rate описывает
+    уже другой манёвр.
+    """
+    seg = cmd[start:end + 1]
+    peak_at = max(range(len(seg)), key=lambda k: abs(seg[k]))
+    sign = math.copysign(1.0, seg[peak_at]) if seg[peak_at] else 1.0
+    peak = -math.inf
+    for k, v in enumerate(seg):
+        if math.isnan(v):
+            continue
+        peak = max(peak, sign * v)
+        if peak - sign * v >= release:
+            return start + max(k - 1, 0)
+    return end
+
+
 def yaw_step_response(rows: list[Row], start: int, window_ms: float = 1000.0,
                       gain_dps: float = NORMAL_STEER_TO_YAW_DPS) -> dict:
     """Overshoot и settling yaw rate после шага руля, начавшегося в `start`.
@@ -122,6 +146,7 @@ def yaw_step_response(rows: list[Row], start: int, window_ms: float = 1000.0,
     end = start
     while end < len(rows) - 1 and ts[end + 1] - t0 <= window_ms:
         end += 1
+    end = _clip_at_release(cmd, start, end)
     # Руль после шага: медиана последней четверти окна (команда уже установилась).
     tail = sorted(cmd[start + (end - start) * 3 // 4: end + 1])
     steer = tail[len(tail) // 2]
@@ -226,7 +251,10 @@ def stationary_drift(rows: list[Row], mask: list[bool] | None = None) -> dict:
         raise ValueError("мало неподвижных отсчётов")
     ts = _ts(rows)
     t = [ts[i] for i in idx]
-    out: dict = {"duration_s": (t[-1] - t[0]) / 1000.0, "samples": len(idx)}
+    # Длительность — сумма интервалов внутри непрерывных кусков покоя, а не
+    # размах первого и последнего отсчёта (между кусками может быть езда).
+    rest_ms = sum(ts[b] - ts[a] for a, b in zip(idx, idx[1:]) if b == a + 1)
+    out: dict = {"duration_s": rest_ms / 1000.0, "samples": len(idx)}
     for ch in ("gx", "gy", "gz", "pitch_deg", "roll_deg"):
         if not has_col(rows, ch):
             continue
@@ -309,6 +337,10 @@ def failsafe_latencies(rows: list[Row]) -> list[dict]:
             source_timeout = max(
                 RC_SOURCE_TIMEOUT_MS if rc[i - 1] > 0.5 else 0.0,
                 WIFI_SOURCE_TIMEOUT_MS if wifi[i - 1] > 0.5 else 0.0)
+            back_at = next((k for k in range(i, len(rows))
+                            if rc[k] > 0.5 or wifi[k] > 0.5), None)
+            if back_at is not None and ts[back_at] - ts[i] < FAILSAFE_GRACE_MS:
+                continue  # кратковременный провал флагов
             moving = abs(thr[i - 1]) > NEUTRAL_EPS or abs(st[i - 1]) > NEUTRAL_EPS
             neutral_at = None
             for k in range(i, len(rows)):

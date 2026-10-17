@@ -538,3 +538,74 @@ def test_yaw_step_setpoint_is_robust_to_command_glitch(tmp_path):
     log = _write_csv(tmp_path / "glitch.csv", rows)
     r = tm.yaw_step_response(log, 99, window_ms=400)
     assert r["setpoint_dps"] == pytest.approx(36.0)
+
+
+def _pulse_steer_log(hold_ms: int, n=300):
+    """Руль 0 → 0.4 на 50-м отсчёте, удержание hold_ms, потом возврат к нулю."""
+    rows = []
+    release = 50 + hold_ms // 10
+    for i in range(n):
+        held = 50 <= i < release
+        rows.append({"ts_ms": i * 10, "rc_steering": 0.4 if held else 0.0,
+                     "yaw_rate_dps": 36.0 if 52 <= i < release else 0.0})
+    return rows
+
+
+def test_yaw_step_released_before_window_end(tmp_path):
+    """Руль удержан 600 мс и отпущен: метрика считается по удержанию, а не SKIP и не по хвосту."""
+    log = _write_csv(tmp_path / "short.csv", _pulse_steer_log(600))
+    res = tm.check_yaw_step(log)
+    assert len(res) == 1 and not res[0].no_data and res[0].passed is True
+    assert "уставка 36.0" in res[0].value
+    # Отпускание на 800 мс: хвост после возврата не должен давать settling = 800 мс.
+    r = tm.yaw_step_response(_write_csv(tmp_path / "s8.csv", _pulse_steer_log(800)), 49)
+    assert r["settling_ms"] < tm.YAW_SETTLING_LIMIT_MS
+
+
+def test_yaw_step_valueerror_becomes_skip(tmp_path, monkeypatch):
+    """Шаг без уставки (ValueError из расчёта) пропускается, а не роняет скрипт."""
+    def boom(*a, **k):
+        raise ValueError("шаг руля без ненулевой уставки")
+
+    monkeypatch.setattr(tm, "yaw_step_response", boom)
+    res = tm.check_yaw_step(_write_csv(tmp_path / "x.csv", _pulse_steer_log(600)))
+    assert res[0].no_data and res[0].passed is None
+
+
+def test_yaw_step_very_short_blip_does_not_crash(tmp_path):
+    res = tm.check_yaw_step(_write_csv(tmp_path / "blip.csv", _pulse_steer_log(30)))
+    assert len(res) == 1
+
+
+def test_yaw_step_mode_is_read_after_step(tmp_path):
+    """Режим берётся на шаге, а не до него: переключение Normal → Sport одновременно с рулём."""
+    rows = _two_steps_log(0.0)
+    for i, r in enumerate(rows):
+        r["drive_mode"] = 0 if i <= 99 else 1
+    assert tm.check_yaw_step(_write_csv(tmp_path / "mode.csv", rows))[0].no_data
+
+
+def test_gyro_bias_rest_duration_counts_only_contiguous_rest(tmp_path):
+    """31 с покоя, 10 мин езды, ещё 31 с: покоя 62 с суммарно, но куски по 31 с."""
+    rows = _rest_log(0.52)
+    for r in rows:
+        r["throttle"] = 0.0
+    t_end = rows[-1]["ts_ms"]
+    drive = [{"ts_ms": t_end + 10 * (k + 1), "throttle": 0.5, "speed_ms": 2.0,
+              "gx": 0.0, "gy": 0.0, "gz": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
+             for k in range(60000)]
+    t2 = drive[-1]["ts_ms"]
+    rest2 = [dict(r, ts_ms=t2 + 10 * (k + 1)) for k, r in enumerate(_rest_log(0.52))]
+    log = _write_csv(tmp_path / "gap.csv", rows + drive + rest2)
+    d = tm.stationary_drift(log)
+    assert d["duration_s"] == pytest.approx(2 * 31.2, abs=1.0)  # без 10 мин езды
+    d_long = tm.stationary_drift(_write_csv(tmp_path / "one.csv", _rest_log(1.5)))
+    assert d_long["duration_s"] == pytest.approx(90, abs=1)
+
+
+def test_failsafe_short_flag_glitch_is_not_a_loss(tmp_path):
+    """Провал rc_ok на 30 мс при езде: grace-период 120 мс не истёк, failsafe не обязан сработать."""
+    rows = [{"ts_ms": i * 10, "rc_ok": 0 if 100 <= i < 103 else 1, "wifi_ok": 0,
+             "throttle": 0.4, "steering": 0.0} for i in range(300)]
+    log = _write_csv(tmp_path / "glitch_ok.csv", rows)
+    assert tm.failsafe_latencies(log) == []
