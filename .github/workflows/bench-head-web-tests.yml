@@ -1,0 +1,62 @@
+name: Bench Head Web Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/bench_controller/head_web/**
+      - .github/workflows/bench-head-web-tests.yml
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - projects/bench_controller/head_web/**
+      - .github/workflows/bench-head-web-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  page-tests:
+    name: Page (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/bench_controller/head_web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: projects/bench_controller/head_web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run page tests
+        run: npm test
+
+  mock-ws-tests:
+    name: Mock WS (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/bench_controller/head_web/mock_ws
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: python -m pytest tests/
