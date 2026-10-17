@@ -27,14 +27,14 @@ struct TickSnapshot {
   uint32_t now_ms{0};
   ControlMode mode{ControlMode::kDisplacement};
   LinkState link_state{LinkState::kRunning};
-  float program_target{0.0f};  ///< Цель программы до рампы разгрузки
+  float program_target{0.0f};    ///< Цель программы до рампы разгрузки
   float effective_target{0.0f};  ///< Цель после рампы захвата
   float valve_command{0.0f};     ///< Команда клапану [-1..1]
   float force_n{0.0f};
   float position_mm{0.0f};
   uint8_t valve_status{0};  ///< Статусное слово узла
   bool failure_latched{false};
-  bool fb_fresh{false};  ///< Пришёл ли новый feedback в этом тике
+  bool fb_fresh{false};      ///< Пришёл ли новый feedback в этом тике
   uint32_t fb_age_ticks{0};  ///< Возраст feedback в тиках
 };
 
@@ -77,7 +77,7 @@ class BenchControlLoop {
       float position_ramp_mm_per_s{5.0f};  ///< Рампа уставки по перемещению
     } manual{};
 
-    uint32_t publish_every_ticks{20};  ///< 25 Гц при 500 Гц контуре
+    uint32_t publish_every_ticks{20};   ///< 25 Гц при 500 Гц контуре
     uint32_t stats_refresh_ticks{500};  ///< Пересчёт отчёта джиттера
   };
 
@@ -150,7 +150,7 @@ class BenchControlLoop {
   TickStats stats_{};
 
   float hold_position_mm_{0.0f};  ///< Цель displacement-hold
-  bool holding_{false};  ///< Останов, разрушение или SafeHold
+  bool holding_{false};           ///< Останов, разрушение или SafeHold
   HoldReason hold_reason_{HoldReason::kNone};
   StopReason last_stop_reason_{StopReason::kNone};
 

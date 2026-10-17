@@ -28,11 +28,11 @@ inline constexpr size_t kSnapshotJsonMaxSize = 4096;
 
 enum class ParseError : uint8_t {
   kOk = 0,
-  kSyntax,      ///< Не JSON-объект нужной формы
-  kUnknownKey,  ///< Неизвестное поле (формат строгий)
-  kUnknownType,  ///< Неизвестное значение type/mode
+  kSyntax,        ///< Не JSON-объект нужной формы
+  kUnknownKey,    ///< Неизвестное поле (формат строгий)
+  kUnknownType,   ///< Неизвестное значение type/mode
   kMissingField,  ///< Нет cmd_id, type или аргумента команды
-  kBadValue,  ///< Значение не того типа/диапазона
+  kBadValue,      ///< Значение не того типа/диапазона
 };
 
 /**

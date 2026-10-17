@@ -15,9 +15,9 @@ namespace bench {
 enum class StopReason : uint8_t {
   kNone = 0,
   kOperatorControlledStop,  ///< Команда controlled_stop (P-1)
-  kOperatorEStopSoft,  ///< Команда e_stop_soft (P-2, программный)
-  kLinkSafeHold,       ///< Потеря связи: grace → ramp → hold
-  kSpecimenFailure,  ///< Латч детектора разрушения образца
+  kOperatorEStopSoft,       ///< Команда e_stop_soft (P-2, программный)
+  kLinkSafeHold,            ///< Потеря связи: grace → ramp → hold
+  kSpecimenFailure,         ///< Латч детектора разрушения образца
 };
 
 /**

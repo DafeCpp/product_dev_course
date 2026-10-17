@@ -14,11 +14,11 @@ namespace bench {
  * идемпотентности и журнала нет (P-1/P-5 из LOS-74).
  */
 enum class CommandType : uint8_t {
-  kEnable = 0,  ///< Разрешение/запрет работы канала (args: enable)
+  kEnable = 0,   ///< Разрешение/запрет работы канала (args: enable)
   kSetMode,      ///< Режим force/displacement, bumpless (args: mode)
   kSetSetpoint,  ///< Ручная уставка в единицах активного режима (args: value)
   kControlledStop,  ///< P-1: остановка программы и удержание позиции
-  kEStopSoft,  ///< P-2: программное снятие enable. НЕ защита людей
+  kEStopSoft,       ///< P-2: программное снятие enable. НЕ защита людей
 };
 
 /**
@@ -42,9 +42,9 @@ enum class RejectReason : uint8_t {
   kNone = 0,
   kInvalidId,       ///< cmd_id == 0
   kProgramRunning,  ///< Идёт программа нагружения (S2-ограничение)
-  kHeld,  ///< Защитное удержание (разрушение / потеря связи)
-  kStopped,  ///< Операторский останов: сначала enable(true)
-  kOutOfRange,  ///< Значение вне лимитов или не число
+  kHeld,            ///< Защитное удержание (разрушение / потеря связи)
+  kStopped,         ///< Операторский останов: сначала enable(true)
+  kOutOfRange,      ///< Значение вне лимитов или не число
 };
 
 /**
