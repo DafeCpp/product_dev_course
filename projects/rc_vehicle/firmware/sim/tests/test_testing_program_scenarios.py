@@ -285,8 +285,7 @@ def test_pitch_comp_acts_on_slope():
 @pytest.mark.xfail(strict=True, reason=(
     "Подозрение на знак в PitchCompensator: прошивка считает «нос вверх» как "
     "ax=-sin (test_pitch_compensator.cpp), а реальный акселерометр на подъёме "
-    "даёт +sin по оси «вперёд» — компенсация режет газ в гору. Проверить на "
-    "машине и исправить отдельной задачей."))
+    "даёт +sin по оси «вперёд» — компенсация режет газ в гору. LOS-369."))
 def test_pitch_comp_adds_throttle_uphill():
     """TESTING_PROGRAM.md: на подъёме pitch compensation добавляет газ и
     держит скорость выше, чем без неё."""
