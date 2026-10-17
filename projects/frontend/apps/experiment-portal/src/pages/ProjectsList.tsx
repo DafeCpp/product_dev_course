@@ -7,6 +7,7 @@ import { Loading, Error, EmptyState, FloatingActionButton, MaterialSelect, Searc
 import ProjectModal from '../components/ProjectModal'
 import ProjectMembersModal from '../components/ProjectMembersModal'
 import './ProjectsList.scss'
+import { getApiErrorMessage } from '../utils/apiError'
 
 const ROLE_OPTIONS = [
   { value: '', label: 'Все роли' },
@@ -112,7 +113,7 @@ function ProjectsList() {
 
       {isLoading && <Loading message="Загрузка проектов..." />}
       {isError && error && (
-        <Error message={error instanceof Error ? error.message : 'Ошибка загрузки проектов'} />
+        <Error message={getApiErrorMessage(error, 'Ошибка загрузки проектов')} />
       )}
 
       {showContent && data && (

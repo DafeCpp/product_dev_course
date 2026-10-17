@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage } from '../utils/apiError'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
@@ -31,6 +32,7 @@ function RunDetail() {
   const { id } = useParams<{ id: string }>()
   const [actionError, setActionError] = useState<string | null>(null)
   const actionErrorOptions = { inlineError: setActionError, notifyOnError: true }
+  useEffect(() => setActionError(null), [id])
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<string | null>(null)
   const [selectedSensorId, setSelectedSensorId] = useState<string>('')
   const [showTelemetryStream, setShowTelemetryStream] = useState(false)
@@ -203,7 +205,7 @@ function RunDetail() {
   }
 
   if (error || !run) {
-    return <ErrorComponent message="Запуск не найден" />
+    return <ErrorComponent message={getApiErrorMessage(error, 'Запуск не найден')} />
   }
 
   // UI note:

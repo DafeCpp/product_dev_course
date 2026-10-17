@@ -117,7 +117,8 @@ describe('RateLimitsQos', () => {
     renderPage()
 
     await waitFor(() => {
-      expect(screen.getByText(/Network error/)).toBeInTheDocument()
+      // client-side exception text is never shown; the page's fallback is
+      expect(screen.getByText('Ошибка загрузки конфигов')).toBeInTheDocument()
     })
   })
 })

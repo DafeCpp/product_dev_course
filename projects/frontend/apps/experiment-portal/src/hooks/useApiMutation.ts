@@ -57,7 +57,10 @@ export function useApiMutation<TData = unknown, TVars = void>({
       if (successMessage) {
         notifySuccess(successMessage)
       }
-      return onSuccess?.(data, vars)
+      const result = onSuccess?.(data, vars)
+      // Await an async onSuccess (keeps isPending until e.g. a redirect),
+      // but a failure there must not flip a successful request to error.
+      if (result instanceof Promise) return result.catch(() => undefined)
     },
     onError: (error, vars) => {
       const message = getApiErrorMessage(error, errorFallback)

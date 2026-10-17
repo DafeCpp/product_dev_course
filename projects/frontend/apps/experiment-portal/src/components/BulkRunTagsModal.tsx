@@ -47,6 +47,11 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
 
     const disabled = mutation.isPending || runIds.length === 0
 
+    const handleClose = () => {
+        setError(null)
+        onClose()
+    }
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
@@ -58,7 +63,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
     }
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Bulk tagging" disabled={mutation.isPending}>
+        <Modal isOpen={isOpen} onClose={handleClose} title="Bulk tagging" disabled={mutation.isPending}>
             <form onSubmit={handleSubmit} className="modal-form">
                 {error && <div className="error" role="alert">{error}</div>}
 
@@ -99,7 +104,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
                 </div>
 
                 <div className="modal-actions">
-                    <button type="button" className="btn btn-secondary" onClick={onClose} disabled={mutation.isPending}>
+                    <button type="button" className="btn btn-secondary" onClick={handleClose} disabled={mutation.isPending}>
                         Отмена
                     </button>
                     <button type="submit" className="btn btn-primary" disabled={disabled}>

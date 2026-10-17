@@ -107,7 +107,7 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         mutationFn: (data) => conversionProfilesApi.create(sensorId, data),
         invalidateKeys: [['sensor', sensorId, 'profiles']],
         successMessage: 'Профиль преобразования создан',
-        onSuccess: () => handleClose(),
+        onSuccess: () => resetAndClose(),
         errorFallback: 'Ошибка создания профиля',
         inlineError: setError,
     })
@@ -134,21 +134,23 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         })
     }
 
+    const resetAndClose = () => {
+        setVersion('')
+        setKind('linear')
+        setLinearA('1')
+        setLinearB('0')
+        setCoefficients(['0', '1'])
+        setTablePoints([
+            { raw: '0', physical: '0' },
+            { raw: '100', physical: '100' },
+        ])
+        setPreviewRaw('10')
+        setError(null)
+        onClose()
+    }
+
     const handleClose = () => {
-        if (!createMutation.isPending) {
-            setVersion('')
-            setKind('linear')
-            setLinearA('1')
-            setLinearB('0')
-            setCoefficients(['0', '1'])
-            setTablePoints([
-                { raw: '0', physical: '0' },
-                { raw: '100', physical: '100' },
-            ])
-            setPreviewRaw('10')
-            setError(null)
-            onClose()
-        }
+        if (!createMutation.isPending) resetAndClose()
     }
 
     return (

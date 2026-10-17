@@ -3,6 +3,7 @@ import { configsApi } from '../../api/configs'
 import type { ConfigResponse } from '../../types/configs'
 import Modal from '../../components/Modal'
 import { Loading, Error as ErrorComponent, EmptyState } from '../../components/common'
+import { getApiErrorMessage } from '../../utils/apiError'
 
 export interface ConfigHistoryModalProps {
   config: ConfigResponse
@@ -22,7 +23,7 @@ export default function ConfigHistoryModal({ config, onClose }: ConfigHistoryMod
     <Modal isOpen onClose={onClose} title={`История «${config.key}»`} className="configs-history-modal">
       {isLoading && <Loading message="Загрузка истории..." />}
       {error && (
-        <ErrorComponent message={error instanceof Error ? error.message : 'Ошибка загрузки истории'} />
+        <ErrorComponent message={getApiErrorMessage(error, 'Ошибка загрузки истории')} />
       )}
       {!isLoading && !error && items.length === 0 && <EmptyState message="История пуста" />}
       {!isLoading && !error && items.length > 0 && (

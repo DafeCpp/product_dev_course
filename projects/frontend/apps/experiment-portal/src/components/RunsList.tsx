@@ -9,6 +9,7 @@ import { notifyError, notifySuccess } from '../utils/notify'
 import Tags from './common/Tags'
 import BulkRunTagsModal from './BulkRunTagsModal'
 import './RunsList.scss'
+import { getApiErrorMessage } from '../utils/apiError'
 
 interface RunsListProps {
   experimentId: string
@@ -65,7 +66,7 @@ function RunsList({ experimentId }: RunsListProps) {
   }
 
   if (error) {
-    return <Error message="Ошибка загрузки запусков" />
+    return <Error message={getApiErrorMessage(error, 'Ошибка загрузки запусков')} />
   }
 
   if (!data || runs.length === 0) {

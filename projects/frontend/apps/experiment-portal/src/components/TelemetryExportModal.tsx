@@ -3,6 +3,7 @@ import Modal from './Modal'
 import { telemetryExportApi } from '../api/client'
 import type { CaptureSession, Sensor } from '../types'
 import { notifyError, notifySuccess } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 
 export interface TelemetryExportModalProps {
     isOpen: boolean
@@ -98,8 +99,8 @@ function TelemetryExportModal({
 
             notifySuccess('Телеметрия экспортирована')
             onClose()
-        } catch (err: any) {
-            notifyError(err?.response?.data?.message || err?.message || 'Ошибка экспорта телеметрии')
+        } catch (err: unknown) {
+            notifyError(getApiErrorMessage(err, 'Ошибка экспорта телеметрии'))
         } finally {
             setIsExporting(false)
         }

@@ -18,10 +18,10 @@ function parseParams(raw: string): ParsedParams {
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { error: 'Невалидный JSON' }
+    return { error: 'Неверный формат JSON' }
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { error: 'Должен быть JSON-объект' }
+    return { error: 'Должен быть JSON-объект, например {}' }
   }
   return { value: parsed as Record<string, unknown> }
 }

@@ -9,6 +9,7 @@ import { usePermissions } from '../hooks/usePermissions'
 import { notifyError } from '../utils/notify'
 import { useApiMutation } from '../hooks/useApiMutation'
 import './SystemRoles.scss'
+import { getApiErrorMessage } from '../utils/apiError'
 
 interface RoleFormState {
   name: string
@@ -165,7 +166,7 @@ function SystemRoles() {
         {error && (
           <ErrorComponent
             message={
-              error instanceof Error ? error.message : 'Ошибка загрузки ролей'
+              getApiErrorMessage(error, 'Ошибка загрузки ролей')
             }
           />
         )}

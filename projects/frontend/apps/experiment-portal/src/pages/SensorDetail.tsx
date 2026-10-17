@@ -21,6 +21,7 @@ import SensorErrorLog from './sensor-detail/SensorErrorLog'
 import SensorBackfillSection from './sensor-detail/SensorBackfillSection'
 import './SensorDetail.scss'
 import { notifyError, notifySuccessSticky } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 
 function SensorDetail() {
     const { id } = useParams<{ id: string }>()
@@ -161,7 +162,7 @@ function SensorDetail() {
     }
 
     if (error || !sensor) {
-        return <Error message="Датчик не найден" />
+        return <Error message={getApiErrorMessage(error, 'Датчик не найден')} />
     }
 
     return (

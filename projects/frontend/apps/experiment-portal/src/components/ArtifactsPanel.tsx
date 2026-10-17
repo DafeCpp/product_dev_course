@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage } from '../utils/apiError'
 import {
   Alert,
   Box,
@@ -247,7 +248,7 @@ function UploadArtifactDialog({ open, onClose, runId, projectId: _projectId, onS
         handleClose()
       }, 800)
     } catch (e: unknown) {
-      setErrorMsg(e instanceof Error ? e.message : 'Upload failed')
+      setErrorMsg(getApiErrorMessage(e, 'Ошибка загрузки файла'))
       setStatus('error')
     }
   }

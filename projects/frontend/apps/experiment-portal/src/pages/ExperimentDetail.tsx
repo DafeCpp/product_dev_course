@@ -17,6 +17,7 @@ import {
 import './ExperimentDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage } from '../utils/apiError'
 
 function ExperimentDetail() {
   const { id } = useParams<{ id: string }>()
@@ -48,7 +49,7 @@ function ExperimentDetail() {
   }
 
   if (error || !experiment) {
-    return <Error message="Эксперимент не найден" />
+    return <Error message={getApiErrorMessage(error, 'Эксперимент не найден')} />
   }
 
   const formattedCreatedAt = format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')
