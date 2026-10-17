@@ -75,7 +75,7 @@ TEST(SimProtocol, StdioPlatform_RcPulsesDecodedLikeIsr) {
   EXPECT_GE(stats->throttle.stats.accepted, 2u);
 
   p.SetRcPulses(0, 1250);  // газ замолчал
-  p.AdvanceTimeMs(300);    // > таймаута декодера (RcInputConfig::kTimeoutMs)
+  p.AdvanceTimeMs(300);  // > таймаута декодера (RcInputConfig::kTimeoutMs)
   EXPECT_FALSE(p.GetRc().has_value());
   stats = p.GetRcStats();
   EXPECT_FALSE(stats->throttle.active);
