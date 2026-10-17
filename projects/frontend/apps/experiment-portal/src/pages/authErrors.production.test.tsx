@@ -9,6 +9,8 @@ import { authApi } from '../api/auth'
 import { emitToast } from '../utils/toastBus'
 
 // Production mode: IS_TEST is false, so notify* really emits toasts.
+// Only text toasts are counted: the transport-level debug toast (HTTP status,
+// trace_id) comes from the axios interceptor, which these tests mock out.
 vi.mock('../utils/env', () => ({ IS_TEST: false }))
 vi.mock('../utils/toastBus', () => ({ emitToast: vi.fn() }))
 vi.mock('../api/auth', () => ({
@@ -31,14 +33,14 @@ const createWrapper = () => {
 }
 
 const errorToasts = () =>
-    vi.mocked(emitToast).mock.calls.filter(([evt]) => evt.variant === 'error')
+    vi.mocked(emitToast).mock.calls.filter(([evt]) => evt.kind === 'text' && evt.variant === 'error')
 
 describe('auth errors in production mode', () => {
     beforeEach(() => {
         vi.clearAllMocks()
     })
 
-    it('Login shows the server error inline without a duplicate toast', async () => {
+    it('Login shows the server error inline without a duplicate text toast', async () => {
         const user = userEvent.setup()
         vi.mocked(authApi.login).mockRejectedValueOnce({
             response: { status: 401, data: { error: 'Invalid credentials' } },

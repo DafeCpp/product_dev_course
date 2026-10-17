@@ -1,3 +1,5 @@
+import { HttpError } from '@lostpointer/web-http'
+
 const MAX_MESSAGE_LENGTH = 300
 
 function cleanMessage(value: unknown): string | null {
@@ -18,12 +20,17 @@ function cleanMessage(value: unknown): string | null {
  * Axios' own `message` ("Request failed with status code 500") is skipped
  * in favour of the caller's fallback; `serverOnly` skips `error.message`
  * for any error, so client-side exceptions never reach the user.
+ * A shared-transport `HttpError` carries server text in `message` only
+ * when `kind === 'api'`; other kinds (network, timeout) use the fallback.
  */
 export function getApiErrorMessage(
     error: unknown,
     fallback: string,
     { serverOnly = false }: { serverOnly?: boolean } = {},
 ): string {
+    if (error instanceof HttpError) {
+        return (error.kind === 'api' ? cleanMessage(error.message) : null) ?? fallback
+    }
     if (error && typeof error === 'object') {
         const e = error as {
             response?: { data?: { error?: unknown; message?: unknown } }

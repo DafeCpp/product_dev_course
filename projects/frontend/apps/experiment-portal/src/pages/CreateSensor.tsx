@@ -53,13 +53,11 @@ function CreateSensor() {
                         )
                         setAdditionalProjectsStatus('done')
                         notifySuccess('Датчик добавлен в дополнительные проекты')
-                    } catch (e: any) {
+                    } catch (e: unknown) {
                         setAdditionalProjectsStatus('error')
-                        const msg =
-                            e?.response?.data?.error ||
-                            e?.message ||
-                            'Не удалось добавить датчик в дополнительные проекты'
-                        setAdditionalProjectsError(msg)
+                        setAdditionalProjectsError(
+                            getApiErrorMessage(e, 'Не удалось добавить датчик в дополнительные проекты')
+                        )
                     }
                 })()
             } else {

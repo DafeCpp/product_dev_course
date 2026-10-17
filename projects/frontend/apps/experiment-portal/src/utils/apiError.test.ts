@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { HttpError } from '@lostpointer/web-http'
 import { getApiErrorMessage } from './apiError'
 
 describe('getApiErrorMessage', () => {
@@ -39,5 +40,11 @@ describe('getApiErrorMessage', () => {
         const msg = getApiErrorMessage({ response: { data: { error: 'x'.repeat(1000) } } }, 'fb')
         expect(msg.length).toBe(300)
         expect(msg.endsWith('…')).toBe(true)
+    })
+
+    it('uses HttpError text only for api errors', () => {
+        expect(getApiErrorMessage(new HttpError('api', 409, 'conflict', 'Проект уже существует'), 'fb')).toBe('Проект уже существует')
+        expect(getApiErrorMessage(new HttpError('network', undefined, 'network', 'Network request failed'), 'fb')).toBe('fb')
+        expect(getApiErrorMessage(new HttpError('timeout', undefined, 'timeout', 'Request timed out'), 'fb')).toBe('fb')
     })
 })

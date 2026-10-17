@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 
 function ChangePassword() {
   const navigate = useNavigate()
@@ -20,13 +21,8 @@ function ChangePassword() {
       notifySuccess('Пароль успешно изменён')
       navigate('/experiments', { replace: true })
     },
-    onError: (err: any) => {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Ошибка смены пароля. Проверьте текущий пароль.'
-      setError(msg)
-      notifyError(msg)
+    onError: (err: unknown) => {
+      setError(getApiErrorMessage(err, 'Ошибка смены пароля. Проверьте текущий пароль.'))
     },
   })
 
@@ -37,28 +33,24 @@ function ChangePassword() {
     if (!oldPassword) {
       const msg = 'Введите текущий пароль'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (!newPassword) {
       const msg = 'Введите новый пароль'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (newPassword !== confirmPassword) {
       const msg = 'Пароли не совпадают'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (newPassword.length < 8) {
       const msg = 'Новый пароль должен содержать не менее 8 символов'
       setError(msg)
-      notifyError(msg)
       return
     }
 

@@ -221,13 +221,7 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
 
                     {isLoading && <Loading />}
                     {isError && (
-                        <Error
-                            message={
-                                membersError instanceof Error
-                                    ? membersError.message
-                                    : 'Ошибка загрузки участников'
-                            }
-                        />
+                        <Error message={getApiErrorMessage(membersError, 'Ошибка загрузки участников')} />
                     )}
 
                     {membersData && (

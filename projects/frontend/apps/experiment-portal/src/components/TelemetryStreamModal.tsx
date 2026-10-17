@@ -5,7 +5,7 @@ import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
 import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import './TelemetryStreamModal.scss'
 
 type TelemetryStreamModalProps = {
@@ -142,7 +142,16 @@ export default function TelemetryStreamModal({
                             },
                         })
                     )
-                    throw new Error(text || `Ошибка стрима: HTTP ${resp.status}`)
+                    let serverMessage: unknown = text
+                    try {
+                        const parsed = JSON.parse(text)
+                        serverMessage = parsed?.error ?? parsed?.message
+                    } catch {
+                        // plain-text body
+                    }
+                    throw new Error(
+                        getApiErrorMessage({ response: { data: { error: serverMessage } } }, `Ошибка стрима: HTTP ${resp.status}`)
+                    )
                 }
                 return { response: resp }
             } catch (e: any) {
@@ -162,17 +171,10 @@ export default function TelemetryStreamModal({
         [sensorId],
     )
 
-    const onStreamError = useCallback((err: Error, ctx: { willRetry: boolean }) => {
-        if (ctx.willRetry) return
-        const msg = err.message || 'Ошибка подключения к стриму'
-        notifyError(msg)
-    }, [])
-
     const stream = useTelemetryStream(sensorId, {
         open,
         bufferSize: _clamp(Number(maxPoints || '200'), 10, 2000),
         idleTimeoutSeconds: _clamp(Number(idleTimeoutSeconds || '30'), 1, 600),
-        onError: onStreamError,
     })
 
     const { status: streamStatus, points: records, error: streamError, cursor, start: startStream, stop: stopStream, clear: clearStream } = stream
@@ -248,7 +250,7 @@ export default function TelemetryStreamModal({
         >
             <div className="telemetry-stream">
                 {streamStatus === 'error' && streamError && (
-                    <div className="error">{streamError.message}</div>
+                    <div className="error">{getApiErrorMessage(streamError, 'Ошибка подключения к стриму')}</div>
                 )}
 
                 <div className="form-grid">

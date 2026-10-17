@@ -3,7 +3,7 @@ import { useApiMutation } from '../hooks/useApiMutation'
 import { conversionProfilesApi } from '../api/client'
 import type { ConversionProfileInput } from '../types'
 import Modal from './Modal'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 
 interface ConversionProfileCreateModalProps {
     sensorId: string
@@ -109,7 +109,8 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         invalidateKeys: [['sensor', sensorId, 'profiles']],
         successMessage: 'Профиль преобразования создан',
         onSuccess: () => handleClose(),
-        onError: (err: any) => setError(err?.response?.data?.error || 'Ошибка создания профиля'),
+        notifyOnError: false,
+        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания профиля')),
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -119,7 +120,6 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         if (!version.trim()) {
             const msg = 'Версия обязательна'
             setError(msg)
-            notifyError(msg)
             return
         }
 
@@ -127,7 +127,6 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         if (payload === null) {
             const msg = 'Некорректные параметры преобразования'
             setError(msg)
-            notifyError(msg)
             return
         }
 

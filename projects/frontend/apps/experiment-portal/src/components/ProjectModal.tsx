@@ -208,13 +208,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
             {isLoading && <Loading />}
 
             {isErrorState && (
-                <Error
-                    message={
-                        combinedError && typeof combinedError === 'object' && 'message' in combinedError
-                            ? String((combinedError as any).message)
-                            : 'Ошибка загрузки проекта'
-                    }
-                />
+                <Error message={getApiErrorMessage(combinedError, 'Ошибка загрузки проекта')} />
             )}
 
             {!isLoading && !isErrorState && (

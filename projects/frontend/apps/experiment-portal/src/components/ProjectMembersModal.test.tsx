@@ -6,6 +6,7 @@ import ProjectMembersModal from './ProjectMembersModal'
 import { projectsApi, usersApi } from '../api/client'
 import { authApi } from '../api/auth'
 import { permissionsApi } from '../api/permissions'
+import { HttpError } from '@lostpointer/web-http'
 
 vi.mock('../api/client', () => ({
     projectsApi: {
@@ -210,7 +211,10 @@ describe('ProjectMembersModal', () => {
     })
 
     it('shows error message when loading members fails', async () => {
-        vi.mocked(projectsApi).listMembers.mockRejectedValueOnce(new Error('Failed to load members'))
+        // Projects use the shared transport: a network failure is an HttpError, not server text.
+        vi.mocked(projectsApi).listMembers.mockRejectedValueOnce(
+            new HttpError('network', undefined, 'network', 'Network request failed')
+        )
 
         render(
             <ProjectMembersModal
@@ -224,6 +228,26 @@ describe('ProjectMembersModal', () => {
 
         await waitFor(() => {
             expect(screen.getByText(/ошибка загрузки участников/i)).toBeInTheDocument()
+        })
+    })
+
+    it('shows the server message when loading members fails with an api error', async () => {
+        vi.mocked(projectsApi).listMembers.mockRejectedValueOnce(
+            new HttpError('api', 403, 'forbidden', 'Нет доступа к проекту')
+        )
+
+        render(
+            <ProjectMembersModal
+                isOpen={true}
+                onClose={mockOnClose}
+                projectId={projectId}
+                projectOwnerId={projectOwnerId}
+            />,
+            { wrapper: createWrapper() }
+        )
+
+        await waitFor(() => {
+            expect(screen.getByText('Нет доступа к проекту')).toBeInTheDocument()
         })
     })
 
