@@ -25,6 +25,9 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
     [sensors, selectedSensorKey],
   );
 
+  // Repairs the selection after the list changes (e.g. the selected sensor
+  // was removed); the follow-up render is intentional.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!sensors.length) {
       const s = createEmptySensor();
@@ -33,6 +36,7 @@ export function usePersistedSensors(onLog?: (line: string) => void) {
     } else if (!sensors.some((s) => s.key === selectedSensorKey))
       setSelectedSensorKey(sensors[0].key);
   }, [sensors, selectedSensorKey]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

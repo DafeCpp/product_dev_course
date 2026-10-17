@@ -11,11 +11,12 @@ ENV NODE_ENV=development
 
 # Copy workspace manifests first for better layer caching
 COPY package.json package-lock.json ./
+COPY projects/frontend/tsconfig.base.json projects/frontend/tsconfig.react.json projects/frontend/
 COPY projects/frontend/common/package.json projects/frontend/common/package.json
 COPY ${APP_DIR}/package.json ${APP_DIR}/package.json
 
-# Install all dependencies (including dev) for the whole workspace
-RUN npm ci --no-audit --no-fund
+# Install all dependencies (including dev) for this app and frontend-common
+RUN npm ci --workspace=experiment-tracking-frontend --no-audit --no-fund
 
 # Copy source code
 COPY projects/frontend/common projects/frontend/common
@@ -39,11 +40,12 @@ ENV VITE_AUTH_PROXY_URL=${VITE_AUTH_PROXY_URL}
 
 # Copy workspace manifests first for better layer caching
 COPY package.json package-lock.json ./
+COPY projects/frontend/tsconfig.base.json projects/frontend/tsconfig.react.json projects/frontend/
 COPY projects/frontend/common/package.json projects/frontend/common/package.json
 COPY ${APP_DIR}/package.json ${APP_DIR}/package.json
 
-# Install dependencies for the whole workspace
-RUN npm ci --no-audit --no-fund
+# Install dependencies for this app and frontend-common
+RUN npm ci --workspace=experiment-tracking-frontend --no-audit --no-fund
 
 # Copy source code
 COPY projects/frontend/common projects/frontend/common

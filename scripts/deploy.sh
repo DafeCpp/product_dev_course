@@ -58,8 +58,9 @@ for SVC in "${SERVICES[@]}"; do
       DOCKERFILE="services/${SVC}/Dockerfile"
       ;;
     auth-proxy|experiment-portal|sensor-simulator)
-      CONTEXT="./projects/frontend/apps/${SVC}"
-      DOCKERFILE="Dockerfile"
+      # Общий npm workspace: контекст сборки — корень репозитория.
+      CONTEXT="."
+      DOCKERFILE="projects/frontend/apps/${SVC}/Dockerfile"
       ;;
   esac
 

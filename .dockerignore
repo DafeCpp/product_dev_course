@@ -1,5 +1,6 @@
-# Root .dockerignore — the experiment-portal build context is the repo root
-# so it can reach the sibling npm workspace at projects/frontend/common.
+# Root .dockerignore — the frontend images (experiment-portal, sensor-simulator,
+# auth-proxy) build from the repo root so they can install from the shared npm
+# workspace lockfile and reach projects/frontend/common.
 # Keep this narrowly scoped: only exclude what's safe/large/irrelevant to that build.
 
 .git

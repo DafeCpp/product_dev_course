@@ -40,8 +40,8 @@ const config: Config = {
 
 function makeReply() {
     return {
-        setCookie: jest.fn(),
-        clearCookie: jest.fn(),
+        setCookie: vi.fn(),
+        clearCookie: vi.fn(),
     } as unknown as FastifyReply
 }
 

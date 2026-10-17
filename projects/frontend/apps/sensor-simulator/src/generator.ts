@@ -33,7 +33,7 @@ export function mulberry32(seed: number): () => number {
 }
 
 function nextRandom(runtime: GeneratorRuntime): number {
-  let state = (runtime.rngState + 0x6d2b79f5) >>> 0;
+  const state = (runtime.rngState + 0x6d2b79f5) >>> 0;
   runtime.rngState = state;
 
   let value = Math.imul(state ^ (state >>> 15), 1 | state);

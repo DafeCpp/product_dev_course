@@ -1,4 +1,4 @@
-import { buildServer, InMemoryPermissionsCache, PermissionsCache } from '../src/index'
+import { buildServer, InMemoryPermissionsCache } from '../src/index'
 
 // Minimal config helper
 function makeConfig(overrides: Record<string, unknown> = {}) {

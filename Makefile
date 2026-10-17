@@ -10,7 +10,6 @@ SHELL := /bin/bash
 BACKEND_SERVICES_DIR := projects/backend/services
 BACKEND_COMMON_DIR := projects/backend/common
 BACKEND_DIR := projects/backend/services/experiment-service
-FRONTEND_DIR := projects/frontend/apps/experiment-portal
 OPENAPI_SPEC := openapi/openapi.yaml
 # Find all backend services (directories with pyproject.toml)
 BACKEND_SERVICES := $(shell find $(BACKEND_SERVICES_DIR) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort)
@@ -90,11 +89,10 @@ backend-install:
 	done
 
 frontend-install:
-	@cd $(FRONTEND_DIR) && \
-		if ! command -v "$(NODE)" >/dev/null 2>&1; then \
+	@if ! command -v "$(NODE)" >/dev/null 2>&1; then \
 			if command -v docker >/dev/null 2>&1; then \
 				echo "⚠️  Не найден Node.js локально — запускаю npm ci в Docker ($(FRONTEND_NODE_IMAGE))."; \
-				docker run --rm -v "$$(pwd)":/repo -w /repo/$(FRONTEND_DIR) $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error"; \
+				docker run --rm -v "$$(pwd)":/repo -w /repo $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error"; \
 				exit 0; \
 			fi; \
 			echo "❌ Не найден Node.js (пробовал: $(NODE))."; \
@@ -103,10 +101,10 @@ frontend-install:
 			echo "   Альтернатива: установите Docker и используйте 'make test-frontend-docker'."; \
 			exit 1; \
 		fi; \
-		if ! "$(NODE)" -e 'const [maj]=process.versions.node.split(\".\"); process.exit(Number(maj) >= 24 ? 0 : 1)' >/dev/null 2>&1; then \
+		if ! "$(NODE)" -e 'process.exit(parseInt(process.versions.node, 10) >= 24 ? 0 : 1)' >/dev/null 2>&1; then \
 			if command -v docker >/dev/null 2>&1; then \
 				echo "⚠️  Node.js слишком старый: $$($(NODE) -v 2>&1) — запускаю npm ci в Docker ($(FRONTEND_NODE_IMAGE))."; \
-				docker run --rm -v "$$(pwd)":/repo -w /repo/$(FRONTEND_DIR) $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error"; \
+				docker run --rm -v "$$(pwd)":/repo -w /repo $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error"; \
 				exit 0; \
 			fi; \
 			echo "❌ Node.js слишком старый: $$($(NODE) -v 2>&1)"; \
@@ -202,15 +200,15 @@ test-telemetry-cli:
 		fi; \
 		PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p "test_*.py" -q
 
+# Vitest во всех frontend workspace (common, experiment-portal, auth-proxy, sensor-simulator).
 test-frontend: frontend-install
-	@cd $(FRONTEND_DIR) && \
-		if command -v "$(NODE)" >/dev/null 2>&1 && "$(NODE)" -e 'const [maj]=process.versions.node.split(\".\"); process.exit(Number(maj) >= 24 ? 0 : 1)' >/dev/null 2>&1; then \
+	@if command -v "$(NODE)" >/dev/null 2>&1 && "$(NODE)" -e 'process.exit(parseInt(process.versions.node, 10) >= 24 ? 0 : 1)' >/dev/null 2>&1; then \
 			npm run test; \
 			exit 0; \
 		fi; \
 		if command -v docker >/dev/null 2>&1; then \
 			echo "⚠️  Запускаю frontend тесты в Docker ($(FRONTEND_NODE_IMAGE))."; \
-			docker run --rm -v "$$(pwd)":/repo -w /repo/$(FRONTEND_DIR) $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test"; \
+			docker run --rm -v "$$(pwd)":/repo -w /repo $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test"; \
 			exit 0; \
 		fi; \
 		echo "❌ Нужен Node.js 24+ или Docker для запуска frontend тестов."; \
@@ -218,7 +216,7 @@ test-frontend: frontend-install
 
 .PHONY: test-frontend-docker
 test-frontend-docker:
-	@docker run --rm -v "$$(pwd)":/repo -w /repo/$(FRONTEND_DIR) $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test"
+	@docker run --rm -v "$$(pwd)":/repo -w /repo $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test"
 
 # ============================================
 # Coverage
@@ -257,23 +255,16 @@ test-coverage-backend: backend-install
 	done; \
 	exit $$failed
 
-# Coverage по фронту (vitest --coverage для experiment-portal, jest --coverage для auth-proxy).
+# Coverage по фронту (vitest --coverage во всех frontend workspace).
 test-coverage-frontend: frontend-install
-	@cd $(FRONTEND_DIR) && \
-		if command -v "$(NODE)" >/dev/null 2>&1 && "$(NODE)" -e 'const [maj]=process.versions.node.split(\".\"); process.exit(Number(maj) >= 24 ? 0 : 1)' >/dev/null 2>&1; then \
+	@if command -v "$(NODE)" >/dev/null 2>&1 && "$(NODE)" -e 'process.exit(parseInt(process.versions.node, 10) >= 24 ? 0 : 1)' >/dev/null 2>&1; then \
 			npm run test:coverage; \
 		elif command -v docker >/dev/null 2>&1; then \
 			echo "⚠️  Запускаю frontend coverage в Docker ($(FRONTEND_NODE_IMAGE))."; \
-			docker run --rm -v "$$(pwd)/../../..":/repo -w /repo/$(FRONTEND_DIR) $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test:coverage"; \
+			docker run --rm -v "$$(pwd)":/repo -w /repo $(FRONTEND_NODE_IMAGE) sh -lc "npm ci --no-audit --no-fund --loglevel=error && npm run test:coverage"; \
 		else \
 			echo "❌ Нужен Node.js 24+ или Docker для запуска frontend coverage."; \
 			exit 1; \
-		fi
-	@cd projects/frontend/apps/auth-proxy && \
-		if [ -d node_modules ]; then \
-			npm run test:coverage; \
-		else \
-			echo "ℹ️  auth-proxy не установлен — пропускаю (выполните 'npm ci' в projects/frontend/apps/auth-proxy)."; \
 		fi
 
 # Coverage прошивки (host-сборка GTest с lcov).
@@ -516,13 +507,17 @@ dev-rebuild-changed:
 	if echo "$$changed_files" | grep -q '^projects/backend/services/telemetry-ingest-service/'; then \
 		services="$$services telemetry-ingest-service"; \
 	fi; \
-	if echo "$$changed_files" | grep -q '^projects/frontend/apps/auth-proxy/'; then \
+	frontend_shared=0; \
+	if echo "$$changed_files" | grep -q -E '^(package\.json|package-lock\.json|projects/frontend/common/|projects/frontend/tsconfig[^/]*\.json)'; then \
+		frontend_shared=1; \
+	fi; \
+	if [ "$$frontend_shared" = "1" ] || echo "$$changed_files" | grep -q '^projects/frontend/apps/auth-proxy/'; then \
 		services="$$services auth-proxy"; \
 	fi; \
-	if echo "$$changed_files" | grep -q '^projects/frontend/apps/experiment-portal/'; then \
+	if [ "$$frontend_shared" = "1" ] || echo "$$changed_files" | grep -q '^projects/frontend/apps/experiment-portal/'; then \
 		services="$$services experiment-portal"; \
 	fi; \
-	if echo "$$changed_files" | grep -q '^projects/frontend/apps/sensor-simulator/'; then \
+	if [ "$$frontend_shared" = "1" ] || echo "$$changed_files" | grep -q '^projects/frontend/apps/sensor-simulator/'; then \
 		services="$$services sensor-simulator"; \
 	fi; \
 	services="$$(echo $$services | tr ' ' '\n' | awk 'NF' | sort -u | tr '\n' ' ')"; \
