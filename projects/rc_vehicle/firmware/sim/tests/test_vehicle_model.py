@@ -88,6 +88,37 @@ def test_dynamic_model_uses_kinematics_in_reverse():
     assert dynamic.state.vy == 0.0
 
 
+def test_slope_slows_climb_without_changing_long_accel():
+    """Уклон (LOS-367) тормозит разгон через физику v, но не меняет
+    long_accel — specific force остаётся актуаторной (см. sensors.py):
+    из одного и того же состояния (accel, v) шаг с уклоном и без даёт
+    одинаковый long_accel, но разную новую v."""
+    flat = VehicleModel(SimParams())
+    uphill = VehicleModel(SimParams(), slope_deg=10.0)
+    flat.state.accel = uphill.state.accel = 4.0
+    flat.state.v = uphill.state.v = 2.0
+    out_flat = flat.step(DT, throttle=1.0, steering=0.0)
+    out_uphill = uphill.step(DT, throttle=1.0, steering=0.0)
+    assert math.isclose(out_uphill.long_accel, out_flat.long_accel, abs_tol=1e-6)
+    assert uphill.state.v < flat.state.v
+
+
+def test_slope_slows_climb_over_time():
+    flat = VehicleModel(SimParams())
+    uphill = VehicleModel(SimParams(), slope_deg=10.0)
+    out_flat = _run(flat, throttle=1.0, steering=0.0, n=250)  # 0.5 с
+    out_uphill = _run(uphill, throttle=1.0, steering=0.0, n=250)
+    assert out_uphill.speed < out_flat.speed
+
+
+def test_negative_slope_speeds_descent():
+    flat = VehicleModel(SimParams())
+    downhill = VehicleModel(SimParams(), slope_deg=-10.0)
+    out_flat = _run(flat, throttle=0.3, steering=0.0, n=250)
+    out_downhill = _run(downhill, throttle=0.3, steering=0.0, n=250)
+    assert out_downhill.speed > out_flat.speed
+
+
 def _DYN_MIN():
     from simlib.vehicle_model import _DYNAMIC_MIN_SPEED
 

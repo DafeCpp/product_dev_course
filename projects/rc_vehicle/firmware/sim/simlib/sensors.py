@@ -145,12 +145,21 @@ def _mount_rot(p: SimParams) -> np.ndarray:
 def synth_accel(long_accel: float, lat_accel: float,
                 p: SimParams,
                 road_accel_g: tuple[float, float, float] | None = None,
-                road_attitude_rad: tuple[float, float] | None = None
+                road_attitude_rad: tuple[float, float] | None = None,
+                slope_rad: float = 0.0
                 ) -> tuple[float, float, float]:
-    """Акселерометр (g): гравитация (по ориентации IMU) + ускорение движения."""
+    """Акселерометр (g): гравитация (по ориентации IMU) + ускорение движения.
+
+    slope_rad — продольный уклон (LOS-367), >0 — подъём. Машина едет
+    параллельно склону: specific force = тяга/сопротивление вдоль X корпуса
+    (long_accel) + реакция опоры g·cos(уклон) вдоль Z. Составляющая тяжести
+    вдоль склона уже учтена в физике скорости (VehicleModel), поэтому в
+    измерение не входит: на подъёме с постоянной скоростью ax = sin(уклон)
+    появляется через long_accel, которым мотор держит скорость.
+    """
     g = p.gravity_ms2
-    # В СК корпуса (level): покой → (0,0,1) g; движение добавляет long/lat.
-    body = np.array([long_accel / g, lat_accel / g, 1.0])
+    # В СК корпуса: покой на ровном → (0,0,1) g; движение добавляет long/lat.
+    body = np.array([long_accel / g, lat_accel / g, math.cos(slope_rad)])
     if road_accel_g is not None:
         body += np.asarray(road_accel_g)
     body = _road_rot(road_attitude_rad).T @ body
@@ -177,7 +186,8 @@ def synth_gyro(yaw_rate_rad: float,
 
 
 def synth_mag(psi_rad: float, p: SimParams,
-              road_attitude_rad: tuple[float, float] | None = None
+              road_attitude_rad: tuple[float, float] | None = None,
+              slope_rad: float = 0.0
               ) -> tuple[float, float, float]:
     """Магнитометр (мГс): горизонтальное поле Земли (North) в СК корпуса."""
     f = p.mag_field_mga
@@ -185,7 +195,9 @@ def synth_mag(psi_rad: float, p: SimParams,
     cz, sz = math.cos(psi_rad), math.sin(psi_rad)
     rz_t = np.array([[cz, sz, 0.0], [-sz, cz, 0.0], [0.0, 0.0, 1.0]])
     world = np.array([f, 0.0, 0.0])
-    level_body = rz_t @ world
+    # Нос вверх на уклон: в конвенции _road_rot это pitch = -slope (там
+    # pitch>0 даёт ax=-sin, как при наклоне носом вниз).
+    level_body = _road_rot((0.0, -slope_rad)).T @ rz_t @ world
     body = _road_rot(road_attitude_rad).T @ level_body
     meas = _mount_rot(p).T @ body
     return float(meas[0]), float(meas[1]), float(meas[2])
@@ -196,26 +208,35 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
                rc_steering: float | None = None,
                with_mag: bool = True,
                wifi_keepalive: bool = False,
-               road_noise: RoadNoiseModel | None = None) -> SensorFrame:
+               road_noise: RoadNoiseModel | None = None,
+               slope_rad: float = 0.0
+               ) -> SensorFrame:
     """Собрать SensorFrame из выхода модели (для подачи в sim_host, FW-S2.5).
 
     wifi_keepalive=True — нулевая WiFi-команда каждый кадр. Нужна авто-режимам
     (start_test и калибровки): они требуют неактивного пульта, но без единого
     источника команд сработал бы failsafe и PWM не выдавался бы вовсе.
+
+    slope_rad — продольный уклон (LOS-367), см. synth_accel; должен совпадать
+    с VehicleModel.slope_rad, иначе физика и сенсоры разойдутся.
+    Уклон задан в СК корпуса и не зависит от курса: машина всегда едет прямо
+    вверх/вниз по склону, поворот не переводит уклон в крен.
     """
     excitation = road_noise.sample(out.speed, dt_ms) if road_noise else None
+    road_attitude = excitation.attitude_rad if excitation else None
     ax, ay, az = synth_accel(
         out.long_accel, out.lat_accel, p,
         excitation.accel_g if excitation else None,
-        excitation.attitude_rad if excitation else None)
+        road_attitude, slope_rad)
+    # Yaw rate — вокруг нормали к склону, т.е. уже ось Z корпуса: уклон
+    # гироскоп не поворачивает.
     gx, gy, gz = synth_gyro(
         out.yaw_rate, p, excitation.gyro_dps if excitation else None,
-        excitation.attitude_rad if excitation else None)
+        road_attitude)
     f = SensorFrame(dt_ms=dt_ms, ax=ax, ay=ay, az=az, gx=gx, gy=gy, gz=gz)
     if with_mag:
         f.mag_present = True
-        f.mx, f.my, f.mz = synth_mag(
-            psi_rad, p, excitation.attitude_rad if excitation else None)
+        f.mx, f.my, f.mz = synth_mag(psi_rad, p, road_attitude, slope_rad)
     if rc_throttle is not None or rc_steering is not None:
         f.rc_present = True
         f.rc_throttle = rc_throttle or 0.0

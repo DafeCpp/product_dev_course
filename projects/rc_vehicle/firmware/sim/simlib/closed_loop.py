@@ -7,6 +7,7 @@
 полный тракт прошивки в контуре (калибровка/Madgwick/EKF).
 """
 
+import math
 import subprocess
 
 from .profiles import get_profile
@@ -36,10 +37,14 @@ class ClosedLoopSim:
                  sensor_noise: bool = True,
                  noise_seed: int = 0,
                  oversteer: OversteerReplayConfig | None = None,
-                 kids_accel_limit: bool = True):
+                 kids_accel_limit: bool = True,
+                 pitch_comp: bool = False,
+                 slip_target_deg: float | None = None,
+                 kids_preset: str | None = None,
+                 slope_deg: float = 0.0):
         self.p = (params if params is not None
                   else get_profile(DEFAULT_CLOSED_LOOP_PROFILE))
-        self.model = VehicleModel(self.p, dynamic=dynamic)
+        self.model = VehicleModel(self.p, dynamic=dynamic, slope_deg=slope_deg)
         # StepOutput предыдущего тика → сенсоры текущего кадра (на старте — покой).
         self.last_out = StepOutput(0.0, 0.0, 0.0, 0.0, 0.0)
         self.road_noise = RoadNoiseModel(self.p, noise_seed) if sensor_noise else None
@@ -55,6 +60,12 @@ class ClosedLoopSim:
             args.append("--stabilize")
         if not kids_accel_limit:
             args.append("--no-kids-accel-limit")
+        if pitch_comp:
+            args.append("--pitch-comp")
+        if slip_target_deg is not None:
+            args += ["--slip-target-deg", repr(float(slip_target_deg))]
+        if kids_preset:
+            args += ["--kids-preset", kids_preset]
         if oversteer is not None:
             args += ["--oversteer",
                      "--oversteer-slip-thresh", repr(float(oversteer.slip_thresh_deg)),
@@ -90,7 +101,8 @@ class ClosedLoopSim:
                            dt_ms=dt_ms, rc_throttle=rc_throttle,
                            rc_steering=rc_steering, with_mag=with_mag,
                            wifi_keepalive=self.wifi_keepalive,
-                           road_noise=self.road_noise)
+                           road_noise=self.road_noise,
+                           slope_rad=self.model.slope_rad)
         self.proc.stdin.write(frame.to_csv() + "\n")
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
@@ -101,6 +113,12 @@ class ClosedLoopSim:
         self.last_out = self.model.step(dt_ms / 1000.0, row["throttle"],
                                         row["steering"])
         return row
+
+    def set_slope(self, slope_deg: float) -> None:
+        """Сменить продольный уклон на ходу (LOS-367): калибровка IMU на старте
+        принимает текущую гравитацию за горизонт, поэтому склон для сценариев
+        задают уже после неё."""
+        self.model.slope_rad = math.radians(slope_deg)
 
     def run(self, n: int, dt_ms: int = 2, rc_throttle=None, rc_steering=None,
             with_mag: bool = True) -> list[dict]:

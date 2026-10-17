@@ -1,11 +1,11 @@
-"""LOS-362: SIL-сценарии с критериями из TESTING_PROGRAM.md.
+"""LOS-362/LOS-367: SIL-сценарии с критериями из TESTING_PROGRAM.md.
 
 Те же критерии PASS, что проверяются на машине, но в SIL: это регрессия и
-эталон для сравнения с будущими заездами. Не покрыто (нет поддержки в модели
-или sim_host): склон/pitch compensation, удержание угла заноса в Drift,
-anti-spin, пресеты Kids; см. LOS-362. Критерии,
-которые в SIL не выполняются, помечены strict xfail: исправление сразу
-покажет XPASS.
+эталон для сравнения с будущими заездами. Склон/pitch compensation, уставка
+угла заноса в Drift и пресеты Kids поддержаны через ClosedLoopSim/sim_host
+(LOS-367). Не покрыто (нет wheel-level slip-модели): Kids anti-spin — см.
+LOS-367. Критерии, которые в SIL не выполняются, помечены strict xfail:
+исправление сразу покажет XPASS.
 """
 
 import math
@@ -228,3 +228,112 @@ def test_kids_accel_limiter_smooths_launch():
     kids_peak = max(r["forward_accel"] for r in rows)
     ref_peak = max(r["forward_accel"] for r in ref)
     assert kids_peak < ref_peak - 0.012
+
+
+SLOPE_DEG = 10.0
+
+
+def _climb(pitch_comp: bool, slope_deg: float = SLOPE_DEG):
+    """Калибровка в покое на ровном, разгон, затем въезд на склон.
+
+    Калибровка принимает гравитацию на старте за горизонт, поэтому склон
+    включается уже после неё. Эталон тоже со stabilize=True: прогоны
+    отличаются только pitch_comp.
+    """
+    with ClosedLoopSim(BIN, dynamic=True, sensor_noise=False, stabilize=True,
+                       pitch_comp=pitch_comp) as sim:
+        sim.run(1000, rc_throttle=0.0, rc_steering=0.0)
+        sim.run(1000, rc_throttle=0.5, rc_steering=0.0)
+        sim.set_slope(slope_deg)
+        rows = sim.run(1500, rc_throttle=0.5, rc_steering=0.0)
+        return rows, sim.model.state.v
+
+
+def _tail_mean(rows, key, n=100):
+    return _mean_tail([r[key] for r in rows], n)
+
+
+def test_slope_is_seen_as_pitch():
+    """LOS-367: подъём с постоянной скоростью виден Madgwick как тангаж ≈ уклон.
+
+    Знак фиксирует текущую конвенцию прошивки: подъём даёт pitch_deg < 0
+    (как и разгон) — на это опирается xfail ниже.
+    """
+    rows, _ = _climb(pitch_comp=False)
+    assert abs(_tail_mean(rows, "pitch_deg") + SLOPE_DEG) < 1.5
+    flat, _ = _climb(pitch_comp=False, slope_deg=0.0)
+    assert abs(_tail_mean(flat, "pitch_deg")) < 1.0
+
+
+def test_pitch_comp_idle_on_flat():
+    """LOS-367: на ровном с постоянной скоростью компенсация газ не трогает."""
+    with_comp, _ = _climb(pitch_comp=True, slope_deg=0.0)
+    without, _ = _climb(pitch_comp=False, slope_deg=0.0)
+    assert abs(_tail_mean(with_comp, "cmd_throttle")
+               - _tail_mean(without, "cmd_throttle")) < 0.02
+
+
+def test_pitch_comp_acts_on_slope():
+    """LOS-367: --pitch-comp доходит до прошивки — на склоне газ с компенсацией
+    заметно отличается от газа без неё (направление проверяет xfail ниже)."""
+    with_comp, _ = _climb(pitch_comp=True)
+    without, _ = _climb(pitch_comp=False)
+    assert abs(_tail_mean(with_comp, "cmd_throttle")
+               - _tail_mean(without, "cmd_throttle")) > 0.05
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "Подозрение на знак в PitchCompensator: прошивка считает «нос вверх» как "
+    "ax=-sin (test_pitch_compensator.cpp), а реальный акселерометр на подъёме "
+    "даёт +sin по оси «вперёд» — компенсация режет газ в гору. LOS-369."))
+def test_pitch_comp_adds_throttle_uphill():
+    """TESTING_PROGRAM.md: на подъёме pitch compensation добавляет газ и
+    держит скорость выше, чем без неё."""
+    with_comp, v_comp = _climb(pitch_comp=True)
+    without, v_plain = _climb(pitch_comp=False)
+    assert (_tail_mean(with_comp, "cmd_throttle")
+            > _tail_mean(without, "cmd_throttle") + 0.05)
+    assert v_comp > v_plain
+
+
+def test_drift_slip_target_shifts_throttle_correction():
+    """LOS-367: уставка угла заноса (Drift) двигает коррекцию газа в сторону,
+    задаваемую знаком target_deg (SlipAngleController работает по throttle)."""
+
+    def drift(target_deg: float):
+        with ClosedLoopSim(BIN, stabilize=True, drive_mode="drift",
+                           dynamic=True, sensor_noise=False,
+                           slip_target_deg=target_deg) as sim:
+            sim.run(1500, rc_throttle=0.5, rc_steering=0.0)
+            return sim.run(300, rc_throttle=0.5, rc_steering=0.3)
+
+    positive = drift(20.0)
+    negative = drift(-20.0)
+    assert (_mean_tail([r["cmd_throttle"] for r in positive], n=50)
+           > _mean_tail([r["cmd_throttle"] for r in negative], n=50))
+
+
+KIDS_PRESET_LIMITS = {"toddler": 0.15, "child": 0.30, "preteen": 0.50}
+
+
+def _kids_preset_launch(preset: str) -> list[dict]:
+    with ClosedLoopSim(BIN, drive_mode="kids", kids_preset=preset,
+                       sensor_noise=False, kids_accel_limit=False) as sim:
+        return sim.run(1500, rc_throttle=1.0, rc_steering=0.0)
+
+
+@pytest.mark.parametrize("preset", KIDS_PRESET_LIMITS)
+def test_kids_preset_caps_full_stick_throttle(preset):
+    """LOS-367: --kids-preset доходит до прошивки (KidsModeConfig::ApplyPreset)
+    и газ в пол не выходит за лимит пресета."""
+    rows = _kids_preset_launch(preset)
+    limit = KIDS_PRESET_LIMITS[preset]
+    assert rows[-1]["kids_throttle_limit"] == pytest.approx(limit, abs=1e-3)
+    assert max(r["throttle"] for r in rows) <= limit + 1e-3
+
+
+def test_kids_presets_order_by_age():
+    """Старший пресет даёт больше газа при том же «газ в пол»."""
+    peaks = [max(r["throttle"] for r in _kids_preset_launch(p))
+             for p in ("toddler", "child", "preteen")]
+    assert peaks[0] < peaks[1] < peaks[2]

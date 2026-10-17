@@ -36,10 +36,18 @@ class StepOutput:
 
 
 class VehicleModel:
-    def __init__(self, params: SimParams | None = None, dynamic: bool = False):
+    def __init__(self, params: SimParams | None = None, dynamic: bool = False,
+                 slope_deg: float = 0.0):
+        """slope_deg: продольный уклон (LOS-367), >0 — подъём в гору.
+
+        Здесь — только физика скорости (тяжесть вдоль склона); реакцию опоры
+        для IMU синтезирует sensors.make_frame(slope_rad=...). Уклон можно
+        менять на ходу через slope_rad.
+        """
         self.p = params or SimParams()
         self.dynamic = dynamic
         self.state = VehicleState()
+        self.slope_rad = math.radians(slope_deg)
 
     # ── Подмодели актуаторов ─────────────────────────────────────────────────
     def _motor_accel_cmd(self, throttle: float) -> float:
@@ -73,8 +81,12 @@ class VehicleModel:
         # Точная дискретизация лага (устойчива при любом dt/τ, важно для fitting).
         a_cmd = self._motor_accel_cmd(throttle)
         s.accel += (a_cmd - s.accel) * (1.0 - math.exp(-dt / p.motor_tau))
-        long_accel = s.accel - p.drag_coeff * s.v  # фактическое dv/dt
-        s.v += long_accel * dt
+        # long_accel — specific force по X корпуса (тяга минус сопротивление):
+        # именно её меряет акселерометр. Тяжесть вдоль склона меняет скорость,
+        # но акселерометром не видна (свободное падение по склону).
+        long_accel = s.accel - p.drag_coeff * s.v
+        grade_accel = p.gravity_ms2 * math.sin(self.slope_rad)
+        s.v += (long_accel - grade_accel) * dt
 
         delta = self._servo_angle(steering, dt)
 
