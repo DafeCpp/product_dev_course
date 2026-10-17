@@ -68,7 +68,8 @@ export function getApiErrorMessage(
         return (
             cleanMessage(body?.message) ??
             cleanMessage(body?.error) ??
-            cleanMessage(typeof data === 'string' ? data : undefined) ??
+            // `responseType: 'text'` requests get a JSON body as an unparsed string.
+            (typeof data === 'string' ? bodyTextMessage(data) : null) ??
             (includeClientMessage && !e.isAxiosError ? cleanMessage(e.message) : null) ??
             fallback
         )
@@ -82,18 +83,31 @@ export function getApiErrorMessage(
  * body without such a string never shows raw JSON.
  */
 export function getResponseBodyMessage(body: string, fallback: string): string {
+    return bodyTextMessage(body) ?? fallback
+}
+
+function bodyTextMessage(body: string): string | null {
     let parsed: unknown
     try {
         parsed = JSON.parse(body)
     } catch {
-        return cleanMessage(body) ?? fallback
+        return cleanMessage(body)
     }
-    if (typeof parsed === 'string') return cleanMessage(parsed) ?? fallback
+    if (typeof parsed === 'string') return cleanMessage(parsed)
     if (parsed && typeof parsed === 'object') {
         const p = parsed as { error?: unknown; message?: unknown }
-        return cleanMessage(p.message) ?? cleanMessage(p.error) ?? fallback
+        return cleanMessage(p.message) ?? cleanMessage(p.error)
     }
-    return fallback
+    return null
+}
+
+/** True for a 404 response, from the shared transport or axios. */
+export function isNotFoundError(error: unknown): boolean {
+    if (error instanceof HttpError) return error.status === 404
+    if (error && typeof error === 'object') {
+        return (error as { response?: { status?: unknown } }).response?.status === 404
+    }
+    return false
 }
 
 /** Error for a non-OK fetch response: sanitized 4xx body text, else `${prefix}: HTTP ${status}`. */

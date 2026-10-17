@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { getApiErrorMessage } from '../utils/apiError'
+import { getApiErrorMessage, UserFacingError } from '../utils/apiError'
 import {
   Alert,
   Box,
@@ -233,9 +233,9 @@ function UploadArtifactDialog({ open, onClose, runId, projectId: _projectId, onS
         }
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`Upload failed: HTTP ${xhr.status}`))
+          else reject(new UserFacingError(`Ошибка загрузки файла: HTTP ${xhr.status}`))
         }
-        xhr.onerror = () => reject(new Error('Network error during upload'))
+        xhr.onerror = () => reject(new UserFacingError('Ошибка сети при загрузке файла'))
         xhr.open('PUT', upload_url)
         xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
         xhr.send(file)

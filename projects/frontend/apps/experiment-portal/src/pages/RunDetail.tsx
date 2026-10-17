@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { getApiErrorMessage } from '../utils/apiError'
+import { getApiErrorMessage, isNotFoundError } from '../utils/apiError'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
@@ -205,7 +205,7 @@ function RunDetail() {
   }
 
   if (error || !run) {
-    return <ErrorComponent message={getApiErrorMessage(error, 'Запуск не найден')} />
+    return <ErrorComponent message={isNotFoundError(error) ? 'Запуск не найден' : getApiErrorMessage(error, 'Запуск не найден')} />
   }
 
   // UI note:

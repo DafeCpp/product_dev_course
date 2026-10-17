@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { HttpError } from '@lostpointer/web-http'
-import { UserFacingError, getApiErrorMessage, getResponseBodyMessage } from './apiError'
+import { UserFacingError, getApiErrorMessage, getResponseBodyMessage, isNotFoundError } from './apiError'
 
 describe('getApiErrorMessage', () => {
     it('prefers response.data.message, then response.data.error', () => {
@@ -108,5 +108,27 @@ describe('getResponseBodyMessage', () => {
         expect(getResponseBodyMessage('sensor not found', 'fb')).toBe('sensor not found')
         expect(getResponseBodyMessage('<html>502</html>', 'fb')).toBe('fb')
         expect(getResponseBodyMessage('', 'fb')).toBe('fb')
+    })
+})
+
+describe('getApiErrorMessage with text response bodies', () => {
+    it('parses a JSON body delivered as a string', () => {
+        const err = { isAxiosError: true, response: { status: 400, data: '{"error":"bad","message":"Неверный формат"}' } }
+        expect(getApiErrorMessage(err, 'fb')).toBe('Неверный формат')
+    })
+
+    it('falls back for JSON text without a string message', () => {
+        const err = { isAxiosError: true, response: { status: 400, data: '{"detail":"x"}' } }
+        expect(getApiErrorMessage(err, 'fb')).toBe('fb')
+    })
+})
+
+describe('isNotFoundError', () => {
+    it('detects 404 from HttpError and axios errors', () => {
+        expect(isNotFoundError(new HttpError('api', 404, 'not_found', 'HTTP 404'))).toBe(true)
+        expect(isNotFoundError({ response: { status: 404 } })).toBe(true)
+        expect(isNotFoundError({ response: { status: 403 } })).toBe(false)
+        expect(isNotFoundError(new Error('x'))).toBe(false)
+        expect(isNotFoundError(null)).toBe(false)
     })
 })
