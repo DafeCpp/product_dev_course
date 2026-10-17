@@ -102,6 +102,11 @@ infrastructure/yandex-cloud/.terraform/
 infrastructure/yandex-cloud/.terraform.lock.hcl
 infrastructure/yandex-cloud/terraform.tfstate*
 infrastructure/yandex-cloud/terraform.tfvars
+infrastructure/yandex-cloud/backend.hcl
+infrastructure/yandex-cloud/bootstrap/.terraform/
+infrastructure/yandex-cloud/bootstrap/.terraform.lock.hcl
+infrastructure/yandex-cloud/bootstrap/terraform.tfstate*
+infrastructure/yandex-cloud/bootstrap/terraform.tfvars
 # Saved plans contain input variables and may expose secrets.
 infrastructure/yandex-cloud/tfplan*
 

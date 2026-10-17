@@ -143,8 +143,13 @@ cd infrastructure/yandex-cloud
 cp terraform.tfvars.example terraform.tfvars
 # Отредактируйте terraform.tfvars — укажите cloud_id, folder_id, пароли
 
+# State лежит в Object Storage: настройка backend.hcl и ключей —
+# docs/terraform-state-runbook.md (там же одноразовый bootstrap бакета)
+cp backend.hcl.example backend.hcl   # подставьте endpoint блокировок
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+
 # Инициализация
-terraform init
+terraform init -backend-config=backend.hcl
 
 # Если используется .terraform.lock.hcl и провайдер не подтянулся, привяжите lock к зеркалу:
 # terraform providers lock -net-mirror=https://terraform-mirror.yandexcloud.net -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_arm64 yandex-cloud/yandex
