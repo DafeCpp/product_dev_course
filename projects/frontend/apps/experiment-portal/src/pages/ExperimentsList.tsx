@@ -22,7 +22,7 @@ import CreateExperimentModal from '../components/CreateExperimentModal'
 import { setActiveProjectId } from '../utils/activeProject'
 import { downloadBlob } from '../utils/download'
 import { notifyError, notifySuccess } from '../utils/notify'
-import { IS_TEST } from '../utils/env'
+import { getApiErrorMessage } from '../utils/apiError'
 import './ExperimentsList.scss'
 
 function ExperimentsList() {
@@ -99,17 +99,10 @@ function ExperimentsList() {
   return (
     <div className="experiments-list">
       {isBusy && !error && <Loading message={loadingMessage} />}
-      {IS_TEST && error && (
+      {error && (
         <Error
-          message={
-            error instanceof Error
-              ? error.message
-              : 'Ошибка загрузки экспериментов. Убедитесь, что выбран проект.'
-          }
+          message={getApiErrorMessage(error, 'Ошибка загрузки экспериментов. Убедитесь, что выбран проект.')}
         />
-      )}
-      {!IS_TEST && error && (
-        <EmptyState message="Не удалось загрузить эксперименты. Проверьте выбранный проект." />
       )}
       {!projectId && projectsData?.projects && projectsData.projects.length === 0 && (
         <EmptyState message="У вас нет проектов. Создайте проект, чтобы начать работу с экспериментами." />

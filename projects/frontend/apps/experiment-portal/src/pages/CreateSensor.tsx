@@ -6,8 +6,8 @@ import { sensorsApi, projectsApi } from '../api/client'
 import type { SensorCreate, SensorRegisterResponse } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
 import { PageHeader, Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
+import { notifySuccess, notifySuccessSticky } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import { createSensorSchema, flatFieldErrors } from '../schemas/forms'
 import './CreateSensor.scss'
 
@@ -60,7 +60,6 @@ function CreateSensor() {
                             e?.message ||
                             'Не удалось добавить датчик в дополнительные проекты'
                         setAdditionalProjectsError(msg)
-                        notifyError(msg)
                     }
                 })()
             } else {
@@ -69,8 +68,9 @@ function CreateSensor() {
             }
             setShowToken(true)
         },
-        onError: (err: any) => {
-            setError(err?.response?.data?.error || 'Ошибка регистрации датчика')
+        notifyOnError: false,
+        onError: (err: unknown) => {
+            setError(getApiErrorMessage(err, 'Ошибка регистрации датчика', { serverOnly: true }))
         },
     })
 
@@ -93,7 +93,6 @@ function CreateSensor() {
             setFieldErrors(errors)
             const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
             setError(first)
-            notifyError(first)
             return
         }
 
@@ -128,7 +127,7 @@ function CreateSensor() {
                     )}
                     {additionalProjectsStatus === 'error' && additionalProjectsError && (
                         <div style={{ marginTop: '0.5rem' }}>
-                            {IS_TEST && <Error message={additionalProjectsError} />}
+                            <Error message={additionalProjectsError} />
                         </div>
                     )}
                     <div className="token-box">
@@ -163,7 +162,7 @@ function CreateSensor() {
         <div className="create-sensor">
             <PageHeader title="Зарегистрировать датчик" />
 
-            {IS_TEST && error && <Error message={error} />}
+            {error && <Error message={error} />}
 
             <form onSubmit={handleSubmit} className="sensor-form card">
                 <FormGroup label="Проекты" htmlFor="project_id" required>

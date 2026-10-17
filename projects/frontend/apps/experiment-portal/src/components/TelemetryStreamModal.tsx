@@ -5,7 +5,6 @@ import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
 import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
-import { IS_TEST } from '../utils/env'
 import { notifyError } from '../utils/notify'
 import './TelemetryStreamModal.scss'
 
@@ -248,7 +247,7 @@ export default function TelemetryStreamModal({
             className="telemetry-stream-modal"
         >
             <div className="telemetry-stream">
-                {IS_TEST && streamStatus === 'error' && streamError && (
+                {streamStatus === 'error' && streamError && (
                     <div className="error">{streamError.message}</div>
                 )}
 

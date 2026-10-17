@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { QueryKey } from '@tanstack/react-query'
 import { notifyError, notifySuccess } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 
 interface UseApiMutationOptions<TData, TVars> {
   mutationFn: (vars: TVars) => Promise<TData>
@@ -12,21 +13,13 @@ interface UseApiMutationOptions<TData, TVars> {
   errorFallback?: string
   /** Called after built-in success handling (invalidate + toast). */
   onSuccess?: (data: TData, vars: TVars) => void
-  /** Called after built-in error toast. Use to set local error state. */
+  /**
+   * Show an error toast on failure (default). Pass `false` when the caller
+   * renders the error inline, so the user doesn't see it twice.
+   */
+  notifyOnError?: boolean
+  /** Called after built-in error handling. Use to set local error state. */
   onError?: (error: unknown, vars: TVars) => void
-}
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === 'object') {
-    const e = error as Record<string, any>
-    return (
-      e?.response?.data?.error ||
-      e?.response?.data?.message ||
-      e?.message ||
-      fallback
-    )
-  }
-  return fallback
 }
 
 export function useApiMutation<TData = unknown, TVars = void>({
@@ -34,6 +27,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
   invalidateKeys,
   successMessage,
   errorFallback = 'Произошла ошибка',
+  notifyOnError = true,
   onSuccess,
   onError,
 }: UseApiMutationOptions<TData, TVars>) {
@@ -53,7 +47,9 @@ export function useApiMutation<TData = unknown, TVars = void>({
       onSuccess?.(data, vars)
     },
     onError: (error, vars) => {
-      notifyError(extractErrorMessage(error, errorFallback))
+      if (notifyOnError) {
+        notifyError(getApiErrorMessage(error, errorFallback))
+      }
       onError?.(error, vars)
     },
   })

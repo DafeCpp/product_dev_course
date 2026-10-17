@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import type { ZodType } from 'zod'
 import { flatFieldErrors } from '../schemas/forms'
-import { notifyError } from '../utils/notify'
 
 export interface UseFormErrorsReturn {
   error: string | null
@@ -27,7 +26,6 @@ export function useFormErrors(): UseFormErrorsReturn {
       setFieldErrors(errors)
       const first = Object.values(errors).find(Boolean) ?? 'Проверьте заполнение формы'
       setError(first)
-      notifyError(first)
       return null
     }
     clearErrors()

@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { runsApi } from '../api/client'
 import { format } from 'date-fns'
 import { StatusBadge, Loading, Error, EmptyState, runStatusMap } from './common'
-import { IS_TEST } from '../utils/env'
 import { downloadBlob } from '../utils/download'
 import { notifyError, notifySuccess } from '../utils/notify'
 import Tags from './common/Tags'
@@ -66,7 +65,7 @@ function RunsList({ experimentId }: RunsListProps) {
   }
 
   if (error) {
-    return IS_TEST ? <Error message="Ошибка загрузки запусков" /> : <EmptyState message="Запуски недоступны" />
+    return <Error message="Ошибка загрузки запусков" />
   }
 
   if (!data || runs.length === 0) {

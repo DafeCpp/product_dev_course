@@ -1,6 +1,5 @@
 import type { Run, CaptureSession, Sensor } from '../../types'
 import { StatusBadge, InfoRow, runStatusMap } from '../../components/common'
-import { IS_TEST } from '../../utils/env'
 
 interface RunOverviewGridProps {
   run: Run
@@ -34,7 +33,7 @@ export default function RunOverviewGrid({
           </div>
         </div>
 
-        {IS_TEST && actionError && <div className="error run-detail__action-error">{actionError}</div>}
+        {actionError && <div className="error run-detail__action-error">{actionError}</div>}
 
         <div className="run-info">
           <InfoRow label="ID" value={<span className="mono">{run.id}</span>} />

@@ -4,8 +4,7 @@ import type { Experiment, ExperimentUpdate } from '../types'
 import Modal from './Modal'
 import { experimentStatusMap } from './common/statusMaps'
 import { MaterialSelect } from './common'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateRunModal.scss'
 
@@ -41,7 +40,8 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент обновлён',
         errorFallback: 'Ошибка обновления эксперимента',
         onSuccess: () => onClose(),
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка обновления эксперимента'),
+        notifyOnError: false,
+        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка обновления эксперимента')),
     })
 
     const archiveMutation = useApiMutation({
@@ -50,7 +50,8 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент архивирован',
         errorFallback: 'Ошибка архивации эксперимента',
         onSuccess: () => onClose(),
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка архивации эксперимента'),
+        notifyOnError: false,
+        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка архивации эксперимента')),
     })
 
     const isBusy = updateMutation.isPending || archiveMutation.isPending
@@ -74,7 +75,6 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         if (!name.trim()) {
             const msg = 'Название эксперимента обязательно'
             setError(msg)
-            notifyError(msg)
             return
         }
 
@@ -90,7 +90,6 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         } catch {
             const msg = 'Неверный формат JSON в метаданных'
             setError(msg)
-            notifyError(msg)
             return
         }
 
@@ -128,7 +127,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
             className="experiment-modal"
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error">{error}</div>}
 
                 <div className="form-group">
                     <label>

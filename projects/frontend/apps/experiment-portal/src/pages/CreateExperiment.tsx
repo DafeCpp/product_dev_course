@@ -5,8 +5,8 @@ import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import './CreateExperiment.scss'
 
 function CreateExperiment() {
@@ -34,10 +34,8 @@ function CreateExperiment() {
       notifySuccess('Эксперимент создан')
       navigate(`/experiments/${experiment.id}`)
     },
-    onError: (err: any) => {
-      const msg = err.response?.data?.error || 'Ошибка создания эксперимента'
-      setError(msg)
-      notifyError(msg)
+    onError: (err: unknown) => {
+      setError(getApiErrorMessage(err, 'Ошибка создания эксперимента', { serverOnly: true }))
     },
   })
 
@@ -48,14 +46,12 @@ function CreateExperiment() {
     if (!formData.project_id) {
       const msg = 'Выберите проект'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (!formData.name.trim()) {
       const msg = 'Название эксперимента обязательно'
       setError(msg)
-      notifyError(msg)
       return
     }
 
@@ -74,13 +70,11 @@ function CreateExperiment() {
       } else {
         const msg = 'Метаданные должны быть JSON-объектом (например, {})'
         setError(msg)
-        notifyError(msg)
         return
       }
     } catch {
       const msg = 'Неверный формат JSON в метаданных'
       setError(msg)
-      notifyError(msg)
       return
     }
 
@@ -98,7 +92,7 @@ function CreateExperiment() {
     <div className="create-experiment">
       <h2>Создать эксперимент</h2>
 
-      {IS_TEST && error && <Error message={error} />}
+      {error && <Error message={error} />}
 
       <form onSubmit={handleSubmit} className="experiment-form card">
         <FormGroup label="Проект" required>

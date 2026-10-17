@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage } from '../utils/apiError'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { Experiment, ExperimentCreate } from '../types'
 import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import Modal from './Modal'
-import { IS_TEST } from '../utils/env'
 import { Loading, MaterialSelect } from './common'
 import { createExperimentSchema } from '../schemas/forms'
 import { useFormErrors } from '../hooks/useFormErrors'
@@ -45,8 +45,9 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             onClose()
             navigate(`/experiments/${experiment.id}`)
         },
-        onError: (err: any) => {
-            setError(err?.response?.data?.error || 'Ошибка создания эксперимента')
+        notifyOnError: false,
+        onError: (err: unknown) => {
+            setError(getApiErrorMessage(err, 'Ошибка создания эксперимента', { serverOnly: true }))
         },
     })
 
@@ -116,7 +117,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             disabled={createMutation.isPending}
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error">{error}</div>}
 
                 <div className="form-group">
                     <label htmlFor="experiment_project">

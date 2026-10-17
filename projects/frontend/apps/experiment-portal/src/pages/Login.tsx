@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import { UserIcon, LockIcon } from '../components/common'
 import './Login.scss'
 
@@ -28,13 +28,8 @@ function Login() {
         navigate('/experiments')
       }
     },
-    onError: (err: any) => {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Ошибка входа. Проверьте имя пользователя и пароль.'
-      setError(msg)
-      notifyError(msg)
+    onError: (err: unknown) => {
+      setError(getApiErrorMessage(err, 'Ошибка входа. Проверьте имя пользователя и пароль.'))
     },
   })
 
@@ -45,14 +40,12 @@ function Login() {
     if (!formData.username.trim()) {
       const msg = 'Введите имя пользователя'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (!formData.password) {
       const msg = 'Введите пароль'
       setError(msg)
-      notifyError(msg)
       return
     }
 
@@ -98,7 +91,7 @@ function Login() {
             </p>
           </div>
 
-          {IS_TEST && error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="login-form auth-form">
             <div className="form-group">

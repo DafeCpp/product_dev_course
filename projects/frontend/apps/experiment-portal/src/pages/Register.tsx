@@ -3,8 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { RegisterRequest } from '../types'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import './Register.scss'
 
 function Register() {
@@ -27,13 +27,8 @@ function Register() {
       notifySuccess('Регистрация успешна. Войдите в систему.')
       navigate('/login')
     },
-    onError: (err: any) => {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Ошибка регистрации. Проверьте введенные данные.'
-      setError(msg)
-      notifyError(msg)
+    onError: (err: unknown) => {
+      setError(getApiErrorMessage(err, 'Ошибка регистрации. Проверьте введенные данные.'))
     },
   })
 
@@ -47,56 +42,48 @@ function Register() {
     if (!username) {
       const msg = 'Введите имя пользователя'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (username.length < 3) {
       const msg = 'Имя пользователя должно быть не короче 3 символов'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (!email) {
       const msg = 'Введите email'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (!/^\S+@\S+\.\S+$/.test(email)) {
       const msg = 'Введите корректный email'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (!formData.password) {
       const msg = 'Введите пароль'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (formData.password.length < 8) {
       const msg = 'Пароль должен быть не короче 8 символов'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (!formData.confirmPassword) {
       const msg = 'Повторите пароль'
       setError(msg)
-      notifyError(msg)
       return
     }
 
     if (formData.password !== formData.confirmPassword) {
       const msg = 'Пароли не совпадают'
       setError(msg)
-      notifyError(msg)
       return
     }
 
@@ -154,7 +141,7 @@ function Register() {
             </div>
           )}
 
-          {IS_TEST && error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="register-form auth-form">
             <div className="form-group">

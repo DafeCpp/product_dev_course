@@ -5,8 +5,7 @@ import { HttpError } from '@lostpointer/web-http'
 import { projectsApi } from '../api/client'
 import type { ProjectCreate } from '../types'
 import { Error, FormGroup, FormActions } from '../components/common'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
 import './CreateProject.scss'
 
 function CreateProject() {
@@ -28,7 +27,6 @@ function CreateProject() {
             // Projects uses the shared transport: server text arrives as HttpError.message.
             const msg = err instanceof HttpError && err.kind === 'api' ? err.message : 'Ошибка создания проекта'
             setError(msg)
-            notifyError(msg)
         },
     })
 
@@ -39,7 +37,6 @@ function CreateProject() {
         if (!formData.name.trim()) {
             const msg = 'Название проекта обязательно'
             setError(msg)
-            notifyError(msg)
             return
         }
 
@@ -53,7 +50,7 @@ function CreateProject() {
         <div className="create-project">
             <h2>Создать проект</h2>
 
-            {IS_TEST && error && <Error message={error} />}
+            {error && <Error message={error} />}
 
             <form onSubmit={handleSubmit} className="project-form card">
                 <FormGroup label="Название" required>

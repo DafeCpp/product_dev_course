@@ -7,8 +7,7 @@ import { permissionsApi } from '../api/permissions'
 import type { ProjectMemberAdd, ProjectMemberUpdate, UserSearchResult } from '../types'
 import Modal from './Modal'
 import { Loading, Error } from './common'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import MembersTable from './project-members/MembersTable'
 import AddMemberForm from './project-members/AddMemberForm'
 import MemberRolesModal from './project-members/MemberRolesModal'
@@ -129,7 +128,8 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Участник добавлен',
         errorFallback: 'Ошибка добавления участника',
         onSuccess: () => { setSelectedUser(null); setUserSearchInput(''); setDebouncedQuery(''); setNewMemberRoleId(''); setError(null) },
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка добавления участника'),
+        notifyOnError: false,
+        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка добавления участника')),
     })
 
     // Мутация для удаления участника
@@ -139,7 +139,8 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Участник удалён',
         errorFallback: 'Ошибка удаления участника',
         onSuccess: () => setError(null),
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка удаления участника'),
+        notifyOnError: false,
+        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка удаления участника')),
     })
 
     // Мутация для изменения роли участника (legacy)
@@ -149,7 +150,8 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Роль обновлена',
         errorFallback: 'Ошибка изменения роли',
         onSuccess: () => setError(null),
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка изменения роли'),
+        notifyOnError: false,
+        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка изменения роли')),
     })
 
     const handleAddMember = (e: React.FormEvent) => {
@@ -159,7 +161,6 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         if (!selectedUser) {
             const msg = 'Выберите пользователя из списка'
             setError(msg)
-            notifyError(msg)
             return
         }
 
@@ -216,10 +217,10 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
                 className="project-members-modal"
             >
                 <div className="modal-form">
-                    {IS_TEST && error && <div className="error">{error}</div>}
+                    {error && <div className="error">{error}</div>}
 
                     {isLoading && <Loading />}
-                    {IS_TEST && isError && (
+                    {isError && (
                         <Error
                             message={
                                 membersError instanceof Error

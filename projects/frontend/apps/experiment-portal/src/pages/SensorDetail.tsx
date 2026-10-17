@@ -12,7 +12,6 @@ import {
     StatusBadge,
     Loading,
     Error,
-    EmptyState,
     InfoRow,
     sensorStatusMap,
 } from '../components/common'
@@ -21,7 +20,6 @@ import SensorConversionProfiles from './sensor-detail/SensorConversionProfiles'
 import SensorErrorLog from './sensor-detail/SensorErrorLog'
 import SensorBackfillSection from './sensor-detail/SensorBackfillSection'
 import './SensorDetail.scss'
-import { IS_TEST } from '../utils/env'
 import { notifyError, notifySuccessSticky } from '../utils/notify'
 
 function SensorDetail() {
@@ -163,7 +161,7 @@ function SensorDetail() {
     }
 
     if (error || !sensor) {
-        return IS_TEST ? <Error message="Датчик не найден" /> : <EmptyState message="Датчик не найден" />
+        return <Error message="Датчик не найден" />
     }
 
     return (

@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { telemetryApi } from '../api/client'
 import type { TelemetryIngest } from '../types'
 import Modal from './Modal'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import { useApiMutation } from '../hooks/useApiMutation'
 import './TestTelemetryModal.scss'
 
@@ -35,8 +34,9 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             setError(null)
             setTimeout(() => { setMetaJson('{}'); setReadingsJson(''); setSuccess(null) }, 2000)
         },
-        onError: (err: any) => {
-            setError(err?.response?.data?.error || err?.message || 'Ошибка отправки телеметрии')
+        notifyOnError: false,
+        onError: (err: unknown) => {
+            setError(getApiErrorMessage(err, 'Ошибка отправки телеметрии'))
             setSuccess(null)
         },
     })
@@ -49,7 +49,6 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
         if (!token.trim()) {
             const msg = 'Токен датчика обязателен'
             setError(msg)
-            notifyError(msg)
             return
         }
 
@@ -61,7 +60,6 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             } catch (err) {
                 const msg = 'Ошибка в формате JSON для meta'
                 setError(msg)
-                notifyError(msg)
                 return
             }
         }
@@ -74,7 +72,6 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
                 if (!Array.isArray(readings)) {
                     const msg = 'readings должен быть массивом'
                     setError(msg)
-                    notifyError(msg)
                     return
                 }
                 // Валидация readings
@@ -82,14 +79,12 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
                     if (!reading.timestamp || typeof reading.raw_value !== 'number') {
                         const msg = 'Каждый reading должен содержать timestamp и raw_value'
                         setError(msg)
-                        notifyError(msg)
                         return
                     }
                 }
             } catch (err) {
                 const msg = 'Ошибка в формате JSON для readings'
                 setError(msg)
-                notifyError(msg)
                 return
             }
         } else {
@@ -166,7 +161,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             className="telemetry-modal"
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error">{error}</div>}
                 {success && <div className="success">{success}</div>}
 
                 <div className="form-group">

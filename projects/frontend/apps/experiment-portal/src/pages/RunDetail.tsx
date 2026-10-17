@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage } from '../utils/apiError'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
@@ -23,7 +24,6 @@ import RunOverviewGrid from './run-detail/RunOverviewGrid'
 import RunCaptureSessions from './run-detail/RunCaptureSessions'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
-import { IS_TEST } from '../utils/env'
 import { useCountdown } from '../hooks/useCountdown'
 
 function RunDetail() {
@@ -90,7 +90,8 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось завершить run'),
+    notifyOnError: false,
+    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось завершить run')),
   })
 
   const startRunMutation = useApiMutation({
@@ -101,7 +102,8 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить run'),
+    notifyOnError: false,
+    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить run')),
   })
 
   const failMutation = useApiMutation<unknown, string | undefined>({
@@ -109,7 +111,8 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось пометить run как failed'),
+    notifyOnError: false,
+    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось пометить run как failed')),
   })
 
   // Создание capture session
@@ -129,7 +132,8 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт запущен',
     errorFallback: 'Не удалось запустить отсчёт',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить отсчёт'),
+    notifyOnError: false,
+    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить отсчёт')),
   })
 
   // Остановка capture session
@@ -139,7 +143,8 @@ function RunDetail() {
     successMessage: 'Отсчёт остановлен',
     errorFallback: 'Не удалось остановить отсчёт',
     onSuccess: () => setOptimisticActiveSessionId(null),
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось остановить отсчёт'),
+    notifyOnError: false,
+    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось остановить отсчёт')),
   })
 
   // Удаление capture session
@@ -148,7 +153,8 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось удалить сессию'),
+    notifyOnError: false,
+    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось удалить сессию')),
   })
 
   const countdownDeadline = useMemo(() => {
@@ -204,7 +210,7 @@ function RunDetail() {
   }
 
   if (error || !run) {
-    return IS_TEST ? <ErrorComponent message="Запуск не найден" /> : <EmptyState message="Запуск не найден" />
+    return <ErrorComponent message="Запуск не найден" />
   }
 
   // UI note:

@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 import Modal from './Modal'
 import { MaterialSelect } from './common'
 import { runsApi } from '../api/client'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import { useApiMutation } from '../hooks/useApiMutation'
 
 type BulkMode = 'add' | 'remove' | 'set'
@@ -44,7 +43,8 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         successMessage: 'Теги обновлены',
         errorFallback: 'Ошибка bulk tagging',
         onSuccess: () => { onClose(); setTagsText(''); setMode('add'); setError(null) },
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка bulk tagging'),
+        notifyOnError: false,
+        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка bulk tagging')),
     })
 
     const disabled = mutation.isPending || runIds.length === 0
@@ -55,7 +55,6 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         if (mode !== 'set' && tags.length === 0) {
             const msg = 'Укажи хотя бы один тег (через запятую)'
             setError(msg)
-            notifyError(msg)
             return
         }
         mutation.mutate()
@@ -64,7 +63,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Bulk tagging" disabled={mutation.isPending}>
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error">{error}</div>}
 
                 <div className="form-group">
                     <label>Выбрано запусков</label>

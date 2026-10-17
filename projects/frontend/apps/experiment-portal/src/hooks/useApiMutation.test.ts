@@ -121,6 +121,21 @@ describe('useApiMutation — error path', () => {
     expect(notifyError).toHaveBeenCalledWith('Network error')
   })
 
+  it('skips the error toast when notifyOnError is false', async () => {
+    const onError = vi.fn()
+    const mutationFn = vi.fn().mockRejectedValue(new Error('boom'))
+    const { result } = renderHook(
+      () => useApiMutation({ mutationFn, notifyOnError: false, onError }),
+      { wrapper: createWrapper() },
+    )
+
+    await act(async () => result.current.mutate(undefined as void))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(notifyError).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalled()
+  })
+
   it('uses errorFallback when error has no message', async () => {
     const mutationFn = vi.fn().mockRejectedValue({})
     const { result } = renderHook(
