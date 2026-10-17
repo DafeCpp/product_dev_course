@@ -25,8 +25,8 @@
 │  Core 1: Control Loop (IMU + фильтрация + PID + PWM)│
 │                                                      │
 │  SPI2 ──► MPU-6500 (IMU) + MMC5983MA (MAG)           │
-│  MCPWM0 ──► ESC (Throttle)                           │
-│  MCPWM0 ──► Servo (Steering)                         │
+│  LEDC ──► ESC (Throttle)                             │
+│  LEDC ──► Servo (Steering)                           │
 │  GPIO ──► RC Receiver CH1 (Throttle)                 │
 │  GPIO ──► RC Receiver CH2 (Steering)                 │
 └──────────────────────────────────────────────────────┘
@@ -85,9 +85,9 @@
 
 > **Calibration (оба варианта):** hard-iron offset сохраняется в NVS. WS-команда `calibrate_mag`.
 
-**MCPWM выходы (50 Hz, 1-2 мс):**
-- `GPIO14 (MCPWM0)` → Signal вход ESC (Throttle)
-- `GPIO21 (MCPWM0)` → Signal вход Servo (Steering)
+**PWM выходы (LEDC) (50 Hz, 1-2 мс):**
+- `GPIO14 (LEDC)` → Signal вход ESC (Throttle)
+- `GPIO21 (LEDC)` → Signal вход Servo (Steering)
 - `GND` → общая земля с ESC/Servo
 
 **RC-in входы (чтение PWM с приёмника):**
@@ -114,8 +114,8 @@
 | MMC5983MA (SPI)   | SDA       | **SDA**            | GPIO11        | SPI2 MOSI (если SPI)   |
 | MMC5983MA (SPI)   | SDO       | **SDO**            | GPIO13        | SPI2 MISO (если SPI)   |
 | MMC5983MA (SPI)   | VCC       | **VCC**            | 3V3           | Питание (если SPI)     |
-| ESC               | Signal    |                    | GPIO14        | MCPWM0, 50Hz           |
-| Servo             | Signal    |                    | GPIO21        | MCPWM0, 50Hz           |
+| ESC               | Signal    |                    | GPIO14        | LEDC, 50Hz             |
+| Servo             | Signal    |                    | GPIO21        | LEDC, 50Hz             |
 | RC RX             | CH1       |                    | GPIO16        | Через делитель если 5V |
 | RC RX             | CH2       |                    | GPIO17        | Через делитель если 5V |
 | Все               | GND       | **GND**            | Общая земля   | ⚠️ Важно!              |
@@ -231,8 +231,8 @@ idf.py set-target esp32s3   # или esp32c6
 | SPI SCK       | GPIO6    | GPIO12   | Только pin config        |
 | SPI MOSI      | GPIO7    | GPIO11   | Только pin config        |
 | SPI MISO      | GPIO2    | GPIO13   | Только pin config        |
-| MCPWM ESC     | GPIO3    | GPIO14   | Только pin config        |
-| MCPWM Servo   | GPIO4    | GPIO21   | Только pin config        |
+| PWM ESC       | GPIO3    | GPIO14   | Только pin config        |
+| PWM Servo     | GPIO4    | GPIO21   | Только pin config        |
 | RC-in CH1     | GPIO5    | GPIO16   | Только pin config        |
 | RC-in CH2     | GPIO11   | GPIO17   | Только pin config        |
 | Core pinning  | —        | Core 1   | `xTaskCreatePinnedToCore` |
