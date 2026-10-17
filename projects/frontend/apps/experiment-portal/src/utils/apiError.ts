@@ -15,13 +15,19 @@ function cleanMessage(value: unknown): string | null {
     return chars.length > MAX_MESSAGE_LENGTH ? `${chars.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…` : text
 }
 
+/** An Error whose message is already safe to show the user (e.g. built from a sanitized response body). */
+export class UserFacingError extends Error {
+    override name = 'UserFacingError'
+}
+
 /**
  * User-facing message for a failed API call: `response.data.error`,
  * then `response.data.message`, then `fallback`.
  * Only non-empty strings are accepted; anything else falls through.
  * A shared-transport `HttpError` carries server text in `message` only
- * when `kind === 'api'`; other kinds (network, timeout) use the fallback.
- * `includeClientMessage` also accepts `error.message` of a plain Error;
+ * when `kind === 'api'` and the body had one (not the synthetic `HTTP 500`);
+ * other kinds (network, timeout) use the fallback. A `UserFacingError`
+ * always shows its message. `includeClientMessage` also accepts `error.message` of a plain Error;
  * off by default so client-side exceptions never reach the user. Axios'
  * own message ("Request failed with status code 500") is always skipped.
  */
@@ -30,8 +36,12 @@ export function getApiErrorMessage(
     fallback: string,
     { includeClientMessage = false }: { includeClientMessage?: boolean } = {},
 ): string {
+    if (error instanceof UserFacingError) {
+        return cleanMessage(error.message) ?? fallback
+    }
     if (error instanceof HttpError) {
-        return (error.kind === 'api' ? cleanMessage(error.message) : null) ?? fallback
+        const synthetic = error.message === `HTTP ${error.status}`
+        return (error.kind === 'api' && !synthetic ? cleanMessage(error.message) : null) ?? fallback
     }
     if (error && typeof error === 'object') {
         const e = error as {

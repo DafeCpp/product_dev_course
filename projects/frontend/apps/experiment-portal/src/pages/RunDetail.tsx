@@ -91,7 +91,6 @@ function RunDetail() {
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
     onSuccess: () => setActionError(null),
-    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось завершить run')),
   })
 
@@ -103,7 +102,6 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
-    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить run')),
   })
 
@@ -113,7 +111,6 @@ function RunDetail() {
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
     onSuccess: () => setActionError(null),
-    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось пометить run как failed')),
   })
 
@@ -135,7 +132,6 @@ function RunDetail() {
     successMessage: 'Отсчёт запущен',
     errorFallback: 'Не удалось запустить отсчёт',
     onSuccess: () => setActionError(null),
-    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить отсчёт')),
   })
 
@@ -149,7 +145,6 @@ function RunDetail() {
       setOptimisticActiveSessionId(null)
       setActionError(null)
     },
-    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось остановить отсчёт')),
   })
 
@@ -160,7 +155,6 @@ function RunDetail() {
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
     onSuccess: () => setActionError(null),
-    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось удалить сессию')),
   })
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import './Login.scss'
+import { getApiErrorMessage } from '../utils/apiError'
 
 function ForgotPassword() {
   const [email, setEmail] = useState('')
@@ -22,12 +23,8 @@ function ForgotPassword() {
     try {
       await authApi.requestPasswordReset(email.trim())
       setSubmitted(true)
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Не удалось отправить запрос. Попробуйте позже.'
-      setError(msg)
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Не удалось отправить запрос. Попробуйте позже.'))
     } finally {
       setIsPending(false)
     }

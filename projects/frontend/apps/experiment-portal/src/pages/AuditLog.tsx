@@ -7,7 +7,7 @@ import type { AuditEntry } from '../types/permissions'
 import { usePermissions } from '../hooks/usePermissions'
 import { Loading, Error as ErrorComponent, EmptyState, Pagination, MaterialSelect, ListSearchIcon, UserIcon, GridIcon } from '../components/common'
 import Modal from '../components/Modal'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import './AuditLog.scss'
 
 const LIMIT = 50
@@ -38,17 +38,7 @@ function AuditLog() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['audit-log', filters, offset],
     queryFn: async () => {
-      try {
-        return await auditApi.queryAuditLog({ ...filters, limit: LIMIT, offset })
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          'Ошибка загрузки аудит-лога'
-        notifyError(msg)
-        throw err
-      }
+      return await auditApi.queryAuditLog({ ...filters, limit: LIMIT, offset })
     },
     staleTime: 10_000,
     refetchOnWindowFocus: false,
@@ -157,7 +147,7 @@ function AuditLog() {
       {isLoading && <Loading message="Загрузка аудит-лога..." />}
       {error && (
         <ErrorComponent
-          message={error instanceof Error ? error.message : 'Ошибка загрузки аудит-лога'}
+          message={getApiErrorMessage(error, 'Ошибка загрузки аудит-лога')}
         />
       )}
 

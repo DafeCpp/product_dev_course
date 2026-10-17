@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { HttpError } from '@lostpointer/web-http'
-import { getApiErrorMessage, getResponseBodyMessage } from './apiError'
+import { UserFacingError, getApiErrorMessage, getResponseBodyMessage } from './apiError'
 
 describe('getApiErrorMessage', () => {
     it('prefers response.data.error, then response.data.message', () => {
@@ -43,6 +43,14 @@ describe('getApiErrorMessage', () => {
         const msg = getApiErrorMessage({ response: { data: { error: 'x'.repeat(1000) } } }, 'fb')
         expect(msg.length).toBe(300)
         expect(msg.endsWith('…')).toBe(true)
+    })
+
+    it('falls back on the synthetic HTTP <status> message of an HttpError', () => {
+        expect(getApiErrorMessage(new HttpError('api', 500, 'http_error', 'HTTP 500'), 'fb')).toBe('fb')
+    })
+
+    it('always shows a UserFacingError message', () => {
+        expect(getApiErrorMessage(new UserFacingError('Ошибка стрима: HTTP 404'), 'fb')).toBe('Ошибка стрима: HTTP 404')
     })
 
     it('uses HttpError text only for api errors', () => {
