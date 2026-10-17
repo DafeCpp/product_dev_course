@@ -69,8 +69,8 @@ def test_receiver_dropout_reported_with_cause_and_duration():
     held = rows[(2000 + 150) // DT_MS]
     assert held["failsafe"] == 0.0
     assert held["throttle"] == pytest.approx(rows[2000 // DT_MS - 1]["throttle"])
-    # Во время пропадания — failsafe: таймаут декодера 100 мс, опрос RC 20 мс
-    # и grace-период Failsafe 130 мс, итого ≤250 мс (LOS-368).
+    # Во время пропадания — failsafe: таймаут декодера 90 мс, опрос RC 20 мс
+    # и grace-период Failsafe 120 мс, итого ≤250 мс (LOS-368).
     dropout = rows[(2000 + 270) // DT_MS:(2000 + 600) // DT_MS]
     assert all(r["failsafe"] == 1.0 for r in dropout)
     assert all(r["throttle"] == 0.0 for r in dropout)
@@ -85,7 +85,7 @@ def test_receiver_dropout_reported_with_cause_and_duration():
     assert "thr: no pulses" in rc[1] and "str: no pulses" in rc[1]
     m = re.search(r"RC restored after (\d+) ms", rc[2])
     assert m, rc[2]
-    # Потеря фиксируется через 100 мс после последнего импульса, возврат —
+    # Потеря фиксируется через 90 мс после последнего импульса, возврат —
     # с первым импульсом и опросом RC (20 мс).
     assert 440 <= int(m.group(1)) <= 560
 
