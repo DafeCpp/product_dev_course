@@ -25,6 +25,13 @@
 //       [--test-duration s] [--test-steering v] — запустить авто-манёвр
 //       (аналог start_test по WebSocket) до первого кадра; машина едет сама,
 //       RC-команды в сценарии не нужны.
+//   --pitch-comp — включить pitch_comp.enabled (LOS-367, компенсация тангажа
+//       на уклоне; требует --stabilize-эквивалентного enabled, выставляется
+//       автоматически).
+//   --slip-target-deg <deg> — целевой угол скольжения Drift-режима
+//       (slip_angle.target_deg), LOS-367.
+//   --kids-preset <toddler|child|preteen> — возрастной пресет Kids Mode
+//       (KidsModeConfig::ApplyPreset), LOS-367.
 //   --log — печатать Log() прошивки (в т.ч. события RC-связи LOS-216) в
 //       stderr с логическим временем.
 //
@@ -86,6 +93,13 @@ rc_vehicle::DriveMode ParseDriveMode(std::string_view s) {
   return rc_vehicle::DriveMode::Normal;
 }
 
+rc_vehicle::KidsPreset ParseKidsPreset(std::string_view s) {
+  if (s == "toddler") return rc_vehicle::KidsPreset::Toddler;
+  if (s == "child") return rc_vehicle::KidsPreset::Child;
+  if (s == "preteen") return rc_vehicle::KidsPreset::Preteen;
+  return rc_vehicle::KidsPreset::Custom;
+}
+
 int main(int argc, char** argv) {
   bool batch = false;
   bool identity_calib = false;
@@ -101,6 +115,9 @@ int main(int argc, char** argv) {
   float oversteer_throttle_reduction = 0.7f;
   bool start_test = false;
   bool log_to_stderr = false;
+  bool pitch_comp = false;
+  std::optional<float> slip_target_deg;
+  rc_vehicle::KidsPreset kids_preset = rc_vehicle::KidsPreset::Custom;
   rc_vehicle::TestParams test_params;
   for (int i = 1; i < argc; ++i) {
     const std::string_view a = argv[i];
@@ -153,6 +170,12 @@ int main(int argc, char** argv) {
       test_params.duration_sec = std::strtof(argv[++i], nullptr);
     else if (a == "--test-steering" && i + 1 < argc)
       test_params.steering = std::strtof(argv[++i], nullptr);
+    else if (a == "--pitch-comp")
+      pitch_comp = true;
+    else if (a == "--slip-target-deg" && i + 1 < argc)
+      slip_target_deg = std::strtof(argv[++i], nullptr);
+    else if (a == "--kids-preset" && i + 1 < argc)
+      kids_preset = ParseKidsPreset(argv[++i]);
   }
 
   auto platform = std::make_unique<StdioPlatform>();
@@ -167,6 +190,9 @@ int main(int argc, char** argv) {
   p->SetSpeedLimit(speed_limit);
   p->SetStabilize(stabilize);
   p->SetKidsAccelLimit(kids_accel_limit);
+  p->SetPitchComp(pitch_comp);
+  if (slip_target_deg) p->SetSlipTargetDeg(*slip_target_deg);
+  p->SetKidsPreset(kids_preset);
   if (oversteer) {
     rc_vehicle::OversteerConfig cfg;
     cfg.warn_enabled = true;

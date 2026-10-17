@@ -191,31 +191,55 @@ def synth_mag(psi_rad: float, p: SimParams,
     return float(meas[0]), float(meas[1]), float(meas[2])
 
 
+def _combine_attitude(
+        static_rad: tuple[float, float] | None,
+        dyn_rad: tuple[float, float] | None) -> tuple[float, float] | None:
+    """Сумма постоянного наклона (уклон, LOS-367) и дорожного возбуждения.
+
+    Малоугловое приближение: оба вклада малы (десятки градусов max), поэтому
+    покомпонентное сложение (roll, pitch) достаточно точно и избегает
+    композиции полных матриц поворота на каждом кадре.
+    """
+    if static_rad is None:
+        return dyn_rad
+    if dyn_rad is None:
+        return static_rad
+    return (static_rad[0] + dyn_rad[0], static_rad[1] + dyn_rad[1])
+
+
 def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
                rc_throttle: float | None = None,
                rc_steering: float | None = None,
                with_mag: bool = True,
                wifi_keepalive: bool = False,
-               road_noise: RoadNoiseModel | None = None) -> SensorFrame:
+               road_noise: RoadNoiseModel | None = None,
+               static_attitude_rad: tuple[float, float] | None = None
+               ) -> SensorFrame:
     """Собрать SensorFrame из выхода модели (для подачи в sim_host, FW-S2.5).
 
     wifi_keepalive=True — нулевая WiFi-команда каждый кадр. Нужна авто-режимам
     (start_test и калибровки): они требуют неактивного пульта, но без единого
     источника команд сработал бы failsafe и PWM не выдавался бы вовсе.
+
+    static_attitude_rad (roll, pitch) — постоянный наклон корпуса относительно
+    level ground (например, уклон дороги, LOS-367). Складывается с дорожным
+    возбуждением перед проекцией в синтез сенсоров — так гравитация,
+    спроецированная на оси корпуса, учитывает и уклон, и тряску.
     """
     excitation = road_noise.sample(out.speed, dt_ms) if road_noise else None
+    attitude_rad = _combine_attitude(
+        static_attitude_rad, excitation.attitude_rad if excitation else None)
     ax, ay, az = synth_accel(
         out.long_accel, out.lat_accel, p,
         excitation.accel_g if excitation else None,
-        excitation.attitude_rad if excitation else None)
+        attitude_rad)
     gx, gy, gz = synth_gyro(
         out.yaw_rate, p, excitation.gyro_dps if excitation else None,
-        excitation.attitude_rad if excitation else None)
+        attitude_rad)
     f = SensorFrame(dt_ms=dt_ms, ax=ax, ay=ay, az=az, gx=gx, gy=gy, gz=gz)
     if with_mag:
         f.mag_present = True
-        f.mx, f.my, f.mz = synth_mag(
-            psi_rad, p, excitation.attitude_rad if excitation else None)
+        f.mx, f.my, f.mz = synth_mag(psi_rad, p, attitude_rad)
     if rc_throttle is not None or rc_steering is not None:
         f.rc_present = True
         f.rc_throttle = rc_throttle or 0.0

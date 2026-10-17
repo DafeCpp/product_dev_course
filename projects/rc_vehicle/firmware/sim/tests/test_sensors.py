@@ -134,3 +134,28 @@ def test_make_frame_without_noise_remains_clean():
     frame = make_frame(out, 0.0, SimParams())
     assert (frame.ax, frame.ay, frame.az) == (0.0, 0.0, 1.0)
     assert (frame.gx, frame.gy, frame.gz) == (0.0, 0.0, 0.0)
+
+
+def test_static_slope_leaks_gravity_into_ax():
+    """static_attitude_rad (LOS-367, уклон) наклоняет gravity-вектор так же,
+    как и imu_pitch_deg (аналог test_pitch_mount_leaks_gravity_into_ax)."""
+    out = StepOutput(long_accel=0.0, lat_accel=0.0, yaw_rate=0.0, speed=0.0,
+                     delta_rad=0.0)
+    frame = make_frame(out, psi_rad=0.0, p=SimParams(), with_mag=False,
+                       static_attitude_rad=(0.0, math.radians(10.0)))
+    assert frame.ax < 0.0
+    assert math.isclose(frame.ax, -math.sin(math.radians(10.0)), abs_tol=1e-6)
+    assert frame.az < 1.0
+
+
+def test_static_slope_combines_with_road_noise_attitude():
+    """Уклон и дорожная тряска складываются, а не перезаписывают друг друга."""
+    out = StepOutput(0.0, 0.0, 0.0, 2.0, 0.0)
+    noise = RoadNoiseModel(SimParams(), seed=3)
+    with_slope = make_frame(out, 0.0, SimParams(), with_mag=False,
+                            road_noise=noise,
+                            static_attitude_rad=(0.0, math.radians(5.0)))
+    noise_only = RoadNoiseModel(SimParams(), seed=3)
+    without_slope = make_frame(out, 0.0, SimParams(), with_mag=False,
+                               road_noise=noise_only)
+    assert with_slope.ax != without_slope.ax

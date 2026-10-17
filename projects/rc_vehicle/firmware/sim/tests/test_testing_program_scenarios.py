@@ -1,11 +1,11 @@
-"""LOS-362: SIL-сценарии с критериями из TESTING_PROGRAM.md.
+"""LOS-362/LOS-367: SIL-сценарии с критериями из TESTING_PROGRAM.md.
 
 Те же критерии PASS, что проверяются на машине, но в SIL: это регрессия и
-эталон для сравнения с будущими заездами. Не покрыто (нет поддержки в модели
-или sim_host): склон/pitch compensation, удержание угла заноса в Drift,
-anti-spin, пресеты Kids; см. LOS-362. Критерии,
-которые в SIL не выполняются, помечены strict xfail: исправление сразу
-покажет XPASS.
+эталон для сравнения с будущими заездами. Склон/pitch compensation, уставка
+угла заноса в Drift и пресеты Kids поддержаны через ClosedLoopSim/sim_host
+(LOS-367). Не покрыто (нет wheel-level slip-модели): Kids anti-spin — см.
+LOS-367. Критерии, которые в SIL не выполняются, помечены strict xfail:
+исправление сразу покажет XPASS.
 """
 
 import math
@@ -228,3 +228,49 @@ def test_kids_accel_limiter_smooths_launch():
     kids_peak = max(r["forward_accel"] for r in rows)
     ref_peak = max(r["forward_accel"] for r in ref)
     assert kids_peak < ref_peak - 0.012
+
+
+def test_pitch_comp_reduces_throttle_on_slope():
+    """LOS-367: pitch compensation на уклоне заметно меняет командуемый газ
+    относительно того же манёвра без компенсации."""
+
+    def climb(pitch_comp: bool):
+        with ClosedLoopSim(BIN, dynamic=True, sensor_noise=False,
+                           pitch_comp=pitch_comp, slope_deg=15.0) as sim:
+            sim.run(1000, rc_throttle=0.0, rc_steering=0.0)  # калибровка в покое
+            return sim.run(500, rc_throttle=0.4, rc_steering=0.0)
+
+    with_comp = climb(True)
+    without_comp = climb(False)
+    # Склон 15° реально воспринят Madgwick (не нулевой шум).
+    assert abs(with_comp[-1]["pitch_deg"]) > 1.0
+    assert abs(_mean_tail([r["cmd_throttle"] for r in with_comp], n=50)
+              - _mean_tail([r["cmd_throttle"] for r in without_comp], n=50)) > 0.05
+
+
+def test_drift_slip_target_shifts_throttle_correction():
+    """LOS-367: уставка угла заноса (Drift) двигает коррекцию газа в сторону,
+    задаваемую знаком target_deg (SlipAngleController работает по throttle)."""
+
+    def drift(target_deg: float):
+        with ClosedLoopSim(BIN, stabilize=True, drive_mode="drift",
+                           dynamic=True, sensor_noise=False,
+                           slip_target_deg=target_deg) as sim:
+            sim.run(1500, rc_throttle=0.5, rc_steering=0.0)
+            return sim.run(300, rc_throttle=0.5, rc_steering=0.3)
+
+    positive = drift(20.0)
+    negative = drift(-20.0)
+    assert (_mean_tail([r["cmd_throttle"] for r in positive], n=50)
+           > _mean_tail([r["cmd_throttle"] for r in negative], n=50))
+
+
+@pytest.mark.parametrize("preset,expected_limit", [
+    ("toddler", 0.15), ("child", 0.30), ("preteen", 0.50)])
+def test_kids_preset_sets_throttle_limit_telemetry(preset, expected_limit):
+    """LOS-367: --kids-preset прокидывает KidsModeConfig::ApplyPreset() через
+    sim_host независимо от drive_mode (как в WS API, LOS-162)."""
+    with ClosedLoopSim(BIN, kids_preset=preset, sensor_noise=False) as sim:
+        rows = sim.run(10, rc_throttle=0.0, rc_steering=0.0)
+    assert rows[-1]["kids_throttle_limit"] == pytest.approx(expected_limit,
+                                                            abs=1e-3)

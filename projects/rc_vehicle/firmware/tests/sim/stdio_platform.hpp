@@ -92,6 +92,13 @@ class StdioPlatform : public VehicleControlPlatform {
   void SetOversteerConfig(std::optional<OversteerConfig> cfg) {
     oversteer_config_ = cfg;
   }
+  /** Включить компенсацию тангажа (pitch_comp.enabled), LOS-367. */
+  void SetPitchComp(bool on) { pitch_comp_enabled_ = on; }
+  /** Целевой угол скольжения Drift-режима [deg] (slip_angle.target_deg),
+   *  LOS-367. */
+  void SetSlipTargetDeg(float deg) { slip_target_deg_ = deg; }
+  /** Возрастной пресет Kids Mode (ApplyPreset), LOS-367. */
+  void SetKidsPreset(KidsPreset preset) { kids_preset_ = preset; }
 
   // ── Выход: читается циклом после HostStep ────────────────────────────────
   [[nodiscard]] float GetLastThrottle() const { return last_throttle_; }
@@ -258,20 +265,25 @@ class StdioPlatform : public VehicleControlPlatform {
   // скорости (Kids) + опц. enabled (--stabilize).
   std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
     if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_ &&
-        !oversteer_config_) {
+        !oversteer_config_ && !pitch_comp_enabled_ && !slip_target_deg_ &&
+        kids_preset_ == KidsPreset::Custom) {
       return std::nullopt;
     }
     StabilizationConfig cfg{};
     cfg.mode = mode;
     cfg.ApplyModeDefaults();  // тюнинг выбранного режима (gains/slew/лимиты)
     if (oversteer_config_) cfg.oversteer = *oversteer_config_;
+    if (kids_preset_ != KidsPreset::Custom)
+      cfg.kids_mode.ApplyPreset(kids_preset_);
     if (speed_limit_ms_ > 0.0f) {
       cfg.kids_mode.speed_limit_enabled = true;
       cfg.kids_mode.max_speed_ms = speed_limit_ms_;
     }
-    if (stabilize_) {
+    if (stabilize_ || pitch_comp_enabled_ || slip_target_deg_) {
       cfg.enabled = true;  // иначе stab_weight=0 → контроллеры не работают
     }
+    if (pitch_comp_enabled_) cfg.pitch_comp.enabled = true;
+    if (slip_target_deg_) cfg.slip_angle.target_deg = *slip_target_deg_;
     if (!kids_accel_limit_) cfg.kids_mode.accel_limit_enabled = false;
     return cfg;
   }
@@ -320,6 +332,9 @@ class StdioPlatform : public VehicleControlPlatform {
   bool stabilize_{false};
   bool kids_accel_limit_{true};
   std::optional<OversteerConfig> oversteer_config_;
+  bool pitch_comp_enabled_{false};
+  std::optional<float> slip_target_deg_;
+  KidsPreset kids_preset_{KidsPreset::Custom};
 
   float last_throttle_{0.0f};
   float last_steering_{0.0f};
