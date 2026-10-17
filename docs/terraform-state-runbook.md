@@ -65,6 +65,18 @@ terraform plan                        # должен показать No changes
 1. Убедитесь, что объект `terraform.tfstate` есть в бакете: `yc storage s3api list-objects --bucket experiment-tracking-tf-state`.
 2. Локальные `terraform.tfstate` и `terraform.tfstate.backup` перенесите во временное безопасное место, через неделю без проблем удалите.
 
+## 2.1. Развёртывание с нуля (локального state нет)
+
+Если инфраструктура пересоздаётся и мигрировать нечего, шаг 2 пропускается: применяете `bootstrap/` (шаг 1, включая таблицу блокировок), настраиваете `backend.hcl` и ключи и сразу запускаете основной модуль:
+
+```bash
+cd infrastructure/yandex-cloud
+terraform init -backend-config=backend.hcl
+terraform apply
+```
+
+State с первого `apply` пишется в бакет. Бакет и сервисный аккаунт state живут отдельно от основной инфраструктуры, поэтому пересоздание основного модуля их не затрагивает.
+
 ## 3. Ежедневная работа
 
 ```bash
