@@ -82,16 +82,18 @@ export function getApiErrorMessage(
  * body without such a string never shows raw JSON.
  */
 export function getResponseBodyMessage(body: string, fallback: string): string {
+    let parsed: unknown
     try {
-        const parsed: unknown = JSON.parse(body)
-        if (parsed && typeof parsed === 'object') {
-            const p = parsed as { error?: unknown; message?: unknown }
-            return cleanMessage(p.message) ?? cleanMessage(p.error) ?? fallback
-        }
+        parsed = JSON.parse(body)
     } catch {
-        // plain-text body
+        return cleanMessage(body) ?? fallback
     }
-    return cleanMessage(body) ?? fallback
+    if (typeof parsed === 'string') return cleanMessage(parsed) ?? fallback
+    if (parsed && typeof parsed === 'object') {
+        const p = parsed as { error?: unknown; message?: unknown }
+        return cleanMessage(p.message) ?? cleanMessage(p.error) ?? fallback
+    }
+    return fallback
 }
 
 /** Error for a non-OK fetch response: sanitized 4xx body text, else `${prefix}: HTTP ${status}`. */

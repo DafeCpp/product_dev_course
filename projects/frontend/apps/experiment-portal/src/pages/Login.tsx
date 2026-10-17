@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
 import { notifySuccess } from '../utils/notify'
-import { getApiErrorMessage } from '../utils/apiError'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { UserIcon, LockIcon } from '../components/common'
 import './Login.scss'
 
@@ -17,7 +17,7 @@ function Login() {
   })
   const [error, setError] = useState<string | null>(null)
 
-  const loginMutation = useMutation({
+  const loginMutation = useApiMutation({
     mutationFn: (credentials: LoginRequest) => authApi.login(credentials),
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
@@ -28,9 +28,8 @@ function Login() {
         navigate('/experiments')
       }
     },
-    onError: (err: unknown) => {
-      setError(getApiErrorMessage(err, 'Ошибка входа. Проверьте имя пользователя и пароль.'))
-    },
+    errorFallback: 'Ошибка входа. Проверьте имя пользователя и пароль.',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {

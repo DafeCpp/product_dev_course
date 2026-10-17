@@ -60,7 +60,7 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
         >
             <div className="modal-form">
                 <form onSubmit={handleSubmit}>
-                    {error && <div className="error">{error}</div>}
+                    {error && <div className="error" role="alert">{error}</div>}
                     <div className="form-group">
                         <label htmlFor="role_name">
                             Название <span className="required">*</span>

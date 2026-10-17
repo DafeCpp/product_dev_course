@@ -60,7 +60,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Bulk tagging" disabled={mutation.isPending}>
             <form onSubmit={handleSubmit} className="modal-form">
-                {error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label>Выбрано запусков</label>

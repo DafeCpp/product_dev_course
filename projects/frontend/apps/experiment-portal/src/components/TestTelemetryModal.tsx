@@ -153,7 +153,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             className="telemetry-modal"
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
                 {success && <div className="success">{success}</div>}
 
                 <div className="form-group">

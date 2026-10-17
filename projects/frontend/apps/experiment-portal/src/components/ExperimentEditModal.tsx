@@ -122,7 +122,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
             className="experiment-modal"
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label>

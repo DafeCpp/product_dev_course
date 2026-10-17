@@ -136,19 +136,6 @@ describe('useApiMutation — error path', () => {
     expect(onError).toHaveBeenCalled()
   })
 
-  it('calls onMutate before the request', async () => {
-    const onMutate = vi.fn()
-    const mutationFn = vi.fn().mockResolvedValue('ok')
-    const { result } = renderHook(() => useApiMutation({ mutationFn, onMutate }), {
-      wrapper: createWrapper(),
-    })
-
-    await act(async () => result.current.mutate(undefined as void))
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
-
-    expect(onMutate).toHaveBeenCalled()
-  })
-
   it('inlineError clears on start, sets the message and skips the toast', async () => {
     const inlineError = vi.fn()
     const mutationFn = vi.fn().mockRejectedValue({ response: { data: { error: 'Нет прав' } } })

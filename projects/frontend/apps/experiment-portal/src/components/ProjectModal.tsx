@@ -212,7 +212,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
 
             {!isLoading && !isErrorState && (
                 <>
-                    {error && <div className="error">{error}</div>}
+                    {error && <div className="error" role="alert">{error}</div>}
 
                     {!isCreate && project && (
                         <div className="user-info-section" style={{ marginBottom: '1rem' }}>

@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
 import { notifySuccess } from '../utils/notify'
-import { getApiErrorMessage } from '../utils/apiError'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateExperiment.scss'
 
 function CreateExperiment() {
@@ -28,15 +28,14 @@ function CreateExperiment() {
     queryFn: () => projectsApi.list(),
   })
 
-  const createMutation = useMutation({
+  const createMutation = useApiMutation({
     mutationFn: (data: ExperimentCreate) => experimentsApi.create(data),
     onSuccess: (experiment) => {
       notifySuccess('Эксперимент создан')
       navigate(`/experiments/${experiment.id}`)
     },
-    onError: (err: unknown) => {
-      setError(getApiErrorMessage(err, 'Ошибка создания эксперимента'))
-    },
+    errorFallback: 'Ошибка создания эксперимента',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {

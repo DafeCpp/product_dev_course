@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
 import { projectsApi } from '../api/client'
 import type { ProjectCreate } from '../types'
 import { Error, FormGroup, FormActions } from '../components/common'
 import { notifySuccess } from '../utils/notify'
-import { getApiErrorMessage } from '../utils/apiError'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateProject.scss'
 
 function CreateProject() {
@@ -16,16 +15,15 @@ function CreateProject() {
     })
     const [error, setError] = useState<string | null>(null)
 
-    const createMutation = useMutation({
+    const createMutation = useApiMutation({
         mutationFn: (data: ProjectCreate) => projectsApi.create(data),
         onSuccess: () => {
             notifySuccess('Проект создан')
             // Переходим на список проектов после создания
             navigate('/projects')
         },
-        onError: (err: unknown) => {
-            setError(getApiErrorMessage(err, 'Ошибка создания проекта'))
-        },
+        errorFallback: 'Ошибка создания проекта',
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {

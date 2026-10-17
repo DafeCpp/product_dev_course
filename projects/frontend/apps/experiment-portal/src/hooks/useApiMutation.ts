@@ -23,8 +23,6 @@ interface UseApiMutationOptions<TData, TVars> {
    * set to the sanitized message on failure. Implies `notifyOnError: false`.
    */
   inlineError?: (message: string | null) => void
-  /** Called before the request starts, e.g. to clear a previous inline error. */
-  onMutate?: (vars: TVars) => void
   /**
    * Called after built-in error handling with the sanitized user-facing
    * `message` (server text or `errorFallback`). Use to set inline error state.
@@ -39,7 +37,6 @@ export function useApiMutation<TData = unknown, TVars = void>({
   errorFallback = 'Произошла ошибка',
   inlineError,
   notifyOnError = inlineError === undefined,
-  onMutate,
   onSuccess,
   onError,
 }: UseApiMutationOptions<TData, TVars>) {
@@ -47,12 +44,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
 
   return useMutation<TData, unknown, TVars>({
     mutationFn,
-    onMutate: onMutate || inlineError
-      ? (vars) => {
-          inlineError?.(null)
-          onMutate?.(vars)
-        }
-      : undefined,
+    onMutate: inlineError ? () => { inlineError(null) } : undefined,
     onSuccess: (data, vars) => {
       if (invalidateKeys) {
         for (const key of invalidateKeys) {

@@ -3,7 +3,6 @@ import { useApiMutation } from '../../hooks/useApiMutation'
 import { scriptsApi } from '../../api/scripts'
 import type { Script } from '../../types/scripts'
 import Modal from '../../components/Modal'
-import { notifyError } from '../../utils/notify'
 import { UserFacingError } from '../../utils/apiError'
 
 export interface ScriptExecuteModalProps {
@@ -17,17 +16,23 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
   const [selectedScript, setSelectedScript] = useState<Script | null>(null)
   const [paramsRaw, setParamsRaw] = useState('')
   const [paramsError, setParamsError] = useState('')
+  const [scriptError, setScriptError] = useState('')
 
   const executeMutation = useApiMutation({
     mutationFn: async () => {
       if (!selectedScript) throw new UserFacingError('Скрипт не выбран')
       let parameters: Record<string, unknown> = {}
       if (paramsRaw.trim()) {
+        let parsed: unknown
         try {
-          parameters = JSON.parse(paramsRaw) as Record<string, unknown>
+          parsed = JSON.parse(paramsRaw)
         } catch {
           throw new UserFacingError('Параметры должны быть валидным JSON')
         }
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new UserFacingError('Параметры должны быть JSON-объектом')
+        }
+        parameters = parsed as Record<string, unknown>
       }
       return scriptsApi.executeScript(selectedScript.id, { parameters })
     },
@@ -38,9 +43,10 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
 
   const goToStep2 = () => {
     if (!selectedScript) {
-      notifyError('Выберите скрипт')
+      setScriptError('Выберите скрипт')
       return
     }
+    setScriptError('')
     setStep(2)
   }
 
@@ -118,6 +124,7 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
                 </option>
               ))}
             </select>
+            {scriptError && <small className="field-error" role="alert">{scriptError}</small>}
           </div>
         )}
 

@@ -139,6 +139,8 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         errorFallback: 'Ошибка удаления участника',
         onSuccess: () => setError(null),
         inlineError: setError,
+        // row actions: the banner may be scrolled out of view
+        notifyOnError: true,
     })
 
     // Мутация для изменения роли участника (legacy)
@@ -149,6 +151,8 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         errorFallback: 'Ошибка изменения роли',
         onSuccess: () => setError(null),
         inlineError: setError,
+        // row actions: the banner may be scrolled out of view
+        notifyOnError: true,
     })
 
     const handleAddMember = (e: React.FormEvent) => {
@@ -213,7 +217,7 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
                 className="project-members-modal"
             >
                 <div className="modal-form">
-                    {error && <div className="error">{error}</div>}
+                    {error && <div className="error" role="alert">{error}</div>}
 
                     {isLoading && <Loading />}
                     {isError && (

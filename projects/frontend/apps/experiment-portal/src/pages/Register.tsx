@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { RegisterRequest } from '../types'
 import { notifySuccess } from '../utils/notify'
-import { getApiErrorMessage } from '../utils/apiError'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './Register.scss'
 
 function Register() {
@@ -21,15 +20,14 @@ function Register() {
   })
   const [error, setError] = useState<string | null>(null)
 
-  const registerMutation = useMutation({
+  const registerMutation = useApiMutation({
     mutationFn: (payload: RegisterRequest) => authApi.register(payload),
     onSuccess: () => {
       notifySuccess('Регистрация успешна. Войдите в систему.')
       navigate('/login')
     },
-    onError: (err: unknown) => {
-      setError(getApiErrorMessage(err, 'Ошибка регистрации. Проверьте введенные данные.'))
-    },
+    errorFallback: 'Ошибка регистрации. Проверьте введенные данные.',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {

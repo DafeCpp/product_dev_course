@@ -33,7 +33,7 @@ export default function RunOverviewGrid({
           </div>
         </div>
 
-        {actionError && <div className="error run-detail__action-error">{actionError}</div>}
+        {actionError && <div className="error run-detail__action-error" role="alert">{actionError}</div>}
 
         <div className="run-info">
           <InfoRow label="ID" value={<span className="mono">{run.id}</span>} />

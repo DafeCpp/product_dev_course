@@ -98,6 +98,12 @@ describe('getResponseBodyMessage', () => {
         expect(getResponseBodyMessage('{"error":{"code":"x"}}', 'fb')).toBe('fb')
     })
 
+    it('handles JSON scalar bodies', () => {
+        expect(getResponseBodyMessage('"sensor not found"', 'fb')).toBe('sensor not found')
+        expect(getResponseBodyMessage('null', 'fb')).toBe('fb')
+        expect(getResponseBodyMessage('42', 'fb')).toBe('fb')
+    })
+
     it('uses plain text and drops markup', () => {
         expect(getResponseBodyMessage('sensor not found', 'fb')).toBe('sensor not found')
         expect(getResponseBodyMessage('<html>502</html>', 'fb')).toBe('fb')

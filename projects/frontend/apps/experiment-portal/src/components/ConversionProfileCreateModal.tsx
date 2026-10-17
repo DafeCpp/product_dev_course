@@ -159,7 +159,7 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
             disabled={createMutation.isPending}
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label htmlFor="profile_version">

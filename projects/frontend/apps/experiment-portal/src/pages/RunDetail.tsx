@@ -30,6 +30,7 @@ import { useCountdown } from '../hooks/useCountdown'
 function RunDetail() {
   const { id } = useParams<{ id: string }>()
   const [actionError, setActionError] = useState<string | null>(null)
+  const actionErrorOptions = { inlineError: setActionError, notifyOnError: true }
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<string | null>(null)
   const [selectedSensorId, setSelectedSensorId] = useState<string>('')
   const [showTelemetryStream, setShowTelemetryStream] = useState(false)
@@ -91,8 +92,7 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
-    inlineError: setActionError,
-    notifyOnError: true,
+    ...actionErrorOptions,
   })
 
   const startRunMutation = useApiMutation({
@@ -100,8 +100,7 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
-    inlineError: setActionError,
-    notifyOnError: true,
+    ...actionErrorOptions,
   })
 
   const failMutation = useApiMutation<unknown, string | undefined>({
@@ -109,8 +108,7 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
-    inlineError: setActionError,
-    notifyOnError: true,
+    ...actionErrorOptions,
   })
 
   // Создание capture session
@@ -130,8 +128,7 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт запущен',
     errorFallback: 'Не удалось запустить отсчёт',
-    inlineError: setActionError,
-    notifyOnError: true,
+    ...actionErrorOptions,
   })
 
   // Остановка capture session
@@ -141,8 +138,7 @@ function RunDetail() {
     successMessage: 'Отсчёт остановлен',
     errorFallback: 'Не удалось остановить отсчёт',
     onSuccess: () => setOptimisticActiveSessionId(null),
-    inlineError: setActionError,
-    notifyOnError: true,
+    ...actionErrorOptions,
   })
 
   // Удаление capture session
@@ -151,8 +147,7 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
-    inlineError: setActionError,
-    notifyOnError: true,
+    ...actionErrorOptions,
   })
 
   const countdownDeadline = useMemo(() => {

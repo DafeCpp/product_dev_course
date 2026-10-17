@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import { notifySuccess } from '../utils/notify'
-import { getApiErrorMessage } from '../utils/apiError'
+import { useApiMutation } from '../hooks/useApiMutation'
 
 function ChangePassword() {
   const navigate = useNavigate()
@@ -13,7 +13,7 @@ function ChangePassword() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const mutation = useMutation({
+  const mutation = useApiMutation({
     mutationFn: () => authApi.changePassword({ old_password: oldPassword, new_password: newPassword }),
     onSuccess: async () => {
       // Invalidate auth/me so password_change_required flag is refreshed
@@ -21,9 +21,8 @@ function ChangePassword() {
       notifySuccess('Пароль успешно изменён')
       navigate('/experiments', { replace: true })
     },
-    onError: (err: unknown) => {
-      setError(getApiErrorMessage(err, 'Ошибка смены пароля. Проверьте текущий пароль.'))
-    },
+    errorFallback: 'Ошибка смены пароля. Проверьте текущий пароль.',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {
