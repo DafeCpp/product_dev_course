@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.build.json && vite build",
     "type-check": "tsc --noEmit",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "test": "cross-env VITE_CJS_IGNORE_WARNING=1 vitest run",
     "test:watch": "cross-env VITE_CJS_IGNORE_WARNING=1 vitest",
     "test:coverage": "cross-env VITE_CJS_IGNORE_WARNING=1 vitest run --coverage",
