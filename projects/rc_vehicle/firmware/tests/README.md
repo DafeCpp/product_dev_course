@@ -8,7 +8,6 @@ This directory contains the test suite for the RC vehicle firmware project.
 tests/
 ├── CMakeLists.txt           # Build configuration for tests
 ├── unit/                    # Unit tests (platform-independent)
-│   ├── test_protocol.cpp    # Protocol serialization/parsing tests
 │   ├── test_failsafe.cpp    # Failsafe logic tests
 │   ├── test_madgwick.cpp    # Madgwick filter tests
 │   └── test_lpf.cpp         # Low-pass filter tests
@@ -69,12 +68,6 @@ genhtml coverage.info --output-directory coverage_html
 ### Unit Tests
 
 Platform-independent tests that verify individual components in isolation:
-
-- **Protocol Tests** ([`test_protocol.cpp`](unit/test_protocol.cpp))
-  - Frame building and parsing
-  - CRC validation
-  - Error handling
-  - Message types (Command, Telemetry, Ping, Pong, Log)
 
 - **Failsafe Tests** ([`test_failsafe.cpp`](unit/test_failsafe.cpp))
   - Activation/deactivation logic
@@ -202,7 +195,6 @@ TEST(IntegrationTest, WithMock) {
 
 | Component | Target Coverage | Priority |
 |-----------|----------------|----------|
-| protocol.hpp | 95%+ | Critical |
 | failsafe.hpp | 100% | Critical |
 | madgwick_filter.hpp | 90%+ | High |
 | lpf_butterworth.cpp | 90%+ | High |
