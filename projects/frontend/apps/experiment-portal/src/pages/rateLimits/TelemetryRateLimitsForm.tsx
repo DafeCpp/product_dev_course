@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { z } from 'zod'
 import type { ConfigResponse } from '../../types/configs'
-import { telemetryRateLimitsSchema, flatFieldErrors } from '../../schemas/forms'
+import { telemetryRateLimitsSchema } from '../../schemas/forms'
 import { FormGroup, FormActions } from '../../components/common'
 import './RateLimitForms.scss'
 
@@ -78,16 +78,12 @@ export function TelemetryRateLimitsForm({
       onSave(parsed)
     } catch (err) {
       if (err instanceof z.ZodError) {
-        const errors = flatFieldErrors(err)
-        // Flatten nested errors from zod
+        // flatten() only reports top-level keys, so nested rest/ws issues
+        // would be dropped: build `rest_max_requests`-style keys from issue paths.
         const flatErrors: Record<string, string> = {}
-        for (const [key, value] of Object.entries(errors)) {
-          if (key.includes('.')) {
-            const [prefix, suffix] = key.split('.')
-            flatErrors[`${prefix}_${suffix}`] = value || ''
-          } else {
-            flatErrors[key] = value || ''
-          }
+        for (const issue of err.issues) {
+          const key = issue.path.join('_')
+          if (key && !flatErrors[key]) flatErrors[key] = issue.message
         }
         setFieldErrors(flatErrors)
       }
