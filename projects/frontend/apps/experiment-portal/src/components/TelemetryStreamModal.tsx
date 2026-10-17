@@ -242,7 +242,7 @@ export default function TelemetryStreamModal({
         >
             <div className="telemetry-stream">
                 {streamStatus === 'error' && streamError && (
-                    <div className="error">{streamErrorMessage}</div>
+                    <div className="error" role="alert">{streamErrorMessage}</div>
                 )}
 
                 <div className="form-grid">

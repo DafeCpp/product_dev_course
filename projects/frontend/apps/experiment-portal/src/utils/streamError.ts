@@ -1,4 +1,3 @@
-import { TelemetryStreamServerError } from 'frontend-common'
 import { UserFacingError, getApiErrorMessage, responseBodyError } from './apiError'
 
 const STREAM_FALLBACK = 'Ошибка подключения к стриму'
@@ -16,12 +15,9 @@ export async function streamResponseError(response: Response): Promise<UserFacin
 
 /**
  * User-facing text for a failed telemetry stream: the opener's sanitized
- * HTTP error or the server's SSE `error` event; anything else (fetch
- * TypeError, the hook's own messages) gets the fallback.
+ * HTTP error; anything else (fetch TypeError, the hook's own messages, the
+ * server's SSE `error` event, which only ever says "stream error") gets the fallback.
  */
 export function getStreamErrorMessage(err: unknown): string {
-    if (err instanceof TelemetryStreamServerError) {
-        return getApiErrorMessage(err, STREAM_FALLBACK, { includeClientMessage: true })
-    }
     return getApiErrorMessage(err, STREAM_FALLBACK)
 }

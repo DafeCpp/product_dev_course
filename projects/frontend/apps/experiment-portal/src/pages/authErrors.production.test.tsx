@@ -55,10 +55,10 @@ describe('auth errors in production mode', () => {
         expect(errorToasts()).toHaveLength(0)
     })
 
-    it('Login falls back to a generic message for an HTML error page', async () => {
+    it('Login falls back to a generic message for a 4xx HTML error page', async () => {
         const user = userEvent.setup()
         vi.mocked(authApi.login).mockRejectedValueOnce({
-            response: { status: 502, data: { error: '<html><body>Bad Gateway</body></html>' } },
+            response: { status: 404, data: { error: '<html><body>Not Found</body></html>' } },
         })
         render(<Login />, { wrapper: createWrapper() })
 

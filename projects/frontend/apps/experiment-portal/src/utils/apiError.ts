@@ -13,7 +13,7 @@ function cleanMessage(value: unknown): string | null {
     // a leading placeholder such as "<sensor_id> must be a UUID" is kept.
     if (
         /^<[!?]/.test(text) ||
-        /^<(html|head|body|meta|title|style|div|p|br|center|h[1-6])(\s|>|\/)/i.test(text) ||
+        /^<(html|head|body|meta|link|title|style|script|div|span|p|pre|a|b|i|em|strong|br|hr|img|center|font|table|ul|ol|li|form|section|main|header|footer|nav|article|h[1-6])(\s|>|\/)/i.test(text) ||
         /^<([a-z][a-z0-9]*)\b[^>]*>.*<\/\1>/i.test(text) ||
         /^<[a-z][a-z0-9]*\b[^>]*\/>$/i.test(text)
     ) return null

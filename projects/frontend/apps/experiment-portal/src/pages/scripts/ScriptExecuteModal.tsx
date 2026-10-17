@@ -11,6 +11,21 @@ export interface ScriptExecuteModalProps {
   onExecuted: () => void
 }
 
+type ParsedParams = { value: Record<string, unknown> } | { error: string }
+
+function parseParams(raw: string): ParsedParams {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { error: 'Невалидный JSON' }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { error: 'Должен быть JSON-объект' }
+  }
+  return { value: parsed as Record<string, unknown> }
+}
+
 export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: ScriptExecuteModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selectedScript, setSelectedScript] = useState<Script | null>(null)
@@ -23,16 +38,9 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
       if (!selectedScript) throw new UserFacingError('Скрипт не выбран')
       let parameters: Record<string, unknown> = {}
       if (paramsRaw.trim()) {
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(paramsRaw)
-        } catch {
-          throw new UserFacingError('Параметры должны быть валидным JSON')
-        }
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-          throw new UserFacingError('Параметры должны быть JSON-объектом')
-        }
-        parameters = parsed as Record<string, unknown>
+        const parsed = parseParams(paramsRaw)
+        if ('error' in parsed) throw new UserFacingError(parsed.error)
+        parameters = parsed.value
       }
       return scriptsApi.executeScript(selectedScript.id, { parameters })
     },
@@ -54,14 +62,9 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
     const hasSchema =
       selectedScript && Object.keys(selectedScript.parameters_schema).length > 0
     if (hasSchema && paramsRaw.trim()) {
-      try {
-        const parsed = JSON.parse(paramsRaw)
-        if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
-          setParamsError('Должен быть JSON-объект')
-          return
-        }
-      } catch {
-        setParamsError('Невалидный JSON')
+      const parsed = parseParams(paramsRaw)
+      if ('error' in parsed) {
+        setParamsError(parsed.error)
         return
       }
     }
@@ -73,14 +76,8 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
   const hasSchema =
     selectedScript && Object.keys(selectedScript.parameters_schema).length > 0
 
-  let parsedParams: Record<string, unknown> = {}
-  if (paramsRaw.trim()) {
-    try {
-      parsedParams = JSON.parse(paramsRaw) as Record<string, unknown>
-    } catch {
-      // ignore in summary step
-    }
-  }
+  const summaryParams = paramsRaw.trim() ? parseParams(paramsRaw) : null
+  const parsedParams: Record<string, unknown> = summaryParams && 'value' in summaryParams ? summaryParams.value : {}
 
   return (
     <Modal
@@ -115,6 +112,7 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
                 setSelectedScript(found)
                 setParamsRaw('')
                 setParamsError('')
+                setScriptError('')
               }}
             >
               <option value="">— Выберите скрипт —</option>

@@ -10,7 +10,7 @@ export type {
   TelemetryAggregatedFn,
 } from './types/telemetry'
 
-export { useTelemetryStream, TelemetryStreamServerError } from './hooks/useTelemetryStream'
+export { useTelemetryStream } from './hooks/useTelemetryStream'
 export type {
   UseTelemetryStreamOptions,
   UseTelemetryStreamResult,

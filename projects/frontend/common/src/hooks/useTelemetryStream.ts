@@ -3,11 +3,6 @@ import { createSSEParser } from '../sse'
 import type { TelemetryStreamOpener, TelemetryStreamRecord } from '../types/telemetry'
 import { computeBackoffDelayMs, type TelemetryBackoffOptions } from './backoff'
 
-/** Raised for an SSE `error` event: its message is the server's text. */
-export class TelemetryStreamServerError extends Error {
-  override name = 'TelemetryStreamServerError'
-}
-
 export type TelemetryStreamStatus =
   | 'idle'
   | 'connecting'
@@ -151,9 +146,7 @@ export function useTelemetryStream(
           const decoder = new TextDecoder()
           const parser = createSSEParser((evt) => {
             if (evt.event === 'error') {
-              throw evt.data
-                ? new TelemetryStreamServerError(evt.data)
-                : new Error('Telemetry stream reported an error')
+              throw new Error(evt.data || 'Telemetry stream reported an error')
             }
             if (evt.event !== 'telemetry' && evt.event !== 'message') return
             let record: TelemetryStreamRecord
