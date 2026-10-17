@@ -150,6 +150,9 @@ add_executable(unit_tests
     unit/test_mpu6050_spi.cpp
     unit/test_mag_calibration.cpp
     unit/test_stdio_platform.cpp
+    unit/test_ws_command_registry.cpp
+    # LOS-37: файл прошивки целиком; esp_http_server.h подменён mocks/.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_s3/main/ws_command_registry.cpp
     sim/stdio_platform.cpp
     integration/test_control_loop.cpp
     integration/test_uart_bridge.cpp
