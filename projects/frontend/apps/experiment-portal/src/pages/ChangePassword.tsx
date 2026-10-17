@@ -1,3 +1,4 @@
+import { isClientRequestError } from '../utils/apiError'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -21,7 +22,10 @@ function ChangePassword() {
       notifySuccess('Пароль успешно изменён')
       navigate('/experiments', { replace: true })
     },
-    errorFallback: 'Ошибка смены пароля. Проверьте текущий пароль.',
+    errorFallback: (error) =>
+      isClientRequestError(error)
+        ? 'Ошибка смены пароля. Проверьте текущий пароль.'
+        : 'Не удалось сменить пароль: сервис недоступен. Попробуйте позже.',
     inlineError: setError,
   })
 

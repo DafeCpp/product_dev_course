@@ -119,12 +119,23 @@ describe('RunDetail', () => {
 
     it('renders error state', async () => {
         const mockGet = vi.mocked(runsApi.get)
-        mockGet.mockRejectedValueOnce(new Error('Not found'))
+        mockGet.mockRejectedValueOnce({ response: { status: 404, data: { error: 'not_found' } } })
 
         render(<RunDetail />, { wrapper: createWrapper() })
 
         await waitFor(() => {
             expect(screen.getByText('Запуск не найден')).toBeInTheDocument()
+        })
+    })
+
+    it('renders load failure state', async () => {
+        const mockGet = vi.mocked(runsApi.get)
+        mockGet.mockRejectedValueOnce({ response: { status: 503 } })
+
+        render(<RunDetail />, { wrapper: createWrapper() })
+
+        await waitFor(() => {
+            expect(screen.getByText('Не удалось загрузить запуск')).toBeInTheDocument()
         })
     })
 

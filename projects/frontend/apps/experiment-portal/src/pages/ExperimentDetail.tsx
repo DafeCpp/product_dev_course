@@ -49,7 +49,7 @@ function ExperimentDetail() {
   }
 
   if (error || !experiment) {
-    return <Error message={isNotFoundError(error) ? 'Эксперимент не найден' : getApiErrorMessage(error, 'Эксперимент не найден')} />
+    return <Error message={isNotFoundError(error) ? 'Эксперимент не найден' : getApiErrorMessage(error, 'Не удалось загрузить эксперимент')} />
   }
 
   const formattedCreatedAt = format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')

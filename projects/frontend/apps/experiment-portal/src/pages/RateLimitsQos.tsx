@@ -95,10 +95,10 @@ function RateLimitsQos() {
     invalidateKeys: [],
     onSuccess: (result) => {
       setDryRunPreview(result.preview)
-      setDryRunError(null)
     },
+    errorFallback: 'не удалось проверить конфигурацию',
+    inlineError: setDryRunError,
     onError: () => {
-      setDryRunError('Ошибка валидации конфигурации')
       setDryRunPreview(null)
     },
   })

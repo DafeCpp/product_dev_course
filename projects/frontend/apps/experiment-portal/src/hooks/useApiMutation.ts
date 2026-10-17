@@ -9,8 +9,8 @@ interface UseApiMutationOptions<TData, TVars> {
   invalidateKeys?: QueryKey[]
   /** Toast shown on success. Omit to skip success toast. */
   successMessage?: string
-  /** Fallback error text when the server sends no message. */
-  errorFallback?: string
+  /** Fallback error text when the server sends no message; a function picks it per error. */
+  errorFallback?: string | ((error: unknown) => string)
   /**
    * Called after built-in success handling (invalidate + toast). A returned
    * promise is awaited: the mutation stays pending until it settles.
@@ -63,7 +63,10 @@ export function useApiMutation<TData = unknown, TVars = void>({
       if (result instanceof Promise) return result.catch(() => undefined)
     },
     onError: (error, vars) => {
-      const message = getApiErrorMessage(error, errorFallback)
+      const message = getApiErrorMessage(
+        error,
+        typeof errorFallback === 'function' ? errorFallback(error) : errorFallback,
+      )
       if (notifyOnError) {
         notifyError(message)
       }

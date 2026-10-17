@@ -101,13 +101,25 @@ function bodyTextMessage(body: string): string | null {
     return null
 }
 
-/** True for a 404 response, from the shared transport or axios. */
-export function isNotFoundError(error: unknown): boolean {
-    if (error instanceof HttpError) return error.status === 404
+/** HTTP status of a failed request (shared transport or axios), if it got a response. */
+export function getErrorStatus(error: unknown): number | undefined {
+    if (error instanceof HttpError) return error.kind === 'api' ? error.status : undefined
     if (error && typeof error === 'object') {
-        return (error as { response?: { status?: unknown } }).response?.status === 404
+        const status = (error as { response?: { status?: unknown } }).response?.status
+        return typeof status === 'number' ? status : undefined
     }
-    return false
+    return undefined
+}
+
+/** True for a 404 response. */
+export function isNotFoundError(error: unknown): boolean {
+    return getErrorStatus(error) === 404
+}
+
+/** True for a 4xx response: the request itself was rejected, the service is up. */
+export function isClientRequestError(error: unknown): boolean {
+    const status = getErrorStatus(error)
+    return status !== undefined && status >= 400 && status < 500
 }
 
 /** Error for a non-OK fetch response: sanitized 4xx body text, else `${prefix}: HTTP ${status}`. */

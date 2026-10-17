@@ -1,3 +1,4 @@
+import { isClientRequestError } from '../utils/apiError'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -28,7 +29,10 @@ function Login() {
         navigate('/experiments')
       }
     },
-    errorFallback: 'Ошибка входа. Проверьте имя пользователя и пароль.',
+    errorFallback: (error) =>
+      isClientRequestError(error)
+        ? 'Ошибка входа. Проверьте имя пользователя и пароль.'
+        : 'Не удалось войти: сервис недоступен. Попробуйте позже.',
     inlineError: setError,
   })
 

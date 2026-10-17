@@ -80,12 +80,23 @@ describe('SensorDetail', () => {
 
     it('renders error state', async () => {
         const mockGet = vi.mocked(sensorsApi.get)
-        mockGet.mockRejectedValueOnce(new Error('Sensor not found'))
+        mockGet.mockRejectedValueOnce({ response: { status: 404, data: { error: 'not_found' } } })
 
         render(<SensorDetail />, { wrapper: createWrapper() })
 
         await waitFor(() => {
             expect(screen.getByText(/датчик не найден/i)).toBeInTheDocument()
+        })
+    })
+
+    it('renders load failure state', async () => {
+        const mockGet = vi.mocked(sensorsApi.get)
+        mockGet.mockRejectedValueOnce({ response: { status: 503 } })
+
+        render(<SensorDetail />, { wrapper: createWrapper() })
+
+        await waitFor(() => {
+            expect(screen.getByText('Не удалось загрузить датчик')).toBeInTheDocument()
         })
     })
 

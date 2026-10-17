@@ -32,7 +32,6 @@ function RunDetail() {
   const { id } = useParams<{ id: string }>()
   const [actionError, setActionError] = useState<string | null>(null)
   const actionErrorOptions = { inlineError: setActionError, notifyOnError: true }
-  useEffect(() => setActionError(null), [id])
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<string | null>(null)
   const [selectedSensorId, setSelectedSensorId] = useState<string>('')
   const [showTelemetryStream, setShowTelemetryStream] = useState(false)
@@ -205,7 +204,7 @@ function RunDetail() {
   }
 
   if (error || !run) {
-    return <ErrorComponent message={isNotFoundError(error) ? 'Запуск не найден' : getApiErrorMessage(error, 'Запуск не найден')} />
+    return <ErrorComponent message={isNotFoundError(error) ? 'Запуск не найден' : getApiErrorMessage(error, 'Не удалось загрузить запуск')} />
   }
 
   // UI note:
@@ -473,4 +472,11 @@ function RunDetail() {
   )
 }
 
-export default RunDetail
+// Keyed by run id: a fresh instance per run, so state (and the setters a
+// still-running action of the previous run holds) never leaks across runs.
+function RunDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  return <RunDetail key={id} />
+}
+
+export default RunDetailPage

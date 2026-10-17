@@ -143,7 +143,7 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
                   }}
                   className="scripts-form__code"
                 />
-                {paramsError && <small className="field-error">{paramsError}</small>}
+                {paramsError && <small className="field-error" role="alert">{paramsError}</small>}
               </>
             ) : (
               <p className="scripts-execute__no-params">Нет параметров для этого скрипта.</p>

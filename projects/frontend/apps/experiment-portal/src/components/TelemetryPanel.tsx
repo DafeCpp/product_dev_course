@@ -774,7 +774,7 @@ export default function TelemetryPanel({
                 </label>
             </div>
 
-            {error && <div className="telemetry-panel__error">{error}</div>}
+            {error && <div className="telemetry-panel__error" role="alert">{error}</div>}
 
             <div className="telemetry-panel__chart">
                 <div className="telemetry-panel__chart-area">

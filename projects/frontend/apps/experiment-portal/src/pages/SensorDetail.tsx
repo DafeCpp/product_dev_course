@@ -162,7 +162,7 @@ function SensorDetail() {
     }
 
     if (error || !sensor) {
-        return <Error message={isNotFoundError(error) ? 'Датчик не найден' : getApiErrorMessage(error, 'Датчик не найден')} />
+        return <Error message={isNotFoundError(error) ? 'Датчик не найден' : getApiErrorMessage(error, 'Не удалось загрузить датчик')} />
     }
 
     return (

@@ -69,6 +69,20 @@ describe('auth errors in production mode', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(/ошибка входа/i)
     })
 
+    it('Login says the service is down for a 5xx instead of blaming credentials', async () => {
+        const user = userEvent.setup()
+        vi.mocked(authApi.login).mockRejectedValueOnce({
+            response: { status: 503, data: { error: 'service unavailable' } },
+        })
+        render(<Login />, { wrapper: createWrapper() })
+
+        await user.type(screen.getByLabelText(/имя пользователя/i), 'testuser')
+        await user.type(screen.getByLabelText(/пароль/i), 'secret')
+        await user.click(screen.getByRole('button', { name: /войти/i }))
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(/сервис недоступен/i)
+    })
+
     it('Register shows a validation error inline without a toast', async () => {
         const user = userEvent.setup()
         render(<Register />, { wrapper: createWrapper() })
