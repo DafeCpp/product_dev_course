@@ -231,8 +231,8 @@ idf.py set-target esp32s3   # или esp32c6
 | SPI SCK       | GPIO6    | GPIO12   | Только pin config        |
 | SPI MOSI      | GPIO7    | GPIO11   | Только pin config        |
 | SPI MISO      | GPIO2    | GPIO13   | Только pin config        |
-| MCPWM ESC     | GPIO3    | GPIO14   | Только pin config        |
-| MCPWM Servo   | GPIO4    | GPIO21   | Только pin config        |
+| PWM ESC       | GPIO3    | GPIO14   | Только pin config        |
+| PWM Servo     | GPIO4    | GPIO21   | Только pin config        |
 | RC-in CH1     | GPIO5    | GPIO16   | Только pin config        |
 | RC-in CH2     | GPIO11   | GPIO17   | Только pin config        |
 | Core pinning  | —        | Core 1   | `xTaskCreatePinnedToCore` |
