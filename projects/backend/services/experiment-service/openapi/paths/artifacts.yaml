@@ -1,0 +1,226 @@
+# Project scope for every artifact route comes ONLY from the X-Project-Id header
+# (ensure_project_context). A project_id query parameter is ignored by the service itself;
+# auth-proxy turns ?project_id into X-Project-Id before forwarding.
+runArtifacts:
+  post:
+    tags: [artifacts]
+    summary: Create artifact
+    description: >
+      Registers an artifact that already lives at `uri`. Requires the X-Project-Id header (400
+      otherwise). 404 when the run is not in the project.
+    operationId: createArtifact
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ArtifactCreate
+    responses:
+      201:
+        description: Artifact created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Artifact
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+  get:
+    tags: [artifacts]
+    summary: List artifacts
+    description: >
+      Artifacts of the run, newest first. Requires the X-Project-Id header. The run is not looked up,
+      so an unknown run gives 200 with an empty list. limit/offset are clamped (limit 1-100, default 50).
+    operationId: listArtifacts
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - name: type
+        in: query
+        description: Exact artifact type to filter on.
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+    responses:
+      200:
+        description: Artifacts
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ArtifactListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+
+runArtifactUploadUrl:
+  post:
+    tags: [artifacts]
+    summary: Request presigned upload URL
+    description: >
+      Creates an artifact record with uri s3://artifacts/{project_id}/{run_id}/{uuid}/{filename} and
+      returns a presigned PUT URL for it. The record is created before presigning, so a 503 leaves
+      it behind. Requires the X-Project-Id header.
+    operationId: requestArtifactUploadUrl
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ArtifactUploadUrlRequest
+    responses:
+      201:
+        description: Artifact record created and upload URL issued
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ArtifactUploadUrlResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      503:
+        description: Object storage unavailable
+        content:
+          text/plain:
+            schema:
+              type: string
+            example: S3 unavailable
+
+item:
+  get:
+    tags: [artifacts]
+    summary: Get artifact
+    description: Requires the X-Project-Id header.
+    operationId: getArtifact
+    parameters:
+      - $ref: ../components/parameters.yaml#/ArtifactId
+    responses:
+      200:
+        description: Artifact
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Artifact
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+  delete:
+    tags: [artifacts]
+    summary: Delete artifact
+    description: Deletes the artifact record only; the S3 object is not removed. Requires the X-Project-Id header.
+    operationId: deleteArtifact
+    parameters:
+      - $ref: ../components/parameters.yaml#/ArtifactId
+    responses:
+      204:
+        description: Deleted
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+approve:
+  post:
+    tags: [artifacts]
+    summary: Approve artifact
+    description: >
+      Sets approved_by to the caller and approval_note to `note` (null when omitted, overwriting any
+      earlier note). Needs the project.roles.manage permission (project owner). The body must be a
+      JSON object; send `{}` for no note. Requires the X-Project-Id header.
+    operationId: approveArtifact
+    parameters:
+      - $ref: ../components/parameters.yaml#/ArtifactId
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ArtifactApproveRequest
+    responses:
+      200:
+        description: Approved artifact
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Artifact
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+downloadUrl:
+  get:
+    tags: [artifacts]
+    summary: Get artifact download URL
+    description: >
+      For s3:// artifacts returns a presigned GET URL (Content-Disposition attachment with the file
+      name) valid for expires_in seconds (setting s3_presign_expire_seconds, default 3600). For legacy
+      artifacts the stored uri is returned unchanged with expires_in null. Requires the X-Project-Id
+      header.
+    operationId: getArtifactDownloadUrl
+    parameters:
+      - $ref: ../components/parameters.yaml#/ArtifactId
+    responses:
+      200:
+        description: Download URL
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ArtifactDownloadUrlResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      503:
+        description: Object storage unavailable
+        content:
+          text/plain:
+            schema:
+              type: string
+            example: S3 unavailable

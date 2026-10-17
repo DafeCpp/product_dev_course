@@ -1,0 +1,349 @@
+experimentsExport:
+  get:
+    tags: [experiments]
+    summary: Export experiments as CSV or JSON
+    description: >
+      Up to 5000 experiments of the project (newest first) with the same filters as the list
+      endpoint, served as an attachment experiments.csv / experiments.json. CSV header:
+      id,project_id,name,description,experiment_type,status,tags,owner_id,created_at,updated_at,archived_at
+      (tags joined with ","; null values are empty strings).
+    operationId: exportExperiments
+    parameters:
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: format
+        in: query
+        description: Case-insensitive.
+        schema:
+          type: string
+          enum: [csv, json]
+          default: csv
+      - name: status
+        in: query
+        description: An unknown value currently fails with 500 (unhandled ValueError).
+        schema:
+          $ref: ../components/schemas.yaml#/ExperimentStatus
+      - name: tags
+        in: query
+        description: Comma separated tags; only experiments carrying all of them are exported.
+        schema:
+          type: string
+      - name: created_after
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: created_before
+        in: query
+        schema:
+          type: string
+          format: date-time
+    responses:
+      200:
+        description: Export file
+        headers:
+          Content-Disposition:
+            schema:
+              type: string
+            description: attachment; filename="experiments.{csv|json}"
+        content:
+          text/csv:
+            schema:
+              type: string
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: ../components/schemas.yaml#/Experiment
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+
+experimentRunsExport:
+  get:
+    tags: [runs]
+    summary: Export runs of an experiment as CSV or JSON
+    description: >
+      Up to 5000 runs (newest first) with the same filters as the run list endpoint, served as an
+      attachment runs_{experiment_id}.csv / .json. The experiment is not looked up, so an unknown id
+      gives an empty export. CSV header:
+      id,experiment_id,project_id,name,status,tags,git_sha,env,notes,started_at,finished_at,duration_seconds,created_by,created_at,updated_at
+    operationId: exportRuns
+    parameters:
+      - $ref: ../components/parameters.yaml#/ExperimentId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: format
+        in: query
+        description: Case-insensitive.
+        schema:
+          type: string
+          enum: [csv, json]
+          default: csv
+      - name: status
+        in: query
+        description: An unknown value currently fails with 500 (unhandled ValueError).
+        schema:
+          $ref: ../components/schemas.yaml#/RunStatus
+      - name: tags
+        in: query
+        description: Comma separated tags; only runs carrying all of them are exported.
+        schema:
+          type: string
+      - name: created_after
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: created_before
+        in: query
+        schema:
+          type: string
+          format: date-time
+    responses:
+      200:
+        description: Export file
+        headers:
+          Content-Disposition:
+            schema:
+              type: string
+            description: attachment; filename="runs_{experiment_id}.{csv|json}"
+        content:
+          text/csv:
+            schema:
+              type: string
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: ../components/schemas.yaml#/Run
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+
+experimentArchive:
+  get:
+    tags: [experiments]
+    summary: Export full experiment as ZIP
+    description: >
+      ZIP named experiment_{experiment_id}.zip with a top-level experiment_{experiment_id}/ folder
+      holding experiment.json, capture_sessions.json, artifacts.json (metadata only) and, per run,
+      runs/run_{run_id}/run.json plus, only when there is data, runs/run_{run_id}/metrics.(parquet|csv)
+      and runs/run_{run_id}/telemetry/sensor_{capture_session_id}.(parquet|csv). Parquet is used when
+      pyarrow is installed, CSV otherwise. The whole archive is built in memory before sending.
+    operationId: exportExperimentZip
+    parameters:
+      - $ref: ../components/parameters.yaml#/ExperimentId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: format
+        in: query
+        description: Case-insensitive; any other value gives 400.
+        schema:
+          type: string
+          enum: [zip]
+          default: zip
+    responses:
+      200:
+        description: ZIP archive containing experiment data
+        headers:
+          Content-Disposition:
+            schema:
+              type: string
+            description: attachment; filename="experiment_{experiment_id}.zip"
+        content:
+          application/zip:
+            schema:
+              type: string
+              format: binary
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+runTelemetryExport:
+  get:
+    tags: [telemetry, runs]
+    summary: Export telemetry of a run
+    description: >
+      Streams the readings of the run's capture sessions (up to the first 500 sessions, or only
+      capture_session_id when given), ordered by timestamp, as an attachment. Rate-limited per user
+      (export_rate_limit_requests per export_rate_limit_window_seconds, default 10 per 60 s; shared
+      with the capture-session export); the counter is charged before any other check.
+      With aggregation=1m rows come from the telemetry_1m continuous aggregate and include_late /
+      raw_or_physical are ignored. CSV raw header: timestamp,sensor_id,signal[,raw_value][,physical_value],conversion_status,capture_session_id.
+      CSV 1m header: bucket,sensor_id,signal,capture_session_id,sample_count,avg_raw,min_raw,max_raw,avg_physical,min_physical,max_physical.
+      When the run has no capture sessions the body is `[]` (JSON) or empty (CSV, no header row).
+    operationId: exportRunTelemetry
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: format
+        in: query
+        description: Case-insensitive.
+        schema:
+          type: string
+          enum: [csv, json]
+          default: csv
+      - name: capture_session_id
+        in: query
+        description: Export only this capture session. It is not checked to belong to the run.
+        schema:
+          type: string
+          format: uuid
+      - name: sensor_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: signal
+        in: query
+        description: Exact signal name (meta.signal).
+        schema:
+          type: string
+      - name: include_late
+        in: query
+        description: Only the literal "false" (case-insensitive) excludes late readings; anything else includes them.
+        schema:
+          type: boolean
+          default: true
+      - name: raw_or_physical
+        in: query
+        description: Which value columns to include (raw readings only). Case-insensitive.
+        schema:
+          type: string
+          enum: [raw, physical, both]
+          default: both
+      - name: aggregation
+        in: query
+        description: 1m reads the 1-minute continuous aggregate; any other value is treated as no aggregation.
+        schema:
+          type: string
+          enum: [1m]
+    responses:
+      200:
+        description: Telemetry file, streamed
+        headers:
+          Content-Disposition:
+            schema:
+              type: string
+            description: >
+              attachment; filename="telemetry_run_{run_id}.{csv|json}" or, with aggregation=1m,
+              "telemetry_run_{run_id}_agg.{csv|json}"
+        content:
+          text/csv:
+            schema:
+              type: string
+          application/json:
+            schema:
+              anyOf:
+                - type: array
+                  items:
+                    $ref: ../components/schemas.yaml#/TelemetryExportRecord
+                - type: array
+                  items:
+                    $ref: ../components/schemas.yaml#/TelemetryExportAggregateRecord
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      429:
+        $ref: ../components/responses.yaml#/TooManyRequests
+
+sessionTelemetryExport:
+  get:
+    tags: [telemetry, capture_sessions]
+    summary: Export telemetry of a capture session
+    description: >
+      Same format, filters and rate limit as the run telemetry export, for one capture session. The run
+      and the session must each exist in the project; the session is not checked to belong to the run.
+      Unlike the run export, an empty result still has the CSV header row.
+    operationId: exportCaptureSessionTelemetry
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: format
+        in: query
+        description: Case-insensitive.
+        schema:
+          type: string
+          enum: [csv, json]
+          default: csv
+      - name: sensor_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: signal
+        in: query
+        description: Exact signal name (meta.signal).
+        schema:
+          type: string
+      - name: include_late
+        in: query
+        description: Only the literal "false" (case-insensitive) excludes late readings; anything else includes them.
+        schema:
+          type: boolean
+          default: true
+      - name: raw_or_physical
+        in: query
+        description: Which value columns to include (raw readings only). Case-insensitive.
+        schema:
+          type: string
+          enum: [raw, physical, both]
+          default: both
+      - name: aggregation
+        in: query
+        description: 1m reads the 1-minute continuous aggregate; any other value is treated as no aggregation.
+        schema:
+          type: string
+          enum: [1m]
+    responses:
+      200:
+        description: Telemetry file, streamed
+        headers:
+          Content-Disposition:
+            schema:
+              type: string
+            description: >
+              attachment; filename="telemetry_{session_id}.{csv|json}" or, with aggregation=1m,
+              "telemetry_agg_{session_id}.{csv|json}"
+        content:
+          text/csv:
+            schema:
+              type: string
+          application/json:
+            schema:
+              anyOf:
+                - type: array
+                  items:
+                    $ref: ../components/schemas.yaml#/TelemetryExportRecord
+                - type: array
+                  items:
+                    $ref: ../components/schemas.yaml#/TelemetryExportAggregateRecord
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      429:
+        $ref: ../components/responses.yaml#/TooManyRequests

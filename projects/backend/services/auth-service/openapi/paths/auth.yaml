@@ -170,11 +170,19 @@ changePassword:
             $ref: ../components/schemas.yaml#/PasswordChangeRequest
     responses:
       '200':
-        description: Password changed successfully
+        description: Password changed; the user fields are returned flattened together with the new tokens
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/User
+              allOf:
+                - $ref: ../components/schemas.yaml#/User
+                - type: object
+                  required: [access_token, refresh_token]
+                  properties:
+                    access_token:
+                      type: string
+                    refresh_token:
+                      type: string
       '400':
         description: Invalid request data
         content:

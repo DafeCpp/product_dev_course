@@ -1,5 +1,10 @@
 SensorListResponse:
   type: object
+  required:
+  - sensors
+  - total
+  - page
+  - page_size
   properties:
     sensors:
       type: array
@@ -7,17 +12,24 @@ SensorListResponse:
         $ref: '#/Sensor'
     total:
       type: integer
+      description: Total matching rows
     page:
       type: integer
+      description: offset // limit + 1
     page_size:
       type: integer
+      description: Effective limit
 SensorTokenResponse:
   type: object
+  required:
+  - sensor
+  - token
   properties:
     sensor:
       $ref: '#/Sensor'
     token:
       type: string
+      description: Plaintext sensor token; only returned here.
 ExperimentStatus:
   type: string
   enum:
@@ -45,6 +57,19 @@ CaptureSessionStatus:
   - backfilling
 Experiment:
   type: object
+  required:
+  - id
+  - project_id
+  - name
+  - description
+  - experiment_type
+  - tags
+  - metadata
+  - status
+  - owner_id
+  - created_at
+  - updated_at
+  - archived_at
   properties:
     id:
       type: string
@@ -55,11 +80,20 @@ Experiment:
     name:
       type: string
     description:
-      type: string
+      type:
+      - string
+      - 'null'
+    experiment_type:
+      type:
+      - string
+      - 'null'
     tags:
       type: array
       items:
         type: string
+    metadata:
+      type: object
+      additionalProperties: true
     status:
       $ref: '#/ExperimentStatus'
     owner_id:
@@ -72,20 +106,16 @@ Experiment:
       type: string
       format: date-time
     archived_at:
-      type: string
+      type:
+      - string
+      - 'null'
       format: date-time
-      nullable: true
 ExperimentCreate:
   type: object
   required:
-  - project_id
-  - owner_id
   - name
   properties:
     project_id:
-      type: string
-      format: uuid
-    owner_id:
       type: string
       format: uuid
     name:
@@ -101,6 +131,8 @@ ExperimentCreate:
     metadata:
       type: object
       additionalProperties: true
+    status:
+      $ref: '#/ExperimentStatus'
 ExperimentUpdate:
   type: object
   properties:
@@ -119,6 +151,9 @@ ExperimentUpdate:
       additionalProperties: true
     status:
       $ref: '#/ExperimentStatus'
+    archived_at:
+      type: string
+      format: date-time
 ExperimentListResponse:
   type: object
   properties:
@@ -132,51 +167,36 @@ ExperimentListResponse:
       type: integer
     page_size:
       type: integer
+  required:
+  - experiments
+  - total
+  - page
+  - page_size
 Run:
   type: object
+  required:
+  - id
+  - experiment_id
+  - project_id
+  - created_by
+  - name
+  - params
+  - git_sha
+  - env
+  - notes
+  - tags
+  - metadata
+  - status
+  - started_at
+  - finished_at
+  - duration_seconds
+  - auto_complete_after_minutes
+  - created_at
+  - updated_at
   properties:
     id:
       type: string
       format: uuid
-    experiment_id:
-      type: string
-      format: uuid
-    params:
-      type: object
-      additionalProperties: true
-    git_sha:
-      type: string
-    env:
-      type: string
-    status:
-      $ref: '#/RunStatus'
-    started_at:
-      type: string
-      format: date-time
-      nullable: true
-    finished_at:
-      type: string
-      format: date-time
-      nullable: true
-    duration_seconds:
-      type: integer
-      nullable: true
-    created_at:
-      type: string
-      format: date-time
-    updated_at:
-      type: string
-      format: date-time
-    project_id:
-      type: string
-      format: uuid
-RunCreate:
-  type: object
-  required:
-  - experiment_id
-  - project_id
-  - created_by
-  properties:
     experiment_id:
       type: string
       format: uuid
@@ -186,6 +206,61 @@ RunCreate:
     created_by:
       type: string
       format: uuid
+    name:
+      type:
+      - string
+      - 'null'
+    params:
+      type: object
+      additionalProperties: true
+    git_sha:
+      type:
+      - string
+      - 'null'
+    env:
+      type:
+      - string
+      - 'null'
+    notes:
+      type:
+      - string
+      - 'null'
+    tags:
+      type: array
+      items:
+        type: string
+    metadata:
+      type: object
+      additionalProperties: true
+    status:
+      $ref: '#/RunStatus'
+    started_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    finished_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    duration_seconds:
+      type:
+      - integer
+      - 'null'
+    auto_complete_after_minutes:
+      type:
+      - integer
+      - 'null'
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+RunCreate:
+  type: object
+  properties:
     name:
       type: string
     params:
@@ -200,6 +275,18 @@ RunCreate:
       type: string
     env:
       type: string
+    status:
+      $ref: '#/RunStatus'
+    started_at:
+      type: string
+      format: date-time
+    finished_at:
+      type: string
+      format: date-time
+    duration_seconds:
+      type: integer
+    auto_complete_after_minutes:
+      type: integer
 RunUpdate:
   type: object
   properties:
@@ -215,6 +302,20 @@ RunUpdate:
       additionalProperties: true
     status:
       $ref: '#/RunStatus'
+    git_sha:
+      type: string
+    env:
+      type: string
+    started_at:
+      type: string
+      format: date-time
+    finished_at:
+      type: string
+      format: date-time
+    duration_seconds:
+      type: integer
+    auto_complete_after_minutes:
+      type: integer
 RunListResponse:
   type: object
   properties:
@@ -228,6 +329,11 @@ RunListResponse:
       type: integer
     page_size:
       type: integer
+  required:
+  - runs
+  - total
+  - page
+  - page_size
 RunBatchStatusRequest:
   type: object
   required:
@@ -256,21 +362,26 @@ CaptureSession:
     ordinal_number:
       type: integer
     started_at:
-      type: string
+      type:
+      - string
+      - 'null'
       format: date-time
-      nullable: true
     stopped_at:
-      type: string
+      type:
+      - string
+      - 'null'
       format: date-time
-      nullable: true
     status:
       $ref: '#/CaptureSessionStatus'
     initiated_by:
-      type: string
+      type:
+      - string
+      - 'null'
       format: uuid
-      nullable: true
     notes:
-      type: string
+      type:
+      - string
+      - 'null'
     archived:
       type: boolean
     created_at:
@@ -279,21 +390,24 @@ CaptureSession:
     updated_at:
       type: string
       format: date-time
+  required:
+  - id
+  - run_id
+  - project_id
+  - ordinal_number
+  - started_at
+  - stopped_at
+  - status
+  - initiated_by
+  - notes
+  - archived
+  - created_at
+  - updated_at
 CaptureSessionCreate:
   type: object
   required:
-  - project_id
-  - run_id
   - ordinal_number
   properties:
-    project_id:
-      type: string
-      format: uuid
-      description: Project context. Server may override from request context (query/auth headers).
-    run_id:
-      type: string
-      format: uuid
-      description: Run context. Server may override from request path parameter.
     ordinal_number:
       type: integer
     status:
@@ -369,6 +483,12 @@ MetricQueryResponse:
       type: integer
     offset:
       type: integer
+  required:
+  - run_id
+  - series
+  - total
+  - limit
+  - offset
 MetricSummaryResponse:
   type: object
   properties:
@@ -379,17 +499,26 @@ MetricSummaryResponse:
       type: array
       items:
         $ref: '#/MetricSummaryItem'
+  required:
+  - run_id
+  - metrics
 MetricSummaryItem:
   type: object
   properties:
     name:
       type: string
     last_step:
-      type: integer
+      type:
+      - integer
+      - 'null'
     last_value:
-      type: number
+      type:
+      - number
+      - 'null'
     last_timestamp:
-      type: string
+      type:
+      - string
+      - 'null'
       format: date-time
     total_steps:
       type: integer
@@ -399,6 +528,15 @@ MetricSummaryItem:
       type: number
     avg_value:
       type: number
+  required:
+  - name
+  - last_step
+  - last_value
+  - last_timestamp
+  - total_steps
+  - min_value
+  - max_value
+  - avg_value
 MetricAggregationsResponse:
   type: object
   properties:
@@ -418,6 +556,10 @@ MetricAggregationsResponse:
             type: array
             items:
               $ref: '#/MetricBucket'
+  required:
+  - run_id
+  - bucket_size
+  - series
 MetricBucket:
   type: object
   properties:
@@ -433,8 +575,30 @@ MetricBucket:
       type: number
     count:
       type: integer
+  required:
+  - step_from
+  - step_to
+  - min
+  - avg
+  - max
+  - count
 Artifact:
   type: object
+  required:
+  - id
+  - run_id
+  - project_id
+  - type
+  - uri
+  - checksum
+  - size_bytes
+  - metadata
+  - created_by
+  - approved_by
+  - approval_note
+  - is_restricted
+  - created_at
+  - updated_at
   properties:
     id:
       type: string
@@ -442,23 +606,45 @@ Artifact:
     run_id:
       type: string
       format: uuid
+    project_id:
+      type: string
+      format: uuid
     type:
       type: string
     uri:
       type: string
+      description: s3://<key> for uploaded files; legacy artifacts hold any string
     checksum:
-      type: string
-    size:
-      type: integer
+      type:
+      - string
+      - 'null'
+    size_bytes:
+      type:
+      - integer
+      - 'null'
+    metadata:
+      type: object
+      additionalProperties: true
     created_by:
       type: string
       format: uuid
     approved_by:
-      type: string
+      type:
+      - string
+      - 'null'
       format: uuid
-      nullable: true
     approval_note:
+      type:
+      - string
+      - 'null'
+    is_restricted:
+      type: boolean
+    created_at:
       type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
 ArtifactCreate:
   type: object
   required:
@@ -471,13 +657,33 @@ ArtifactCreate:
       type: string
     checksum:
       type: string
-    size:
-      type: integer
     metadata:
       type: object
       additionalProperties: true
+    size_bytes:
+      type:
+      - integer
+      - 'null'
+    is_restricted:
+      type: boolean
+      default: false
 Sensor:
   type: object
+  required:
+  - id
+  - project_id
+  - name
+  - type
+  - input_unit
+  - display_unit
+  - status
+  - token_preview
+  - last_heartbeat
+  - active_profile_id
+  - calibration_notes
+  - connection_status
+  - created_at
+  - updated_at
   properties:
     id:
       type: string
@@ -485,6 +691,7 @@ Sensor:
     project_id:
       type: string
       format: uuid
+      description: Primary project. The sensor may also be attached to other projects.
     name:
       type: string
     type:
@@ -494,67 +701,120 @@ Sensor:
     display_unit:
       type: string
     status:
-      type: string
+      $ref: '#/SensorStatus'
+    token_preview:
+      type:
+      - string
+      - 'null'
+      description: Last 4 characters of the current token.
     last_heartbeat:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    active_profile_id:
+      type:
+      - string
+      - 'null'
+      format: uuid
+    calibration_notes:
+      type:
+      - string
+      - 'null'
+    connection_status:
+      $ref: '#/ConnectionStatus'
+    created_at:
       type: string
       format: date-time
-      nullable: true
-    connection_status:
+    updated_at:
       type: string
-      enum: [online, delayed, offline]
-    active_profile_id:
-      type: string
-      format: uuid
-      nullable: true
+      format: date-time
 SensorCreate:
   type: object
+  additionalProperties: false
   required:
-  - project_id
   - name
   - type
   - input_unit
   - display_unit
   properties:
     project_id:
-      type: string
+      type:
+      - string
+      - 'null'
       format: uuid
+      description: Defaults to the X-Project-Id header when omitted or null. Not checked against the caller's
+        project permissions.
     name:
       type: string
+      description: Unique per project (case-insensitive).
     type:
       type: string
     input_unit:
       type: string
     display_unit:
       type: string
+    status:
+      $ref: '#/SensorStatus'
+      default: registering
+    calibration_notes:
+      type:
+      - string
+      - 'null'
 SensorRegisterRequest:
-  allOf:
-    - $ref: '#/SensorCreate'
-    - type: object
-      properties:
-        conversion_profile:
-          $ref: '#/ConversionProfileInput'
-SensorListResponse:
   type: object
+  additionalProperties: false
+  description: SensorCreate plus an optional initial conversion profile.
+  required:
+  - name
+  - type
+  - input_unit
+  - display_unit
   properties:
-    sensors:
-      type: array
-      items:
-        $ref: '#/Sensor'
-    total:
-      type: integer
-    page:
-      type: integer
-    page_size:
-      type: integer
-SensorTokenResponse:
-  type: object
-  properties:
-    sensor:
-      $ref: '#/Sensor'
-    token:
+    project_id:
+      type:
+      - string
+      - 'null'
+      format: uuid
+      description: Defaults to the X-Project-Id header when omitted or null. Not checked against the caller's
+        project permissions.
+    name:
       type: string
+      description: Unique per project (case-insensitive).
+    type:
+      type: string
+    input_unit:
+      type: string
+    display_unit:
+      type: string
+    status:
+      $ref: '#/SensorStatus'
+      default: registering
+    calibration_notes:
+      type:
+      - string
+      - 'null'
+    conversion_profile:
+      oneOf:
+      - $ref: '#/ConversionProfileInput'
+      - type: 'null'
+      description: Optional initial profile; `null` is the same as omitting it.
 ConversionProfile:
   type: object
+  required:
+  - id
+  - sensor_id
+  - project_id
+  - version
+  - kind
+  - payload
+  - status
+  - valid_from
+  - valid_to
+  - created_by
+  - published_by
+  - created_at
+  - updated_at
   properties:
     id:
       type: string
@@ -562,30 +822,46 @@ ConversionProfile:
     sensor_id:
       type: string
       format: uuid
+    project_id:
+      type: string
+      format: uuid
     version:
       type: string
     kind:
       type: string
+      description: One of ConversionProfileKind for profiles created through the API (stored as free text).
     payload:
       type: object
       additionalProperties: true
     status:
-      type: string
-      enum:
-      - draft
-      - active
-      - scheduled
-      - deprecated
+      $ref: '#/ConversionProfileStatus'
     valid_from:
-      type: string
+      type:
+      - string
+      - 'null'
       format: date-time
-      nullable: true
     valid_to:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    created_by:
+      type: string
+      format: uuid
+    published_by:
+      type:
+      - string
+      - 'null'
+      format: uuid
+    created_at:
       type: string
       format: date-time
-      nullable: true
+    updated_at:
+      type: string
+      format: date-time
 ConversionProfileInput:
   type: object
+  additionalProperties: false
   required:
   - version
   - kind
@@ -593,51 +869,45 @@ ConversionProfileInput:
   properties:
     version:
       type: string
+      minLength: 1
+      maxLength: 50
+      description: Unique per sensor.
     kind:
-      type: string
+      $ref: '#/ConversionProfileKind'
     payload:
-      type: object
-      additionalProperties: true
+      description: 'Shape depends on `kind` (linear / polynomial / lookup_table). The server defaults
+        a missing
+
+        payload to {}, which then fails the per-kind check, so it is effectively required. Extra keys
+
+        inside the payload are accepted.'
+      anyOf:
+      - $ref: '#/LinearConversionPayload'
+      - $ref: '#/PolynomialConversionPayload'
+      - $ref: '#/LookupTableConversionPayload'
     status:
-      type: string
-      enum:
-      - draft
-      - scheduled
-      - active
-      - deprecated
+      $ref: '#/ConversionProfileStatus'
       default: draft
+      description: Initial status; `active` also sets the sensor's active_profile_id.
     valid_from:
-      type: string
+      type:
+      - string
+      - 'null'
       format: date-time
-      nullable: true
     valid_to:
-      type: string
+      type:
+      - string
+      - 'null'
       format: date-time
-      nullable: true
 ConversionProfileCreate:
   $ref: '#/ConversionProfileInput'
-SensorTokenResponse:
-  type: object
-  properties:
-    sensor:
-      $ref: '#/Sensor'
-    token:
-      type: string
-SensorListResponse:
-  type: object
-  properties:
-    sensors:
-      type: array
-      items:
-        $ref: '#/Sensor'
-    total:
-      type: integer
-    page:
-      type: integer
-    page_size:
-      type: integer
 ConversionProfileListResponse:
   type: object
+  required:
+  - conversion_profiles
+  - total
+  - page
+  - page_size
   properties:
     conversion_profiles:
       type: array
@@ -645,10 +915,13 @@ ConversionProfileListResponse:
         $ref: '#/ConversionProfile'
     total:
       type: integer
+      description: Total matching rows
     page:
       type: integer
+      description: offset // limit + 1
     page_size:
       type: integer
+      description: Effective limit
 TelemetryIngestRequest:
   type: object
   required:
@@ -662,12 +935,12 @@ TelemetryIngestRequest:
       type: string
       format: uuid
       nullable: true
-      description: Optional. Usually omitted: service will infer run_id from project's active capture session if present.
+      description: "Optional. Usually omitted: service will infer run_id from project's active capture session if present."
     capture_session_id:
       type: string
       format: uuid
       nullable: true
-      description: Optional. Usually omitted: service will auto-attach active capture session. If provided but not active, it won't be attached.
+      description: "Optional. Usually omitted: service will auto-attach active capture session. If provided but not active, it won't be attached."
     meta:
       type: object
       description: Optional batch-level metadata merged into each reading meta
@@ -736,6 +1009,10 @@ ComparisonResponse:
       type: array
       items:
         $ref: '#/ComparisonRunEntry'
+  required:
+  - experiment_id
+  - metric_names
+  - runs
 ComparisonRunEntry:
   type: object
   properties:
@@ -743,29 +1020,45 @@ ComparisonRunEntry:
       type: string
       format: uuid
     run_name:
-      type: string
+      type:
+      - string
+      - 'null'
     status:
       $ref: '#/RunStatus'
     metrics:
       type: object
       additionalProperties:
         $ref: '#/ComparisonMetricData'
+  required:
+  - run_id
+  - run_name
+  - status
+  - metrics
 ComparisonMetricData:
   type: object
   properties:
     summary:
-      $ref: '#/ComparisonMetricSummary'
+      anyOf:
+      - $ref: '#/ComparisonMetricSummary'
+      - type: 'null'
     series:
       type: array
       items:
         $ref: '#/ComparisonPoint'
+  required:
+  - summary
+  - series
 ComparisonMetricSummary:
   type: object
   properties:
     last_value:
-      type: number
+      type:
+      - number
+      - 'null'
     last_step:
-      type: integer
+      type:
+      - integer
+      - 'null'
     min:
       type: number
     max:
@@ -774,6 +1067,13 @@ ComparisonMetricSummary:
       type: number
     count:
       type: integer
+  required:
+  - last_value
+  - last_step
+  - min
+  - max
+  - avg
+  - count
 ComparisonPoint:
   type: object
   properties:
@@ -781,3 +1081,907 @@ ComparisonPoint:
       type: integer
     value:
       type: number
+  required:
+  - step
+  - value
+Error:
+  type: object
+  description: 'JSON error produced by the common error-handling middleware for ServiceError subclasses
+    that
+
+    escape a handler, and for unhandled exceptions (500). Errors raised by handlers as aiohttp HTTP
+
+    exceptions are plain text instead (text/plain).'
+  required:
+  - error
+  properties:
+    error:
+      type: string
+SensorStatus:
+  type: string
+  enum:
+  - registering
+  - active
+  - inactive
+  - decommissioned
+ConnectionStatus:
+  type: string
+  description: Computed from last_heartbeat age (online / delayed thresholds from service settings).
+  enum:
+  - online
+  - delayed
+  - offline
+ConversionProfileStatus:
+  type: string
+  enum:
+  - draft
+  - active
+  - scheduled
+  - deprecated
+ConversionProfileKind:
+  type: string
+  enum:
+  - linear
+  - polynomial
+  - lookup_table
+LinearConversionPayload:
+  type: object
+  description: 'kind=linear: physical = a * raw + b. Both fields are required at runtime.'
+  required:
+  - a
+  - b
+  properties:
+    a:
+      type: number
+    b:
+      type: number
+PolynomialConversionPayload:
+  type: object
+  description: 'kind=polynomial: physical = c[0] + c[1]*x + c[2]*x^2 + ...'
+  required:
+  - coefficients
+  properties:
+    coefficients:
+      type: array
+      minItems: 1
+      items:
+        type: number
+LookupTablePoint:
+  type: object
+  required:
+  - raw
+  - physical
+  properties:
+    raw:
+      type: number
+    physical:
+      type: number
+LookupTableConversionPayload:
+  type: object
+  description: 'kind=lookup_table: linear interpolation between points, clamped beyond the boundaries.'
+  required:
+  - table
+  properties:
+    table:
+      type: array
+      minItems: 2
+      items:
+        $ref: '#/LookupTablePoint'
+SensorUpdate:
+  type: object
+  additionalProperties: false
+  description: All fields optional; `null` values are ignored. At least one non-null field is expected.
+  properties:
+    name:
+      type: string
+    type:
+      type: string
+    input_unit:
+      type: string
+    display_unit:
+      type: string
+    status:
+      $ref: '#/SensorStatus'
+    calibration_notes:
+      type:
+      - string
+      - 'null'
+    last_heartbeat:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    active_profile_id:
+      type:
+      - string
+      - 'null'
+      format: uuid
+      description: Must reference an existing conversion profile.
+SensorStatusSummary:
+  type: object
+  required:
+  - online
+  - delayed
+  - offline
+  - total
+  properties:
+    online:
+      type: integer
+    delayed:
+      type: integer
+    offline:
+      type: integer
+    total:
+      type: integer
+SensorHeartbeatHistory:
+  type: object
+  required:
+  - sensor_id
+  - timestamps
+  - count
+  properties:
+    sensor_id:
+      type: string
+      format: uuid
+    timestamps:
+      type: array
+      items:
+        type: string
+        format: date-time
+    count:
+      type: integer
+SensorProjectsResponse:
+  type: object
+  required:
+  - project_ids
+  properties:
+    project_ids:
+      type: array
+      items:
+        type: string
+        format: uuid
+SensorProjectAddRequest:
+  type: object
+  required:
+  - project_id
+  description: Other properties are ignored.
+  properties:
+    project_id:
+      type:
+      - string
+      - 'null'
+      format: uuid
+      description: Target project. `null` falls back to the X-Project-Id header.
+BackfillTaskStatus:
+  type: string
+  enum:
+  - pending
+  - running
+  - completed
+  - failed
+BackfillTask:
+  type: object
+  required:
+  - id
+  - sensor_id
+  - project_id
+  - conversion_profile_id
+  - status
+  - total_records
+  - processed_records
+  - error_message
+  - created_by
+  - created_at
+  - started_at
+  - completed_at
+  - updated_at
+  properties:
+    id:
+      type: string
+      format: uuid
+    sensor_id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    conversion_profile_id:
+      type: string
+      format: uuid
+      description: Sensor's active profile at the time the task was created.
+    status:
+      $ref: '#/BackfillTaskStatus'
+    total_records:
+      type:
+      - integer
+      - 'null'
+      description: Set once the worker has counted the records.
+    processed_records:
+      type: integer
+    error_message:
+      type:
+      - string
+      - 'null'
+    created_by:
+      type: string
+      format: uuid
+    created_at:
+      type: string
+      format: date-time
+    started_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    completed_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+BackfillTaskListResponse:
+  type: object
+  required:
+  - backfill_tasks
+  - total
+  - page
+  - page_size
+  properties:
+    backfill_tasks:
+      type: array
+      items:
+        $ref: '#/BackfillTask'
+    total:
+      type: integer
+      description: Total matching rows
+    page:
+      type: integer
+      description: offset // limit + 1
+    page_size:
+      type: integer
+      description: Effective limit
+WebhookCreate:
+  type: object
+  required:
+  - target_url
+  - event_types
+  description: Unknown properties are ignored.
+  properties:
+    target_url:
+      type: string
+      description: Delivery URL (not validated as a URL).
+    event_types:
+      type: array
+      minItems: 1
+      items:
+        type: string
+      description: 'Event types to receive. Not validated against a list; events emitted today: run.started,
+
+        run.finished, run.archived, run.status_changed, run.tags_updated, capture_session.created,
+
+        capture_session.stopped, capture_session.backfill_started, capture_session.backfill_completed.'
+    secret:
+      type:
+      - string
+      - 'null'
+      description: Optional HMAC-SHA256 signing secret.
+WebhookSubscription:
+  type: object
+  required:
+  - id
+  - project_id
+  - target_url
+  - secret
+  - event_types
+  - is_active
+  - created_at
+  - updated_at
+  properties:
+    id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    target_url:
+      type: string
+    secret:
+      type:
+      - string
+      - 'null'
+      description: Returned in plaintext.
+    event_types:
+      type: array
+      items:
+        type: string
+    is_active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+WebhookListResponse:
+  type: object
+  required:
+  - webhooks
+  - total
+  - page
+  - page_size
+  properties:
+    webhooks:
+      type: array
+      items:
+        $ref: '#/WebhookSubscription'
+    total:
+      type: integer
+      description: Total matching rows
+    page:
+      type: integer
+      description: offset // limit + 1
+    page_size:
+      type: integer
+      description: Effective limit
+WebhookDeliveryStatus:
+  type: string
+  description: '`failed` is a legacy value that may exist in older rows.'
+  enum:
+  - pending
+  - in_progress
+  - succeeded
+  - dead_lettered
+  - failed
+WebhookEventEnvelope:
+  type: object
+  description: Body POSTed to the subscriber.
+  required:
+  - event_type
+  - project_id
+  - occurred_at
+  - payload
+  properties:
+    event_type:
+      type: string
+    project_id:
+      type: string
+      format: uuid
+    occurred_at:
+      type: string
+      format: date-time
+    payload:
+      type: object
+      additionalProperties: true
+WebhookDelivery:
+  type: object
+  required:
+  - id
+  - subscription_id
+  - project_id
+  - event_type
+  - target_url
+  - secret
+  - request_body
+  - status
+  - attempt_count
+  - last_error
+  - dedup_key
+  - locked_at
+  - next_attempt_at
+  - created_at
+  - updated_at
+  properties:
+    id:
+      type: string
+      format: uuid
+    subscription_id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    event_type:
+      type: string
+    target_url:
+      type: string
+    secret:
+      type:
+      - string
+      - 'null'
+      description: Copied from the subscription; returned in plaintext.
+    request_body:
+      $ref: '#/WebhookEventEnvelope'
+    status:
+      $ref: '#/WebhookDeliveryStatus'
+    attempt_count:
+      type: integer
+    last_error:
+      type:
+      - string
+      - 'null'
+    dedup_key:
+      type:
+      - string
+      - 'null'
+    locked_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    next_attempt_at:
+      type: string
+      format: date-time
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+WebhookDeliveryListResponse:
+  type: object
+  required:
+  - deliveries
+  - total
+  - page
+  - page_size
+  properties:
+    deliveries:
+      type: array
+      items:
+        $ref: '#/WebhookDelivery'
+    total:
+      type: integer
+      description: Total matching rows
+    page:
+      type: integer
+      description: offset // limit + 1
+    page_size:
+      type: integer
+      description: Effective limit
+RunBatchResponse:
+  type: object
+  description: Runs touched by a bulk operation (runs:batch-status, runs:bulk-tags).
+  required:
+  - runs
+  properties:
+    runs:
+      type: array
+      items:
+        $ref: '#/Run'
+RunBulkTagsRequest:
+  type: object
+  description: 'Exactly one mode: `set_tags` (replace; may be empty to clear) or `add_tags`/`remove_tags`
+    (at least one of them non-empty after trimming). Tags are trimmed, empty strings dropped and duplicates
+    removed. In add/remove mode the stored tag array is de-duplicated and sorted.
+
+    '
+  required:
+  - run_ids
+  properties:
+    run_ids:
+      type: array
+      minItems: 1
+      items:
+        type: string
+        format: uuid
+    set_tags:
+      type: array
+      items:
+        type: string
+    add_tags:
+      type: array
+      items:
+        type: string
+    remove_tags:
+      type: array
+      items:
+        type: string
+EventActorRole:
+  type: string
+  description: Role inferred from the actor's permissions when the event was recorded.
+  enum:
+  - owner
+  - editor
+  - viewer
+RunEvent:
+  type: object
+  required:
+  - id
+  - run_id
+  - event_type
+  - actor_id
+  - actor_role
+  - payload
+  - created_at
+  properties:
+    id:
+      type: integer
+      format: int64
+    run_id:
+      type: string
+      format: uuid
+    event_type:
+      type: string
+      description: 'Values written by the service today: run.status_changed, run.tags_updated.'
+    actor_id:
+      type: string
+      format: uuid
+    actor_role:
+      $ref: '#/EventActorRole'
+    payload:
+      type: object
+      additionalProperties: true
+      description: 'run.status_changed: {from, to}. run.tags_updated: {set_tags, add_tags, remove_tags}
+        (unused mode is null).
+
+        '
+    created_at:
+      type: string
+      format: date-time
+RunEventListResponse:
+  type: object
+  required:
+  - events
+  - total
+  - page
+  - page_size
+  properties:
+    events:
+      type: array
+      items:
+        $ref: '#/RunEvent'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+RunSensor:
+  type: object
+  required:
+  - run_id
+  - sensor_id
+  - project_id
+  - mode
+  - attached_at
+  - detached_at
+  - created_by
+  properties:
+    run_id:
+      type: string
+      format: uuid
+    sensor_id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    mode:
+      type: string
+      description: Free-form attachment mode; the API defaults to "passive".
+    attached_at:
+      type: string
+      format: date-time
+    detached_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    created_by:
+      type: string
+      format: uuid
+RunSensorListResponse:
+  type: object
+  description: Sensors currently attached to the run (not paginated).
+  required:
+  - sensors
+  properties:
+    sensors:
+      type: array
+      items:
+        $ref: '#/RunSensor'
+RunSensorAttachRequest:
+  type: object
+  properties:
+    mode:
+      type: string
+      default: passive
+CaptureSessionListResponse:
+  type: object
+  required:
+  - capture_sessions
+  - total
+  - page
+  - page_size
+  properties:
+    capture_sessions:
+      type: array
+      items:
+        $ref: '#/CaptureSession'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+CaptureSessionStopRequest:
+  type: object
+  description: All fields optional, but the body must be a JSON object (send `{}`).
+  properties:
+    status:
+      allOf:
+      - $ref: '#/CaptureSessionStatus'
+      default: succeeded
+      description: Target status; must be a valid transition from the current one.
+    stopped_at:
+      type: string
+      format: date-time
+      description: Defaults to the server's current time.
+    archived:
+      type: boolean
+    notes:
+      type: string
+CaptureSessionBackfillCompleteResponse:
+  description: Capture session after backfill completion plus the number of late rows attached.
+  allOf:
+  - $ref: '#/CaptureSession'
+  - type: object
+    required:
+    - attached_records
+    properties:
+      attached_records:
+        type: integer
+        minimum: 0
+        description: Late telemetry rows retroactively linked to the capture session.
+CaptureSessionEvent:
+  type: object
+  required:
+  - id
+  - capture_session_id
+  - event_type
+  - actor_id
+  - actor_role
+  - payload
+  - created_at
+  properties:
+    id:
+      type: integer
+      format: int64
+    capture_session_id:
+      type: string
+      format: uuid
+    event_type:
+      type: string
+      description: 'Values written by the service today: capture_session.created, capture_session.stopped,
+        capture_session.backfill_started, capture_session.backfill_completed.
+
+        '
+    actor_id:
+      type: string
+      format: uuid
+    actor_role:
+      $ref: '#/EventActorRole'
+    payload:
+      type: object
+      additionalProperties: true
+    created_at:
+      type: string
+      format: date-time
+CaptureSessionEventListResponse:
+  type: object
+  required:
+  - events
+  - total
+  - page
+  - page_size
+  properties:
+    events:
+      type: array
+      items:
+        $ref: '#/CaptureSessionEvent'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+MetricIngestResponse:
+  type: object
+  required:
+  - status
+  - accepted
+  properties:
+    status:
+      type: string
+      enum:
+      - accepted
+    accepted:
+      type: integer
+      description: Number of metric points stored.
+ArtifactListResponse:
+  type: object
+  required:
+  - artifacts
+  - total
+  - page
+  - page_size
+  properties:
+    artifacts:
+      type: array
+      items:
+        $ref: '#/Artifact'
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+ArtifactApproveRequest:
+  type: object
+  description: Body must be a JSON object; send `{}` to approve without a note.
+  properties:
+    note:
+      type:
+      - string
+      - 'null'
+ArtifactUploadUrlRequest:
+  type: object
+  required:
+  - filename
+  - type
+  properties:
+    filename:
+      type: string
+      minLength: 1
+      description: Original filename; becomes the last component of the S3 key.
+    content_type:
+      type: string
+      default: application/octet-stream
+      description: MIME type the client must send with the PUT upload.
+    type:
+      type: string
+      minLength: 1
+      description: Artifact type (model, dataset, log, ...).
+    size_bytes:
+      type:
+      - integer
+      - 'null'
+    metadata:
+      type: object
+      additionalProperties: true
+    is_restricted:
+      type: boolean
+      default: false
+ArtifactUploadUrlResponse:
+  type: object
+  required:
+  - upload_url
+  - artifact_id
+  - s3_key
+  properties:
+    upload_url:
+      type: string
+      format: uri
+      description: Presigned PUT URL.
+    artifact_id:
+      type: string
+      format: uuid
+      description: Artifact record created for this upload (uri = s3://<s3_key>).
+    s3_key:
+      type: string
+      description: Object key, artifacts/{project_id}/{run_id}/{uuid}/{filename}.
+ArtifactDownloadUrlResponse:
+  type: object
+  required:
+  - download_url
+  - expires_in
+  properties:
+    download_url:
+      type: string
+      description: 'Presigned GET URL for s3:// artifacts; for legacy artifacts whose uri is not s3://
+        this is the stored uri returned as-is.
+
+        '
+    expires_in:
+      type:
+      - integer
+      - 'null'
+      description: Seconds until the presigned URL expires; null for legacy (non-S3) artifacts.
+TelemetryConversionStatus:
+  type: string
+  enum:
+  - raw_only
+  - converted
+  - client_provided
+  - conversion_failed
+TelemetryExportRecord:
+  type: object
+  description: 'One raw telemetry reading in a JSON telemetry export, ordered by timestamp ascending.
+    raw_value is present only when raw_or_physical is raw or both; physical_value only when it is physical
+    or both.
+
+    '
+  required:
+  - timestamp
+  - sensor_id
+  - signal
+  - conversion_status
+  - capture_session_id
+  properties:
+    timestamp:
+      type: string
+      format: date-time
+    sensor_id:
+      type: string
+      format: uuid
+    signal:
+      type:
+      - string
+      - 'null'
+      description: meta.signal of the reading, null when the reading had none.
+    raw_value:
+      type: number
+    physical_value:
+      type:
+      - number
+      - 'null'
+    conversion_status:
+      $ref: '#/TelemetryConversionStatus'
+    capture_session_id:
+      type: string
+      format: uuid
+      description: Always set, the export filters on capture_session_id.
+TelemetryExportAggregateRecord:
+  type: object
+  description: 'One 1-minute bucket from the telemetry_1m continuous aggregate (aggregation=1m), ordered
+    by bucket ascending. Physical aggregates are null when no reading in the bucket had a physical value.
+
+    '
+  required:
+  - bucket
+  - sensor_id
+  - signal
+  - capture_session_id
+  - sample_count
+  - avg_raw
+  - min_raw
+  - max_raw
+  - avg_physical
+  - min_physical
+  - max_physical
+  properties:
+    bucket:
+      type: string
+      format: date-time
+    sensor_id:
+      type: string
+      format: uuid
+    signal:
+      type:
+      - string
+      - 'null'
+    capture_session_id:
+      type: string
+      format: uuid
+    sample_count:
+      type: integer
+    avg_raw:
+      type: number
+    min_raw:
+      type: number
+    max_raw:
+      type: number
+    avg_physical:
+      type:
+      - number
+      - 'null'
+    min_physical:
+      type:
+      - number
+      - 'null'
+    max_physical:
+      type:
+      - number
+      - 'null'

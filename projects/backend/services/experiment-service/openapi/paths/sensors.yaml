@@ -1,10 +1,55 @@
+# Full replacement for openapi/paths/sensors.yaml
 collection:
   get:
-    tags: [sensors]
+    tags:
+    - sensors
     summary: List sensors
+    description: |-
+      Scope resolution: (1) `project_id` query -> that project (requires `experiments.view`);
+      (2) else `X-Project-Ids` header (set by auth-proxy) -> sensors of any listed project,
+      no permission check, and the `status` / `created_after` / `created_before` filters are IGNORED;
+      (3) else X-Project-Id header -> that project (requires `experiments.view`);
+      (4) else an empty page. Ordered by created_at DESC.
     operationId: listSensors
     parameters:
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: X-Project-Ids
+      in: header
+      required: false
+      description: Comma-separated project UUIDs (set by auth-proxy). Invalid entries are skipped.
+      schema:
+        type: string
+    - name: status
+      in: query
+      description: Filter by lifecycle status. An unknown value currently yields 500 (unhandled ValueError).
+      schema:
+        $ref: ../components/schemas.yaml#/SensorStatus
+    - name: created_after
+      in: query
+      description: Inclusive lower bound on created_at (ISO-8601; naive values are treated as UTC).
+      schema:
+        type: string
+        format: date-time
+    - name: created_before
+      in: query
+      description: Inclusive upper bound on created_at (ISO-8601; naive values are treated as UTC).
+      schema:
+        type: string
+        format: date-time
+    - name: limit
+      in: query
+      description: Page size. Values <= 0 fall back to 50; values > 100 are clamped to 100. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 50
+        maximum: 100
+    - name: offset
+      in: query
+      description: Rows to skip. Negative values are treated as 0. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
     responses:
       200:
         description: Paginated sensors
@@ -12,12 +57,42 @@ collection:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/SensorListResponse
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; invalid project_id, created_after/created_before, limit or offset
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
   post:
-    tags: [sensors]
+    tags:
+    - sensors
     summary: Register sensor
+    description: |-
+      Creates the sensor (and its primary `sensor_projects` row) and returns the plaintext token once.
+      If `conversion_profile` is given it is created too; when its status is `active` it becomes the
+      sensor's `active_profile_id`. The idempotency body hash covers the sensor fields only, not
+      `conversion_profile`.
     operationId: registerSensor
     parameters:
-      - $ref: ../components/parameters.yaml#/IdempotencyKey
+    - $ref: ../components/parameters.yaml#/IdempotencyKey
     requestBody:
       required: true
       content:
@@ -26,24 +101,106 @@ collection:
             $ref: ../components/schemas.yaml#/SensorRegisterRequest
     responses:
       201:
-        description: Sensor registered (token included)
+        description: Sensor registered (token included). Also returned verbatim when an Idempotency-Key replays a completed
+          request.
         content:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/SensorTokenResponse
       400:
-        description: Validation error
+        description: |-
+          Invalid X-User-Id / X-Project-Id header; invalid JSON / non-object body; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; Pydantic validation failure of the
+          sensor or `conversion_profile` (body is the JSON-encoded Pydantic error list, sent as text/plain);
+          invalid initial profile status transition (`Bad request`).
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.create` permission (text body `403: Missing permission: experiments.create`).'
+        content:
+          text/plain:
+            schema:
+              type: string
       409:
-        description: Idempotency key conflicts with another payload
-
+        description: |-
+          Idempotency-Key reused for another path or a different payload (text/plain `Conflict`), or a sensor
+          with the same name (case-insensitive) already exists in the project
+          (JSON `{"error": "Sensor with name '<name>' already exists in this project"}`).
+        content:
+          text/plain:
+            schema:
+              type: string
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+      503:
+        description: Another request holding the same Idempotency-Key is still in progress; retry with the same key.
+        content:
+          text/plain:
+            schema:
+              type: string
+statusSummary:
+  get:
+    tags:
+    - sensors
+    summary: Get sensor connection status summary for a project
+    operationId: getSensorStatusSummary
+    parameters:
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      200:
+        description: Counts of online/delayed/offline sensors
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorStatusSummary
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
 item:
   get:
-    tags: [sensors]
+    tags:
+    - sensors
     summary: Get sensor
     operationId: getSensor
     parameters:
-      - $ref: ../components/parameters.yaml#/SensorId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Sensor with connection_status
@@ -51,41 +208,154 @@ item:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/Sensor
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid sensor_id
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
       404:
-        description: Sensor not found
-
-statusSummary:
-  get:
-    tags: [sensors]
-    summary: Get sensor connection status summary for a project
-    operationId: getSensorStatusSummary
-    parameters:
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    responses:
-      200:
-        description: Counts of online/delayed/offline sensors
+        description: Sensor not found or not attached to the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                online:
-                  type: integer
-                delayed:
-                  type: integer
-                offline:
-                  type: integer
-                total:
-                  type: integer
-              required: [online, delayed, offline, total]
-
+              $ref: ../components/schemas.yaml#/Error
+  patch:
+    tags:
+    - sensors
+    summary: Update sensor
+    description: |-
+      Partial update. Fields sent as `null` are ignored (cannot clear a value). A body with no
+      non-null fields currently yields 500 (unhandled ValueError). Note: the returned
+      `connection_status` is always `offline` (the UPDATE ... RETURNING row lacks the computed column).
+    operationId: updateSensor
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/SensorUpdate
+    responses:
+      200:
+        description: Updated sensor
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Sensor
+      400:
+        description: |-
+          Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id; invalid JSON; Pydantic validation failure
+          (JSON-encoded error list as text/plain)
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.update` permission (text body `403: Missing permission: experiments.update`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor not found or not attached to the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: |-
+          Unhandled error, including: empty update, duplicate name (unique index), unknown
+          active_profile_id (FK). Body `{"error": "Internal server error"}`.
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+  delete:
+    tags:
+    - sensors
+    summary: Delete sensor
+    description: |-
+      Deletes the sensor row itself (all project links and conversion profiles cascade), even when
+      called from a secondary project the sensor is merely attached to.
+    operationId: deleteSensor
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      204:
+        description: Sensor deleted
+      400:
+        description: |-
+          Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id; sensor participates in a draft/running/backfilling
+          capture session (`Bad request`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.delete` permission (text body `403: Missing permission: experiments.delete`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor not found or not attached to the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
 rotateToken:
   post:
-    tags: [sensors]
+    tags:
+    - sensors
     summary: Rotate sensor token
+    description: |-
+      Issues a new token (old one stops working immediately). Note: the returned sensor's
+      `connection_status` is always `offline` (RETURNING row lacks the computed column).
     operationId: rotateSensorToken
     parameters:
-      - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Token rotated
@@ -93,52 +363,421 @@ rotateToken:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/SensorTokenResponse
-
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid sensor_id
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.update` permission (text body `403: Missing permission: experiments.update`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor not found or not attached to the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
 heartbeatHistory:
   get:
-    tags: [sensors]
+    tags:
+    - sensors
     summary: Get sensor heartbeat history (per-minute buckets for sparkline)
+    description: Returns the start of every 1-minute bucket in the window that has at least one telemetry record, ascending.
     operationId: getSensorHeartbeatHistory
     parameters:
-      - $ref: ../components/parameters.yaml#/SensorId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-      - name: minutes
-        in: query
-        schema:
-          type: integer
-          default: 60
-          minimum: 1
-          maximum: 1440
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: minutes
+      in: query
+      description: Window size in minutes.
+      schema:
+        type: integer
+        default: 60
+        minimum: 1
+        maximum: 1440
     responses:
       200:
         description: List of per-minute bucket timestamps
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                sensor_id:
-                  type: string
-                  format: uuid
-                timestamps:
-                  type: array
-                  items:
-                    type: string
-                    format: date-time
-                count:
-                  type: integer
-              required: [sensor_id, timestamps, count]
+              $ref: ../components/schemas.yaml#/SensorHeartbeatHistory
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid sensor_id; `minutes must be an integer between 1 and 1440`
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
       404:
-        description: Sensor not found
-
+        description: Sensor not found or not attached to the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+projects:
+  get:
+    tags:
+    - sensors
+    summary: List projects a sensor is attached to
+    description: |-
+      Project scope comes ONLY from the X-Project-Id header (the `project_id` query is not read).
+      The sensor must be attached to that project. Ordered by attach time; falls back to the
+      sensor's primary project when no `sensor_projects` rows exist.
+    operationId: listSensorProjects
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    responses:
+      200:
+        description: Project ids
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorProjectsResponse
+      400:
+        description: 'Invalid X-User-Id / X-Project-Id header; X-Project-Id header missing (text body `400: X-Project-Id header
+          required`); invalid sensor_id'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor not found or not attached to the caller's project (`Resource not found` / `Sensor not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+  post:
+    tags:
+    - sensors
+    summary: Attach sensor to a project
+    description: |-
+      Adds a `sensor_projects` link (no-op when it already exists). The sensor is looked up
+      globally (no membership check on its current projects). `experiments.create` is checked
+      against the caller's header permissions, not against the target project. If `project_id`
+      is `null` the X-Project-Id header is used.
+    operationId: addSensorProject
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/SensorProjectAddRequest
+    responses:
+      204:
+        description: Sensor attached (or already attached)
+      400:
+        description: |-
+          Invalid X-User-Id / X-Project-Id header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id`;
+          any failure while inserting the link (`Bad request`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.create` permission (text body `403: Missing permission: experiments.create`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor not found (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error, including a non-string, non-null `project_id`. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+projectItem:
+  delete:
+    tags:
+    - sensors
+    summary: Detach sensor from a project
+    description: |-
+      Deletes the `sensor_projects` link. No project-scope check: only `experiments.delete` in the
+      caller's header permissions is required. Removing the link to the sensor's primary project
+      does not change `sensors.project_id`, so the sensor stays visible there.
+    operationId: removeSensorProject
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdPath
+    responses:
+      204:
+        description: Link removed
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; invalid sensor_id or project_id
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.delete` permission (text body `403: Missing permission: experiments.delete`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor-project link not found (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+backfill:
+  get:
+    tags:
+    - sensors
+    summary: List conversion backfill tasks of a sensor
+    description: Project scope comes ONLY from the X-Project-Id header. Ordered by created_at DESC. Unknown sensors yield
+      an empty page.
+    operationId: listSensorBackfillTasks
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    - name: limit
+      in: query
+      description: Page size. Values <= 0 fall back to 50; values > 100 are clamped to 100. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 50
+        maximum: 100
+    - name: offset
+      in: query
+      description: Rows to skip. Negative values are treated as 0. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    responses:
+      200:
+        description: Paginated backfill tasks
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/BackfillTaskListResponse
+      400:
+        description: 'Invalid X-User-Id / X-Project-Id header; X-Project-Id header missing (text body `400: X-Project-Id header
+          required`); invalid sensor_id, limit or offset'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+  post:
+    tags:
+    - sensors
+    summary: Start conversion backfill for a sensor
+    description: |-
+      Queues a `pending` task that re-applies the sensor's current active conversion profile to its
+      stored telemetry; a background worker picks it up. No request body. Project scope comes ONLY
+      from the X-Project-Id header.
+    operationId: startSensorBackfill
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    responses:
+      201:
+        description: Backfill task created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/BackfillTask
+      400:
+        description: 'Invalid X-User-Id / X-Project-Id header; X-Project-Id header missing (text body `400: X-Project-Id header
+          required`); invalid sensor_id'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `runs.create` permission (text body `403: Missing permission: runs.create`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor not found in the project, or the sensor has no active conversion profile (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+backfillTask:
+  get:
+    tags:
+    - sensors
+    summary: Get a conversion backfill task
+    description: |-
+      Looked up by task id within the X-Project-Id project. The `sensor_id` path segment is
+      neither validated nor matched against the task.
+    operationId: getSensorBackfillTask
+    parameters:
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/BackfillTaskId
+    responses:
+      200:
+        description: Backfill task
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/BackfillTask
+      400:
+        description: 'Invalid X-User-Id / X-Project-Id header; X-Project-Id header missing (text body `400: X-Project-Id header
+          required`); invalid task_id'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Task not found in the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
 conversionProfiles:
   get:
-    tags: [conversion_profiles]
+    tags:
+    - conversion_profiles
     summary: List conversion profiles
+    description: Ordered by created_at DESC. Unknown sensors yield an empty page (no 404).
     operationId: listConversionProfiles
     parameters:
-      - $ref: ../components/parameters.yaml#/SensorId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: limit
+      in: query
+      description: Page size. Values <= 0 fall back to 50; values > 100 are clamped to 100. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 50
+        maximum: 100
+    - name: offset
+      in: query
+      description: Rows to skip. Negative values are treated as 0. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
     responses:
       200:
         description: Paginated conversion profiles
@@ -146,13 +785,40 @@ conversionProfiles:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/ConversionProfileListResponse
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid sensor_id, limit or offset
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
   post:
-    tags: [conversion_profiles]
+    tags:
+    - conversion_profiles
     summary: Create conversion profile
+    description: When created with status `active`, the profile also becomes the sensor's `active_profile_id`.
     operationId: createConversionProfile
     parameters:
-      - $ref: ../components/parameters.yaml#/SensorId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
@@ -166,16 +832,55 @@ conversionProfiles:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/ConversionProfile
-
+      400:
+        description: |-
+          Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id; invalid JSON; Pydantic validation failure incl.
+          payload-vs-kind checks (JSON-encoded error list as text/plain)
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.create` permission (text body `403: Missing permission: experiments.create`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Sensor not found or not attached to the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: |-
+          Unhandled error, including a duplicate `version` for the sensor, or a sensor attached to
+          this project only via `sensor_projects` (FK on sensor's primary project).
+          Body `{"error": "Internal server error"}`.
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
 conversionProfilePublish:
   post:
-    tags: [conversion_profiles]
+    tags:
+    - conversion_profiles
     summary: Publish conversion profile
+    description: |-
+      Sets status `active`, `valid_from`/`valid_to` to null and `published_by` to the caller, and makes
+      it the sensor's active profile. Already-active profiles are returned unchanged. Other active
+      profiles of the sensor are not deprecated.
     operationId: publishConversionProfile
     parameters:
-      - $ref: ../components/parameters.yaml#/SensorId
-      - $ref: ../components/parameters.yaml#/ProfileId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - $ref: ../components/parameters.yaml#/SensorId
+    - $ref: ../components/parameters.yaml#/ProfileId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Conversion profile published
@@ -183,4 +888,34 @@ conversionProfilePublish:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/ConversionProfile
-
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid sensor_id or profile_id; profile is `deprecated` (`Bad request`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `project.settings.update` permission (text body `403: Missing permission: project.settings.update`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Profile not found for this sensor and project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error

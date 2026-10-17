@@ -2,8 +2,7 @@ openapi: 3.1.0
 info:
   title: Experiment Service API
   version: 0.1.0
-  description: Programmatic contract for Experiment Tracking Platform backend (aiohttp
-    skeleton)
+  description: Programmatic contract for Experiment Tracking Platform backend (aiohttp skeleton)
 servers:
 - url: http://localhost:8002
 tags:
@@ -15,43 +14,10 @@ tags:
 - name: sensors
 - name: conversion_profiles
 - name: telemetry
+- name: webhooks
 paths:
   /health:
     $ref: ./paths/health.yaml
-  /api/v1/experiments:
-    $ref: ./paths/experiments.yaml#/collection
-  /api/v1/experiments/search:
-    $ref: ./paths/experiments.yaml#/search
-  /api/v1/experiments/{experiment_id}:
-    $ref: ./paths/experiments.yaml#/item
-  /api/v1/experiments/{experiment_id}/archive:
-    $ref: ./paths/experiments.yaml#/archive
-  /api/v1/experiments/{experiment_id}/compare:
-    $ref: ./paths/experiments.yaml#/compare
-  /api/v1/experiments/{experiment_id}/export:
-    $ref: ./paths/experiments.yaml#/export
-  /api/v1/experiments/{experiment_id}/runs:
-    $ref: ./paths/experiments.yaml#/runs
-  /api/v1/runs/{run_id}:
-    $ref: ./paths/runs.yaml#/run
-  /api/v1/runs:batch-status:
-    $ref: ./paths/runs.yaml#/batchStatus
-  /api/v1/runs/{run_id}/capture-sessions:
-    $ref: ./paths/runs.yaml#/captureSessions
-  /api/v1/runs/{run_id}/capture-sessions/{session_id}/stop:
-    $ref: ./paths/runs.yaml#/captureSessionStop
-  /api/v1/runs/{run_id}/capture-sessions/{session_id}:
-    $ref: ./paths/runs.yaml#/captureSessionDelete
-  /api/v1/runs/{run_id}/metrics:
-    $ref: ./paths/runs.yaml#/metrics
-  /api/v1/runs/{run_id}/metrics/summary:
-    $ref: ./paths/runs.yaml#/metricsSummary
-  /api/v1/runs/{run_id}/metrics/aggregations:
-    $ref: ./paths/runs.yaml#/metricsAggregations
-  /api/v1/runs/{run_id}/artifacts:
-    $ref: ./paths/runs.yaml#/artifacts
-  /api/v1/runs/{run_id}/artifacts/{artifact_id}/approve:
-    $ref: ./paths/runs.yaml#/artifactApprove
   /api/v1/sensors:
     $ref: ./paths/sensors.yaml#/collection
   /api/v1/sensors/status-summary:
@@ -70,6 +36,86 @@ paths:
     $ref: ./paths/telemetry.yaml#/ingest
   /api/v1/telemetry/stream:
     $ref: ./paths/telemetry.yaml#/stream
+  /api/v1/experiments:
+    $ref: ./paths/experiments.yaml#/collection
+  /api/v1/experiments/search:
+    $ref: ./paths/experiments.yaml#/search
+  /api/v1/experiments/{experiment_id}:
+    $ref: ./paths/experiments.yaml#/item
+  /api/v1/experiments/{experiment_id}/archive:
+    $ref: ./paths/experiments.yaml#/archive
+  /api/v1/experiments/{experiment_id}/runs:
+    $ref: ./paths/runs.yaml#/experimentRuns
+  /api/v1/runs/{run_id}:
+    $ref: ./paths/runs.yaml#/run
+  /api/v1/runs:batch-status:
+    $ref: ./paths/runs.yaml#/batchStatus
+  /api/v1/runs:bulk-tags:
+    $ref: ./paths/runs.yaml#/bulkTags
+  /api/v1/runs/{run_id}/events:
+    $ref: ./paths/runs.yaml#/runEvents
+  /api/v1/runs/{run_id}/sensors:
+    $ref: ./paths/runs.yaml#/runSensors
+  /api/v1/runs/{run_id}/sensors/{sensor_id}:
+    $ref: ./paths/runs.yaml#/runSensor
+  /api/v1/runs/{run_id}/capture-sessions:
+    $ref: ./paths/capture_sessions.yaml#/captureSessions
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}:
+    $ref: ./paths/capture_sessions.yaml#/captureSessionItem
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}/stop:
+    $ref: ./paths/capture_sessions.yaml#/captureSessionStop
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}/events:
+    $ref: ./paths/capture_sessions.yaml#/captureSessionEvents
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}/backfill/start:
+    $ref: ./paths/capture_sessions.yaml#/captureSessionBackfillStart
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}/backfill/complete:
+    $ref: ./paths/capture_sessions.yaml#/captureSessionBackfillComplete
+  /api/v1/runs/{run_id}/metrics:
+    $ref: ./paths/metrics.yaml#/metrics
+  /api/v1/runs/{run_id}/metrics/summary:
+    $ref: ./paths/metrics.yaml#/metricsSummary
+  /api/v1/runs/{run_id}/metrics/aggregations:
+    $ref: ./paths/metrics.yaml#/metricsAggregations
+  /api/v1/experiments/{experiment_id}/compare:
+    $ref: ./paths/metrics.yaml#/compare
+  /api/v1/experiments/{experiment_id}/compare/export:
+    $ref: ./paths/metrics.yaml#/compareExport
+  /api/v1/runs/{run_id}/artifacts:
+    $ref: ./paths/artifacts.yaml#/runArtifacts
+  /api/v1/runs/{run_id}/artifacts/upload-url:
+    $ref: ./paths/artifacts.yaml#/runArtifactUploadUrl
+  /api/v1/artifacts/{artifact_id}:
+    $ref: ./paths/artifacts.yaml#/item
+  /api/v1/artifacts/{artifact_id}/approve:
+    $ref: ./paths/artifacts.yaml#/approve
+  /api/v1/artifacts/{artifact_id}/download-url:
+    $ref: ./paths/artifacts.yaml#/downloadUrl
+  /api/v1/experiments/export:
+    $ref: ./paths/exports.yaml#/experimentsExport
+  /api/v1/experiments/{experiment_id}/export:
+    $ref: ./paths/exports.yaml#/experimentArchive
+  /api/v1/experiments/{experiment_id}/runs/export:
+    $ref: ./paths/exports.yaml#/experimentRunsExport
+  /api/v1/runs/{run_id}/telemetry/export:
+    $ref: ./paths/exports.yaml#/runTelemetryExport
+  /api/v1/runs/{run_id}/capture-sessions/{session_id}/telemetry/export:
+    $ref: ./paths/exports.yaml#/sessionTelemetryExport
+  /api/v1/sensors/{sensor_id}/projects:
+    $ref: ./paths/sensors.yaml#/projects
+  /api/v1/sensors/{sensor_id}/projects/{project_id}:
+    $ref: ./paths/sensors.yaml#/projectItem
+  /api/v1/sensors/{sensor_id}/backfill:
+    $ref: ./paths/sensors.yaml#/backfill
+  /api/v1/sensors/{sensor_id}/backfill/{task_id}:
+    $ref: ./paths/sensors.yaml#/backfillTask
+  /api/v1/webhooks:
+    $ref: ./paths/webhooks.yaml#/collection
+  /api/v1/webhooks/{webhook_id}:
+    $ref: ./paths/webhooks.yaml#/item
+  /api/v1/webhooks/deliveries:
+    $ref: ./paths/webhooks.yaml#/deliveries
+  /api/v1/webhooks/deliveries/{delivery_id}:retry:
+    $ref: ./paths/webhooks.yaml#/deliveryRetry
 components:
   parameters:
     ExperimentId:
@@ -84,6 +130,14 @@ components:
       $ref: ./components/parameters.yaml#/ProfileId
     ArtifactId:
       $ref: ./components/parameters.yaml#/ArtifactId
+    ProjectIdPath:
+      $ref: ./components/parameters.yaml#/ProjectIdPath
+    BackfillTaskId:
+      $ref: ./components/parameters.yaml#/BackfillTaskId
+    WebhookId:
+      $ref: ./components/parameters.yaml#/WebhookId
+    DeliveryId:
+      $ref: ./components/parameters.yaml#/DeliveryId
   schemas:
     ExperimentStatus:
       $ref: ./components/schemas.yaml#/ExperimentStatus
@@ -151,3 +205,124 @@ components:
       $ref: ./components/schemas.yaml#/ConversionProfileCreate
     TelemetryIngestRequest:
       $ref: ./components/schemas.yaml#/TelemetryIngestRequest
+    Error:
+      $ref: ./components/schemas.yaml#/Error
+    RunBatchResponse:
+      $ref: ./components/schemas.yaml#/RunBatchResponse
+    RunBulkTagsRequest:
+      $ref: ./components/schemas.yaml#/RunBulkTagsRequest
+    EventActorRole:
+      $ref: ./components/schemas.yaml#/EventActorRole
+    RunEvent:
+      $ref: ./components/schemas.yaml#/RunEvent
+    RunEventListResponse:
+      $ref: ./components/schemas.yaml#/RunEventListResponse
+    RunSensor:
+      $ref: ./components/schemas.yaml#/RunSensor
+    RunSensorListResponse:
+      $ref: ./components/schemas.yaml#/RunSensorListResponse
+    RunSensorAttachRequest:
+      $ref: ./components/schemas.yaml#/RunSensorAttachRequest
+    CaptureSessionListResponse:
+      $ref: ./components/schemas.yaml#/CaptureSessionListResponse
+    CaptureSessionStopRequest:
+      $ref: ./components/schemas.yaml#/CaptureSessionStopRequest
+    CaptureSessionBackfillCompleteResponse:
+      $ref: ./components/schemas.yaml#/CaptureSessionBackfillCompleteResponse
+    CaptureSessionEvent:
+      $ref: ./components/schemas.yaml#/CaptureSessionEvent
+    CaptureSessionEventListResponse:
+      $ref: ./components/schemas.yaml#/CaptureSessionEventListResponse
+    MetricIngestResponse:
+      $ref: ./components/schemas.yaml#/MetricIngestResponse
+    ArtifactListResponse:
+      $ref: ./components/schemas.yaml#/ArtifactListResponse
+    ArtifactApproveRequest:
+      $ref: ./components/schemas.yaml#/ArtifactApproveRequest
+    ArtifactUploadUrlRequest:
+      $ref: ./components/schemas.yaml#/ArtifactUploadUrlRequest
+    ArtifactUploadUrlResponse:
+      $ref: ./components/schemas.yaml#/ArtifactUploadUrlResponse
+    ArtifactDownloadUrlResponse:
+      $ref: ./components/schemas.yaml#/ArtifactDownloadUrlResponse
+    TelemetryConversionStatus:
+      $ref: ./components/schemas.yaml#/TelemetryConversionStatus
+    TelemetryExportRecord:
+      $ref: ./components/schemas.yaml#/TelemetryExportRecord
+    TelemetryExportAggregateRecord:
+      $ref: ./components/schemas.yaml#/TelemetryExportAggregateRecord
+    SensorStatus:
+      $ref: ./components/schemas.yaml#/SensorStatus
+    ConnectionStatus:
+      $ref: ./components/schemas.yaml#/ConnectionStatus
+    ConversionProfileStatus:
+      $ref: ./components/schemas.yaml#/ConversionProfileStatus
+    ConversionProfileKind:
+      $ref: ./components/schemas.yaml#/ConversionProfileKind
+    LinearConversionPayload:
+      $ref: ./components/schemas.yaml#/LinearConversionPayload
+    PolynomialConversionPayload:
+      $ref: ./components/schemas.yaml#/PolynomialConversionPayload
+    LookupTablePoint:
+      $ref: ./components/schemas.yaml#/LookupTablePoint
+    LookupTableConversionPayload:
+      $ref: ./components/schemas.yaml#/LookupTableConversionPayload
+    SensorUpdate:
+      $ref: ./components/schemas.yaml#/SensorUpdate
+    SensorStatusSummary:
+      $ref: ./components/schemas.yaml#/SensorStatusSummary
+    SensorHeartbeatHistory:
+      $ref: ./components/schemas.yaml#/SensorHeartbeatHistory
+    SensorProjectsResponse:
+      $ref: ./components/schemas.yaml#/SensorProjectsResponse
+    SensorProjectAddRequest:
+      $ref: ./components/schemas.yaml#/SensorProjectAddRequest
+    BackfillTaskStatus:
+      $ref: ./components/schemas.yaml#/BackfillTaskStatus
+    BackfillTask:
+      $ref: ./components/schemas.yaml#/BackfillTask
+    BackfillTaskListResponse:
+      $ref: ./components/schemas.yaml#/BackfillTaskListResponse
+    WebhookCreate:
+      $ref: ./components/schemas.yaml#/WebhookCreate
+    WebhookSubscription:
+      $ref: ./components/schemas.yaml#/WebhookSubscription
+    WebhookListResponse:
+      $ref: ./components/schemas.yaml#/WebhookListResponse
+    WebhookDeliveryStatus:
+      $ref: ./components/schemas.yaml#/WebhookDeliveryStatus
+    WebhookEventEnvelope:
+      $ref: ./components/schemas.yaml#/WebhookEventEnvelope
+    WebhookDelivery:
+      $ref: ./components/schemas.yaml#/WebhookDelivery
+    WebhookDeliveryListResponse:
+      $ref: ./components/schemas.yaml#/WebhookDeliveryListResponse
+    SensorRegisterRequest:
+      $ref: ./components/schemas.yaml#/SensorRegisterRequest
+    SensorListResponse:
+      $ref: ./components/schemas.yaml#/SensorListResponse
+    SensorTokenResponse:
+      $ref: ./components/schemas.yaml#/SensorTokenResponse
+    ConversionProfileInput:
+      $ref: ./components/schemas.yaml#/ConversionProfileInput
+    ConversionProfileListResponse:
+      $ref: ./components/schemas.yaml#/ConversionProfileListResponse
+  responses:
+    BadRequest:
+      $ref: ./components/responses.yaml#/BadRequest
+    Unauthorized:
+      $ref: ./components/responses.yaml#/Unauthorized
+    Forbidden:
+      $ref: ./components/responses.yaml#/Forbidden
+    NotFound:
+      $ref: ./components/responses.yaml#/NotFound
+    IdempotencyConflict:
+      $ref: ./components/responses.yaml#/IdempotencyConflict
+    ServiceConflict:
+      $ref: ./components/responses.yaml#/ServiceConflict
+    InternalError:
+      $ref: ./components/responses.yaml#/InternalError
+    IdempotencyInProgress:
+      $ref: ./components/responses.yaml#/IdempotencyInProgress
+    TooManyRequests:
+      $ref: ./components/responses.yaml#/TooManyRequests

@@ -1,0 +1,91 @@
+# New file: openapi/components/responses.yaml
+#
+# Reusable error responses. The service produces errors in two shapes:
+#   * handlers raise aiohttp HTTP exceptions (web.HTTPBadRequest(text=...), web.HTTPNotFound(...), ...)
+#     -> body is plain text. With `text=` the body is that text ("Resource not found");
+#        with only `reason=` aiohttp renders "<status>: <reason>" ("401: Header X-User-Id is required").
+#   * a ServiceError subclass (or any other exception) escapes the handler and is caught by
+#     backend_common.middleware.error_handler.error_handling_middleware
+#     -> application/json {"error": "<message>"} (status from ServiceError.status_code, else 500).
+BadRequest:
+  description: >
+    Invalid request: malformed UUID in the path/query, body that is not a JSON object, a missing or
+    invalid field, or no project context (neither ?project_id nor X-Project-Id). Plain-text body. When
+    Pydantic validation fails the body is the JSON-encoded Pydantic error list, still sent as text/plain.
+  content:
+    text/plain:
+      schema:
+        type: string
+      example: Invalid run_id
+Unauthorized:
+  description: X-User-Id header missing (normally injected by auth-proxy).
+  content:
+    text/plain:
+      schema:
+        type: string
+      example: '401: Header X-User-Id is required'
+Forbidden:
+  description: Caller lacks the required permission.
+  content:
+    text/plain:
+      schema:
+        type: string
+      example: '403: Missing permission: experiments.view'
+NotFound:
+  description: Resource not found in the caller's project.
+  content:
+    text/plain:
+      schema:
+        type: string
+      example: Resource not found
+IdempotencyConflict:
+  description: Idempotency-Key was already used for a different path or a different body.
+  content:
+    text/plain:
+      schema:
+        type: string
+      example: Conflict
+ServiceConflict:
+  description: >
+    Domain conflict raised by the service layer and rendered by the error middleware, e.g. an invalid
+    status transition or a uniqueness violation.
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas.yaml#/Error
+InternalError:
+  description: Unhandled error, rendered by the error middleware.
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas.yaml#/Error
+      example:
+        error: Internal server error
+IdempotencyInProgress:
+  description: A request with the same Idempotency-Key is still being processed; retry later.
+  content:
+    text/plain:
+      schema:
+        type: string
+TooManyRequests:
+  description: Per-user export rate limit exceeded (fixed window).
+  headers:
+    Retry-After:
+      schema:
+        type: integer
+      description: Seconds until the window resets.
+    X-RateLimit-Limit:
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      schema:
+        type: integer
+      description: Seconds until the window resets.
+  content:
+    text/plain:
+      schema:
+        type: string
+      example: Export rate limit exceeded. Try again later.

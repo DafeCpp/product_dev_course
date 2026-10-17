@@ -1,3 +1,105 @@
+experimentRuns:
+  get:
+    tags: [runs]
+    summary: List runs
+    description: >
+      Runs of the experiment, newest first. limit/offset are clamped rather than rejected
+      (limit <= 0 becomes 50, limit > 100 becomes 100, offset < 0 becomes 0).
+    operationId: listRuns
+    parameters:
+      - $ref: ../components/parameters.yaml#/ExperimentId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: status
+        in: query
+        description: An unknown value currently fails with 500 (unhandled ValueError).
+        schema:
+          $ref: ../components/schemas.yaml#/RunStatus
+      - name: tags
+        in: query
+        description: Comma separated tags; only runs carrying all of them are returned.
+        schema:
+          type: string
+      - name: created_after
+        in: query
+        description: ISO-8601, inclusive; a value without offset is treated as UTC.
+        schema:
+          type: string
+          format: date-time
+      - name: created_before
+        in: query
+        description: ISO-8601, inclusive; a value without offset is treated as UTC.
+        schema:
+          type: string
+          format: date-time
+    responses:
+      200:
+        description: Runs
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/RunListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+  post:
+    tags: [runs]
+    summary: Create run
+    description: >
+      experiment_id comes from the path, project_id from ?project_id or X-Project-Id, created_by is
+      the calling user; any of these in the body is overwritten. A non-draft initial status must be
+      reachable from draft. With an Idempotency-Key, a repeat with the same body replays the stored
+      201 response.
+    operationId: createRun
+    parameters:
+      - $ref: ../components/parameters.yaml#/ExperimentId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - $ref: ../components/parameters.yaml#/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/RunCreate
+    responses:
+      201:
+        description: Run created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Run
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      409:
+        $ref: ../components/responses.yaml#/IdempotencyConflict
+      503:
+        $ref: ../components/responses.yaml#/IdempotencyInProgress
+
 run:
   get:
     tags: [runs]
@@ -5,6 +107,7 @@ run:
     operationId: getRun
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Run
@@ -12,12 +115,26 @@ run:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/Run
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
   patch:
     tags: [runs]
     summary: Update run
+    description: >
+      Partial update. A status change must be an allowed transition, and moving to succeeded, failed
+      or archived is refused while the run has an active (running/backfilling) capture session; both
+      give 400. Status changes record a run.status_changed event and emit run.started / run.finished /
+      run.archived webhooks. A body with no non-null fields currently fails with 500.
     operationId: updateRun
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
@@ -31,12 +148,47 @@ run:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/Run
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+  delete:
+    tags: [runs]
+    summary: Delete run
+    description: Refused with 400 while the run has an active (running/backfilling) capture session.
+    operationId: deleteRun
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      204:
+        description: Deleted
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
 
 batchStatus:
   post:
     tags: [runs]
     summary: Batch status update
+    description: >
+      Applies one status to every listed run in a single transaction. Every run must exist in the
+      project (404 otherwise) and the transition must be valid for each (400 otherwise). Returned runs
+      are in database order, not request order.
     operationId: batchUpdateRunStatus
+    parameters:
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
@@ -49,231 +201,168 @@ batchStatus:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                runs:
-                  type: array
-                  items:
-                    $ref: ../components/schemas.yaml#/Run
-
-captureSessions:
-  get:
-    tags: [capture_sessions]
-    summary: List capture sessions
-    operationId: listCaptureSessions
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    responses:
-      200:
-        description: Capture session list
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: ../components/schemas.yaml#/CaptureSession
-  post:
-    tags: [capture_sessions]
-    summary: Start capture session
-    operationId: createCaptureSession
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: ../components/schemas.yaml#/CaptureSessionCreate
-    responses:
-      201:
-        description: Capture session created
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/CaptureSession
-
-captureSessionStop:
-  post:
-    tags: [capture_sessions]
-    summary: Stop capture session
-    operationId: stopCaptureSession
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/SessionId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    responses:
-      200:
-        description: Stopped
-
-captureSessionDelete:
-  delete:
-    tags: [capture_sessions]
-    summary: Delete capture session
-    operationId: deleteCaptureSession
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/SessionId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    responses:
-      200:
-        description: Deleted
-
-metrics:
-  post:
-    tags: [metrics]
-    summary: Ingest metrics
-    operationId: ingestMetrics
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: ../components/schemas.yaml#/MetricIngestRequest
-    responses:
-      202:
-        description: Accepted
-  get:
-    tags: [metrics]
-    summary: Query metrics
-    operationId: queryMetrics
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-      - name: name
-        in: query
-        schema:
-          type: string
-      - name: from_step
-        in: query
-        schema:
-          type: integer
-      - name: to_step
-        in: query
-        schema:
-          type: integer
-    responses:
-      200:
-        description: Metrics
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/MetricQueryResponse
-
-metricsSummary:
-  get:
-    tags: [metrics]
-    summary: Get metrics summary (last value, min/avg/max per metric)
-    operationId: getMetricsSummary
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/ProjectIdQuery
-      - name: names
-        in: query
-        schema:
-          type: string
-        description: Comma-separated metric names
-    responses:
-      200:
-        description: Summary
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/MetricSummaryResponse
+              $ref: ../components/schemas.yaml#/RunBatchResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
       404:
-        description: Run not found
+        $ref: ../components/responses.yaml#/NotFound
 
-metricsAggregations:
+bulkTags:
+  post:
+    tags: [runs]
+    summary: Bulk update run tags
+    description: >
+      Replaces (set_tags) or adds/removes (add_tags, remove_tags) tags on every listed run in one
+      transaction; 404 if any run is missing from the project. Records a run.tags_updated event per run.
+      Returned runs are in database order.
+    operationId: bulkUpdateRunTags
+    parameters:
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/RunBulkTagsRequest
+    responses:
+      200:
+        description: Updated runs
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/RunBatchResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+runEvents:
   get:
-    tags: [metrics]
-    summary: Get step-bucketed aggregations for selected metrics
-    operationId: getMetricsAggregations
+    tags: [runs]
+    summary: List run audit events
+    description: Oldest first. limit/offset are clamped (limit 1-100, default 50).
+    operationId: listRunEvents
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
       - $ref: ../components/parameters.yaml#/ProjectIdQuery
-      - name: names
-        in: query
-        required: true
-        schema:
-          type: string
-        description: Comma-separated metric names
-      - name: from_step
-        in: query
-        schema:
-          type: integer
-      - name: to_step
-        in: query
-        schema:
-          type: integer
-      - name: bucket_size
+      - name: limit
         in: query
         schema:
           type: integer
           minimum: 1
-      - name: agg
+          maximum: 100
+          default: 50
+      - name: offset
         in: query
         schema:
-          type: string
-          default: min,avg,max
+          type: integer
+          minimum: 0
+          default: 0
     responses:
       200:
-        description: Aggregated metrics
+        description: Run events
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/MetricAggregationsResponse
+              $ref: ../components/schemas.yaml#/RunEventListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
       404:
-        description: Run not found
+        $ref: ../components/responses.yaml#/NotFound
 
-artifacts:
-  post:
-    tags: [artifacts]
-    summary: Create artifact
-    operationId: createArtifact
+runSensors:
+  get:
+    tags: [runs, sensors]
+    summary: List sensors attached to a run
+    description: >
+      Currently attached sensors (detached_at is null), oldest attachment first. The run is not looked
+      up, so an unknown run gives 200 with an empty list.
+    operationId: listRunSensors
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      200:
+        description: Attached sensors
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/RunSensorListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+
+runSensor:
+  post:
+    tags: [runs, sensors]
+    summary: Attach sensor to run
+    description: >
+      Upsert: re-attaching a previously detached sensor clears detached_at and resets attached_at,
+      mode and created_by. The body must be a JSON object (send `{}` for the default mode). A run or
+      sensor outside the project violates a foreign key and currently fails with 500.
+    operationId: attachRunSensor
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SensorId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
         application/json:
           schema:
-            $ref: ../components/schemas.yaml#/ArtifactCreate
+            $ref: ../components/schemas.yaml#/RunSensorAttachRequest
     responses:
       201:
-        description: Artifact created
+        description: Sensor attached
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/Artifact
-  get:
-    tags: [artifacts]
-    summary: List artifacts
-    operationId: listArtifacts
+              $ref: ../components/schemas.yaml#/RunSensor
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+  delete:
+    tags: [runs, sensors]
+    summary: Detach sensor from run
+    description: Soft delete (sets detached_at).
+    operationId: detachRunSensor
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SensorId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
-      200:
-        description: Artifacts
+      204:
+        description: Detached
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        description: Sensor is not currently attached to this run
         content:
-          application/json:
+          text/plain:
             schema:
-              type: array
-              items:
-                $ref: ../components/schemas.yaml#/Artifact
-
-artifactApprove:
-  post:
-    tags: [artifacts]
-    summary: Approve artifact
-    operationId: approveArtifact
-    parameters:
-      - $ref: ../components/parameters.yaml#/RunId
-      - $ref: ../components/parameters.yaml#/ArtifactId
-    responses:
-      200:
-        description: Approved
-
+              type: string
+            example: Sensor not attached to this run

@@ -58,8 +58,13 @@ jobs:
           # configs) affect every app, since all apps install from one lockfile.
           SHARED='^(package(-lock)?\.json|projects/frontend/[^/]+)$|\.github/workflows/(frontend-tests|reusable-frontend-tests)\.yml'
 
+          # experiment-portal generates its API types from these specs.
+          PORTAL_SPECS='^projects/backend/services/(experiment|auth)-service/openapi/'
+
           for app in experiment-portal sensor-simulator auth-proxy; do
-            if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "^projects/frontend/(apps/$app|common)/|$SHARED" > /dev/null; then
+            PATTERN="^projects/frontend/(apps/$app|common)/|$SHARED"
+            if [ "$app" = "experiment-portal" ]; then PATTERN="$PATTERN|$PORTAL_SPECS"; fi
+            if echo "$CHANGED_FILES" | grep -Fxq "${{ inputs.node-version-file }}" || echo "$CHANGED_FILES" | grep -E "$PATTERN" > /dev/null; then
               echo "$app=true" >> $GITHUB_OUTPUT
               echo "✓ $app changed"
             else
@@ -98,6 +103,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check generated API types match the OpenAPI specs
+        run: npm run check:types-generated
 
       - name: Run type check
         run: npm run type-check
