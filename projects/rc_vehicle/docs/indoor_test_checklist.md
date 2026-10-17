@@ -123,6 +123,31 @@ python3 projects/rc_vehicle/tools/analyze_telemetry.py telemetry_log.csv
 
 **Итого D5:** ___ / 7 PASS
 
+### Метрики испытаний (`trial_metrics.py`, LOS-363)
+
+Метрики из `TESTING_PROGRAM.md` считаются по тому же CSV автоматически. Метрики,
+для которых в логе нет данных (нет шага руля, покоя, потери связи), печатаются
+как `SKIP`; с `--only` отсутствие данных считается провалом.
+
+```bash
+python3 projects/rc_vehicle/tools/trial_metrics.py telemetry_log.csv --only yaw-step
+python3 projects/rc_vehicle/tools/trial_metrics.py rest.csv --only gyro-bias     # 5-10 мин покоя
+python3 projects/rc_vehicle/tools/trial_metrics.py loss.csv --only failsafe
+python3 projects/rc_vehicle/tools/trial_metrics.py kids.csv --only kids --kids-max-speed 1.5
+python3 projects/rc_vehicle/tools/trial_metrics.py run.csv --only ekf-dist --distance-m 5.0
+```
+
+| Метрика | Что считает | Критерий |
+|---------|-------------|----------|
+| `yaw-step` | overshoot и settling yaw rate после шага `rc_steering` (уставка руль × 90 °/с) | overshoot < 20 %, settling < 200 мс (полоса ±10 %) |
+| `gyro-bias` | тренд bias gx/gy/gz и pitch/roll на неподвижных отсчётах | gyro < 0.5 °/с в минуту, углы < 1 °/мин |
+| `failsafe` | от падения `rc_ok`/`wifi_ok` до нулевых газа и руля, плюс таймаут источника (RC 90 мс, Wi-Fi 100 мс) | ≤ 250 мс |
+| `kids` | максимум `speed_ms` и `\|ax\|` при `drive_mode` = Kids | лимиты задаются `--kids-max-speed` / `--kids-max-accel` |
+| `ekf-dist` | интеграл `speed_ms` против известной дистанции (`--from-ms`, `--to-ms` выбирают участок) | ошибка ±5 % (`--tolerance`) |
+
+Пороги дрейфа ориентировочные: после первой записи на железе их стоит уточнить.
+Те же функции проверены в SIL: `firmware/sim/tests/test_trial_metrics.py`.
+
 ---
 
 ## Общий итог
