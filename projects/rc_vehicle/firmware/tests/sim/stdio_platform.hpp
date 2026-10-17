@@ -10,6 +10,7 @@
 
 #include "control_components.hpp"    // TelemetrySnapshot
 #include "diagnostics_reporter.hpp"  // DiagnosticsSnapshot
+#include "failsafe.hpp"              // Failsafe (LOS-362)
 #include "imu_calibration.hpp"       // ImuCalibData
 #include "imu_sensor.hpp"            // ImuData
 #include "mag_sensor.hpp"            // MagData
@@ -84,6 +85,8 @@ class StdioPlatform : public VehicleControlPlatform {
   /** Включить стабилизацию (cfg.enabled=true) — иначе stab_weight=0 и
    *  yaw/pitch/slip/oversteer не работают. */
   void SetStabilize(bool on) { stabilize_ = on; }
+  /** Выключить accel limiter детского режима (эталон для SIL, LOS-362). */
+  void SetKidsAccelLimit(bool on) { kids_accel_limit_ = on; }
   /** Явный oversteer-конфиг из provenance replay-эпизода. */
   void SetOversteerConfig(std::optional<OversteerConfig> cfg) {
     oversteer_config_ = cfg;
@@ -214,11 +217,16 @@ class StdioPlatform : public VehicleControlPlatform {
   }
 
   // ── Failsafe ─────────────────────────────────────────────────────────────
+  // Тот же Failsafe с тем же таймаутом, что на ESP32 (FAILSAFE_TIMEOUT_MS в
+  // esp32_s3/main/config.hpp): без grace-периода SIL показывал бы нейтраль
+  // на 250 мс раньше, чем машина (LOS-362).
   bool FailsafeUpdate(bool rc_active, bool wifi_active) override {
-    failsafe_active_ = !rc_active && !wifi_active;
-    return failsafe_active_;
+    return failsafe_.Update(time_ms_, rc_active, wifi_active) ==
+           FailsafeState::Active;
   }
-  bool FailsafeIsActive() const noexcept override { return failsafe_active_; }
+  bool FailsafeIsActive() const noexcept override {
+    return failsafe_.IsActive();
+  }
 
   // ── WebSocket / телеметрия ───────────────────────────────────────────────
   unsigned GetWebSocketClientCount() const noexcept override { return 0; }
@@ -263,6 +271,7 @@ class StdioPlatform : public VehicleControlPlatform {
     if (stabilize_) {
       cfg.enabled = true;  // иначе stab_weight=0 → контроллеры не работают
     }
+    if (!kids_accel_limit_) cfg.kids_mode.accel_limit_enabled = false;
     return cfg;
   }
 
@@ -285,6 +294,7 @@ class StdioPlatform : public VehicleControlPlatform {
   }
 
   static constexpr uint64_t kRcFramePeriodUs = 20'000;  // 50 Гц, как приёмник
+  static constexpr uint32_t kFailsafeTimeoutMs = 250;   // = FAILSAFE_TIMEOUT_MS
 
   uint32_t time_ms_{0};
   bool rc_pulse_mode_{false};
@@ -301,10 +311,11 @@ class StdioPlatform : public VehicleControlPlatform {
   std::optional<RcCommand> wifi_command_;
   bool identity_calib_{false};
   bool inverted_z_calib_{false};
-  bool failsafe_active_{false};
+  Failsafe failsafe_{kFailsafeTimeoutMs};
   DriveMode drive_mode_{DriveMode::Normal};
   float speed_limit_ms_{0.0f};
   bool stabilize_{false};
+  bool kids_accel_limit_{true};
   std::optional<OversteerConfig> oversteer_config_;
 
   float last_throttle_{0.0f};

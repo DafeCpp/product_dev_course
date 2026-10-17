@@ -19,6 +19,8 @@
 //   --oversteer [--oversteer-slip-thresh deg]
 //       [--oversteer-rate-thresh deg/s] [--oversteer-throttle-reduction 0..1]
 //       — воспроизвести oversteer-конфиг, записанный в provenance эпизода.
+//   --no-kids-accel-limit — выключить accel limiter детского режима (эталон
+//       для SIL-сценария LOS-362).
 //   --start-test <straight|circle|step> [--target-accel g]
 //       [--test-duration s] [--test-steering v] — запустить авто-манёвр
 //       (аналог start_test по WebSocket) до первого кадра; машина едет сама,
@@ -92,6 +94,7 @@ int main(int argc, char** argv) {
   rc_vehicle::DriveMode drive_mode = rc_vehicle::DriveMode::Normal;
   float speed_limit = 0.0f;
   bool stabilize = false;
+  bool kids_accel_limit = true;
   bool oversteer = false;
   float oversteer_slip_thresh_deg = 10.0f;
   float oversteer_rate_thresh_deg_s = 30.0f;
@@ -128,6 +131,8 @@ int main(int argc, char** argv) {
       speed_limit = std::strtof(argv[++i], nullptr);
     else if (a == "--stabilize")
       stabilize = true;
+    else if (a == "--no-kids-accel-limit")
+      kids_accel_limit = false;
     else if (a == "--oversteer")
       oversteer = true;
     else if (a == "--oversteer-slip-thresh" && i + 1 < argc) {
@@ -161,6 +166,7 @@ int main(int argc, char** argv) {
   p->SetDriveMode(drive_mode);
   p->SetSpeedLimit(speed_limit);
   p->SetStabilize(stabilize);
+  p->SetKidsAccelLimit(kids_accel_limit);
   if (oversteer) {
     rc_vehicle::OversteerConfig cfg;
     cfg.warn_enabled = true;

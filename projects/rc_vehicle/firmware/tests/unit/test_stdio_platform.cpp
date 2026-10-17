@@ -136,7 +136,11 @@ class SimHostTest : public ::testing::Test {
 };
 
 TEST_F(SimHostTest, NoCommands_FailsafeNeutral) {
-  for (int i = 0; i < 50; ++i) Drive(LevelFrame());  // нет RC, нет Wi-Fi
+  // Нет RC, нет Wi-Fi. Failsafe с тем же grace-периодом 250 мс, что на ESP32
+  // (LOS-362): до его истечения failsafe ещё не активен.
+  for (int i = 0; i < 50; ++i) Drive(LevelFrame());
+  EXPECT_FALSE(p_->GetLastSnap().failsafe);
+  for (int i = 0; i < 150; ++i) Drive(LevelFrame());
   EXPECT_TRUE(p_->WasNeutral());
   EXPECT_FLOAT_EQ(p_->GetLastThrottle(), 0.0f);
   EXPECT_FLOAT_EQ(p_->GetLastSteering(), 0.0f);

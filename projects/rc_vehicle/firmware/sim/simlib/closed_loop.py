@@ -11,6 +11,7 @@ import subprocess
 
 from .profiles import get_profile
 from .sensors import RoadNoiseModel, make_frame
+from .sim_host_runner import OversteerReplayConfig
 from .sim_params import SimParams
 from .vehicle_model import StepOutput, VehicleModel
 
@@ -33,7 +34,9 @@ class ClosedLoopSim:
                  test_steering: float | None = None,
                  wifi_keepalive: bool = False,
                  sensor_noise: bool = True,
-                 noise_seed: int = 0):
+                 noise_seed: int = 0,
+                 oversteer: OversteerReplayConfig | None = None,
+                 kids_accel_limit: bool = True):
         self.p = (params if params is not None
                   else get_profile(DEFAULT_CLOSED_LOOP_PROFILE))
         self.model = VehicleModel(self.p, dynamic=dynamic)
@@ -50,6 +53,14 @@ class ClosedLoopSim:
             args += ["--speed-limit", repr(float(speed_limit))]
         if stabilize:
             args.append("--stabilize")
+        if not kids_accel_limit:
+            args.append("--no-kids-accel-limit")
+        if oversteer is not None:
+            args += ["--oversteer",
+                     "--oversteer-slip-thresh", repr(float(oversteer.slip_thresh_deg)),
+                     "--oversteer-rate-thresh", repr(float(oversteer.rate_thresh_deg_s)),
+                     "--oversteer-throttle-reduction",
+                     repr(float(oversteer.throttle_reduction))]
         if start_test:
             args += ["--start-test", start_test]
             if target_accel is not None:
