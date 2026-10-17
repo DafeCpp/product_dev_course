@@ -12,7 +12,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 6.0.1
+    version: 6.1.0
 direct_dependencies:
 - espressif/cjson
 manifest_hash: d8a753e95d19d36857e48bb997b3c46a6abe7eb9f0db46a6aeca6ef1e21203e2

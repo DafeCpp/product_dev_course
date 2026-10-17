@@ -20,6 +20,8 @@ vi.mock('axios', () => ({
     default: { create: mockCreate, post: vi.fn() },
 }))
 
+vi.mock('./http/projectsClient', () => ({ projectsClient: mockAxiosInstance }))
+
 import { projectsApi, usersApi } from './projects'
 
 describe('projectsApi', () => {

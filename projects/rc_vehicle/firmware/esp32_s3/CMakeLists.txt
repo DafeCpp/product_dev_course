@@ -4,6 +4,30 @@ cmake_minimum_required(VERSION 3.16)
 # Включаем ESP-IDF
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
+# Версия ESP-IDF закреплена в .idf_version тегом esp-idf: vX.Y (= X.Y.0) или
+# vX.Y.Z. По нему собирает CI, с ним согласован dependencies.lock (там версия
+# с патчем). Сборка на любой другой версии, включая другой патч, переписала бы
+# lock, поэтому останавливаемся сразу с понятной ошибкой. Формат проверяется
+# тем же регэкспом в job idf-version (.github/workflows/firmware-tests.yml).
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/.idf_version" RC_IDF_VERSION_TAG LIMIT_COUNT 1)
+string(STRIP "${RC_IDF_VERSION_TAG}" RC_IDF_VERSION_TAG)
+if(NOT RC_IDF_VERSION_TAG MATCHES "^v([0-9]+)\\.([0-9]+)(\\.([0-9]+))?$")
+  message(FATAL_ERROR
+    ".idf_version: ожидается тег вида vX.Y или vX.Y.Z, найдено '${RC_IDF_VERSION_TAG}'")
+endif()
+set(_rc_idf_patch "${CMAKE_MATCH_4}")
+if(_rc_idf_patch STREQUAL "")
+  set(_rc_idf_patch 0)  # vX.Y — релиз X.Y.0
+endif()
+set(RC_IDF_VERSION_REQUIRED "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${_rc_idf_patch}")
+if(NOT "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}" STREQUAL
+   "${RC_IDF_VERSION_REQUIRED}")
+  message(FATAL_ERROR
+    "Прошивка собирается на ESP-IDF ${RC_IDF_VERSION_TAG} (.idf_version), "
+    "найден ${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}. "
+    "Установите нужную версию: docs/esp32s3-setup.md.")
+endif()
+
 # Отладочный override интервала отправки телеметрии (мс).
 # Без флага — дефолт из config.hpp (50 мс / 20 Гц), поведение не меняется.
 #   idf.py build -DRC_TELEM_SEND_INTERVAL_MS=10   # 100 Гц
