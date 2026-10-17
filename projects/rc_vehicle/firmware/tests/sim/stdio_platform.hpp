@@ -170,9 +170,8 @@ class StdioPlatform : public VehicleControlPlatform {
   bool LoadComOffset(float[2]) override { return false; }
 
   // ── Stabilization config ─────────────────────────────────────────────────
-  // Normal без лимита/стабилизации → nullopt (дефолты прошивки). Иначе строим
-  // конфиг с заданным режимом + (для Kids) лимитом скорости + (с --stabilize)
-  // enabled=true, чтобы yaw/pitch/slip/oversteer реально работали.
+  // Normal без флагов → nullopt (дефолты прошивки). Иначе — конфиг режима
+  // с переопределениями из флагов sim_host (см. MakeConfig).
   std::optional<StabilizationConfig> LoadStabilizationConfig() override {
     return MakeConfig(drive_mode_);
   }
@@ -260,9 +259,10 @@ class StdioPlatform : public VehicleControlPlatform {
   }
 
  private:
-  // Конфиг режима. Normal без лимита и без --stabilize → nullopt (дефолты
-  // прошивки). Иначе строим конфиг режима (ApplyModeDefaults) + опц. лимит
-  // скорости (Kids) + опц. enabled (--stabilize).
+  // Конфиг режима. Normal без флагов → nullopt (дефолты прошивки). Иначе
+  // ApplyModeDefaults() + переопределения: oversteer, Kids-пресет, лимит
+  // скорости, pitch_comp, slip target, accel limiter. --stabilize,
+  // --pitch-comp и --slip-target-deg включают enabled (иначе stab_weight=0).
   std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
     if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_ &&
         !oversteer_config_ && !pitch_comp_enabled_ && !slip_target_deg_ &&

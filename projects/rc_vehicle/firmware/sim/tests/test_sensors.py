@@ -136,26 +136,46 @@ def test_make_frame_without_noise_remains_clean():
     assert (frame.gx, frame.gy, frame.gz) == (0.0, 0.0, 0.0)
 
 
-def test_static_slope_leaks_gravity_into_ax():
-    """static_attitude_rad (LOS-367, уклон) наклоняет gravity-вектор так же,
-    как и imu_pitch_deg (аналог test_pitch_mount_leaks_gravity_into_ax)."""
-    out = StepOutput(long_accel=0.0, lat_accel=0.0, yaw_rate=0.0, speed=0.0,
-                     delta_rad=0.0)
-    frame = make_frame(out, psi_rad=0.0, p=SimParams(), with_mag=False,
-                       static_attitude_rad=(0.0, math.radians(10.0)))
-    assert frame.ax < 0.0
-    assert math.isclose(frame.ax, -math.sin(math.radians(10.0)), abs_tol=1e-6)
-    assert frame.az < 1.0
+def test_slope_specific_force_is_normal_reaction_plus_actuator():
+    """Уклон (LOS-367): машина едет параллельно склону, поэтому акселерометр
+    видит тягу по X и реакцию опоры g·cos по Z, без утечки тяжести в ax и без
+    поворота long_accel в az (иначе получился бы наклон на ровном месте)."""
+    p = SimParams()
+    slope = math.radians(15.0)
+    out = StepOutput(long_accel=0.5 * p.gravity_ms2, lat_accel=0.0,
+                     yaw_rate=0.0, speed=2.0, delta_rad=0.0)
+    f = make_frame(out, psi_rad=0.0, p=p, with_mag=False, slope_rad=slope)
+    assert math.isclose(f.ax, 0.5, abs_tol=1e-6)
+    assert math.isclose(f.az, math.cos(slope), abs_tol=1e-6)
 
 
-def test_static_slope_combines_with_road_noise_attitude():
-    """Уклон и дорожная тряска складываются, а не перезаписывают друг друга."""
-    out = StepOutput(0.0, 0.0, 0.0, 2.0, 0.0)
-    noise = RoadNoiseModel(SimParams(), seed=3)
-    with_slope = make_frame(out, 0.0, SimParams(), with_mag=False,
-                            road_noise=noise,
-                            static_attitude_rad=(0.0, math.radians(5.0)))
-    noise_only = RoadNoiseModel(SimParams(), seed=3)
-    without_slope = make_frame(out, 0.0, SimParams(), with_mag=False,
-                               road_noise=noise_only)
-    assert with_slope.ax != without_slope.ax
+def test_steady_climb_reads_like_nose_up_tilt():
+    """Подъём с постоянной скоростью: мотор держит g·sin(уклон), и вектор
+    specific force совпадает с покоем на ровном, наклонённом носом вверх."""
+    p = SimParams()
+    slope = math.radians(10.0)
+    out = StepOutput(long_accel=p.gravity_ms2 * math.sin(slope),
+                     lat_accel=0.0, yaw_rate=0.0, speed=1.5, delta_rad=0.0)
+    f = make_frame(out, psi_rad=0.0, p=p, with_mag=False, slope_rad=slope)
+    assert np.linalg.norm((f.ax, f.ay, f.az)) == pytest.approx(1.0)
+    assert f.ax == pytest.approx(math.sin(slope))
+
+
+def test_slope_does_not_rotate_yaw_rate():
+    """Поворот на склоне идёт вокруг нормали к нему, т.е. оси Z корпуса:
+    yaw rate не протекает в roll/pitch-rate."""
+    out = StepOutput(0.0, 0.0, math.radians(90.0), 2.0, 0.0)
+    f = make_frame(out, psi_rad=0.0, p=SimParams(), with_mag=False,
+                   slope_rad=math.radians(15.0))
+    assert (f.gx, f.gy) == (0.0, 0.0)
+    assert math.isclose(f.gz, 90.0, abs_tol=1e-6)
+
+
+def test_slope_tilts_magnetic_field_nose_up():
+    """Нос вверх, курс на север: горизонтальное поле уходит в -Z корпуса."""
+    p = SimParams()
+    slope = math.radians(15.0)
+    out = StepOutput(0.0, 0.0, 0.0, 0.0, 0.0)
+    f = make_frame(out, psi_rad=0.0, p=p, slope_rad=slope)
+    assert f.mx == pytest.approx(p.mag_field_mga * math.cos(slope))
+    assert f.mz == pytest.approx(-p.mag_field_mga * math.sin(slope))

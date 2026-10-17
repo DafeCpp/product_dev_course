@@ -40,9 +40,9 @@ class VehicleModel:
                  slope_deg: float = 0.0):
         """slope_deg: продольный уклон (LOS-367), >0 — подъём в гору.
 
-        Влияет только на физику продольной скорости (сила тяжести вдоль
-        склона); сигнатуру для IMU синтезирует sensors.make_frame() через
-        static_attitude_rad — машина едет параллельно поверхности склона.
+        Здесь — только физика скорости (тяжесть вдоль склона); реакцию опоры
+        для IMU синтезирует sensors.make_frame(slope_rad=...). Уклон можно
+        менять на ходу через slope_rad.
         """
         self.p = params or SimParams()
         self.dynamic = dynamic
@@ -81,11 +81,11 @@ class VehicleModel:
         # Точная дискретизация лага (устойчива при любом dt/τ, важно для fitting).
         a_cmd = self._motor_accel_cmd(throttle)
         s.accel += (a_cmd - s.accel) * (1.0 - math.exp(-dt / p.motor_tau))
-        # specific force (только актуатор) — это именно то, что видит IMU вдоль
-        # продольной оси корпуса; наклон не входит сюда, иначе гравитация
-        # посчиталась бы дважды (ещё раз — через static_attitude_rad в sensors.py).
+        # long_accel — specific force по X корпуса (тяга минус сопротивление):
+        # именно её меряет акселерометр. Тяжесть вдоль склона меняет скорость,
+        # но акселерометром не видна (свободное падение по склону).
         long_accel = s.accel - p.drag_coeff * s.v
-        grade_accel = p.gravity_ms2 * math.sin(self.slope_rad)  # г тяжести вдоль склона
+        grade_accel = p.gravity_ms2 * math.sin(self.slope_rad)
         s.v += (long_accel - grade_accel) * dt
 
         delta = self._servo_angle(steering, dt)

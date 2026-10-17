@@ -48,10 +48,6 @@ class ClosedLoopSim:
         # StepOutput предыдущего тика → сенсоры текущего кадра (на старте — покой).
         self.last_out = StepOutput(0.0, 0.0, 0.0, 0.0, 0.0)
         self.road_noise = RoadNoiseModel(self.p, noise_seed) if sensor_noise else None
-        # Постоянный наклон корпуса для синтеза сенсоров (LOS-367): машина едет
-        # параллельно поверхности склона, roll не затрагивается.
-        self.static_attitude_rad = (
-            (0.0, math.radians(slope_deg)) if slope_deg else None)
 
         args = [sim_host_bin, "--interactive"]
         if identity_calib:
@@ -106,7 +102,7 @@ class ClosedLoopSim:
                            rc_steering=rc_steering, with_mag=with_mag,
                            wifi_keepalive=self.wifi_keepalive,
                            road_noise=self.road_noise,
-                           static_attitude_rad=self.static_attitude_rad)
+                           slope_rad=self.model.slope_rad)
         self.proc.stdin.write(frame.to_csv() + "\n")
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
@@ -117,6 +113,12 @@ class ClosedLoopSim:
         self.last_out = self.model.step(dt_ms / 1000.0, row["throttle"],
                                         row["steering"])
         return row
+
+    def set_slope(self, slope_deg: float) -> None:
+        """Сменить продольный уклон на ходу (LOS-367): калибровка IMU на старте
+        принимает текущую гравитацию за горизонт, поэтому склон для сценариев
+        задают уже после неё."""
+        self.model.slope_rad = math.radians(slope_deg)
 
     def run(self, n: int, dt_ms: int = 2, rc_throttle=None, rc_steering=None,
             with_mag: bool = True) -> list[dict]:
