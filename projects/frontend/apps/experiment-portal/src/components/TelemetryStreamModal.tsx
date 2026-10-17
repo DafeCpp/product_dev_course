@@ -5,7 +5,8 @@ import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
 import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
-import { UserFacingError, getApiErrorMessage, getResponseBodyMessage } from '../utils/apiError'
+import { UserFacingError, getResponseBodyMessage } from '../utils/apiError'
+import { getStreamErrorMessage } from '../utils/streamError'
 import './TelemetryStreamModal.scss'
 
 type TelemetryStreamModalProps = {
@@ -96,23 +97,6 @@ function _buildSparkline(values: number[], width: number, height: number): Spark
         max: rawMax,
         last: values[values.length - 1] ?? null,
     }
-}
-
-// Messages useTelemetryStream builds itself (not server text).
-const STREAM_HOOK_MESSAGES = new Set([
-    'Telemetry stream ended',
-    'Telemetry stream response has no body',
-    'Telemetry stream reported an error',
-])
-
-// Plain Errors from the stream hook carry server text (SSE `error` event);
-// TypeError / SyntaxError and the hook's own messages get the fallback.
-function streamErrorMessage(err: Error): string {
-    const fallback = 'Ошибка подключения к стриму'
-    if (err instanceof TypeError || err instanceof SyntaxError || STREAM_HOOK_MESSAGES.has(err.message)) {
-        return fallback
-    }
-    return getApiErrorMessage(err, fallback, { includeClientMessage: true })
 }
 
 export default function TelemetryStreamModal({
@@ -258,7 +242,7 @@ export default function TelemetryStreamModal({
         >
             <div className="telemetry-stream">
                 {streamStatus === 'error' && streamError && (
-                    <div className="error">{streamErrorMessage(streamError)}</div>
+                    <div className="error">{getStreamErrorMessage(streamError)}</div>
                 )}
 
                 <div className="form-grid">

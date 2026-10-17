@@ -130,8 +130,9 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         invalidateKeys: [['projects']],
         successMessage: 'Проект создан',
         onSuccess: () => onClose(),
+        errorFallback: 'Ошибка создания проекта',
         notifyOnError: false,
-        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания проекта')),
+        onError: (_err, _vars, message) => setError(message),
     })
 
     const updateMutation = useApiMutation<unknown, ProjectUpdate>({
@@ -139,8 +140,9 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         invalidateKeys: [['projects']],
         successMessage: 'Проект обновлён',
         onSuccess: () => onClose(),
+        errorFallback: 'Ошибка обновления проекта',
         notifyOnError: false,
-        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка обновления проекта')),
+        onError: (_err, _vars, message) => setError(message),
     })
 
     const isBusy = createMutation.isPending || updateMutation.isPending

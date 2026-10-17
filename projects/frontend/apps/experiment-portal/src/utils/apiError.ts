@@ -11,7 +11,11 @@ function cleanMessage(value: unknown): string | null {
     if (!text) return null
     // Markup bodies (proxy error pages, XML) are never shown to the user;
     // a leading placeholder such as "<sensor_id> must be a UUID" is kept.
-    if (/^<[!?]/.test(text) || (/^<[a-z]/i.test(text) && text.includes('</'))) return null
+    if (
+        /^<[!?]/.test(text) ||
+        /^<(html|head|body|meta|title|style|div|p|br|center|h[1-6])\b/i.test(text) ||
+        (/^<[a-z]/i.test(text) && (text.includes('</') || /\/>$/.test(text)))
+    ) return null
     const chars = Array.from(text)
     return chars.length > MAX_MESSAGE_LENGTH ? `${chars.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…` : text
 }

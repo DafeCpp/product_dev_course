@@ -20,8 +20,11 @@ interface UseApiMutationOptions<TData, TVars> {
   notifyOnError?: boolean
   /** Called before the request starts, e.g. to clear a previous inline error. */
   onMutate?: (vars: TVars) => void
-  /** Called after built-in error handling. Use to set local error state. */
-  onError?: (error: unknown, vars: TVars) => void
+  /**
+   * Called after built-in error handling with the sanitized user-facing
+   * `message` (server text or `errorFallback`). Use to set inline error state.
+   */
+  onError?: (error: unknown, vars: TVars, message: string) => void
 }
 
 export function useApiMutation<TData = unknown, TVars = void>({
@@ -51,10 +54,11 @@ export function useApiMutation<TData = unknown, TVars = void>({
       onSuccess?.(data, vars)
     },
     onError: (error, vars) => {
+      const message = getApiErrorMessage(error, errorFallback)
       if (notifyOnError) {
-        notifyError(getApiErrorMessage(error, errorFallback))
+        notifyError(message)
       }
-      onError?.(error, vars)
+      onError?.(error, vars, message)
     },
   })
 }

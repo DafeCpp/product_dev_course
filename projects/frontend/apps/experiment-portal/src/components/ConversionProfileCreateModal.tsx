@@ -3,7 +3,6 @@ import { useApiMutation } from '../hooks/useApiMutation'
 import { conversionProfilesApi } from '../api/client'
 import type { ConversionProfileInput } from '../types'
 import Modal from './Modal'
-import { getApiErrorMessage } from '../utils/apiError'
 
 interface ConversionProfileCreateModalProps {
     sensorId: string
@@ -109,8 +108,9 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         invalidateKeys: [['sensor', sensorId, 'profiles']],
         successMessage: 'Профиль преобразования создан',
         onSuccess: () => handleClose(),
+        errorFallback: 'Ошибка создания профиля',
         notifyOnError: false,
-        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания профиля')),
+        onError: (_err, _vars, message) => setError(message),
     })
 
     const handleSubmit = (e: React.FormEvent) => {

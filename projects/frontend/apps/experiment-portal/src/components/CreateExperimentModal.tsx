@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { getApiErrorMessage } from '../utils/apiError'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { Experiment, ExperimentCreate } from '../types'
 import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
@@ -45,9 +44,10 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             onClose()
             navigate(`/experiments/${experiment.id}`)
         },
+        errorFallback: 'Ошибка создания эксперимента',
         notifyOnError: false,
-        onError: (err: unknown) => {
-            setError(getApiErrorMessage(err, 'Ошибка создания эксперимента'))
+        onError: (_err, _vars, message) => {
+            setError(message)
         },
     })
 

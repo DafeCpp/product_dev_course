@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { telemetryApi } from '../api/client'
 import type { TelemetryIngest } from '../types'
 import Modal from './Modal'
-import { getApiErrorMessage } from '../utils/apiError'
+import { UserFacingError } from '../utils/apiError'
 import { useApiMutation } from '../hooks/useApiMutation'
 import './TestTelemetryModal.scss'
 
@@ -23,7 +23,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
     const ingestMutation = useApiMutation({
         mutationFn: (data: TelemetryIngest) => {
             if (!token) {
-                throw new Error('Токен датчика обязателен')
+                throw new UserFacingError('Токен датчика обязателен')
             }
             return telemetryApi.ingest(data, token)
         },
@@ -35,8 +35,8 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             setTimeout(() => { setMetaJson('{}'); setReadingsJson(''); setSuccess(null) }, 2000)
         },
         notifyOnError: false,
-        onError: (err: unknown) => {
-            setError(getApiErrorMessage(err, 'Ошибка отправки телеметрии'))
+        onError: (_err, _vars, message) => {
+            setError(message)
             setSuccess(null)
         },
     })

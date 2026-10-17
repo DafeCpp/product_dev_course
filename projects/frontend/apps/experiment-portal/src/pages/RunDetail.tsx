@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { getApiErrorMessage } from '../utils/apiError'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
@@ -92,7 +91,7 @@ function RunDetail() {
     errorFallback: 'Не удалось завершить run',
     onMutate: () => setActionError(null),
     notifyOnError: false,
-    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось завершить run')),
+    onError: (_err, _vars, message) => setActionError(message),
   })
 
   const startRunMutation = useApiMutation({
@@ -102,7 +101,7 @@ function RunDetail() {
     errorFallback: 'Не удалось запустить run',
     onMutate: () => setActionError(null),
     notifyOnError: false,
-    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить run')),
+    onError: (_err, _vars, message) => setActionError(message),
   })
 
   const failMutation = useApiMutation<unknown, string | undefined>({
@@ -112,7 +111,7 @@ function RunDetail() {
     errorFallback: 'Не удалось пометить run как failed',
     onMutate: () => setActionError(null),
     notifyOnError: false,
-    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось пометить run как failed')),
+    onError: (_err, _vars, message) => setActionError(message),
   })
 
   // Создание capture session
@@ -134,7 +133,7 @@ function RunDetail() {
     errorFallback: 'Не удалось запустить отсчёт',
     onMutate: () => setActionError(null),
     notifyOnError: false,
-    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить отсчёт')),
+    onError: (_err, _vars, message) => setActionError(message),
   })
 
   // Остановка capture session
@@ -146,7 +145,7 @@ function RunDetail() {
     onMutate: () => setActionError(null),
     onSuccess: () => setOptimisticActiveSessionId(null),
     notifyOnError: false,
-    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось остановить отсчёт')),
+    onError: (_err, _vars, message) => setActionError(message),
   })
 
   // Удаление capture session

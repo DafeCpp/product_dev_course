@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useApiMutation } from '../../hooks/useApiMutation'
 import { permissionsApi } from '../../api/permissions'
 import Modal from '../Modal'
-import { getApiErrorMessage } from '../../utils/apiError'
 import PermissionPickerLocal from './PermissionPickerLocal'
 
 interface CreateProjectRoleModalProps {
@@ -29,7 +28,7 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
         errorFallback: 'Ошибка создания роли',
         onSuccess: () => { setName(''); setDescription(''); setPermissionIds([]); setError(null); onClose() },
         notifyOnError: false,
-        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания роли')),
+        onError: (_err, _vars, message) => setError(message),
     })
 
     const handleSubmit = (e: React.FormEvent) => {

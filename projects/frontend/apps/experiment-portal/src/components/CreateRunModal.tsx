@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { getApiErrorMessage } from '../utils/apiError'
 import { runsApi } from '../api/client'
 import type { Run, RunCreate } from '../types'
 import Modal from './Modal'
@@ -37,9 +36,10 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             onClose()
             navigate(`/runs/${run.id}`)
         },
+        errorFallback: 'Ошибка создания запуска',
         notifyOnError: false,
-        onError: (err: unknown) => {
-            setError(getApiErrorMessage(err, 'Ошибка создания запуска'))
+        onError: (_err, _vars, message) => {
+            setError(message)
         },
     })
 

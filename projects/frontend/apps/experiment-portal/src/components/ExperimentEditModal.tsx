@@ -4,7 +4,6 @@ import type { Experiment, ExperimentUpdate } from '../types'
 import Modal from './Modal'
 import { experimentStatusMap } from './common/statusMaps'
 import { MaterialSelect } from './common'
-import { getApiErrorMessage } from '../utils/apiError'
 import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateRunModal.scss'
 
@@ -41,7 +40,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         errorFallback: 'Ошибка обновления эксперимента',
         onSuccess: () => onClose(),
         notifyOnError: false,
-        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка обновления эксперимента')),
+        onError: (_err, _vars, message) => setError(message),
     })
 
     const archiveMutation = useApiMutation({
@@ -51,7 +50,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         errorFallback: 'Ошибка архивации эксперимента',
         onSuccess: () => onClose(),
         notifyOnError: false,
-        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка архивации эксперимента')),
+        onError: (_err, _vars, message) => setError(message),
     })
 
     const isBusy = updateMutation.isPending || archiveMutation.isPending

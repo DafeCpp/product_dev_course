@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { getApiErrorMessage } from '../utils/apiError'
 import {
   Alert,
   Box,
@@ -407,7 +406,7 @@ export default function ArtifactsPanel({ runId, projectId, isOwner = false }: Pr
     errorFallback: 'Ошибка создания артефакта',
     onSuccess: () => { setShowAdd(false); setAddError(null) },
     notifyOnError: false,
-    onError: (err: unknown) => setAddError(getApiErrorMessage(err, 'Ошибка создания артефакта')),
+    onError: (_err, _vars, message) => setAddError(message),
   })
 
   const deleteMutation = useApiMutation<unknown, string>({

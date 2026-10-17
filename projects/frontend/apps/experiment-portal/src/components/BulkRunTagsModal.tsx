@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import Modal from './Modal'
 import { MaterialSelect } from './common'
 import { runsApi } from '../api/client'
-import { getApiErrorMessage } from '../utils/apiError'
 import { useApiMutation } from '../hooks/useApiMutation'
 
 type BulkMode = 'add' | 'remove' | 'set'
@@ -44,7 +43,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         errorFallback: 'Ошибка bulk tagging',
         onSuccess: () => { onClose(); setTagsText(''); setMode('add'); setError(null) },
         notifyOnError: false,
-        onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка bulk tagging')),
+        onError: (_err, _vars, message) => setError(message),
     })
 
     const disabled = mutation.isPending || runIds.length === 0

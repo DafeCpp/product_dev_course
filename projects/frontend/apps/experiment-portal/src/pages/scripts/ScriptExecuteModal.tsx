@@ -4,6 +4,7 @@ import { scriptsApi } from '../../api/scripts'
 import type { Script } from '../../types/scripts'
 import Modal from '../../components/Modal'
 import { notifyError } from '../../utils/notify'
+import { UserFacingError } from '../../utils/apiError'
 
 export interface ScriptExecuteModalProps {
   scripts: Script[]
@@ -19,7 +20,7 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
 
   const executeMutation = useApiMutation({
     mutationFn: async () => {
-      if (!selectedScript) throw new Error('Скрипт не выбран')
+      if (!selectedScript) throw new UserFacingError('Скрипт не выбран')
       let parameters: Record<string, unknown> = {}
       if (paramsRaw.trim()) {
         parameters = JSON.parse(paramsRaw) as Record<string, unknown>
