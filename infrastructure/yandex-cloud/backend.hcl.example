@@ -1,0 +1,13 @@
+# Скопируйте в backend.hcl (файл в .gitignore) и подставьте значения из
+# `terraform output` в bootstrap/. Ключи доступа сюда НЕ пишутся:
+#   export AWS_ACCESS_KEY_ID=...
+#   export AWS_SECRET_ACCESS_KEY=...
+bucket = "experiment-tracking-tf-state"
+key    = "terraform.tfstate"
+
+# Блокировки через YDB Document API (DynamoDB-совместимый).
+# Endpoint — `terraform output lock_document_api_endpoint` из bootstrap/.
+endpoints = {
+  dynamodb = "https://docapi.serverless.yandexcloud.net/ru-central1/<cloud-id>/<database-id>"
+}
+dynamodb_table = "tfstate-lock"
