@@ -5,7 +5,7 @@ import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
 import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
-import { getApiErrorMessage } from '../utils/apiError'
+import { getApiErrorMessage, getResponseBodyMessage } from '../utils/apiError'
 import './TelemetryStreamModal.scss'
 
 type TelemetryStreamModalProps = {
@@ -142,16 +142,7 @@ export default function TelemetryStreamModal({
                             },
                         })
                     )
-                    let serverMessage: unknown = text
-                    try {
-                        const parsed = JSON.parse(text)
-                        serverMessage = parsed?.error ?? parsed?.message
-                    } catch {
-                        // plain-text body
-                    }
-                    throw new Error(
-                        getApiErrorMessage({ response: { data: { error: serverMessage } } }, `Ошибка стрима: HTTP ${resp.status}`)
-                    )
+                    throw new Error(getResponseBodyMessage(text, `Ошибка стрима: HTTP ${resp.status}`))
                 }
                 return { response: resp }
             } catch (e: any) {
@@ -250,7 +241,7 @@ export default function TelemetryStreamModal({
         >
             <div className="telemetry-stream">
                 {streamStatus === 'error' && streamError && (
-                    <div className="error">{getApiErrorMessage(streamError, 'Ошибка подключения к стриму')}</div>
+                    <div className="error">{getApiErrorMessage(streamError, 'Ошибка подключения к стриму', { includeClientMessage: true })}</div>
                 )}
 
                 <div className="form-grid">

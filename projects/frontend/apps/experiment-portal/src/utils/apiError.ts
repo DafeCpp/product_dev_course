@@ -9,24 +9,26 @@ function cleanMessage(value: unknown): string | null {
     // eslint-disable-next-line no-control-regex
     const text = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
     if (!text) return null
-    if (/^<!doctype|^<html/i.test(text)) return null
-    return text.length > MAX_MESSAGE_LENGTH ? `${text.slice(0, MAX_MESSAGE_LENGTH - 1)}…` : text
+    // Markup bodies (proxy error pages, XML) are never shown to the user.
+    if (/^<[a-z!?/]/i.test(text)) return null
+    const chars = Array.from(text)
+    return chars.length > MAX_MESSAGE_LENGTH ? `${chars.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…` : text
 }
 
 /**
  * User-facing message for a failed API call: `response.data.error`,
- * then `response.data.message`, then `error.message`, then `fallback`.
+ * then `response.data.message`, then `fallback`.
  * Only non-empty strings are accepted; anything else falls through.
- * Axios' own `message` ("Request failed with status code 500") is skipped
- * in favour of the caller's fallback; `serverOnly` skips `error.message`
- * for any error, so client-side exceptions never reach the user.
  * A shared-transport `HttpError` carries server text in `message` only
  * when `kind === 'api'`; other kinds (network, timeout) use the fallback.
+ * `includeClientMessage` also accepts `error.message` of a plain Error;
+ * off by default so client-side exceptions never reach the user. Axios'
+ * own message ("Request failed with status code 500") is always skipped.
  */
 export function getApiErrorMessage(
     error: unknown,
     fallback: string,
-    { serverOnly = false }: { serverOnly?: boolean } = {},
+    { includeClientMessage = false }: { includeClientMessage?: boolean } = {},
 ): string {
     if (error instanceof HttpError) {
         return (error.kind === 'api' ? cleanMessage(error.message) : null) ?? fallback
@@ -40,9 +42,27 @@ export function getApiErrorMessage(
         return (
             cleanMessage(e.response?.data?.error) ??
             cleanMessage(e.response?.data?.message) ??
-            (serverOnly || e.isAxiosError ? null : cleanMessage(e.message)) ??
+            (includeClientMessage && !e.isAxiosError ? cleanMessage(e.message) : null) ??
             fallback
         )
     }
     return fallback
+}
+
+/**
+ * User-facing message from a raw response body: the `error` / `message`
+ * string of a JSON body, else the body text itself, else `fallback`.
+ */
+export function getResponseBodyMessage(body: string, fallback: string): string {
+    try {
+        const parsed: unknown = JSON.parse(body)
+        if (parsed && typeof parsed === 'object') {
+            const p = parsed as { error?: unknown; message?: unknown }
+            const fromJson = cleanMessage(p.error) ?? cleanMessage(p.message)
+            if (fromJson) return fromJson
+        }
+    } catch {
+        // plain-text body
+    }
+    return cleanMessage(body) ?? fallback
 }

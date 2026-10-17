@@ -136,7 +136,7 @@ function RunDetail() {
     errorFallback: 'Не удалось запустить отсчёт',
     onSuccess: () => setActionError(null),
     notifyOnError: false,
-    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить отсчёт', { serverOnly: true })),
+    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить отсчёт')),
   })
 
   // Остановка capture session

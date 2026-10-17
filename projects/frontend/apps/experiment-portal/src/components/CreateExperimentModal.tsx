@@ -47,7 +47,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
         },
         notifyOnError: false,
         onError: (err: unknown) => {
-            setError(getApiErrorMessage(err, 'Ошибка создания эксперимента', { serverOnly: true }))
+            setError(getApiErrorMessage(err, 'Ошибка создания эксперимента'))
         },
     })
 

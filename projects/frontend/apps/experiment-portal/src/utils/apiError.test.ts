@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { HttpError } from '@lostpointer/web-http'
-import { getApiErrorMessage } from './apiError'
+import { getApiErrorMessage, getResponseBodyMessage } from './apiError'
 
 describe('getApiErrorMessage', () => {
     it('prefers response.data.error, then response.data.message', () => {
@@ -8,17 +8,15 @@ describe('getApiErrorMessage', () => {
         expect(getApiErrorMessage({ response: { data: { message: 'B' } } }, 'fb')).toBe('B')
     })
 
-    it('uses error.message for plain errors', () => {
-        expect(getApiErrorMessage(new Error('boom'), 'fb')).toBe('boom')
+    it('hides plain Error messages unless includeClientMessage is set', () => {
+        expect(getApiErrorMessage(new Error('boom'), 'fb')).toBe('fb')
+        expect(getApiErrorMessage(new Error('boom'), 'fb', { includeClientMessage: true })).toBe('boom')
     })
 
-    it('skips error.message when serverOnly is set', () => {
-        expect(getApiErrorMessage(new Error('boom'), 'fb', { serverOnly: true })).toBe('fb')
-    })
 
     it("skips axios' generic message", () => {
         const err = { isAxiosError: true, message: 'Request failed with status code 500', response: { data: {} } }
-        expect(getApiErrorMessage(err, 'fb')).toBe('fb')
+        expect(getApiErrorMessage(err, 'fb', { includeClientMessage: true })).toBe('fb')
     })
 
     it('ignores non-string payloads', () => {
@@ -27,9 +25,14 @@ describe('getApiErrorMessage', () => {
         expect(getApiErrorMessage('oops', 'fb')).toBe('fb')
     })
 
-    it('drops HTML error pages', () => {
-        const err = { response: { data: { error: '<!DOCTYPE html><html><body>502</body></html>' } } }
-        expect(getApiErrorMessage(err, 'fb')).toBe('fb')
+    it('drops markup error pages', () => {
+        for (const body of [
+            '<!DOCTYPE html><html><body>502</body></html>',
+            '<head><title>502 Bad Gateway</title></head><body>nginx</body>',
+            '<?xml version="1.0"?><Error/>',
+        ]) {
+            expect(getApiErrorMessage({ response: { data: { error: body } } }, 'fb')).toBe('fb')
+        }
     })
 
     it('collapses whitespace and control characters', () => {
@@ -46,5 +49,27 @@ describe('getApiErrorMessage', () => {
         expect(getApiErrorMessage(new HttpError('api', 409, 'conflict', 'Проект уже существует'), 'fb')).toBe('Проект уже существует')
         expect(getApiErrorMessage(new HttpError('network', undefined, 'network', 'Network request failed'), 'fb')).toBe('fb')
         expect(getApiErrorMessage(new HttpError('timeout', undefined, 'timeout', 'Request timed out'), 'fb')).toBe('fb')
+    })
+
+    it('does not split surrogate pairs when truncating', () => {
+        const msg = getApiErrorMessage({ response: { data: { error: 'x'.repeat(298) + '😀😀😀' } } }, 'fb')
+        expect(msg).toBe('x'.repeat(298) + '😀…')
+    })
+})
+
+describe('getResponseBodyMessage', () => {
+    it('reads error/message strings from a JSON body', () => {
+        expect(getResponseBodyMessage('{"error":"bad since_ts"}', 'fb')).toBe('bad since_ts')
+        expect(getResponseBodyMessage('{"message":"nope"}', 'fb')).toBe('nope')
+    })
+
+    it('keeps the body text when JSON has no string error/message', () => {
+        expect(getResponseBodyMessage('{"detail":"since_ts is invalid"}', 'fb')).toBe('{"detail":"since_ts is invalid"}')
+    })
+
+    it('uses plain text and drops markup', () => {
+        expect(getResponseBodyMessage('sensor not found', 'fb')).toBe('sensor not found')
+        expect(getResponseBodyMessage('<html>502</html>', 'fb')).toBe('fb')
+        expect(getResponseBodyMessage('', 'fb')).toBe('fb')
     })
 })

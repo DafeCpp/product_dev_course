@@ -39,7 +39,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
         },
         notifyOnError: false,
         onError: (err: unknown) => {
-            setError(getApiErrorMessage(err, 'Ошибка создания запуска', { serverOnly: true }))
+            setError(getApiErrorMessage(err, 'Ошибка создания запуска'))
         },
     })
 

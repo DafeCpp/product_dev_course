@@ -35,7 +35,7 @@ function CreateExperiment() {
       navigate(`/experiments/${experiment.id}`)
     },
     onError: (err: unknown) => {
-      setError(getApiErrorMessage(err, 'Ошибка создания эксперимента', { serverOnly: true }))
+      setError(getApiErrorMessage(err, 'Ошибка создания эксперимента'))
     },
   })
 

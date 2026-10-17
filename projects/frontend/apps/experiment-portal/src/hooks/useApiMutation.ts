@@ -48,7 +48,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
     },
     onError: (error, vars) => {
       if (notifyOnError) {
-        notifyError(getApiErrorMessage(error, errorFallback))
+        notifyError(getApiErrorMessage(error, errorFallback, { includeClientMessage: true }))
       }
       onError?.(error, vars)
     },
