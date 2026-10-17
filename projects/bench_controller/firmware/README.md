@@ -42,6 +42,14 @@ tests/build/sim_host --link-loss-at-ms 1000 > linkloss.csv
 
 CSV: `now_ms,mode,link,program_target,effective_target,valve_cmd,force_n,position_mm,failure`.
 
+## Командный тракт (Ф2)
+
+Команды `enable` / `set_mode` / `set_setpoint` / `controlled_stop` /
+`e_stop_soft` приходят в контур через `ICommandInbox`, исполняются
+идемпотентно по `cmd_id` и журналируются; состояние и ack уходят
+наружу снимком через `ISnapshotPublisher`. JSON-схема (контракт для
+веб-страницы): [docs/experiment-control/bench-command-schema.md](../../../docs/experiment-control/bench-command-schema.md).
+
 ## Ключевые инварианты ядра (закреплены тестами)
 
 - Команда клапану никогда не меняется быстрее slew-лимита — в том

@@ -77,6 +77,7 @@ class ChannelController {
   [[nodiscard]] float LastOutput() const noexcept { return last_output_; }
 
   void SetEnabled(bool enabled) noexcept { enabled_ = enabled; }
+  [[nodiscard]] bool Enabled() const noexcept { return enabled_; }
 
  private:
   [[nodiscard]] float Measured(const ValveFeedback& fb) const noexcept {
