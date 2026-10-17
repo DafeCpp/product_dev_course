@@ -36,11 +36,13 @@ static constexpr uint8_t kDriveModeCount = 5;
 // v10: миграция KidsModeConfig::speed_limit_gain на 1.5 (LOS-247)
 // v11: безопасный Kids yaw-rate пресет (LOS-284)
 // v12: добавлен KidsModeConfig::limiters_enabled (LOS-286)
-static constexpr uint8_t kCurrentStabConfigVersion = 12;
+// v13: новые yaw-коэффициенты Normal вместо нетронутых прежних (LOS-366)
+static constexpr uint8_t kCurrentStabConfigVersion = 13;
 static constexpr uint8_t kV8StabConfigVersion = 8;
 static constexpr uint8_t kV9StabConfigVersion = 9;
 static constexpr uint8_t kV10StabConfigVersion = 10;
 static constexpr uint8_t kV11StabConfigVersion = 11;
+static constexpr uint8_t kV12StabConfigVersion = 12;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
 struct StabConfigBlob {
@@ -300,7 +302,7 @@ esp_err_t MigrateV11Profiles(nvs_handle_t handle) {
     }
 
     blob.config.kids_mode.limiters_enabled = true;
-    blob.version = kCurrentStabConfigVersion;
+    blob.version = kV12StabConfigVersion;
     err = nvs_set_blob(handle, key, &blob, sizeof(blob));
     if (err != ESP_OK) return err;
     changed = true;
@@ -316,7 +318,7 @@ esp_err_t MigrateV11Profiles(nvs_handle_t handle) {
   if (legacy_err == ESP_OK && legacy_size == sizeof(legacy_blob) &&
       legacy_blob.version == kV11StabConfigVersion) {
     legacy_blob.config.kids_mode.limiters_enabled = true;
-    legacy_blob.version = kCurrentStabConfigVersion;
+    legacy_blob.version = kV12StabConfigVersion;
     legacy_err =
         nvs_set_blob(handle, NVS_LEGACY_KEY, &legacy_blob, sizeof(legacy_blob));
     if (legacy_err != ESP_OK) return legacy_err;
@@ -328,6 +330,60 @@ esp_err_t MigrateV11Profiles(nvs_handle_t handle) {
     return nvs_commit(handle);
   }
   return ESP_OK;
+}
+
+/**
+ * @brief Мигрировать v12 профили: новые yaw-коэффициенты Normal (LOS-366).
+ *
+ * Layout не менялся. Коэффициенты заменяются, только если в профиле Normal
+ * остались прежние значения по умолчанию, см.
+ * StabilizationConfig::UpgradeLegacyNormalYawGains().
+ */
+esp_err_t MigrateV12Profiles(nvs_handle_t handle) {
+  bool changed = false;
+  for (uint8_t m = 0; m < kDriveModeCount; ++m) {
+    char key[8];
+    ModeKey(static_cast<DriveMode>(m), key);
+
+    StabConfigBlob blob{};
+    size_t size = sizeof(blob);
+    esp_err_t err = nvs_get_blob(handle, key, &blob, &size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) continue;
+    if (err != ESP_OK) return err;
+    if (size != sizeof(blob) || blob.version != kV12StabConfigVersion) {
+      continue;
+    }
+
+    if (blob.config.UpgradeLegacyNormalYawGains()) {
+      ESP_LOGI(TAG, "Updated Normal yaw gains while migrating v12 -> v13");
+    }
+    blob.version = kCurrentStabConfigVersion;
+    err = nvs_set_blob(handle, key, &blob, sizeof(blob));
+    if (err != ESP_OK) return err;
+    changed = true;
+  }
+
+  StabConfigBlob legacy_blob{};
+  size_t legacy_size = sizeof(legacy_blob);
+  esp_err_t legacy_err =
+      nvs_get_blob(handle, NVS_LEGACY_KEY, &legacy_blob, &legacy_size);
+  if (legacy_err != ESP_ERR_NVS_NOT_FOUND && legacy_err != ESP_OK) {
+    return legacy_err;
+  }
+  if (legacy_err == ESP_OK && legacy_size == sizeof(legacy_blob) &&
+      legacy_blob.version == kV12StabConfigVersion) {
+    if (legacy_blob.config.UpgradeLegacyNormalYawGains()) {
+      ESP_LOGI(TAG,
+               "Updated legacy Normal yaw gains while migrating v12 -> v13");
+    }
+    legacy_blob.version = kCurrentStabConfigVersion;
+    legacy_err =
+        nvs_set_blob(handle, NVS_LEGACY_KEY, &legacy_blob, sizeof(legacy_blob));
+    if (legacy_err != ESP_OK) return legacy_err;
+    changed = true;
+  }
+
+  return changed ? nvs_commit(handle) : ESP_OK;
 }
 
 esp_err_t Load(DriveMode mode, StabilizationConfig& config) {
@@ -361,6 +417,12 @@ esp_err_t Load(DriveMode mode, StabilizationConfig& config) {
     return err;
   }
   err = MigrateV11Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV12Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);
@@ -411,6 +473,12 @@ esp_err_t Load(StabilizationConfig& config) {
     return err;
   }
   err = MigrateV11Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV12Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);

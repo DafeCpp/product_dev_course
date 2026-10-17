@@ -79,10 +79,13 @@ class YawRateController {
   void Process(const StabilizationConfig& cfg, float& steering, float stab_w,
                float mode_w, uint32_t dt_ms, bool reversing = false) noexcept;
 
-  /** Snapshot-based production path. */
+  /** Snapshot-based production path.
+   *  @param ref_cutoff_hz Частота среза опорной модели уставки
+   *                       (ModeTraits::yaw_ref_cutoff_hz), 0 — без фильтра.
+   */
   void Process(const StabilizationConfig& cfg, float& steering,
-               const StabilizationInput& input,
-               bool reversing = false) noexcept;
+               const StabilizationInput& input, bool reversing = false,
+               float ref_cutoff_hz = 0.0f) noexcept;
 
   /**
    * @brief Обновить PID-коэффициенты из конфигурации.
@@ -103,6 +106,8 @@ class YawRateController {
   const ImuHandler* imu_{nullptr};
   firmware_common::PidController pid_;
   float filtered_error_dps_{0.0f};
+  float omega_ref_dps_{0.0f};
+  bool omega_ref_valid_{false};
   float activation_weight_{0.0f};
   bool speed_gate_active_{false};
 };

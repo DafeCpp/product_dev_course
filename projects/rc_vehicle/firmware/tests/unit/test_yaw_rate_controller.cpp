@@ -456,3 +456,64 @@ TEST_F(YawRateControllerTest, AdaptivePid_Disabled_NoScaling) {
   EXPECT_FLOAT_EQ(steering1, steering2)
       << "Without adaptive PID, speed should not affect correction";
 }
+
+// LOS-366: опорная модель уставки (ModeTraits::yaw_ref_cutoff_hz).
+namespace {
+StabilizationInput MovingInput(float gyro_z_dps) {
+  return StabilizationInput{
+      .dt_ms = 2,
+      .speed_ms = 1.0f,
+      .filtered_gyro_z_dps = gyro_z_dps,
+      .stabilization_weight = 1.0f,
+      .mode_transition_weight = 1.0f,
+      .imu_enabled = true,
+  };
+}
+}  // namespace
+
+TEST_F(YawRateControllerTest, ReferenceModel_StartsFromActualYawRate) {
+  // Машина уже крутится на 30 dps, водитель просит 45 dps.
+  const StabilizationInput input = MovingInput(30.0f);
+  float unfiltered = 0.5f;
+  ctrl_.Process(cfg_, unfiltered, input, false, 0.0f);
+  ctrl_.Reset();
+  float filtered = 0.5f;
+  ctrl_.Process(cfg_, filtered, input, false, 1.5f);
+
+  // Без фильтра ошибка сразу 15 dps. Опорная модель стартует с 30 dps и за
+  // тик уходит на ~2 % ступеньки: поправка того же знака, но в разы меньше.
+  // Старт с 0 dps дал бы ошибку около -29 dps и поправку против водителя.
+  ASSERT_GT(unfiltered, 0.5f);
+  EXPECT_GT(filtered, 0.5f);
+  EXPECT_LT(filtered - 0.5f, 0.05f * (unfiltered - 0.5f));
+}
+
+TEST_F(YawRateControllerTest, ReferenceModel_ConvergesToSetpoint) {
+  // Поправка ~0.18 < max_correction: выход не насыщается, сравнение честное.
+  cfg_.yaw_rate.pid.kp = 0.01f;
+  ctrl_.SetGains(cfg_);
+  YawRateController reference;
+  reference.Init(cfg_, ekf_, &imu_handler_);
+  const StabilizationInput input = MovingInput(0.0f);
+
+  constexpr float kSteer = 0.2f;  // уставка 18 dps
+  // Постоянная времени опорной модели 1 / (2π · 1.5 Гц) ≈ 106 мс = 53 тика.
+  constexpr int kTauTicks = 53;
+  float filtered = 0.0f;
+  float unfiltered = 0.0f;
+  for (int i = 0; i < 1000; ++i) {
+    filtered = kSteer;
+    ctrl_.Process(cfg_, filtered, input, false, 1.5f);
+    unfiltered = kSteer;
+    reference.Process(cfg_, unfiltered, input, false, 0.0f);
+    if (i + 1 == kTauTicks) {
+      // Через τ опорная модель прошла ~63 % ступеньки (чуть меньше из-за
+      // фильтра ошибки 10 Гц), а не застряла и не прыгнула сразу.
+      const float ratio = (filtered - kSteer) / (unfiltered - kSteer);
+      EXPECT_GT(ratio, 0.45f);
+      EXPECT_LT(ratio, 0.70f);
+    }
+  }
+  EXPECT_LT(unfiltered - kSteer, cfg_.yaw_rate.pid.max_correction - 0.05f);
+  EXPECT_NEAR(filtered, unfiltered, 1e-4f);
+}

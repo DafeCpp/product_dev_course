@@ -45,8 +45,8 @@ void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
 }
 
 void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
-                                const StabilizationInput& input,
-                                bool reversing) noexcept {
+                                const StabilizationInput& input, bool reversing,
+                                float ref_cutoff_hz) noexcept {
   if (input.stabilization_weight <= 0.0f || !input.imu_enabled) {
     Reset();
     return;
@@ -80,7 +80,19 @@ void YawRateController::Process(const StabilizationConfig& cfg, float& steering,
 
   const float omega_desired = cfg.yaw_rate.steer_to_yaw_rate_dps * steering;
   const float omega_actual = input.filtered_gyro_z_dps;
-  const float error_dps = omega_desired - omega_actual;
+  // Опорная модель: на включении стартует с фактического yaw rate (без рывка
+  // ошибки), дальше догоняет уставку фильтром 1-го порядка.
+  if (!omega_ref_valid_) {
+    omega_ref_dps_ = omega_actual;
+    omega_ref_valid_ = true;
+  }
+  if (ref_cutoff_hz > 0.0f) {
+    omega_ref_dps_ += (1.0f - std::exp(-kTwoPi * ref_cutoff_hz * dt_sec)) *
+                      (omega_desired - omega_ref_dps_);
+  } else {
+    omega_ref_dps_ = omega_desired;
+  }
+  const float error_dps = omega_ref_dps_ - omega_actual;
   const float filter_alpha =
       1.0f - std::exp(-kTwoPi * kYawErrorCutoffHz * dt_sec);
   filtered_error_dps_ += filter_alpha * (error_dps - filtered_error_dps_);
@@ -113,6 +125,8 @@ void YawRateController::SetGains(const StabilizationConfig& cfg) noexcept {
 void YawRateController::Reset() noexcept {
   pid_.Reset();
   filtered_error_dps_ = 0.0f;
+  omega_ref_dps_ = 0.0f;
+  omega_ref_valid_ = false;
   activation_weight_ = 0.0f;
   speed_gate_active_ = false;
 }
@@ -295,7 +309,7 @@ StabilizationOutput StabilizationPipeline::Process(
 
   if (policy.yaw_rate_active) {
     yaw_ctrl_.Process(cfg, output.command.steering, input,
-                      output.command.throttle < 0.0f);
+                      output.command.throttle < 0.0f, policy.yaw_ref_cutoff_hz);
   }
   if (policy.pitch_comp_active) {
     pitch_ctrl_.Process(cfg, output.command.throttle, input);

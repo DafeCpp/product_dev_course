@@ -8,10 +8,14 @@ namespace rc_vehicle {
 
 void NormalModeStrategy::ApplyDefaults(
     StabilizationConfig& cfg) const noexcept {
-  cfg.yaw_rate.pid.kp = 0.10f;
-  cfg.yaw_rate.pid.ki = 0.00f;
-  cfg.yaw_rate.pid.kd = 0.005f;
-  cfg.yaw_rate.pid.max_integral = 0.5f;
+  // LOS-366: подобрано в SIL вместе с опорной моделью (yaw_ref_cutoff_hz).
+  // Прежние 0.10/0/0.005 давали автоколебания: D-член и ступенька уставки
+  // требовали руля быстрее slew rate. Интегратор убирает статическую ошибку,
+  // ki * max_integral = 0.2 перекрывает нужную поправку руля.
+  cfg.yaw_rate.pid.kp = 0.02f;
+  cfg.yaw_rate.pid.ki = 0.20f;
+  cfg.yaw_rate.pid.kd = 0.0004f;
+  cfg.yaw_rate.pid.max_integral = 1.0f;
   cfg.yaw_rate.pid.max_correction = 0.30f;
   cfg.yaw_rate.steer_to_yaw_rate_dps = 90.0f;
 
