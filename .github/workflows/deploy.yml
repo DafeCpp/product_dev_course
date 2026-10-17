@@ -69,6 +69,10 @@ jobs:
     needs: [backend-tests, frontend-tests, production-contract-tests]
     runs-on: ubuntu-latest
     environment: production
+    outputs:
+      # Digest собранной базы: build-and-push ссылается на неё неизменяемо.
+      # В output нельзя класть CR_REGISTRY, он содержит секрет и GitHub отбросит такой output.
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space (runner)
@@ -95,13 +99,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build and push backend base
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./projects/backend
           file: ./projects/backend/Dockerfile.base
           target: base
           push: true
-          tags: ${{ env.CR_REGISTRY }}/backend-base:latest
+          # Релизный тег фиксирует базу конкретного релиза; latest только для удобства,
+          # сервисы на него не ссылаются.
+          tags: |
+            ${{ env.CR_REGISTRY }}/backend-base:${{ env.RELEASE_TAG }}
+            ${{ env.CR_REGISTRY }}/backend-base:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -198,7 +207,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
-            BACKEND_BASE_IMAGE=${{ env.CR_REGISTRY }}/backend-base:latest
+            BACKEND_BASE_IMAGE=${{ env.CR_REGISTRY }}/backend-base@${{ needs.build-backend-base.outputs.digest }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

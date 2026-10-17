@@ -235,6 +235,16 @@ class ProductionDeployContractTest(unittest.TestCase):
             self.assertIsNotNone(block)
             self.assertIn("sensitive   = true", block.group("body"))
 
+    def test_release_services_pin_backend_base_by_digest(self) -> None:
+        workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotRegex(workflow, r"BACKEND_BASE_IMAGE=\S*backend-base:latest")
+        self.assertIn(
+            "BACKEND_BASE_IMAGE=${{ env.CR_REGISTRY }}/backend-base@"
+            "${{ needs.build-backend-base.outputs.digest }}",
+            workflow,
+        )
+        self.assertIn("backend-base:${{ env.RELEASE_TAG }}", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
