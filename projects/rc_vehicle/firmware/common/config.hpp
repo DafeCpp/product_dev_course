@@ -20,7 +20,7 @@ struct ControlLoopConfig {
 struct RcInputConfig {
   static constexpr uint32_t kPollIntervalMs = 20;  ///< Интервал опроса (50 Hz)
   /// Таймаут валидности сигнала (= RC_IN_TIMEOUT_MS на ESP32)
-  static constexpr uint32_t kTimeoutMs = 100;
+  static constexpr uint32_t kTimeoutMs = 90;
   static constexpr uint32_t kPulseMinUs =
       1000;  ///< Минимальная длительность импульса
   static constexpr uint32_t kPulseMaxUs =
@@ -100,7 +100,7 @@ struct LpfConfig {
  */
 struct FailsafeConfig {
   /// Grace-период после потери последнего источника (= FAILSAFE_TIMEOUT_MS)
-  static constexpr uint32_t kTimeoutMs = 130;
+  static constexpr uint32_t kTimeoutMs = 120;
   /// Требование: нейтраль не позже чем через 250 мс после последней команды
   /// (TESTING_PROGRAM.md, docs/interfaces_protocols.md; LOS-368).
   static constexpr uint32_t kLossToNeutralMs = 250;
@@ -147,11 +147,13 @@ struct WifiConfig {
 // Потеря источника доходит до нейтрали за таймаут источника, задержку его
 // опроса и grace-период failsafe; сумма не должна превышать требование
 // (LOS-368). RC опрашивается раз в kPollIntervalMs, Wi-Fi — каждый тик.
+// Запас ~20 мс остаётся на ширину импульса (до 2 мс; таймаут декодера
+// считается от его конца), тик control loop и джиттер ISR.
 static_assert(RcInputConfig::kTimeoutMs + RcInputConfig::kPollIntervalMs +
-                  FailsafeConfig::kTimeoutMs <=
+                  FailsafeConfig::kTimeoutMs + 20 <=
               FailsafeConfig::kLossToNeutralMs);
 static_assert(WifiConfig::kCommandTimeoutMs + ControlLoopConfig::kPeriodMs +
-                  FailsafeConfig::kTimeoutMs <=
+                  FailsafeConfig::kTimeoutMs + 20 <=
               FailsafeConfig::kLossToNeutralMs);
 
 /**

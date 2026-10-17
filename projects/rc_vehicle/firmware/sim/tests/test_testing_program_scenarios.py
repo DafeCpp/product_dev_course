@@ -40,10 +40,10 @@ def _pulses(ms: int, thr_us: int, str_us: int) -> list[SensorFrame]:
             for _ in range(ms // DT_MS)]
 
 
-# На ESP32 два таймаута подряд: декодер RC-импульсов (RC_IN_TIMEOUT_MS = 100 мс)
-# и grace-период Failsafe (FAILSAFE_TIMEOUT_MS = 130 мс), плюс опрос RC раз в
+# На ESP32 два таймаута подряд: декодер RC-импульсов (RC_IN_TIMEOUT_MS = 90 мс)
+# и grace-период Failsafe (FAILSAFE_TIMEOUT_MS = 120 мс), плюс опрос RC раз в
 # 20 мс; в grace-периоде прошивка держит последнюю команду (LOS-283).
-# Суммарно нейтраль не позже 250 мс (LOS-368).
+# Суммарно нейтраль не позже 250 мс с запасом ~20 мс (LOS-368).
 RC_LOSS_AT_MS = 2000
 
 
@@ -75,7 +75,7 @@ def test_rc_loss_neutral_within_250_ms_and_recovers():
     for offset in range(0, 20, DT_MS):
         _, neutral_ms = _rc_dropout_rows(RC_LOSS_AT_MS + offset)
         # Нижняя граница: нейтраль по таймаутам, а не мгновенно.
-        assert neutral_ms >= 200
+        assert neutral_ms >= 180
         worst = max(worst, neutral_ms)
     assert worst <= 250
 
@@ -85,18 +85,38 @@ def test_rc_loss_neutral_within_250_ms_and_recovers():
     assert back[-1]["throttle"] > 0.1
 
 
+def _wifi_frames(ms: int, on: bool) -> list[SensorFrame]:
+    return [SensorFrame(dt_ms=DT_MS, wifi_present=on,
+                        wifi_throttle=0.3 if on else 0.0,
+                        wifi_steering=0.2 if on else 0.0)
+            for _ in range(ms // DT_MS)]
+
+
 def test_wifi_loss_neutral_within_250_ms():
     """Failsafe по TESTING_PROGRAM.md: команды Wi-Fi пропали (RC нет) → нейтраль за ≤250 мс."""
     loss_at = 2000
-    frames = [SensorFrame(dt_ms=DT_MS, wifi_present=True, wifi_throttle=0.3,
-                          wifi_steering=0.2) for _ in range(loss_at // DT_MS)]
-    frames += [SensorFrame(dt_ms=DT_MS) for _ in range(600 // DT_MS)]
-    rows = run_batch(frames, BIN)
+    rows = run_batch(_wifi_frames(loss_at, True) + _wifi_frames(600, False), BIN)
     assert rows[loss_at // DT_MS - 1]["throttle"] > 0.1
     neutral_ms = _first_ms(
         rows[loss_at // DT_MS:],
         lambda r: r["failsafe"] == 1.0 and r["throttle"] == 0.0)
-    assert neutral_ms is not None and 200 <= neutral_ms <= 250
+    assert neutral_ms is not None and 180 <= neutral_ms <= 250
+
+
+def test_wifi_command_gap_does_not_trip_failsafe_below_timeout():
+    """Web UI шлёт команды каждые 20 мс: пауза ~80 мс не должна давать failsafe, пауза ~300 мс — должна.
+
+    Любая пауза дольше ~230 мс (таймаут команды + grace) прерывает и
+    автотесты/калибровки (HandleFailsafe → StopAll), так что граница важна.
+    """
+    def run(gap_ms: int):
+        frames = (_wifi_frames(2000, True) + _wifi_frames(gap_ms, False)
+                  + _wifi_frames(1000, True))
+        return run_batch(frames, BIN)[2000 // DT_MS:]
+
+    assert all(r["failsafe"] == 0.0 for r in run(80))
+    assert all(r["failsafe"] == 0.0 for r in run(160))
+    assert any(r["failsafe"] == 1.0 for r in run(300))
 
 
 def _yaw_step(steer: float, stabilize: bool = True):

@@ -153,12 +153,12 @@ def test_failsafe_episode_forces_neutral_pwm():
     raw, frames, output = _replay("golden_real_failsafe_reconstructed.csv")
     assert all(not frame.rc_present and not frame.wifi_present for frame in frames)
     assert statistics.mean(frame.az for frame in frames) < -0.9
-    # Первые ≤250 мс — таймаут Wi-Fi-команды (100 мс) и grace-период Failsafe
-    # (130 мс), как на машине; команды нет, так что газ и руль нулевые и в нём.
+    # Первые ~120 мс — grace-период Failsafe (FailsafeConfig::kTimeoutMs), как
+    # на машине; команды нет, так что газ и руль нулевые и в нём.
     active_from = next(
         i for i, row in enumerate(output) if row["failsafe"] == 1.0)
     grace_ms = _f(raw[active_from], "ts_ms") - _f(raw[0], "ts_ms")
-    assert 100 <= grace_ms <= 270
+    assert 110 <= grace_ms <= 150
     assert all(row["failsafe"] == 1.0 for row in output[active_from:])
     assert all(row["neutral"] == 1.0 for row in output[active_from:])
     assert max(abs(row["throttle"]) for row in output) < 1.0e-6

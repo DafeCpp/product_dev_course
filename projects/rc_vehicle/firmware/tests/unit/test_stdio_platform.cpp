@@ -3,6 +3,7 @@
 #include <cmath>
 #include <memory>
 
+#include "config.hpp"
 #include "imu_sensor.hpp"
 #include "stdio_platform.hpp"
 #include "vehicle_control_unified.hpp"
@@ -74,7 +75,7 @@ TEST(SimProtocol, StdioPlatform_RcPulsesDecodedLikeIsr) {
   EXPECT_GE(stats->throttle.stats.accepted, 2u);
 
   p.SetRcPulses(0, 1250);  // газ замолчал
-  p.AdvanceTimeMs(300);    // > таймаута декодера 250 мс
+  p.AdvanceTimeMs(300);    // > таймаута декодера (RcInputConfig::kTimeoutMs)
   EXPECT_FALSE(p.GetRc().has_value());
   stats = p.GetRcStats();
   EXPECT_FALSE(stats->throttle.active);
@@ -136,11 +137,14 @@ class SimHostTest : public ::testing::Test {
 };
 
 TEST_F(SimHostTest, NoCommands_FailsafeNeutral) {
-  // Нет RC, нет Wi-Fi. Failsafe с тем же grace-периодом 250 мс, что на ESP32
-  // (LOS-362): до его истечения failsafe ещё не активен.
-  for (int i = 0; i < 50; ++i) Drive(LevelFrame());
+  // Нет RC, нет Wi-Fi. Failsafe с тем же grace-периодом, что на ESP32
+  // (FailsafeConfig::kTimeoutMs, LOS-362/368): до его истечения failsafe ещё
+  // не активен, сразу после — активен.
+  constexpr int kGraceTicks = static_cast<int>(
+      config::FailsafeConfig::kTimeoutMs / 2);  // кадры по 2 мс
+  for (int i = 0; i < kGraceTicks - 5; ++i) Drive(LevelFrame());
   EXPECT_FALSE(p_->GetLastSnap().failsafe);
-  for (int i = 0; i < 150; ++i) Drive(LevelFrame());
+  for (int i = 0; i < 10; ++i) Drive(LevelFrame());
   EXPECT_TRUE(p_->WasNeutral());
   EXPECT_FLOAT_EQ(p_->GetLastThrottle(), 0.0f);
   EXPECT_FLOAT_EQ(p_->GetLastSteering(), 0.0f);

@@ -63,6 +63,6 @@ WebSocket:
 ## Логика управления
 
 - **RC имеет приоритет** над Wi‑Fi, если сигнал валиден.
-- `wifi_active=true`, если команды по WebSocket приходили недавно (`WIFI_CMD_TIMEOUT_MS`).
-- **failsafe**: если нет активного источника (RC или Wi‑Fi) дольше `FAILSAFE_TIMEOUT_MS` (130 мс после потери источника по `RC_IN_TIMEOUT_MS` / таймауту Wi‑Fi-команды, по 100 мс; в сумме ≤250 мс) → выставляется нейтраль.
+- `wifi_active=true`, если команды по WebSocket приходили недавно (`WifiConfig::kCommandTimeoutMs`, 100 мс).
+- **failsafe**: если нет активного источника (RC или Wi‑Fi) дольше `FAILSAFE_TIMEOUT_MS` (120 мс после потери источника по `RC_IN_TIMEOUT_MS` = 90 мс / таймауту Wi‑Fi-команды = 100 мс; в сумме ≤250 мс; значения в `firmware/common/config.hpp`) → выставляется нейтраль.
 - **slew‑rate**: applied плавно тянется к commanded.
