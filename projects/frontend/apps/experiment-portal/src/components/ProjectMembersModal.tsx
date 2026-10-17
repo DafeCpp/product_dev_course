@@ -128,7 +128,6 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Участник добавлен',
         errorFallback: 'Ошибка добавления участника',
         onSuccess: () => { setSelectedUser(null); setUserSearchInput(''); setDebouncedQuery(''); setNewMemberRoleId(''); setError(null) },
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка добавления участника')),
     })
 
@@ -139,7 +138,6 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Участник удалён',
         errorFallback: 'Ошибка удаления участника',
         onSuccess: () => setError(null),
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка удаления участника')),
     })
 
@@ -150,7 +148,6 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Роль обновлена',
         errorFallback: 'Ошибка изменения роли',
         onSuccess: () => setError(null),
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка изменения роли')),
     })
 

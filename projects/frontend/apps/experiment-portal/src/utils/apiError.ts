@@ -10,7 +10,7 @@ function cleanMessage(value: unknown): string | null {
     const text = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
     if (!text) return null
     // Markup bodies (proxy error pages, XML) are never shown to the user.
-    if (/^<[a-z!?/]/i.test(text)) return null
+    if (/^<(!doctype|\?xml|html|head|body|title|center|h1)\b/i.test(text)) return null
     const chars = Array.from(text)
     return chars.length > MAX_MESSAGE_LENGTH ? `${chars.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…` : text
 }
@@ -21,8 +21,9 @@ export class UserFacingError extends Error {
 }
 
 /**
- * User-facing message for a failed API call: `response.data.error`,
- * then `response.data.message`, then `fallback`.
+ * User-facing message for a failed API call: `response.data.message`,
+ * then `response.data.error`, then `fallback`. Same order as the shared
+ * transport: backends put a code in `error` and human text in `message`.
  * Only non-empty strings are accepted; anything else falls through.
  * A shared-transport `HttpError` carries server text in `message` only
  * when `kind === 'api'` and the body had one (not the synthetic `HTTP 500`);
@@ -50,8 +51,8 @@ export function getApiErrorMessage(
             isAxiosError?: boolean
         }
         return (
-            cleanMessage(e.response?.data?.error) ??
             cleanMessage(e.response?.data?.message) ??
+            cleanMessage(e.response?.data?.error) ??
             (includeClientMessage && !e.isAxiosError ? cleanMessage(e.message) : null) ??
             fallback
         )
@@ -60,16 +61,16 @@ export function getApiErrorMessage(
 }
 
 /**
- * User-facing message from a raw response body: the `error` / `message`
- * string of a JSON body, else the body text itself, else `fallback`.
+ * User-facing message from a raw response body: the `message` / `error`
+ * string of a JSON body, else plain body text, else `fallback`. A JSON
+ * body without such a string never shows raw JSON.
  */
 export function getResponseBodyMessage(body: string, fallback: string): string {
     try {
         const parsed: unknown = JSON.parse(body)
         if (parsed && typeof parsed === 'object') {
             const p = parsed as { error?: unknown; message?: unknown }
-            const fromJson = cleanMessage(p.error) ?? cleanMessage(p.message)
-            if (fromJson) return fromJson
+            return cleanMessage(p.message) ?? cleanMessage(p.error) ?? fallback
         }
     } catch {
         // plain-text body

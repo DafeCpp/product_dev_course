@@ -109,7 +109,6 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         invalidateKeys: [['sensor', sensorId, 'profiles']],
         successMessage: 'Профиль преобразования создан',
         onSuccess: () => handleClose(),
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания профиля')),
     })
 

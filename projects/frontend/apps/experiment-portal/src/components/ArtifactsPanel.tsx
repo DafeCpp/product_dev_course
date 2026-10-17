@@ -406,7 +406,6 @@ export default function ArtifactsPanel({ runId, projectId, isOwner = false }: Pr
     invalidateKeys: [['artifacts', runId]],
     errorFallback: 'Ошибка создания артефакта',
     onSuccess: () => { setShowAdd(false); setAddError(null) },
-    notifyOnError: false,
     onError: (err: unknown) => setAddError(getApiErrorMessage(err, 'Ошибка создания артефакта')),
   })
 

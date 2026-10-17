@@ -149,11 +149,26 @@ describe('useApiMutation — error path', () => {
     expect(notifyError).toHaveBeenCalledWith('Кастомная ошибка')
   })
 
-  it('calls custom onError after showing toast', async () => {
+  it('skips the toast by default when onError handles the error', async () => {
     const customOnError = vi.fn()
     const mutationFn = vi.fn().mockRejectedValue(new Error('oops'))
     const { result } = renderHook(
       () => useApiMutation({ mutationFn, onError: customOnError }),
+      { wrapper: createWrapper() },
+    )
+
+    await act(async () => result.current.mutate(undefined as void))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(notifyError).not.toHaveBeenCalled()
+    expect(customOnError).toHaveBeenCalled()
+  })
+
+  it('shows the toast and calls onError when notifyOnError is true', async () => {
+    const customOnError = vi.fn()
+    const mutationFn = vi.fn().mockRejectedValue(new Error('oops'))
+    const { result } = renderHook(
+      () => useApiMutation({ mutationFn, notifyOnError: true, onError: customOnError }),
       { wrapper: createWrapper() },
     )
 

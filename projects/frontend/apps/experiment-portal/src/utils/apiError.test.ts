@@ -3,9 +3,14 @@ import { HttpError } from '@lostpointer/web-http'
 import { UserFacingError, getApiErrorMessage, getResponseBodyMessage } from './apiError'
 
 describe('getApiErrorMessage', () => {
-    it('prefers response.data.error, then response.data.message', () => {
-        expect(getApiErrorMessage({ response: { data: { error: 'A', message: 'B' } } }, 'fb')).toBe('A')
-        expect(getApiErrorMessage({ response: { data: { message: 'B' } } }, 'fb')).toBe('B')
+    it('prefers response.data.message, then response.data.error', () => {
+        const body = { error: 'password_change_required', message: 'Смените пароль' }
+        expect(getApiErrorMessage({ response: { data: body } }, 'fb')).toBe('Смените пароль')
+        expect(getApiErrorMessage({ response: { data: { error: 'A' } } }, 'fb')).toBe('A')
+    })
+
+    it('keeps messages that merely start with a placeholder', () => {
+        expect(getApiErrorMessage({ response: { data: { error: '<sensor_id> must be a UUID' } } }, 'fb')).toBe('<sensor_id> must be a UUID')
     })
 
     it('hides plain Error messages unless includeClientMessage is set', () => {
@@ -71,8 +76,9 @@ describe('getResponseBodyMessage', () => {
         expect(getResponseBodyMessage('{"message":"nope"}', 'fb')).toBe('nope')
     })
 
-    it('keeps the body text when JSON has no string error/message', () => {
-        expect(getResponseBodyMessage('{"detail":"since_ts is invalid"}', 'fb')).toBe('{"detail":"since_ts is invalid"}')
+    it('falls back instead of showing raw JSON without a string error/message', () => {
+        expect(getResponseBodyMessage('{"detail":"since_ts is invalid"}', 'fb')).toBe('fb')
+        expect(getResponseBodyMessage('{"error":{"code":"x"}}', 'fb')).toBe('fb')
     })
 
     it('uses plain text and drops markup', () => {

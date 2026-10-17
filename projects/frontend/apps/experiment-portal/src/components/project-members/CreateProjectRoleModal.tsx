@@ -28,7 +28,6 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
         successMessage: 'Роль создана',
         errorFallback: 'Ошибка создания роли',
         onSuccess: () => { setName(''); setDescription(''); setPermissionIds([]); setError(null); onClose() },
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания роли')),
     })
 

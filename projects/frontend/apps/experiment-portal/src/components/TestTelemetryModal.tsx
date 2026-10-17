@@ -34,7 +34,6 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             setError(null)
             setTimeout(() => { setMetaJson('{}'); setReadingsJson(''); setSuccess(null) }, 2000)
         },
-        notifyOnError: false,
         onError: (err: unknown) => {
             setError(getApiErrorMessage(err, 'Ошибка отправки телеметрии'))
             setSuccess(null)

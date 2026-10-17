@@ -14,8 +14,9 @@ interface UseApiMutationOptions<TData, TVars> {
   /** Called after built-in success handling (invalidate + toast). */
   onSuccess?: (data: TData, vars: TVars) => void
   /**
-   * Show an error toast on failure (default). Pass `false` when the caller
-   * renders the error inline, so the user doesn't see it twice.
+   * Show an error toast on failure. Defaults to `true` without `onError`
+   * and `false` with it: a caller that handles the error renders it inline,
+   * so the user doesn't see it twice. Pass explicitly to override.
    */
   notifyOnError?: boolean
   /** Called after built-in error handling. Use to set local error state. */
@@ -27,7 +28,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
   invalidateKeys,
   successMessage,
   errorFallback = 'Произошла ошибка',
-  notifyOnError = true,
+  notifyOnError,
   onSuccess,
   onError,
 }: UseApiMutationOptions<TData, TVars>) {
@@ -47,7 +48,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
       onSuccess?.(data, vars)
     },
     onError: (error, vars) => {
-      if (notifyOnError) {
+      if (notifyOnError ?? onError === undefined) {
         notifyError(getApiErrorMessage(error, errorFallback, { includeClientMessage: true }))
       }
       onError?.(error, vars)

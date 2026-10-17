@@ -43,7 +43,6 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         successMessage: 'Теги обновлены',
         errorFallback: 'Ошибка bulk tagging',
         onSuccess: () => { onClose(); setTagsText(''); setMode('add'); setError(null) },
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка bulk tagging')),
     })
 

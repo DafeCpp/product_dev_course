@@ -40,7 +40,6 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент обновлён',
         errorFallback: 'Ошибка обновления эксперимента',
         onSuccess: () => onClose(),
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка обновления эксперимента')),
     })
 
@@ -50,7 +49,6 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент архивирован',
         errorFallback: 'Ошибка архивации эксперимента',
         onSuccess: () => onClose(),
-        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка архивации эксперимента')),
     })
 

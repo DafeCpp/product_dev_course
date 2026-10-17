@@ -45,7 +45,6 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             onClose()
             navigate(`/experiments/${experiment.id}`)
         },
-        notifyOnError: false,
         onError: (err: unknown) => {
             setError(getApiErrorMessage(err, 'Ошибка создания эксперимента'))
         },

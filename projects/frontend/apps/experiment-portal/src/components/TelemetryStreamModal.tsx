@@ -98,6 +98,14 @@ function _buildSparkline(values: number[], width: number, height: number): Spark
     }
 }
 
+// Plain Errors from the stream hook carry server text (SSE `error` event);
+// TypeError / SyntaxError are browser-side failures and get the fallback.
+function streamErrorMessage(err: Error): string {
+    const fallback = 'Ошибка подключения к стриму'
+    if (err instanceof TypeError || err instanceof SyntaxError) return fallback
+    return getApiErrorMessage(err, fallback, { includeClientMessage: true })
+}
+
 export default function TelemetryStreamModal({
     sensorId,
     isOpen,
@@ -241,7 +249,7 @@ export default function TelemetryStreamModal({
         >
             <div className="telemetry-stream">
                 {streamStatus === 'error' && streamError && (
-                    <div className="error">{getApiErrorMessage(streamError, 'Ошибка подключения к стриму')}</div>
+                    <div className="error">{streamErrorMessage(streamError)}</div>
                 )}
 
                 <div className="form-grid">

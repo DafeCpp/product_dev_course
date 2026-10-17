@@ -95,13 +95,11 @@ function RunDetail() {
   })
 
   const startRunMutation = useApiMutation({
-    mutationFn: () => {
-      setActionError(null)
-      return runsApi.update(id!, { status: 'running' })
-    },
+    mutationFn: () => runsApi.update(id!, { status: 'running' }),
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
+    onSuccess: () => setActionError(null),
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить run')),
   })
 
@@ -154,8 +152,6 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
-    onSuccess: () => setActionError(null),
-    onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось удалить сессию')),
   })
 
   const countdownDeadline = useMemo(() => {
