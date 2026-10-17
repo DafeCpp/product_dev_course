@@ -6,7 +6,7 @@
 
 | Каталог         | Описание |
 |-----------------|----------|
-| `common/`       | Общий код: протокол, UART-мост (база), SPI/IMU драйверы, калибровка IMU, Madgwick, control loop. |
+| `common/`       | Общий код: протокол, SPI/IMU драйверы, калибровка IMU, Madgwick, EKF, control loop, failsafe. Остался `uart_bridge_base.*` от прежней двухплатной схемы, он используется только в тестах. |
 | `esp32_common/` | Общий код для ESP32 (Wi‑Fi AP, HTTP, WebSocket, NVS калибровки). |
 | `esp32_s3/`     | Прошивка ESP32-S3 (ESP-IDF): точка входа, HAL, PWM, RC, IMU, стабилизация. |
 
