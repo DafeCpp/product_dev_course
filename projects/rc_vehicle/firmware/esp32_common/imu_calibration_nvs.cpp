@@ -98,30 +98,27 @@ esp_err_t imu_nvs::Load(rc_vehicle::ImuCalibData& data) {
     return ESP_ERR_NOT_FOUND;
   }
 
-  for (int i = 0; i < 3; ++i) {
-    if (!std::isfinite(blob.gyro_bias[i]) ||
-        std::fabs(blob.gyro_bias[i]) >
-            rc_vehicle::ImuCalibration::kMaxGyroBias) {
-      ESP_LOGW(TAG, "Invalid gyro_bias[%d]=%.3f — discarding", i,
-               blob.gyro_bias[i]);
-      return ESP_ERR_INVALID_STATE;
-    }
-    if (!std::isfinite(blob.accel_bias[i]) ||
-        std::fabs(blob.accel_bias[i]) >
-            rc_vehicle::ImuCalibration::kMaxAccelBias) {
-      ESP_LOGW(TAG, "Invalid accel_bias[%d]=%.4f — discarding", i,
-               blob.accel_bias[i]);
-      return ESP_ERR_INVALID_STATE;
-    }
-  }
+  rc_vehicle::ImuCalibData loaded = data;
+  std::memcpy(loaded.gyro_bias, blob.gyro_bias, sizeof(loaded.gyro_bias));
+  std::memcpy(loaded.accel_bias, blob.accel_bias, sizeof(loaded.accel_bias));
+  std::memcpy(loaded.accel_forward_vec, blob.accel_forward_vec,
+              sizeof(loaded.accel_forward_vec));
+  std::memcpy(loaded.gravity_vec, blob.gravity_vec, sizeof(loaded.gravity_vec));
+  loaded.valid = (blob.flags & 0x01) != 0;
+  loaded.gravity_valid = (blob.flags & 0x02) != 0;
 
-  std::memcpy(data.gyro_bias, blob.gyro_bias, sizeof(data.gyro_bias));
-  std::memcpy(data.accel_bias, blob.accel_bias, sizeof(data.accel_bias));
-  std::memcpy(data.accel_forward_vec, blob.accel_forward_vec,
-              sizeof(data.accel_forward_vec));
-  std::memcpy(data.gravity_vec, blob.gravity_vec, sizeof(data.gravity_vec));
-  data.valid = (blob.flags & 0x01) != 0;
-  data.gravity_valid = (blob.flags & 0x02) != 0;
+  // Та же проверка, что в Finalize()/SetData(): наклон монтажа в accel_bias
+  // не считается дефектом (LOS-227).
+  if (!rc_vehicle::ImuCalibration::IsBiasPlausible(loaded)) {
+    ESP_LOGW(TAG,
+             "Implausible bias: gyro=[%.3f, %.3f, %.3f] "
+             "accel=[%.4f, %.4f, %.4f] gravity_valid=%d — discarding",
+             loaded.gyro_bias[0], loaded.gyro_bias[1], loaded.gyro_bias[2],
+             loaded.accel_bias[0], loaded.accel_bias[1], loaded.accel_bias[2],
+             loaded.gravity_valid);
+    return ESP_ERR_INVALID_STATE;
+  }
+  data = loaded;
 
   ESP_LOGI(
       TAG,

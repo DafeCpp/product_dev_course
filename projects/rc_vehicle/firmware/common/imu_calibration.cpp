@@ -173,29 +173,37 @@ bool ImuCalibration::Finalize() {
     }
   }
 
+  // Собираем в копию: отвергнутая калибровка не должна портить текущую.
+  ImuCalibData next = data_;
+
   // Gyro bias = среднее значение в покое (идеал = 0)
-  data_.gyro_bias[0] = static_cast<float>(mean[0]);
-  data_.gyro_bias[1] = static_cast<float>(mean[1]);
-  data_.gyro_bias[2] = static_cast<float>(mean[2]);
+  next.gyro_bias[0] = static_cast<float>(mean[0]);
+  next.gyro_bias[1] = static_cast<float>(mean[1]);
+  next.gyro_bias[2] = static_cast<float>(mean[2]);
 
   // Accel bias и вектор g в СК датчика (этап 1: стояние на месте).
   if (mode_ == CalibMode::Full) {
     const double expected_az = (mean[5] >= 0.0) ? 1.0 : -1.0;
-    data_.accel_bias[0] = static_cast<float>(mean[3]);
-    data_.accel_bias[1] = static_cast<float>(mean[4]);
-    data_.accel_bias[2] = static_cast<float>(mean[5] - expected_az);
+    next.accel_bias[0] = static_cast<float>(mean[3]);
+    next.accel_bias[1] = static_cast<float>(mean[4]);
+    next.accel_bias[2] = static_cast<float>(mean[5] - expected_az);
     // Вектор g в СК датчика (направление при покое)
     double g2 = mean[3] * mean[3] + mean[4] * mean[4] + mean[5] * mean[5];
     constexpr double kMinG2 = 1e-6;
     if (g2 >= kMinG2) {
       double g = std::sqrt(g2);
-      data_.gravity_vec[0] = static_cast<float>(mean[3] / g);
-      data_.gravity_vec[1] = static_cast<float>(mean[4] / g);
-      data_.gravity_vec[2] = static_cast<float>(mean[5] / g);
-      data_.gravity_valid = true;  // код-ревью PR #290, 12-й раунд
+      next.gravity_vec[0] = static_cast<float>(mean[3] / g);
+      next.gravity_vec[1] = static_cast<float>(mean[4] / g);
+      next.gravity_vec[2] = static_cast<float>(mean[5] / g);
+      next.gravity_valid = true;  // код-ревью PR #290, 12-й раунд
     }
   }
 
+  // Та же проверка, что при загрузке: иначе калибровка работала бы до
+  // перезагрузки и молча терялась после неё (LOS-227).
+  if (!IsBiasPlausible(next)) return false;
+
+  data_ = next;
   data_.valid = true;
   return true;
 }
@@ -380,17 +388,34 @@ void ImuCalibration::SetForwardDirection(float fx, float fy, float fz) {
   data_.forward_valid = true;
 }
 
-void ImuCalibration::SetData(const ImuCalibData& data) {
-  // Валидация: bias не должен быть слишком большим
+bool ImuCalibration::IsBiasPlausible(const ImuCalibData& data) noexcept {
   for (int i = 0; i < 3; ++i) {
-    if (std::fabs(data.gyro_bias[i]) > kMaxGyroBias) {
-      data_.valid = false;
-      return;
+    if (!std::isfinite(data.gyro_bias[i]) ||
+        std::fabs(data.gyro_bias[i]) > kMaxGyroBias) {
+      return false;
     }
-    if (std::fabs(data.accel_bias[i]) > kMaxAccelBias) {
-      data_.valid = false;
-      return;
+    if (!std::isfinite(data.accel_bias[i])) return false;
+  }
+  const float* b = data.accel_bias;
+  // Без реальной Full-калибровки наклон неизвестен — объяснить им смещение
+  // нельзя.
+  if (!data.gravity_valid) {
+    for (int i = 0; i < 3; ++i) {
+      if (std::fabs(b[i]) > kMaxAccelBias) return false;
     }
+    return true;
+  }
+  // Знак опоры тот же, что выбрал Finalize(): по знаку сырого среднего az.
+  const float expected_az = data.gravity_vec[2] >= 0.f ? 1.f : -1.f;
+  const float mz = b[2] + expected_az;
+  const float norm = std::sqrt(b[0] * b[0] + b[1] * b[1] + mz * mz);
+  return std::fabs(norm - 1.f) <= kMaxAccelNormError;
+}
+
+void ImuCalibration::SetData(const ImuCalibData& data) {
+  if (!IsBiasPlausible(data)) {
+    data_.valid = false;
+    return;
   }
 
   data_ = data;
