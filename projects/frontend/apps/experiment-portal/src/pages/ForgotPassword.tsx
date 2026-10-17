@@ -47,7 +47,7 @@ function ForgotPassword() {
             </div>
           ) : (
             <>
-              {error && <div className="error-message">{error}</div>}
+              {error && <div className="error-message" role="alert">{error}</div>}
 
               <form onSubmit={handleSubmit} className="login-form auth-form">
                 <div className="form-group">

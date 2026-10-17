@@ -14,11 +14,12 @@ interface UseApiMutationOptions<TData, TVars> {
   /** Called after built-in success handling (invalidate + toast). */
   onSuccess?: (data: TData, vars: TVars) => void
   /**
-   * Show an error toast on failure. Defaults to `true` without `onError`
-   * and `false` with it: a caller that handles the error renders it inline,
-   * so the user doesn't see it twice. Pass explicitly to override.
+   * Show an error toast on failure (default). Pass `false` when the caller
+   * renders the error inline, so the user doesn't see it twice.
    */
   notifyOnError?: boolean
+  /** Called before the request starts, e.g. to clear a previous inline error. */
+  onMutate?: (vars: TVars) => void
   /** Called after built-in error handling. Use to set local error state. */
   onError?: (error: unknown, vars: TVars) => void
 }
@@ -28,7 +29,8 @@ export function useApiMutation<TData = unknown, TVars = void>({
   invalidateKeys,
   successMessage,
   errorFallback = 'Произошла ошибка',
-  notifyOnError,
+  notifyOnError = true,
+  onMutate,
   onSuccess,
   onError,
 }: UseApiMutationOptions<TData, TVars>) {
@@ -36,6 +38,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
 
   return useMutation<TData, unknown, TVars>({
     mutationFn,
+    onMutate: onMutate ? (vars) => { onMutate(vars) } : undefined,
     onSuccess: (data, vars) => {
       if (invalidateKeys) {
         for (const key of invalidateKeys) {
@@ -48,8 +51,8 @@ export function useApiMutation<TData = unknown, TVars = void>({
       onSuccess?.(data, vars)
     },
     onError: (error, vars) => {
-      if (notifyOnError ?? onError === undefined) {
-        notifyError(getApiErrorMessage(error, errorFallback, { includeClientMessage: true }))
+      if (notifyOnError) {
+        notifyError(getApiErrorMessage(error, errorFallback))
       }
       onError?.(error, vars)
     },

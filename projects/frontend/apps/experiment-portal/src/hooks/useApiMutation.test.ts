@@ -109,7 +109,7 @@ describe('useApiMutation — error path', () => {
     expect(notifyError).toHaveBeenCalledWith('Сервер недоступен')
   })
 
-  it('falls back to err.message when response.data is absent', async () => {
+  it('does not toast client-side exception text', async () => {
     const mutationFn = vi.fn().mockRejectedValue(new Error('Network error'))
     const { result } = renderHook(() => useApiMutation({ mutationFn }), {
       wrapper: createWrapper(),
@@ -118,7 +118,7 @@ describe('useApiMutation — error path', () => {
     await act(async () => result.current.mutate(undefined as void))
     await waitFor(() => expect(result.current.isError).toBe(true))
 
-    expect(notifyError).toHaveBeenCalledWith('Network error')
+    expect(notifyError).toHaveBeenCalledWith('Произошла ошибка')
   })
 
   it('skips the error toast when notifyOnError is false', async () => {
@@ -136,6 +136,19 @@ describe('useApiMutation — error path', () => {
     expect(onError).toHaveBeenCalled()
   })
 
+  it('calls onMutate before the request', async () => {
+    const onMutate = vi.fn()
+    const mutationFn = vi.fn().mockResolvedValue('ok')
+    const { result } = renderHook(() => useApiMutation({ mutationFn, onMutate }), {
+      wrapper: createWrapper(),
+    })
+
+    await act(async () => result.current.mutate(undefined as void))
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(onMutate).toHaveBeenCalled()
+  })
+
   it('uses errorFallback when error has no message', async () => {
     const mutationFn = vi.fn().mockRejectedValue({})
     const { result } = renderHook(
@@ -149,26 +162,11 @@ describe('useApiMutation — error path', () => {
     expect(notifyError).toHaveBeenCalledWith('Кастомная ошибка')
   })
 
-  it('skips the toast by default when onError handles the error', async () => {
+  it('calls custom onError after showing toast', async () => {
     const customOnError = vi.fn()
     const mutationFn = vi.fn().mockRejectedValue(new Error('oops'))
     const { result } = renderHook(
       () => useApiMutation({ mutationFn, onError: customOnError }),
-      { wrapper: createWrapper() },
-    )
-
-    await act(async () => result.current.mutate(undefined as void))
-    await waitFor(() => expect(result.current.isError).toBe(true))
-
-    expect(notifyError).not.toHaveBeenCalled()
-    expect(customOnError).toHaveBeenCalled()
-  })
-
-  it('shows the toast and calls onError when notifyOnError is true', async () => {
-    const customOnError = vi.fn()
-    const mutationFn = vi.fn().mockRejectedValue(new Error('oops'))
-    const { result } = renderHook(
-      () => useApiMutation({ mutationFn, notifyOnError: true, onError: customOnError }),
       { wrapper: createWrapper() },
     )
 

@@ -40,50 +40,42 @@ function Register() {
     const email = formData.email.trim()
 
     if (!username) {
-      const msg = 'Введите имя пользователя'
-      setError(msg)
+      setError('Введите имя пользователя')
       return
     }
 
     if (username.length < 3) {
-      const msg = 'Имя пользователя должно быть не короче 3 символов'
-      setError(msg)
+      setError('Имя пользователя должно быть не короче 3 символов')
       return
     }
 
     if (!email) {
-      const msg = 'Введите email'
-      setError(msg)
+      setError('Введите email')
       return
     }
 
     if (!/^\S+@\S+\.\S+$/.test(email)) {
-      const msg = 'Введите корректный email'
-      setError(msg)
+      setError('Введите корректный email')
       return
     }
 
     if (!formData.password) {
-      const msg = 'Введите пароль'
-      setError(msg)
+      setError('Введите пароль')
       return
     }
 
     if (formData.password.length < 8) {
-      const msg = 'Пароль должен быть не короче 8 символов'
-      setError(msg)
+      setError('Пароль должен быть не короче 8 символов')
       return
     }
 
     if (!formData.confirmPassword) {
-      const msg = 'Повторите пароль'
-      setError(msg)
+      setError('Повторите пароль')
       return
     }
 
     if (formData.password !== formData.confirmPassword) {
-      const msg = 'Пароли не совпадают'
-      setError(msg)
+      setError('Пароли не совпадают')
       return
     }
 

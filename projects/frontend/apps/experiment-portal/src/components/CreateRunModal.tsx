@@ -37,6 +37,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             onClose()
             navigate(`/runs/${run.id}`)
         },
+        notifyOnError: false,
         onError: (err: unknown) => {
             setError(getApiErrorMessage(err, 'Ошибка создания запуска'))
         },

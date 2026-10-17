@@ -38,14 +38,12 @@ function Login() {
     setError(null)
 
     if (!formData.username.trim()) {
-      const msg = 'Введите имя пользователя'
-      setError(msg)
+      setError('Введите имя пользователя')
       return
     }
 
     if (!formData.password) {
-      const msg = 'Введите пароль'
-      setError(msg)
+      setError('Введите пароль')
       return
     }
 

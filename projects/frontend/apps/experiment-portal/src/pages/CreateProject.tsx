@@ -33,8 +33,7 @@ function CreateProject() {
         setError(null)
 
         if (!formData.name.trim()) {
-            const msg = 'Название проекта обязательно'
-            setError(msg)
+            setError('Название проекта обязательно')
             return
         }
 

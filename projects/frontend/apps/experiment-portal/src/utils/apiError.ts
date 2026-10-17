@@ -9,8 +9,9 @@ function cleanMessage(value: unknown): string | null {
     // eslint-disable-next-line no-control-regex
     const text = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
     if (!text) return null
-    // Markup bodies (proxy error pages, XML) are never shown to the user.
-    if (/^<(!doctype|\?xml|html|head|body|title|center|h1)\b/i.test(text)) return null
+    // Markup bodies (proxy error pages, XML) are never shown to the user;
+    // a leading placeholder such as "<sensor_id> must be a UUID" is kept.
+    if (/^<[!?]/.test(text) || (/^<[a-z]/i.test(text) && text.includes('</'))) return null
     const chars = Array.from(text)
     return chars.length > MAX_MESSAGE_LENGTH ? `${chars.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…` : text
 }

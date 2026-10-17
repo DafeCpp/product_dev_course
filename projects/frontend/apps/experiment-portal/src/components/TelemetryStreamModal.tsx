@@ -98,11 +98,20 @@ function _buildSparkline(values: number[], width: number, height: number): Spark
     }
 }
 
+// Messages useTelemetryStream builds itself (not server text).
+const STREAM_HOOK_MESSAGES = new Set([
+    'Telemetry stream ended',
+    'Telemetry stream response has no body',
+    'Telemetry stream reported an error',
+])
+
 // Plain Errors from the stream hook carry server text (SSE `error` event);
-// TypeError / SyntaxError are browser-side failures and get the fallback.
+// TypeError / SyntaxError and the hook's own messages get the fallback.
 function streamErrorMessage(err: Error): string {
     const fallback = 'Ошибка подключения к стриму'
-    if (err instanceof TypeError || err instanceof SyntaxError) return fallback
+    if (err instanceof TypeError || err instanceof SyntaxError || STREAM_HOOK_MESSAGES.has(err.message)) {
+        return fallback
+    }
     return getApiErrorMessage(err, fallback, { includeClientMessage: true })
 }
 

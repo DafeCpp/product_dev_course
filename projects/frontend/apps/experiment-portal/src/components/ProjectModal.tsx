@@ -130,6 +130,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         invalidateKeys: [['projects']],
         successMessage: 'Проект создан',
         onSuccess: () => onClose(),
+        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания проекта')),
     })
 
@@ -138,6 +139,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         invalidateKeys: [['projects']],
         successMessage: 'Проект обновлён',
         onSuccess: () => onClose(),
+        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка обновления проекта')),
     })
 
@@ -153,8 +155,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         if (!canEdit) return
 
         if (!name.trim()) {
-            const msg = 'Название проекта обязательно'
-            setError(msg)
+            setError('Название проекта обязательно')
             return
         }
 

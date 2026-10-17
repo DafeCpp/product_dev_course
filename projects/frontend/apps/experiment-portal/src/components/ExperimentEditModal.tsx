@@ -40,6 +40,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент обновлён',
         errorFallback: 'Ошибка обновления эксперимента',
         onSuccess: () => onClose(),
+        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка обновления эксперимента')),
     })
 
@@ -49,6 +50,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент архивирован',
         errorFallback: 'Ошибка архивации эксперимента',
         onSuccess: () => onClose(),
+        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка архивации эксперимента')),
     })
 
@@ -71,8 +73,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         setError(null)
 
         if (!name.trim()) {
-            const msg = 'Название эксперимента обязательно'
-            setError(msg)
+            setError('Название эксперимента обязательно')
             return
         }
 
@@ -86,8 +87,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
             const parsed = JSON.parse((metadataInput || '').trim() || '{}')
             metadata = parsed && typeof parsed === 'object' ? parsed : {}
         } catch {
-            const msg = 'Неверный формат JSON в метаданных'
-            setError(msg)
+            setError('Неверный формат JSON в метаданных')
             return
         }
 

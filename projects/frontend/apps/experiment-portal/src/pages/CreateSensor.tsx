@@ -66,6 +66,7 @@ function CreateSensor() {
             }
             setShowToken(true)
         },
+        notifyOnError: false,
         onError: (err: unknown) => {
             setError(getApiErrorMessage(err, 'Ошибка регистрации датчика'))
         },

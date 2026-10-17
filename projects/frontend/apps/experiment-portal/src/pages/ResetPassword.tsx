@@ -73,7 +73,7 @@ function ResetPassword() {
             <p className="login-subtitle">Придумайте новый пароль для вашего аккаунта.</p>
           </div>
 
-          {error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="login-form auth-form">
             <div className="form-group">

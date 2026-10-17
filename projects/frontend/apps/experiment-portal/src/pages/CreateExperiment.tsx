@@ -44,14 +44,12 @@ function CreateExperiment() {
     setError(null)
 
     if (!formData.project_id) {
-      const msg = 'Выберите проект'
-      setError(msg)
+      setError('Выберите проект')
       return
     }
 
     if (!formData.name.trim()) {
-      const msg = 'Название эксперимента обязательно'
-      setError(msg)
+      setError('Название эксперимента обязательно')
       return
     }
 
@@ -68,13 +66,11 @@ function CreateExperiment() {
       if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
         metadata = parsed
       } else {
-        const msg = 'Метаданные должны быть JSON-объектом (например, {})'
-        setError(msg)
+        setError('Метаданные должны быть JSON-объектом (например, {})')
         return
       }
     } catch {
-      const msg = 'Неверный формат JSON в метаданных'
-      setError(msg)
+      setError('Неверный формат JSON в метаданных')
       return
     }
 

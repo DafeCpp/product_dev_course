@@ -90,7 +90,8 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
-    onSuccess: () => setActionError(null),
+    onMutate: () => setActionError(null),
+    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось завершить run')),
   })
 
@@ -99,7 +100,8 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
-    onSuccess: () => setActionError(null),
+    onMutate: () => setActionError(null),
+    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить run')),
   })
 
@@ -108,7 +110,8 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
-    onSuccess: () => setActionError(null),
+    onMutate: () => setActionError(null),
+    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось пометить run как failed')),
   })
 
@@ -129,7 +132,8 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт запущен',
     errorFallback: 'Не удалось запустить отсчёт',
-    onSuccess: () => setActionError(null),
+    onMutate: () => setActionError(null),
+    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось запустить отсчёт')),
   })
 
@@ -139,10 +143,9 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт остановлен',
     errorFallback: 'Не удалось остановить отсчёт',
-    onSuccess: () => {
-      setOptimisticActiveSessionId(null)
-      setActionError(null)
-    },
+    onMutate: () => setActionError(null),
+    onSuccess: () => setOptimisticActiveSessionId(null),
+    notifyOnError: false,
     onError: (err: unknown) => setActionError(getApiErrorMessage(err, 'Не удалось остановить отсчёт')),
   })
 
@@ -152,6 +155,7 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
+    onMutate: () => setActionError(null),
   })
 
   const countdownDeadline = useMemo(() => {

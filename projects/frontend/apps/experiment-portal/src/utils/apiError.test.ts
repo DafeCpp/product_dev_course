@@ -35,6 +35,8 @@ describe('getApiErrorMessage', () => {
             '<!DOCTYPE html><html><body>502</body></html>',
             '<head><title>502 Bad Gateway</title></head><body>nginx</body>',
             '<?xml version="1.0"?><Error/>',
+            '<!-- cdn --><p>Service unavailable</p>',
+            '<meta charset="utf-8"><title>503</title></head>',
         ]) {
             expect(getApiErrorMessage({ response: { data: { error: body } } }, 'fb')).toBe('fb')
         }

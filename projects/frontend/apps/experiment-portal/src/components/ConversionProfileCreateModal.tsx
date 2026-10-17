@@ -109,6 +109,7 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         invalidateKeys: [['sensor', sensorId, 'profiles']],
         successMessage: 'Профиль преобразования создан',
         onSuccess: () => handleClose(),
+        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка создания профиля')),
     })
 
@@ -117,15 +118,13 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         setError(null)
 
         if (!version.trim()) {
-            const msg = 'Версия обязательна'
-            setError(msg)
+            setError('Версия обязательна')
             return
         }
 
         const payload = buildPayload()
         if (payload === null) {
-            const msg = 'Некорректные параметры преобразования'
-            setError(msg)
+            setError('Некорректные параметры преобразования')
             return
         }
 

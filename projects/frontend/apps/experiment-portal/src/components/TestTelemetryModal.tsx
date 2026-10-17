@@ -34,6 +34,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             setError(null)
             setTimeout(() => { setMetaJson('{}'); setReadingsJson(''); setSuccess(null) }, 2000)
         },
+        notifyOnError: false,
         onError: (err: unknown) => {
             setError(getApiErrorMessage(err, 'Ошибка отправки телеметрии'))
             setSuccess(null)
@@ -46,8 +47,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
         setSuccess(null)
 
         if (!token.trim()) {
-            const msg = 'Токен датчика обязателен'
-            setError(msg)
+            setError('Токен датчика обязателен')
             return
         }
 
@@ -57,8 +57,7 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             try {
                 meta = JSON.parse(metaJson)
             } catch (err) {
-                const msg = 'Ошибка в формате JSON для meta'
-                setError(msg)
+                setError('Ошибка в формате JSON для meta')
                 return
             }
         }
@@ -69,21 +68,18 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             try {
                 readings = JSON.parse(readingsJson)
                 if (!Array.isArray(readings)) {
-                    const msg = 'readings должен быть массивом'
-                    setError(msg)
+                    setError('readings должен быть массивом')
                     return
                 }
                 // Валидация readings
                 for (const reading of readings) {
                     if (!reading.timestamp || typeof reading.raw_value !== 'number') {
-                        const msg = 'Каждый reading должен содержать timestamp и raw_value'
-                        setError(msg)
+                        setError('Каждый reading должен содержать timestamp и raw_value')
                         return
                     }
                 }
             } catch (err) {
-                const msg = 'Ошибка в формате JSON для readings'
-                setError(msg)
+                setError('Ошибка в формате JSON для readings')
                 return
             }
         } else {

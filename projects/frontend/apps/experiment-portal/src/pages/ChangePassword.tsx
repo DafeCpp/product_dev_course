@@ -31,26 +31,22 @@ function ChangePassword() {
     setError(null)
 
     if (!oldPassword) {
-      const msg = 'Введите текущий пароль'
-      setError(msg)
+      setError('Введите текущий пароль')
       return
     }
 
     if (!newPassword) {
-      const msg = 'Введите новый пароль'
-      setError(msg)
+      setError('Введите новый пароль')
       return
     }
 
     if (newPassword !== confirmPassword) {
-      const msg = 'Пароли не совпадают'
-      setError(msg)
+      setError('Пароли не совпадают')
       return
     }
 
     if (newPassword.length < 8) {
-      const msg = 'Новый пароль должен содержать не менее 8 символов'
-      setError(msg)
+      setError('Новый пароль должен содержать не менее 8 символов')
       return
     }
 
@@ -68,7 +64,7 @@ function ChangePassword() {
             </p>
           </div>
 
-          {error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="login-form auth-form">
             <div className="form-group">

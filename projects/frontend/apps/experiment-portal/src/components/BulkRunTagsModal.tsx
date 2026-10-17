@@ -43,6 +43,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         successMessage: 'Теги обновлены',
         errorFallback: 'Ошибка bulk tagging',
         onSuccess: () => { onClose(); setTagsText(''); setMode('add'); setError(null) },
+        notifyOnError: false,
         onError: (err: unknown) => setError(getApiErrorMessage(err, 'Ошибка bulk tagging')),
     })
 
@@ -52,8 +53,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         e.preventDefault()
         setError(null)
         if (mode !== 'set' && tags.length === 0) {
-            const msg = 'Укажи хотя бы один тег (через запятую)'
-            setError(msg)
+            setError('Укажи хотя бы один тег (через запятую)')
             return
         }
         mutation.mutate()
