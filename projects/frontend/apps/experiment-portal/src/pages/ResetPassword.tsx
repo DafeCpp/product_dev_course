@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { notifySuccess } from '../utils/notify'
 import './Login.scss'
+import { getApiErrorMessage, isClientRequestError } from '../utils/apiError'
 
 function ResetPassword() {
   const [searchParams] = useSearchParams()
@@ -38,12 +39,15 @@ function ResetPassword() {
       await authApi.confirmPasswordReset(token!, newPassword)
       notifySuccess('Пароль успешно изменён')
       navigate('/login', { replace: true })
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Не удалось сбросить пароль. Возможно, ссылка устарела или недействительна.'
-      setError(msg)
+    } catch (err: unknown) {
+      setError(
+        getApiErrorMessage(
+          err,
+          isClientRequestError(err)
+            ? 'Не удалось сбросить пароль. Возможно, ссылка устарела или недействительна.'
+            : 'Не удалось сбросить пароль: сервис недоступен. Попробуйте позже.',
+        ),
+      )
     } finally {
       setIsPending(false)
     }
@@ -76,7 +80,7 @@ function ResetPassword() {
             <p className="login-subtitle">Придумайте новый пароль для вашего аккаунта.</p>
           </div>
 
-          {error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="login-form auth-form">
             <div className="form-group">

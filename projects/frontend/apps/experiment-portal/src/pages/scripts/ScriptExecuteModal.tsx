@@ -3,7 +3,7 @@ import { useApiMutation } from '../../hooks/useApiMutation'
 import { scriptsApi } from '../../api/scripts'
 import type { Script } from '../../types/scripts'
 import Modal from '../../components/Modal'
-import { notifyError } from '../../utils/notify'
+import { UserFacingError } from '../../utils/apiError'
 
 export interface ScriptExecuteModalProps {
   scripts: Script[]
@@ -11,18 +11,36 @@ export interface ScriptExecuteModalProps {
   onExecuted: () => void
 }
 
+type ParsedParams = { value: Record<string, unknown> } | { error: string }
+
+function parseParams(raw: string): ParsedParams {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { error: 'Неверный формат JSON' }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { error: 'Должен быть JSON-объект, например {}' }
+  }
+  return { value: parsed as Record<string, unknown> }
+}
+
 export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: ScriptExecuteModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selectedScript, setSelectedScript] = useState<Script | null>(null)
   const [paramsRaw, setParamsRaw] = useState('')
   const [paramsError, setParamsError] = useState('')
+  const [scriptError, setScriptError] = useState('')
 
   const executeMutation = useApiMutation({
     mutationFn: async () => {
-      if (!selectedScript) throw new Error('Скрипт не выбран')
+      if (!selectedScript) throw new UserFacingError('Скрипт не выбран')
       let parameters: Record<string, unknown> = {}
       if (paramsRaw.trim()) {
-        parameters = JSON.parse(paramsRaw) as Record<string, unknown>
+        const parsed = parseParams(paramsRaw)
+        if ('error' in parsed) throw new UserFacingError(parsed.error)
+        parameters = parsed.value
       }
       return scriptsApi.executeScript(selectedScript.id, { parameters })
     },
@@ -33,9 +51,10 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
 
   const goToStep2 = () => {
     if (!selectedScript) {
-      notifyError('Выберите скрипт')
+      setScriptError('Выберите скрипт')
       return
     }
+    setScriptError('')
     setStep(2)
   }
 
@@ -43,14 +62,9 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
     const hasSchema =
       selectedScript && Object.keys(selectedScript.parameters_schema).length > 0
     if (hasSchema && paramsRaw.trim()) {
-      try {
-        const parsed = JSON.parse(paramsRaw)
-        if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
-          setParamsError('Должен быть JSON-объект')
-          return
-        }
-      } catch {
-        setParamsError('Невалидный JSON')
+      const parsed = parseParams(paramsRaw)
+      if ('error' in parsed) {
+        setParamsError(parsed.error)
         return
       }
     }
@@ -62,14 +76,8 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
   const hasSchema =
     selectedScript && Object.keys(selectedScript.parameters_schema).length > 0
 
-  let parsedParams: Record<string, unknown> = {}
-  if (paramsRaw.trim()) {
-    try {
-      parsedParams = JSON.parse(paramsRaw) as Record<string, unknown>
-    } catch {
-      // ignore in summary step
-    }
-  }
+  const summaryParams = paramsRaw.trim() ? parseParams(paramsRaw) : null
+  const parsedParams: Record<string, unknown> = summaryParams && 'value' in summaryParams ? summaryParams.value : {}
 
   return (
     <Modal
@@ -104,6 +112,7 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
                 setSelectedScript(found)
                 setParamsRaw('')
                 setParamsError('')
+                setScriptError('')
               }}
             >
               <option value="">— Выберите скрипт —</option>
@@ -113,6 +122,7 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
                 </option>
               ))}
             </select>
+            {scriptError && <small className="field-error" role="alert">{scriptError}</small>}
           </div>
         )}
 
@@ -133,7 +143,7 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
                   }}
                   className="scripts-form__code"
                 />
-                {paramsError && <small className="field-error">{paramsError}</small>}
+                {paramsError && <small className="field-error" role="alert">{paramsError}</small>}
               </>
             ) : (
               <p className="scripts-execute__no-params">Нет параметров для этого скрипта.</p>

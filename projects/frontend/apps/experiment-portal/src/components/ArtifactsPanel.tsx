@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage, UserFacingError } from '../utils/apiError'
 import {
   Alert,
   Box,
@@ -232,9 +233,9 @@ function UploadArtifactDialog({ open, onClose, runId, projectId: _projectId, onS
         }
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`Upload failed: HTTP ${xhr.status}`))
+          else reject(new UserFacingError(`Ошибка загрузки файла: HTTP ${xhr.status}`))
         }
-        xhr.onerror = () => reject(new Error('Network error during upload'))
+        xhr.onerror = () => reject(new UserFacingError('Ошибка сети при загрузке файла'))
         xhr.open('PUT', upload_url)
         xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
         xhr.send(file)
@@ -247,7 +248,7 @@ function UploadArtifactDialog({ open, onClose, runId, projectId: _projectId, onS
         handleClose()
       }, 800)
     } catch (e: unknown) {
-      setErrorMsg(e instanceof Error ? e.message : 'Upload failed')
+      setErrorMsg(getApiErrorMessage(e, 'Ошибка загрузки файла'))
       setStatus('error')
     }
   }
@@ -405,7 +406,7 @@ export default function ArtifactsPanel({ runId, projectId, isOwner = false }: Pr
     invalidateKeys: [['artifacts', runId]],
     errorFallback: 'Ошибка создания артефакта',
     onSuccess: () => { setShowAdd(false); setAddError(null) },
-    onError: (err: any) => setAddError(err?.response?.data?.error || err?.message || 'Ошибка создания артефакта'),
+    inlineError: setAddError,
   })
 
   const deleteMutation = useApiMutation<unknown, string>({

@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useApiMutation } from '../../hooks/useApiMutation'
 import { permissionsApi } from '../../api/permissions'
 import Modal from '../Modal'
-import { notifyError } from '../../utils/notify'
 import PermissionPickerLocal from './PermissionPickerLocal'
 
 interface CreateProjectRoleModalProps {
@@ -15,6 +14,7 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [permissionIds, setPermissionIds] = useState<string[]>([])
+    const [error, setError] = useState<string | null>(null)
 
     const createMutation = useApiMutation({
         mutationFn: () =>
@@ -26,13 +26,15 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
         invalidateKeys: [['projects', projectId, 'roles']],
         successMessage: 'Роль создана',
         errorFallback: 'Ошибка создания роли',
-        onSuccess: () => { setName(''); setDescription(''); setPermissionIds([]); onClose() },
+        onSuccess: () => { setName(''); setDescription(''); setPermissionIds([]); setError(null); onClose() },
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
+        setError(null)
         if (!name.trim()) {
-            notifyError('Введите название роли')
+            setError('Введите название роли')
             return
         }
         createMutation.mutate()
@@ -43,6 +45,7 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
             setName('')
             setDescription('')
             setPermissionIds([])
+            setError(null)
             onClose()
         }
     }
@@ -57,6 +60,7 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
         >
             <div className="modal-form">
                 <form onSubmit={handleSubmit}>
+                    {error && <div className="error" role="alert">{error}</div>}
                     <div className="form-group">
                         <label htmlFor="role_name">
                             Название <span className="required">*</span>

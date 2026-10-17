@@ -109,7 +109,7 @@ describe('useApiMutation — error path', () => {
     expect(notifyError).toHaveBeenCalledWith('Сервер недоступен')
   })
 
-  it('falls back to err.message when response.data is absent', async () => {
+  it('does not toast client-side exception text', async () => {
     const mutationFn = vi.fn().mockRejectedValue(new Error('Network error'))
     const { result } = renderHook(() => useApiMutation({ mutationFn }), {
       wrapper: createWrapper(),
@@ -118,7 +118,52 @@ describe('useApiMutation — error path', () => {
     await act(async () => result.current.mutate(undefined as void))
     await waitFor(() => expect(result.current.isError).toBe(true))
 
-    expect(notifyError).toHaveBeenCalledWith('Network error')
+    expect(notifyError).toHaveBeenCalledWith('Произошла ошибка')
+  })
+
+  it('skips the error toast when notifyOnError is false', async () => {
+    const onError = vi.fn()
+    const mutationFn = vi.fn().mockRejectedValue(new Error('boom'))
+    const { result } = renderHook(
+      () => useApiMutation({ mutationFn, notifyOnError: false, onError }),
+      { wrapper: createWrapper() },
+    )
+
+    await act(async () => result.current.mutate(undefined as void))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(notifyError).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalled()
+  })
+
+  it('inlineError clears on start, sets the message and skips the toast', async () => {
+    const inlineError = vi.fn()
+    const mutationFn = vi.fn().mockRejectedValue({ response: { data: { error: 'Нет прав' } } })
+    const { result } = renderHook(() => useApiMutation({ mutationFn, inlineError }), {
+      wrapper: createWrapper(),
+    })
+
+    await act(async () => result.current.mutate(undefined as void))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(inlineError.mock.calls).toEqual([[null], ['Нет прав']])
+    expect(notifyError).not.toHaveBeenCalled()
+  })
+
+  it('stays pending until an async onSuccess settles', async () => {
+    let release!: () => void
+    const onSuccess = vi.fn(() => new Promise<void>((r) => { release = r }))
+    const mutationFn = vi.fn().mockResolvedValue('ok')
+    const { result } = renderHook(() => useApiMutation({ mutationFn, onSuccess }), {
+      wrapper: createWrapper(),
+    })
+
+    act(() => result.current.mutate(undefined as void))
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled())
+    expect(result.current.isPending).toBe(true)
+
+    await act(async () => release())
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
   })
 
   it('uses errorFallback when error has no message', async () => {

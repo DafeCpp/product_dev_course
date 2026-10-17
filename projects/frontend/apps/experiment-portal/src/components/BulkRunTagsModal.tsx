@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react'
 import Modal from './Modal'
 import { MaterialSelect } from './common'
 import { runsApi } from '../api/client'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
 import { useApiMutation } from '../hooks/useApiMutation'
 
 type BulkMode = 'add' | 'remove' | 'set'
@@ -44,27 +42,30 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         successMessage: 'Теги обновлены',
         errorFallback: 'Ошибка bulk tagging',
         onSuccess: () => { onClose(); setTagsText(''); setMode('add'); setError(null) },
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка bulk tagging'),
+        inlineError: setError,
     })
 
     const disabled = mutation.isPending || runIds.length === 0
+
+    const handleClose = () => {
+        setError(null)
+        onClose()
+    }
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
         if (mode !== 'set' && tags.length === 0) {
-            const msg = 'Укажи хотя бы один тег (через запятую)'
-            setError(msg)
-            notifyError(msg)
+            setError('Укажи хотя бы один тег (через запятую)')
             return
         }
         mutation.mutate()
     }
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Bulk tagging" disabled={mutation.isPending}>
+        <Modal isOpen={isOpen} onClose={handleClose} title="Bulk tagging" disabled={mutation.isPending}>
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label>Выбрано запусков</label>
@@ -103,7 +104,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
                 </div>
 
                 <div className="modal-actions">
-                    <button type="button" className="btn btn-secondary" onClick={onClose} disabled={mutation.isPending}>
+                    <button type="button" className="btn btn-secondary" onClick={handleClose} disabled={mutation.isPending}>
                         Отмена
                     </button>
                     <button type="submit" className="btn btn-primary" disabled={disabled}>

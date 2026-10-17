@@ -5,8 +5,7 @@ import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
 import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { getStreamErrorMessage, streamBodyError } from '../utils/streamError'
 import './TelemetryStreamModal.scss'
 
 type TelemetryStreamModalProps = {
@@ -143,7 +142,7 @@ export default function TelemetryStreamModal({
                             },
                         })
                     )
-                    throw new Error(text || `Ошибка стрима: HTTP ${resp.status}`)
+                    throw streamBodyError(text, resp.status)
                 }
                 return { response: resp }
             } catch (e: any) {
@@ -163,20 +162,14 @@ export default function TelemetryStreamModal({
         [sensorId],
     )
 
-    const onStreamError = useCallback((err: Error, ctx: { willRetry: boolean }) => {
-        if (ctx.willRetry) return
-        const msg = err.message || 'Ошибка подключения к стриму'
-        notifyError(msg)
-    }, [])
-
     const stream = useTelemetryStream(sensorId, {
         open,
         bufferSize: _clamp(Number(maxPoints || '200'), 10, 2000),
         idleTimeoutSeconds: _clamp(Number(idleTimeoutSeconds || '30'), 1, 600),
-        onError: onStreamError,
     })
 
     const { status: streamStatus, points: records, error: streamError, cursor, start: startStream, stop: stopStream, clear: clearStream } = stream
+    const streamErrorMessage = useMemo(() => (streamError ? getStreamErrorMessage(streamError) : null), [streamError])
 
     useEffect(() => {
         if (!isOpen) {
@@ -248,8 +241,8 @@ export default function TelemetryStreamModal({
             className="telemetry-stream-modal"
         >
             <div className="telemetry-stream">
-                {IS_TEST && streamStatus === 'error' && streamError && (
-                    <div className="error">{streamError.message}</div>
+                {streamStatus === 'error' && streamError && (
+                    <div className="error" role="alert">{streamErrorMessage}</div>
                 )}
 
                 <div className="form-grid">

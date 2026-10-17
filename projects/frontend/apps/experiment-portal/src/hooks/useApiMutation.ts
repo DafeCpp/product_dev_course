@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { QueryKey } from '@tanstack/react-query'
 import { notifyError, notifySuccess } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 
 interface UseApiMutationOptions<TData, TVars> {
   mutationFn: (vars: TVars) => Promise<TData>
@@ -8,25 +9,28 @@ interface UseApiMutationOptions<TData, TVars> {
   invalidateKeys?: QueryKey[]
   /** Toast shown on success. Omit to skip success toast. */
   successMessage?: string
-  /** Fallback error text when the server sends no message. */
-  errorFallback?: string
-  /** Called after built-in success handling (invalidate + toast). */
-  onSuccess?: (data: TData, vars: TVars) => void
-  /** Called after built-in error toast. Use to set local error state. */
-  onError?: (error: unknown, vars: TVars) => void
-}
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === 'object') {
-    const e = error as Record<string, any>
-    return (
-      e?.response?.data?.error ||
-      e?.response?.data?.message ||
-      e?.message ||
-      fallback
-    )
-  }
-  return fallback
+  /** Fallback error text when the server sends no message; a function picks it per error. */
+  errorFallback?: string | ((error: unknown) => string)
+  /**
+   * Called after built-in success handling (invalidate + toast). A returned
+   * promise is awaited: the mutation stays pending until it settles.
+   */
+  onSuccess?: (data: TData, vars: TVars) => unknown
+  /**
+   * Show an error toast on failure (default). Pass `false` when the caller
+   * renders the error inline, so the user doesn't see it twice.
+   */
+  notifyOnError?: boolean
+  /**
+   * Setter for an inline error block: cleared when the request starts and
+   * set to the sanitized message on failure. Implies `notifyOnError: false`.
+   */
+  inlineError?: (message: string | null) => void
+  /**
+   * Called after built-in error handling with the sanitized user-facing
+   * `message` (server text or `errorFallback`). Use to set inline error state.
+   */
+  onError?: (error: unknown, vars: TVars, message: string) => void
 }
 
 export function useApiMutation<TData = unknown, TVars = void>({
@@ -34,6 +38,8 @@ export function useApiMutation<TData = unknown, TVars = void>({
   invalidateKeys,
   successMessage,
   errorFallback = 'Произошла ошибка',
+  inlineError,
+  notifyOnError = inlineError === undefined,
   onSuccess,
   onError,
 }: UseApiMutationOptions<TData, TVars>) {
@@ -41,6 +47,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
 
   return useMutation<TData, unknown, TVars>({
     mutationFn,
+    onMutate: inlineError ? () => { inlineError(null) } : undefined,
     onSuccess: (data, vars) => {
       if (invalidateKeys) {
         for (const key of invalidateKeys) {
@@ -50,11 +57,21 @@ export function useApiMutation<TData = unknown, TVars = void>({
       if (successMessage) {
         notifySuccess(successMessage)
       }
-      onSuccess?.(data, vars)
+      const result = onSuccess?.(data, vars)
+      // Await an async onSuccess (keeps isPending until e.g. a redirect),
+      // but a failure there must not flip a successful request to error.
+      if (result instanceof Promise) return result.catch(() => undefined)
     },
     onError: (error, vars) => {
-      notifyError(extractErrorMessage(error, errorFallback))
-      onError?.(error, vars)
+      const message = getApiErrorMessage(
+        error,
+        typeof errorFallback === 'function' ? errorFallback(error) : errorFallback,
+      )
+      if (notifyOnError) {
+        notifyError(message)
+      }
+      inlineError?.(message)
+      onError?.(error, vars, message)
     },
   })
 }

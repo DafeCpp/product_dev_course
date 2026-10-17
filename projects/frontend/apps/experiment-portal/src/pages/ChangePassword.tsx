@@ -1,8 +1,10 @@
+import { isClientRequestError } from '../utils/apiError'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 
 function ChangePassword() {
   const navigate = useNavigate()
@@ -12,7 +14,7 @@ function ChangePassword() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const mutation = useMutation({
+  const mutation = useApiMutation({
     mutationFn: () => authApi.changePassword({ old_password: oldPassword, new_password: newPassword }),
     onSuccess: async () => {
       // Invalidate auth/me so password_change_required flag is refreshed
@@ -20,14 +22,11 @@ function ChangePassword() {
       notifySuccess('Пароль успешно изменён')
       navigate('/experiments', { replace: true })
     },
-    onError: (err: any) => {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Ошибка смены пароля. Проверьте текущий пароль.'
-      setError(msg)
-      notifyError(msg)
-    },
+    errorFallback: (error) =>
+      isClientRequestError(error)
+        ? 'Ошибка смены пароля. Проверьте текущий пароль.'
+        : 'Не удалось сменить пароль: сервис недоступен. Попробуйте позже.',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -35,30 +34,22 @@ function ChangePassword() {
     setError(null)
 
     if (!oldPassword) {
-      const msg = 'Введите текущий пароль'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите текущий пароль')
       return
     }
 
     if (!newPassword) {
-      const msg = 'Введите новый пароль'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите новый пароль')
       return
     }
 
     if (newPassword !== confirmPassword) {
-      const msg = 'Пароли не совпадают'
-      setError(msg)
-      notifyError(msg)
+      setError('Пароли не совпадают')
       return
     }
 
     if (newPassword.length < 8) {
-      const msg = 'Новый пароль должен содержать не менее 8 символов'
-      setError(msg)
-      notifyError(msg)
+      setError('Новый пароль должен содержать не менее 8 символов')
       return
     }
 
@@ -76,7 +67,7 @@ function ChangePassword() {
             </p>
           </div>
 
-          {error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="login-form auth-form">
             <div className="form-group">

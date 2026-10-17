@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { experimentsApi, projectsApi } from '../api/client'
 import type { ExperimentCreate } from '../types'
 import { setActiveProjectId } from '../utils/activeProject'
 import { Error, FormGroup, FormActions, Loading, MaterialSelect } from '../components/common'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateExperiment.scss'
 
 function CreateExperiment() {
@@ -28,17 +28,14 @@ function CreateExperiment() {
     queryFn: () => projectsApi.list(),
   })
 
-  const createMutation = useMutation({
+  const createMutation = useApiMutation({
     mutationFn: (data: ExperimentCreate) => experimentsApi.create(data),
     onSuccess: (experiment) => {
       notifySuccess('Эксперимент создан')
       navigate(`/experiments/${experiment.id}`)
     },
-    onError: (err: any) => {
-      const msg = err.response?.data?.error || 'Ошибка создания эксперимента'
-      setError(msg)
-      notifyError(msg)
-    },
+    errorFallback: 'Ошибка создания эксперимента',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -46,16 +43,12 @@ function CreateExperiment() {
     setError(null)
 
     if (!formData.project_id) {
-      const msg = 'Выберите проект'
-      setError(msg)
-      notifyError(msg)
+      setError('Выберите проект')
       return
     }
 
     if (!formData.name.trim()) {
-      const msg = 'Название эксперимента обязательно'
-      setError(msg)
-      notifyError(msg)
+      setError('Название эксперимента обязательно')
       return
     }
 
@@ -72,15 +65,11 @@ function CreateExperiment() {
       if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
         metadata = parsed
       } else {
-        const msg = 'Метаданные должны быть JSON-объектом (например, {})'
-        setError(msg)
-        notifyError(msg)
+        setError('Метаданные должны быть JSON-объектом (например, {})')
         return
       }
     } catch {
-      const msg = 'Неверный формат JSON в метаданных'
-      setError(msg)
-      notifyError(msg)
+      setError('Неверный формат JSON в метаданных')
       return
     }
 
@@ -98,7 +87,7 @@ function CreateExperiment() {
     <div className="create-experiment">
       <h2>Создать эксперимент</h2>
 
-      {IS_TEST && error && <Error message={error} />}
+      {error && <Error message={error} />}
 
       <form onSubmit={handleSubmit} className="experiment-form card">
         <FormGroup label="Проект" required>

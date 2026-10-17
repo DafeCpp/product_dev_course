@@ -10,15 +10,14 @@ import {
   StatusBadge,
   Loading,
   Error,
-  EmptyState,
   InfoRow,
   Tags,
   experimentStatusMap,
 } from '../components/common'
 import './ExperimentDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
-import { IS_TEST } from '../utils/env'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage, isNotFoundError } from '../utils/apiError'
 
 function ExperimentDetail() {
   const { id } = useParams<{ id: string }>()
@@ -50,11 +49,7 @@ function ExperimentDetail() {
   }
 
   if (error || !experiment) {
-    return IS_TEST ? (
-      <Error message="Эксперимент не найден" />
-    ) : (
-      <EmptyState message="Эксперимент не найден" />
-    )
+    return <Error message={isNotFoundError(error) ? 'Эксперимент не найден' : getApiErrorMessage(error, 'Не удалось загрузить эксперимент')} />
   }
 
   const formattedCreatedAt = format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')

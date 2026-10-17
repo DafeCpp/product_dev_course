@@ -6,8 +6,7 @@ import { authApi } from '../api/auth'
 import type { ProjectCreate, ProjectUpdate } from '../types'
 import Modal from './Modal'
 import { Error, InfoRow, Loading, FormActions } from './common'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
 import './CreateRunModal.scss'
 
 type ProjectModalMode = 'create' | 'view' | 'edit'
@@ -131,12 +130,8 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         invalidateKeys: [['projects']],
         successMessage: 'Проект создан',
         onSuccess: () => onClose(),
-        onError: (err: any) => setError(
-            err?.response?.data?.error ||
-            err?.response?.data?.message ||
-            err?.message ||
-            'Ошибка создания проекта'
-        ),
+        errorFallback: 'Ошибка создания проекта',
+        inlineError: setError,
     })
 
     const updateMutation = useApiMutation<unknown, ProjectUpdate>({
@@ -144,12 +139,8 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         invalidateKeys: [['projects']],
         successMessage: 'Проект обновлён',
         onSuccess: () => onClose(),
-        onError: (err: any) => setError(
-            err?.response?.data?.error ||
-            err?.response?.data?.message ||
-            err?.message ||
-            'Ошибка обновления проекта'
-        ),
+        errorFallback: 'Ошибка обновления проекта',
+        inlineError: setError,
     })
 
     const isBusy = createMutation.isPending || updateMutation.isPending
@@ -164,9 +155,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         if (!canEdit) return
 
         if (!name.trim()) {
-            const msg = 'Название проекта обязательно'
-            setError(msg)
-            notifyError(msg)
+            setError('Название проекта обязательно')
             return
         }
 
@@ -217,19 +206,13 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         >
             {isLoading && <Loading />}
 
-            {IS_TEST && isErrorState && (
-                <Error
-                    message={
-                        combinedError && typeof combinedError === 'object' && 'message' in combinedError
-                            ? String((combinedError as any).message)
-                            : 'Ошибка загрузки проекта'
-                    }
-                />
+            {isErrorState && (
+                <Error message={getApiErrorMessage(combinedError, 'Ошибка загрузки проекта')} />
             )}
 
             {!isLoading && !isErrorState && (
                 <>
-                    {IS_TEST && error && <div className="error">{error}</div>}
+                    {error && <div className="error" role="alert">{error}</div>}
 
                     {!isCreate && project && (
                         <div className="user-info-section" style={{ marginBottom: '1rem' }}>

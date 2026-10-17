@@ -4,8 +4,6 @@ import type { Experiment, ExperimentUpdate } from '../types'
 import Modal from './Modal'
 import { experimentStatusMap } from './common/statusMaps'
 import { MaterialSelect } from './common'
-import { IS_TEST } from '../utils/env'
-import { notifyError } from '../utils/notify'
 import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateRunModal.scss'
 
@@ -41,7 +39,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент обновлён',
         errorFallback: 'Ошибка обновления эксперимента',
         onSuccess: () => onClose(),
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка обновления эксперимента'),
+        inlineError: setError,
     })
 
     const archiveMutation = useApiMutation({
@@ -50,7 +48,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент архивирован',
         errorFallback: 'Ошибка архивации эксперимента',
         onSuccess: () => onClose(),
-        onError: (err: any) => setError(err?.response?.data?.error || err?.message || 'Ошибка архивации эксперимента'),
+        inlineError: setError,
     })
 
     const isBusy = updateMutation.isPending || archiveMutation.isPending
@@ -72,9 +70,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         setError(null)
 
         if (!name.trim()) {
-            const msg = 'Название эксперимента обязательно'
-            setError(msg)
-            notifyError(msg)
+            setError('Название эксперимента обязательно')
             return
         }
 
@@ -88,9 +84,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
             const parsed = JSON.parse((metadataInput || '').trim() || '{}')
             metadata = parsed && typeof parsed === 'object' ? parsed : {}
         } catch {
-            const msg = 'Неверный формат JSON в метаданных'
-            setError(msg)
-            notifyError(msg)
+            setError('Неверный формат JSON в метаданных')
             return
         }
 
@@ -128,7 +122,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
             className="experiment-modal"
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label>

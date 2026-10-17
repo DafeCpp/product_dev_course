@@ -9,6 +9,7 @@ import { AuthQosForm } from './rateLimits/AuthQosForm'
 import { ExperimentQosForm } from './rateLimits/ExperimentQosForm'
 import { TelemetryRateLimitsForm } from './rateLimits/TelemetryRateLimitsForm'
 import './RateLimitsQos.scss'
+import { getApiErrorMessage, isClientRequestError } from '../utils/apiError'
 
 type ServiceType = 'auth' | 'experiment' | 'telemetry'
 
@@ -94,10 +95,11 @@ function RateLimitsQos() {
     invalidateKeys: [],
     onSuccess: (result) => {
       setDryRunPreview(result.preview)
-      setDryRunError(null)
     },
+    errorFallback: (error) =>
+      isClientRequestError(error) ? 'конфигурация отклонена сервером' : 'сервис недоступен, попробуйте позже',
+    inlineError: setDryRunError,
     onError: () => {
-      setDryRunError('Ошибка валидации конфигурации')
       setDryRunPreview(null)
     },
   })
@@ -181,7 +183,7 @@ function RateLimitsQos() {
 
       {isLoading && <Loading message="Загрузка конфигов..." />}
       {error && (
-        <ErrorComponent message={error instanceof Error ? error.message : 'Ошибка загрузки конфигов'} />
+        <ErrorComponent message={getApiErrorMessage(error, 'Ошибка загрузки конфигов')} />
       )}
 
       {!isLoading && !error && (
@@ -229,8 +231,8 @@ function RateLimitsQos() {
           )}
 
           {dryRunError && (
-            <div className="rate-limits-page__error-box">
-              <strong>⚠️ Ошибка валидации:</strong> {dryRunError}
+            <div className="rate-limits-page__error-box" role="alert">
+              <strong>⚠️ Проверка не пройдена:</strong> {dryRunError}
             </div>
           )}
         </>

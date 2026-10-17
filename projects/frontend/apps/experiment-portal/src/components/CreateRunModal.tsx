@@ -4,7 +4,6 @@ import { useApiMutation } from '../hooks/useApiMutation'
 import { runsApi } from '../api/client'
 import type { Run, RunCreate } from '../types'
 import Modal from './Modal'
-import { IS_TEST } from '../utils/env'
 import { createRunSchema } from '../schemas/forms'
 import { useFormErrors } from '../hooks/useFormErrors'
 import './CreateRunModal.scss'
@@ -37,9 +36,8 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             onClose()
             navigate(`/runs/${run.id}`)
         },
-        onError: (err: any) => {
-            setError(err?.response?.data?.error || 'Ошибка создания запуска')
-        },
+        errorFallback: 'Ошибка создания запуска',
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -92,7 +90,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             disabled={createMutation.isPending}
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label htmlFor="run_name">

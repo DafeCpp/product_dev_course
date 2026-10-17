@@ -6,7 +6,8 @@ import type { Script, ScriptExecution } from '../types/scripts'
 import { usePermissions } from '../hooks/usePermissions'
 import PermissionGate from '../components/PermissionGate'
 import { Loading, Error as ErrorComponent, EmptyState, MaterialSelect, LiveSwitch, ListSearchIcon, SensorIcon } from '../components/common'
-import { notifySuccess, notifyError } from '../utils/notify'
+import { getApiErrorMessage } from '../utils/apiError'
+import { notifySuccess } from '../utils/notify'
 import ScriptFormModal from './scripts/ScriptFormModal'
 import ScriptExecuteModal from './scripts/ScriptExecuteModal'
 import ScriptExecDetailModal from './scripts/ScriptExecDetailModal'
@@ -39,20 +40,7 @@ function RegistryTab({ onScriptExecuted: _onScriptExecuted }: RegistryTabProps) 
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['scripts', filters],
-    queryFn: async () => {
-      try {
-        return await scriptsApi.listScripts(filters)
-      } catch (err: unknown) {
-        const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
-        notifyError(
-          e?.response?.data?.error ||
-            e?.response?.data?.message ||
-            e?.message ||
-            'Ошибка загрузки скриптов'
-        )
-        throw err
-      }
-    },
+    queryFn: () => scriptsApi.listScripts(filters),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   })
@@ -105,7 +93,7 @@ function RegistryTab({ onScriptExecuted: _onScriptExecuted }: RegistryTabProps) 
       {isLoading && <Loading message="Загрузка скриптов..." />}
       {error && (
         <ErrorComponent
-          message={error instanceof Error ? error.message : 'Ошибка загрузки скриптов'}
+          message={getApiErrorMessage(error, 'Ошибка загрузки скриптов')}
         />
       )}
 
@@ -163,20 +151,7 @@ function ExecutionsTab({ onTabChange: _onTabChange }: ExecutionsTabProps) {
 
   const { data: executionsData, isLoading: exLoading, error: exError } = useQuery({
     queryKey: ['executions', executionFilters],
-    queryFn: async () => {
-      try {
-        return await scriptsApi.listExecutions(executionFilters)
-      } catch (err: unknown) {
-        const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
-        notifyError(
-          e?.response?.data?.error ||
-            e?.response?.data?.message ||
-            e?.message ||
-            'Ошибка загрузки выполнений'
-        )
-        throw err
-      }
-    },
+    queryFn: () => scriptsApi.listExecutions(executionFilters),
     staleTime: 5_000,
     refetchOnWindowFocus: false,
     refetchInterval: (query) => {
@@ -245,7 +220,7 @@ function ExecutionsTab({ onTabChange: _onTabChange }: ExecutionsTabProps) {
       {exLoading && <Loading message="Загрузка выполнений..." />}
       {exError && (
         <ErrorComponent
-          message={exError instanceof Error ? exError.message : 'Ошибка загрузки выполнений'}
+          message={getApiErrorMessage(exError, 'Ошибка загрузки выполнений')}
         />
       )}
 

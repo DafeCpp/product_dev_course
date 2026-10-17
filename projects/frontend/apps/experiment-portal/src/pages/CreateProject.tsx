@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
-import { HttpError } from '@lostpointer/web-http'
 import { projectsApi } from '../api/client'
 import type { ProjectCreate } from '../types'
 import { Error, FormGroup, FormActions } from '../components/common'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './CreateProject.scss'
 
 function CreateProject() {
@@ -17,19 +15,15 @@ function CreateProject() {
     })
     const [error, setError] = useState<string | null>(null)
 
-    const createMutation = useMutation({
+    const createMutation = useApiMutation({
         mutationFn: (data: ProjectCreate) => projectsApi.create(data),
         onSuccess: () => {
             notifySuccess('Проект создан')
             // Переходим на список проектов после создания
             navigate('/projects')
         },
-        onError: (err: unknown) => {
-            // Projects uses the shared transport: server text arrives as HttpError.message.
-            const msg = err instanceof HttpError && err.kind === 'api' ? err.message : 'Ошибка создания проекта'
-            setError(msg)
-            notifyError(msg)
-        },
+        errorFallback: 'Ошибка создания проекта',
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -37,9 +31,7 @@ function CreateProject() {
         setError(null)
 
         if (!formData.name.trim()) {
-            const msg = 'Название проекта обязательно'
-            setError(msg)
-            notifyError(msg)
+            setError('Название проекта обязательно')
             return
         }
 
@@ -53,7 +45,7 @@ function CreateProject() {
         <div className="create-project">
             <h2>Создать проект</h2>
 
-            {IS_TEST && error && <Error message={error} />}
+            {error && <Error message={error} />}
 
             <form onSubmit={handleSubmit} className="project-form card">
                 <FormGroup label="Название" required>

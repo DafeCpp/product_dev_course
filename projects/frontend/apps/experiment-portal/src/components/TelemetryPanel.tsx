@@ -4,6 +4,7 @@ import { useTelemetryStream, type TelemetryStreamOpener, type TelemetryStreamSta
 import type { Sensor, TelemetryStreamRecord } from '../types'
 import { telemetryApi } from '../api/client'
 import { MaterialSelect, PlayCircleIcon, StopCircleIcon, SettingsIcon, XIcon } from './common'
+import { getStreamErrorMessage, streamResponseError } from '../utils/streamError'
 import './TelemetryPanel.scss'
 
 type TelemetryPanelProps = {
@@ -92,10 +93,7 @@ function SensorStream({
                 idle_timeout_seconds: idleTimeoutSeconds,
                 signal,
             })
-            if (!response.ok) {
-                const text = await response.text().catch(() => '')
-                throw new Error(text || `Ошибка стрима: HTTP ${response.status}`)
-            }
+            if (!response.ok) throw await streamResponseError(response)
             if (!response.body) throw new Error('Stream body is empty')
             return { response }
         },
@@ -389,7 +387,7 @@ export default function TelemetryPanel({
     }, [])
 
     const onSensorStreamError = useCallback((_sensorId: string, err: Error) => {
-        setError(err.message || 'Ошибка подключения к стриму')
+        setError(getStreamErrorMessage(err))
     }, [])
 
     const startStreams = () => {
@@ -776,7 +774,7 @@ export default function TelemetryPanel({
                 </label>
             </div>
 
-            {error && <div className="telemetry-panel__error">{error}</div>}
+            {error && <div className="telemetry-panel__error" role="alert">{error}</div>}
 
             <div className="telemetry-panel__chart">
                 <div className="telemetry-panel__chart-area">

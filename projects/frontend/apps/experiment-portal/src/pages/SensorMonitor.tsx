@@ -15,6 +15,7 @@ import {
 } from '../components/common'
 import SensorStatusSummaryBar from '../components/SensorStatusSummaryBar'
 import './SensorMonitor.scss'
+import { getApiErrorMessage } from '../utils/apiError'
 
 const CONNECTION_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Все' },
@@ -76,7 +77,7 @@ function SensorMonitor() {
       {isBusy && <Loading message="Загрузка..." />}
       {!isBusy && error && (
         <Error
-          message={error instanceof Error ? error.message : 'Ошибка загрузки датчиков'}
+          message={getApiErrorMessage(error, 'Ошибка загрузки датчиков')}
         />
       )}
 

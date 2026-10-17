@@ -3,7 +3,6 @@ import { useApiMutation } from '../hooks/useApiMutation'
 import { conversionProfilesApi } from '../api/client'
 import type { ConversionProfileInput } from '../types'
 import Modal from './Modal'
-import { notifyError } from '../utils/notify'
 
 interface ConversionProfileCreateModalProps {
     sensorId: string
@@ -108,8 +107,9 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         mutationFn: (data) => conversionProfilesApi.create(sensorId, data),
         invalidateKeys: [['sensor', sensorId, 'profiles']],
         successMessage: 'Профиль преобразования создан',
-        onSuccess: () => handleClose(),
-        onError: (err: any) => setError(err?.response?.data?.error || 'Ошибка создания профиля'),
+        onSuccess: () => resetAndClose(),
+        errorFallback: 'Ошибка создания профиля',
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -117,17 +117,13 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         setError(null)
 
         if (!version.trim()) {
-            const msg = 'Версия обязательна'
-            setError(msg)
-            notifyError(msg)
+            setError('Версия обязательна')
             return
         }
 
         const payload = buildPayload()
         if (payload === null) {
-            const msg = 'Некорректные параметры преобразования'
-            setError(msg)
-            notifyError(msg)
+            setError('Некорректные параметры преобразования')
             return
         }
 
@@ -138,21 +134,23 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         })
     }
 
+    const resetAndClose = () => {
+        setVersion('')
+        setKind('linear')
+        setLinearA('1')
+        setLinearB('0')
+        setCoefficients(['0', '1'])
+        setTablePoints([
+            { raw: '0', physical: '0' },
+            { raw: '100', physical: '100' },
+        ])
+        setPreviewRaw('10')
+        setError(null)
+        onClose()
+    }
+
     const handleClose = () => {
-        if (!createMutation.isPending) {
-            setVersion('')
-            setKind('linear')
-            setLinearA('1')
-            setLinearB('0')
-            setCoefficients(['0', '1'])
-            setTablePoints([
-                { raw: '0', physical: '0' },
-                { raw: '100', physical: '100' },
-            ])
-            setPreviewRaw('10')
-            setError(null)
-            onClose()
-        }
+        if (!createMutation.isPending) resetAndClose()
     }
 
     return (
@@ -163,7 +161,7 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
             disabled={createMutation.isPending}
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label htmlFor="profile_version">

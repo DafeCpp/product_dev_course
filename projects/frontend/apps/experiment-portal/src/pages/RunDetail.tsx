@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
+import { getApiErrorMessage, isNotFoundError, UserFacingError } from '../utils/apiError'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
@@ -23,12 +24,14 @@ import RunOverviewGrid from './run-detail/RunOverviewGrid'
 import RunCaptureSessions from './run-detail/RunCaptureSessions'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
-import { IS_TEST } from '../utils/env'
 import { useCountdown } from '../hooks/useCountdown'
 
+// Run actions show the error in the banner under the header and as a toast:
+// the page is long and the capture-session buttons sit far below the banner.
 function RunDetail() {
   const { id } = useParams<{ id: string }>()
   const [actionError, setActionError] = useState<string | null>(null)
+  const actionErrorOptions = { inlineError: setActionError, notifyOnError: true }
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<string | null>(null)
   const [selectedSensorId, setSelectedSensorId] = useState<string>('')
   const [showTelemetryStream, setShowTelemetryStream] = useState(false)
@@ -90,18 +93,15 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось завершить run'),
+    ...actionErrorOptions,
   })
 
   const startRunMutation = useApiMutation({
-    mutationFn: () => {
-      setActionError(null)
-      return runsApi.update(id!, { status: 'running' })
-    },
+    mutationFn: () => runsApi.update(id!, { status: 'running' }),
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить run'),
+    ...actionErrorOptions,
   })
 
   const failMutation = useApiMutation<unknown, string | undefined>({
@@ -109,13 +109,13 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось пометить run как failed'),
+    ...actionErrorOptions,
   })
 
   // Создание capture session
   const createSessionMutation = useApiMutation<unknown, string | undefined>({
     mutationFn: (notes) => {
-      if (!experiment) throw new Error('Experiment not loaded')
+      if (!experiment) throw new UserFacingError('Эксперимент ещё не загружен, попробуйте ещё раз')
       const nextOrdinal = sessions.length > 0
         ? Math.max(...sessions.map((s: CaptureSession) => s.ordinal_number)) + 1
         : 1
@@ -129,7 +129,7 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт запущен',
     errorFallback: 'Не удалось запустить отсчёт',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось запустить отсчёт'),
+    ...actionErrorOptions,
   })
 
   // Остановка capture session
@@ -139,7 +139,7 @@ function RunDetail() {
     successMessage: 'Отсчёт остановлен',
     errorFallback: 'Не удалось остановить отсчёт',
     onSuccess: () => setOptimisticActiveSessionId(null),
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось остановить отсчёт'),
+    ...actionErrorOptions,
   })
 
   // Удаление capture session
@@ -148,7 +148,7 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
-    onError: (err: any) => setActionError(err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Не удалось удалить сессию'),
+    ...actionErrorOptions,
   })
 
   const countdownDeadline = useMemo(() => {
@@ -204,7 +204,7 @@ function RunDetail() {
   }
 
   if (error || !run) {
-    return IS_TEST ? <ErrorComponent message="Запуск не найден" /> : <EmptyState message="Запуск не найден" />
+    return <ErrorComponent message={isNotFoundError(error) ? 'Запуск не найден' : getApiErrorMessage(error, 'Не удалось загрузить запуск')} />
   }
 
   // UI note:
@@ -472,4 +472,11 @@ function RunDetail() {
   )
 }
 
-export default RunDetail
+// Keyed by run id: a fresh instance per run, so state (and the setters a
+// still-running action of the previous run holds) never leaks across runs.
+function RunDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  return <RunDetail key={id} />
+}
+
+export default RunDetailPage

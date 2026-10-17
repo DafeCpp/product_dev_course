@@ -6,7 +6,6 @@ import { experimentsApi, projectsApi } from '../api/client'
 import type { Experiment, ExperimentCreate } from '../types'
 import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import Modal from './Modal'
-import { IS_TEST } from '../utils/env'
 import { Loading, MaterialSelect } from './common'
 import { createExperimentSchema } from '../schemas/forms'
 import { useFormErrors } from '../hooks/useFormErrors'
@@ -45,9 +44,8 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             onClose()
             navigate(`/experiments/${experiment.id}`)
         },
-        onError: (err: any) => {
-            setError(err?.response?.data?.error || 'Ошибка создания эксперимента')
-        },
+        errorFallback: 'Ошибка создания эксперимента',
+        inlineError: setError,
     })
 
     // Если проект выбран в фильтрах списка, проставляем его в форме при открытии модалки.
@@ -116,7 +114,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             disabled={createMutation.isPending}
         >
             <form onSubmit={handleSubmit} className="modal-form">
-                {IS_TEST && error && <div className="error">{error}</div>}
+                {error && <div className="error" role="alert">{error}</div>}
 
                 <div className="form-group">
                     <label htmlFor="experiment_project">

@@ -16,6 +16,7 @@ import { notifySuccess, notifyError } from '../utils/notify'
 import ConfigFormModal from './configs/ConfigFormModal'
 import ConfigHistoryModal from './configs/ConfigHistoryModal'
 import './Configs.scss'
+import { getApiErrorMessage } from '../utils/apiError'
 
 function Configs() {
   const queryClient = useQueryClient()
@@ -146,7 +147,7 @@ function Configs() {
 
       {isLoading && <Loading message="Загрузка конфигов..." />}
       {error && (
-        <ErrorComponent message={error instanceof Error ? error.message : 'Ошибка загрузки конфигов'} />
+        <ErrorComponent message={getApiErrorMessage(error, 'Ошибка загрузки конфигов')} />
       )}
       {!isLoading && !error && configs.length === 0 && <EmptyState message="Конфигов не найдено" />}
 

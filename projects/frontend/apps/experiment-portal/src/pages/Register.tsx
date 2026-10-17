@@ -1,10 +1,10 @@
+import { isClientRequestError } from '../utils/apiError'
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { RegisterRequest } from '../types'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import './Register.scss'
 
 function Register() {
@@ -21,20 +21,17 @@ function Register() {
   })
   const [error, setError] = useState<string | null>(null)
 
-  const registerMutation = useMutation({
+  const registerMutation = useApiMutation({
     mutationFn: (payload: RegisterRequest) => authApi.register(payload),
     onSuccess: () => {
       notifySuccess('Регистрация успешна. Войдите в систему.')
       navigate('/login')
     },
-    onError: (err: any) => {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Ошибка регистрации. Проверьте введенные данные.'
-      setError(msg)
-      notifyError(msg)
-    },
+    errorFallback: (error) =>
+      isClientRequestError(error)
+        ? 'Ошибка регистрации. Проверьте введенные данные.'
+        : 'Не удалось зарегистрироваться: сервис недоступен. Попробуйте позже.',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -45,58 +42,42 @@ function Register() {
     const email = formData.email.trim()
 
     if (!username) {
-      const msg = 'Введите имя пользователя'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите имя пользователя')
       return
     }
 
     if (username.length < 3) {
-      const msg = 'Имя пользователя должно быть не короче 3 символов'
-      setError(msg)
-      notifyError(msg)
+      setError('Имя пользователя должно быть не короче 3 символов')
       return
     }
 
     if (!email) {
-      const msg = 'Введите email'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите email')
       return
     }
 
     if (!/^\S+@\S+\.\S+$/.test(email)) {
-      const msg = 'Введите корректный email'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите корректный email')
       return
     }
 
     if (!formData.password) {
-      const msg = 'Введите пароль'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите пароль')
       return
     }
 
     if (formData.password.length < 8) {
-      const msg = 'Пароль должен быть не короче 8 символов'
-      setError(msg)
-      notifyError(msg)
+      setError('Пароль должен быть не короче 8 символов')
       return
     }
 
     if (!formData.confirmPassword) {
-      const msg = 'Повторите пароль'
-      setError(msg)
-      notifyError(msg)
+      setError('Повторите пароль')
       return
     }
 
     if (formData.password !== formData.confirmPassword) {
-      const msg = 'Пароли не совпадают'
-      setError(msg)
-      notifyError(msg)
+      setError('Пароли не совпадают')
       return
     }
 
@@ -154,7 +135,7 @@ function Register() {
             </div>
           )}
 
-          {IS_TEST && error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="register-form auth-form">
             <div className="form-group">

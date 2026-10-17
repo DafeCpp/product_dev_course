@@ -1,10 +1,11 @@
+import { isClientRequestError } from '../utils/apiError'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import type { LoginRequest } from '../types'
-import { IS_TEST } from '../utils/env'
-import { notifyError, notifySuccess } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
+import { useApiMutation } from '../hooks/useApiMutation'
 import { UserIcon, LockIcon } from '../components/common'
 import './Login.scss'
 
@@ -17,7 +18,7 @@ function Login() {
   })
   const [error, setError] = useState<string | null>(null)
 
-  const loginMutation = useMutation({
+  const loginMutation = useApiMutation({
     mutationFn: (credentials: LoginRequest) => authApi.login(credentials),
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
@@ -28,14 +29,11 @@ function Login() {
         navigate('/experiments')
       }
     },
-    onError: (err: any) => {
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Ошибка входа. Проверьте имя пользователя и пароль.'
-      setError(msg)
-      notifyError(msg)
-    },
+    errorFallback: (error) =>
+      isClientRequestError(error)
+        ? 'Ошибка входа. Проверьте имя пользователя и пароль.'
+        : 'Не удалось войти: сервис недоступен. Попробуйте позже.',
+    inlineError: setError,
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -43,16 +41,12 @@ function Login() {
     setError(null)
 
     if (!formData.username.trim()) {
-      const msg = 'Введите имя пользователя'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите имя пользователя')
       return
     }
 
     if (!formData.password) {
-      const msg = 'Введите пароль'
-      setError(msg)
-      notifyError(msg)
+      setError('Введите пароль')
       return
     }
 
@@ -98,7 +92,7 @@ function Login() {
             </p>
           </div>
 
-          {IS_TEST && error && <div className="error-message">{error}</div>}
+          {error && <div className="error-message" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} className="login-form auth-form">
             <div className="form-group">
