@@ -3,10 +3,15 @@ import { UserFacingError, getApiErrorMessage, getResponseBodyMessage } from './a
 
 const STREAM_FALLBACK = 'Ошибка подключения к стриму'
 
-/** Error for a non-OK stream response, with a sanitized message from its body. */
+/** Error for a non-OK stream response, with a sanitized message from its body text. */
+export function streamBodyError(text: string, status: number): UserFacingError {
+    return new UserFacingError(getResponseBodyMessage(text, `Ошибка стрима: HTTP ${status}`))
+}
+
+/** Same as `streamBodyError`, reading the body from the response. */
 export async function streamResponseError(response: Response): Promise<UserFacingError> {
     const text = await response.text().catch(() => '')
-    return new UserFacingError(getResponseBodyMessage(text, `Ошибка стрима: HTTP ${response.status}`))
+    return streamBodyError(text, response.status)
 }
 
 /**

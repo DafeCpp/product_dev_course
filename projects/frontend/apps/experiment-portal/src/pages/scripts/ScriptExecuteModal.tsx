@@ -23,7 +23,11 @@ export default function ScriptExecuteModal({ scripts, onClose, onExecuted }: Scr
       if (!selectedScript) throw new UserFacingError('Скрипт не выбран')
       let parameters: Record<string, unknown> = {}
       if (paramsRaw.trim()) {
-        parameters = JSON.parse(paramsRaw) as Record<string, unknown>
+        try {
+          parameters = JSON.parse(paramsRaw) as Record<string, unknown>
+        } catch {
+          throw new UserFacingError('Параметры должны быть валидным JSON')
+        }
       }
       return scriptsApi.executeScript(selectedScript.id, { parameters })
     },

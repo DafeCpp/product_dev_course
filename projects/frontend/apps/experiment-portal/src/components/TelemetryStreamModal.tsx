@@ -5,8 +5,7 @@ import { MaterialSelect } from './common'
 import { telemetryApi } from '../api/client'
 import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
-import { UserFacingError, getResponseBodyMessage } from '../utils/apiError'
-import { getStreamErrorMessage } from '../utils/streamError'
+import { getStreamErrorMessage, streamBodyError } from '../utils/streamError'
 import './TelemetryStreamModal.scss'
 
 type TelemetryStreamModalProps = {
@@ -143,7 +142,7 @@ export default function TelemetryStreamModal({
                             },
                         })
                     )
-                    throw new UserFacingError(getResponseBodyMessage(text, `Ошибка стрима: HTTP ${resp.status}`))
+                    throw streamBodyError(text, resp.status)
                 }
                 return { response: resp }
             } catch (e: any) {

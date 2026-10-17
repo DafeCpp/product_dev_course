@@ -154,7 +154,6 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
-    onMutate: () => setActionError(null),
   })
 
   const countdownDeadline = useMemo(() => {
