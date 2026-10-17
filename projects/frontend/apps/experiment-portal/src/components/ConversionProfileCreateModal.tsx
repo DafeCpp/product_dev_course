@@ -109,8 +109,7 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
         successMessage: 'Профиль преобразования создан',
         onSuccess: () => handleClose(),
         errorFallback: 'Ошибка создания профиля',
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {

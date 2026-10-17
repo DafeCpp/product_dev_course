@@ -169,6 +169,7 @@ export default function TelemetryStreamModal({
     })
 
     const { status: streamStatus, points: records, error: streamError, cursor, start: startStream, stop: stopStream, clear: clearStream } = stream
+    const streamErrorMessage = useMemo(() => (streamError ? getStreamErrorMessage(streamError) : null), [streamError])
 
     useEffect(() => {
         if (!isOpen) {
@@ -241,7 +242,7 @@ export default function TelemetryStreamModal({
         >
             <div className="telemetry-stream">
                 {streamStatus === 'error' && streamError && (
-                    <div className="error">{getStreamErrorMessage(streamError)}</div>
+                    <div className="error">{streamErrorMessage}</div>
                 )}
 
                 <div className="form-grid">

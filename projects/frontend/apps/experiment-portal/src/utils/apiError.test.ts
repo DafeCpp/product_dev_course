@@ -10,7 +10,13 @@ describe('getApiErrorMessage', () => {
     })
 
     it('keeps messages that merely start with a placeholder', () => {
-        expect(getApiErrorMessage({ response: { data: { error: '<sensor_id> must be a UUID' } } }, 'fb')).toBe('<sensor_id> must be a UUID')
+        for (const msg of ['<sensor_id> must be a UUID', '<body-temp> must be a number', '<p.value> required', '<path> must not contain </']) {
+            expect(getApiErrorMessage({ response: { data: { error: msg } } }, 'fb')).toBe(msg)
+        }
+    })
+
+    it('uses a plain-text response body', () => {
+        expect(getApiErrorMessage({ isAxiosError: true, response: { data: 'sensor not found' } }, 'fb')).toBe('sensor not found')
     })
 
     it('hides plain Error messages unless includeClientMessage is set', () => {

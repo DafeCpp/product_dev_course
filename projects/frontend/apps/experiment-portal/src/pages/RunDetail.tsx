@@ -89,9 +89,7 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
-    onMutate: () => setActionError(null),
-    notifyOnError: false,
-    onError: (_err, _vars, message) => setActionError(message),
+    inlineError: setActionError,
   })
 
   const startRunMutation = useApiMutation({
@@ -99,9 +97,7 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
-    onMutate: () => setActionError(null),
-    notifyOnError: false,
-    onError: (_err, _vars, message) => setActionError(message),
+    inlineError: setActionError,
   })
 
   const failMutation = useApiMutation<unknown, string | undefined>({
@@ -109,9 +105,7 @@ function RunDetail() {
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
-    onMutate: () => setActionError(null),
-    notifyOnError: false,
-    onError: (_err, _vars, message) => setActionError(message),
+    inlineError: setActionError,
   })
 
   // Создание capture session
@@ -131,9 +125,7 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт запущен',
     errorFallback: 'Не удалось запустить отсчёт',
-    onMutate: () => setActionError(null),
-    notifyOnError: false,
-    onError: (_err, _vars, message) => setActionError(message),
+    inlineError: setActionError,
   })
 
   // Остановка capture session
@@ -144,8 +136,7 @@ function RunDetail() {
     errorFallback: 'Не удалось остановить отсчёт',
     onMutate: () => setActionError(null),
     onSuccess: () => setOptimisticActiveSessionId(null),
-    notifyOnError: false,
-    onError: (_err, _vars, message) => setActionError(message),
+    inlineError: setActionError,
   })
 
   // Удаление capture session
@@ -154,6 +145,7 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
+    inlineError: setActionError,
   })
 
   const countdownDeadline = useMemo(() => {

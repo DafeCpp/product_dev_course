@@ -66,10 +66,7 @@ function CreateSensor() {
             }
             setShowToken(true)
         },
-        notifyOnError: false,
-        onError: (_err, _vars, message) => {
-            setError(message)
-        },
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {

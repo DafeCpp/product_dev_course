@@ -128,8 +128,7 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Участник добавлен',
         errorFallback: 'Ошибка добавления участника',
         onSuccess: () => { setSelectedUser(null); setUserSearchInput(''); setDebouncedQuery(''); setNewMemberRoleId(''); setError(null) },
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     // Мутация для удаления участника
@@ -139,8 +138,7 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Участник удалён',
         errorFallback: 'Ошибка удаления участника',
         onSuccess: () => setError(null),
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     // Мутация для изменения роли участника (legacy)
@@ -150,8 +148,7 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
         successMessage: 'Роль обновлена',
         errorFallback: 'Ошибка изменения роли',
         onSuccess: () => setError(null),
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const handleAddMember = (e: React.FormEvent) => {

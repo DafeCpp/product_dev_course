@@ -45,10 +45,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
             navigate(`/experiments/${experiment.id}`)
         },
         errorFallback: 'Ошибка создания эксперимента',
-        notifyOnError: false,
-        onError: (_err, _vars, message) => {
-            setError(message)
-        },
+        inlineError: setError,
     })
 
     // Если проект выбран в фильтрах списка, проставляем его в форме при открытии модалки.

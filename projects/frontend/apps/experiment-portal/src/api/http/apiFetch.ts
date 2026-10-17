@@ -5,7 +5,7 @@ import {
   maybeEmitHttpErrorToast,
   truncateString,
 } from '../../utils/httpDebug'
-import { UserFacingError, getResponseBodyMessage } from '../../utils/apiError'
+import { responseBodyError } from '../../utils/apiError'
 
 export function makeFetchHeaders(): Record<string, string> {
   return {
@@ -37,7 +37,7 @@ export async function apiFetch<T>(url: string): Promise<T> {
         },
       }),
     )
-    throw new UserFacingError(getResponseBodyMessage(text, `Ошибка запроса: HTTP ${resp.status}`))
+    throw responseBodyError(text, resp.status, 'Ошибка запроса')
   }
 
   return (await resp.json()) as T

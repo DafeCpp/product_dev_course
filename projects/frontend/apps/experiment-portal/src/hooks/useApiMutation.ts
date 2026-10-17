@@ -18,6 +18,11 @@ interface UseApiMutationOptions<TData, TVars> {
    * renders the error inline, so the user doesn't see it twice.
    */
   notifyOnError?: boolean
+  /**
+   * Setter for an inline error block: cleared when the request starts and
+   * set to the sanitized message on failure. Implies `notifyOnError: false`.
+   */
+  inlineError?: (message: string | null) => void
   /** Called before the request starts, e.g. to clear a previous inline error. */
   onMutate?: (vars: TVars) => void
   /**
@@ -32,7 +37,8 @@ export function useApiMutation<TData = unknown, TVars = void>({
   invalidateKeys,
   successMessage,
   errorFallback = 'Произошла ошибка',
-  notifyOnError = true,
+  inlineError,
+  notifyOnError = inlineError === undefined,
   onMutate,
   onSuccess,
   onError,
@@ -41,7 +47,12 @@ export function useApiMutation<TData = unknown, TVars = void>({
 
   return useMutation<TData, unknown, TVars>({
     mutationFn,
-    onMutate: onMutate ? (vars) => { onMutate(vars) } : undefined,
+    onMutate: onMutate || inlineError
+      ? (vars) => {
+          inlineError?.(null)
+          onMutate?.(vars)
+        }
+      : undefined,
     onSuccess: (data, vars) => {
       if (invalidateKeys) {
         for (const key of invalidateKeys) {
@@ -58,6 +69,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
       if (notifyOnError) {
         notifyError(message)
       }
+      inlineError?.(message)
       onError?.(error, vars, message)
     },
   })

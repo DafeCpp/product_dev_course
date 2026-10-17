@@ -149,6 +149,20 @@ describe('useApiMutation — error path', () => {
     expect(onMutate).toHaveBeenCalled()
   })
 
+  it('inlineError clears on start, sets the message and skips the toast', async () => {
+    const inlineError = vi.fn()
+    const mutationFn = vi.fn().mockRejectedValue({ response: { data: { error: 'Нет прав' } } })
+    const { result } = renderHook(() => useApiMutation({ mutationFn, inlineError }), {
+      wrapper: createWrapper(),
+    })
+
+    await act(async () => result.current.mutate(undefined as void))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(inlineError.mock.calls).toEqual([[null], ['Нет прав']])
+    expect(notifyError).not.toHaveBeenCalled()
+  })
+
   it('uses errorFallback when error has no message', async () => {
     const mutationFn = vi.fn().mockRejectedValue({})
     const { result } = renderHook(

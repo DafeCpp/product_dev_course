@@ -42,8 +42,7 @@ export default function BulkRunTagsModal({ isOpen, onClose, experimentId, runIds
         successMessage: 'Теги обновлены',
         errorFallback: 'Ошибка bulk tagging',
         onSuccess: () => { onClose(); setTagsText(''); setMode('add'); setError(null) },
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const disabled = mutation.isPending || runIds.length === 0

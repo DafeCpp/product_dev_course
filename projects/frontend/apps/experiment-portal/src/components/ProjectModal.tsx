@@ -131,8 +131,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         successMessage: 'Проект создан',
         onSuccess: () => onClose(),
         errorFallback: 'Ошибка создания проекта',
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const updateMutation = useApiMutation<unknown, ProjectUpdate>({
@@ -141,8 +140,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         successMessage: 'Проект обновлён',
         onSuccess: () => onClose(),
         errorFallback: 'Ошибка обновления проекта',
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const isBusy = createMutation.isPending || updateMutation.isPending

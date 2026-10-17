@@ -37,10 +37,7 @@ function CreateRunModal({ experimentId, isOpen, onClose }: CreateRunModalProps) 
             navigate(`/runs/${run.id}`)
         },
         errorFallback: 'Ошибка создания запуска',
-        notifyOnError: false,
-        onError: (_err, _vars, message) => {
-            setError(message)
-        },
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {

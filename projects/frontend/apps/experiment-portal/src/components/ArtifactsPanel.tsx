@@ -405,8 +405,7 @@ export default function ArtifactsPanel({ runId, projectId, isOwner = false }: Pr
     invalidateKeys: [['artifacts', runId]],
     errorFallback: 'Ошибка создания артефакта',
     onSuccess: () => { setShowAdd(false); setAddError(null) },
-    notifyOnError: false,
-    onError: (_err, _vars, message) => setAddError(message),
+    inlineError: setAddError,
   })
 
   const deleteMutation = useApiMutation<unknown, string>({

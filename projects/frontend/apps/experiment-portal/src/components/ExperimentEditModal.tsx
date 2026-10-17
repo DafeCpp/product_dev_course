@@ -39,8 +39,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент обновлён',
         errorFallback: 'Ошибка обновления эксперимента',
         onSuccess: () => onClose(),
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const archiveMutation = useApiMutation({
@@ -49,8 +48,7 @@ function ExperimentEditModal({ isOpen, onClose, experiment }: ExperimentEditModa
         successMessage: 'Эксперимент архивирован',
         errorFallback: 'Ошибка архивации эксперимента',
         onSuccess: () => onClose(),
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const isBusy = updateMutation.isPending || archiveMutation.isPending

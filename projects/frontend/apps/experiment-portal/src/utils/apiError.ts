@@ -13,9 +13,10 @@ function cleanMessage(value: unknown): string | null {
     // a leading placeholder such as "<sensor_id> must be a UUID" is kept.
     if (
         /^<[!?]/.test(text) ||
-        /^<(html|head|body|meta|title|style|div|p|br|center|h[1-6])\b/i.test(text) ||
-        (/^<[a-z]/i.test(text) && (text.includes('</') || /\/>$/.test(text)))
+        /^<(html|head|body|meta|title|style|div|p|br|center|h[1-6])(\s|>|\/)/i.test(text) ||
+        (/^<[a-z][a-z0-9]*(\s[^>]*)?\/?>/i.test(text) && (/<\/[a-z]/i.test(text) || /\/>$/.test(text)))
     ) return null
+    if (text.length <= MAX_MESSAGE_LENGTH) return text
     const chars = Array.from(text)
     return chars.length > MAX_MESSAGE_LENGTH ? `${chars.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…` : text
 }
@@ -27,7 +28,7 @@ export class UserFacingError extends Error {
 
 /**
  * User-facing message for a failed API call: `response.data.message`,
- * then `response.data.error`, then `fallback`. Same order as the shared
+ * then `response.data.error`, then a plain-text `response.data`, then `fallback`. Same order as the shared
  * transport: backends put a code in `error` and human text in `message`.
  * Only non-empty strings are accepted; anything else falls through.
  * A shared-transport `HttpError` carries server text in `message` only
@@ -51,13 +52,16 @@ export function getApiErrorMessage(
     }
     if (error && typeof error === 'object') {
         const e = error as {
-            response?: { data?: { error?: unknown; message?: unknown } }
+            response?: { data?: unknown }
             message?: unknown
             isAxiosError?: boolean
         }
+        const data = e.response?.data
+        const body = data && typeof data === 'object' ? (data as { error?: unknown; message?: unknown }) : undefined
         return (
-            cleanMessage(e.response?.data?.message) ??
-            cleanMessage(e.response?.data?.error) ??
+            cleanMessage(body?.message) ??
+            cleanMessage(body?.error) ??
+            cleanMessage(typeof data === 'string' ? data : undefined) ??
             (includeClientMessage && !e.isAxiosError ? cleanMessage(e.message) : null) ??
             fallback
         )
@@ -81,4 +85,9 @@ export function getResponseBodyMessage(body: string, fallback: string): string {
         // plain-text body
     }
     return cleanMessage(body) ?? fallback
+}
+
+/** Error for a non-OK fetch response: sanitized body text, else `${prefix}: HTTP ${status}`. */
+export function responseBodyError(body: string, status: number, prefix: string): UserFacingError {
+    return new UserFacingError(getResponseBodyMessage(body, `${prefix}: HTTP ${status}`))
 }

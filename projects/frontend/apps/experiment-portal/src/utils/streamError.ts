@@ -1,11 +1,11 @@
 import { TelemetryStreamServerError } from 'frontend-common'
-import { UserFacingError, getApiErrorMessage, getResponseBodyMessage } from './apiError'
+import { UserFacingError, getApiErrorMessage, responseBodyError } from './apiError'
 
 const STREAM_FALLBACK = 'Ошибка подключения к стриму'
 
 /** Error for a non-OK stream response, with a sanitized message from its body text. */
 export function streamBodyError(text: string, status: number): UserFacingError {
-    return new UserFacingError(getResponseBodyMessage(text, `Ошибка стрима: HTTP ${status}`))
+    return responseBodyError(text, status, 'Ошибка стрима')
 }
 
 /** Same as `streamBodyError`, reading the body from the response. */

@@ -27,8 +27,7 @@ function CreateProjectRoleModal({ isOpen, onClose, projectId }: CreateProjectRol
         successMessage: 'Роль создана',
         errorFallback: 'Ошибка создания роли',
         onSuccess: () => { setName(''); setDescription(''); setPermissionIds([]); setError(null); onClose() },
-        notifyOnError: false,
-        onError: (_err, _vars, message) => setError(message),
+        inlineError: setError,
     })
 
     const handleSubmit = (e: React.FormEvent) => {
