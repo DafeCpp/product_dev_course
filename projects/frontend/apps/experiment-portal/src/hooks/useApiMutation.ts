@@ -11,8 +11,11 @@ interface UseApiMutationOptions<TData, TVars> {
   successMessage?: string
   /** Fallback error text when the server sends no message. */
   errorFallback?: string
-  /** Called after built-in success handling (invalidate + toast). */
-  onSuccess?: (data: TData, vars: TVars) => void
+  /**
+   * Called after built-in success handling (invalidate + toast). A returned
+   * promise is awaited: the mutation stays pending until it settles.
+   */
+  onSuccess?: (data: TData, vars: TVars) => unknown
   /**
    * Show an error toast on failure (default). Pass `false` when the caller
    * renders the error inline, so the user doesn't see it twice.
@@ -54,7 +57,7 @@ export function useApiMutation<TData = unknown, TVars = void>({
       if (successMessage) {
         notifySuccess(successMessage)
       }
-      onSuccess?.(data, vars)
+      return onSuccess?.(data, vars)
     },
     onError: (error, vars) => {
       const message = getApiErrorMessage(error, errorFallback)

@@ -150,6 +150,22 @@ describe('useApiMutation — error path', () => {
     expect(notifyError).not.toHaveBeenCalled()
   })
 
+  it('stays pending until an async onSuccess settles', async () => {
+    let release!: () => void
+    const onSuccess = vi.fn(() => new Promise<void>((r) => { release = r }))
+    const mutationFn = vi.fn().mockResolvedValue('ok')
+    const { result } = renderHook(() => useApiMutation({ mutationFn, onSuccess }), {
+      wrapper: createWrapper(),
+    })
+
+    act(() => result.current.mutate(undefined as void))
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled())
+    expect(result.current.isPending).toBe(true)
+
+    await act(async () => release())
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
   it('uses errorFallback when error has no message', async () => {
     const mutationFn = vi.fn().mockRejectedValue({})
     const { result } = renderHook(

@@ -10,7 +10,7 @@ describe('getApiErrorMessage', () => {
     })
 
     it('keeps messages that merely start with a placeholder', () => {
-        for (const msg of ['<sensor_id> must be a UUID', '<body-temp> must be a number', '<p.value> required', '<path> must not contain </', '<name> must not contain </script>']) {
+        for (const msg of ['<sensor_id> must be a UUID', '<body-temp> must be a number', '<p.value> required', '<path> must not contain </', '<name> must not contain </script>', '<p> must be between 0 and 1', '<a> is required']) {
             expect(getApiErrorMessage({ response: { data: { error: msg } } }, 'fb')).toBe(msg)
         }
     })
