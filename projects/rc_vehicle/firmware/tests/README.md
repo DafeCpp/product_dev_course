@@ -16,7 +16,8 @@ tests/
 │   └── test_control_loop.cpp # Control loop integration tests
 ├── hil/                     # Hardware-in-the-loop tests (ESP32)
 ├── mocks/                   # Mock implementations
-│   └── mock_platform.hpp    # Mock VehicleControlPlatform
+│   ├── mock_platform.hpp    # Mock VehicleControlPlatform
+│   └── esp_http_server.h    # Mock ESP-IDF esp_http_server (WS frames recorded)
 └── fixtures/                # Test helpers and utilities
     └── test_helpers.hpp     # Common test utilities
 ```

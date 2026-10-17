@@ -65,7 +65,11 @@ class WsCommandRegistry {
    * @param type Command type string
    * @param json Parsed JSON object
    * @param req HTTP request handle
-   * @return true if handler was found and executed, false otherwise
+   * @return true if the command was handled: a handler ran, or the command
+   *         was rejected with a "not_ready" reply because the control task is
+   *         still initializing (the rejection happens before handler lookup,
+   *         so this also holds for unknown types); false if @p type is null or
+   *         no handler is registered
    */
   bool Handle(IVehicleControl& vc, const char* type, cJSON* json,
               httpd_req_t* req);

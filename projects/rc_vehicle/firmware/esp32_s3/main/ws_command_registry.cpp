@@ -1,5 +1,6 @@
 #include "ws_command_registry.hpp"
 
+#include <cstdlib>
 #include <cstring>
 
 #include "esp_log.h"
