@@ -72,7 +72,7 @@ function ConversionProfileCreateModal({ sensorId, isOpen, onClose }: ConversionP
     // Preview
     const [previewRaw, setPreviewRaw] = useState('10')
 
-    const buildPayload = (): Record<string, any> | null => {
+    const buildPayload = (): ConversionProfileInput['payload'] | null => {
         if (kind === 'linear') {
             const a = Number(linearA)
             const b = Number(linearB)

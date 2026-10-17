@@ -7,6 +7,8 @@ on:
       - develop
     paths:
       - 'projects/frontend/**'
+      - 'projects/backend/services/experiment-service/openapi/**'
+      - 'projects/backend/services/auth-service/openapi/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/frontend-tests.yml'
@@ -18,6 +20,8 @@ on:
       - develop
     paths:
       - 'projects/frontend/**'
+      - 'projects/backend/services/experiment-service/openapi/**'
+      - 'projects/backend/services/auth-service/openapi/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/frontend-tests.yml'

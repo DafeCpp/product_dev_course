@@ -31,7 +31,12 @@ const createWrapper = () => {
 const mockRun = {
     id: 'run-123',
     experiment_id: 'exp-123',
+    project_id: 'project-1',
+    created_by: 'user-1',
     name: 'Test Run',
+    git_sha: null,
+    env: null,
+    notes: null,
     params: { param1: 'value1', param2: 'value2', param3: 'value3' },
     status: 'running' as const,
     tags: ['alpha'],
@@ -231,7 +236,7 @@ describe('RunsList', () => {
             runs: [
                 {
                     ...mockRun,
-                    duration_seconds: undefined,
+                    duration_seconds: null,
                 },
             ],
             total: 1,
@@ -274,7 +279,7 @@ describe('RunsList', () => {
             runs: [
                 {
                     ...mockRun,
-                    started_at: undefined,
+                    started_at: null,
                 },
             ],
             total: 1,
@@ -317,7 +322,7 @@ describe('RunsList', () => {
             runs: [
                 {
                     ...mockRun,
-                    finished_at: undefined,
+                    finished_at: null,
                 },
             ],
             total: 1,

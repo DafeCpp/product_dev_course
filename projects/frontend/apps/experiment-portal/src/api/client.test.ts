@@ -180,7 +180,7 @@ describe('API Client', () => {
             it('calls PATCH /api/v1/experiments/:id with data', async () => {
                 const updateData = {
                     name: 'Updated Experiment',
-                    status: 'running',
+                    status: 'running' as const,
                 }
                 const mockExperiment = {
                     id: 'exp-123',
@@ -363,7 +363,7 @@ describe('API Client', () => {
             it('calls PATCH /api/v1/runs/:id with data', async () => {
                 const updateData = {
                     name: 'Updated Run',
-                    status: 'running',
+                    status: 'running' as const,
                 }
                 const mockRun = {
                     id: 'run-123',

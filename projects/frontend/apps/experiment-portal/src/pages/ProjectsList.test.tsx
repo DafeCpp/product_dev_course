@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
+import { createMockProjectMember } from '../testUtils/factories'
 
 // В тестах не нужен настоящий portal (иногда дает шум в stderr),
 // поэтому упрощаем: createPortal возвращает element как есть.
@@ -69,6 +70,9 @@ describe('ProjectsList', () => {
             username: 'user1',
             email: 'u1@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
     })
@@ -102,8 +106,8 @@ describe('ProjectsList', () => {
         const { default: ProjectsList } = await import('./ProjectsList')
         vi.mocked(projectsApi).get.mockResolvedValue(otherProject as any)
         vi.mocked(projectsApi).listMembers.mockResolvedValue({
-            members: [{ project_id: otherProject.id, user_id: 'user-1', role: 'viewer', created_at: '2024-01-01T00:00:00Z' }],
-        } as any)
+            members: [createMockProjectMember({ project_id: otherProject.id, user_id: 'user-1', roles: ['viewer'] })],
+        })
 
         render(<ProjectsList />, { wrapper: createWrapper() })
 

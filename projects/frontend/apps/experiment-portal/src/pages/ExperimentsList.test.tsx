@@ -42,6 +42,7 @@ const mockExperiment = {
     tags: ['test', 'benchmark'],
     metadata: {},
     owner_id: 'user-1',
+    archived_at: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
 }

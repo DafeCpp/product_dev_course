@@ -149,9 +149,10 @@ function Webhooks() {
 
   function deliveryStatusClass(status: string): string {
     switch (status) {
-      case 'delivered':
+      case 'succeeded':
         return 'delivery-status--delivered'
       case 'failed':
+      case 'dead_lettered':
         return 'delivery-status--failed'
       case 'pending':
         return 'delivery-status--pending'
@@ -346,8 +347,10 @@ function Webhooks() {
             >
               <option value="">Все</option>
               <option value="pending">Pending</option>
-              <option value="delivered">Delivered</option>
+              <option value="in_progress">In progress</option>
+              <option value="succeeded">Succeeded</option>
               <option value="failed">Failed</option>
+              <option value="dead_lettered">Dead-lettered</option>
             </select>
           </div>
         </div>

@@ -1,49 +1,63 @@
 User:
   type: object
+  required:
+  - id
+  - username
+  - email
+  - password_change_required
+  - is_active
+  - is_admin
+  - system_roles
+  - created_at
   properties:
     id:
       type: string
       format: uuid
-      description: User ID
     username:
       type: string
-      description: Username
-      example: "johndoe"
     email:
       type: string
       format: email
-      description: User email
-      example: "john@example.com"
     password_change_required:
       type: boolean
-      description: Whether password change is required
-      default: false
+    is_active:
+      type: boolean
+    is_admin:
+      type: boolean
+      description: Derived from system_roles (admin|superadmin).
+    system_roles:
+      type: array
+      items:
+        type: string
+    created_at:
+      type: string
+      format: date-time
 
 UserRegisterRequest:
   type: object
   required:
-    - username
-    - email
-    - password
+  - username
+  - email
+  - password
   properties:
     username:
       type: string
       minLength: 3
       maxLength: 50
-      description: Username (3-50 characters)
-      example: "johndoe"
     email:
       type: string
       format: email
-      description: User email
-      example: "john@example.com"
     password:
       type: string
       format: password
       minLength: 8
       maxLength: 100
-      description: Password (8-100 characters)
-      example: "securepass123"
+      description: Must contain an uppercase letter, a lowercase letter and a digit.
+    invite_token:
+      type:
+      - string
+      - 'null'
+      format: uuid
 
 UserLoginRequest:
   type: object
@@ -63,29 +77,34 @@ UserLoginRequest:
 
 AuthTokensResponse:
   type: object
+  required:
+  - access_token
+  - refresh_token
+  - password_change_required
   properties:
     access_token:
       type: string
-      description: JWT access token
-      example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
     refresh_token:
       type: string
-      description: JWT refresh token
-      example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    password_change_required:
+      type: boolean
 
 AuthResponse:
   type: object
+  required:
+  - user
+  - access_token
+  - refresh_token
   properties:
     user:
       $ref: '#/User'
     access_token:
       type: string
-      description: JWT access token
-      example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
     refresh_token:
       type: string
-      description: JWT refresh token
-      example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    password_change_required:
+      type: boolean
+      description: Present (true) only on login when a change is required.
 
 TokenRefreshRequest:
   type: object
@@ -118,140 +137,162 @@ PasswordChangeRequest:
 
 Project:
   type: object
+  required:
+  - id
+  - name
+  - description
+  - owner_id
+  - created_at
+  - updated_at
   properties:
     id:
       type: string
       format: uuid
-      description: Project ID
     name:
       type: string
-      description: Project name
-      example: "My Project"
     description:
-      type: string
-      nullable: true
-      description: Project description
-      example: "A sample project"
+      type:
+      - string
+      - 'null'
     owner_id:
       type: string
       format: uuid
-      description: Owner user ID
     created_at:
       type: string
       format: date-time
-      description: Creation timestamp
     updated_at:
       type: string
       format: date-time
-      description: Last update timestamp
 
 ProjectCreateRequest:
   type: object
   required:
-    - name
+  - name
   properties:
     name:
       type: string
       minLength: 1
       maxLength: 200
       description: Project name
-      example: "My Project"
+      example: My Project
     description:
-      type: string
+      type:
+      - string
+      - 'null'
       maxLength: 1000
-      nullable: true
       description: Project description
-      example: "A sample project"
+      example: A sample project
 
 ProjectUpdateRequest:
   type: object
   properties:
     name:
-      type: string
+      type:
+      - string
+      - 'null'
       minLength: 1
       maxLength: 200
-      nullable: true
       description: Project name
-      example: "Updated Project Name"
+      example: Updated Project Name
     description:
-      type: string
+      type:
+      - string
+      - 'null'
       maxLength: 1000
-      nullable: true
       description: Project description
-      example: "Updated description"
+      example: Updated description
 
 ProjectListResponse:
   type: object
+  required:
+  - items
+  - total
+  - limit
+  - offset
   properties:
-    projects:
+    items:
       type: array
       items:
         $ref: '#/Project'
+    total:
+      type: integer
+    limit:
+      type: integer
+    offset:
+      type: integer
 
 ProjectMember:
   type: object
+  required:
+  - project_id
+  - user_id
+  - roles
+  - username
+  - granted_at
   properties:
     project_id:
       type: string
       format: uuid
-      description: Project ID
     user_id:
       type: string
       format: uuid
-      description: User ID
-    role:
-      type: string
-      enum:
-        - owner
-        - editor
-        - viewer
-      description: Member role
-      example: "editor"
-    created_at:
-      type: string
-      format: date-time
-      description: When member was added
+    roles:
+      type: array
+      items:
+        type: string
+      description: Role names (e.g. owner, editor, viewer, or custom role names).
     username:
-      type: string
-      nullable: true
-      description: Username (populated when listing members)
-      example: "johndoe"
+      type:
+      - string
+      - 'null'
+    granted_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+      description: Earliest active grant.
 
 ProjectMemberAddRequest:
   type: object
   required:
-    - user_id
-    - role
+  - user_id
   properties:
     user_id:
       type: string
       format: uuid
-      description: User ID to add as member
     role:
       type: string
       enum:
-        - owner
-        - editor
-        - viewer
-      description: Member role
-      example: "editor"
+      - owner
+      - editor
+      - viewer
+      description: Built-in role name; alternative to role_id. One of role/role_id is required.
+    role_id:
+      type: string
+      format: uuid
+    expires_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
 
 ProjectMemberUpdateRequest:
   type: object
-  required:
-    - role
   properties:
     role:
       type: string
       enum:
-        - owner
-        - editor
-        - viewer
-      description: New member role
-      example: "editor"
+      - owner
+      - editor
+      - viewer
+    role_id:
+      type: string
+      format: uuid
 
 ProjectMemberListResponse:
   type: object
+  required:
+  - members
   properties:
     members:
       type: array
@@ -286,3 +327,33 @@ OkResponse:
       type: boolean
       example: true
 
+ProjectRoleAssignment:
+  type: object
+  required:
+  - user_id
+  - project_id
+  - role_id
+  - granted_by
+  - granted_at
+  - expires_at
+  properties:
+    user_id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+    role_id:
+      type: string
+      format: uuid
+    granted_by:
+      type: string
+      format: uuid
+    granted_at:
+      type: string
+      format: date-time
+    expires_at:
+      type:
+      - string
+      - 'null'
+      format: date-time

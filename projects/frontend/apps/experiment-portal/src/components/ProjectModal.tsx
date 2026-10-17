@@ -1,3 +1,4 @@
+import { getMemberBuiltinRole } from '../utils/projectRole'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
@@ -61,7 +62,7 @@ function ProjectModal({ isOpen, onClose, mode, projectId }: ProjectModalProps) {
         if (!user || !project) return 'viewer'
         if (user.id === project.owner_id) return 'owner'
         const member = membersData?.members?.find((m) => m.user_id === user.id)
-        return member?.role ?? 'viewer'
+        return (member && getMemberBuiltinRole(member)) ?? 'viewer'
     }, [membersData?.members, needsProject, project, user])
 
     const canEditByRole = role === 'owner' || role === 'editor'

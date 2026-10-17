@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CreateSensor from './CreateSensor'
 import { sensorsApi, projectsApi } from '../api/client'
+import { createMockSensor } from '../testUtils/factories'
 import { pickMaterialSelectOption } from '../testUtils/materialSelect'
 
 // Мокаем API
@@ -104,7 +105,7 @@ describe('CreateSensor', () => {
         const mockCreate = vi.mocked(sensorsApi.create)
         const mockAddProject = vi.mocked(sensorsApi.addProject)
         const mockResponse = {
-            sensor: {
+            sensor: createMockSensor({
                 id: 'sensor-1',
                 project_id: 'project-1',
                 name: 'Test Sensor',
@@ -114,7 +115,7 @@ describe('CreateSensor', () => {
                 status: 'registering' as const,
                 created_at: '2024-01-01T00:00:00Z',
                 updated_at: '2024-01-01T00:00:00Z',
-            },
+            }),
             token: 'test-token-12345',
         }
         mockCreate.mockResolvedValueOnce(mockResponse)
@@ -152,7 +153,7 @@ describe('CreateSensor', () => {
         const mockAddProject = vi.mocked(sensorsApi.addProject)
 
         mockCreate.mockResolvedValueOnce({
-            sensor: {
+            sensor: createMockSensor({
                 id: 'sensor-1',
                 project_id: 'project-1',
                 name: 'Test Sensor',
@@ -162,7 +163,7 @@ describe('CreateSensor', () => {
                 status: 'registering' as const,
                 created_at: '2024-01-01T00:00:00Z',
                 updated_at: '2024-01-01T00:00:00Z',
-            },
+            }),
             token: 'test-token-12345',
         })
         mockAddProject.mockResolvedValueOnce(undefined)
@@ -226,7 +227,7 @@ describe('CreateSensor', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(sensorsApi.create)
         const mockResponse = {
-            sensor: {
+            sensor: createMockSensor({
                 id: 'sensor-1',
                 project_id: 'project-1',
                 name: 'Test Sensor',
@@ -236,7 +237,7 @@ describe('CreateSensor', () => {
                 status: 'registering' as const,
                 created_at: '2024-01-01T00:00:00Z',
                 updated_at: '2024-01-01T00:00:00Z',
-            },
+            }),
             token: 'test-token-12345',
         }
         mockCreate.mockResolvedValueOnce(mockResponse)
@@ -265,7 +266,7 @@ describe('CreateSensor', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(sensorsApi.create)
         mockCreate.mockResolvedValueOnce({
-            sensor: {
+            sensor: createMockSensor({
                 id: 'sensor-1',
                 project_id: 'project-1',
                 name: 'Test Sensor',
@@ -275,7 +276,7 @@ describe('CreateSensor', () => {
                 status: 'registering' as const,
                 created_at: '2024-01-01T00:00:00Z',
                 updated_at: '2024-01-01T00:00:00Z',
-            },
+            }),
             token: 'test-token-12345',
         })
 
@@ -308,7 +309,7 @@ describe('CreateSensor', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(sensorsApi.create)
         const mockResponse = {
-            sensor: {
+            sensor: createMockSensor({
                 id: 'sensor-1',
                 project_id: 'project-1',
                 name: 'Test Sensor',
@@ -318,7 +319,7 @@ describe('CreateSensor', () => {
                 status: 'registering' as const,
                 created_at: '2024-01-01T00:00:00Z',
                 updated_at: '2024-01-01T00:00:00Z',
-            },
+            }),
             token: 'test-token-12345',
         }
         mockCreate.mockResolvedValueOnce(mockResponse)

@@ -79,6 +79,8 @@ components:
       $ref: ./components/schemas.yaml#/ProjectMemberUpdateRequest
     ProjectMemberListResponse:
       $ref: ./components/schemas.yaml#/ProjectMemberListResponse
+    ProjectRoleAssignment:
+      $ref: ./components/schemas.yaml#/ProjectRoleAssignment
     Error:
       $ref: ./components/schemas.yaml#/Error
     HealthResponse:

@@ -40,21 +40,6 @@ ArtifactId:
   schema:
     type: string
     format: uuid
-IdempotencyKey:
-  name: Idempotency-Key
-  in: header
-  description: Ensures POST requests are idempotent
-  required: false
-  schema:
-    type: string
-ProjectIdQuery:
-  name: project_id
-  in: query
-  description: Explicitly specify project scope (defaults to active project)
-  required: false
-  schema:
-    type: string
-    format: uuid
 ProjectIdQuery:
   name: project_id
   in: query
@@ -70,3 +55,31 @@ IdempotencyKey:
   schema:
     type: string
   description: Provides idempotency on POST requests. When supplied, repeats must include the same body.
+ProjectIdPath:
+  name: project_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+BackfillTaskId:
+  name: task_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+WebhookId:
+  name: webhook_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+DeliveryId:
+  name: delivery_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid

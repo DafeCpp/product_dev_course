@@ -278,7 +278,7 @@ members:
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/ProjectMember
+              $ref: ../components/schemas.yaml#/ProjectRoleAssignment
       '400':
         description: Invalid request data
         content:
@@ -370,6 +370,12 @@ memberRole:
     parameters:
       - $ref: ../components/parameters.yaml#/ProjectId
       - $ref: ../components/parameters.yaml#/UserId
+      - name: old_role
+        in: query
+        required: true
+        description: Role being replaced, as a role name or role UUID (alias query parameter `old_role_id`).
+        schema:
+          type: string
     requestBody:
       required: true
       content:
@@ -382,7 +388,7 @@ memberRole:
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/ProjectMember
+              $ref: ../components/schemas.yaml#/ProjectRoleAssignment
       '400':
         description: Invalid request data
         content:

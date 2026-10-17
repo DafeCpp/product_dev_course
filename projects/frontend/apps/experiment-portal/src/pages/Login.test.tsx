@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Login from './Login'
+import { createMockUser } from '../testUtils/factories'
 import { authApi } from '../api/auth'
 
 // Мокаем authApi
@@ -78,8 +79,7 @@ describe('Login', () => {
         const user = userEvent.setup()
         const mockLogin = vi.mocked(authApi.login)
         mockLogin.mockResolvedValueOnce({
-            expires_in: 900,
-            token_type: 'bearer',
+            user: createMockUser(),
         })
 
         render(<Login />, { wrapper: createWrapper() })

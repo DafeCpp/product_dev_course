@@ -41,6 +41,9 @@ describe('UserProfileModal', () => {
         username: 'testuser',
         email: 'test@example.com',
         is_active: true,
+        is_admin: false,
+        system_roles: [],
+        password_change_required: false,
         created_at: '2024-01-01T00:00:00Z',
     }
 
@@ -68,8 +71,8 @@ describe('UserProfileModal', () => {
             {
                 project_id: 'project-1',
                 user_id: 'user-1',
-                role: 'owner' as const,
-                created_at: '2024-01-01T00:00:00Z',
+                roles: ['owner'],
+                granted_at: '2024-01-01T00:00:00Z',
                 username: 'testuser',
             },
         ],
@@ -80,8 +83,8 @@ describe('UserProfileModal', () => {
             {
                 project_id: 'project-2',
                 user_id: 'user-1',
-                role: 'editor' as const,
-                created_at: '2024-01-02T00:00:00Z',
+                roles: ['editor'],
+                granted_at: '2024-01-02T00:00:00Z',
                 username: 'testuser',
             },
         ],

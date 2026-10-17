@@ -1,0 +1,257 @@
+# New file: openapi/paths/webhooks.yaml
+collection:
+  get:
+    tags:
+    - webhooks
+    summary: List webhook subscriptions
+    description: 'Ordered by created_at DESC. Note: `secret` is returned in plaintext.'
+    operationId: listWebhooks
+    parameters:
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: limit
+      in: query
+      description: Page size. Values <= 0 fall back to 50; values > 100 are clamped to 100. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 50
+        maximum: 100
+    - name: offset
+      in: query
+      description: Rows to skip. Negative values are treated as 0. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    responses:
+      200:
+        description: Paginated webhook subscriptions
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/WebhookListResponse
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid limit or offset
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+  post:
+    tags:
+    - webhooks
+    summary: Create webhook subscription
+    description: |-
+      Event types are trimmed, empty entries dropped and duplicates removed (order kept). The
+      subscription is created active. Deliveries are signed with HMAC-SHA256 of the body when a
+      secret is set. Project comes from the `project_id` query or X-Project-Id header (a
+      `project_id` in the body is ignored).
+    operationId: createWebhook
+    parameters:
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/WebhookCreate
+    responses:
+      201:
+        description: Subscription created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/WebhookSubscription
+      400:
+        description: |-
+          Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid JSON; Pydantic validation failure (JSON-encoded error list as
+          text/plain); `event_types must be a non-empty list` after normalisation
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.create` permission (text body `403: Missing permission: experiments.create`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+item:
+  delete:
+    tags:
+    - webhooks
+    summary: Delete webhook subscription
+    description: Its deliveries are deleted by cascade.
+    operationId: deleteWebhook
+    parameters:
+    - $ref: ../components/parameters.yaml#/WebhookId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      204:
+        description: Subscription deleted
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid webhook_id
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.delete` permission (text body `403: Missing permission: experiments.delete`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Subscription not found in the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+deliveries:
+  get:
+    tags:
+    - webhooks
+    summary: List webhook deliveries
+    description: 'Outbox rows of the project, ordered by created_at DESC. Note: `secret` is returned in plaintext.'
+    operationId: listWebhookDeliveries
+    parameters:
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: status
+      in: query
+      description: Exact-match filter on delivery status (not validated; unknown values yield an empty page).
+      schema:
+        $ref: ../components/schemas.yaml#/WebhookDeliveryStatus
+    - name: limit
+      in: query
+      description: Page size. Values <= 0 fall back to 50; values > 100 are clamped to 100. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 50
+        maximum: 100
+    - name: offset
+      in: query
+      description: Rows to skip. Negative values are treated as 0. Non-integer -> 400.
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    responses:
+      200:
+        description: Paginated deliveries
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/WebhookDeliveryListResponse
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid limit or offset
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view` permission (text body `403: Missing permission: experiments.view`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+deliveryRetry:
+  post:
+    tags:
+    - webhooks
+    summary: Retry webhook delivery
+    description: |-
+      Resets the delivery to `pending` (clears `locked_at` and `last_error`, `next_attempt_at = now()`)
+      regardless of its current status, so the dispatcher re-sends it. `attempt_count` is kept.
+    operationId: retryWebhookDelivery
+    parameters:
+    - $ref: ../components/parameters.yaml#/DeliveryId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      204:
+        description: Delivery re-queued
+      400:
+        description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
+          header) or not a UUID; invalid delivery_id
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.update` permission (text body `403: Missing permission: experiments.update`).'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: Delivery not found in the project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error

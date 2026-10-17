@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CreateRunModal from './CreateRunModal'
 import { runsApi } from '../api/client'
+import { createMockRun } from '../testUtils/factories'
 
 // Мокаем runsApi
 vi.mock('../api/client', () => ({
@@ -151,18 +152,15 @@ describe('CreateRunModal', () => {
     it('submits form with correct data', async () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(runsApi.create)
-        const mockRun = {
+        const mockRun = createMockRun({
             id: 'run-1',
             experiment_id: 'exp-1',
             name: 'Test Run',
             params: { key: 'value' },
-            status: 'draft' as const,
+            status: 'draft',
             notes: 'Test notes',
             metadata: { meta: 'data' },
-            auto_complete_after_minutes: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z',
-        }
+        })
         mockCreate.mockResolvedValueOnce(mockRun)
 
         render(
@@ -206,17 +204,15 @@ describe('CreateRunModal', () => {
     it('handles empty JSON fields', async () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(runsApi.create)
-        const mockRun = {
+        const mockRun = createMockRun({
             id: 'run-1',
             experiment_id: 'exp-1',
             name: 'Test Run',
             params: {},
-            status: 'draft' as const,
+            status: 'draft',
+            notes: null,
             metadata: {},
-            auto_complete_after_minutes: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z',
-        }
+        })
         mockCreate.mockResolvedValueOnce(mockRun)
 
         render(

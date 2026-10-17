@@ -100,15 +100,16 @@ describe('createMockProjectMember', () => {
         expect(member).toMatchObject({
             project_id: expect.any(String),
             user_id: expect.any(String),
-            role: expect.stringMatching(/^(owner|editor|viewer)$/),
-            created_at: expect.any(String),
+            roles: expect.any(Array),
+            username: expect.any(String),
+            granted_at: expect.any(String),
         })
     })
 
     it('applies overrides correctly', () => {
-        const member = createMockProjectMember({ role: 'editor', user_id: 'user-42' })
+        const member = createMockProjectMember({ roles: ['editor'], user_id: 'user-42' })
 
-        expect(member.role).toBe('editor')
+        expect(member.roles).toEqual(['editor'])
         expect(member.user_id).toBe('user-42')
     })
 })

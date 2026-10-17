@@ -120,8 +120,6 @@ function RunDetail() {
         ? Math.max(...sessions.map((s: CaptureSession) => s.ordinal_number)) + 1
         : 1
       return captureSessionsApi.create(id!, {
-        project_id: experiment.project_id,
-        run_id: id!,
         ordinal_number: nextOrdinal,
         notes: notes || undefined,
       }, { project_id: experiment.project_id })
@@ -173,7 +171,7 @@ function RunDetail() {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
   }
 
-  const formatDuration = (seconds?: number) => {
+  const formatDuration = (seconds?: number | null) => {
     if (!seconds) return '-'
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)

@@ -3,6 +3,10 @@ collection:
     tags:
     - experiments
     summary: List experiments
+    description: >
+      Experiments of the project, newest first. Project scope comes from ?project_id or the
+      X-Project-Id header. limit/offset are clamped rather than rejected (limit <= 0 becomes 50,
+      limit > 100 becomes 100, offset < 0 becomes 0).
     operationId: listExperiments
     parameters:
     - $ref: ../components/parameters.yaml#/ProjectIdQuery
@@ -18,25 +22,29 @@ collection:
       schema:
         type: integer
         minimum: 0
+        default: 0
     - name: status
       in: query
+      description: An unknown value currently fails with 500 (unhandled ValueError).
       schema:
         $ref: ../components/schemas.yaml#/ExperimentStatus
     - name: tags
       in: query
+      description: Comma separated tags; only experiments carrying all of them are returned.
       schema:
         type: string
-        description: Comma separated tags
-    - name: page
+    - name: created_after
       in: query
+      description: ISO-8601; a value without offset is treated as UTC.
       schema:
-        type: integer
-        default: 1
-    - name: page_size
+        type: string
+        format: date-time
+    - name: created_before
       in: query
+      description: ISO-8601; a value without offset is treated as UTC.
       schema:
-        type: integer
-        default: 50
+        type: string
+        format: date-time
     responses:
       200:
         description: Experiment collection
@@ -44,18 +52,25 @@ collection:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/ExperimentListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      500:
+        $ref: ../components/responses.yaml#/InternalError
   post:
     tags:
     - experiments
     summary: Create experiment
+    description: >
+      owner_id is always set to the calling user. project_id may be given in the body, otherwise
+      ?project_id is not read here and the X-Project-Id header is used. With an Idempotency-Key, a
+      repeat with the same body replays the stored 201 response.
     operationId: createExperiment
     parameters:
-    - name: Idempotency-Key
-      in: header
-      required: false
-      description: Used to make POST experiments idempotent
-      schema:
-        type: string
+    - $ref: ../components/parameters.yaml#/IdempotencyKey
     requestBody:
       required: true
       content:
@@ -69,6 +84,67 @@ collection:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/Experiment
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      409:
+        description: >
+          Idempotency-Key reused with another body or path (text/plain "Conflict"), or an experiment
+          with the same name already exists in the project (JSON Error).
+        content:
+          text/plain:
+            schema:
+              type: string
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+      503:
+        $ref: ../components/responses.yaml#/IdempotencyInProgress
+search:
+  get:
+    tags:
+    - experiments
+    summary: Search experiments
+    description: Case-insensitive search in name and description, newest first.
+    operationId: searchExperiments
+    parameters:
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    - name: q
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      description: Search query (searches in name and description). Whitespace-only counts as missing.
+    - name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    - name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    responses:
+      200:
+        description: Experiment search results
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ExperimentListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
 item:
   get:
     tags:
@@ -77,6 +153,7 @@ item:
     operationId: getExperiment
     parameters:
     - $ref: ../components/parameters.yaml#/ExperimentId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
       200:
         description: Experiment
@@ -84,13 +161,25 @@ item:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/Experiment
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
   patch:
     tags:
     - experiments
     summary: Update experiment
+    description: >
+      Partial update. A status change must be an allowed transition (400 otherwise). A body with no
+      non-null fields currently fails with 500.
     operationId: updateExperiment
     parameters:
     - $ref: ../components/parameters.yaml#/ExperimentId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
     requestBody:
       required: true
       content:
@@ -104,207 +193,62 @@ item:
           application/json:
             schema:
               $ref: ../components/schemas.yaml#/Experiment
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      500:
+        $ref: ../components/responses.yaml#/InternalError
   delete:
     tags:
     - experiments
     summary: Delete experiment
+    description: Refused with 400 while the experiment has a run in running status.
     operationId: deleteExperiment
     parameters:
     - $ref: ../components/parameters.yaml#/ExperimentId
+    - $ref: ../components/parameters.yaml#/ProjectIdQuery
     responses:
-      200:
+      204:
         description: Deleted
-search:
-  get:
-    tags:
-    - experiments
-    summary: Search experiments
-    operationId: searchExperiments
-    parameters:
-    - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    - name: q
-      in: query
-      required: true
-      schema:
-        type: string
-      description: Search query (searches in name and description)
-    - name: limit
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 50
-    - name: offset
-      in: query
-      schema:
-        type: integer
-        minimum: 0
-    - name: page
-      in: query
-      schema:
-        type: integer
-        default: 1
-    - name: page_size
-      in: query
-      schema:
-        type: integer
-        default: 50
-    responses:
-      200:
-        description: Experiment search results
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/ExperimentListResponse
       400:
-        description: Bad request (missing query parameter)
-compare:
-  get:
-    tags:
-    - metrics
-    - experiments
-    summary: Compare metrics across runs (GET)
-    operationId: compareRunMetricsGet
-    parameters:
-    - $ref: ../components/parameters.yaml#/ExperimentId
-    - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    - name: run_ids
-      in: query
-      required: true
-      schema:
-        type: string
-      description: Comma-separated run UUIDs (2-10)
-    - name: names
-      in: query
-      required: true
-      schema:
-        type: string
-      description: Comma-separated metric names (1-20)
-    - name: from_step
-      in: query
-      schema:
-        type: integer
-    - name: to_step
-      in: query
-      schema:
-        type: integer
-    - name: max_points
-      in: query
-      schema:
-        type: integer
-        minimum: 100
-        maximum: 2000
-        default: 500
-    responses:
-      200:
-        description: Comparison data
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/ComparisonResponse
-      400:
-        description: Validation error (too many runs, missing params)
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
       404:
-        description: Experiment or runs not found
-  post:
-    tags:
-    - metrics
-    - experiments
-    summary: Compare metrics across runs (POST)
-    operationId: compareRunMetrics
-    parameters:
-    - $ref: ../components/parameters.yaml#/ExperimentId
-    - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: ../components/schemas.yaml#/ComparisonRequest
-    responses:
-      200:
-        description: Comparison data
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/ComparisonResponse
-      400:
-        description: Validation error
-      404:
-        description: Experiment or runs not found
+        $ref: ../components/responses.yaml#/NotFound
 archive:
   post:
     tags:
     - experiments
     summary: Archive experiment
+    description: >
+      Sets status=archived and archived_at=now. Allowed from draft, succeeded and failed; archiving an
+      archived experiment is a no-op that returns 200. No request body is read.
     operationId: archiveExperiment
     parameters:
     - $ref: ../components/parameters.yaml#/ExperimentId
-    responses:
-      200:
-        description: Archived
-export:
-  get:
-    tags:
-    - experiments
-    summary: Export full experiment as ZIP
-    operationId: exportExperimentZip
-    parameters:
-    - $ref: ../components/parameters.yaml#/ExperimentId
     - $ref: ../components/parameters.yaml#/ProjectIdQuery
-    - name: format
-      in: query
-      schema:
-        type: string
-        enum: [zip]
-        default: zip
     responses:
       200:
-        description: ZIP archive containing experiment data
+        description: Archived experiment
         content:
-          application/zip:
+          application/json:
             schema:
-              type: string
-              format: binary
+              $ref: ../components/schemas.yaml#/Experiment
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
       404:
-        description: Experiment not found
-runs:
-  get:
-    tags:
-    - runs
-    summary: List runs
-    operationId: listRuns
-    parameters:
-    - $ref: ../components/parameters.yaml#/ExperimentId
-    - name: status
-      in: query
-      schema:
-        $ref: ../components/schemas.yaml#/RunStatus
-    responses:
-      200:
-        description: Runs
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/RunListResponse
-  post:
-    tags:
-    - runs
-    summary: Create run
-    operationId: createRun
-    parameters:
-    - $ref: ../components/parameters.yaml#/ExperimentId
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: ../components/schemas.yaml#/RunCreate
-    responses:
-      201:
-        description: Run created
-        content:
-          application/json:
-            schema:
-              $ref: ../components/schemas.yaml#/Run
+        $ref: ../components/responses.yaml#/NotFound
+      409:
+        $ref: ../components/responses.yaml#/ServiceConflict

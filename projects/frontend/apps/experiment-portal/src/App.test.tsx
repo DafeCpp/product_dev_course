@@ -69,6 +69,9 @@ describe('App', () => {
             username: 'testuser',
             email: 'test@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
@@ -85,6 +88,9 @@ describe('App', () => {
             username: 'testuser',
             email: 'test@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
@@ -101,6 +107,9 @@ describe('App', () => {
             username: 'testuser',
             email: 'test@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
@@ -117,6 +126,9 @@ describe('App', () => {
             username: 'testuser',
             email: 'test@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
@@ -133,6 +145,9 @@ describe('App', () => {
             username: 'testuser',
             email: 'test@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
@@ -149,6 +164,9 @@ describe('App', () => {
             username: 'testuser',
             email: 'test@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
@@ -165,6 +183,9 @@ describe('App', () => {
             username: 'testuser',
             email: 'test@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 

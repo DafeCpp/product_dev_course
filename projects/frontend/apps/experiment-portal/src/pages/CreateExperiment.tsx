@@ -97,7 +97,7 @@ function CreateExperiment() {
             <>
               <MaterialSelect
                 id="create_experiment_project_id"
-                value={formData.project_id}
+                value={formData.project_id ?? ''}
                 onChange={(id) => {
                   setFormData({ ...formData, project_id: id })
                   if (id) setActiveProjectId(id)

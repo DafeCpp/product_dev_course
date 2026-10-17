@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createMockProjectMember } from '../testUtils/factories'
 import ProjectModal from './ProjectModal'
 import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
@@ -86,14 +87,17 @@ describe('ProjectModal', () => {
             username: 'viewer',
             email: 'viewer@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
         const mockProjectsApi = vi.mocked(projectsApi)
         mockProjectsApi.get.mockResolvedValue(mockProject as any)
         mockProjectsApi.listMembers.mockResolvedValue({
-            members: [{ project_id: projectId, user_id: 'viewer-1', role: 'viewer', created_at: '2024-01-01T00:00:00Z' }],
-        } as any)
+            members: [createMockProjectMember({ project_id: projectId, user_id: 'viewer-1', roles: ['viewer'] })],
+        })
 
         render(<ProjectModal isOpen={true} onClose={mockOnClose} mode="view" projectId={projectId} />, {
             wrapper: createWrapper(),
@@ -114,14 +118,17 @@ describe('ProjectModal', () => {
             username: 'owner',
             email: 'owner@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
         const mockProjectsApi = vi.mocked(projectsApi)
         mockProjectsApi.get.mockResolvedValue(mockProject as any)
         mockProjectsApi.listMembers.mockResolvedValue({
-            members: [{ project_id: projectId, user_id: 'owner-1', role: 'owner', created_at: '2024-01-01T00:00:00Z' }],
-        } as any)
+            members: [createMockProjectMember({ project_id: projectId, user_id: 'owner-1', roles: ['owner'] })],
+        })
         mockProjectsApi.update.mockResolvedValue({
             ...mockProject,
             name: 'Project Updated',
@@ -155,14 +162,17 @@ describe('ProjectModal', () => {
             username: 'editor',
             email: 'editor@example.com',
             is_active: true,
+            is_admin: false,
+            system_roles: [],
+            password_change_required: false,
             created_at: '2024-01-01T00:00:00Z',
         })
 
         const mockProjectsApi = vi.mocked(projectsApi)
         mockProjectsApi.get.mockResolvedValue(mockProject as any)
         mockProjectsApi.listMembers.mockResolvedValue({
-            members: [{ project_id: projectId, user_id: 'editor-1', role: 'editor', created_at: '2024-01-01T00:00:00Z' }],
-        } as any)
+            members: [createMockProjectMember({ project_id: projectId, user_id: 'editor-1', roles: ['editor'] })],
+        })
         mockProjectsApi.update.mockResolvedValue({
             ...mockProject,
             description: 'New desc',

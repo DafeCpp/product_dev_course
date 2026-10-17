@@ -70,8 +70,13 @@ const mockDelivery = {
     event_type: 'run.started',
     target_url: 'https://example.com/hook',
     secret: null,
-    request_body: {},
-    status: 'delivered',
+    request_body: {
+        event_type: 'run.started',
+        project_id: 'proj-1',
+        occurred_at: '2024-01-15T10:30:00Z',
+        payload: {},
+    },
+    status: 'succeeded' as const,
     attempt_count: 1,
     last_error: null,
     dedup_key: null,
@@ -253,7 +258,7 @@ describe('Webhooks', () => {
 
         // Delivery event type should appear in the table
         expect(await screen.findByText('run.started')).toBeInTheDocument()
-        expect(screen.getByText('delivered')).toBeInTheDocument()
+        expect(screen.getByText('succeeded')).toBeInTheDocument()
 
         // Change status filter
         const select = screen.getByLabelText(/статус:/i)
@@ -276,7 +281,7 @@ describe('Webhooks', () => {
         const failedDelivery = {
             ...mockDelivery,
             id: 'del-2',
-            status: 'failed',
+            status: 'failed' as const,
             last_error: 'Connection refused',
         }
         vi.mocked(webhooksApi.list).mockResolvedValue(emptySubscriptions)

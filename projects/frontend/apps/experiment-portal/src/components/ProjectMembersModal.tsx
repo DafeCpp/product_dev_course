@@ -1,3 +1,4 @@
+import { getMemberBuiltinRole } from '../utils/projectRole'
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
@@ -114,7 +115,7 @@ function ProjectMembersModal({ isOpen, onClose, projectId, projectOwnerId }: Pro
 
             if (!isProjectOwner && membersData?.members) {
                 const member = membersData.members.find((m) => m.user_id === currentUser.id)
-                if (member?.role === 'owner') {
+                if (member && getMemberBuiltinRole(member) === 'owner') {
                     setIsOwner(true)
                 }
             }

@@ -2,6 +2,7 @@ import Chip from '@mui/material/Chip'
 import type { ProjectMember } from '../../types'
 import type { Role } from '../../types/permissions'
 import { MaterialSelect } from '../common'
+import { getMemberBuiltinRole } from '../../utils/projectRole'
 
 interface MembersTableProps {
     members: ProjectMember[]
@@ -55,7 +56,8 @@ function MembersTable({
                         const isMemberOwner = member.user_id === projectOwnerId
                         const canEdit = isOwner && !isMemberOwner
 
-                        const legacyRoleLabel = getRoleLabel(member.role)
+                        const builtinRole = getMemberBuiltinRole(member) ?? 'viewer'
+                        const roleLabel = member.roles.length > 0 ? member.roles.map(getRoleLabel).join(', ') : getRoleLabel(builtinRole)
 
                         return (
                             <tr key={member.user_id}>
@@ -75,7 +77,7 @@ function MembersTable({
                                         {canEdit ? (
                                             <MaterialSelect
                                                 id={`member_role_${member.user_id}`}
-                                                value={member.role}
+                                                value={builtinRole}
                                                 onChange={(value) =>
                                                     onRoleChange(
                                                         member.user_id,
@@ -91,7 +93,7 @@ function MembersTable({
                                             </MaterialSelect>
                                         ) : (
                                             <Chip
-                                                label={legacyRoleLabel}
+                                                label={roleLabel}
                                                 size="small"
                                                 variant="outlined"
                                             />
@@ -111,7 +113,7 @@ function MembersTable({
                                                                 userId: member.user_id,
                                                                 username: member.username || member.user_id,
                                                                 assignedRoleIds: projectRoles
-                                                                    .filter((r) => r.name === member.role)
+                                                                    .filter((r) => member.roles.some((name) => name.toLowerCase() === r.name.toLowerCase()))
                                                                     .map((r) => r.id),
                                                             })
                                                         }

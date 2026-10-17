@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CreateExperimentModal from '../components/CreateExperimentModal'
 import { experimentsApi, projectsApi } from '../api/client'
+import { createMockExperiment } from '../testUtils/factories'
 import { pickMaterialSelectOption } from '../testUtils/materialSelect'
 
 // Мокаем API
@@ -101,7 +102,7 @@ describe('CreateExperimentModal', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(experimentsApi.create)
 
-        const createdExperiment = {
+        const createdExperiment = createMockExperiment({
             id: 'exp-123',
             project_id: 'project-1',
             name: 'New Experiment',
@@ -112,7 +113,7 @@ describe('CreateExperimentModal', () => {
             owner_id: 'user-1',
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
-        }
+        })
 
         mockCreate.mockResolvedValueOnce(createdExperiment)
 
@@ -145,7 +146,7 @@ describe('CreateExperimentModal', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(experimentsApi.create)
 
-        mockCreate.mockResolvedValueOnce({
+        mockCreate.mockResolvedValueOnce(createMockExperiment({
             id: 'exp-123',
             project_id: 'project-1',
             name: 'New Experiment',
@@ -155,7 +156,7 @@ describe('CreateExperimentModal', () => {
             owner_id: 'user-1',
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
-        })
+        }))
 
         render(<CreateExperimentModal isOpen={true} onClose={vi.fn()} />, { wrapper: createWrapper() })
 
@@ -182,7 +183,7 @@ describe('CreateExperimentModal', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(experimentsApi.create)
 
-        mockCreate.mockResolvedValueOnce({
+        mockCreate.mockResolvedValueOnce(createMockExperiment({
             id: 'exp-123',
             project_id: 'project-1',
             name: 'New Experiment',
@@ -192,7 +193,7 @@ describe('CreateExperimentModal', () => {
             owner_id: 'user-1',
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
-        })
+        }))
 
         render(<CreateExperimentModal isOpen={true} onClose={vi.fn()} />, { wrapper: createWrapper() })
 
@@ -372,7 +373,7 @@ describe('CreateExperimentModal', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(experimentsApi.create)
 
-        mockCreate.mockResolvedValueOnce({
+        mockCreate.mockResolvedValueOnce(createMockExperiment({
             id: 'exp-123',
             project_id: 'project-1',
             name: 'New Experiment',
@@ -383,7 +384,7 @@ describe('CreateExperimentModal', () => {
             owner_id: 'user-1',
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
-        })
+        }))
 
         render(<CreateExperimentModal isOpen={true} onClose={vi.fn()} />, { wrapper: createWrapper() })
 
@@ -411,7 +412,7 @@ describe('CreateExperimentModal', () => {
         const user = userEvent.setup()
         const mockCreate = vi.mocked(experimentsApi.create)
 
-        mockCreate.mockResolvedValueOnce({
+        mockCreate.mockResolvedValueOnce(createMockExperiment({
             id: 'exp-123',
             project_id: 'project-1',
             name: 'New Experiment',
@@ -421,7 +422,7 @@ describe('CreateExperimentModal', () => {
             owner_id: 'user-1',
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
-        })
+        }))
 
         render(<CreateExperimentModal isOpen={true} onClose={vi.fn()} />, { wrapper: createWrapper() })
 

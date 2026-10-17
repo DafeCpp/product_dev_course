@@ -4,7 +4,7 @@ import type {
   ProjectCreate,
   ProjectUpdate,
   ProjectsListResponse,
-  ProjectMember,
+  ProjectRoleAssignment,
   ProjectMemberAdd,
   ProjectMemberUpdate,
   ProjectMembersListResponse,
@@ -49,8 +49,8 @@ export const projectsApi = {
     return response.data
   },
 
-  addMember: async (projectId: string, data: ProjectMemberAdd): Promise<ProjectMember> => {
-    const response = await projectsClient.post<ProjectMember>(
+  addMember: async (projectId: string, data: ProjectMemberAdd): Promise<ProjectRoleAssignment> => {
+    const response = await projectsClient.post<ProjectRoleAssignment>(
       `/api/v1/projects/${projectId}/members`,
       data
     )
@@ -65,8 +65,8 @@ export const projectsApi = {
     projectId: string,
     userId: string,
     data: ProjectMemberUpdate
-  ): Promise<ProjectMember> => {
-    const response = await projectsClient.put<ProjectMember>(
+  ): Promise<ProjectRoleAssignment> => {
+    const response = await projectsClient.put<ProjectRoleAssignment>(
       `/api/v1/projects/${projectId}/members/${userId}/role`,
       data
     )

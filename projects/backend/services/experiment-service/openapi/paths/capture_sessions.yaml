@@ -1,0 +1,247 @@
+captureSessions:
+  get:
+    tags: [capture_sessions]
+    summary: List capture sessions
+    description: Capture sessions of the run ordered by ordinal_number. limit/offset are clamped (limit 1-100, default 50).
+    operationId: listCaptureSessions
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+    responses:
+      200:
+        description: Capture session list
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CaptureSessionListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+  post:
+    tags: [capture_sessions]
+    summary: Start capture session
+    description: >
+      run_id comes from the path and project_id from ?project_id or X-Project-Id (body values are
+      overwritten). Defaults: status=running, started_at=now, initiated_by=calling user. Refused with
+      400 when the run is succeeded/failed/archived, when the project already has an active capture
+      session, or when the initial status is not reachable from draft. Records a
+      capture_session.created event and emits the matching webhook.
+    operationId: createCaptureSession
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - $ref: ../components/parameters.yaml#/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/CaptureSessionCreate
+    responses:
+      201:
+        description: Capture session created
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CaptureSession
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      409:
+        description: >
+          Idempotency-Key reused with another body or path (text/plain "Conflict"), or a capture
+          session with this ordinal_number already exists for the run (JSON Error).
+        content:
+          text/plain:
+            schema:
+              type: string
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+      503:
+        $ref: ../components/responses.yaml#/IdempotencyInProgress
+
+captureSessionStop:
+  post:
+    tags: [capture_sessions]
+    summary: Stop capture session
+    description: >
+      Moves the session to `status` (default succeeded) and sets stopped_at (default now). An invalid
+      transition is reported by the error middleware as 409 JSON. The session is looked up by project
+      only; it is not checked to belong to run_id. A stopped_at that is not a valid date-time
+      currently fails with 500. Records a capture_session.stopped event and emits the matching webhook.
+    operationId: stopCaptureSession
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/CaptureSessionStopRequest
+    responses:
+      200:
+        description: Stopped capture session
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CaptureSession
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      409:
+        $ref: ../components/responses.yaml#/ServiceConflict
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+
+captureSessionItem:
+  delete:
+    tags: [capture_sessions]
+    summary: Delete capture session
+    description: Refused with 400 while the session is running or backfilling.
+    operationId: deleteCaptureSession
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      204:
+        description: Deleted
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+captureSessionEvents:
+  get:
+    tags: [capture_sessions]
+    summary: List capture session audit events
+    description: >
+      Oldest first. 404 when the run or session is not in the project, or the session belongs to
+      another run. limit/offset are clamped (limit 1-100, default 50).
+    operationId: listCaptureSessionEvents
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+    responses:
+      200:
+        description: Capture session events
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CaptureSessionEventListResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+captureSessionBackfillStart:
+  post:
+    tags: [capture_sessions]
+    summary: Start backfill for a capture session
+    description: >
+      Moves a succeeded session to backfilling; while backfilling, telemetry-ingest-service treats
+      incoming readings for it as normal rather than late. No request body is read. 400 when the
+      session is not in succeeded (or already backfilling). Records a capture_session.backfill_started
+      event and emits the matching webhook.
+    operationId: startCaptureSessionBackfill
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      200:
+        description: Capture session in backfilling status
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CaptureSession
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+captureSessionBackfillComplete:
+  post:
+    tags: [capture_sessions]
+    summary: Complete backfill for a capture session
+    description: >
+      Attaches late telemetry rows recorded for this session and moves it back to succeeded. No request
+      body is read. 400 when the session is not backfilling. Records a
+      capture_session.backfill_completed event and emits the matching webhook.
+    operationId: completeCaptureSessionBackfill
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/SessionId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    responses:
+      200:
+        description: Capture session back in succeeded status, with the attached row count
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CaptureSessionBackfillCompleteResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound

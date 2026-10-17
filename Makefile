@@ -299,6 +299,7 @@ generate-sdk:
 			-g cpp-restsdk \
 			-o clients/cpp-restsdk \
 			-c openapi/clients/cpp-restsdk-config.yaml
+	@npm --prefix projects/frontend/apps/experiment-portal run generate:types
 
 # ============================================
 # Логирование

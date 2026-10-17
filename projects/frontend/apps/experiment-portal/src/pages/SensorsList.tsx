@@ -138,7 +138,7 @@ function SensorsList() {
               <option value="registering">Регистрация</option>
               <option value="active">Активен</option>
               <option value="inactive">Неактивен</option>
-              <option value="archived">Архивирован</option>
+              <option value="decommissioned">Выведен из эксплуатации</option>
             </MaterialSelect>
           </div>
 

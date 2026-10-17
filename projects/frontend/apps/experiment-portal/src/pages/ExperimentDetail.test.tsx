@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ExperimentDetail from './ExperimentDetail'
 import { experimentsApi } from '../api/client'
+import { createMockExperiment } from '../testUtils/factories'
 
 // Мокаем experimentsApi
 vi.mock('../api/client', () => ({
@@ -47,7 +48,7 @@ const createWrapper = () => {
     )
 }
 
-const mockExperiment = {
+const mockExperiment = createMockExperiment({
     id: 'exp-123',
     project_id: 'project-1',
     name: 'Test Experiment',
@@ -59,7 +60,7 @@ const mockExperiment = {
     owner_id: 'user-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-02T00:00:00Z',
-}
+})
 
 describe('ExperimentDetail', () => {
     beforeEach(() => {
@@ -251,7 +252,7 @@ describe('ExperimentDetail', () => {
         const mockGet = vi.mocked(experimentsApi.get)
         mockGet.mockResolvedValueOnce({
             ...mockExperiment,
-            description: undefined,
+            description: null,
         })
 
         render(<ExperimentDetail />, { wrapper: createWrapper() })

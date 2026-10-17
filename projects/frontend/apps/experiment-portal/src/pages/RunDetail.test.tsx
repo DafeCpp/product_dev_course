@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import RunDetail from './RunDetail'
 import { runsApi, experimentsApi, captureSessionsApi } from '../api/client'
+import { createMockRun, createMockExperiment, createMockCaptureSession } from '../testUtils/factories'
 
 // Мокаем API клиенты
 vi.mock('../api/client', () => ({
@@ -47,23 +48,23 @@ const createWrapper = () => {
     )
 }
 
-const mockRun = {
+const mockRun = createMockRun({
     id: 'run-123',
     experiment_id: 'exp-123',
     name: 'Test Run',
     params: { param1: 'value1', param2: 'value2' },
     status: 'running' as const,
     started_at: '2024-01-01T10:00:00Z',
-    finished_at: undefined,
+    finished_at: null,
     duration_seconds: 3600,
     notes: 'Test notes',
     metadata: { key: 'value' },
     auto_complete_after_minutes: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T12:00:00Z',
-}
+})
 
-const mockExperiment = {
+const mockExperiment = createMockExperiment({
     id: 'exp-123',
     project_id: 'project-123',
     name: 'Test Experiment',
@@ -75,9 +76,9 @@ const mockExperiment = {
     metadata: {},
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
-}
+})
 
-const mockCaptureSession = {
+const mockCaptureSession = createMockCaptureSession({
     id: 'session-123',
     run_id: 'run-123',
     project_id: 'project-123',
@@ -90,7 +91,7 @@ const mockCaptureSession = {
     archived: false,
     created_at: '2024-01-01T10:00:00Z',
     updated_at: '2024-01-01T10:00:00Z',
-}
+})
 
 describe('RunDetail', () => {
     beforeEach(() => {
@@ -104,6 +105,8 @@ describe('RunDetail', () => {
         vi.mocked(captureSessionsApi.list).mockResolvedValue({
             capture_sessions: [],
             total: 0,
+            page: 1,
+            page_size: 20,
         })
     })
 
@@ -208,7 +211,7 @@ describe('RunDetail', () => {
         const mockGet = vi.mocked(runsApi.get)
         mockGet.mockResolvedValueOnce({
             ...mockRun,
-            duration_seconds: undefined,
+            duration_seconds: null,
         })
 
         render(<RunDetail />, { wrapper: createWrapper() })
@@ -373,7 +376,7 @@ describe('RunDetail', () => {
         const mockGet = vi.mocked(runsApi.get)
         mockGet.mockResolvedValueOnce({
             ...mockRun,
-            notes: undefined,
+            notes: null,
         })
 
         render(<RunDetail />, { wrapper: createWrapper() })
@@ -486,6 +489,8 @@ describe('RunDetail', () => {
             mockList.mockResolvedValueOnce({
                 capture_sessions: [mockCaptureSession],
                 total: 1,
+                page: 1,
+                page_size: 20,
             })
 
             render(<RunDetail />, { wrapper: createWrapper() })
@@ -505,6 +510,8 @@ describe('RunDetail', () => {
             mockList.mockResolvedValueOnce({
                 capture_sessions: [mockCaptureSession],
                 total: 1,
+                page: 1,
+                page_size: 20,
             })
             mockStop.mockResolvedValueOnce({
                 ...mockCaptureSession,
@@ -535,6 +542,8 @@ describe('RunDetail', () => {
             mockList.mockResolvedValueOnce({
                 capture_sessions: [mockCaptureSession],
                 total: 1,
+                page: 1,
+                page_size: 20,
             })
 
             render(<RunDetail />, { wrapper: createWrapper() })
@@ -574,6 +583,8 @@ describe('RunDetail', () => {
             mockList.mockResolvedValueOnce({
                 capture_sessions: [completedSession],
                 total: 1,
+                page: 1,
+                page_size: 20,
             })
 
             render(<RunDetail />, { wrapper: createWrapper() })

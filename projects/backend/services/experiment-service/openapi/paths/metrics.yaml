@@ -1,0 +1,331 @@
+metrics:
+  post:
+    tags: [metrics]
+    summary: Ingest metrics
+    description: Stores up to 10000 points per request; more is rejected with 400.
+    operationId: ingestMetrics
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/MetricIngestRequest
+    responses:
+      202:
+        description: Accepted
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/MetricIngestResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+  get:
+    tags: [metrics]
+    summary: Query metrics
+    description: >
+      Raw metric points grouped into one series per metric name. limit/offset apply to points
+      across all series; total counts all matching points.
+    operationId: queryMetrics
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: name
+        in: query
+        description: Single metric name.
+        schema:
+          type: string
+      - name: names
+        in: query
+        description: Comma-separated metric names.
+        schema:
+          type: string
+      - name: from_step
+        in: query
+        schema:
+          type: integer
+      - name: to_step
+        in: query
+        schema:
+          type: integer
+      - name: order
+        in: query
+        description: Step order.
+        schema:
+          type: string
+          enum: [asc, desc]
+          default: asc
+      - name: limit
+        in: query
+        description: Values above 10000 are clamped to 10000.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          default: 1000
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+    responses:
+      200:
+        description: Metrics
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/MetricQueryResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+metricsSummary:
+  get:
+    tags: [metrics]
+    summary: Get metrics summary (last value, min/avg/max per metric)
+    operationId: getMetricsSummary
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: names
+        in: query
+        schema:
+          type: string
+        description: Comma-separated metric names; all metrics of the run when omitted.
+    responses:
+      200:
+        description: Summary
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/MetricSummaryResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+metricsAggregations:
+  get:
+    tags: [metrics]
+    summary: Get step-bucketed aggregations for selected metrics
+    description: >
+      Always returns min, avg, max and count per bucket. When bucket_size is omitted it is
+      (to_step - from_step) / 300 (at least 1) if both bounds are given and to_step > from_step,
+      otherwise 1.
+    operationId: getMetricsAggregations
+    parameters:
+      - $ref: ../components/parameters.yaml#/RunId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: names
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Comma-separated metric names
+      - name: from_step
+        in: query
+        schema:
+          type: integer
+      - name: to_step
+        in: query
+        schema:
+          type: integer
+      - name: bucket_size
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      200:
+        description: Aggregated metrics
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/MetricAggregationsResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+
+compare:
+  get:
+    tags: [metrics, experiments]
+    summary: Compare metrics across runs (GET)
+    description: >
+      Shareable-URL variant of the POST. Duplicate run ids are collapsed; after that 2-10 runs and
+      1-20 metric names are allowed (400 otherwise). 404 when any run is not in the experiment
+      (including when the experiment itself does not exist). Series are downsampled into step buckets
+      when a series has more than max_points points.
+    operationId: compareRunMetricsGet
+    parameters:
+      - $ref: ../components/parameters.yaml#/ExperimentId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: run_ids
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Comma-separated run UUIDs (2-10)
+      - name: names
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Comma-separated metric names (1-20)
+      - name: from_step
+        in: query
+        schema:
+          type: integer
+      - name: to_step
+        in: query
+        schema:
+          type: integer
+      - name: max_points
+        in: query
+        description: Clamped into 100-2000 rather than rejected.
+        schema:
+          type: integer
+          minimum: 100
+          maximum: 2000
+          default: 500
+    responses:
+      200:
+        description: Comparison data
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ComparisonResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+  post:
+    tags: [metrics, experiments]
+    summary: Compare metrics across runs (POST)
+    description: >
+      Same rules as the GET. max_points_per_series is clamped into 100-2000. A from_step or to_step
+      that is not an integer currently fails with 500.
+    operationId: compareRunMetrics
+    parameters:
+      - $ref: ../components/parameters.yaml#/ExperimentId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ComparisonRequest
+    responses:
+      200:
+        description: Comparison data
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ComparisonResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
+      500:
+        $ref: ../components/responses.yaml#/InternalError
+
+compareExport:
+  get:
+    tags: [metrics, experiments]
+    summary: Export comparison data as CSV or JSON
+    description: >
+      Same data and validation as GET compare, served as an attachment named
+      comparison_{experiment_id}.csv or .json. CSV has one row per series point with header
+      run_id,run_name,metric_name,step,value. max_points is clamped into 100-10000.
+    operationId: exportComparison
+    parameters:
+      - $ref: ../components/parameters.yaml#/ExperimentId
+      - $ref: ../components/parameters.yaml#/ProjectIdQuery
+      - name: format
+        in: query
+        description: Case-insensitive.
+        schema:
+          type: string
+          enum: [csv, json]
+          default: csv
+      - name: run_ids
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Comma-separated run UUIDs (2-10)
+      - name: names
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Comma-separated metric names (1-20)
+      - name: from_step
+        in: query
+        schema:
+          type: integer
+      - name: to_step
+        in: query
+        schema:
+          type: integer
+      - name: max_points
+        in: query
+        description: Clamped into 100-10000 rather than rejected.
+        schema:
+          type: integer
+          minimum: 100
+          maximum: 10000
+          default: 500
+    responses:
+      200:
+        description: Comparison file
+        headers:
+          Content-Disposition:
+            schema:
+              type: string
+            description: attachment; filename="comparison_{experiment_id}.{csv|json}"
+        content:
+          text/csv:
+            schema:
+              type: string
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ComparisonResponse
+      400:
+        $ref: ../components/responses.yaml#/BadRequest
+      401:
+        $ref: ../components/responses.yaml#/Unauthorized
+      403:
+        $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
