@@ -1,7 +1,6 @@
 /** Metrics API */
 import type {
   RunMetricsResponse,
-  RunMetricsListResponse,
   MetricSummaryResponse,
   MetricAggregationsResponse,
 } from '../types'
@@ -39,7 +38,7 @@ export const metricsApi = {
       limit?: number
       offset?: number
     }
-  ): Promise<RunMetricsListResponse> => {
+  ): Promise<RunMetricsResponse> => {
     return await apiGet(`/api/v1/runs/${runId}/metrics`, { params })
   },
 

@@ -60,7 +60,7 @@ function CreateProject() {
 
                 <FormGroup label="Описание">
                     <textarea
-                        value={formData.description}
+                        value={formData.description ?? ''}
                         onChange={(e) =>
                             setFormData({ ...formData, description: e.target.value })
                         }

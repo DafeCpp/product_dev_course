@@ -6,6 +6,7 @@ import ProjectMembersModal from './ProjectMembersModal'
 import { projectsApi, usersApi } from '../api/client'
 import { authApi } from '../api/auth'
 import { permissionsApi } from '../api/permissions'
+import { createMockProjectMember, createMockUser } from '../testUtils/factories'
 import { HttpError } from '@lostpointer/web-http'
 
 vi.mock('../api/client', () => ({
@@ -57,36 +58,16 @@ describe('ProjectMembersModal', () => {
     const currentUserId = 'owner-1'
 
     const mockMembers = [
-        {
-            project_id: projectId,
-            user_id: 'owner-1',
-            role: 'owner' as const,
-            created_at: '2024-01-01T00:00:00Z',
-            username: 'owner',
-        },
-        {
-            project_id: projectId,
-            user_id: 'editor-1',
-            role: 'editor' as const,
-            created_at: '2024-01-02T00:00:00Z',
-            username: 'editor',
-        },
-        {
-            project_id: projectId,
-            user_id: 'viewer-1',
-            role: 'viewer' as const,
-            created_at: '2024-01-03T00:00:00Z',
-            username: 'viewer',
-        },
+        createMockProjectMember({ project_id: projectId, user_id: 'owner-1', roles: ['owner'], granted_at: '2024-01-01T00:00:00Z', username: 'owner' }),
+        createMockProjectMember({ project_id: projectId, user_id: 'editor-1', roles: ['editor'], granted_at: '2024-01-02T00:00:00Z', username: 'editor' }),
+        createMockProjectMember({ project_id: projectId, user_id: 'viewer-1', roles: ['viewer'], granted_at: '2024-01-03T00:00:00Z', username: 'viewer' }),
     ]
 
-    const mockCurrentUser = {
+    const mockCurrentUser = createMockUser({
         id: currentUserId,
         username: 'owner',
         email: 'owner@example.com',
-        is_active: true,
-        created_at: '2024-01-01T00:00:00Z',
-    }
+    })
 
     const mockProjectRoles = [
         {
@@ -315,12 +296,14 @@ describe('ProjectMembersModal', () => {
             users: [{ id: 'new-user-1', username: 'newuser', email: 'new@example.com' }],
         })
 
-        vi.mocked(projectsApi).addMember.mockResolvedValueOnce({
-            project_id: projectId,
-            user_id: 'new-user-1',
-            role: 'viewer' as const,
-            created_at: '2024-01-04T00:00:00Z',
-        })
+        vi.mocked(projectsApi).addMember.mockResolvedValueOnce(
+            createMockProjectMember({
+                project_id: projectId,
+                user_id: 'new-user-1',
+                roles: ['viewer'],
+                granted_at: '2024-01-04T00:00:00Z',
+            })
+        )
 
         render(
             <ProjectMembersModal
@@ -358,12 +341,12 @@ describe('ProjectMembersModal', () => {
 
     it('updates member role successfully', async () => {
         const user = userEvent.setup()
-        const updatedMember = {
+        const updatedMember = createMockProjectMember({
             project_id: projectId,
             user_id: 'editor-1',
-            role: 'owner' as const,
-            created_at: '2024-01-02T00:00:00Z',
-        }
+            roles: ['owner'],
+            granted_at: '2024-01-02T00:00:00Z',
+        })
         vi.mocked(projectsApi).updateMemberRole.mockResolvedValueOnce(updatedMember)
 
         render(

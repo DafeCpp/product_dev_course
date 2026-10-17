@@ -1,3 +1,4 @@
+import { getMemberBuiltinRole } from '../utils/projectRole'
 import { useQuery, useQueries } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { projectsApi } from '../api/client'
@@ -141,7 +142,7 @@ function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                                                                 (m) => m.user_id === user.id
                                                             )
                                                             if (member) {
-                                                                role = member.role
+                                                                role = getMemberBuiltinRole(member) ?? 'viewer'
                                                             }
                                                         }
                                                     }

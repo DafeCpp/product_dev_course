@@ -1,121 +1,41 @@
-/** Типы для экспериментов и runs */
+/**
+ * Типы API. Модели experiment-service и auth-service берутся из сгенерированных
+ * `generated/*.ts` (`npm run generate:types`, CI проверяет актуальность), поэтому
+ * здесь только алиасы под привычные имена и типы, которых нет в спеках.
+ */
+import type { components as ExperimentApi } from './generated/experiment-service'
+import type { components as AuthApi } from './generated/auth-service'
 import type { UserProjectRole } from './permissions'
 export type { UserProjectRole }
 
-export interface Experiment {
-  id: string
-  project_id: string
-  name: string
-  description?: string
-  experiment_type?: string
-  owner_id: string
-  status: 'draft' | 'running' | 'succeeded' | 'failed' | 'archived'
-  tags: string[]
-  metadata: Record<string, any>
-  created_at: string
-  updated_at: string
-}
+type Es = ExperimentApi['schemas']
+type As = AuthApi['schemas']
 
-export interface Run {
-  id: string
-  experiment_id: string
-  name: string
-  params: Record<string, any>
-  status: 'draft' | 'running' | 'succeeded' | 'failed' | 'archived'
-  tags?: string[]
-  started_at?: string
-  finished_at?: string
-  duration_seconds?: number
-  notes?: string
-  metadata: Record<string, any>
-  auto_complete_after_minutes: number | null
-  created_at: string
-  updated_at: string
-}
+/** Типы для экспериментов и runs */
 
-export interface RunSensor {
-  run_id: string
-  sensor_id: string
-  project_id: string
-  mode: string
-  attached_at: string
-  detached_at: string | null
-  created_by: string
-}
+export type Experiment = Es['Experiment']
+export type ExperimentCreate = Es['ExperimentCreate']
+export type ExperimentUpdate = Es['ExperimentUpdate']
+export type ExperimentsListResponse = Es['ExperimentListResponse']
 
-export interface ExperimentCreate {
-  project_id: string
-  name: string
-  description?: string
-  experiment_type?: string
-  tags?: string[]
-  metadata?: Record<string, any>
-}
-
-export interface ExperimentUpdate {
-  name?: string
-  description?: string
-  experiment_type?: string
-  tags?: string[]
-  metadata?: Record<string, any>
-  status?: string
-}
-
-export interface RunCreate {
-  name: string
-  params: Record<string, any>
-  notes?: string
-  metadata?: Record<string, any>
-  auto_complete_after_minutes?: number | null
-}
-
-export interface RunUpdate {
-  name?: string
-  params?: Record<string, any>
-  notes?: string
-  metadata?: Record<string, any>
-  status?: string
-}
-
-export interface ExperimentsListResponse {
-  experiments: Experiment[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface RunsListResponse {
-  runs: Run[]
-  total: number
-  page: number
-  page_size: number
-}
+export type Run = Es['Run']
+export type RunCreate = Es['RunCreate']
+export type RunUpdate = Es['RunUpdate']
+export type RunsListResponse = Es['RunListResponse']
+export type RunSensor = Es['RunSensor']
 
 /** Типы для аутентификации */
 
-export interface User {
-  id: string
-  username: string
-  email: string
-  is_active: boolean
-  is_admin?: boolean            // kept for backward compat, computed from roles in backend
-  system_roles?: string[]       // role names like 'superadmin', 'admin'
-  effective_permissions?: string[]  // RBAC v2: resolved permission list
-  password_change_required?: boolean
-  created_at: string
-}
+export type User = As['User']
+/** Тот же формат, что и у `User`: GET /auth/admin/users отдаёт UserResponse. */
+export type AdminUser = As['User']
+export type LoginRequest = As['UserLoginRequest']
+export type RegisterRequest = As['UserRegisterRequest']
 
-export interface AdminUser {
-  id: string
-  username: string
-  email: string
-  is_active: boolean
-  is_admin: boolean
-  system_roles: string[]
-  password_change_required: boolean
-  created_at: string
-}
+/** Ответ auth-proxy: токены вырезаются BFF и до портала не доходят. */
+export type AuthResponse = Partial<Omit<As['AuthResponse'], 'access_token' | 'refresh_token'>>
 
+/** Эндпоинты /auth/admin/invites и /api/v1/users/search не описаны в спеке auth-service. */
 export interface AdminInviteToken {
   id: string
   token: string
@@ -128,28 +48,6 @@ export interface AdminInviteToken {
   is_active: boolean
 }
 
-export interface LoginRequest {
-  username: string
-  password: string
-}
-
-export interface RegisterRequest {
-  username: string
-  email: string
-  password: string
-  invite_token?: string
-}
-
-export interface AuthResponse {
-  user?: User
-  expires_in?: number
-  refresh_expires_in?: number
-  token_type?: string
-  access_token?: string
-  refresh_token?: string
-  [key: string]: unknown
-}
-
 export interface UserSearchResult {
   id: string
   username: string
@@ -158,40 +56,18 @@ export interface UserSearchResult {
 
 /** Типы для датчиков */
 
-export type SensorStatus = 'registering' | 'active' | 'inactive' | 'archived'
+export type SensorStatus = Es['SensorStatus']
+export type ConnectionStatus = Es['ConnectionStatus']
+export type Sensor = Es['Sensor']
+export type StatusSummary = Es['SensorStatusSummary']
+export type HeartbeatHistory = Es['SensorHeartbeatHistory']
+export type SensorCreate = Es['SensorRegisterRequest']
+export type SensorUpdate = Es['SensorUpdate']
+export type SensorRegisterResponse = Es['SensorTokenResponse']
+export type SensorTokenResponse = Es['SensorTokenResponse']
+export type SensorsListResponse = Es['SensorListResponse']
 
-export type ConnectionStatus = 'online' | 'delayed' | 'offline'
-
-export interface Sensor {
-  id: string
-  project_id: string
-  name: string
-  type: string
-  input_unit: string
-  display_unit: string
-  status: SensorStatus
-  connection_status?: ConnectionStatus
-  token_preview?: string | null
-  last_heartbeat?: string | null
-  active_profile_id?: string | null
-  calibration_notes?: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface StatusSummary {
-  online: number
-  delayed: number
-  offline: number
-  total: number
-}
-
-export interface HeartbeatHistory {
-  sensor_id: string
-  timestamps: string[]
-  count: number
-}
-
+/** Журнал ошибок датчика отдаёт не experiment-service, в его спеке эндпоинта нет. */
 export interface SensorErrorEntry {
   id: number
   sensor_id: string
@@ -211,150 +87,28 @@ export interface SensorErrorLogResponse {
   offset: number
 }
 
-export interface SensorCreate {
-  project_id: string
-  name: string
-  type: string
-  input_unit: string
-  display_unit: string
-  calibration_notes?: string
-  conversion_profile?: ConversionProfileInput
-}
+export type ConversionProfileInput = Es['ConversionProfileInput']
+export type ConversionProfileStatus = Es['ConversionProfileStatus']
+export type ConversionProfile = Es['ConversionProfile']
+export type ConversionProfilesListResponse = Es['ConversionProfileListResponse']
 
-export interface SensorUpdate {
-  name?: string
-  type?: string
-  input_unit?: string
-  display_unit?: string
-  calibration_notes?: string
-}
-
-export interface ConversionProfileInput {
-  version: string
-  kind: string
-  payload: Record<string, any>
-  status?: 'draft' | 'scheduled' | 'active' | 'deprecated'
-  valid_from?: string
-  valid_to?: string
-}
-
-export type ConversionProfileStatus = 'draft' | 'scheduled' | 'active' | 'deprecated'
-
-export interface ConversionProfile {
-  id: string
-  sensor_id: string
-  project_id: string
-  version: string
-  kind: string
-  payload: Record<string, any>
-  status: ConversionProfileStatus
-  valid_from?: string | null
-  valid_to?: string | null
-  created_by: string
-  published_by?: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface ConversionProfilesListResponse {
-  conversion_profiles: ConversionProfile[]
-  total: number
-  limit: number
-  offset: number
-}
-
-export type BackfillTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
-
-export interface BackfillTask {
-  id: string
-  sensor_id: string
-  project_id: string
-  conversion_profile_id: string
-  status: BackfillTaskStatus
-  total_records: number | null
-  processed_records: number
-  error_message: string | null
-  created_by: string
-  created_at: string
-  started_at: string | null
-  completed_at: string | null
-}
-
-export interface BackfillTasksListResponse {
-  backfill_tasks: BackfillTask[]
-  total: number
-  limit: number
-  offset: number
-}
-
-export interface SensorRegisterResponse {
-  sensor: Sensor
-  token: string
-}
-
-export interface SensorTokenResponse {
-  sensor: Sensor
-  token: string
-}
-
-export interface SensorsListResponse {
-  sensors: Sensor[]
-  total: number
-  page: number
-  page_size: number
-}
+export type BackfillTaskStatus = Es['BackfillTaskStatus']
+export type BackfillTask = Es['BackfillTask']
+export type BackfillTasksListResponse = Es['BackfillTaskListResponse']
 
 /** Типы для Capture Sessions */
 
-export type CaptureSessionStatus = 'draft' | 'running' | 'failed' | 'succeeded' | 'archived' | 'backfilling'
-
-export interface CaptureSession {
-  id: string
-  run_id: string
-  project_id: string
-  ordinal_number: number
-  started_at?: string | null
-  stopped_at?: string | null
-  status: CaptureSessionStatus
-  initiated_by?: string | null
-  notes?: string | null
-  archived: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface CaptureSessionCreate {
-  project_id: string
-  run_id: string
-  ordinal_number: number
-  status?: CaptureSessionStatus
-  notes?: string
-}
-
-export interface CaptureSessionsListResponse {
-  capture_sessions: CaptureSession[]
-  total: number
-  page?: number
-  page_size?: number
-}
+export type CaptureSessionStatus = Es['CaptureSessionStatus']
+export type CaptureSession = Es['CaptureSession']
+export type CaptureSessionCreate = Es['CaptureSessionCreate']
+export type CaptureSessionsListResponse = Es['CaptureSessionListResponse']
 
 /** Типы для телеметрии */
 
-export interface TelemetryReading {
-  timestamp: string
-  raw_value: number
-  physical_value?: number
-  meta: Record<string, any>
-}
+export type TelemetryReading = Es['TelemetryIngestRequest']['readings'][number]
+export type TelemetryIngest = Es['TelemetryIngestRequest']
 
-export interface TelemetryIngest {
-  sensor_id: string
-  run_id?: string
-  capture_session_id?: string
-  meta?: Record<string, any>
-  readings: TelemetryReading[]
-}
-
+/** Ответ отдаёт telemetry-ingest-service, в спеке experiment-service его нет. */
 export interface TelemetryIngestResponse {
   status: 'accepted'
   accepted: number
@@ -369,258 +123,58 @@ export type {
 
 /** Типы для проектов */
 
-export interface Project {
-  id: string
-  name: string
-  description?: string | null
-  owner_id: string
-  created_at: string
-  updated_at: string
-}
+export type Project = As['Project']
+export type ProjectCreate = As['ProjectCreateRequest']
+export type ProjectUpdate = As['ProjectUpdateRequest']
 
-export interface ProjectCreate {
-  name: string
-  description?: string
-}
-
-export interface ProjectUpdate {
-  name?: string
-  description?: string
-}
-
+/** Адаптер: auth-service отдаёт `items`, `projectsApi` приводит их к `projects`. */
 export interface ProjectsListResponse {
   projects: Project[]
   total?: number
 }
 
-export interface ProjectMember {
-  project_id: string
-  user_id: string
-  role: 'owner' | 'editor' | 'viewer'   // keep for backward compat
-  roles?: UserProjectRole[]               // RBAC v2 roles array
-  effective_permissions?: string[]        // computed permissions
-  created_at: string
-  username?: string | null
-}
-
-export interface ProjectMemberAdd {
-  user_id: string
-  role: 'owner' | 'editor' | 'viewer'
-}
-
-export interface ProjectMemberUpdate {
-  role: 'owner' | 'editor' | 'viewer'
-}
-
-export interface ProjectMembersListResponse {
-  members: ProjectMember[]
-}
+export type ProjectMember = As['ProjectMember']
+export type ProjectMemberAdd = As['ProjectMemberAddRequest']
+export type ProjectMemberUpdate = As['ProjectMemberUpdateRequest']
+export type ProjectMembersListResponse = As['ProjectMemberListResponse']
+export type ProjectRoleAssignment = As['ProjectRoleAssignment']
 
 /** Типы для аудит-лога (events) */
 
-export interface RunEvent {
-  id: number
-  run_id: string
-  event_type: string
-  actor_id: string
-  actor_role: string
-  payload: Record<string, any>
-  created_at: string
-}
-
-export interface RunEventsListResponse {
-  events: RunEvent[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface CaptureSessionEvent {
-  id: number
-  capture_session_id: string
-  event_type: string
-  actor_id: string
-  actor_role: string
-  payload: Record<string, any>
-  created_at: string
-}
-
-export interface CaptureSessionEventsListResponse {
-  events: CaptureSessionEvent[]
-  total: number
-  page: number
-  page_size: number
-}
+export type RunEvent = Es['RunEvent']
+export type RunEventsListResponse = Es['RunEventListResponse']
+export type CaptureSessionEvent = Es['CaptureSessionEvent']
+export type CaptureSessionEventsListResponse = Es['CaptureSessionEventListResponse']
 
 /** Типы для метрик */
 
-export interface RunMetricPoint {
-  step: number
-  value: number
-  timestamp: string
-}
-
-export interface RunMetricSeries {
-  name: string
-  points: RunMetricPoint[]
-}
-
-export interface RunMetricsResponse {
-  run_id: string
-  series: RunMetricSeries[]
-}
-
-export interface RunMetric {
-  name: string
-  step: number
-  value: number
-  timestamp: string
-}
-
-export interface RunMetricsListResponse {
-  items: RunMetric[]
-  total: number
-}
-
-export interface MetricSummaryItem {
-  name: string
-  last_step: number
-  last_value: number
-  count: number
-  min: number
-  avg: number
-  max: number
-}
-
-export interface MetricSummaryResponse {
-  items: MetricSummaryItem[]
-}
-
-export interface MetricBucket {
-  name: string
-  bucket_start: number
-  bucket_end: number
-  min: number
-  avg: number
-  max: number
-  count: number
-}
-
-export interface MetricAggregationsResponse {
-  items: MetricBucket[]
-}
+export type RunMetricsResponse = Es['MetricQueryResponse']
+export type MetricSummaryItem = Es['MetricSummaryItem']
+export type MetricSummaryResponse = Es['MetricSummaryResponse']
+export type MetricBucket = Es['MetricBucket']
+export type MetricAggregationsResponse = Es['MetricAggregationsResponse']
 
 /** Типы для сравнения runs */
 
-export interface ComparisonMetricSummary {
-  last: number | null
-  min: number | null
-  max: number | null
-  count: number
-}
-
-export interface ComparisonMetricPoint {
-  step: number
-  value: number
-}
-
-export interface ComparisonMetricData {
-  summary: ComparisonMetricSummary
-  series: ComparisonMetricPoint[]
-}
-
-export interface ComparisonRunEntry {
-  run_id: string
-  run_name: string
-  status: string
-  metrics: Record<string, ComparisonMetricData>
-}
-
-export interface ComparisonResponse {
-  runs: ComparisonRunEntry[]
-  metric_names: string[]
-}
+export type ComparisonMetricSummary = Es['ComparisonMetricSummary']
+export type ComparisonMetricPoint = Es['ComparisonPoint']
+export type ComparisonMetricData = Es['ComparisonMetricData']
+export type ComparisonRunEntry = Es['ComparisonRunEntry']
+export type ComparisonResponse = Es['ComparisonResponse']
 
 /** Типы для артефактов */
 
+/** Подсказка для UI: в API `type` — произвольная строка. */
 export type ArtifactType = 'model' | 'dataset' | 'plot' | 'log' | 'config' | 'other'
 
-export interface Artifact {
-  id: string
-  run_id: string
-  type: ArtifactType | string
-  uri: string
-  checksum?: string | null
-  size_bytes?: number | null
-  metadata: Record<string, any>
-  approved_by?: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface ArtifactsListResponse {
-  artifacts: Artifact[]
-  total: number
-  limit: number
-  offset: number
-}
-
-export interface CreateArtifactRequest {
-  type: ArtifactType | string
-  uri: string
-  checksum?: string
-  size_bytes?: number
-  metadata?: Record<string, any>
-}
+export type Artifact = Es['Artifact']
+export type ArtifactsListResponse = Es['ArtifactListResponse']
+export type CreateArtifactRequest = Es['ArtifactCreate']
 
 /** Типы для вебхуков */
 
-export interface WebhookSubscription {
-  id: string
-  project_id: string
-  target_url: string
-  secret: string | null
-  event_types: string[]
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface WebhookSubscriptionCreate {
-  target_url: string
-  event_types: string[]
-  secret?: string
-}
-
-export interface WebhooksListResponse {
-  webhooks: WebhookSubscription[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface WebhookDelivery {
-  id: string
-  subscription_id: string
-  project_id: string
-  event_type: string
-  target_url: string
-  secret: string | null
-  request_body: Record<string, any>
-  status: string
-  attempt_count: number
-  last_error: string | null
-  dedup_key: string | null
-  locked_at: string | null
-  next_attempt_at: string
-  created_at: string
-  updated_at: string
-}
-
-export interface WebhookDeliveriesListResponse {
-  deliveries: WebhookDelivery[]
-  total: number
-  page: number
-  page_size: number
-}
-
+export type WebhookSubscription = Es['WebhookSubscription']
+export type WebhookSubscriptionCreate = Es['WebhookCreate']
+export type WebhooksListResponse = Es['WebhookListResponse']
+export type WebhookDelivery = Es['WebhookDelivery']
+export type WebhookDeliveriesListResponse = Es['WebhookDeliveryListResponse']

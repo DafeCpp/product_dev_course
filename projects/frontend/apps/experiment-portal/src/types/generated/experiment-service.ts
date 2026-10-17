@@ -1197,7 +1197,7 @@ export interface components {
             /** Format: date-time */
             finished_at?: string;
             duration_seconds?: number;
-            auto_complete_after_minutes?: number;
+            auto_complete_after_minutes?: number | null;
         };
         RunUpdate: {
             name?: string;
@@ -1216,7 +1216,7 @@ export interface components {
             /** Format: date-time */
             finished_at?: string;
             duration_seconds?: number;
-            auto_complete_after_minutes?: number;
+            auto_complete_after_minutes?: number | null;
         };
         RunListResponse: {
             runs: components["schemas"]["Run"][];
@@ -1282,12 +1282,12 @@ export interface components {
             /** Format: uuid */
             run_id: string;
             series: {
-                name?: string;
-                points?: {
-                    step?: number;
-                    value?: number;
+                name: string;
+                points: {
+                    step: number;
+                    value: number;
                     /** Format: date-time */
-                    timestamp?: string;
+                    timestamp: string;
                 }[];
             }[];
             total: number;
@@ -1315,8 +1315,8 @@ export interface components {
             run_id: string;
             bucket_size: number;
             series: {
-                name?: string;
-                buckets?: components["schemas"]["MetricBucket"][];
+                name: string;
+                buckets: components["schemas"]["MetricBucket"][];
             }[];
         };
         MetricBucket: {

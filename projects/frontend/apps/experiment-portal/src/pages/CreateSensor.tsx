@@ -287,7 +287,7 @@ function CreateSensor() {
                 <FormGroup label="Заметки по калибровке" htmlFor="calibration_notes">
                     <textarea
                         id="calibration_notes"
-                        value={formData.calibration_notes}
+                        value={formData.calibration_notes ?? ''}
                         onChange={(e) =>
                             setFormData({ ...formData, calibration_notes: e.target.value })
                         }

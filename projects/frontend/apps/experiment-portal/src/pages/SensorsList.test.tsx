@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SensorsList from './SensorsList'
 import { sensorsApi, projectsApi } from '../api/client'
+import { createMockSensor } from '../testUtils/factories'
 import { pickMaterialSelectOption } from '../testUtils/materialSelect'
 
 // Мокаем API
@@ -31,7 +32,7 @@ const createWrapper = () => {
     )
 }
 
-const mockSensor = {
+const mockSensor = createMockSensor({
     id: 'sensor-1',
     project_id: 'project-1',
     name: 'Temperature Sensor #1',
@@ -45,7 +46,7 @@ const mockSensor = {
     calibration_notes: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
-}
+})
 
 const mockProject = {
     id: 'project-1',

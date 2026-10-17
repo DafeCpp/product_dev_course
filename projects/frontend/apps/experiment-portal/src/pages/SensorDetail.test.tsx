@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SensorDetail from './SensorDetail'
 import { sensorsApi } from '../api/client'
+import { createMockSensor } from '../testUtils/factories'
 
 // Мокаем sensorsApi
 vi.mock('../api/client', () => ({
@@ -42,7 +43,7 @@ const createWrapper = () => {
     )
 }
 
-const mockSensor = {
+const mockSensor = createMockSensor({
     id: 'sensor-1',
     project_id: 'project-1',
     name: 'Temperature Sensor #1',
@@ -56,7 +57,7 @@ const mockSensor = {
     calibration_notes: 'Calibrated at 20°C',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
-}
+})
 
 describe('SensorDetail', () => {
     beforeEach(() => {

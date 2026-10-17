@@ -286,7 +286,9 @@ RunCreate:
     duration_seconds:
       type: integer
     auto_complete_after_minutes:
-      type: integer
+      type:
+      - integer
+      - 'null'
 RunUpdate:
   type: object
   properties:
@@ -315,7 +317,9 @@ RunUpdate:
     duration_seconds:
       type: integer
     auto_complete_after_minutes:
-      type: integer
+      type:
+      - integer
+      - 'null'
 RunListResponse:
   type: object
   properties:
@@ -477,6 +481,13 @@ MetricQueryResponse:
                 timestamp:
                   type: string
                   format: date-time
+              required:
+              - step
+              - value
+              - timestamp
+        required:
+        - name
+        - points
     total:
       type: integer
     limit:
@@ -556,6 +567,9 @@ MetricAggregationsResponse:
             type: array
             items:
               $ref: '#/MetricBucket'
+        required:
+        - name
+        - buckets
   required:
   - run_id
   - bucket_size

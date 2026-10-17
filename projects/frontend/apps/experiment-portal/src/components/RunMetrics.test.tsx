@@ -33,28 +33,42 @@ function createWrapper() {
 const RUN_ID = 'run-abc'
 
 const mockSummary = {
-  items: [
-    { name: 'loss', last_step: 3, last_value: 0.5, count: 3, min: 0.5, avg: 0.7, max: 0.9 },
-    { name: 'accuracy', last_step: 2, last_value: 0.8, count: 2, min: 0.6, avg: 0.7, max: 0.8 },
+  run_id: RUN_ID,
+  metrics: [
+    { name: 'loss', last_step: 3, last_value: 0.5, last_timestamp: '2024-01-01T00:00:03Z', total_steps: 3, min_value: 0.5, avg_value: 0.7, max_value: 0.9 },
+    { name: 'accuracy', last_step: 2, last_value: 0.8, last_timestamp: '2024-01-01T00:00:02Z', total_steps: 2, min_value: 0.6, avg_value: 0.7, max_value: 0.8 },
   ],
 }
 
 const mockList = {
-  items: [
-    { name: 'loss', step: 1, value: 0.9, timestamp: '2024-01-01T00:00:01Z' },
-    { name: 'loss', step: 2, value: 0.7, timestamp: '2024-01-01T00:00:02Z' },
-    { name: 'loss', step: 3, value: 0.5, timestamp: '2024-01-01T00:00:03Z' },
-    { name: 'accuracy', step: 1, value: 0.6, timestamp: '2024-01-01T00:00:01Z' },
-    { name: 'accuracy', step: 2, value: 0.8, timestamp: '2024-01-01T00:00:02Z' },
+  run_id: RUN_ID,
+  series: [
+    {
+      name: 'loss',
+      points: [
+        { step: 1, value: 0.9, timestamp: '2024-01-01T00:00:01Z' },
+        { step: 2, value: 0.7, timestamp: '2024-01-01T00:00:02Z' },
+        { step: 3, value: 0.5, timestamp: '2024-01-01T00:00:03Z' },
+      ],
+    },
+    {
+      name: 'accuracy',
+      points: [
+        { step: 1, value: 0.6, timestamp: '2024-01-01T00:00:01Z' },
+        { step: 2, value: 0.8, timestamp: '2024-01-01T00:00:02Z' },
+      ],
+    },
   ],
   total: 5,
+  limit: 1000,
+  offset: 0,
 }
 
 describe('RunMetrics', () => {
   beforeEach(() => {
     vi.mocked(metricsApi.summary).mockResolvedValue(mockSummary)
     vi.mocked(metricsApi.list).mockResolvedValue(mockList)
-    vi.mocked(metricsApi.aggregations).mockResolvedValue({ items: [] })
+    vi.mocked(metricsApi.aggregations).mockResolvedValue({ run_id: RUN_ID, bucket_size: 1, series: [] })
   })
 
   it('shows loading state initially', () => {
@@ -101,7 +115,7 @@ describe('RunMetrics', () => {
   })
 
   it('shows empty state when no metrics returned', async () => {
-    vi.mocked(metricsApi.summary).mockResolvedValue({ items: [] })
+    vi.mocked(metricsApi.summary).mockResolvedValue({ run_id: RUN_ID, metrics: [] })
     render(<RunMetrics runId={RUN_ID} />, { wrapper: createWrapper() })
     await waitFor(() => {
       expect(screen.getByText(/нет записанных метрик/i)).toBeInTheDocument()

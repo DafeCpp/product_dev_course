@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Plotly from 'plotly.js-dist-min'
 import { metricsApi } from '../api/client'
-import type { MetricSummaryItem, RunMetric, MetricBucket } from '../types'
+import type { MetricSummaryItem } from '../types'
 import { Loading, EmptyState } from './common'
 import './RunMetrics.scss'
 
@@ -24,7 +24,7 @@ const SERIES_COLORS = [
 const RAW_LIMIT = 10_000
 const AGG_THRESHOLD = 10_000
 
-function fmt(n: number | undefined): string {
+function fmt(n: number | null | undefined): string {
   if (n === undefined || n === null) return '—'
   return Number.isInteger(n) ? String(n) : n.toFixed(4)
 }
@@ -53,11 +53,11 @@ function SummaryCard({
       <span className="run-metrics__summary-card-name">{item.name}</span>
       <span className="run-metrics__summary-card-value">{fmt(item.last_value)}</span>
       <div className="run-metrics__summary-card-stats">
-        <span>min <strong>{fmt(item.min)}</strong></span>
-        <span>avg <strong>{fmt(item.avg)}</strong></span>
-        <span>max <strong>{fmt(item.max)}</strong></span>
-        <span>step <strong>{item.last_step}</strong></span>
-        <span>n <strong>{item.count}</strong></span>
+        <span>min <strong>{fmt(item.min_value)}</strong></span>
+        <span>avg <strong>{fmt(item.avg_value)}</strong></span>
+        <span>max <strong>{fmt(item.max_value)}</strong></span>
+        <span>step <strong>{item.last_step ?? '—'}</strong></span>
+        <span>n <strong>{item.total_steps}</strong></span>
       </div>
     </button>
   )
@@ -141,7 +141,7 @@ export default function RunMetrics({ runId }: Props) {
     enabled: !!runId,
   })
 
-  const summaryItems = summaryData?.items ?? []
+  const summaryItems = useMemo(() => summaryData?.metrics ?? [], [summaryData])
 
   // Auto-select all metrics on first load
   useEffect(() => {
@@ -156,7 +156,7 @@ export default function RunMetrics({ runId }: Props) {
   const namesParam = activeItems.map((s) => s.name).join(',')
 
   // Determine if we need aggregations (based on max count among selected)
-  const maxCount = activeItems.reduce((m, s) => Math.max(m, s.count), 0)
+  const maxCount = activeItems.reduce((m, s) => Math.max(m, s.total_steps), 0)
   const useAgg = maxCount >= AGG_THRESHOLD
 
   // 2a. Raw metrics (when data is small enough)
@@ -198,17 +198,17 @@ export default function RunMetrics({ runId }: Props) {
       ] ?? SERIES_COLORS[idx % SERIES_COLORS.length]
 
       if (useAgg && aggData) {
-        const buckets: MetricBucket[] = aggData.items.filter((b) => b.name === item.name)
+        const buckets = aggData.series.find((s) => s.name === item.name)?.buckets ?? []
         return {
           name: item.name,
           color,
-          x: buckets.map((b) => b.bucket_start),
+          x: buckets.map((b) => b.step_from),
           y: buckets.map((b) => b.avg),
           mode: 'lines' as const,
         }
       }
 
-      const points: RunMetric[] = (rawData?.items ?? []).filter((p) => p.name === item.name)
+      const points = rawData?.series.find((s) => s.name === item.name)?.points ?? []
       return {
         name: item.name,
         color,

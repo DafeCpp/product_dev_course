@@ -126,7 +126,7 @@ function CreateExperimentModal({ isOpen, onClose, defaultProjectId }: CreateExpe
                         <>
                             <MaterialSelect
                                 id="experiment_project"
-                                value={formData.project_id}
+                                value={formData.project_id ?? ''}
                                 onChange={(id) => {
                                     setFormData({ ...formData, project_id: id })
                                     if (id) setActiveProjectId(id)

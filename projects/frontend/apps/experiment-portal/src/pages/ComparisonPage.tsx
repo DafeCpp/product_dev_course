@@ -381,7 +381,7 @@ export default function ComparisonPage() {
                         const s = entry.metrics[m]?.summary
                         return (
                           <>
-                            <TableCell key={`${entry.run_id}-${m}-last`} align="right">{fmt(s?.last)}</TableCell>
+                            <TableCell key={`${entry.run_id}-${m}-last`} align="right">{fmt(s?.last_value)}</TableCell>
                             <TableCell key={`${entry.run_id}-${m}-min`} align="right">{fmt(s?.min)}</TableCell>
                             <TableCell key={`${entry.run_id}-${m}-max`} align="right">{fmt(s?.max)}</TableCell>
                           </>

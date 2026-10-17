@@ -47,7 +47,7 @@ function RunsList({ experimentId }: RunsListProps) {
   )
   const allSelected = runs.length > 0 && selectedRunIds.length === runs.length
 
-  const formatDuration = (seconds?: number) => {
+  const formatDuration = (seconds?: number | null) => {
     if (!seconds) return '-'
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
