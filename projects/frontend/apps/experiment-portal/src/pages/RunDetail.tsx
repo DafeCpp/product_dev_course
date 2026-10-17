@@ -25,6 +25,8 @@ import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { useCountdown } from '../hooks/useCountdown'
 
+// Run actions show the error in the banner under the header and as a toast:
+// the page is long and the capture-session buttons sit far below the banner.
 function RunDetail() {
   const { id } = useParams<{ id: string }>()
   const [actionError, setActionError] = useState<string | null>(null)
@@ -90,6 +92,7 @@ function RunDetail() {
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
     inlineError: setActionError,
+    notifyOnError: true,
   })
 
   const startRunMutation = useApiMutation({
@@ -98,6 +101,7 @@ function RunDetail() {
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
     inlineError: setActionError,
+    notifyOnError: true,
   })
 
   const failMutation = useApiMutation<unknown, string | undefined>({
@@ -106,6 +110,7 @@ function RunDetail() {
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
     inlineError: setActionError,
+    notifyOnError: true,
   })
 
   // Создание capture session
@@ -126,6 +131,7 @@ function RunDetail() {
     successMessage: 'Отсчёт запущен',
     errorFallback: 'Не удалось запустить отсчёт',
     inlineError: setActionError,
+    notifyOnError: true,
   })
 
   // Остановка capture session
@@ -134,9 +140,9 @@ function RunDetail() {
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт остановлен',
     errorFallback: 'Не удалось остановить отсчёт',
-    onMutate: () => setActionError(null),
     onSuccess: () => setOptimisticActiveSessionId(null),
     inlineError: setActionError,
+    notifyOnError: true,
   })
 
   // Удаление capture session
@@ -146,6 +152,7 @@ function RunDetail() {
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
     inlineError: setActionError,
+    notifyOnError: true,
   })
 
   const countdownDeadline = useMemo(() => {

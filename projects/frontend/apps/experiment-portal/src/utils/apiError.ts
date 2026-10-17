@@ -14,11 +14,16 @@ function cleanMessage(value: unknown): string | null {
     if (
         /^<[!?]/.test(text) ||
         /^<(html|head|body|meta|title|style|div|p|br|center|h[1-6])(\s|>|\/)/i.test(text) ||
-        (/^<[a-z][a-z0-9]*(\s[^>]*)?\/?>/i.test(text) && (/<\/[a-z]/i.test(text) || /\/>$/.test(text)))
+        /^<([a-z][a-z0-9]*)\b[^>]*>.*<\/\1>/i.test(text) ||
+        /^<[a-z][a-z0-9]*\b[^>]*\/>$/i.test(text)
     ) return null
     if (text.length <= MAX_MESSAGE_LENGTH) return text
     const chars = Array.from(text)
     return chars.length > MAX_MESSAGE_LENGTH ? `${chars.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…` : text
+}
+
+function isServerFailure(status: number | undefined): boolean {
+    return typeof status === 'number' && status >= 500
 }
 
 /** An Error whose message is already safe to show the user (e.g. built from a sanitized response body). */
@@ -31,6 +36,7 @@ export class UserFacingError extends Error {
  * then `response.data.error`, then a plain-text `response.data`, then `fallback`. Same order as the shared
  * transport: backends put a code in `error` and human text in `message`.
  * Only non-empty strings are accepted; anything else falls through.
+ * Body text of a 5xx response is internal (proxy/stack details) and never shown.
  * A shared-transport `HttpError` carries server text in `message` only
  * when `kind === 'api'` and the body had one (not the synthetic `HTTP 500`);
  * other kinds (network, timeout) use the fallback. A `UserFacingError`
@@ -48,15 +54,16 @@ export function getApiErrorMessage(
     }
     if (error instanceof HttpError) {
         const synthetic = error.message === `HTTP ${error.status}`
-        return (error.kind === 'api' && !synthetic ? cleanMessage(error.message) : null) ?? fallback
+        const usable = error.kind === 'api' && !synthetic && !isServerFailure(error.status)
+        return (usable ? cleanMessage(error.message) : null) ?? fallback
     }
     if (error && typeof error === 'object') {
         const e = error as {
-            response?: { data?: unknown }
+            response?: { data?: unknown; status?: number }
             message?: unknown
             isAxiosError?: boolean
         }
-        const data = e.response?.data
+        const data = isServerFailure(e.response?.status) ? undefined : e.response?.data
         const body = data && typeof data === 'object' ? (data as { error?: unknown; message?: unknown }) : undefined
         return (
             cleanMessage(body?.message) ??
@@ -87,7 +94,8 @@ export function getResponseBodyMessage(body: string, fallback: string): string {
     return cleanMessage(body) ?? fallback
 }
 
-/** Error for a non-OK fetch response: sanitized body text, else `${prefix}: HTTP ${status}`. */
+/** Error for a non-OK fetch response: sanitized 4xx body text, else `${prefix}: HTTP ${status}`. */
 export function responseBodyError(body: string, status: number, prefix: string): UserFacingError {
-    return new UserFacingError(getResponseBodyMessage(body, `${prefix}: HTTP ${status}`))
+    const fallback = `${prefix}: HTTP ${status}`
+    return new UserFacingError(isServerFailure(status) ? fallback : getResponseBodyMessage(body, fallback))
 }

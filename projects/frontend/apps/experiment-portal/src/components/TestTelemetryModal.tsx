@@ -34,11 +34,8 @@ function TestTelemetryModal({ sensorId, sensorToken, isOpen, onClose }: TestTele
             setError(null)
             setTimeout(() => { setMetaJson('{}'); setReadingsJson(''); setSuccess(null) }, 2000)
         },
-        notifyOnError: false,
-        onError: (_err, _vars, message) => {
-            setError(message)
-            setSuccess(null)
-        },
+        inlineError: setError,
+        onError: () => setSuccess(null),
     })
 
     const handleSubmit = (e: React.FormEvent) => {

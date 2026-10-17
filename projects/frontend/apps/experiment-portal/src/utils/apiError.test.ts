@@ -10,9 +10,16 @@ describe('getApiErrorMessage', () => {
     })
 
     it('keeps messages that merely start with a placeholder', () => {
-        for (const msg of ['<sensor_id> must be a UUID', '<body-temp> must be a number', '<p.value> required', '<path> must not contain </']) {
+        for (const msg of ['<sensor_id> must be a UUID', '<body-temp> must be a number', '<p.value> required', '<path> must not contain </', '<name> must not contain </script>']) {
             expect(getApiErrorMessage({ response: { data: { error: msg } } }, 'fb')).toBe(msg)
         }
+    })
+
+    it('never shows 5xx body text', () => {
+        const proxy = { isAxiosError: true, response: { status: 502, data: { statusCode: 502, error: 'Bad Gateway', message: 'connect ECONNREFUSED 10.0.0.5:8001' } } }
+        expect(getApiErrorMessage(proxy, 'fb')).toBe('fb')
+        expect(getApiErrorMessage(new HttpError('api', 503, 'unavailable', 'upstream timeout at 10.0.0.5'), 'fb')).toBe('fb')
+        expect(getApiErrorMessage({ response: { status: 409, data: { error: 'Уже существует' } } }, 'fb')).toBe('Уже существует')
     })
 
     it('uses a plain-text response body', () => {

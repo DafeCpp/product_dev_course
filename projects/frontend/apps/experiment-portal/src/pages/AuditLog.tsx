@@ -37,9 +37,7 @@ function AuditLog() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['audit-log', filters, offset],
-    queryFn: async () => {
-      return await auditApi.queryAuditLog({ ...filters, limit: LIMIT, offset })
-    },
+    queryFn: () => auditApi.queryAuditLog({ ...filters, limit: LIMIT, offset }),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
     enabled: !permissionsLoading && hasSystemPermission('audit.read'),
