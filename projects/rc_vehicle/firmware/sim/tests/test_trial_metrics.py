@@ -609,3 +609,23 @@ def test_failsafe_short_flag_glitch_is_not_a_loss(tmp_path):
              "throttle": 0.4, "steering": 0.0} for i in range(300)]
     log = _write_csv(tmp_path / "glitch_ok.csv", rows)
     assert tm.failsafe_latencies(log) == []
+
+
+@pytest.mark.parametrize("before, after", [(-0.5, 0.3), (-0.4, 0.4), (0.5, -0.3)])
+def test_yaw_step_from_held_opposite_turn(tmp_path, before, after):
+    """Перекладка руля из удержанного поворота: уставка по новой команде, отклик реально измеряется."""
+    gain = tm.NORMAL_STEER_TO_YAW_DPS
+    dt = 0.01
+    y = before * gain
+    rows = []
+    for i in range(300):
+        cmd = before if i < 50 else after
+        y += (cmd * gain - y) * (1 - math.exp(-dt / 0.05))  # τ = 50 мс
+        rows.append({"ts_ms": i * 10, "rc_steering": cmd, "yaw_rate_dps": y})
+    log = _write_csv(tmp_path / "flip.csv", rows)
+    steps = tm.find_steering_steps(log)
+    assert len(steps) == 1
+    r = tm.yaw_step_response(log, steps[0])
+    assert r["setpoint_dps"] == pytest.approx(abs(after) * gain)
+    # Реальный отклик: от -45 до +27 °/с за ~3τ, а не мгновенный «PASS 0 мс».
+    assert 80 <= r["settling_ms"] <= 200

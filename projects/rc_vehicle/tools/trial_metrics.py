@@ -120,8 +120,12 @@ def _clip_at_release(cmd: list[float], start: int, end: int,
     уже другой манёвр.
     """
     seg = cmd[start:end + 1]
-    peak_at = max(range(len(seg)), key=lambda k: abs(seg[k]))
-    sign = math.copysign(1.0, seg[peak_at]) if seg[peak_at] else 1.0
+    # Направление шага — по отклонению от команды до шага, а не по абсолютному
+    # значению: при перекладке из удержанного поворота старая команда больше.
+    base = seg[0]
+    peak_at = max(range(len(seg)),
+                  key=lambda k: 0.0 if math.isnan(seg[k]) else abs(seg[k] - base))
+    sign = math.copysign(1.0, seg[peak_at] - base) if seg[peak_at] != base else 1.0
     peak = -math.inf
     for k, v in enumerate(seg):
         if math.isnan(v):
