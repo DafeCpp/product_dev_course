@@ -37,13 +37,11 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware_common/sources.cmake)
 
 # Common sources that don't depend on platform
 set(COMMON_SOURCES
-    ${COMMON_DIR}/protocol.cpp
     ${COMMON_DIR}/madgwick_filter.cpp
     ${COMMON_DIR}/failsafe.cpp
     ${COMMON_DIR}/lpf_butterworth.cpp
     ${COMMON_DIR}/imu_calibration.cpp
     ${COMMON_DIR}/control_components.cpp
-    ${COMMON_DIR}/uart_bridge_base.cpp
     ${FIRMWARE_COMMON_SOURCES}
     ${COMMON_DIR}/vehicle_ekf.cpp
     ${COMMON_DIR}/vehicle_state_estimator.cpp
@@ -107,7 +105,6 @@ endif()
 # Unit tests executable
 add_executable(unit_tests
     ${COMMON_SOURCES}
-    unit/test_protocol.cpp
     unit/test_madgwick.cpp
     unit/test_failsafe.cpp
     unit/test_lpf.cpp
@@ -155,7 +152,6 @@ add_executable(unit_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_s3/main/ws_command_registry.cpp
     sim/stdio_platform.cpp
     integration/test_control_loop.cpp
-    integration/test_uart_bridge.cpp
 )
 
 target_link_libraries(unit_tests
