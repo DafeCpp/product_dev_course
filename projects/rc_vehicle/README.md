@@ -12,9 +12,9 @@
 | Ядро | Что выполняется |
 |------|-----------------|
 | Core 1 | Control loop на **500 Гц**: IMU, фильтры (Madgwick, EKF), стабилизация, failsafe, PWM |
-| Core 0 | Wi‑Fi AP, HTTP, WebSocket, телеметрия (в том числе UDP‑стриминг) |
+| Core 0 | Wi‑Fi AP, HTTP, WebSocket, телеметрия (в том числе UDP‑стриминг); жёстко на Core 0 закреплён только драйвер Wi‑Fi, остальные задачи ядром не фиксируются |
 
-Периферия: IMU MPU‑6500 и магнитометр MMC5983MA по SPI, ESC и серво через MCPWM, сигналы RC‑приёмника на GPIO. Схема подключения — `docs/wiring_diagram.md`.
+Периферия: IMU MPU‑6500 по SPI (прошивка также распознаёт MPU‑6050 и LSM6DS3), магнитометр MMC5983MA (по умолчанию I2C, вариант SPI выбирается в `firmware/esp32_s3/main/config.hpp`), ESC и серво через PWM 50 Гц (LEDC), сигналы RC‑приёмника на GPIO. Схема подключения — `docs/wiring_diagram.md`.
 
 Источники управления: RC‑пульт и Wi‑Fi (web‑пульт), приоритет **RC > Wi‑Fi**. При потере источника машина встаёт в нейтраль не позже чем через 250 мс (failsafe). Команда из WebSocket применяется напрямую к PWM.
 
@@ -32,7 +32,7 @@ CLI/агент для отправки телеметрии в Experiment Servic
 
 ## Структура проекта
 - `firmware/esp32_s3/` — прошивка ESP32‑S3 (ESP‑IDF): точка входа, PWM, RC, IMU, стабилизация
-- `firmware/common/` — платформенно‑независимый код (протокол, калибровка IMU, Madgwick, EKF, control loop, failsafe)
+- `firmware/common/` — платформенно‑независимый код (калибровка IMU, Madgwick, EKF, control loop, failsafe; `protocol.*` и `uart_bridge_base.*` остались от прежней двухплатной схемы)
 - `firmware/esp32_common/` — общий код для ESP32 (Wi‑Fi, HTTP, WebSocket, NVS, web UI)
 - `firmware/tests/` — GTest‑тесты без железа и `sim_host` для SIL
 - `firmware/sim/` — SIL: физическая модель машинки и сценарии (`pytest`), см. `firmware/sim/README.md`
@@ -45,7 +45,7 @@ CLI/агент для отправки телеметрии в Experiment Servic
 Актуальные документы:
 - `firmware/README.md` — сборка прошивки, стандарты кода, pre‑commit.
 - `firmware/esp32_s3/README.md` — прошивка ESP32‑S3: конфигурация пинов, подключение, логика управления.
-- `docs/wiring_diagram.md` — **схема подключения компонентов** (ESP32‑S3, IMU, ESC, серво, RC‑приёмник); `docs/wiring_diagram.drawio` — визуальная схема для draw.io.
+- `docs/wiring_diagram.md` — **схема подключения компонентов** (ESP32‑S3, IMU, ESC, серво, RC‑приёмник); актуален раздел про ESP32‑S3, раздел ESP32‑C3 + RP2040 в нём legacy. `docs/wiring_diagram.drawio` — визуальная схема для draw.io.
 - `docs/interfaces_protocols.md` — протоколы: WebSocket (браузер ↔ ESP32), SPI/I2C датчиков.
 - `docs/stabilization/` — система стабилизации: обзор, физика, настройка, роудмап.
 - `docs/udp-telemetry-design.md` — UDP‑стриминг телеметрии.
@@ -58,7 +58,7 @@ CLI/агент для отправки телеметрии в Experiment Servic
 Исторические материалы (схема STM32/RP2040 + ESP32 по UART, оставлены для справки):
 - `docs/stm32g431_pinout_ru.md` — распиновка STM32G431.
 - Приложение «UART‑протокол ESP32 ↔ внешний MCU (архив)» в `docs/interfaces_protocols.md` и разделы про RP2040 в `docs/firmware_timing.md`.
-- `firmware/common/uart_bridge_base.*` — база UART‑моста, используется только в тестах.
+- `firmware/common/protocol.*` и `uart_bridge_base.*` — UART‑протокол и база моста, собираются только в host‑тестах.
 
 Прочее: `docs/ai_schematic_tools.md` — инструменты и AI для генерации схем; `docs/schematic_review_ru.md`, `docs/schematic_check_report.md`, `docs/drc_fix_guide_ru.md`, `docs/kicad_pcb_settings_ru.md` — ревью и правки схемы.
 
