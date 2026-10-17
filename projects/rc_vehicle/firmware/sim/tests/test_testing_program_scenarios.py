@@ -3,7 +3,7 @@
 Те же критерии PASS, что проверяются на машине, но в SIL: это регрессия и
 эталон для сравнения с будущими заездами. Не покрыто (нет поддержки в модели
 или sim_host): склон/pitch compensation, удержание угла заноса в Drift,
-anti-spin, пресеты Kids, таймаут потери Wi-Fi; см. LOS-362. Критерии,
+anti-spin, пресеты Kids; см. LOS-362. Критерии,
 которые в SIL не выполняются, помечены strict xfail: исправление сразу
 покажет XPASS.
 """
@@ -40,20 +40,20 @@ def _pulses(ms: int, thr_us: int, str_us: int) -> list[SensorFrame]:
             for _ in range(ms // DT_MS)]
 
 
-# На ESP32 два таймаута подряд: декодер RC-импульсов (RC_IN_TIMEOUT_MS) и
-# grace-период Failsafe (FAILSAFE_TIMEOUT_MS), оба по 250 мс в
-# esp32_s3/main/config.hpp. В grace-периоде прошивка держит последнюю
-# команду (LOS-283), поэтому нейтраль наступает примерно через 500 мс.
+# На ESP32 два таймаута подряд: декодер RC-импульсов (RC_IN_TIMEOUT_MS = 100 мс)
+# и grace-период Failsafe (FAILSAFE_TIMEOUT_MS = 130 мс), плюс опрос RC раз в
+# 20 мс; в grace-периоде прошивка держит последнюю команду (LOS-283).
+# Суммарно нейтраль не позже 250 мс (LOS-368).
 RC_LOSS_AT_MS = 2000
 
 
-def _rc_dropout_rows():
-    frames = (_pulses(RC_LOSS_AT_MS, 1600, 1600) + _pulses(800, 0, 0)
+def _rc_dropout_rows(loss_at_ms: int = RC_LOSS_AT_MS):
+    frames = (_pulses(loss_at_ms, 1600, 1600) + _pulses(800, 0, 0)
               + _pulses(1000, 1600, 1600))
     rows = run_batch(frames, BIN)
     assert len(rows) == len(frames)
-    assert rows[RC_LOSS_AT_MS // DT_MS - 1]["throttle"] > 0.1  # до потери едем
-    lost = rows[RC_LOSS_AT_MS // DT_MS:(RC_LOSS_AT_MS + 800) // DT_MS]
+    assert rows[loss_at_ms // DT_MS - 1]["throttle"] > 0.1  # до потери едем
+    lost = rows[loss_at_ms // DT_MS:(loss_at_ms + 800) // DT_MS]
     neutral_ms = _first_ms(
         lost, lambda r: r["failsafe"] == 1.0 and r["throttle"] == 0.0
         and r["steering"] == 0.0)
@@ -63,16 +63,21 @@ def _rc_dropout_rows():
     return rows, neutral_ms
 
 
-def test_rc_loss_reaches_neutral_after_both_timeouts_and_recovers():
-    """Приёмник пропал → нейтраль после таймаута декодера и grace Failsafe; импульсы вернулись → управление вернулось.
+def test_rc_loss_neutral_within_250_ms_and_recovers():
+    """Failsafe по TESTING_PROGRAM.md: приёмник пропал → нейтраль за ≤250 мс; импульсы вернулись → управление вернулось.
 
     Через сырые импульсы, чтобы в контуре был настоящий таймаут RcPulseDecoder;
-    флаг rc_present=0 обошёл бы его (см. test_rc_link.py). Регрессия текущего
-    поведения; критерий программы испытаний — в тесте ниже.
+    флаг rc_present=0 обошёл бы его (см. test_rc_link.py). Момент потери
+    сдвигается относительно фазы опроса RC (20 мс): худший случай тоже ≤250 мс.
     """
-    rows, neutral_ms = _rc_dropout_rows()
-    # 250 + 250 мс; последний импульс и опрос RC сдвигают момент на ±20 мс.
-    assert 470 <= neutral_ms <= 530
+    rows, _ = _rc_dropout_rows()
+    worst = 0
+    for offset in range(0, 20, DT_MS):
+        _, neutral_ms = _rc_dropout_rows(RC_LOSS_AT_MS + offset)
+        # Нижняя граница: нейтраль по таймаутам, а не мгновенно.
+        assert neutral_ms >= 200
+        worst = max(worst, neutral_ms)
+    assert worst <= 250
 
     back = rows[(RC_LOSS_AT_MS + 800) // DT_MS:]
     recovered_ms = _first_ms(back, lambda r: r["failsafe"] == 0.0)
@@ -80,14 +85,18 @@ def test_rc_loss_reaches_neutral_after_both_timeouts_and_recovers():
     assert back[-1]["throttle"] > 0.1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="LOS-362: таймаут декодера RC и grace Failsafe (по 250 мс) идут "
-           "подряд, нейтраль через ~490 мс вместо ≤250 мс")
-def test_rc_loss_neutral_within_250_ms():
-    """Failsafe по TESTING_PROGRAM.md: моторы в нейтрали за ≤250 мс после потери RC."""
-    _, neutral_ms = _rc_dropout_rows()
-    assert neutral_ms <= 250
+def test_wifi_loss_neutral_within_250_ms():
+    """Failsafe по TESTING_PROGRAM.md: команды Wi-Fi пропали (RC нет) → нейтраль за ≤250 мс."""
+    loss_at = 2000
+    frames = [SensorFrame(dt_ms=DT_MS, wifi_present=True, wifi_throttle=0.3,
+                          wifi_steering=0.2) for _ in range(loss_at // DT_MS)]
+    frames += [SensorFrame(dt_ms=DT_MS) for _ in range(600 // DT_MS)]
+    rows = run_batch(frames, BIN)
+    assert rows[loss_at // DT_MS - 1]["throttle"] > 0.1
+    neutral_ms = _first_ms(
+        rows[loss_at // DT_MS:],
+        lambda r: r["failsafe"] == 1.0 and r["throttle"] == 0.0)
+    assert neutral_ms is not None and 200 <= neutral_ms <= 250
 
 
 def _yaw_step(steer: float, stabilize: bool = True):

@@ -66,12 +66,12 @@ def test_receiver_dropout_reported_with_cause_and_duration():
 
     # Grace-период: декодер уже потерял сигнал, но Failsafe ещё держит
     # последнюю команду (LOS-283).
-    held = rows[(2000 + 300) // DT_MS]
+    held = rows[(2000 + 150) // DT_MS]
     assert held["failsafe"] == 0.0
     assert held["throttle"] == pytest.approx(rows[2000 // DT_MS - 1]["throttle"])
-    # Во время пропадания — failsafe: таймаут декодера 250 мс, затем
-    # grace-период Failsafe ещё 250 мс (LOS-362).
-    dropout = rows[(2000 + 520) // DT_MS:(2000 + 600) // DT_MS]
+    # Во время пропадания — failsafe: таймаут декодера 100 мс, опрос RC 20 мс
+    # и grace-период Failsafe 130 мс, итого ≤250 мс (LOS-368).
+    dropout = rows[(2000 + 270) // DT_MS:(2000 + 600) // DT_MS]
     assert all(r["failsafe"] == 1.0 for r in dropout)
     assert all(r["throttle"] == 0.0 for r in dropout)
     assert rows[-1]["failsafe"] == 0.0
@@ -85,9 +85,9 @@ def test_receiver_dropout_reported_with_cause_and_duration():
     assert "thr: no pulses" in rc[1] and "str: no pulses" in rc[1]
     m = re.search(r"RC restored after (\d+) ms", rc[2])
     assert m, rc[2]
-    # Потеря фиксируется через 250 мс после последнего импульса, возврат —
+    # Потеря фиксируется через 100 мс после последнего импульса, возврат —
     # с первым импульсом и опросом RC (20 мс).
-    assert 300 <= int(m.group(1)) <= 420
+    assert 440 <= int(m.group(1)) <= 560
 
 
 def test_out_of_range_pulses_reported_with_width():

@@ -29,7 +29,11 @@
 #define RC_IN_PULSE_MAX_US 2000         // 2.0 мс
 #define RC_IN_PULSE_NEUTRAL_US 1500     // 1.5 мс
 #define RC_IN_PULSE_TOLERANCE_US 200    // Допуск окна приёма вокруг [min, max]
-#define RC_IN_TIMEOUT_MS 250            // Таймаут потери сигнала
+// Таймаут потери сигнала. Вместе с опросом RC (RC_IN_POLL_INTERVAL_MS) и
+// FAILSAFE_TIMEOUT_MS даёт время от потери до нейтрали: не больше
+// 100 + 20 + 130 = 250 мс (LOS-368).
+// = rc_vehicle::config::RcInputConfig::kTimeoutMs.
+#define RC_IN_TIMEOUT_MS 100
 
 // IMU конфигурация (MPU-6050/MPU-6500 по SPI)
 #define IMU_SPI_HOST SPI2_HOST
@@ -68,7 +72,16 @@
 #define RC_IN_POLL_INTERVAL_MS 20  // 50 Hz
 #define IMU_READ_INTERVAL_MS 2     // 500 Hz (каждую итерацию control loop)
 #define TELEM_SEND_INTERVAL_MS 50  // 20 Hz
-#define FAILSAFE_TIMEOUT_MS 250    // Таймаут failsafe
+// Grace-период failsafe после потери последнего источника управления; сам
+// источник теряется по RC_IN_TIMEOUT_MS (+ опрос RC) или
+// WifiConfig::kCommandTimeoutMs, в сумме не больше 250 мс (LOS-368).
+// = rc_vehicle::config::FailsafeConfig::kTimeoutMs.
+#define FAILSAFE_TIMEOUT_MS 130
+
+// Потеря RC → нейтраль не позже 250 мс (TESTING_PROGRAM.md, LOS-368).
+static_assert(RC_IN_TIMEOUT_MS + RC_IN_POLL_INTERVAL_MS + FAILSAFE_TIMEOUT_MS <=
+                  250,
+              "RC loss to neutral must stay within 250 ms");
 
 // Slew-rate limiting (плавность)
 #define SLEW_RATE_THROTTLE_MAX_PER_SEC 0.5f

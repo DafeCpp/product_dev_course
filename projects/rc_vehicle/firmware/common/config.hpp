@@ -19,7 +19,8 @@ struct ControlLoopConfig {
  */
 struct RcInputConfig {
   static constexpr uint32_t kPollIntervalMs = 20;  ///< Интервал опроса (50 Hz)
-  static constexpr uint32_t kTimeoutMs = 100;  ///< Таймаут валидности сигнала
+  /// Таймаут валидности сигнала (= RC_IN_TIMEOUT_MS на ESP32)
+  static constexpr uint32_t kTimeoutMs = 100;
   static constexpr uint32_t kPulseMinUs =
       1000;  ///< Минимальная длительность импульса
   static constexpr uint32_t kPulseMaxUs =
@@ -98,7 +99,11 @@ struct LpfConfig {
  * @brief Конфигурация failsafe
  */
 struct FailsafeConfig {
-  static constexpr uint32_t kTimeoutMs = 250;  ///< Таймаут потери управления
+  /// Grace-период после потери последнего источника (= FAILSAFE_TIMEOUT_MS)
+  static constexpr uint32_t kTimeoutMs = 130;
+  /// Требование: нейтраль не позже чем через 250 мс после последней команды
+  /// (TESTING_PROGRAM.md, docs/interfaces_protocols.md; LOS-368).
+  static constexpr uint32_t kLossToNeutralMs = 250;
 };
 
 /**
@@ -134,9 +139,20 @@ struct ProfilingConfig {
  * @brief Конфигурация Wi-Fi команд
  */
 struct WifiConfig {
-  static constexpr uint32_t kCommandTimeoutMs =
-      500;  ///< Таймаут актуальности команды
+  /// Таймаут актуальности команды. Web UI шлёт команды каждые 20 мс, так что
+  /// это 5 пропущенных команд (LOS-368).
+  static constexpr uint32_t kCommandTimeoutMs = 100;
 };
+
+// Потеря источника доходит до нейтрали за таймаут источника, задержку его
+// опроса и grace-период failsafe; сумма не должна превышать требование
+// (LOS-368). RC опрашивается раз в kPollIntervalMs, Wi-Fi — каждый тик.
+static_assert(RcInputConfig::kTimeoutMs + RcInputConfig::kPollIntervalMs +
+                  FailsafeConfig::kTimeoutMs <=
+              FailsafeConfig::kLossToNeutralMs);
+static_assert(WifiConfig::kCommandTimeoutMs + ControlLoopConfig::kPeriodMs +
+                  FailsafeConfig::kTimeoutMs <=
+              FailsafeConfig::kLossToNeutralMs);
 
 /**
  * @brief Конфигурация PWM
