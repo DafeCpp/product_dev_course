@@ -299,7 +299,8 @@ def test_kids_without_samples(tmp_path):
 
 
 def test_kids_no_limits_is_informational(tmp_path):
-    rows = [{"ts_ms": i * 10, "speed_ms": 1.0, "ax": 0.1} for i in range(20)]
+    rows = [{"ts_ms": i * 10, "speed_ms": 1.0, "ax": 0.1, "drive_mode": 3}
+            for i in range(20)]
     res = tm.check_kids(_write_csv(tmp_path / "info.csv", rows))
     assert [r.passed for r in res] == [None, None]
 
@@ -326,7 +327,7 @@ def test_ekf_distance_window(tmp_path):
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 def test_cli_exit_codes(tmp_path, capsys):
-    rows = _rest_log(0.5)
+    rows = _rest_log(1.5)
     path = tmp_path / "rest.csv"
     _write_csv(path, rows)
     assert tm.main([str(path), "--only", "gyro-bias"]) == 0
@@ -341,15 +342,15 @@ def test_cli_exit_codes(tmp_path, capsys):
 
 def test_cli_skips_ekf_dist_without_distance(tmp_path, capsys):
     path = tmp_path / "rest.csv"
-    _write_csv(path, _rest_log(0.5))
-    tm.main([str(path), "--only", "ekf-dist"])
+    _write_csv(path, _rest_log(1.5))
+    assert tm.main([str(path), "--only", "ekf-dist"]) == 2
     assert "EKF: дистанция" not in capsys.readouterr().out
 
 
 def test_cli_skips_metrics_without_data_unless_requested(tmp_path, capsys):
     """Лог покоя: без --only остальные метрики пропускаются, с --only — провал."""
     path = tmp_path / "rest.csv"
-    _write_csv(path, _rest_log(0.5))
+    _write_csv(path, _rest_log(1.5))
     assert tm.main([str(path)]) == 0
     out = capsys.readouterr().out
     assert "[SKIP] Yaw PID step" in out and "[SKIP] Failsafe" in out
@@ -361,3 +362,179 @@ def test_cli_without_any_data_is_an_error(tmp_path):
     path = tmp_path / "empty.csv"
     _write_csv(path, [{"ts_ms": i * 10, "throttle": 0.5} for i in range(50)])
     assert tm.main([str(path)]) == 2
+
+
+# ── Замечания ревью (PR #358) ────────────────────────────────────────────
+
+def _two_steps_log(second: float, n=900):
+    """Шаг руля 0 → 0.4 на 100-м отсчёте, затем `second` на 400-м (10 мс/отсчёт)."""
+    rows = []
+    for i in range(n):
+        cmd = 0.0 if i < 100 else (0.4 if i < 400 else second)
+        rows.append({"ts_ms": i * 10, "rc_steering": cmd,
+                     "yaw_rate_dps": 36.0 if 102 <= i < 400 else 0.0})
+    return rows
+
+
+def test_yaw_step_return_to_zero_is_not_a_step(tmp_path):
+    """Руль 0 → 0.4 → 0 (и потеря RC обнуляет rc_steering): второй «шаг» не считается и не роняет скрипт."""
+    log = _write_csv(tmp_path / "updown.csv", _two_steps_log(0.0))
+    assert len(tm.find_steering_steps(log)) == 1
+    res = tm.check_yaw_step(log)
+    assert len(res) == 1 and res[0].passed is True
+
+
+def test_yaw_step_window_ends_at_next_step(tmp_path):
+    """Второй шаг 0.4 → -0.4 через 3 с: переходный процесс первого не захватывает второй."""
+    rows = _two_steps_log(-0.4)
+    for r in rows[400:]:
+        r["yaw_rate_dps"] = -36.0
+    log = _write_csv(tmp_path / "two.csv", rows)
+    res = tm.check_yaw_step(log)
+    assert len(res) == 2 and all(r.passed for r in res)
+
+
+def test_yaw_step_zero_setpoint_does_not_raise(tmp_path):
+    rows = [{"ts_ms": i * 10, "rc_steering": 0.0, "yaw_rate_dps": 0.0} for i in range(50)]
+    log = _write_csv(tmp_path / "z.csv", rows)
+    with pytest.raises(ValueError):
+        tm.yaw_step_response(log, 10)
+    assert tm.run_metrics(log)[0].no_data  # без --only это SKIP, не падение
+
+
+def test_yaw_step_wifi_log_is_reported_as_unsupported(tmp_path):
+    """Прошивка пишет rc_steering только для RC: у Wi-Fi-заезда там нули, а не молчаливый PASS."""
+    rows = [{"ts_ms": i * 10, "rc_steering": 0.0, "cmd_steering": 0.4 if i > 50 else 0.0,
+             "yaw_rate_dps": 36.0} for i in range(200)]
+    res = tm.check_yaw_step(_write_csv(tmp_path / "wifi.csv", rows))
+    assert res[0].no_data and "RC" in res[0].value
+
+
+def test_yaw_step_overshoot_and_settling_checked_separately(tmp_path):
+    """Каждый критерий в отдельности: большой overshoot при быстром входе в полосу и наоборот."""
+    def log(profile):
+        rows = [{"ts_ms": i * 10, "rc_steering": 0.0 if i < 50 else 0.4,
+                 "yaw_rate_dps": profile(i - 50) if i >= 50 else 0.0} for i in range(300)]
+        return _write_csv(tmp_path / f"p{id(profile)}.csv", rows)
+
+    sp = 36.0
+    # Пик 30 % на одном отсчёте, дальше в полосе: settling мал, overshoot нет.
+    peak = log(lambda k: sp if k != 5 else sp * 1.3)
+    r = tm.check_yaw_step(peak)[0]
+    assert r.passed is False and "overshoot" in r.value
+    assert r.value.count("НЕ ВЫПОЛНЕНО") == 1
+    # Медленный подход без перелёта: overshoot 0, settling 400 мс.
+    slow = log(lambda k: sp * min(1.0, k / 40.0))
+    r = tm.check_yaw_step(slow)[0]
+    assert r.passed is False and r.value.count("НЕ ВЫПОЛНЕНО") == 1
+    res = tm.yaw_step_response(slow and _write_csv(tmp_path / "s.csv", [
+        {"ts_ms": i * 10, "rc_steering": 0.0 if i < 50 else 0.4,
+         "yaw_rate_dps": sp * min(1.0, max(0, i - 50) / 40.0)} for i in range(300)]), 49)
+    assert res["overshoot"] < 0.01 and 340 <= res["settling_ms"] <= 380
+
+
+def test_yaw_step_skips_non_normal_modes_without_gain(tmp_path):
+    rows = _two_steps_log(0.0)
+    for r in rows:
+        r["drive_mode"] = 1
+    log = _write_csv(tmp_path / "sport.csv", rows)
+    assert tm.check_yaw_step(log)[0].no_data
+    assert tm.check_yaw_step(log, gain_dps=90.0)[0].passed is True
+
+
+def test_kids_info_only_exits_zero(tmp_path, capsys):
+    rows = [{"ts_ms": i * 10, "speed_ms": 1.0, "ax": 0.1, "drive_mode": 3} for i in range(20)]
+    path = tmp_path / "kids.csv"
+    _write_csv(path, rows)
+    assert tm.main([str(path), "--only", "kids"]) == 0
+    assert "критерии не заданы" in capsys.readouterr().out
+
+
+def test_kids_uses_absolute_values(tmp_path):
+    rows = [{"ts_ms": i * 10, "speed_ms": -2.0, "ax": -0.5, "drive_mode": 3} for i in range(20)]
+    p = tm.kids_peaks(_write_csv(tmp_path / "rev.csv", rows))
+    assert p["max_speed_ms"] == pytest.approx(2.0)
+    assert p["max_accel_ms2"] == pytest.approx(0.5 * tm.G)
+
+
+def test_kids_requires_drive_mode_column(tmp_path):
+    rows = [{"ts_ms": i * 10, "speed_ms": 1.0, "ax": 0.1} for i in range(20)]
+    res = tm.check_kids(_write_csv(tmp_path / "nomode.csv", rows))
+    assert res[0].no_data and "drive_mode" in res[0].value
+
+
+def test_gyro_bias_requires_long_rest(tmp_path):
+    log = _write_csv(tmp_path / "short.csv", _rest_log(0.5))  # 30 с
+    res = tm.check_gyro_bias(log)
+    assert res[0].no_data and "нужно" in res[0].value
+    assert all(r.passed for r in tm.check_gyro_bias(log, min_rest_s=10))
+
+
+def test_gyro_bias_angle_threshold(tmp_path):
+    log = _write_csv(tmp_path / "pitch.csv", _rest_log(3, pitch_slope=3.0))
+    res = {r.name: r for r in tm.check_gyro_bias(log)}
+    assert res["Дрейф в покое: pitch_deg"].passed is False
+    assert res["Дрейф в покое: roll_deg"].passed is True
+
+
+def test_failsafe_total_includes_source_timeout(tmp_path):
+    """Нейтраль через 200 мс после падения флага RC: с таймаутом источника 290 мс, это провал."""
+    rows = []
+    for i in range(300):
+        t = i * 10
+        rows.append({"ts_ms": t, "rc_ok": 0 if t >= 1000 else 1, "wifi_ok": 0,
+                     "throttle": 0.0 if t >= 1200 else 0.4, "steering": 0.0})
+    res = tm.check_failsafe(_write_csv(tmp_path / "f.csv", rows))
+    assert res[0].passed is False and "290" in res[0].value
+
+
+def test_failsafe_flags_standing_car(tmp_path):
+    rows = [{"ts_ms": i * 10, "rc_ok": 0 if i >= 100 else 1, "wifi_ok": 0,
+             "throttle": 0.0, "steering": 0.0} for i in range(200)]
+    res = tm.check_failsafe(_write_csv(tmp_path / "stand.csv", rows))
+    assert "уже стояла" in res[0].value
+
+
+def test_failsafe_neutral_after_source_returned_does_not_count(tmp_path):
+    rows = []
+    for i in range(300):
+        t = i * 10
+        back = t >= 1500
+        rows.append({"ts_ms": t, "rc_ok": 1 if (back or t < 1000) else 0, "wifi_ok": 0,
+                     "throttle": 0.0 if t >= 2000 else 0.4, "steering": 0.0})
+    res = tm.check_failsafe(_write_csv(tmp_path / "back.csv", rows))
+    assert res[0].passed is False and "не наступила" in res[0].value
+
+
+def test_failsafe_takes_larger_timeout_when_both_sources_were_alive(tmp_path):
+    rows = [{"ts_ms": i * 10, "rc_ok": 0 if i >= 100 else 1,
+             "wifi_ok": 0 if i >= 100 else 1,
+             "throttle": 0.0 if i >= 110 else 0.4, "steering": 0.0} for i in range(200)]
+    e = tm.failsafe_latencies(_write_csv(tmp_path / "both.csv", rows))[0]
+    assert e["source_timeout_ms"] == tm.WIFI_SOURCE_TIMEOUT_MS
+
+
+def test_ekf_distance_rejects_nonpositive(tmp_path, capsys):
+    log = _write_csv(tmp_path / "d.csv", [{"ts_ms": i * 10, "speed_ms": 1.0} for i in range(50)])
+    with pytest.raises(ValueError):
+        tm.check_ekf_distance(log, 0.0)
+    assert tm.main([str(tmp_path / "d.csv"), "--only", "ekf-dist", "--distance-m", "0"]) == 1
+
+
+def test_ekf_distance_ignores_backwards_timestamps(tmp_path):
+    rows = [{"ts_ms": t, "speed_ms": 1.0} for t in (0, 1000, 500, 2000)]
+    assert tm.integrate_distance(_write_csv(tmp_path / "back.csv", rows)) == pytest.approx(2.5)
+
+
+def test_integrate_distance_uses_absolute_speed(tmp_path):
+    rows = [{"ts_ms": i * 100, "speed_ms": -1.0} for i in range(11)]
+    assert tm.integrate_distance(_write_csv(tmp_path / "rev.csv", rows)) == pytest.approx(1.0)
+
+
+def test_yaw_step_setpoint_is_robust_to_command_glitch(tmp_path):
+    """Выброс команды в конце окна (дребезг пульта) не должен менять уставку."""
+    rows = _two_steps_log(0.0, n=140)
+    rows[-1]["rc_steering"] = 1.0
+    log = _write_csv(tmp_path / "glitch.csv", rows)
+    r = tm.yaw_step_response(log, 99, window_ms=400)
+    assert r["setpoint_dps"] == pytest.approx(36.0)

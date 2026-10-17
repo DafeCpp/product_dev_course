@@ -13,7 +13,7 @@
     python3 trial_metrics.py log.csv --distance-m 5.0      # + EKF против мерной ленты
 
 Метрики:
-  yaw-step    overshoot и settling time yaw rate после шага руля
+  yaw-step    overshoot и settling time yaw rate после шага руля (только RC, Normal)
   gyro-bias   дрейф bias гироскопа и pitch/roll в покое
   failsafe    время от пропадания источников до нейтрали (≤250 мс)
   kids        максимальные скорость и ускорение в Kids Mode
@@ -51,6 +51,10 @@ NORMAL_STEER_TO_YAW_DPS = 90.0
 RC_SOURCE_TIMEOUT_MS = 90.0
 WIFI_SOURCE_TIMEOUT_MS = 100.0
 NEUTRAL_EPS = 1e-3
+# Шаг руля считается, только если после него команда не меньше этого (не возврат к нулю).
+STEP_MIN_TARGET = 0.1
+# Покой короче этого не годится для тренда bias (программа: 5-10 мин).
+MIN_REST_S = 60.0
 DRIVE_MODE_KIDS = 3  # DRIVE_MODE_NAMES в analyze_telemetry.py
 
 
@@ -81,19 +85,20 @@ def find_steering_steps(rows: list[Row], min_step: float = 0.2,
                         settle_ms: float = 100.0) -> list[int]:
     """Индексы шагов команды руля: |Δ| ≥ min_step за `settle_ms`.
 
-    Берётся команда водителя (`rc_steering` — активный источник RC/Wi-Fi), а не
-    `cmd_steering`/`steering`: те уже содержат коррекцию стабилизации.
+    Берётся команда водителя `rc_steering`, а не `cmd_steering`/`steering`: те
+    уже содержат коррекцию стабилизации. Прошивка пишет `rc_steering` только
+    пока активен приёмник RC (`telemetry_builder.cpp`), поэтому при управлении
+    по Wi-Fi шагов в логе нет. Возврат руля к нулю — не шаг: уставки нет.
     """
-    name = "rc_steering" if has_col(rows, "rc_steering") else "cmd_steering"
-    if not has_col(rows, name):
+    if not has_col(rows, "rc_steering"):
         return []
-    ts, cmd = _ts(rows), col_raw(rows, name)
+    ts, cmd = _ts(rows), col_raw(rows, "rc_steering")
     steps: list[int] = []
     j = 0
     for i in range(1, len(rows)):
         while ts[i] - ts[j] > settle_ms:
             j += 1
-        if abs(cmd[i] - cmd[j]) >= min_step and (
+        if abs(cmd[i] - cmd[j]) >= min_step and abs(cmd[i]) >= STEP_MIN_TARGET and (
                 not steps or ts[i] - ts[steps[-1]] > 2 * settle_ms):
             # Начало шага — последний отсчёт до первого изменения команды.
             k = j
@@ -111,8 +116,7 @@ def yaw_step_response(rows: list[Row], start: int, window_ms: float = 1000.0,
     уставкой в долях уставки; settling — момент, после которого yaw rate
     остаётся в полосе ±10 % от уставки до конца окна.
     """
-    name = "rc_steering" if has_col(rows, "rc_steering") else "cmd_steering"
-    ts, cmd = _ts(rows), col_raw(rows, name)
+    ts, cmd = _ts(rows), col_raw(rows, "rc_steering")
     yaw = col_raw(rows, "yaw_rate_dps")
     t0 = ts[start]
     end = start
@@ -140,24 +144,53 @@ def yaw_step_response(rows: list[Row], start: int, window_ms: float = 1000.0,
             "settling_ms": settling, "t0_ms": t0}
 
 
-def check_yaw_step(rows: list[Row], gain_dps: float = NORMAL_STEER_TO_YAW_DPS
+def check_yaw_step(rows: list[Row], gain_dps: float | None = None
                    ) -> list[MetricResult]:
+    """Overshoot/settling для каждого шага руля из `rc_steering`.
+
+    `gain_dps=None` — уставка Normal-режима (90 °/с на единицу руля); в логе с
+    колонкой `drive_mode` шаги в других режимах пропускаются: их коэффициент
+    другой, его задают явно через `--gain-dps`.
+    """
     name = "Yaw PID step"
     if not has_col(rows, "yaw_rate_dps"):
         return [MetricResult(name, False, "НЕТ КОЛОНКИ yaw_rate_dps", no_data=True)]
     steps = find_steering_steps(rows)
     if not steps:
-        return [MetricResult(name, False, "ШАГ РУЛЯ НЕ НАЙДЕН", no_data=True)]
+        return [MetricResult(
+            name, False,
+            "ШАГ РУЛЯ НЕ НАЙДЕН (в лог пишется только команда с пульта RC; при "
+            "управлении по Wi-Fi её нет)", no_data=True)]
+    ts = _ts(rows)
+    mode = col_raw(rows, "drive_mode") if has_col(rows, "drive_mode") else None
     out = []
     for n, start in enumerate(steps, 1):
-        r = yaw_step_response(rows, start, gain_dps=gain_dps)
-        ok = (r["overshoot"] < YAW_OVERSHOOT_LIMIT
-              and r["settling_ms"] < YAW_SETTLING_LIMIT_MS)
+        label = f"{name} #{n} (t={ts[start]:.0f} мс)"
+        if gain_dps is None and mode is not None and mode[start + 1] != 0:
+            out.append(MetricResult(
+                label, None,
+                f"режим {mode[start + 1]:.0f} не Normal: уставка не 90 °/с, "
+                "задайте --gain-dps", no_data=True))
+            continue
+        gain = NORMAL_STEER_TO_YAW_DPS if gain_dps is None else gain_dps
+        # Окно кончается на следующем шаге, чтобы не мерить чужой переходный процесс.
+        window = 1000.0
+        if n < len(steps):
+            window = min(window, ts[steps[n]] - ts[start])
+        try:
+            r = yaw_step_response(rows, start, window_ms=window, gain_dps=gain)
+        except ValueError as exc:
+            out.append(MetricResult(label, None, str(exc), no_data=True))
+            continue
+        ok_over = r["overshoot"] < YAW_OVERSHOOT_LIMIT
+        ok_settle = r["settling_ms"] < YAW_SETTLING_LIMIT_MS
         out.append(MetricResult(
-            f"{name} #{n} (t={r['t0_ms']:.0f} мс)", ok,
+            label, ok_over and ok_settle,
             f"уставка {r['setpoint_dps']:.1f} °/с, overshoot "
-            f"{r['overshoot'] * 100:.1f} % (< {YAW_OVERSHOOT_LIMIT * 100:.0f} %), "
-            f"settling {r['settling_ms']:.0f} мс (< {YAW_SETTLING_LIMIT_MS:.0f} мс)"))
+            f"{r['overshoot'] * 100:.1f} % (< {YAW_OVERSHOOT_LIMIT * 100:.0f} %"
+            f"{'' if ok_over else ', НЕ ВЫПОЛНЕНО'}), settling "
+            f"{r['settling_ms']:.0f} мс (< {YAW_SETTLING_LIMIT_MS:.0f} мс"
+            f"{'' if ok_settle else ', НЕ ВЫПОЛНЕНО'})"))
     return out
 
 
@@ -213,12 +246,18 @@ def stationary_drift(rows: list[Row], mask: list[bool] | None = None) -> dict:
 
 
 def check_gyro_bias(rows: list[Row], max_gyro_slope_dps_min: float = 0.5,
-                    max_angle_slope_deg_min: float = 1.0) -> list[MetricResult]:
+                    max_angle_slope_deg_min: float = 1.0,
+                    min_rest_s: float = MIN_REST_S) -> list[MetricResult]:
     name = "Дрейф в покое"
     try:
         d = stationary_drift(rows)
     except ValueError as exc:
         return [MetricResult(name, False, str(exc).upper(), no_data=True)]
+    if d["duration_s"] < min_rest_s:
+        return [MetricResult(
+            name, False,
+            f"покоя {d['duration_s']:.0f} с, нужно ≥ {min_rest_s:.0f} с "
+            "(по программе 5-10 мин): тренд за секунды — это шум", no_data=True)]
     out = []
     for ch in ("gx", "gy", "gz"):
         if ch in d:
@@ -253,6 +292,9 @@ def failsafe_latencies(rows: list[Row]) -> list[dict]:
     (`rc_ok`/`wifi_ok`). Нейтраль — первый отсчёт после него, где применённые
     газ и руль равны нулю. Флаги падают уже после таймаута самого источника
     (RC 90 мс, Wi-Fi 100 мс), поэтому полное время = от флага + таймаут источника.
+    Это нижняя оценка: интервал опроса RC (20 мс) и ширина импульса не учтены
+    (в прошивке на них заложен запас `kLossToNeutralMs`). Нейтраль ищется до
+    возврата источника.
     """
     ts = _ts(rows)
     rc, wifi = col_raw(rows, "rc_ok"), col_raw(rows, "wifi_ok")
@@ -263,11 +305,15 @@ def failsafe_latencies(rows: list[Row]) -> list[dict]:
         was = rc[i - 1] > 0.5 or wifi[i - 1] > 0.5
         now = rc[i] > 0.5 or wifi[i] > 0.5
         if was and not now:
-            source_timeout = (RC_SOURCE_TIMEOUT_MS if rc[i - 1] > 0.5
-                              else WIFI_SOURCE_TIMEOUT_MS)
+            # Оба источника были живы: консервативно берём больший таймаут.
+            source_timeout = max(
+                RC_SOURCE_TIMEOUT_MS if rc[i - 1] > 0.5 else 0.0,
+                WIFI_SOURCE_TIMEOUT_MS if wifi[i - 1] > 0.5 else 0.0)
             moving = abs(thr[i - 1]) > NEUTRAL_EPS or abs(st[i - 1]) > NEUTRAL_EPS
             neutral_at = None
             for k in range(i, len(rows)):
+                if rc[k] > 0.5 or wifi[k] > 0.5:
+                    break  # источник вернулся раньше нейтрали
                 if abs(thr[k]) < NEUTRAL_EPS and abs(st[k]) < NEUTRAL_EPS:
                     neutral_at = ts[k]
                     break
@@ -311,19 +357,21 @@ def check_failsafe(rows: list[Row]) -> list[MetricResult]:
 def kids_peaks(rows: list[Row]) -> dict:
     """Максимум |speed_ms| и |ax| (м/с²) в отсчётах Kids Mode.
 
-    Kids-отсчёты — `drive_mode == 3`; нет колонки — весь лог считается Kids.
+    Kids-отсчёты — `drive_mode == 3`. Ускорение — `ax` из лога (g → м/с²): это
+    не `forward_accel` прошивки (его в логе нет), значение включает проекцию g
+    при наклоне и вибрацию, то есть завышено.
     """
-    if has_col(rows, "drive_mode"):
-        mode = col_raw(rows, "drive_mode")
-        sel = [i for i, m in enumerate(mode) if m == DRIVE_MODE_KIDS]
-    else:
-        sel = list(range(len(rows)))
+    for c in ("drive_mode", "speed_ms", "ax"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    mode = col_raw(rows, "drive_mode")
+    sel = [i for i, m in enumerate(mode) if m == DRIVE_MODE_KIDS]
     if not sel:
         raise ValueError("нет отсчётов Kids Mode")
     speed = col_raw(rows, "speed_ms")
     ax = col_raw(rows, "ax")
     sp = _finite([abs(speed[i]) for i in sel])
-    ac = _finite([abs(ax[i]) * G for i in sel]) if has_col(rows, "ax") else []
+    ac = _finite([abs(ax[i]) * G for i in sel])
     return {"samples": len(sel),
             "max_speed_ms": max(sp) if sp else math.nan,
             "max_accel_ms2": max(ac) if ac else math.nan}
@@ -335,7 +383,7 @@ def check_kids(rows: list[Row], max_speed_ms: float | None = None,
     try:
         p = kids_peaks(rows)
     except ValueError as exc:
-        return [MetricResult(name, False, str(exc).upper(), no_data=True)]
+        return [MetricResult(name, False, str(exc), no_data=True)]
     ok_speed = None if max_speed_ms is None else p["max_speed_ms"] <= max_speed_ms
     ok_accel = None if max_accel_ms2 is None else p["max_accel_ms2"] <= max_accel_ms2
     lim = lambda v, u: "" if v is None else f" (≤ {v} {u})"  # noqa: E731
@@ -363,7 +411,8 @@ def integrate_distance(rows: list[Row], t_from_ms: float | None = None,
             continue
         if t_to_ms is not None and ts[i] > t_to_ms:
             break
-        total += 0.5 * (abs(speed[i]) + abs(speed[i - 1])) * (ts[i] - ts[i - 1]) / 1000.0
+        dt = max(0.0, ts[i] - ts[i - 1])
+        total += 0.5 * (abs(speed[i]) + abs(speed[i - 1])) * dt / 1000.0
     return total
 
 
@@ -373,6 +422,8 @@ def check_ekf_distance(rows: list[Row], distance_m: float, tolerance: float = 0.
     name = "EKF: дистанция"
     if not has_col(rows, "speed_ms"):
         return [MetricResult(name, False, "НЕТ КОЛОНКИ speed_ms", no_data=True)]
+    if distance_m <= 0:
+        raise ValueError("distance_m должна быть > 0")
     est = integrate_distance(rows, t_from_ms, t_to_ms)
     err = (est - distance_m) / distance_m
     return [MetricResult(
@@ -395,9 +446,9 @@ def run_metrics(rows: list[Row], only: list[str] | None = None,
         wanted.discard("ekf-dist")  # без мерной ленты считать нечего
     out: list[MetricResult] = []
     if "yaw-step" in wanted:
-        out += check_yaw_step(rows, kw.get("gain_dps", NORMAL_STEER_TO_YAW_DPS))
+        out += check_yaw_step(rows, kw.get("gain_dps"))
     if "gyro-bias" in wanted:
-        out += check_gyro_bias(rows)
+        out += check_gyro_bias(rows, min_rest_s=kw.get("min_rest_s", MIN_REST_S))
     if "failsafe" in wanted:
         out += check_failsafe(rows)
     if "kids" in wanted:
@@ -432,8 +483,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="допуск ekf-dist, доля (по умолчанию 0.05)")
     ap.add_argument("--from-ms", type=float, help="начало участка для ekf-dist (ts_ms)")
     ap.add_argument("--to-ms", type=float, help="конец участка для ekf-dist (ts_ms)")
-    ap.add_argument("--gain-dps", type=float, default=NORMAL_STEER_TO_YAW_DPS,
-                    help="уставка yaw rate на единицу руля (Normal: 90 °/с)")
+    ap.add_argument("--gain-dps", type=float,
+                    help="уставка yaw rate на единицу руля; по умолчанию Normal "
+                         "(90 °/с), шаги в других режимах пропускаются")
+    ap.add_argument("--min-rest-s", type=float, default=MIN_REST_S,
+                    help="минимальная длительность покоя для gyro-bias, с "
+                         f"(по умолчанию {MIN_REST_S:.0f})")
     ap.add_argument("--kids-max-speed", type=float, help="лимит скорости Kids, м/с")
     ap.add_argument("--kids-max-accel", type=float, help="лимит ускорения Kids, м/с²")
     return ap.parse_args(argv)
@@ -444,6 +499,9 @@ def main(argv: list[str] | None = None) -> int:
     if not os.path.isfile(args.csv_path):
         print(f"ERROR: файл не найден: {args.csv_path}", file=sys.stderr)
         return 1
+    if args.distance_m is not None and args.distance_m <= 0:
+        print("ERROR: --distance-m должна быть > 0", file=sys.stderr)
+        return 1
     _, rows = load_csv(args.csv_path)
     if not rows or "ts_ms" not in rows[0]:
         print("ERROR: пустой лог или нет колонки ts_ms", file=sys.stderr)
@@ -451,15 +509,18 @@ def main(argv: list[str] | None = None) -> int:
     results = run_metrics(
         rows, args.only, args.distance_m, gain_dps=args.gain_dps,
         kids_max_speed=args.kids_max_speed, kids_max_accel=args.kids_max_accel,
-        tolerance=args.tolerance, t_from_ms=args.from_ms, t_to_ms=args.to_ms)
+        tolerance=args.tolerance, t_from_ms=args.from_ms, t_to_ms=args.to_ms,
+        min_rest_s=args.min_rest_s)
     print_results(results)
     failed = [r for r in results if r.passed is False]
     checked = [r for r in results if r.passed is not None]
     if failed:
         print(f"RESULT: {len(failed)} из {len(checked)} критериев не выполнены.")
-    elif not checked:
-        print("RESULT: нет данных ни для одного критерия.")
+    elif not checked and not any(r.passed is None and not r.no_data for r in results):
+        print("RESULT: нет данных ни для одной метрики.")
         return 2
+    elif not checked:
+        print("RESULT: измерено, критерии не заданы.")
     else:
         print("RESULT: все критерии выполнены.")
     return 2 if failed else 0
