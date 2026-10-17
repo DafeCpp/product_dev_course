@@ -15,6 +15,7 @@ from .sim_host_runner import OversteerReplayConfig
 from .sim_params import SimParams
 from .vehicle_model import StepOutput, VehicleModel
 
+
 # Closed-loop SIL моделирует конкретную машинку, поэтому его штатный профиль —
 # последний полностью измеренный. SimParams()/VehicleModel() остаются generic
 # baseline для unit-тестов и синтетических экспериментов.
