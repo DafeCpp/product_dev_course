@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ExperimentEditModal from './ExperimentEditModal'
@@ -174,7 +174,7 @@ describe('ExperimentEditModal', () => {
     const busy = await screen.findByRole('button', { name: 'Сохранение...' })
     expect(busy).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Отмена' })).toBeDisabled()
-    release({})
+    await act(async () => { release({}) })
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 

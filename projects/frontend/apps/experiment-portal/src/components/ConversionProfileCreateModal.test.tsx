@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ConversionProfileCreateModal from './ConversionProfileCreateModal'
@@ -196,12 +196,13 @@ describe('ConversionProfileCreateModal', () => {
     const user = userEvent.setup()
     let release: (v: unknown) => void = () => {}
     vi.mocked(conversionProfilesApi.create).mockReturnValue(new Promise((r) => { release = r }) as never)
-    renderModal()
+    const { onClose } = renderModal()
     await user.type(screen.getByLabelText(/Версия/), 'v1')
     await user.click(screen.getByRole('button', { name: 'Создать профиль' }))
     const saving = await screen.findByRole('button', { name: 'Создание...' })
     expect(saving).toBeDisabled()
     expect(within(saving.closest('form') as HTMLElement).getByRole('button', { name: 'Отмена' })).toBeDisabled()
-    release({})
+    await act(async () => { release({}) })
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 })
