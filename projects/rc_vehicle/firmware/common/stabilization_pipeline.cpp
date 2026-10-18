@@ -336,8 +336,13 @@ StabilizationOutput StabilizationPipeline::Process(
   }
 
   if (policy.yaw_rate_active) {
-    yaw_ctrl_.Process(cfg, output.command.steering, input,
-                      output.command.throttle < 0.0f, policy.yaw_ref_cutoff_hz);
+    // Направление берём и по исходной команде: в Kids компенсация тангажа на
+    // подъёме может обнулить малый задний ход, но машина всё ещё едет назад,
+    // и yaw-PID с инвертированной связью включать нельзя (LOS-369).
+    const bool reversing =
+        input.command.throttle < 0.0f || output.command.throttle < 0.0f;
+    yaw_ctrl_.Process(cfg, output.command.steering, input, reversing,
+                      policy.yaw_ref_cutoff_hz);
   }
   if (policy.pitch_comp_active && !pitch_before_limits) {
     pitch_ctrl_.Process(cfg, output.command.throttle, input);

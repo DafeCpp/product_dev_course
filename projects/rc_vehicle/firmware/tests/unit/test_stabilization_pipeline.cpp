@@ -199,6 +199,25 @@ TEST_F(StabilizationPipelineTest, PitchCompensationNeverFlipsThrottleSign) {
                   0.0f);
 }
 
+TEST_F(StabilizationPipelineTest, KidsYawReverseGateUsesOriginalCommand) {
+  // LOS-369: на подъёме компенсация обнуляет малый задний ход, но yaw-PID
+  // всё равно должен считать, что машина едет назад, и не трогать руль.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.limiters_enabled = false;
+  const ModeTraits policy{
+      .yaw_rate_active = true,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+  input_.pitch_deg = -30.0f;  // подъём: коррекция +0.25
+  input_.command = {.throttle = -0.1f, .steering = 0.5f};
+  const auto output = pipeline_.Process(cfg_, policy, input_);
+  EXPECT_FLOAT_EQ(output.command.throttle, 0.0f);
+  EXPECT_FLOAT_EQ(output.command.steering, 0.5f);
+}
+
 TEST_F(StabilizationPipelineTest, KidsPitchCompensationDoesNotUndoReducers) {
   // LOS-369: accel limiter и anti-spin режут газ уже после компенсации, а
   // не до неё, — добавленный в гору газ их срез не отменяет.
