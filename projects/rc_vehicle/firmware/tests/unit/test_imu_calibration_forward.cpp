@@ -39,6 +39,11 @@ class ImuCalibrationForwardTest : public ::testing::Test {
     d.gravity_vec[0] = gx;
     d.gravity_vec[1] = gy;
     d.gravity_vec[2] = gz;
+    // Bias согласован с gravity_vec, как после настоящей Full-калибровки:
+    // среднее в покое = gravity_vec, опора (0,0,±1) — LOS-227.
+    d.accel_bias[0] = gx;
+    d.accel_bias[1] = gy;
+    d.accel_bias[2] = gz - (gz >= 0.f ? 1.f : -1.f);
     d.accel_forward_vec[0] = fx;
     d.accel_forward_vec[1] = fy;
     d.accel_forward_vec[2] = fz;
@@ -215,12 +220,11 @@ TEST_F(ImuCalibrationForwardTest, FullCalibOnTiltedMount_ForwardAccelMeasured) {
 // (0,0,±1) вместо gravity_vec ось «вперёд» уплощается и продольное ускорение
 // занижается в cos(угла).
 //
-// Угол взят близким к предельно поддерживаемому. Потолок задан
-// kMaxAccelBias = 0.5g: при наклоне монтажа θ в accel_bias попадает sin(θ),
-// поэтому монтаж круче asin(0.5) = 30° не переживает перезагрузку — см.
-// SteepMount_BeyondBiasLimit_DoesNotSurviveReload ниже.
+// 45° — за прежним потолком asin(kMaxAccelBias) = 30°: до LOS-227 при наклоне
+// монтажа θ в accel_bias попадал sin(θ) и такая калибровка не переживала
+// перезагрузку. Теперь горизонтальные компоненты ограничивает невязка модуля.
 TEST_F(ImuCalibrationForwardTest, SteepMount_ForwardAccelNotUnderReported) {
-  constexpr float kPitch = 25.0f * 3.14159265f / 180.0f;
+  constexpr float kPitch = 45.0f * 3.14159265f / 180.0f;
 
   calib.StartCalibration(CalibMode::Full, 10);
   for (int i = 0; i < 10; ++i) {
@@ -261,19 +265,22 @@ TEST_F(ImuCalibrationForwardTest, SteepMount_ForwardAccelNotUnderReported) {
       << "после перезагрузки ось «вперёд» потеряна";
 }
 
-// Характеризует текущий предел: монтаж круче ~30° кладёт в accel_bias больше
-// kMaxAccelBias, и SetData() отбрасывает калибровку целиком. В памяти она
-// работает, но перезагрузку не переживает, и авто-манёвры молча уезжают на
-// дефолтную ось X. Тест фиксирует границу, чтобы она не была сюрпризом;
-// снятие ограничения — отдельная задача (guard не различает смещение датчика
-// и наклон монтажа).
-TEST_F(ImuCalibrationForwardTest,
-       SteepMount_BeyondBiasLimit_DoesNotSurviveReload) {
-  constexpr float kPitch = 45.0f * 3.14159265f / 180.0f;
+// ═══════════════════════════════════════════════════════════════════════════
+// Наклон монтажа vs дефект датчика (LOS-227)
+//
+// Горизонтальные компоненты accel_bias после Full-калибровки — проекция g при
+// наклонном монтаже, а не дефект. Дефект виден как невязка модуля среднего в
+// покое от 1g. Отказ обязан быть явным (Failed в Finalize), а не отложенным
+// до перезагрузки.
+// ═══════════════════════════════════════════════════════════════════════════
 
+constexpr float kDegToRad = 3.14159265f / 180.0f;
+
+TEST_F(ImuCalibrationForwardTest,
+       SteepMount_BiasBeyondOldLimit_SurvivesReload) {
   calib.StartCalibration(CalibMode::Full, 10);
   for (int i = 0; i < 10; ++i) {
-    calib.FeedSample(TiltedRest(kPitch));
+    calib.FeedSample(TiltedRest(55.0f * kDegToRad));
   }
   ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
   ASSERT_GT(std::abs(calib.GetData().accel_bias[0]),
@@ -281,8 +288,126 @@ TEST_F(ImuCalibrationForwardTest,
 
   ImuCalibration reloaded;
   reloaded.SetData(calib.GetData());
-  EXPECT_FALSE(reloaded.IsValid())
-      << "предел kMaxAccelBias изменился — обновить документацию границы";
+  EXPECT_TRUE(reloaded.IsValid()) << "наклон монтажа принят за дефект датчика";
+}
+
+// Датчик на боку (g вдоль Y) — поддержанный монтаж (базис корпуса из
+// gravity_vec): accel_bias = (0, 1, −1). До LOS-227 такая калибровка работала
+// только до перезагрузки.
+TEST_F(ImuCalibrationForwardTest, SidewaysMount_SurvivesReload) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 1.f, 0.f));
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  ImuCalibration reloaded;
+  reloaded.SetData(calib.GetData());
+  EXPECT_TRUE(reloaded.IsValid());
+}
+
+// Датчик на боку с лёгким наклоном вниз (az < 0): знак опоры при загрузке
+// обязан совпасть с выбранным в Finalize().
+TEST_F(ImuCalibrationForwardTest, SidewaysMount_SlightlyNegativeZ_RoundTrips) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 1.f, -0.01f));
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  ImuCalibration reloaded;
+  reloaded.SetData(calib.GetData());
+  EXPECT_TRUE(reloaded.IsValid());
+}
+
+// Граница невязки: у дешёвых датчиков |g| в покое заметно отличается от 1g —
+// всё, что проходило прежний вертикальный предел, проходит и сейчас.
+TEST_F(ImuCalibrationForwardTest, NormResidual_Boundary) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 1.45f));
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 1.55f));
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+}
+
+// Отвергнутая калибровка не портит предыдущую.
+TEST_F(ImuCalibrationForwardTest, RejectedCalibration_KeepsPrevious) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) {
+    calib.FeedSample(TiltedRest(20.0f * kDegToRad));
+  }
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+  const float prev_bias = calib.GetData().accel_bias[0];
+
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 1.6f));
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+  EXPECT_TRUE(calib.IsValid());
+  EXPECT_FLOAT_EQ(calib.GetData().accel_bias[0], prev_bias)
+      << "отвергнутая калибровка перезаписала прежнюю";
+}
+
+TEST_F(ImuCalibrationForwardTest,
+       SensorDefect_LowMagnitude_FailsAtCalibration) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 0.45f));
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+}
+
+// Большое горизонтальное смещение: модуль 1.56g наклоном не объясняется.
+TEST_F(ImuCalibrationForwardTest,
+       SensorDefect_HorizontalExcess_FailsAtCalibration) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(1.2f, 0.f, 1.0f));
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+}
+
+TEST_F(ImuCalibrationForwardTest, SetData_WithoutGravity_KeepsPerAxisLimit) {
+  ImuCalibData d{};
+  d.valid = true;
+  d.accel_bias[0] = 0.6f;  // наклон неизвестен — объяснить нечем
+  calib.SetData(d);
+  EXPECT_FALSE(calib.IsValid());
+}
+
+TEST_F(ImuCalibrationForwardTest, SetData_NonFiniteBias_Rejected) {
+  ImuCalibData d{};
+  d.valid = true;
+  d.accel_bias[1] = std::nanf("");
+  calib.SetData(d);
+  EXPECT_FALSE(calib.IsValid());
+}
+
+TEST_F(ImuCalibrationForwardTest, SetData_InvertedSteepMount_Accepted) {
+  // Перевёрнутый датчик (az ≈ −1) на 45°: среднее (sin, 0, −cos).
+  const float t = 45.0f * kDegToRad;
+  ImuCalibData d{};
+  d.valid = true;
+  d.gravity_valid = true;
+  d.gravity_vec[0] = std::sin(t);
+  d.gravity_vec[2] = -std::cos(t);
+  d.accel_bias[0] = std::sin(t);
+  d.accel_bias[2] = -std::cos(t) + 1.0f;
+  calib.SetData(d);
+  EXPECT_TRUE(calib.IsValid());
+}
+
+TEST_F(ImuCalibrationForwardTest, SetData_BiasContradictsGravity_Rejected) {
+  // Модуль среднего (1,0,0) равен 1g, но bias объясняет датчик на боку, а
+  // gravity_vec говорит «ровно» — Apply() и перевод в СК машины разошлись бы.
+  ImuCalibData d{};
+  d.valid = true;
+  d.gravity_valid = true;
+  d.gravity_vec[2] = 1.0f;
+  d.accel_bias[0] = 1.0f;
+  d.accel_bias[2] = -1.0f;
+  calib.SetData(d);
+  EXPECT_FALSE(calib.IsValid());
+
+  ImuCalibData zero_g = d;
+  zero_g.gravity_vec[2] = 0.0f;
+  zero_g.accel_bias[0] = 0.0f;
+  zero_g.accel_bias[2] = 0.0f;
+  calib.SetData(zero_g);
+  EXPECT_FALSE(calib.IsValid());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -120,6 +120,10 @@ TEST_F(YawRateControllerTest,
   mounted.gravity_vec[0] = 0.f;
   mounted.gravity_vec[1] = 0.6f;
   mounted.gravity_vec[2] = -0.8f;
+  // Bias согласован с gravity_vec: среднее в покое = gravity_vec,
+  // опора (0,0,-1) — иначе SetData() отвергнет данные (LOS-227).
+  mounted.accel_bias[1] = 0.6f;
+  mounted.accel_bias[2] = 0.2f;
   mounted.accel_forward_vec[0] = 1.f;
   calib_.SetData(mounted);
 
