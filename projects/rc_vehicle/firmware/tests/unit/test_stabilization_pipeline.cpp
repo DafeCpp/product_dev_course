@@ -91,7 +91,7 @@ TEST_F(StabilizationPipelineTest, PitchUsesExplicitOrientationSnapshot) {
       .slip_angle_active = false,
       .oversteer_guard_active = false,
   };
-  input_.pitch_deg = 10.0f;
+  input_.pitch_deg = -10.0f;  // нос вверх (LOS-369)
 
   const auto output = pipeline_.Process(cfg_, policy, input_);
 

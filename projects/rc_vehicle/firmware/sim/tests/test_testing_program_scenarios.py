@@ -270,7 +270,7 @@ def test_slope_is_seen_as_pitch():
     """LOS-367: подъём с постоянной скоростью виден Madgwick как тангаж ≈ уклон.
 
     Знак фиксирует текущую конвенцию прошивки: подъём даёт pitch_deg < 0
-    (как и разгон) — на это опирается xfail ниже.
+    (как и разгон); PitchCompensator это учитывает (LOS-369).
     """
     rows, _ = _climb(pitch_comp=False)
     assert abs(_tail_mean(rows, "pitch_deg") + SLOPE_DEG) < 1.5
@@ -288,17 +288,13 @@ def test_pitch_comp_idle_on_flat():
 
 def test_pitch_comp_acts_on_slope():
     """LOS-367: --pitch-comp доходит до прошивки — на склоне газ с компенсацией
-    заметно отличается от газа без неё (направление проверяет xfail ниже)."""
+    заметно отличается от газа без неё (направление проверяют тесты ниже)."""
     with_comp, _ = _climb(pitch_comp=True)
     without, _ = _climb(pitch_comp=False)
     assert abs(_tail_mean(with_comp, "cmd_throttle")
                - _tail_mean(without, "cmd_throttle")) > 0.05
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Подозрение на знак в PitchCompensator: прошивка считает «нос вверх» как "
-    "ax=-sin (test_pitch_compensator.cpp), а реальный акселерометр на подъёме "
-    "даёт +sin по оси «вперёд» — компенсация режет газ в гору. LOS-369."))
 def test_pitch_comp_adds_throttle_uphill():
     """TESTING_PROGRAM.md: на подъёме pitch compensation добавляет газ и
     держит скорость выше, чем без неё."""
@@ -307,6 +303,16 @@ def test_pitch_comp_adds_throttle_uphill():
     assert (_tail_mean(with_comp, "cmd_throttle")
             > _tail_mean(without, "cmd_throttle") + 0.05)
     assert v_comp > v_plain
+
+
+def test_pitch_comp_cuts_throttle_downhill():
+    """LOS-369: под гору компенсация снимает газ и машина разгоняется
+    меньше, чем без неё."""
+    with_comp, v_comp = _climb(pitch_comp=True, slope_deg=-SLOPE_DEG)
+    without, v_plain = _climb(pitch_comp=False, slope_deg=-SLOPE_DEG)
+    assert (_tail_mean(with_comp, "cmd_throttle")
+            < _tail_mean(without, "cmd_throttle") - 0.05)
+    assert v_comp < v_plain
 
 
 def test_drift_slip_target_shifts_throttle_correction():

@@ -163,9 +163,14 @@ void PitchCompensator::Process(const StabilizationConfig& cfg, float& throttle,
   if (input.stabilization_weight <= 0.0f) return;
   if (!input.imu_enabled) return;
 
+  // pitch_deg > 0 — нос ВНИЗ (конвенция Madgwick/TiltEstimator: pitch =
+  // atan2(-ax, …), а на подъёме акселерометр видит ax = +sin). Подъём даёт
+  // отрицательный pitch, поэтому знак меняем: gain > 0 добавляет газ в гору
+  // (LOS-369).
+  const float nose_up_deg = -input.pitch_deg;
   // Fix #8 (REFACTORING.md): std::clamp вместо ручного if/else
   const float correction =
-      std::clamp(cfg.pitch_comp.gain * input.pitch_deg,
+      std::clamp(cfg.pitch_comp.gain * nose_up_deg,
                  -cfg.pitch_comp.max_correction, cfg.pitch_comp.max_correction);
 
   throttle = std::clamp(throttle + correction * input.stabilization_weight,

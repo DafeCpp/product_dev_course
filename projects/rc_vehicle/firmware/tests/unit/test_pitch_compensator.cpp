@@ -49,11 +49,12 @@ class PitchCompensatorTest : public ::testing::Test {
   /// Feed flat IMU data (no pitch, no roll)
   void FeedFlat(int n = 200) { FeedImuData(0.0f, 0.0f, 1.0f, 0, 0, 0, n); }
 
-  /// Feed tilted IMU data: nose up by pitch_deg degrees
-  /// accel_x = -sin(pitch) * g, accel_z = cos(pitch) * g
+  /// Feed tilted IMU data: nose up by pitch_deg degrees.
+  /// Акселерометр меряет specific force: при носе вверх ось «вперёд» видит
+  /// +sin (тот же знак, что при разгоне), accel_z = cos (LOS-369).
   void FeedPitchUp(float pitch_deg, int n = 300) {
     const float rad = pitch_deg * static_cast<float>(M_PI) / 180.0f;
-    FeedImuData(-std::sin(rad), 0.0f, std::cos(rad), 0, 0, 0, n);
+    FeedImuData(std::sin(rad), 0.0f, std::cos(rad), 0, 0, 0, n);
   }
 
   /// Feed tilted IMU data: nose down
