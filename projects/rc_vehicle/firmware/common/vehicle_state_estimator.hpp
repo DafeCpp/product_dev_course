@@ -134,9 +134,9 @@ class VehicleStateEstimator {
   uint32_t last_mag_sample_sequence_{0};
   bool tilt_was_enabled_{false};
   // Якорь TiltEstimator на прошлом тике и остаток выдержки после его
-  // появления (LOS-369).
+  // появления в постоянных времени accel-коррекции (LOS-369).
   bool prev_tick_anchored_{false};
-  float anchor_settle_left_s_{0.0f};
+  float anchor_settle_left_tau_{0.0f};
 #ifdef RC_PROFILE_LOOP
   VehicleStateEstimatorProfile profile_;
 #endif

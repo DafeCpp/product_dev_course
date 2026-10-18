@@ -16,8 +16,6 @@ constexpr float kDegToRad = 3.14159265358979f / 180.0f;
 constexpr float kNhcMaxYawRateRps = 1.0f;
 // Выдержка якоря TiltEstimator в постоянных времени accel-коррекции (LOS-369).
 constexpr float kTiltAnchorSettleTimeConstants = 3.0f;
-// Нижняя граница tilt_corr_gain_hz из StabilizationConfig::IsValid().
-constexpr float kMinTiltCorrGainHz = 0.05f;
 }  // namespace
 
 VehicleStateEstimate VehicleStateEstimator::Update(
@@ -85,11 +83,9 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     // tilt) копить было нечего — выдержки нет.
     if (motor_model_anchor_active && tilt_was_enabled_ &&
         !prev_tick_anchored_) {
-      anchor_settle_left_s_ =
-          kTiltAnchorSettleTimeConstants /
-          std::max(input.filter.tilt_corr_gain_hz, kMinTiltCorrGainHz);
+      anchor_settle_left_tau_ = kTiltAnchorSettleTimeConstants;
     }
-    if (!motor_model_anchor_active) anchor_settle_left_s_ = 0.0f;
+    if (!motor_model_anchor_active) anchor_settle_left_tau_ = 0.0f;
     prev_tick_anchored_ = motor_model_anchor_active;
     const float a_lin_g = motor_model_anchor_active ? a_lin_prev_g_ : 0.0f;
     const float a_lin_lat_g =
@@ -107,10 +103,14 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     pitch_rad = tilt_est_.GetPitchRad();
     roll_rad = tilt_est_.GetRollRad();
     if (motor_model_anchor_active && tilt_est_.LastUpdateAccelCorrected()) {
-      anchor_settle_left_s_ = std::max(anchor_settle_left_s_ - dt_sec, 0.0f);
+      // Выдержка в постоянных времени: k = gain·dt — доля τ за тик, поэтому
+      // смена tilt_corr_gain_hz на ходу её не обманывает.
+      anchor_settle_left_tau_ = std::max(
+          anchor_settle_left_tau_ - input.filter.tilt_corr_gain_hz * dt_sec,
+          0.0f);
     }
     tilt_anchored_this_tick =
-        motor_model_anchor_active && anchor_settle_left_s_ <= 0.0f;
+        motor_model_anchor_active && anchor_settle_left_tau_ <= 0.0f;
   }
   tilt_was_enabled_ = tilt_active_this_tick;
 
@@ -209,7 +209,7 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
   last_mag_sample_sequence_ = 0;
   tilt_was_enabled_ = false;
   prev_tick_anchored_ = false;
-  anchor_settle_left_s_ = 0.0f;
+  anchor_settle_left_tau_ = 0.0f;
 }
 
 void VehicleStateEstimator::RefreshEkfFields(

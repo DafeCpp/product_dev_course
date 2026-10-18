@@ -206,6 +206,29 @@ TEST_F(VehicleStateEstimatorTest,
   EXPECT_TRUE(anchored);
 }
 
+TEST_F(VehicleStateEstimatorTest, TiltAnchorSettleTracksGainChanges) {
+  // LOS-369: выдержка считается в постоянных времени, а не в секундах —
+  // снижение tilt_corr_gain_hz на ходу её удлиняет.
+  input_.filter.motor_model_enabled = true;
+  input_.filter.tilt_corr_gain_hz = 5.0f;  // 3τ = 0.6 с
+  (void)estimator_.Update(sensors_, input_);
+  input_.filter.motor_model_enabled = false;
+  (void)estimator_.Update(sensors_, input_);
+
+  input_.filter.motor_model_enabled = true;
+  (void)estimator_.Update(sensors_, input_);
+  input_.filter.tilt_corr_gain_hz = 0.5f;  // 3τ = 6 с
+  for (int i = 0; i < 2000; ++i) {         // 4 с
+    ASSERT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+        << "тик " << i;
+  }
+  bool anchored = false;
+  for (int i = 0; i < 1500 && !anchored; ++i) {
+    anchored = estimator_.Update(sensors_, input_).tilt_accel_anchored;
+  }
+  EXPECT_TRUE(anchored);
+}
+
 TEST_F(VehicleStateEstimatorTest, CounterfactualMotorModelIsNotTiltAnchor) {
   // LOS-369: пока Kids speed limiter срезает PWM, ускорение мотор-модели
   // counterfactual — pitch по нему для компенсации не годится.
