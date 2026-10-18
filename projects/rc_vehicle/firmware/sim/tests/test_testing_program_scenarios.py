@@ -27,6 +27,14 @@ DT_MS = 2
 NORMAL_STEER_TO_YAW_DPS = 90.0
 NORMAL_MAX_CORRECTION = 0.30
 
+# Режимы с yaw PID и их (уставка °/с на единицу руля, MaxCorr, минимальная
+# ошибка без PID в долях уставки), см. common/drive_modes.cpp. Sport —
+# LOS-371: без PID он в SIL ближе к уставке (~39 % против ~85 % в Normal).
+YAW_MODES = {
+    "normal": (NORMAL_STEER_TO_YAW_DPS, NORMAL_MAX_CORRECTION, 0.5),
+    "sport": (120.0, 0.40, 0.3),
+}
+
 
 def _first_ms(rows, pred):
     for i, row in enumerate(rows):
@@ -119,9 +127,9 @@ def test_wifi_command_gap_does_not_trip_failsafe_below_timeout():
     assert any(r["failsafe"] == 1.0 for r in run(300))
 
 
-def _yaw_step(steer: float, stabilize: bool = True):
+def _yaw_step(steer: float, stabilize: bool = True, mode: str = "normal"):
     with ClosedLoopSim(BIN, dynamic=True, stabilize=stabilize,
-                       sensor_noise=False) as sim:
+                       sensor_noise=False, drive_mode=mode) as sim:
         sim.run(1500, rc_throttle=0.4, rc_steering=0.0)
         rows = sim.run(1000, rc_throttle=0.4, rc_steering=steer)
     yaw_dps = [math.degrees(r["ekf_yaw_rate"]) for r in rows]  # rad/s → °/с
@@ -137,46 +145,51 @@ def _mean_tail(values, n=100):
 YAW_STEPS = (0.3, 0.35, 0.4, 0.45, 0.5)
 
 
+@pytest.mark.parametrize("mode", YAW_MODES)
 @pytest.mark.parametrize("steer", YAW_STEPS)
-def test_yaw_rate_pid_tracks_setpoint(steer):
-    """Yaw PID (Normal): средний yaw rate после шага руля у уставки, без PID — далеко."""
-    setpoint = NORMAL_STEER_TO_YAW_DPS * steer
-    rows, yaw = _yaw_step(steer)
-    _, open_loop = _yaw_step(steer, stabilize=False)
+def test_yaw_rate_pid_tracks_setpoint(steer, mode):
+    """Yaw PID (Normal, Sport): средний yaw rate после шага руля у уставки, без PID — далеко."""
+    steer_to_yaw, max_correction, open_loop_error = YAW_MODES[mode]
+    setpoint = steer_to_yaw * steer
+    rows, yaw = _yaw_step(steer, mode=mode)
+    _, open_loop = _yaw_step(steer, stabilize=False, mode=mode)
 
     # Первые 300 мс руль ещё нарастает по slew rate; дальше разница между
     # командой и выходом — это коррекция PID.
     correction = [abs(r["steering"] - steer) for r in rows[300 // DT_MS:]]
-    assert max(correction) < NORMAL_MAX_CORRECTION - 0.01  # без насыщения
+    assert max(correction) < max_correction - 0.01  # без насыщения
 
     assert abs(_mean_tail(yaw) - setpoint) < 0.15 * setpoint
-    assert abs(_mean_tail(open_loop) - setpoint) > 0.5 * setpoint
+    assert abs(_mean_tail(open_loop) - setpoint) > open_loop_error * setpoint
 
 
+@pytest.mark.parametrize("mode", YAW_MODES)
 @pytest.mark.parametrize("steer", YAW_STEPS)
-def test_yaw_rate_step_no_limit_cycle(steer):
-    """LOS-366: после шага yaw rate успокаивается, а не держит автоколебания."""
-    setpoint = NORMAL_STEER_TO_YAW_DPS * steer
-    rows, yaw = _yaw_step(steer)
+def test_yaw_rate_step_no_limit_cycle(steer, mode):
+    """LOS-366/LOS-371: после шага yaw rate успокаивается, а не держит автоколебания."""
+    setpoint = YAW_MODES[mode][0] * steer
+    rows, yaw = _yaw_step(steer, mode=mode)
     tail = yaw[-100:]
     assert (max(tail) - min(tail)) / setpoint < 0.02
     steer_tail = [r["steering"] for r in rows[-100:]]
     assert max(steer_tail) - min(steer_tail) < 0.01
 
 
+@pytest.mark.parametrize("mode", YAW_MODES)
 @pytest.mark.parametrize("steer", YAW_STEPS)
-def test_yaw_rate_step_overshoot_under_20pct(steer):
-    """Yaw PID (Normal) по TESTING_PROGRAM.md: overshoot < 20 % от уставки."""
-    setpoint = NORMAL_STEER_TO_YAW_DPS * steer
-    _, yaw = _yaw_step(steer)
+def test_yaw_rate_step_overshoot_under_20pct(steer, mode):
+    """Yaw PID по TESTING_PROGRAM.md: overshoot < 20 % от уставки."""
+    setpoint = YAW_MODES[mode][0] * steer
+    _, yaw = _yaw_step(steer, mode=mode)
     assert (max(yaw) - setpoint) / setpoint < 0.20
 
 
-def test_yaw_rate_step_settles_within_200_ms():
-    """Yaw PID (Normal) по TESTING_PROGRAM.md: settling < 200 мс (полоса ±10 % от уставки)."""
+@pytest.mark.parametrize("mode", YAW_MODES)
+def test_yaw_rate_step_settles_within_200_ms(mode):
+    """Yaw PID по TESTING_PROGRAM.md: settling < 200 мс (полоса ±10 % от уставки)."""
     steer = 0.4
-    setpoint = NORMAL_STEER_TO_YAW_DPS * steer
-    _, yaw = _yaw_step(steer)
+    setpoint = YAW_MODES[mode][0] * steer
+    _, yaw = _yaw_step(steer, mode=mode)
     out_of_band = [i for i, y in enumerate(yaw)
                    if abs(y - setpoint) > 0.1 * setpoint]
     settling_ms = (out_of_band[-1] + 1) * DT_MS if out_of_band else 0

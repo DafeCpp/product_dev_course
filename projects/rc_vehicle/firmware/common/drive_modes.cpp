@@ -39,9 +39,13 @@ void NormalModeStrategy::ApplyDefaults(
 
 void SportModeStrategy::ApplyDefaults(
     StabilizationConfig& cfg) const noexcept {
-  cfg.yaw_rate.pid.kp = 0.20f;
-  cfg.yaw_rate.pid.ki = 0.01f;
-  cfg.yaw_rate.pid.kd = 0.010f;
+  // LOS-371: как в Normal (LOS-366), подобрано в SIL вместе с опорной
+  // моделью 2 Гц. Прежние 0.20/0.01/0.010 держали автоколебания: руль бился
+  // шагами slew rate (5/с × 20 мс). Sport быстрее Normal за счёт опорной
+  // модели, уставки 120 °/с, slew руля и MaxCorr, а не за счёт Kp.
+  cfg.yaw_rate.pid.kp = 0.02f;
+  cfg.yaw_rate.pid.ki = 0.20f;
+  cfg.yaw_rate.pid.kd = 0.0004f;
   cfg.yaw_rate.pid.max_integral = 1.0f;
   cfg.yaw_rate.pid.max_correction = 0.40f;
   cfg.yaw_rate.steer_to_yaw_rate_dps = 120.0f;

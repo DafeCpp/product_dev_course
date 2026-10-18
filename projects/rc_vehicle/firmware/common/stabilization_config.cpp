@@ -299,6 +299,23 @@ bool StabilizationConfig::UpgradeLegacyNormalYawGains() noexcept {
   return true;
 }
 
+bool StabilizationConfig::UpgradeLegacySportYawGains() noexcept {
+  PidConfig& pid = yaw_rate.pid;
+  if (mode != DriveMode::Sport || pid.kp != 0.2f || pid.ki != 0.01f ||
+      pid.kd != 0.01f || pid.max_integral != 1.0f) {
+    return false;
+  }
+  StabilizationConfig sport;
+  sport.Reset();
+  DriveModeRegistry::Get(DriveMode::Sport).ApplyDefaults(sport);
+  const PidConfig& current = sport.yaw_rate.pid;
+  pid.kp = current.kp;
+  pid.ki = current.ki;
+  pid.kd = current.kd;
+  pid.max_integral = current.max_integral;
+  return true;
+}
+
 void StabilizationConfig::ApplyModeDefaults() noexcept {
   DriveModeRegistry::Get(mode).ApplyDefaults(*this);
 }

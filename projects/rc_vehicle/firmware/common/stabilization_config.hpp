@@ -676,7 +676,8 @@ struct StabilizationConfig {
    *
    * Устанавливает параметры ПИД и других контроллеров в зависимости от mode:
    *   Normal — консервативный контроль рыскания
-   *   Sport  — агрессивные параметры, высокая отзывчивость
+   *   Sport  — высокая отзывчивость (быстрая опорная модель, большие
+   *            уставка и MaxCorr; коэффициенты PID как в Normal, LOS-371)
    *   Drift  — мягкий контроль, допускает занос
    *
    * Не изменяет: enabled, filter, fade_ms, magic.
@@ -693,6 +694,13 @@ struct StabilizationConfig {
    * @return true, если коэффициенты заменены
    */
   bool UpgradeLegacyNormalYawGains() noexcept;
+
+  /**
+   * @brief То же для Sport (LOS-371): прежние 0.20/0.01/0.010 при
+   * max_integral 1.0 заменяются на текущий пресет Sport.
+   * @return true, если коэффициенты заменены
+   */
+  bool UpgradeLegacySportYawGains() noexcept;
 
   /**
    * @brief Применить ограничения к параметрам
