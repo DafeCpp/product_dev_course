@@ -27,11 +27,12 @@ DT_MS = 2
 NORMAL_STEER_TO_YAW_DPS = 90.0
 NORMAL_MAX_CORRECTION = 0.30
 
-# Режимы с yaw PID и их (уставка °/с на единицу руля, MaxCorr), см.
-# common/drive_modes.cpp. Sport — LOS-371.
+# Режимы с yaw PID и их (уставка °/с на единицу руля, MaxCorr, минимальная
+# ошибка без PID в долях уставки), см. common/drive_modes.cpp. Sport —
+# LOS-371: без PID он в SIL ближе к уставке (~39 % против ~85 % в Normal).
 YAW_MODES = {
-    "normal": (NORMAL_STEER_TO_YAW_DPS, NORMAL_MAX_CORRECTION),
-    "sport": (120.0, 0.40),
+    "normal": (NORMAL_STEER_TO_YAW_DPS, NORMAL_MAX_CORRECTION, 0.5),
+    "sport": (120.0, 0.40, 0.3),
 }
 
 
@@ -148,7 +149,7 @@ YAW_STEPS = (0.3, 0.35, 0.4, 0.45, 0.5)
 @pytest.mark.parametrize("steer", YAW_STEPS)
 def test_yaw_rate_pid_tracks_setpoint(steer, mode):
     """Yaw PID (Normal, Sport): средний yaw rate после шага руля у уставки, без PID — далеко."""
-    steer_to_yaw, max_correction = YAW_MODES[mode]
+    steer_to_yaw, max_correction, open_loop_error = YAW_MODES[mode]
     setpoint = steer_to_yaw * steer
     rows, yaw = _yaw_step(steer, mode=mode)
     _, open_loop = _yaw_step(steer, stabilize=False, mode=mode)
@@ -159,9 +160,7 @@ def test_yaw_rate_pid_tracks_setpoint(steer, mode):
     assert max(correction) < max_correction - 0.01  # без насыщения
 
     assert abs(_mean_tail(yaw) - setpoint) < 0.15 * setpoint
-    # Без PID Sport в SIL ближе к уставке, чем Normal (ошибка ~39 % против
-    # ~85 %), поэтому порог общий и ниже прежних 50 %.
-    assert abs(_mean_tail(open_loop) - setpoint) > 0.3 * setpoint
+    assert abs(_mean_tail(open_loop) - setpoint) > open_loop_error * setpoint
 
 
 @pytest.mark.parametrize("mode", YAW_MODES)

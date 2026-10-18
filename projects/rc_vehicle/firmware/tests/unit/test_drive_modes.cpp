@@ -368,6 +368,13 @@ TEST(SportYawGainsUpgradeTest, KeepsUserTuning) {
   EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, 0.012f);
 }
 
+TEST(SportYawGainsUpgradeTest, KeepsUserMaxIntegral) {
+  StabilizationConfig cfg = LegacySport();
+  cfg.yaw_rate.pid.max_integral = 0.8f;
+  EXPECT_FALSE(cfg.UpgradeLegacySportYawGains());
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.20f);
+}
+
 TEST(SportYawGainsUpgradeTest, KeepsOtherModes) {
   StabilizationConfig cfg = LegacySport();
   cfg.mode = DriveMode::Normal;
