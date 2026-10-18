@@ -182,6 +182,30 @@ TEST_F(VehicleStateEstimatorTest, TiltAnchorSettlesAfterMotorModelReturns) {
   EXPECT_TRUE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
 }
 
+TEST_F(VehicleStateEstimatorTest,
+       TiltAnchorSettleCountsOnlyAcceptedCorrections) {
+  // LOS-369: пока accel-коррекция отбрасывается гейтом 1g (ухабы, ошибка
+  // мотор-модели), устаревший pitch не сходится — выдержка не идёт.
+  input_.filter.motor_model_enabled = true;
+  input_.filter.tilt_corr_gain_hz = 1.0f;
+  (void)estimator_.Update(sensors_, input_);
+  input_.filter.motor_model_enabled = false;
+  (void)estimator_.Update(sensors_, input_);
+
+  input_.filter.motor_model_enabled = true;
+  sensors_.imu_data.az = 1.6f;  // |a| вне гейта
+  for (int i = 0; i < 3000; ++i) {
+    ASSERT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+        << "тик " << i;
+  }
+  sensors_.imu_data.az = 1.0f;
+  bool anchored = false;
+  for (int i = 0; i < 1500 && !anchored; ++i) {
+    anchored = estimator_.Update(sensors_, input_).tilt_accel_anchored;
+  }
+  EXPECT_TRUE(anchored);
+}
+
 TEST_F(VehicleStateEstimatorTest, CounterfactualMotorModelIsNotTiltAnchor) {
   // LOS-369: пока Kids speed limiter срезает PWM, ускорение мотор-модели
   // counterfactual — pitch по нему для компенсации не годится.

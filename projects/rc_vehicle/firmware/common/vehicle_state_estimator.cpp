@@ -76,22 +76,20 @@ VehicleStateEstimate VehicleStateEstimator::Update(
         ekf_active && input.filter.motor_model_enabled &&
         !input.speed_calibration_active && !input.motor_model_counterfactual;
     // После перехода «без якоря → с якорем» в оценке ещё сидит наклон,
-    // накопленный, пока разгон не вычитался (мотор-модель была выключена или
-    // шла калибровка скорости). Якорным pitch считается только через ~3
-    // постоянные времени accel-коррекции (τ = 1/corr_gain), иначе компенсация
-    // тангажа добавляла бы газ по ложному подъёму (LOS-369). После Reset()
-    // (старт, повторное включение tilt) копить было нечего — выдержки нет.
-    if (motor_model_anchor_active) {
-      if (tilt_was_enabled_ && !prev_tick_anchored_) {
-        anchor_settle_left_s_ =
-            kTiltAnchorSettleTimeConstants /
-            std::max(input.filter.tilt_corr_gain_hz, kMinTiltCorrGainHz);
-      }
-      anchor_settle_left_s_ = std::max(anchor_settle_left_s_ - dt_sec, 0.0f);
-      tilt_anchored_this_tick = anchor_settle_left_s_ <= 0.0f;
-    } else {
-      anchor_settle_left_s_ = 0.0f;
+    // накопленный, пока разгон не вычитался (мотор-модель была выключена,
+    // шла калибровка скорости или Kids speed limiter вёл counterfactual-газ).
+    // Якорным pitch считается только после ~3 постоянных времени
+    // accel-коррекции (τ = 1/corr_gain), причём считаются лишь тики, где
+    // коррекция прошла гейт 1g: иначе компенсация тангажа добавляла бы газ по
+    // ложному подъёму (LOS-369). После Reset() (старт, повторное включение
+    // tilt) копить было нечего — выдержки нет.
+    if (motor_model_anchor_active && tilt_was_enabled_ &&
+        !prev_tick_anchored_) {
+      anchor_settle_left_s_ =
+          kTiltAnchorSettleTimeConstants /
+          std::max(input.filter.tilt_corr_gain_hz, kMinTiltCorrGainHz);
     }
+    if (!motor_model_anchor_active) anchor_settle_left_s_ = 0.0f;
     prev_tick_anchored_ = motor_model_anchor_active;
     const float a_lin_g = motor_model_anchor_active ? a_lin_prev_g_ : 0.0f;
     const float a_lin_lat_g =
@@ -108,6 +106,11 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 #endif
     pitch_rad = tilt_est_.GetPitchRad();
     roll_rad = tilt_est_.GetRollRad();
+    if (motor_model_anchor_active && tilt_est_.LastUpdateAccelCorrected()) {
+      anchor_settle_left_s_ = std::max(anchor_settle_left_s_ - dt_sec, 0.0f);
+    }
+    tilt_anchored_this_tick =
+        motor_model_anchor_active && anchor_settle_left_s_ <= 0.0f;
   }
   tilt_was_enabled_ = tilt_active_this_tick;
 

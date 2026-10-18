@@ -92,12 +92,18 @@ class TiltEstimator {
   /** Оценка крена [рад]. */
   [[nodiscard]] float GetRollRad() const noexcept { return roll_rad_; }
 
+  /** true — на последнем Update() accel-коррекция прошла гейт 1g. */
+  [[nodiscard]] bool LastUpdateAccelCorrected() const noexcept {
+    return accel_corrected_;
+  }
+
   /** Установить параметры. */
   void SetParams(Params params) noexcept { params_ = params; }
 
  private:
   float pitch_rad_{0.0f};
   float roll_rad_{0.0f};
+  bool accel_corrected_{false};
   Params params_;
 
   /** Физический предел |pitch|,|roll| для клемпа против разноса гиро [рад]
