@@ -695,6 +695,13 @@ struct StabilizationConfig {
   bool UpgradeLegacyNormalYawGains() noexcept;
 
   /**
+   * @brief То же для Sport (LOS-371): прежние 0.20/0.01/0.010 при
+   * max_integral 1.0 заменяются на текущий пресет Sport.
+   * @return true, если коэффициенты заменены
+   */
+  bool UpgradeLegacySportYawGains() noexcept;
+
+  /**
    * @brief Применить ограничения к параметрам
    */
   void Clamp() noexcept;

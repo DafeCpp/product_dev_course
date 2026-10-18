@@ -54,9 +54,9 @@ TEST(DriveModeTraitsTest, NormalMode_YawActiveSlipInactive) {
   EXPECT_FLOAT_EQ(traits.yaw_ref_cutoff_hz, 1.5f);  // LOS-366
 }
 
-TEST(DriveModeTraitsTest, OnlyNormalFiltersYawSetpoint) {
-  for (const DriveMode mode : {DriveMode::Sport, DriveMode::Drift,
-                               DriveMode::Kids, DriveMode::DirectLaw}) {
+TEST(DriveModeTraitsTest, OnlyNormalAndSportFilterYawSetpoint) {
+  for (const DriveMode mode :
+       {DriveMode::Drift, DriveMode::Kids, DriveMode::DirectLaw}) {
     EXPECT_FLOAT_EQ(DriveModeRegistry::Get(mode).GetTraits().yaw_ref_cutoff_hz,
                     0.0f);
   }
@@ -68,6 +68,7 @@ TEST(DriveModeTraitsTest, SportMode_SameAsNormal) {
   EXPECT_FALSE(traits.slip_angle_active);
   EXPECT_TRUE(traits.oversteer_reduces_throttle);
   EXPECT_TRUE(traits.use_slew_rate);
+  EXPECT_FLOAT_EQ(traits.yaw_ref_cutoff_hz, 2.0f);  // LOS-371
 }
 
 TEST(DriveModeTraitsTest, DriftMode_SlipActiveYawInactive_NoThrottleReduction) {
@@ -176,13 +177,16 @@ TEST(NormalModeDefaultsTest, HasExpectedPidValues) {
 // Sport: проверка конкретных PID-значений
 // ══════════════════════════════════════════════════════════════════════════════
 
-TEST(SportModeDefaultsTest, HasHigherGains) {
+TEST(SportModeDefaultsTest, HasSportPreset) {
   StabilizationConfig cfg;
   cfg.Reset();
   SportModeStrategy{}.ApplyDefaults(cfg);
 
-  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.20f);
-  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.ki, 0.01f);
+  // LOS-371: коэффициенты как в Normal, агрессивнее уставка и MaxCorr.
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.02f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.ki, 0.20f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, 0.0004f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_integral, 1.0f);
   EXPECT_FLOAT_EQ(cfg.yaw_rate.steer_to_yaw_rate_dps, 120.0f);
   EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_correction, 0.40f);
 }
@@ -320,4 +324,53 @@ TEST(NormalYawGainsUpgradeTest, FreshConfigMatchesNormalPreset) {
     EXPECT_FLOAT_EQ(cfg->yaw_rate.pid.max_correction,
                     normal.yaw_rate.pid.max_correction);
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LOS-371: миграция нетронутых прежних yaw-коэффициентов Sport
+// ══════════════════════════════════════════════════════════════════════════════
+
+namespace {
+StabilizationConfig LegacySport() {
+  StabilizationConfig cfg;
+  cfg.Reset();
+  cfg.mode = DriveMode::Sport;
+  cfg.yaw_rate.pid.kp = 0.20f;
+  cfg.yaw_rate.pid.ki = 0.01f;
+  cfg.yaw_rate.pid.kd = 0.010f;
+  cfg.yaw_rate.pid.max_integral = 1.0f;
+  cfg.yaw_rate.pid.max_correction = 0.35f;
+  return cfg;
+}
+}  // namespace
+
+TEST(SportYawGainsUpgradeTest, ReplacesUntouchedLegacyDefaults) {
+  StabilizationConfig cfg = LegacySport();
+  StabilizationConfig fresh;
+  fresh.Reset();
+  SportModeStrategy{}.ApplyDefaults(fresh);
+
+  EXPECT_TRUE(cfg.UpgradeLegacySportYawGains());
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, fresh.yaw_rate.pid.kp);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.ki, fresh.yaw_rate.pid.ki);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, fresh.yaw_rate.pid.kd);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_integral,
+                  fresh.yaw_rate.pid.max_integral);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.max_correction, 0.35f);  // не трогаем
+  EXPECT_FALSE(cfg.UpgradeLegacySportYawGains());           // повторно — no-op
+}
+
+TEST(SportYawGainsUpgradeTest, KeepsUserTuning) {
+  StabilizationConfig cfg = LegacySport();
+  cfg.yaw_rate.pid.kd = 0.012f;
+  EXPECT_FALSE(cfg.UpgradeLegacySportYawGains());
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.20f);
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kd, 0.012f);
+}
+
+TEST(SportYawGainsUpgradeTest, KeepsOtherModes) {
+  StabilizationConfig cfg = LegacySport();
+  cfg.mode = DriveMode::Normal;
+  EXPECT_FALSE(cfg.UpgradeLegacySportYawGains());
+  EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.20f);
 }
