@@ -299,6 +299,30 @@ TEST_F(ImuCalibrationForwardTest, SidewaysMount_SurvivesReload) {
   EXPECT_TRUE(reloaded.IsValid());
 }
 
+// Датчик на боку с лёгким наклоном вниз (az < 0): знак опоры при загрузке
+// обязан совпасть с выбранным в Finalize().
+TEST_F(ImuCalibrationForwardTest, SidewaysMount_SlightlyNegativeZ_RoundTrips) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 1.f, -0.01f));
+  ASSERT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  ImuCalibration reloaded;
+  reloaded.SetData(calib.GetData());
+  EXPECT_TRUE(reloaded.IsValid());
+}
+
+// Граница невязки: у дешёвых датчиков |g| в покое заметно отличается от 1g —
+// всё, что проходило прежний вертикальный предел, проходит и сейчас.
+TEST_F(ImuCalibrationForwardTest, NormResidual_Boundary) {
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 1.45f));
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Done);
+
+  calib.StartCalibration(CalibMode::Full, 10);
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 1.55f));
+  EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
+}
+
 // Отвергнутая калибровка не портит предыдущую.
 TEST_F(ImuCalibrationForwardTest, RejectedCalibration_KeepsPrevious) {
   calib.StartCalibration(CalibMode::Full, 10);
@@ -309,7 +333,7 @@ TEST_F(ImuCalibrationForwardTest, RejectedCalibration_KeepsPrevious) {
   const float prev_bias = calib.GetData().accel_bias[0];
 
   calib.StartCalibration(CalibMode::Full, 10);
-  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 1.4f));
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 1.6f));
   EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
   EXPECT_TRUE(calib.IsValid());
   EXPECT_FLOAT_EQ(calib.GetData().accel_bias[0], prev_bias)
@@ -319,15 +343,15 @@ TEST_F(ImuCalibrationForwardTest, RejectedCalibration_KeepsPrevious) {
 TEST_F(ImuCalibrationForwardTest,
        SensorDefect_LowMagnitude_FailsAtCalibration) {
   calib.StartCalibration(CalibMode::Full, 10);
-  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 0.7f));
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.f, 0.f, 0.45f));
   EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
 }
 
-// Горизонтальное смещение больше, чем объясняет любой наклон при данном az.
+// Большое горизонтальное смещение: модуль 1.56g наклоном не объясняется.
 TEST_F(ImuCalibrationForwardTest,
        SensorDefect_HorizontalExcess_FailsAtCalibration) {
   calib.StartCalibration(CalibMode::Full, 10);
-  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(0.6f, 0.f, 1.0f));
+  for (int i = 0; i < 10; ++i) calib.FeedSample(Accel(1.2f, 0.f, 1.0f));
   EXPECT_EQ(calib.GetStatus(), CalibStatus::Failed);
 }
 

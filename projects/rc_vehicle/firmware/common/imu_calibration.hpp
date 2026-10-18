@@ -205,8 +205,10 @@ class ImuCalibration {
   // gravity_valid). После Full-калибровки accel_bias содержит проекцию g при
   // любом монтаже (вплоть до датчика на боку), и его ограничивает невязка.
   static constexpr float kMaxAccelBias = 0.5f;  // g
-  // Допустимая невязка модуля среднего в покое от 1g (LOS-227).
-  static constexpr float kMaxAccelNormError = 0.15f;  // g
+  // Допустимая невязка модуля среднего в покое от 1g (LOS-227). Равна прежнему
+  // вертикальному пределу: всё, что проходило старую проверку на ровном
+  // монтаже, проходит и эту (дешёвые GY-521 дают |az| − 1 до ~0.3g).
+  static constexpr float kMaxAccelNormError = kMaxAccelBias;  // g
 
   /**
    * Смещения правдоподобны для датчика в покое (LOS-227).
