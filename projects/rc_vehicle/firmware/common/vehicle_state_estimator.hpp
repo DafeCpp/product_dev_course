@@ -54,6 +54,9 @@ struct VehicleStateEstimatorInput {
   float motor_model_throttle{0.0f};
   bool ekf_available{false};
   bool speed_calibration_active{false};
+  // Мотор-модель ведёт counterfactual-газ (Kids speed limiter срезает PWM):
+  // её ускорение не годится как якорь TiltEstimator (LOS-369).
+  bool motor_model_counterfactual{false};
 };
 
 /** Immutable result consumed by control, stabilization and telemetry stages. */

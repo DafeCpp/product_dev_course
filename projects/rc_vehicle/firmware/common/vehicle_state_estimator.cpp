@@ -72,9 +72,9 @@ VehicleStateEstimate VehicleStateEstimator::Update(
       tilt_est_.Reset();
     }
 
-    const bool motor_model_anchor_active = ekf_active &&
-                                           input.filter.motor_model_enabled &&
-                                           !input.speed_calibration_active;
+    const bool motor_model_anchor_active =
+        ekf_active && input.filter.motor_model_enabled &&
+        !input.speed_calibration_active && !input.motor_model_counterfactual;
     // После перехода «без якоря → с якорем» в оценке ещё сидит наклон,
     // накопленный, пока разгон не вычитался (мотор-модель была выключена или
     // шла калибровка скорости). Якорным pitch считается только через ~3

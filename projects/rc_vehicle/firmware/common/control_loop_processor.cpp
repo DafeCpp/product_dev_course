@@ -60,6 +60,12 @@
 
 namespace rc_vehicle {
 
+namespace {
+// Расхождение counterfactual-газа мотор-модели и реального PWM, начиная с
+// которого Kids speed limiter считается вмешавшимся (LOS-369).
+constexpr float kCounterfactualThrottleTol = 0.01f;
+}  // namespace
+
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   // PROF_START() — самая первая строка (код-ревью PR #297): GetConfig()
   // ниже берёт config_mutex_, который также берёт SetConfig() из WS-потока
@@ -214,6 +220,12 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(ControlTickInput& input,
       .motor_model_throttle = persistent_.motor_model_throttle,
       .ekf_available = ctx_.stab_mgr != nullptr,
       .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
+      // Пока Kids speed limiter срезает газ, мотор-модель ведёт
+      // counterfactual-цель до лимита, и её ускорение — не реальное.
+      .motor_model_counterfactual =
+          input.config.KidsSpeedLimiterActive() &&
+          std::abs(persistent_.motor_model_throttle -
+                   persistent_.applied.throttle) > kCounterfactualThrottleTol,
   };
   state.estimate = state_estimator_.Update(input.sensors, estimator_input
 #ifdef RC_PROFILE_LOOP

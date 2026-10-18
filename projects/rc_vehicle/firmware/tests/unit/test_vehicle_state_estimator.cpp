@@ -182,6 +182,17 @@ TEST_F(VehicleStateEstimatorTest, TiltAnchorSettlesAfterMotorModelReturns) {
   EXPECT_TRUE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
 }
 
+TEST_F(VehicleStateEstimatorTest, CounterfactualMotorModelIsNotTiltAnchor) {
+  // LOS-369: пока Kids speed limiter срезает PWM, ускорение мотор-модели
+  // counterfactual — pitch по нему для компенсации не годится.
+  input_.filter.motor_model_enabled = true;
+  input_.motor_model_counterfactual = true;
+  EXPECT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
+  input_.motor_model_counterfactual = false;
+  EXPECT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+      << "после вмешательства лимитера нужна выдержка якоря";
+}
+
 TEST_F(VehicleStateEstimatorTest, FrameChangeResetsTiltHistory) {
   sensors_.imu_data.ax = -0.5f;
   sensors_.imu_data.az = 0.8660254f;
