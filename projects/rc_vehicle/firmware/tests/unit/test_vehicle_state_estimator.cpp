@@ -161,6 +161,27 @@ TEST_F(VehicleStateEstimatorTest, MotorModelAnchorsForwardSpeed) {
   EXPECT_LT(estimate.vx_ms, VehicleEkf::kMaxSpeedMs);
 }
 
+TEST_F(VehicleStateEstimatorTest, TiltAnchorSettlesAfterMotorModelReturns) {
+  // LOS-369: пока якоря не было, разгон мог завалить pitch. После возврата
+  // мотор-модели оценка считается якорной только через 3τ = 3 / corr_gain.
+  input_.filter.motor_model_enabled = true;
+  input_.filter.tilt_corr_gain_hz = 1.0f;  // выдержка 3 с = 1500 тиков
+  EXPECT_TRUE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+      << "после Reset() на старте выдержка не нужна";
+
+  input_.filter.motor_model_enabled = false;
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
+  }
+
+  input_.filter.motor_model_enabled = true;
+  for (int i = 0; i < 1499; ++i) {
+    ASSERT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+        << "тик " << i;
+  }
+  EXPECT_TRUE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
+}
+
 TEST_F(VehicleStateEstimatorTest, FrameChangeResetsTiltHistory) {
   sensors_.imu_data.ax = -0.5f;
   sensors_.imu_data.az = 0.8660254f;

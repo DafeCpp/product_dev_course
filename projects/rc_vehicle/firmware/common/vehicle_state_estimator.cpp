@@ -1,5 +1,6 @@
 #include "vehicle_state_estimator.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "control_loop_helpers.hpp"
@@ -13,6 +14,10 @@ namespace {
 constexpr float kG = 9.80665f;
 constexpr float kDegToRad = 3.14159265358979f / 180.0f;
 constexpr float kNhcMaxYawRateRps = 1.0f;
+// Выдержка якоря TiltEstimator в постоянных времени accel-коррекции (LOS-369).
+constexpr float kTiltAnchorSettleTimeConstants = 3.0f;
+// Нижняя граница tilt_corr_gain_hz из StabilizationConfig::IsValid().
+constexpr float kMinTiltCorrGainHz = 0.05f;
 }  // namespace
 
 VehicleStateEstimate VehicleStateEstimator::Update(
@@ -70,7 +75,24 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     const bool motor_model_anchor_active = ekf_active &&
                                            input.filter.motor_model_enabled &&
                                            !input.speed_calibration_active;
-    tilt_anchored_this_tick = motor_model_anchor_active;
+    // После перехода «без якоря → с якорем» в оценке ещё сидит наклон,
+    // накопленный, пока разгон не вычитался (мотор-модель была выключена или
+    // шла калибровка скорости). Якорным pitch считается только через ~3
+    // постоянные времени accel-коррекции (τ = 1/corr_gain), иначе компенсация
+    // тангажа добавляла бы газ по ложному подъёму (LOS-369). После Reset()
+    // (старт, повторное включение tilt) копить было нечего — выдержки нет.
+    if (motor_model_anchor_active) {
+      if (tilt_was_enabled_ && !prev_tick_anchored_) {
+        anchor_settle_left_s_ =
+            kTiltAnchorSettleTimeConstants /
+            std::max(input.filter.tilt_corr_gain_hz, kMinTiltCorrGainHz);
+      }
+      anchor_settle_left_s_ = std::max(anchor_settle_left_s_ - dt_sec, 0.0f);
+      tilt_anchored_this_tick = anchor_settle_left_s_ <= 0.0f;
+    } else {
+      anchor_settle_left_s_ = 0.0f;
+    }
+    prev_tick_anchored_ = motor_model_anchor_active;
     const float a_lin_g = motor_model_anchor_active ? a_lin_prev_g_ : 0.0f;
     const float a_lin_lat_g =
         ekf_active ? (vehicle_imu.gz * kDegToRad) * prev_vx_ / kG : 0.0f;
@@ -183,6 +205,8 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
   a_lin_prev_g_ = 0.0f;
   last_mag_sample_sequence_ = 0;
   tilt_was_enabled_ = false;
+  prev_tick_anchored_ = false;
+  anchor_settle_left_s_ = 0.0f;
 }
 
 void VehicleStateEstimator::RefreshEkfFields(
