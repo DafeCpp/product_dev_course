@@ -39,6 +39,11 @@ class ImuCalibrationForwardTest : public ::testing::Test {
     d.gravity_vec[0] = gx;
     d.gravity_vec[1] = gy;
     d.gravity_vec[2] = gz;
+    // Bias согласован с gravity_vec, как после настоящей Full-калибровки:
+    // среднее в покое = gravity_vec, опора (0,0,±1) — LOS-227.
+    d.accel_bias[0] = gx;
+    d.accel_bias[1] = gy;
+    d.accel_bias[2] = gz - (gz >= 0.f ? 1.f : -1.f);
     d.accel_forward_vec[0] = fx;
     d.accel_forward_vec[1] = fy;
     d.accel_forward_vec[2] = fz;
@@ -383,6 +388,26 @@ TEST_F(ImuCalibrationForwardTest, SetData_InvertedSteepMount_Accepted) {
   d.accel_bias[2] = -std::cos(t) + 1.0f;
   calib.SetData(d);
   EXPECT_TRUE(calib.IsValid());
+}
+
+TEST_F(ImuCalibrationForwardTest, SetData_BiasContradictsGravity_Rejected) {
+  // Модуль среднего (1,0,0) равен 1g, но bias объясняет датчик на боку, а
+  // gravity_vec говорит «ровно» — Apply() и перевод в СК машины разошлись бы.
+  ImuCalibData d{};
+  d.valid = true;
+  d.gravity_valid = true;
+  d.gravity_vec[2] = 1.0f;
+  d.accel_bias[0] = 1.0f;
+  d.accel_bias[2] = -1.0f;
+  calib.SetData(d);
+  EXPECT_FALSE(calib.IsValid());
+
+  ImuCalibData zero_g = d;
+  zero_g.gravity_vec[2] = 0.0f;
+  zero_g.accel_bias[0] = 0.0f;
+  zero_g.accel_bias[2] = 0.0f;
+  calib.SetData(zero_g);
+  EXPECT_FALSE(calib.IsValid());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

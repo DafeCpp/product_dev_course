@@ -409,7 +409,14 @@ bool ImuCalibration::IsBiasPlausible(const ImuCalibData& data) noexcept {
   const float expected_az = data.gravity_vec[2] >= 0.f ? 1.f : -1.f;
   const float mz = b[2] + expected_az;
   const float norm = std::sqrt(b[0] * b[0] + b[1] * b[1] + mz * mz);
-  return std::fabs(norm - 1.f) <= kMaxAccelNormError;
+  if (std::fabs(norm - 1.f) > kMaxAccelNormError) return false;
+  // Наклон, которым объяснено смещение, обязан совпадать с gravity_vec:
+  // иначе Apply() и перевод в СК машины работали бы с разными ориентациями.
+  const float* g = data.gravity_vec;
+  const float gn = std::sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+  if (!std::isfinite(gn) || gn < 1e-3f) return false;
+  const float cos_angle = (b[0] * g[0] + b[1] * g[1] + mz * g[2]) / (norm * gn);
+  return cos_angle >= kMinGravityAgreement;
 }
 
 void ImuCalibration::SetData(const ImuCalibData& data) {
