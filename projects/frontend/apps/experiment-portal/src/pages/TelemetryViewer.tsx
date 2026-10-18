@@ -75,16 +75,21 @@ export default function TelemetryViewer() {
   useEffect(() => {
     if (
       viewer.experimentId &&
+      experimentsQuery.data &&
       !experiments.some((item) => item.id === viewer.experimentId)
     ) {
       viewer.setExperimentId("");
       viewer.setRunId("");
     }
-  }, [experiments, viewer]);
+  }, [experiments, experimentsQuery.data, viewer]);
   useEffect(() => {
-    if (viewer.runId && !runs.some((item) => item.id === viewer.runId))
+    if (
+      viewer.runId &&
+      runsQuery.data &&
+      !runs.some((item) => item.id === viewer.runId)
+    )
       viewer.setRunId("");
-  }, [runs, viewer]);
+  }, [runs, runsQuery.data, viewer]);
   useEffect(() => {
     if (
       viewer.viewMode === "history" &&
