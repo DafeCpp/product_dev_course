@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { format } from 'date-fns'
 import AdminUsers from './AdminUsers'
 
 vi.mock('../api/auth', () => ({
@@ -63,7 +64,7 @@ describe('AdminUsers', () => {
       expect(screen.getByText('auditor')).toBeInTheDocument()
       expect(screen.getByText('user')).toBeInTheDocument()
       expect(screen.getByText('pwd')).toBeInTheDocument()
-      expect(screen.getAllByText('02.01.2026 10:00')).toHaveLength(2)
+      expect(screen.getAllByText(format(new Date('2026-01-02T10:00:00Z'), 'dd.MM.yyyy HH:mm'))).toHaveLength(2)
     })
 
     it('shows empty and error states', async () => {
@@ -223,7 +224,7 @@ describe('AdminUsers', () => {
       expect(await screen.findByText('abcdefgh…')).toBeInTheDocument()
       expect(screen.getByText('Активен')).toBeInTheDocument()
       expect(screen.getByText('Использован/истёк')).toBeInTheDocument()
-      expect(screen.getByText('05.01.2026 10:00')).toBeInTheDocument()
+      expect(screen.getByText(format(new Date('2026-01-05T10:00:00Z'), 'dd.MM.yyyy HH:mm'))).toBeInTheDocument()
       expect(screen.getAllByText('Отозвать')).toHaveLength(1)
     })
 
