@@ -120,6 +120,32 @@ TEST_F(StabilizationPipelineTest, KidsPolicyExportsPreSpeedLimitMotorTarget) {
   EXPECT_FLOAT_EQ(output.motor_model_target_throttle, 0.4f);
 }
 
+TEST_F(StabilizationPipelineTest, KidsPitchCompensationKeepsThrottleCap) {
+  // LOS-369: в гору компенсация добавляет газ, но предел Kids не обходит.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.throttle_limit = 0.4f;
+  cfg_.kids_mode.speed_limit_enabled = false;
+  cfg_.kids_mode.accel_limit_enabled = false;
+  input_.command = {.throttle = 0.9f, .steering = 0.0f};
+  input_.pitch_deg = -10.0f;  // нос вверх
+  input_.dt_ms = 0;
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+
+  EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                  0.4f);
+
+  // Ниже предела компенсация по-прежнему добавляет газ.
+  input_.command.throttle = 0.2f;
+  EXPECT_NEAR(pipeline_.Process(cfg_, policy, input_).command.throttle, 0.3f,
+              1e-5f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // LOS-286: разделение семантики `enabled` и ограничителей Kids.
 //

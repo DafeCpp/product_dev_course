@@ -286,6 +286,25 @@ def test_pitch_comp_idle_on_flat():
                - _tail_mean(without, "cmd_throttle")) < 0.02
 
 
+def test_pitch_comp_no_feedback_from_flat_acceleration():
+    """LOS-369: разгон по ровному не выглядит для компенсации подъёмом.
+
+    Madgwick на разгоне заваливается «носом вверх» (до −14° в SIL); если
+    кормить им компенсацию, она добавляет газ в ответ на собственное
+    ускорение. Тангаж берётся от TiltEstimator, который снимает ускорение
+    мотор-модели.
+    """
+    def accelerate(pitch_comp: bool):
+        with ClosedLoopSim(BIN, dynamic=True, sensor_noise=False,
+                           stabilize=True, pitch_comp=pitch_comp) as sim:
+            sim.run(1000, rc_throttle=0.0, rc_steering=0.0)
+            return sim.run(3000, rc_throttle=0.5, rc_steering=0.0)
+
+    with_comp = max(r["cmd_throttle"] for r in accelerate(True))
+    without = max(r["cmd_throttle"] for r in accelerate(False))
+    assert with_comp < without + 0.05
+
+
 def test_pitch_comp_acts_on_slope():
     """LOS-367: --pitch-comp доходит до прошивки — на склоне газ с компенсацией
     заметно отличается от газа без неё (направление проверяют тесты ниже)."""
@@ -307,11 +326,16 @@ def test_pitch_comp_adds_throttle_uphill():
 
 def test_pitch_comp_cuts_throttle_downhill():
     """LOS-369: под гору компенсация снимает газ и машина разгоняется
-    меньше, чем без неё."""
+    меньше, чем без неё.
+
+    Порог ниже, чем на подъёме: TiltEstimator опирается на ускорение
+    мотор-модели, которая склона не знает, и в SIL видит спуск 10° примерно
+    как 5° (подъём — как 7°).
+    """
     with_comp, v_comp = _climb(pitch_comp=True, slope_deg=-SLOPE_DEG)
     without, v_plain = _climb(pitch_comp=False, slope_deg=-SLOPE_DEG)
     assert (_tail_mean(with_comp, "cmd_throttle")
-            < _tail_mean(without, "cmd_throttle") - 0.05)
+            < _tail_mean(without, "cmd_throttle") - 0.03)
     assert v_comp < v_plain
 
 

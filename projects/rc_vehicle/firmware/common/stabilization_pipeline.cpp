@@ -318,6 +318,10 @@ StabilizationOutput StabilizationPipeline::Process(
   }
   if (policy.pitch_comp_active) {
     pitch_ctrl_.Process(cfg, output.command.throttle, input);
+    // В гору компенсация добавляет газ, но предел Kids обходить не должна.
+    if (policy.apply_input_limits) {
+      kids_processor_.ClampThrottle(cfg, output.command.throttle);
+    }
   }
   if (policy.slip_angle_active) {
     slip_ctrl_.Process(cfg, output.command.throttle, input);

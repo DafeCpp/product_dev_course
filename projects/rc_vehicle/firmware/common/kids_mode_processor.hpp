@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "control_components.hpp"
 #include "stabilization_config.hpp"
 #include "vehicle_ekf.hpp"
@@ -87,6 +89,20 @@ class KidsModeProcessor {
    */
   [[nodiscard]] bool IsActive(const StabilizationConfig& cfg) const noexcept {
     return cfg.KidsLimitersActive();
+  }
+
+  /**
+   * @brief Снова прижать газ к пределам Kids (throttle_limit/reverse_limit).
+   *
+   * Для стабилизаторов после Process(), которые могут добавить газ (pitch
+   * compensation на подъёме, LOS-369): предел газа — защита ребёнка и не
+   * должен обходиться. Без активных ограничителей ничего не делает.
+   */
+  void ClampThrottle(const StabilizationConfig& cfg,
+                     float& throttle) const noexcept {
+    if (!IsActive(cfg)) return;
+    throttle = std::clamp(throttle, -cfg.kids_mode.reverse_limit,
+                          cfg.kids_mode.throttle_limit);
   }
 
   /**
