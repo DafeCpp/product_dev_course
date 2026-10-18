@@ -57,12 +57,12 @@ export default defineConfig(({ mode }) => {
           'src/vite-env.d.ts',
           'src/**/__mocks__/**',
         ],
-        // Ratchet: raised after the LOS-204 configs/rate-limits/project-roles coverage PR (measured 69.13/66.57/60.95/60.76).
+        // Ratchet: raised after the LOS-204 components coverage PR (part 3) (measured 74.24/71.79/64.91/64.53).
         thresholds: process.env.COVERAGE_ENFORCE_RATCHET === 'true' ? {
-          lines: 69.0,
-          statements: 66.5,
-          functions: 60.9,
-          branches: 60.7,
+          lines: 74.2,
+          statements: 71.7,
+          functions: 64.9,
+          branches: 64.5,
         } : undefined,
       },
     },
