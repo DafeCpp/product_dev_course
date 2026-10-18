@@ -478,14 +478,24 @@ steer_command ──────────────────┐
 
 ### 6.2. Алгоритм компенсации
 
-Pitch и roll берём из Madgwick (уже реализован в Фазе 0):
+Реализация: `PitchCompensator` (`common/stabilization_pipeline.cpp`, LOS-369).
+Pitch берётся из TiltEstimator (`VehicleStateEstimate::pitch_rad`), а не из
+Madgwick, и только при `tilt_valid && tilt_accel_anchored` (из акселерометра
+вычтено ускорение мотор-модели, см. §6.3):
 
 ```
-throttle_correction = K_pitch · sin(pitch)
-throttle_output = throttle_command + clamp(throttle_correction, -0.3, +0.3)
+nose_up_deg = −pitch_deg                    // pitch > 0 — нос вниз
+correction  = clamp(gain · nose_up_deg, −max_correction, +max_correction)
+if throttle == 0: выход = 0                 // нейтраль: машина не едет сама
+ramp        = min(|throttle| / 0.2, 1)      // плавное включение у нейтрали
+out         = clamp(throttle + correction · ramp · stab_w, −1, 1)
+if out · throttle < 0: out = 0              // знак команды не меняется
 ```
 
-Для малых углов (< 20°): sin(θ) ≈ θ [рад], но лучше использовать точный sin — у ESP32-S3 есть FPU.
+`pitch_comp.gain` задаётся в долях газа на градус, предел —
+`pitch_comp.max_correction`. Линейная по углу формула для склонов до ~20°
+отличается от `sin(θ)` меньше чем на 2%. В Kids компенсация применяется до
+ограничителей газа, anti-spin и accel limiter, чтобы не обходить их.
 
 ### 6.3. Отделение наклона от ускорения
 
