@@ -88,7 +88,7 @@ TEST_F(PitchCompensatorTest, IncreasesThrottle_WhenNoseUp) {
   float throttle = 0.5f;
   comp_.Process(cfg_, throttle, 1.0f);
   EXPECT_GT(throttle, 0.5f)
-      << "Nose up (positive pitch) should increase throttle";
+      << "Nose up (negative pitch, LOS-369) should increase throttle";
 }
 
 TEST_F(PitchCompensatorTest, DecreasesThrottle_WhenNoseDown) {
@@ -96,7 +96,7 @@ TEST_F(PitchCompensatorTest, DecreasesThrottle_WhenNoseDown) {
   float throttle = 0.5f;
   comp_.Process(cfg_, throttle, 1.0f);
   EXPECT_LT(throttle, 0.5f)
-      << "Nose down (negative pitch) should decrease throttle";
+      << "Nose down (positive pitch, LOS-369) should decrease throttle";
 }
 
 // FW-R23: процессор НЕ хранит указатель на конфиг — читает переданный per-tick.

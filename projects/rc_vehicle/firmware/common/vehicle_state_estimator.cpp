@@ -58,6 +58,7 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   }
 
   bool tilt_active_this_tick = false;
+  bool tilt_anchored_this_tick = false;
   float pitch_rad = 0.0f;
   float roll_rad = 0.0f;
   if (imu_tick_valid && input.filter.tilt_comp_enabled) {
@@ -69,6 +70,7 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     const bool motor_model_anchor_active = ekf_active &&
                                            input.filter.motor_model_enabled &&
                                            !input.speed_calibration_active;
+    tilt_anchored_this_tick = motor_model_anchor_active;
     const float a_lin_g = motor_model_anchor_active ? a_lin_prev_g_ : 0.0f;
     const float a_lin_lat_g =
         ekf_active ? (vehicle_imu.gz * kDegToRad) * prev_vx_ / kG : 0.0f;
@@ -170,8 +172,9 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     last_mag_sample_sequence_ = sensors.mag_sample_sequence;
   }
 
-  return BuildEstimate(sensors.imu_enabled, tilt_active_this_tick, pitch_rad,
-                       roll_rad, forward_accel_g);
+  return BuildEstimate(sensors.imu_enabled, tilt_active_this_tick,
+                       tilt_anchored_this_tick, pitch_rad, roll_rad,
+                       forward_accel_g);
 }
 
 void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
@@ -195,11 +198,12 @@ void VehicleStateEstimator::RefreshEkfFields(
 }
 
 VehicleStateEstimate VehicleStateEstimator::BuildEstimate(
-    bool imu_valid, bool tilt_valid, float pitch_rad, float roll_rad,
-    float forward_accel_g) const noexcept {
+    bool imu_valid, bool tilt_valid, bool tilt_accel_anchored, float pitch_rad,
+    float roll_rad, float forward_accel_g) const noexcept {
   VehicleStateEstimate estimate;
   estimate.imu_valid = imu_valid;
   estimate.tilt_valid = tilt_valid;
+  estimate.tilt_accel_anchored = tilt_accel_anchored;
   estimate.pitch_rad = pitch_rad;
   estimate.roll_rad = roll_rad;
   estimate.forward_accel_g = forward_accel_g;

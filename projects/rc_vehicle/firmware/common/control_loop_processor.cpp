@@ -278,14 +278,15 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
   const ModeTraits policy =
       DriveModeRegistry::Get(input.config.mode).GetTraits();
   constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
-  // Тангаж для pitch compensation — только от TiltEstimator: он снимает
-  // продольное ускорение мотор-модели и гейтит акселерометр. Madgwick на
-  // разгоне по ровному заваливается в «нос вверх», и компенсация добавляла
-  // бы газ в ответ на собственное ускорение — положительная обратная связь
-  // (LOS-369). Без оценки наклона компенсация не работает.
+  // Тангаж для pitch compensation — только от TiltEstimator, и только пока
+  // он снимает продольное ускорение мотор-модели. Madgwick (и TiltEstimator
+  // без этого якоря: мотор-модель выключена или идёт калибровка скорости) на
+  // разгоне по ровному читает «нос вверх», и компенсация добавляла бы газ в
+  // ответ на собственное ускорение — положительная обратная связь (LOS-369).
+  // Без такой оценки наклона компенсация не работает.
   float pitch_deg = 0.0f;
   if (policy.pitch_comp_active && input.sensors.imu_enabled &&
-      state.estimate.tilt_valid) {
+      state.estimate.tilt_valid && state.estimate.tilt_accel_anchored) {
     pitch_deg = state.estimate.pitch_rad * kRadToDeg;
   }
   const StabilizationInput stabilization_input{

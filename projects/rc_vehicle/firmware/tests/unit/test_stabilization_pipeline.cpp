@@ -146,6 +146,57 @@ TEST_F(StabilizationPipelineTest, KidsPitchCompensationKeepsThrottleCap) {
               1e-5f);
 }
 
+TEST_F(StabilizationPipelineTest, PitchCompensationIdleAtNeutralThrottle) {
+  // LOS-369: отпущенный стик на склоне не толкает машину ни вперёд, ни назад.
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+  };
+  input_.command = {.throttle = 0.0f, .steering = 0.0f};
+  for (const float pitch : {-10.0f, 10.0f}) {
+    input_.pitch_deg = pitch;
+    EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                    0.0f);
+  }
+}
+
+TEST_F(StabilizationPipelineTest, KidsPitchCompensationDoesNotUndoReducers) {
+  // LOS-369: accel limiter и anti-spin режут газ уже после компенсации, а
+  // не до неё, — добавленный в гору газ их срез не отменяет.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.throttle_limit = 0.4f;
+  cfg_.kids_mode.speed_limit_enabled = false;
+  cfg_.kids_mode.anti_spin_enabled = true;
+  cfg_.kids_mode.anti_spin_threshold_deg = 10.0f;
+  cfg_.kids_mode.anti_spin_reduction = 0.5f;
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.15f;
+  cfg_.kids_mode.accel_limit_gain = 3.0f;
+  cfg_.kids_mode.accel_max_reduction = 0.5f;
+  input_.command = {.throttle = 0.9f, .steering = 0.0f};
+  input_.slip_angle_deg = 25.0f;
+  input_.forward_accel_g = 0.25f;
+  input_.dt_ms = 0;
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+
+  input_.pitch_deg = 0.0f;
+  const float level = pipeline_.Process(cfg_, policy, input_).command.throttle;
+  input_.pitch_deg = -10.0f;  // нос вверх
+  const float uphill = pipeline_.Process(cfg_, policy, input_).command.throttle;
+
+  // 0.4 × (1 − 0.5) × (1 − 0.3) на ровном и в гору одинаково.
+  EXPECT_NEAR(level, 0.14f, 1e-5f);
+  EXPECT_NEAR(uphill, level, 1e-5f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // LOS-286: разделение семантики `enabled` и ограничителей Kids.
 //

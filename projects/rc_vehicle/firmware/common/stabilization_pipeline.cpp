@@ -162,6 +162,10 @@ void PitchCompensator::Process(const StabilizationConfig& cfg, float& throttle,
   if (!cfg.pitch_comp.enabled) return;
   if (input.stabilization_weight <= 0.0f) return;
   if (!input.imu_enabled) return;
+  // Нейтраль (шум стика уже снят в SelectControlSource): компенсация не
+  // трогается с места сама — в гору поехала бы вперёд, под гору назад, и
+  // ненулевая команда блокировала бы ZUPT (LOS-369).
+  if (throttle == 0.0f) return;
 
   // pitch_deg > 0 — нос ВНИЗ (конвенция Madgwick/TiltEstimator: pitch =
   // atan2(-ax, …), а на подъёме акселерометр видит ax = +sin). Подъём даёт
@@ -299,6 +303,15 @@ StabilizationOutput StabilizationPipeline::Process(
       .motor_model_target_throttle = input.command.throttle,
   };
 
+  // В Kids компенсация тангажа идёт ДО ограничителей: предел газа,
+  // anti-spin и accel limiter — защита ребёнка, и добавленный в гору газ не
+  // должен её обходить (LOS-369). В остальных режимах порядок прежний.
+  const bool pitch_before_limits =
+      policy.pitch_comp_active && policy.apply_input_limits;
+  if (pitch_before_limits) {
+    pitch_ctrl_.Process(cfg, output.command.throttle, input);
+  }
+
   if (policy.apply_input_limits) {
     kids_processor_.Process(cfg, output.command.throttle,
                             output.command.steering, input, nullptr,
@@ -316,12 +329,8 @@ StabilizationOutput StabilizationPipeline::Process(
     yaw_ctrl_.Process(cfg, output.command.steering, input,
                       output.command.throttle < 0.0f, policy.yaw_ref_cutoff_hz);
   }
-  if (policy.pitch_comp_active) {
+  if (policy.pitch_comp_active && !pitch_before_limits) {
     pitch_ctrl_.Process(cfg, output.command.throttle, input);
-    // В гору компенсация добавляет газ, но предел Kids обходить не должна.
-    if (policy.apply_input_limits) {
-      kids_processor_.ClampThrottle(cfg, output.command.throttle);
-    }
   }
   if (policy.slip_angle_active) {
     slip_ctrl_.Process(cfg, output.command.throttle, input);

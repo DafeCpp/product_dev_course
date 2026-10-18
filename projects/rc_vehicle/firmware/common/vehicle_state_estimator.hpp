@@ -60,6 +60,9 @@ struct VehicleStateEstimatorInput {
 struct VehicleStateEstimate {
   bool imu_valid{false};
   bool tilt_valid{false};
+  /** TiltEstimator снимал с акселерометра продольное ускорение мотор-модели.
+   *  Без этого якоря разгон читается как наклон (LOS-369). */
+  bool tilt_accel_anchored{false};
   float pitch_rad{0.0f};
   float roll_rad{0.0f};
   float yaw_rad{0.0f};
@@ -114,8 +117,8 @@ class VehicleStateEstimator {
 
  private:
   [[nodiscard]] VehicleStateEstimate BuildEstimate(
-      bool imu_valid, bool tilt_valid, float pitch_rad, float roll_rad,
-      float forward_accel_g) const noexcept;
+      bool imu_valid, bool tilt_valid, bool tilt_accel_anchored,
+      float pitch_rad, float roll_rad, float forward_accel_g) const noexcept;
 
   ImuCalibration& imu_calib_;
   MadgwickFilter& madgwick_;
