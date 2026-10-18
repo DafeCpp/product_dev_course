@@ -13,6 +13,8 @@ constexpr float kStabEngageSpeedMs = 0.30f;
 constexpr float kStabDisengageSpeedMs = 0.15f;
 constexpr float kStabRampInSec = 0.25f;
 constexpr float kYawErrorCutoffHz = 10.0f;
+// |throttle|, при котором pitch-компенсация действует в полную силу (LOS-369).
+constexpr float kPitchCompRampThrottle = 0.2f;
 constexpr float kTwoPi = 6.28318530717958647692f;
 }  // namespace
 
@@ -177,8 +179,16 @@ void PitchCompensator::Process(const StabilizationConfig& cfg, float& throttle,
       std::clamp(cfg.pitch_comp.gain * nose_up_deg,
                  -cfg.pitch_comp.max_correction, cfg.pitch_comp.max_correction);
 
-  throttle = std::clamp(throttle + correction * input.stabilization_weight,
-                        -1.0f, 1.0f);
+  // У нейтрали коррекция нарастает линейно с |throttle|: иначе стик, едва
+  // вышедший из мёртвой зоны, на склоне сразу получал бы полную добавку
+  // (скачок 0 → max_correction).
+  const float ramp =
+      std::min(std::fabs(throttle) / kPitchCompRampThrottle, 1.0f);
+  const float compensated = std::clamp(
+      throttle + correction * ramp * input.stabilization_weight, -1.0f, 1.0f);
+  // Компенсация не разворачивает команду: под гору газ вперёд снижается
+  // максимум до нуля, но не превращается в задний ход/тормоз.
+  throttle = (compensated * throttle < 0.0f) ? 0.0f : compensated;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

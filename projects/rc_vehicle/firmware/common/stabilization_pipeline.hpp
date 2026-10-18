@@ -123,7 +123,8 @@ class YawRateController {
  * В прошивке pitch > 0 — нос ВНИЗ (Madgwick/TiltEstimator, LOS-369):
  * подъём (pitch < 0) → увеличить газ, спуск (pitch > 0) → уменьшить.
  * При нейтральном газе не действует: отпущенный стик не должен сам
- * толкать машину. Коррекция ограничена pitch_comp_max_correction.
+ * толкать машину. До |throttle| = 0.2 коррекция нарастает линейно, знак
+ * команды она не меняет. Коррекция ограничена pitch_comp_max_correction.
  *
  * Извлечён из VehicleControlUnified::ControlTaskLoop() (строки 180–191).
  * Fix #8 (REFACTORING.md): ручной if/else заменён на std::clamp.

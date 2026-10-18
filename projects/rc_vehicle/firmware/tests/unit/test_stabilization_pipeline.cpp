@@ -162,6 +162,43 @@ TEST_F(StabilizationPipelineTest, PitchCompensationIdleAtNeutralThrottle) {
   }
 }
 
+TEST_F(StabilizationPipelineTest, PitchCompensationRampsInNearNeutral) {
+  // LOS-369: стик, едва вышедший из мёртвой зоны, не получает скачком полную
+  // добавку — до |throttle| = 0.2 коррекция нарастает линейно.
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+  };
+  input_.pitch_deg = -10.0f;  // подъём: полная коррекция 0.01 * 10 = 0.1
+  input_.command = {.throttle = 0.02f, .steering = 0.0f};
+  EXPECT_NEAR(pipeline_.Process(cfg_, policy, input_).command.throttle, 0.03f,
+              1e-5f);
+  input_.command = {.throttle = 0.4f, .steering = 0.0f};
+  EXPECT_NEAR(pipeline_.Process(cfg_, policy, input_).command.throttle, 0.5f,
+              1e-5f);
+}
+
+TEST_F(StabilizationPipelineTest, PitchCompensationNeverFlipsThrottleSign) {
+  // LOS-369: под гору газ вперёд снижается максимум до нуля, а задний ход
+  // в гору не превращается в газ вперёд.
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+  };
+  input_.pitch_deg = 30.0f;  // спуск: коррекция −0.25
+  input_.command = {.throttle = 0.1f, .steering = 0.0f};
+  EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                  0.0f);
+  input_.pitch_deg = -30.0f;  // подъём: коррекция +0.25
+  input_.command = {.throttle = -0.1f, .steering = 0.0f};
+  EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                  0.0f);
+}
+
 TEST_F(StabilizationPipelineTest, KidsPitchCompensationDoesNotUndoReducers) {
   // LOS-369: accel limiter и anti-spin режут газ уже после компенсации, а
   // не до неё, — добавленный в гору газ их срез не отменяет.
