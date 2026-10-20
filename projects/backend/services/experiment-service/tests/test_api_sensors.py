@@ -11,6 +11,25 @@ from experiment_service.services.idempotency import IDEMPOTENCY_HEADER
 from tests.utils import make_headers
 
 
+async def _attach_via_request(
+    service_client, sensor_id, target_project_id, target_headers, owner_project_id, owner_headers
+):
+    """Attach a sensor to another project: request from the target, approve from the owner."""
+    resp = await service_client.post(
+        f"/api/v1/sensors/{sensor_id}/projects",
+        json={"project_id": str(target_project_id)},
+        headers=target_headers,
+    )
+    assert resp.status == 202
+    request_id = (await resp.json())["id"]
+    resp = await service_client.post(
+        f"/api/v1/sensor-project-requests/{request_id}/approve?project_id={owner_project_id}",
+        headers=owner_headers,
+    )
+    assert resp.status == 200
+    assert (await resp.json())["status"] == "approved"
+
+
 @pytest.mark.asyncio
 async def test_sensor_and_profiles_flow(service_client):
     project_id = uuid.uuid4()
@@ -267,12 +286,9 @@ async def test_sensor_multiple_projects(service_client):
     assert len(projects_data["project_ids"]) == 1
 
     # Add sensor to project2
-    resp = await service_client.post(
-        f"/api/v1/sensors/{sensor_id}/projects",
-        json={"project_id": str(project2_id)},
-        headers=headers2,
+    await _attach_via_request(
+        service_client, sensor_id, project2_id, headers2, project1_id, headers1
     )
-    assert resp.status == 204
 
     # Get sensor projects from project2 context - should see both projects
     # (user has access to both projects via headers)
@@ -297,12 +313,9 @@ async def test_sensor_multiple_projects(service_client):
     assert any(s["id"] == sensor_id for s in sensors_data["sensors"])
 
     # Add sensor to project3
-    resp = await service_client.post(
-        f"/api/v1/sensors/{sensor_id}/projects",
-        json={"project_id": str(project3_id)},
-        headers=headers3,
+    await _attach_via_request(
+        service_client, sensor_id, project3_id, headers3, project1_id, headers1
     )
-    assert resp.status == 204
 
     # Remove sensor from project2
     resp = await service_client.delete(
@@ -369,12 +382,9 @@ async def test_add_sensor_project_requires_owner_or_editor(service_client):
 
     # Add sensor to project2 as owner - should succeed
     headers2_owner = make_headers(project2_id, role="owner", user_id=user_id)
-    resp = await service_client.post(
-        f"/api/v1/sensors/{sensor_id}/projects",
-        json={"project_id": str(project2_id)},
-        headers=headers2_owner,
+    await _attach_via_request(
+        service_client, sensor_id, project2_id, headers2_owner, project1_id, headers1_owner
     )
-    assert resp.status == 204
 
 
 @pytest.mark.asyncio
@@ -405,12 +415,9 @@ async def test_remove_sensor_project_requires_owner_or_editor(service_client):
 
     # Add sensor to project2
     headers2_owner = make_headers(project2_id, role="owner", user_id=user_id)
-    resp = await service_client.post(
-        f"/api/v1/sensors/{sensor_id}/projects",
-        json={"project_id": str(project2_id)},
-        headers=headers2_owner,
+    await _attach_via_request(
+        service_client, sensor_id, project2_id, headers2_owner, project1_id, headers1_owner
     )
-    assert resp.status == 204
 
     # Try to remove sensor from project2 as viewer - should fail
     resp = await service_client.delete(
@@ -454,12 +461,9 @@ async def test_get_sensor_projects_filters_by_access(service_client):
     sensor_id = sensor_data["sensor"]["id"]
 
     # Add sensor to project2
-    resp = await service_client.post(
-        f"/api/v1/sensors/{sensor_id}/projects",
-        json={"project_id": str(project2_id)},
-        headers=headers2,
+    await _attach_via_request(
+        service_client, sensor_id, project2_id, headers2, project1_id, headers1
     )
-    assert resp.status == 204
 
     # Get projects from project1 context - should see project1 only
     resp = await service_client.get(

@@ -12,7 +12,7 @@ import { pickMaterialSelectOption } from '../testUtils/materialSelect'
 vi.mock('../api/client', () => ({
   sensorsApi: {
     get: vi.fn(), getProjects: vi.fn(), delete: vi.fn(), rotateToken: vi.fn(),
-    addProject: vi.fn(), removeProject: vi.fn(),
+    addProject: vi.fn(), removeProject: vi.fn(), decideProjectRequest: vi.fn(),
   },
   projectsApi: { list: vi.fn() },
 }))
@@ -294,9 +294,10 @@ describe('SensorDetailModal', () => {
       expect(sensorsApi.removeProject).not.toHaveBeenCalled()
     })
 
-    it('adds a project from the remaining ones', async () => {
+    it('adds a project from the remaining ones and approves it from the primary project', async () => {
       const user = userEvent.setup()
-      vi.mocked(sensorsApi.addProject).mockResolvedValue(undefined)
+      vi.mocked(sensorsApi.addProject).mockResolvedValue({ id: 'r1' } as never)
+      vi.mocked(sensorsApi.decideProjectRequest).mockResolvedValue({ id: 'r1', status: 'approved' } as never)
       renderModal()
       await screen.findByRole('table')
       await user.click(screen.getByRole('button', { name: 'Добавить проект' }))
@@ -304,7 +305,26 @@ describe('SensorDetailModal', () => {
       await pickMaterialSelectOption(user, /^Проект/, 'Third')
       await user.click(screen.getByRole('button', { name: 'Добавить' }))
       await waitFor(() => expect(sensorsApi.addProject).toHaveBeenCalledWith('s1', 'p3'))
+      expect(sensorsApi.decideProjectRequest).toHaveBeenCalledWith('r1', 'approve', 'p1')
+      await waitFor(() => expect(notifySuccess).toHaveBeenCalledWith('Проект добавлен'))
       await waitFor(() => expect(screen.queryByText('Добавить проект', { selector: 'h2' })).not.toBeInTheDocument())
+    })
+
+    it('leaves the request pending when it cannot be approved from here', async () => {
+      const user = userEvent.setup()
+      vi.mocked(sensorsApi.addProject).mockResolvedValue({ id: 'r1' } as never)
+      vi.mocked(sensorsApi.decideProjectRequest).mockRejectedValue({ response: { status: 403 } })
+      renderModal()
+      await screen.findByRole('table')
+      await user.click(screen.getByRole('button', { name: 'Добавить проект' }))
+      await pickMaterialSelectOption(user, /^Проект/, 'Third')
+      await user.click(screen.getByRole('button', { name: 'Добавить' }))
+      await waitFor(() =>
+        expect(notifySuccess).toHaveBeenCalledWith(
+          'Запрос отправлен, проект добавится после подтверждения владельцем датчика'
+        )
+      )
+      expect(notifyError).not.toHaveBeenCalled()
     })
 
     it('cancels and closes the add dialog (via Отмена, ×, and overlay)', async () => {

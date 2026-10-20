@@ -13,6 +13,7 @@ vi.mock('../api/client', () => ({
     sensorsApi: {
         create: vi.fn(),
         addProject: vi.fn(),
+        decideProjectRequest: vi.fn(),
     },
     projectsApi: {
         list: vi.fn(),
@@ -166,7 +167,8 @@ describe('CreateSensor', () => {
             }),
             token: 'test-token-12345',
         })
-        mockAddProject.mockResolvedValueOnce(undefined)
+        mockAddProject.mockResolvedValueOnce({ id: 'req-1' } as never)
+        vi.mocked(sensorsApi.decideProjectRequest).mockResolvedValueOnce({ id: 'req-1' } as never)
 
         render(<CreateSensor />, { wrapper: createWrapper() })
 
@@ -192,6 +194,9 @@ describe('CreateSensor', () => {
 
         await waitFor(() => {
             expect(mockAddProject).toHaveBeenCalledWith('sensor-1', 'project-2')
+        })
+        await waitFor(() => {
+            expect(sensorsApi.decideProjectRequest).toHaveBeenCalledWith('req-1', 'approve', 'project-1')
         })
     })
 

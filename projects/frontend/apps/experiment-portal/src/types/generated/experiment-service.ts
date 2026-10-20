@@ -916,11 +916,11 @@ export interface paths {
         get: operations["listSensorProjects"];
         put?: never;
         /**
-         * Attach sensor to a project
-         * @description Adds a `sensor_projects` link (no-op when it already exists). The sensor is looked up
-         *     globally (no membership check on its current projects). `experiments.create` is checked
-         *     against the caller's header permissions, not against the target project. If `project_id`
-         *     is `null` the X-Project-Id header is used.
+         * Request to attach sensor to a project
+         * @description Opens a pending attach request from the target project (`project_id`, or the X-Project-Id
+         *     header when it is `null`); the sensor is NOT attached yet. A member of any project the sensor
+         *     already belongs to approves it via `POST /api/v1/sensor-project-requests/{request_id}/approve`.
+         *     Repeating the call while a request is pending returns that same request.
          */
         post: operations["addSensorProject"];
         delete?: never;
@@ -941,11 +941,93 @@ export interface paths {
         post?: never;
         /**
          * Detach sensor from a project
-         * @description Deletes the `sensor_projects` link. No project-scope check: only `experiments.delete` in the
-         *     caller's header permissions is required. Removing the link to the sensor's primary project
-         *     does not change `sensors.project_id`, so the sensor stays visible there.
+         * @description Deletes the `sensor_projects` link. Allowed with `experiments.delete` from the project being
+         *     detached (caller project = path `project_id`) or from the sensor's primary project. Removing the
+         *     link to the sensor's primary project does not change `sensors.project_id`, so the sensor stays
+         *     visible there.
          */
         delete: operations["removeSensorProject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sensor-project-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sensor attach requests
+         * @description `incoming`: requests for sensors that belong to the caller's project (includes `sensor_name`).
+         *     `outgoing`: requests made by the caller's project (`sensor_name` is null). Newest first.
+         */
+        get: operations["listSensorProjectRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sensor-project-requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve sensor attach request
+         * @description Called from a project the sensor already belongs to (not the requesting one); attaches the sensor.
+         */
+        post: operations["approveSensorProjectRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sensor-project-requests/{request_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject sensor attach request
+         * @description Called from a project the sensor already belongs to (not the requesting one).
+         */
+        post: operations["rejectSensorProjectRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sensor-project-requests/{request_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel sensor attach request
+         * @description Called from the project that made the request.
+         */
+        post: operations["cancelSensorProjectRequest"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1773,6 +1855,35 @@ export interface components {
              * @description Target project. `null` falls back to the X-Project-Id header.
              */
             project_id: string | null;
+        };
+        /** @enum {string} */
+        SensorProjectRequestStatus: "pending" | "approved" | "rejected" | "cancelled";
+        SensorProjectRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            sensor_id: string;
+            /**
+             * Format: uuid
+             * @description Project the sensor is requested for.
+             */
+            project_id: string;
+            /** Format: uuid */
+            requested_by: string;
+            status: components["schemas"]["SensorProjectRequestStatus"];
+            /** Format: uuid */
+            decided_by?: string | null;
+            /** Format: uuid */
+            decided_in_project_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            decided_at?: string | null;
+            /** @description Filled for incoming requests only. */
+            sensor_name?: string | null;
+        };
+        SensorProjectRequestListResponse: {
+            requests: components["schemas"]["SensorProjectRequest"][];
         };
         /** @enum {string} */
         BackfillTaskStatus: "pending" | "running" | "completed" | "failed";
@@ -4564,17 +4675,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Sensor attached (or already attached) */
-            204: {
+            /** @description Pending request (new or already open) */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SensorProjectRequest"];
+                };
             };
-            /**
-             * @description Invalid X-User-Id / X-Project-Id header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id`;
-             *     any failure while inserting the link (`Bad request`)
-             */
+            /** @description Invalid header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4583,7 +4693,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`). */
+            /** @description Missing X-User-Id header */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4592,7 +4702,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Caller lacks `experiments.create` permission (text body `403: Missing permission: experiments.create`). */
+            /** @description Caller lacks `experiments.create` in the target project */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4603,6 +4713,15 @@ export interface operations {
             };
             /** @description Sensor not found (`Resource not found`) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Sensor already belongs to the target project */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4623,7 +4742,10 @@ export interface operations {
     };
     removeSensorProject: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Caller's project (defaults to X-Project-Id). */
+                project_id?: string;
+            };
             header?: never;
             path: {
                 sensor_id: components["parameters"]["SensorId"];
@@ -4658,7 +4780,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Caller lacks `experiments.delete` permission (text body `403: Missing permission: experiments.delete`). */
+            /** @description Caller lacks `experiments.delete`, or detaches another project without being the sensor's primary project. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4667,8 +4789,306 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Sensor-project link not found (`Resource not found`) */
+            /** @description Sensor-project link not found, or the sensor is not in the caller's project (`Resource not found`) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listSensorProjectRequests: {
+        parameters: {
+            query?: {
+                /** @description Caller's project (defaults to X-Project-Id). */
+                project_id?: string;
+                direction?: "incoming" | "outgoing";
+                status?: components["schemas"]["SensorProjectRequestStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorProjectRequestListResponse"];
+                };
+            };
+            /** @description Invalid project_id, direction or status */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Missing X-User-Id header */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Caller lacks `experiments.view` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    approveSensorProjectRequest: {
+        parameters: {
+            query?: {
+                /** @description Caller's project (defaults to X-Project-Id). */
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorProjectRequest"];
+                };
+            };
+            /** @description Invalid request_id or project_id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Missing X-User-Id header */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Caller lacks `experiments.update` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Request not found or the sensor is not in the caller's project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Request is no longer pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    rejectSensorProjectRequest: {
+        parameters: {
+            query?: {
+                /** @description Caller's project (defaults to X-Project-Id). */
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorProjectRequest"];
+                };
+            };
+            /** @description Invalid request_id or project_id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Missing X-User-Id header */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Caller lacks `experiments.update` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Request not found or the sensor is not in the caller's project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Request is no longer pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelSensorProjectRequest: {
+        parameters: {
+            query?: {
+                /** @description Caller's project (defaults to X-Project-Id). */
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SensorProjectRequest"];
+                };
+            };
+            /** @description Invalid request_id or project_id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Missing X-User-Id header */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Caller lacks `experiments.create` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Request not found or not made by the caller's project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Request is no longer pending */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

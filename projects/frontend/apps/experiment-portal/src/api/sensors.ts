@@ -14,6 +14,9 @@ import type {
   BackfillTask,
   BackfillTasksListResponse,
   SensorErrorLogResponse,
+  SensorProjectRequest,
+  SensorProjectRequestListResponse,
+  SensorProjectRequestStatus,
 } from '../types'
 import { apiGet, apiPost, apiPatch, apiDelete } from './client'
 
@@ -64,8 +67,40 @@ export const sensorsApi = {
     return await apiGet(`/api/v1/sensors/${id}/projects`)
   },
 
-  addProject: async (id: string, projectId: string): Promise<void> => {
-    await apiPost(`/api/v1/sensors/${id}/projects`, { project_id: projectId })
+  /** Opens a request to attach the sensor to projectId; it is attached once a
+   * project that already owns the sensor approves it. */
+  addProject: async (id: string, projectId: string): Promise<SensorProjectRequest> => {
+    return await apiPost(`/api/v1/sensors/${id}/projects`, { project_id: projectId })
+  },
+
+  listProjectRequests: async (params: {
+    project_id: string
+    direction: 'incoming' | 'outgoing'
+    status?: SensorProjectRequestStatus
+  }): Promise<SensorProjectRequestListResponse> => {
+    return await apiGet('/api/v1/sensor-project-requests', { params })
+  },
+
+  /** Approve or reject from projectId, a project the sensor already belongs to. */
+  decideProjectRequest: async (
+    requestId: string,
+    decision: 'approve' | 'reject',
+    projectId: string
+  ): Promise<SensorProjectRequest> => {
+    return await apiPost(
+      `/api/v1/sensor-project-requests/${requestId}/${decision}`,
+      {},
+      { params: { project_id: projectId } }
+    )
+  },
+
+  /** Withdraw a request from the project that made it. */
+  cancelProjectRequest: async (requestId: string, projectId: string): Promise<SensorProjectRequest> => {
+    return await apiPost(
+      `/api/v1/sensor-project-requests/${requestId}/cancel`,
+      {},
+      { params: { project_id: projectId } }
+    )
   },
 
   removeProject: async (id: string, projectId: string): Promise<void> => {

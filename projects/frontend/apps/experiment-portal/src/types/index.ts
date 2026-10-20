@@ -65,6 +65,9 @@ export type SensorCreate = Es['SensorRegisterRequest']
 export type SensorUpdate = Es['SensorUpdate']
 export type SensorRegisterResponse = Es['SensorTokenResponse']
 export type SensorTokenResponse = Es['SensorTokenResponse']
+export type SensorProjectRequest = Es['SensorProjectRequest']
+export type SensorProjectRequestStatus = Es['SensorProjectRequestStatus']
+export type SensorProjectRequestListResponse = Es['SensorProjectRequestListResponse']
 export type SensorsListResponse = Es['SensorListResponse']
 
 /** Журнал ошибок датчика отдаёт не experiment-service, в его спеке эндпоинта нет. */

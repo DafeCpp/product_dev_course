@@ -11,7 +11,7 @@ import { pickMaterialSelectOption } from '../testUtils/materialSelect'
 import { notifySuccess, notifySuccessSticky } from '../utils/notify'
 
 vi.mock('../api/client', () => ({
-    sensorsApi: { create: vi.fn(), addProject: vi.fn() },
+    sensorsApi: { create: vi.fn(), addProject: vi.fn(), decideProjectRequest: vi.fn() },
     projectsApi: { list: vi.fn() },
 }))
 
@@ -152,5 +152,24 @@ describe('CreateSensor branches', () => {
         await user.click(screen.getByRole('button', { name: 'Копировать' }))
         expect(notifySuccessSticky).not.toHaveBeenCalled()
         await waitFor(() => expect(notifySuccess).toHaveBeenCalledWith('Датчик зарегистрирован'))
+    })
+
+    it('reports pending requests when extra projects cannot be approved right away', async () => {
+        const user = userEvent.setup()
+        vi.mocked(sensorsApi.create).mockResolvedValueOnce({
+            sensor: createMockSensor({ id: 'new-s', project_id: 'project-1' }),
+            token: 'tkn',
+        })
+        vi.mocked(sensorsApi.addProject).mockResolvedValueOnce({ id: 'req-1' } as never)
+        vi.mocked(sensorsApi.decideProjectRequest).mockRejectedValueOnce({ response: { status: 403 } })
+        render(<CreateSensor />, { wrapper })
+        await fillForm(user, ['project-1', 'project-2'])
+        submit()
+        await waitFor(() =>
+            expect(notifySuccess).toHaveBeenCalledWith(
+                'Запросы на добавление в проекты отправлены, ждут подтверждения'
+            )
+        )
+        expect(sensorsApi.decideProjectRequest).toHaveBeenCalledWith('req-1', 'approve', 'project-1')
     })
 })

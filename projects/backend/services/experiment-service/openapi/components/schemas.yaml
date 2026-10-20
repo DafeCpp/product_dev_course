@@ -1254,6 +1254,70 @@ SensorProjectsResponse:
       items:
         type: string
         format: uuid
+SensorProjectRequestStatus:
+  type: string
+  enum:
+  - pending
+  - approved
+  - rejected
+  - cancelled
+SensorProjectRequest:
+  type: object
+  required:
+  - id
+  - sensor_id
+  - project_id
+  - requested_by
+  - status
+  - created_at
+  properties:
+    id:
+      type: string
+      format: uuid
+    sensor_id:
+      type: string
+      format: uuid
+    project_id:
+      type: string
+      format: uuid
+      description: Project the sensor is requested for.
+    requested_by:
+      type: string
+      format: uuid
+    status:
+      $ref: '#/SensorProjectRequestStatus'
+    decided_by:
+      type:
+      - string
+      - 'null'
+      format: uuid
+    decided_in_project_id:
+      type:
+      - string
+      - 'null'
+      format: uuid
+    created_at:
+      type: string
+      format: date-time
+    decided_at:
+      type:
+      - string
+      - 'null'
+      format: date-time
+    sensor_name:
+      type:
+      - string
+      - 'null'
+      description: Filled for incoming requests only.
+SensorProjectRequestListResponse:
+  type: object
+  required:
+  - requests
+  properties:
+    requests:
+      type: array
+      items:
+        $ref: '#/SensorProjectRequest'
 SensorProjectAddRequest:
   type: object
   required:

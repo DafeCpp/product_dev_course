@@ -48,11 +48,29 @@ function CreateSensor() {
                 setAdditionalProjectsError(null)
                 ;(async () => {
                     try {
-                        await Promise.all(
-                            extraProjectIds.map((pid) => sensorsApi.addProject(response.sensor.id, pid))
+                        // Each extra project gets an attach request, approved right
+                        // away from the primary project the sensor was created in.
+                        const attached = await Promise.all(
+                            extraProjectIds.map(async (pid) => {
+                                const request = await sensorsApi.addProject(response.sensor.id, pid)
+                                try {
+                                    await sensorsApi.decideProjectRequest(
+                                        request.id,
+                                        'approve',
+                                        response.sensor.project_id
+                                    )
+                                    return true
+                                } catch {
+                                    return false
+                                }
+                            })
                         )
                         setAdditionalProjectsStatus('done')
-                        notifySuccess('Датчик добавлен в дополнительные проекты')
+                        notifySuccess(
+                            attached.every(Boolean)
+                                ? 'Датчик добавлен в дополнительные проекты'
+                                : 'Запросы на добавление в проекты отправлены, ждут подтверждения'
+                        )
                     } catch (e: unknown) {
                         setAdditionalProjectsStatus('error')
                         setAdditionalProjectsError(

@@ -21,6 +21,7 @@ import {
 } from '../components/common'
 import SensorDetailModal from '../components/SensorDetailModal'
 import SensorStatusSummaryBar from '../components/SensorStatusSummaryBar'
+import SensorProjectRequestsPanel from '../components/SensorProjectRequestsPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import './SensorsList.scss'
 
@@ -100,6 +101,14 @@ function SensorsList() {
       {!isBusy && !error && (projectId || (projectsData?.projects?.length ?? 0) > 0) && (
         <>
           {statusSummary && <SensorStatusSummaryBar summary={statusSummary} />}
+          {projectId && (
+            <SensorProjectRequestsPanel
+              projectId={projectId}
+              projectNames={Object.fromEntries(
+                (projectsData?.projects ?? []).map((p) => [p.id, p.name])
+              )}
+            />
+          )}
 
           <div className="filter-capsule sensors-filter-capsule">
             <div className="filter-capsule__search filter-capsule__search--constrained">
