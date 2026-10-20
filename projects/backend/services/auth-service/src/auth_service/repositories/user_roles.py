@@ -134,6 +134,12 @@ class UserRoleRepository(BaseRepository):
         """Replace all project roles of a user with a single role, atomically."""
         async with self._pool.acquire() as conn:
             async with conn.transaction():
+                # Serialize concurrent replacements for the same member, otherwise
+                # two requests could each delete the other's role and keep both.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text || ':' || $2::uuid::text, 0))",
+                    user_id, project_id,
+                )
                 await conn.execute(
                     "DELETE FROM user_project_roles "
                     "WHERE user_id = $1 AND project_id = $2 AND role_id <> $3",

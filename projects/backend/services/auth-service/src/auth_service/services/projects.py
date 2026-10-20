@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import structlog
+from datetime import datetime, timezone
 from uuid import UUID
 
 from auth_service.core.exceptions import ForbiddenError, NotFoundError
@@ -278,7 +279,12 @@ class ProjectService:
 
         await self.perm_svc.validate_project_role(new_role_id)
 
-        current = await self.user_role_repo.list_project_roles(member_user_id, project_id)
+        now = datetime.now(timezone.utc)
+        current = [
+            r for r in await self.user_role_repo.list_project_roles(member_user_id, project_id)
+            if r.expires_at is None or r.expires_at > now
+        ]
+        # Only expired assignments left means the user is no longer a member
         if not current:
             raise NotFoundError(f"User {member_user_id} is not a member of the project")
         if len(current) == 1 and current[0].role_id == new_role_id and current[0].expires_at is None:

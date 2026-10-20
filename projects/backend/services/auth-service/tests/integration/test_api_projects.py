@@ -595,3 +595,58 @@ async def test_update_role_without_old_role_not_member(service_client):
     )
     assert response.status == 404
     assert await _member_roles(service_client, headers, project_id, member_id) is None
+
+
+@pytest.mark.asyncio
+async def test_update_role_without_old_role_expired_member_not_found(service_client, database_url):
+    import asyncpg
+
+    headers, project_id, _owner_id, member_id = await _project_with_member(service_client, "upexp")
+    conn = await asyncpg.connect(database_url)
+    try:
+        await conn.execute(
+            "UPDATE user_project_roles SET expires_at = now() - interval '1 day' "
+            "WHERE user_id = $1::uuid AND project_id = $2::uuid",
+            member_id, project_id,
+        )
+    finally:
+        await conn.close()
+
+    response = await service_client.put(
+        f"/projects/{project_id}/members/{member_id}/role",
+        headers=headers,
+        json={"role_id": EDITOR_ROLE},
+    )
+    assert response.status == 404
+    assert await _member_roles(service_client, headers, project_id, member_id) is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_role_replacements_leave_one_role(service_client, database_url):
+    import asyncio
+
+    import asyncpg
+
+    headers, project_id, _owner_id, member_id = await _project_with_member(
+        service_client, "upconc", member_roles=(VIEWER_ROLE, EDITOR_ROLE),
+    )
+
+    async def put(role):
+        return await service_client.put(
+            f"/projects/{project_id}/members/{member_id}/role",
+            headers=headers,
+            json={"role": role},
+        )
+
+    responses = await asyncio.gather(*(put(r) for r in ("viewer", "editor") * 3))
+    assert all(r.status == 200 for r in responses)
+
+    conn = await asyncpg.connect(database_url)
+    try:
+        count = await conn.fetchval(
+            "SELECT count(*) FROM user_project_roles WHERE user_id = $1::uuid AND project_id = $2::uuid",
+            member_id, project_id,
+        )
+    finally:
+        await conn.close()
+    assert count == 1
