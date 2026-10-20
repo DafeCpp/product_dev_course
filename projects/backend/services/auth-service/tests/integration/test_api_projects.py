@@ -442,3 +442,156 @@ async def test_update_member_role_success(service_client):
     payload = await response.json()
     assert payload["role_id"] == "00000000-0000-0000-0000-000000000011"
 
+
+
+VIEWER_ROLE = "00000000-0000-0000-0000-000000000012"
+EDITOR_ROLE = "00000000-0000-0000-0000-000000000011"
+
+
+async def _project_with_member(service_client, prefix, member_roles=(VIEWER_ROLE,)):
+    """Create owner, project and a member holding ``member_roles``."""
+    owner_token = await get_auth_token(
+        service_client, username=f"{prefix}owner", email=f"{prefix}owner@example.com",
+    )
+    member_token = await get_auth_token(
+        service_client, username=f"{prefix}member", email=f"{prefix}member@example.com",
+    )
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    owner_id = (await (await service_client.get("/auth/me", headers=headers)).json())["id"]
+    member_id = (await (await service_client.get(
+        "/auth/me", headers={"Authorization": f"Bearer {member_token}"},
+    )).json())["id"]
+    create_response = await service_client.post(
+        "/projects", headers=headers, json={"name": f"{prefix} project"},
+    )
+    assert create_response.status == 201
+    project_id = (await create_response.json())["id"]
+    for role_id in member_roles:
+        add_response = await service_client.post(
+            f"/projects/{project_id}/members",
+            headers=headers,
+            json={"user_id": member_id, "role_id": role_id},
+        )
+        assert add_response.status == 201
+    return headers, project_id, owner_id, member_id
+
+
+async def _member_roles(service_client, headers, project_id, user_id):
+    response = await service_client.get(f"/projects/{project_id}/members", headers=headers)
+    assert response.status == 200
+    for member in (await response.json())["members"]:
+        if member["user_id"] == user_id:
+            return sorted(member["roles"])
+    return None
+
+
+@pytest.mark.asyncio
+async def test_remove_member_without_role_removes_all_roles(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(
+        service_client, "rmall", member_roles=(VIEWER_ROLE, EDITOR_ROLE),
+    )
+    assert await _member_roles(service_client, headers, project_id, member_id) == ["editor", "viewer"]
+
+    response = await service_client.delete(
+        f"/api/v1/projects/{project_id}/members/{member_id}", headers=headers,
+    )
+    assert response.status == 200
+    assert (await response.json())["ok"] is True
+    assert await _member_roles(service_client, headers, project_id, member_id) is None
+
+
+@pytest.mark.asyncio
+async def test_remove_member_without_role_not_member(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(
+        service_client, "rmnone", member_roles=(),
+    )
+    response = await service_client.delete(
+        f"/projects/{project_id}/members/{member_id}", headers=headers,
+    )
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_remove_owner_without_role_forbidden(service_client):
+    headers, project_id, owner_id, _member_id = await _project_with_member(service_client, "rmown")
+    response = await service_client.delete(
+        f"/projects/{project_id}/members/{owner_id}", headers=headers,
+    )
+    assert response.status == 403
+    assert await _member_roles(service_client, headers, project_id, owner_id) == ["owner"]
+
+
+@pytest.mark.asyncio
+async def test_remove_member_invalid_role_id(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(service_client, "rmbad")
+    response = await service_client.delete(
+        f"/projects/{project_id}/members/{member_id}?role_id=not-a-uuid", headers=headers,
+    )
+    assert response.status == 400
+
+
+@pytest.mark.asyncio
+async def test_update_role_without_old_role_replaces_all_roles(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(
+        service_client, "upall", member_roles=(VIEWER_ROLE, EDITOR_ROLE),
+    )
+    response = await service_client.put(
+        f"/api/v1/projects/{project_id}/members/{member_id}/role",
+        headers=headers,
+        json={"role": "viewer"},
+    )
+    assert response.status == 200
+    assert (await response.json())["role_id"] == VIEWER_ROLE
+    assert await _member_roles(service_client, headers, project_id, member_id) == ["viewer"]
+
+
+@pytest.mark.asyncio
+async def test_update_role_without_old_role_same_role_is_noop(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(service_client, "upsame")
+    response = await service_client.put(
+        f"/projects/{project_id}/members/{member_id}/role",
+        headers=headers,
+        json={"role_id": VIEWER_ROLE},
+    )
+    assert response.status == 200
+    assert (await response.json())["role_id"] == VIEWER_ROLE
+    assert await _member_roles(service_client, headers, project_id, member_id) == ["viewer"]
+
+
+@pytest.mark.asyncio
+async def test_update_role_with_same_old_role_keeps_member(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(service_client, "upkeep")
+    response = await service_client.put(
+        f"/projects/{project_id}/members/{member_id}/role?old_role=viewer",
+        headers=headers,
+        json={"role_id": VIEWER_ROLE},
+    )
+    assert response.status == 200
+    assert await _member_roles(service_client, headers, project_id, member_id) == ["viewer"]
+
+
+@pytest.mark.asyncio
+async def test_update_owner_role_forbidden(service_client):
+    headers, project_id, owner_id, _member_id = await _project_with_member(service_client, "upown")
+    for query in ("", "?old_role=owner"):
+        response = await service_client.put(
+            f"/projects/{project_id}/members/{owner_id}/role{query}",
+            headers=headers,
+            json={"role_id": VIEWER_ROLE},
+        )
+        assert response.status == 403
+    assert await _member_roles(service_client, headers, project_id, owner_id) == ["owner"]
+
+
+@pytest.mark.asyncio
+async def test_update_role_without_old_role_not_member(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(
+        service_client, "upnone", member_roles=(),
+    )
+    response = await service_client.put(
+        f"/projects/{project_id}/members/{member_id}/role",
+        headers=headers,
+        json={"role_id": EDITOR_ROLE},
+    )
+    assert response.status == 404
+    assert await _member_roles(service_client, headers, project_id, member_id) is None

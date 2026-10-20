@@ -313,6 +313,9 @@ members:
 memberItem:
   delete:
     summary: Remove member from project
+    description: >-
+      Without `role_id` the user loses every role in the project (leaves it).
+      With `role_id` only that role is revoked. The project owner cannot be removed.
     operationId: removeProjectMember
     tags:
       - projects
@@ -321,6 +324,13 @@ memberItem:
     parameters:
       - $ref: ../components/parameters.yaml#/ProjectId
       - $ref: ../components/parameters.yaml#/UserId
+      - name: role_id
+        in: query
+        required: false
+        description: Revoke only this role instead of removing the member entirely.
+        schema:
+          type: string
+          format: uuid
     responses:
       '200':
         description: Member removed successfully
@@ -362,6 +372,10 @@ memberItem:
 memberRole:
   put:
     summary: Update member role
+    description: >-
+      Without `old_role` all of the member's roles are replaced by the new role
+      in one transaction; setting the role the member already has is a no-op.
+      With `old_role` only that role is swapped. The project owner's role cannot be changed.
     operationId: updateProjectMemberRole
     tags:
       - projects
@@ -372,7 +386,7 @@ memberRole:
       - $ref: ../components/parameters.yaml#/UserId
       - name: old_role
         in: query
-        required: true
+        required: false
         description: Role being replaced, as a role name or role UUID (alias query parameter `old_role_id`).
         schema:
           type: string

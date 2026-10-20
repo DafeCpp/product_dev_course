@@ -116,6 +116,40 @@ class UserRoleRepository(BaseRepository):
         )
         return result == "DELETE 1"
 
+    async def revoke_all_project_roles(self, user_id: UUID, project_id: UUID) -> int:
+        """Revoke every project role of a user. Returns the number of rows deleted."""
+        result = await self._execute(
+            "DELETE FROM user_project_roles WHERE user_id = $1 AND project_id = $2",
+            user_id, project_id,
+        )
+        return int(result.split()[-1])
+
+    async def replace_project_roles(
+        self,
+        user_id: UUID,
+        project_id: UUID,
+        role_id: UUID,
+        granted_by: UUID,
+    ) -> UserProjectRole:
+        """Replace all project roles of a user with a single role, atomically."""
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "DELETE FROM user_project_roles "
+                    "WHERE user_id = $1 AND project_id = $2 AND role_id <> $3",
+                    user_id, project_id, role_id,
+                )
+                row = await conn.fetchrow(
+                    "INSERT INTO user_project_roles (user_id, project_id, role_id, granted_by) "
+                    "VALUES ($1, $2, $3, $4) "
+                    "ON CONFLICT (user_id, project_id, role_id) DO UPDATE "
+                    "SET granted_by = EXCLUDED.granted_by, granted_at = now(), expires_at = NULL "
+                    "RETURNING user_id, project_id, role_id, granted_by, granted_at, expires_at",
+                    user_id, project_id, role_id, granted_by,
+                )
+        assert row is not None
+        return UserProjectRole.from_row(dict(row))
+
     async def list_project_roles(
         self, user_id: UUID, project_id: UUID,
     ) -> list[UserProjectRole]:

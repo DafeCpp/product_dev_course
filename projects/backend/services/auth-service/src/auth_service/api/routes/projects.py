@@ -329,13 +329,12 @@ async def remove_member(request: web.Request) -> web.Response:
     except ValueError:
         return web.json_response({"error": "Invalid ID"}, status=400)
 
-    # Get role_id from query param or body
+    # Optional role_id (query param or body): revoke only that role.
+    # Without it the member is removed from the project with all roles.
     try:
         data = await read_json(request) if request.can_read_body else {}
         role_id_str = data.get("role_id") or request.query.get("role_id")
-        if not role_id_str:
-            return web.json_response({"error": "role_id required"}, status=400)
-        role_id = UUID(role_id_str)
+        role_id = UUID(role_id_str) if role_id_str else None
     except ValueError:
         return web.json_response({"error": "Invalid role ID"}, status=400)
 
@@ -383,12 +382,13 @@ async def update_member_role(request: web.Request) -> web.Response:
 
     try:
         new_role_id = UUID(req.resolved_role_id())
-        # Get old role_id from query param (also supports role name)
+        # Optional old role from query param (role name or UUID): swap only
+        # that role. Without it all member roles are replaced by the new one.
         old_role_id_str = request.query.get("old_role_id") or request.query.get("old_role")
-        if not old_role_id_str:
-            return web.json_response({"error": "old_role_id query param required"}, status=400)
-        from auth_service.domain.dto import PROJECT_ROLE_NAME_TO_ID as _RMAP
-        old_role_id = UUID(_RMAP.get(old_role_id_str.lower(), old_role_id_str))
+        old_role_id: UUID | None = None
+        if old_role_id_str:
+            from auth_service.domain.dto import PROJECT_ROLE_NAME_TO_ID as _RMAP
+            old_role_id = UUID(_RMAP.get(old_role_id_str.lower(), old_role_id_str))
     except ValueError as e:
         return web.json_response({"error": str(e)}, status=400)
 

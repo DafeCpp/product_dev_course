@@ -201,11 +201,15 @@ class ProjectService:
         project_id: UUID,
         requester_id: UUID,
         member_user_id: UUID,
-        role_id: UUID,
+        role_id: UUID | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> bool:
-        """Remove member from project. Requires 'project.members.remove' permission."""
+        """Remove member from project. Requires 'project.members.remove' permission.
+
+        With ``role_id`` only that role is revoked; without it the user loses
+        every role in the project, i.e. leaves the project.
+        """
         await self.perm_svc.ensure_permission(requester_id, "project.members.remove", project_id)
 
         project = await self.project_repo.get_by_id(project_id)
@@ -215,14 +219,22 @@ class ProjectService:
         if member_user_id == project.owner_id:
             raise ForbiddenError("Cannot remove project owner")
 
-        result = await self.user_role_repo.revoke_project_role(
-            member_user_id, project_id, role_id,
-        )
+        if role_id is None:
+            removed = await self.user_role_repo.revoke_all_project_roles(
+                member_user_id, project_id,
+            )
+            if removed == 0:
+                raise NotFoundError(f"User {member_user_id} is not a member of the project")
+            result = True
+        else:
+            result = await self.user_role_repo.revoke_project_role(
+                member_user_id, project_id, role_id,
+            )
         await self._audit(
             requester_id, AuditAction.PROJECT_MEMBER_REMOVE,
             scope_id=project_id,
             target_type="user", target_id=str(member_user_id),
-            details={"role_id": str(role_id)},
+            details={"role_id": str(role_id) if role_id else "all"},
             ip_address=ip_address, user_agent=user_agent,
         )
         return result
@@ -232,19 +244,59 @@ class ProjectService:
         project_id: UUID,
         requester_id: UUID,
         member_user_id: UUID,
-        old_role_id: UUID,
+        old_role_id: UUID | None,
         new_role_id: UUID,
     ) -> UserProjectRole:
-        """Update member role. Requires 'project.members.change_role' permission."""
-        # grant_project_role checks the permission and validates scope_type
-        new_assignment = await self.perm_svc.grant_project_role(
-            requester_id, project_id, member_user_id, new_role_id,
+        """Update member role. Requires 'project.members.change_role' permission.
+
+        With ``old_role_id`` only that role is swapped for the new one; without
+        it all of the member's roles are replaced by the new role in one
+        transaction. The project owner's role cannot be changed.
+        """
+        await self.perm_svc.ensure_permission(
+            requester_id, "project.members.change_role", project_id,
         )
-        # Revoke old role after grant succeeds
-        await self.user_role_repo.revoke_project_role(
-            member_user_id, project_id, old_role_id,
+
+        project = await self.project_repo.get_by_id(project_id)
+        if not project:
+            raise NotFoundError(f"Project {project_id} not found")
+
+        if member_user_id == project.owner_id:
+            raise ForbiddenError("Cannot change the project owner's role")
+
+        if old_role_id is not None:
+            # grant_project_role validates scope_type and writes the audit entry
+            new_assignment = await self.perm_svc.grant_project_role(
+                requester_id, project_id, member_user_id, new_role_id,
+            )
+            # Revoke old role after grant succeeds; same role means nothing to revoke
+            if old_role_id != new_role_id:
+                await self.user_role_repo.revoke_project_role(
+                    member_user_id, project_id, old_role_id,
+                )
+            return new_assignment
+
+        await self.perm_svc.validate_project_role(new_role_id)
+
+        current = await self.user_role_repo.list_project_roles(member_user_id, project_id)
+        if not current:
+            raise NotFoundError(f"User {member_user_id} is not a member of the project")
+        if len(current) == 1 and current[0].role_id == new_role_id and current[0].expires_at is None:
+            return current[0]
+
+        assignment = await self.user_role_repo.replace_project_roles(
+            member_user_id, project_id, new_role_id, requester_id,
         )
-        return new_assignment
+        await self._audit(
+            requester_id, AuditAction.PROJECT_MEMBER_CHANGE_ROLE,
+            scope_id=project_id,
+            target_type="user", target_id=str(member_user_id),
+            details={
+                "old_role_ids": [str(r.role_id) for r in current],
+                "role_id": str(new_role_id),
+            },
+        )
+        return assignment
 
     async def list_members(self, project_id: UUID, user_id: UUID) -> list[dict]:
         """List project members. Requires 'project.members.view' permission."""
