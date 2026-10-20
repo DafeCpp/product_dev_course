@@ -713,6 +713,51 @@ async def test_export_run_filter_by_capture_session(service_client, pgsql):
     assert data[0]["capture_session_id"] == session1_id
 
 
+@pytest.mark.asyncio
+async def test_export_run_rejects_capture_session_of_other_project(service_client, pgsql):
+    """A session ID from another project must not leak its telemetry via run export."""
+    mine = await _setup_context(service_client)
+    other = await _setup_context(service_client)
+    await _insert_telemetry(
+        pgsql,
+        project_id=other["project_id"],
+        sensor_id=other["sensor_uuid"],
+        run_id=uuid.UUID(other["run_id"]),
+        capture_session_id=uuid.UUID(other["capture_session_id"]),
+        records=[{"timestamp": _ts(0), "raw_value": 42.0}],
+    )
+
+    resp = await service_client.get(
+        f"/api/v1/runs/{mine['run_id']}/telemetry/export"
+        f"?format=json&capture_session_id={other['capture_session_id']}"
+        f"&project_id={mine['project_id']}",
+        headers=mine["headers"],
+    )
+    assert resp.status == 404
+
+
+@pytest.mark.asyncio
+async def test_export_run_rejects_capture_session_of_other_run(service_client, pgsql):
+    """A session of another run in the same project is rejected too."""
+    first = await _setup_context(service_client)
+    # Only one active capture session per project is allowed: stop the first one.
+    resp = await service_client.post(
+        f"/api/v1/runs/{first['run_id']}/capture-sessions/{first['capture_session_id']}/stop",
+        json={"status": "succeeded"},
+        headers=first["headers"],
+    )
+    assert resp.status == 200
+    second = await _setup_context(service_client, project_id=first["project_id"])
+
+    resp = await service_client.get(
+        f"/api/v1/runs/{first['run_id']}/telemetry/export"
+        f"?format=json&capture_session_id={second['capture_session_id']}"
+        f"&project_id={first['project_id']}",
+        headers=first["headers"],
+    )
+    assert resp.status == 404
+
+
 # ---------------------------------------------------------------------------
 # RBAC
 # ---------------------------------------------------------------------------
