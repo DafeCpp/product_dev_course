@@ -18,6 +18,11 @@ _DYNAMIC_MIN_SPEED = 0.3  # м/с
 # (LOS-370). Точное значение влияет только на величину slip ratio.
 _WHEEL_SPIN_GAIN = 5.0
 
+# Уточнение секущей жёсткости шин: число решений шага и допуск превышения
+# предела боковой силы оси.
+_SECANT_ITERS = 4
+_SECANT_TOL = 0.01
+
 
 @dataclass
 class VehicleState:
@@ -40,7 +45,10 @@ class StepOutput:
     speed: float  # м/с
     delta_rad: float  # текущий угол руля
     wheel_speed: float = 0.0  # м/с, окружная скорость колёс (LOS-370)
-    slip_ratio: float = 0.0  # (wheel_v − v) / |wheel_v|, >0 — пробуксовка
+    # (wheel_v − v) / max(|wheel_v|, |v|): >0 — колёса обгоняют корпус вперёд
+    # (пробуксовка при разгоне), <0 — отстают (юз при торможении или
+    # пробуксовка назад на реверсе). 0 — катятся без проскальзывания.
+    slip_ratio: float = 0.0
 
 
 class VehicleModel:
@@ -181,33 +189,25 @@ class VehicleModel:
 
     def _slip_ratio(self) -> float:
         s = self.state
-        if abs(s.wheel_v) < 0.1:
+        ref = max(abs(s.wheel_v), abs(s.v))
+        if ref < 0.1:
             return 0.0
-        return (s.wheel_v - s.v) / abs(s.wheel_v)
+        return (s.wheel_v - s.v) / ref
 
-    def _lateral_capacity(self, drive_accel: float,
-                          alphas: tuple[float, float]) -> tuple[float, float]:
-        """Боковой предел осей [Н] при текущей тяге.
+    def _lateral_capacity(self, drive_accel: float) -> tuple[float, float]:
+        """Боковой предел осей [Н] по эллипсу трения sqrt((μN)² − Fx²).
 
-        Без пробуксовки — эллипс трения sqrt((μN)² − Fx²). При пробуксовке
-        сила трения скольжения направлена против вектора скорости
-        проскальзывания шины, поэтому на бок приходится доля
-        v·|α| / |(wheel_v − v, v·|α|)|: чем сильнее буксуют колёса, тем меньше
-        держит ось.
+        Fx оси — её доля продольной силы, переданной корпусу. При пробуксовке
+        это трение скольжения на пределе, поэтому упёршаяся ось почти не
+        держит вбок, а вторая сохраняет остаток эллипса. Сумма сил оси не
+        выходит за μ·N, и на срыве колёс предел непрерывен.
         """
         p = self.p
-        s = self.state
         caps = []
-        for n, share, alpha in zip(self._axle_loads(), self._drive_shares(),
-                                   alphas):
+        for n, share in zip(self._axle_loads(), self._drive_shares()):
             grip = p.tire_mu * n
-            if self._wheels_spinning and share > 0.0:
-                v_lat = abs(s.v * alpha)
-                v_long = s.wheel_v - s.v
-                caps.append(grip * v_lat / max(math.hypot(v_long, v_lat), 1e-6))
-            else:
-                fx = p.mass * drive_accel * share
-                caps.append(math.sqrt(max(grip * grip - fx * fx, 0.0)))
+            fx = p.mass * drive_accel * share
+            caps.append(math.sqrt(max(grip * grip - fx * fx, 0.0)))
         return caps[0], caps[1]
 
     def _step_kinematic(self, dt: float, delta: float) -> float:
@@ -223,18 +223,37 @@ class VehicleModel:
         v = s.v
 
         # Насыщение шин (LOS-370): линейный велосипед решается с секущей
-        # жёсткостью C_eff = F_max/|α| для оси, которая на прошлом состоянии
-        # уже вышла за предел, — неявный шаг остаётся A-устойчивым.
-        Caf, Car = p.Caf, p.Car
-        fy_max_f = fy_max_r = math.inf
-        if p.tire_mu > 0.0:
-            alpha_f0 = delta - (s.vy + p.com_a * s.r) / v
-            alpha_r0 = -(s.vy - p.com_b * s.r) / v
-            fy_max_f, fy_max_r = self._lateral_capacity(
-                drive_accel, (alpha_f0, alpha_r0))
-            Caf = _secant_stiffness(p.Caf, alpha_f0, fy_max_f)
-            Car = _secant_stiffness(p.Car, alpha_r0, fy_max_r)
+        # жёсткостью C_eff = F_max/|α| для оси, вышедшей за предел, —
+        # неявный шаг остаётся A-устойчивым. Секущая уточняется по углам
+        # увода в конце шага, чтобы проинтегрированная сила не превышала
+        # предел (больше чем на _SECANT_TOL).
+        if p.tire_mu <= 0.0:
+            return self._solve_lateral(dt, delta, v, p.Caf, p.Car)
+        fy_max_f, fy_max_r = self._lateral_capacity(drive_accel)
+        alpha_f = delta - (s.vy + p.com_a * s.r) / v
+        alpha_r = -(s.vy - p.com_b * s.r) / v
+        Caf = _secant_stiffness(p.Caf, alpha_f, fy_max_f)
+        Car = _secant_stiffness(p.Car, alpha_r, fy_max_r)
+        vy0, r0 = s.vy, s.r
+        for _ in range(_SECANT_ITERS):
+            s.vy, s.r = vy0, r0
+            lat_accel = self._solve_lateral(dt, delta, v, Caf, Car)
+            alpha_f = delta - (s.vy + p.com_a * s.r) / v
+            alpha_r = -(s.vy - p.com_b * s.r) / v
+            over_f = Caf * abs(alpha_f) > fy_max_f * (1.0 + _SECANT_TOL)
+            over_r = Car * abs(alpha_r) > fy_max_r * (1.0 + _SECANT_TOL)
+            if not (over_f or over_r):
+                break
+            if over_f:
+                Caf = fy_max_f / abs(alpha_f)
+            if over_r:
+                Car = fy_max_r / abs(alpha_r)
+        return lat_accel
 
+    def _solve_lateral(self, dt: float, delta: float, v: float,
+                       Caf: float, Car: float) -> float:
+        p = self.p
+        s = self.state
         # Линейный велосипед имеет вид x_dot = A*x + B*delta, x=[vy, r].
         # Явный Euler расходится при больших dt и около нижнего порога скорости,
         # особенно во время тысяч прогонов fitting. Backward Euler требует лишь
@@ -261,13 +280,7 @@ class VehicleModel:
         # состоянию в конце неявного шага, согласованно с интегратором.
         alpha_f = delta - (vy + p.com_a * r) / v
         alpha_r = -(vy - p.com_b * r) / v
-        fy_f = _clamp(Caf * alpha_f, fy_max_f)
-        fy_r = _clamp(Car * alpha_r, fy_max_r)
-        return (fy_f + fy_r) / p.mass
-
-
-def _clamp(x: float, limit: float) -> float:
-    return max(-limit, min(limit, x))
+        return (Caf * alpha_f + Car * alpha_r) / p.mass
 
 
 def _secant_stiffness(c: float, alpha: float, f_max: float) -> float:

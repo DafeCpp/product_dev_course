@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from simlib import SimParams, VehicleModel
 
 
@@ -163,16 +165,23 @@ def test_wheels_regrip_once_body_catches_up():
 
 
 def test_lateral_force_saturates_at_grip_limit():
-    """Боковое ускорение на низком μ не превышает μ·g."""
+    """Боковое ускорение на низком μ не превышает μ·g — и в выходе, и в
+    проинтегрированной динамике (vy_dot + v·r)."""
     mu = 0.3
     p = SimParams(tire_mu=mu)
-    m = VehicleModel(p, dynamic=True)
-    _run(m, throttle=0.6, steering=0.0, n=1000)
-    peak_lat = 0.0
-    for _ in range(1000):
-        out = m.step(DT, 0.6, 1.0)
-        peak_lat = max(peak_lat, abs(out.lat_accel))
-    assert peak_lat <= mu * p.gravity_ms2 + 1e-6
+    for throttle in (0.3, 0.6, 1.0):
+        m = VehicleModel(p, dynamic=True)
+        _run(m, throttle=throttle, steering=0.0, n=1000)
+        peak_lat = 0.0
+        for i in range(1000):
+            steering = 1.0 if (i // 250) % 2 == 0 else -1.0  # слалом
+            vy0 = m.state.vy
+            out = m.step(DT, throttle, steering)
+            peak_lat = max(peak_lat, abs(out.lat_accel))
+            if m.state.v >= 0.3:
+                implied = (m.state.vy - vy0) / DT + m.state.v * m.state.r
+                assert out.lat_accel == pytest.approx(implied, abs=1e-6)
+        assert peak_lat <= mu * p.gravity_ms2 * 1.011
 
     linear = VehicleModel(SimParams(), dynamic=True)
     _run(linear, throttle=0.6, steering=0.0, n=1000)
@@ -194,3 +203,14 @@ def test_rear_biased_drive_slides_rear_on_low_grip():
         return peak
 
     assert peak_beta(0.2) > peak_beta(0.5) + 5.0
+
+
+def test_reverse_wheelspin_has_negative_slip_ratio():
+    """Пробуксовка назад: колёса обгоняют корпус в сторону реверса."""
+    m = VehicleModel(SimParams(tire_mu=0.1))
+    peak = 0.0
+    for _ in range(500):
+        out = m.step(DT, -1.0, 0.0)
+        peak = min(peak, out.slip_ratio)
+    assert out.speed < 0.0
+    assert peak < -0.2
