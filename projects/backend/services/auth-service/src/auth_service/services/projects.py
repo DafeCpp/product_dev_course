@@ -264,19 +264,22 @@ class ProjectService:
         if member_user_id == project.owner_id:
             raise ForbiddenError("Cannot change the project owner's role")
 
-        if old_role_id is not None:
-            # grant_project_role validates scope_type and writes the audit entry
-            new_assignment = await self.perm_svc.grant_project_role(
-                requester_id, project_id, member_user_id, new_role_id,
-            )
-            # Revoke old role after grant succeeds; same role means nothing to revoke
-            if old_role_id != new_role_id:
-                await self.user_role_repo.revoke_project_role(
-                    member_user_id, project_id, old_role_id,
-                )
-            return new_assignment
-
         await self.perm_svc.validate_project_role(new_role_id)
+
+        if old_role_id is not None:
+            swapped = await self.user_role_repo.swap_project_role(
+                member_user_id, project_id, old_role_id, new_role_id, requester_id,
+            )
+            if swapped is None:
+                raise NotFoundError(f"User {member_user_id} is not a member of the project")
+            if old_role_id != new_role_id:
+                await self._audit(
+                    requester_id, AuditAction.PROJECT_MEMBER_CHANGE_ROLE,
+                    scope_id=project_id,
+                    target_type="user", target_id=str(member_user_id),
+                    details={"old_role_ids": [str(old_role_id)], "role_id": str(new_role_id)},
+                )
+            return swapped
 
         result = await self.user_role_repo.replace_project_roles(
             member_user_id, project_id, new_role_id, requester_id,

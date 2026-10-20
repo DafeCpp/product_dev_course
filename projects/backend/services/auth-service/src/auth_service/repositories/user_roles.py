@@ -168,7 +168,7 @@ class UserRoleRepository(BaseRepository):
                 if not active:
                     return None
                 old_role_ids = [r.role_id for r in active]
-                if len(active) == 1 and active[0].role_id == role_id and active[0].expires_at is None:
+                if old_role_ids == [role_id]:
                     return active[0], old_role_ids
                 await conn.execute(
                     "DELETE FROM user_project_roles "
@@ -185,6 +185,47 @@ class UserRoleRepository(BaseRepository):
                 )
         assert row is not None
         return UserProjectRole.from_row(dict(row)), old_role_ids
+
+    async def swap_project_role(
+        self,
+        user_id: UUID,
+        project_id: UUID,
+        old_role_id: UUID,
+        new_role_id: UUID,
+        granted_by: UUID,
+    ) -> UserProjectRole | None:
+        """Swap one project role of a member for another, atomically.
+
+        Returns None if the user has no active role in the project. Swapping
+        a role for itself leaves an active assignment untouched.
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(self._MEMBER_LOCK_SQL, user_id, project_id)
+                active = {
+                    r["role_id"]: r
+                    for r in await conn.fetch(self._ACTIVE_ROLES_SQL, user_id, project_id)
+                }
+                if not active:
+                    return None
+                if old_role_id == new_role_id and new_role_id in active:
+                    return UserProjectRole.from_row(dict(active[new_role_id]))
+                row = await conn.fetchrow(
+                    "INSERT INTO user_project_roles (user_id, project_id, role_id, granted_by) "
+                    "VALUES ($1, $2, $3, $4) "
+                    "ON CONFLICT (user_id, project_id, role_id) DO UPDATE "
+                    "SET granted_by = EXCLUDED.granted_by, granted_at = now(), expires_at = NULL "
+                    "RETURNING user_id, project_id, role_id, granted_by, granted_at, expires_at",
+                    user_id, project_id, new_role_id, granted_by,
+                )
+                if old_role_id != new_role_id:
+                    await conn.execute(
+                        "DELETE FROM user_project_roles "
+                        "WHERE user_id = $1 AND project_id = $2 AND role_id = $3",
+                        user_id, project_id, old_role_id,
+                    )
+        assert row is not None
+        return UserProjectRole.from_row(dict(row))
 
     async def list_project_roles(
         self, user_id: UUID, project_id: UUID,

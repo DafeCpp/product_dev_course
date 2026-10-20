@@ -694,3 +694,53 @@ async def test_concurrent_remove_and_replace_never_keep_removed_member(service_c
         assert remove.status == 200
         assert replace.status in (200, 404)
         assert await _member_roles(service_client, headers, project_id, member_id) is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_remove_and_targeted_swap_never_keep_removed_member(service_client):
+    import asyncio
+
+    for attempt in range(5):
+        headers, project_id, _owner_id, member_id = await _project_with_member(
+            service_client, f"swrace{attempt}",
+        )
+        remove, swap = await asyncio.gather(
+            service_client.delete(f"/projects/{project_id}/members/{member_id}", headers=headers),
+            service_client.put(
+                f"/projects/{project_id}/members/{member_id}/role?old_role=viewer",
+                headers=headers,
+                json={"role": "editor"},
+            ),
+        )
+        assert remove.status == 200
+        assert swap.status in (200, 404)
+        assert await _member_roles(service_client, headers, project_id, member_id) is None
+
+
+@pytest.mark.asyncio
+async def test_same_role_replacement_keeps_expiry(service_client, database_url):
+    import asyncpg
+
+    headers, project_id, _owner_id, member_id = await _project_with_member(service_client, "upttl")
+    conn = await asyncpg.connect(database_url)
+    try:
+        await conn.execute(
+            "UPDATE user_project_roles SET expires_at = now() + interval '1 day' "
+            "WHERE user_id = $1::uuid AND project_id = $2::uuid",
+            member_id, project_id,
+        )
+        for query in ("", "?old_role=viewer"):
+            response = await service_client.put(
+                f"/projects/{project_id}/members/{member_id}/role{query}",
+                headers=headers,
+                json={"role_id": VIEWER_ROLE},
+            )
+            assert response.status == 200
+            assert (await response.json())["expires_at"] is not None
+        expires_at = await conn.fetchval(
+            "SELECT expires_at FROM user_project_roles WHERE user_id = $1::uuid AND project_id = $2::uuid",
+            member_id, project_id,
+        )
+    finally:
+        await conn.close()
+    assert expires_at is not None
