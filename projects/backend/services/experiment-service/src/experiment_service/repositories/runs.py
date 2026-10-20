@@ -7,8 +7,9 @@ from typing import Any, List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
+from asyncpg.exceptions import ForeignKeyViolationError  # type: ignore[import-untyped]
 
-from experiment_service.core.exceptions import NotFoundError
+from experiment_service.core.exceptions import EmptyUpdateError, NotFoundError
 from experiment_service.domain.dto import RunCreateDTO, RunUpdateDTO
 from experiment_service.domain.enums import RunStatus
 from experiment_service.domain.models import Run, RunSensor
@@ -232,7 +233,7 @@ class RunRepository(BaseRepository):
     ) -> Run:
         payload = updates.model_dump(exclude_none=True)
         if not payload:
-            raise ValueError("No fields provided for update")
+            raise EmptyUpdateError()
 
         assignments = []
         values: list[Any] = []
@@ -408,20 +409,27 @@ class RunRepository(BaseRepository):
         mode: str = "passive",
     ) -> RunSensor:
         """Attach a sensor to a run (upsert — re-attaches if previously detached)."""
-        row = await self._fetchrow(
-            """
-            INSERT INTO run_sensors (run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by)
-            VALUES ($1, $2, $3, $4, now(), NULL, $5)
-            ON CONFLICT (run_id, sensor_id) DO UPDATE
-                SET mode = EXCLUDED.mode,
-                    attached_at = now(),
-                    detached_at = NULL,
-                    created_by = EXCLUDED.created_by
-            RETURNING run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by
-            """,
-            run_id, sensor_id, project_id, mode, created_by,
-        )
-        assert row is not None
+        try:
+            row = await self._fetchrow(
+                """
+                INSERT INTO run_sensors (run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by)
+                VALUES ($1, $2, $3, $4, now(), NULL, $5)
+                ON CONFLICT (run_id, sensor_id) DO UPDATE
+                    SET mode = EXCLUDED.mode,
+                        attached_at = now(),
+                        detached_at = NULL,
+                        created_by = EXCLUDED.created_by
+                    -- An existing pair of another project must not be touched from this one.
+                    WHERE run_sensors.project_id = EXCLUDED.project_id
+                RETURNING run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by
+                """,
+                run_id, sensor_id, project_id, mode, created_by,
+            )
+        except ForeignKeyViolationError as exc:
+            # (run_id, project_id) / (sensor_id, project_id) must exist in the project.
+            raise NotFoundError("Run or sensor not found in this project") from exc
+        if row is None:
+            raise NotFoundError("Run or sensor not found in this project")
         return RunSensor(**dict(row))
 
     async def detach_sensor(self, run_id: UUID, sensor_id: UUID) -> bool:

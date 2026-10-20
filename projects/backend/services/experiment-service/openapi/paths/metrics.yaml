@@ -230,7 +230,7 @@ compare:
     summary: Compare metrics across runs (POST)
     description: >
       Same rules as the GET. max_points_per_series is clamped into 100-2000. A from_step or to_step
-      that is not an integer currently fails with 500.
+      that is not an integer gives 400.
     operationId: compareRunMetrics
     parameters:
       - $ref: ../components/parameters.yaml#/ExperimentId
@@ -256,8 +256,6 @@ compare:
         $ref: ../components/responses.yaml#/Forbidden
       404:
         $ref: ../components/responses.yaml#/NotFound
-      500:
-        $ref: ../components/responses.yaml#/InternalError
 
 compareExport:
   get:

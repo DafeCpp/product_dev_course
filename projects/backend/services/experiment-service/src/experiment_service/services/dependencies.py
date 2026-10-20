@@ -161,7 +161,8 @@ def resolve_project_id(
         return user.active_project_id
     try:
         return UUID(project_id_str)
-    except ValueError as exc:
+    except (ValueError, TypeError, AttributeError) as exc:
+        # A non-string JSON body value (e.g. a number) is a bad request too.
         raise web.HTTPBadRequest(text="Invalid project_id") from exc
 
 

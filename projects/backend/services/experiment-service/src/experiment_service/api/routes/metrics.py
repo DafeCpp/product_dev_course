@@ -55,7 +55,7 @@ async def ingest_metrics(request: web.Request) -> web.Response:
     try:
         accepted = await service.ingest_metrics(project_id, run_id, points)
     except ValueError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+        raise web.HTTPBadRequest(text=str(exc)) from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response({"status": "accepted", "accepted": accepted}, status=202)

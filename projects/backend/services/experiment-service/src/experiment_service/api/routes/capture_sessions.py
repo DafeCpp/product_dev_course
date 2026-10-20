@@ -155,13 +155,22 @@ async def stop_capture_session(request: web.Request):
     except ValueError as exc:
         raise web.HTTPBadRequest(text="Invalid status value") from exc
     stopped_at = body.get("stopped_at") or datetime.now(timezone.utc)
-    dto = CaptureSessionUpdateDTO(
-        status=status,
-        stopped_at=stopped_at,
-        archived=body.get("archived"),
-        notes=body.get("notes"),
-    )
+    try:
+        dto = CaptureSessionUpdateDTO(
+            status=status,
+            stopped_at=stopped_at,
+            archived=body.get("archived"),
+            notes=body.get("notes"),
+        )
+    except ValidationError as exc:
+        raise web.HTTPBadRequest(text=exc.json()) from exc
     service = await get_capture_session_service(request)
+    try:
+        current = await service.get_session(project_id, session_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text="Resource not found") from exc
+    if current.run_id != run_id:
+        raise web.HTTPNotFound(text="Capture session not found")
     try:
         session = await service.update_session(project_id, session_id, dto)
     except NotFoundError as exc:

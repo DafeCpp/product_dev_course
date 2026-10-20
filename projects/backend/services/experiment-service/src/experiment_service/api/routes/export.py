@@ -10,6 +10,7 @@ from aiohttp import web
 
 from experiment_service.api.utils import (
     parse_datetime,
+    parse_status_filter,
     parse_tags_filter,
     parse_uuid,
 )
@@ -128,7 +129,7 @@ async def export_experiments(request: web.Request):
         raise web.HTTPBadRequest(text="format must be csv or json")
 
     status_raw = request.rel_url.query.get("status")
-    status = ExperimentStatus(status_raw) if status_raw else None
+    status = parse_status_filter(status_raw, ExperimentStatus)
     tags = parse_tags_filter(request.rel_url.query.get("tags"))
     created_after = parse_datetime(request.rel_url.query.get("created_after"), "created_after")
     created_before = parse_datetime(request.rel_url.query.get("created_before"), "created_before")
@@ -181,7 +182,7 @@ async def export_runs(request: web.Request):
         raise web.HTTPBadRequest(text="format must be csv or json")
 
     status_raw = request.rel_url.query.get("status")
-    status = RunStatus(status_raw) if status_raw else None
+    status = parse_status_filter(status_raw, RunStatus)
     tags = parse_tags_filter(request.rel_url.query.get("tags"))
     created_after = parse_datetime(request.rel_url.query.get("created_after"), "created_after")
     created_before = parse_datetime(request.rel_url.query.get("created_before"), "created_before")

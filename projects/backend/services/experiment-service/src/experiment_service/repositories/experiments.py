@@ -9,7 +9,11 @@ from uuid import UUID
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
 from asyncpg.exceptions import UniqueViolationError  # type: ignore[import-untyped]
 
-from experiment_service.core.exceptions import DuplicateResourceError, NotFoundError
+from experiment_service.core.exceptions import (
+    DuplicateResourceError,
+    EmptyUpdateError,
+    NotFoundError,
+)
 from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateDTO
 from experiment_service.domain.enums import ExperimentStatus
 from experiment_service.domain.models import Experiment
@@ -204,7 +208,7 @@ class ExperimentRepository(BaseRepository):
     ) -> Experiment:
         payload = updates.model_dump(exclude_none=True)
         if not payload:
-            raise ValueError("No fields provided for update")
+            raise EmptyUpdateError()
 
         assignments = []
         values: list[Any] = []
@@ -228,7 +232,13 @@ class ExperimentRepository(BaseRepository):
             WHERE project_id = ${idx} AND id = ${idx + 1}
             RETURNING *
         """
-        record = await self._fetchrow(query, *values)
+        try:
+            record = await self._fetchrow(query, *values)
+        except UniqueViolationError as exc:
+            # Rename onto a name already taken (experiments_project_name_uindex).
+            raise DuplicateResourceError(
+                f"Experiment with name '{payload.get('name')}' already exists in this project"
+            ) from exc
         if record is None:
             raise NotFoundError("Experiment not found")
         return self._to_model(record)

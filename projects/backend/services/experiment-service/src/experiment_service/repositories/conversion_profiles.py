@@ -6,8 +6,13 @@ from typing import Any, List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
+from asyncpg.exceptions import UniqueViolationError  # type: ignore[import-untyped]
 
-from experiment_service.core.exceptions import InvalidStatusTransitionError, NotFoundError
+from experiment_service.core.exceptions import (
+    DuplicateResourceError,
+    InvalidStatusTransitionError,
+    NotFoundError,
+)
 from experiment_service.domain.dto import ConversionProfileCreateDTO
 from experiment_service.domain.enums import ConversionProfileStatus
 from experiment_service.domain.models import ConversionProfile
@@ -32,32 +37,38 @@ class ConversionProfileRepository(BaseRepository):
         return ConversionProfile.model_validate(payload)
 
     async def create(self, data: ConversionProfileCreateDTO) -> ConversionProfile:
-        record = await self._fetchrow(
-            """
-            INSERT INTO conversion_profiles (
-                sensor_id,
-                project_id,
-                version,
-                kind,
-                payload,
-                status,
-                valid_from,
-                valid_to,
-                created_by
+        try:
+            record = await self._fetchrow(
+                """
+                INSERT INTO conversion_profiles (
+                    sensor_id,
+                    project_id,
+                    version,
+                    kind,
+                    payload,
+                    status,
+                    valid_from,
+                    valid_to,
+                    created_by
+                )
+                VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+                RETURNING *
+                """,
+                data.sensor_id,
+                data.project_id,
+                data.version,
+                data.kind,
+                json.dumps(data.payload),
+                data.status.value,
+                data.valid_from,
+                data.valid_to,
+                data.created_by,
             )
-            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
-            RETURNING *
-            """,
-            data.sensor_id,
-            data.project_id,
-            data.version,
-            data.kind,
-            json.dumps(data.payload),
-            data.status.value,
-            data.valid_from,
-            data.valid_to,
-            data.created_by,
-        )
+        except UniqueViolationError as exc:
+            # UNIQUE (sensor_id, version).
+            raise DuplicateResourceError(
+                f"Conversion profile version '{data.version}' already exists for this sensor"
+            ) from exc
         assert record is not None
         return self._to_model(record)
 

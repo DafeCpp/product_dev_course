@@ -1,6 +1,7 @@
 """Comparison endpoints: POST/GET /api/v1/experiments/{experiment_id}/compare."""
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from aiohttp import web
@@ -21,12 +22,12 @@ _MIN_MAX_POINTS = 100
 _MAX_MAX_POINTS = 2000
 
 
-def _parse_optional_int(value: str | None, field: str) -> int | None:
+def _parse_optional_int(value: Any, field: str) -> int | None:
     if value is None:
         return None
     try:
         return int(value)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise web.HTTPBadRequest(text=f"{field} must be an integer") from exc
 
 
@@ -68,8 +69,8 @@ async def compare_post(request: web.Request) -> web.Response:
 
     from_step_raw = body.get("from_step")
     to_step_raw = body.get("to_step")
-    from_step: int | None = int(from_step_raw) if from_step_raw is not None else None
-    to_step: int | None = int(to_step_raw) if to_step_raw is not None else None
+    from_step = _parse_optional_int(from_step_raw, "from_step")
+    to_step = _parse_optional_int(to_step_raw, "to_step")
 
     max_points_raw = body.get("max_points_per_series", _DEFAULT_MAX_POINTS)
     try:
@@ -90,7 +91,7 @@ async def compare_post(request: web.Request) -> web.Response:
             max_points_per_series=max_points,
         )
     except ValueError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+        raise web.HTTPBadRequest(text=str(exc)) from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(payload)
@@ -135,7 +136,7 @@ async def compare_get(request: web.Request) -> web.Response:
             max_points_per_series=max_points,
         )
     except ValueError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+        raise web.HTTPBadRequest(text=str(exc)) from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(payload)
@@ -190,7 +191,7 @@ async def export_comparison(request: web.Request) -> web.Response:
             max_points_per_series=max_points,
         )
     except ValueError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
+        raise web.HTTPBadRequest(text=str(exc)) from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
 
