@@ -57,12 +57,12 @@ export default defineConfig(({ mode }) => {
           'src/vite-env.d.ts',
           'src/**/__mocks__/**',
         ],
-        // Ratchet: raised after the LOS-204 telemetry panel, stream modal and audit log coverage PR (part 8) (measured 91.36/89.14/86.59/82.19).
+        // Ratchet: raised after the LOS-204 branch coverage PR (part 9) (measured 97.42/95.98/95.23/94.32).
         thresholds: process.env.COVERAGE_ENFORCE_RATCHET === 'true' ? {
-          lines: 91.2,
-          statements: 89.0,
-          functions: 86.4,
-          branches: 82.0,
+          lines: 97.3,
+          statements: 95.8,
+          functions: 95.1,
+          branches: 94.2,
         } : undefined,
       },
     },

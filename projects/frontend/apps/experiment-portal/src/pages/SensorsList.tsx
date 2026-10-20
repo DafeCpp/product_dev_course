@@ -9,7 +9,7 @@ import {
   StatusBadge,
   ConnectionStatusIndicator,
   Loading,
-  Error,
+  Error as ErrorComponent,
   EmptyState,
   Pagination,
   FloatingActionButton,
@@ -84,7 +84,7 @@ function SensorsList() {
     <div className="sensors-list">
       {isBusy && <Loading message={loadingMessage} />}
       {!isBusy && error && (
-        <Error
+        <ErrorComponent
           message={
             error instanceof Error
               ? error.message

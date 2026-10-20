@@ -133,10 +133,10 @@ function RateLimitsQos() {
   })
 
   const handleSave = async (value: Record<string, unknown>) => {
-    // First dry-run
-    await dryRunMutation.mutateAsync(
-      currentConfig ? { config: currentConfig, value } : { value },
-    )
+    // First dry-run. Errors are already surfaced by the mutation (inline + toast).
+    await dryRunMutation
+      .mutateAsync(currentConfig ? { config: currentConfig, value } : { value })
+      .catch(() => undefined)
 
     // Then actual save (only if dry-run succeeds)
     // For simplicity, we'll do a separate call. In a real app, you might want to
@@ -144,9 +144,10 @@ function RateLimitsQos() {
   }
 
   const handleConfirmSave = async (value: Record<string, unknown>) => {
-    await saveMutation.mutateAsync(
-      currentConfig ? { config: currentConfig, value } : { value },
-    )
+    // Errors are already surfaced by the mutation (toast).
+    await saveMutation
+      .mutateAsync(currentConfig ? { config: currentConfig, value } : { value })
+      .catch(() => undefined)
   }
 
   if (permsLoading) return <Loading message="Проверка прав доступа..." />

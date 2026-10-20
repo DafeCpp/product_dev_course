@@ -84,9 +84,20 @@ describe('SensorsList', () => {
         })
     })
 
-    it('renders error state', async () => {
+    it('renders error state with the error message', async () => {
         const mockList = vi.mocked(sensorsApi.list)
         mockList.mockRejectedValueOnce(new Error('Failed to load'))
+
+        render(<SensorsList />, { wrapper: createWrapper() })
+
+        await waitFor(() => {
+            expect(screen.getByText('Failed to load')).toBeInTheDocument()
+        }, { timeout: 3000 })
+    })
+
+    it('renders fallback error text for non-Error rejections', async () => {
+        const mockList = vi.mocked(sensorsApi.list)
+        mockList.mockRejectedValueOnce('boom')
 
         render(<SensorsList />, { wrapper: createWrapper() })
 
