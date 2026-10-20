@@ -21,10 +21,6 @@ vi.mock('./pages/ExperimentsList', () => ({
     default: () => <div>ExperimentsList Page</div>,
 }))
 
-vi.mock('./pages/CreateExperiment', () => ({
-    default: () => <div>CreateExperiment Page</div>,
-}))
-
 vi.mock('./pages/ExperimentDetail', () => ({
     default: () => <div>ExperimentDetail Page</div>,
 }))
@@ -117,25 +113,6 @@ describe('App', () => {
         await waitFor(() => {
             expect(screen.getByText('ExperimentsList Page')).toBeInTheDocument()
         })
-    })
-
-    it('redirects /experiments/new to /experiments (route removed, now using modal)', () => {
-        const mockMe = vi.mocked(authApi.me)
-        mockMe.mockResolvedValueOnce({
-            id: '1',
-            username: 'testuser',
-            email: 'test@example.com',
-            is_active: true,
-            is_admin: false,
-            system_roles: [],
-            password_change_required: false,
-            created_at: '2024-01-01T00:00:00Z',
-        })
-
-        render(<App />, { wrapper: createWrapper(['/experiments/new']) })
-        // Маршрут /experiments/new больше не существует, должен быть редирект или 404
-        // Проверяем, что страница CreateExperiment не рендерится
-        expect(screen.queryByText('CreateExperiment Page')).not.toBeInTheDocument()
     })
 
     it('renders experiment detail at /experiments/:id', async () => {
