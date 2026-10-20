@@ -279,8 +279,7 @@ def test_coarse_step_lateral_force_respects_grip(dt):
         cap_f, cap_r = m._lateral_capacity(out.long_accel)
         target = (max(-cap_f, min(cap_f, p.Caf * alpha_f))
                   + max(-cap_r, min(cap_r, p.Car * alpha_r))) / p.mass
-        assert out.lat_accel == pytest.approx(
-            target, abs=0.011 * (cap_f + cap_r) / p.mass)
+        assert out.lat_accel == pytest.approx(target, abs=1e-9)
 
 
 def test_marginal_wheelspin_never_reports_body_ahead_of_wheels():
@@ -291,3 +290,21 @@ def test_marginal_wheelspin_never_reports_body_ahead_of_wheels():
         for _ in range(1500):
             out = m.step(DT, throttle, 0.0)
             assert out.slip_ratio >= 0.0
+
+
+def test_coarse_reversal_matches_saturated_tire_curve():
+    """Разворот газа и руля на шаге 100 мс: сила по кривой шины, а не
+    недобор от несошедшейся итерации."""
+    p = SimParams(tire_mu=1.0, drive_front_share=0.2)
+    m = VehicleModel(p, dynamic=True)
+    for _ in range(20):
+        m.step(0.1, 1.0, 0.0)
+    out = m.step(0.1, -1.0, -0.5)
+    s = m.state
+    alpha_f = out.delta_rad - (s.vy + p.com_a * s.r) / s.v
+    alpha_r = -(s.vy - p.com_b * s.r) / s.v
+    cap_f, cap_r = m._lateral_capacity(out.long_accel)
+    target = (max(-cap_f, min(cap_f, p.Caf * alpha_f))
+              + max(-cap_r, min(cap_r, p.Car * alpha_r))) / p.mass
+    assert out.lat_accel == pytest.approx(target, abs=1e-9)
+    assert out.lat_accel < -4.0

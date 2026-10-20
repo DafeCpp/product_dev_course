@@ -4,6 +4,7 @@
 yaw rate и скорость (вход для синтеза сенсоров, см. sensors.py).
 """
 
+import itertools
 import math
 from dataclasses import dataclass
 
@@ -17,12 +18,6 @@ _DYNAMIC_MIN_SPEED = 0.3  # м/с
 # лишней тяге: инерция колёс и трансмиссии мала относительно массы машины
 # (LOS-370). Точное значение влияет только на величину slip ratio.
 _WHEEL_SPIN_GAIN = 5.0
-
-# Уточнение секущей жёсткости шин: наибольшее число решений шага (лишние
-# решения — только пока ось за пределом; 16 хватает до dt = 0.1 с fitting)
-# и допуск превышения предела боковой силы оси.
-_SECANT_ITERS = 16
-_SECANT_TOL = 0.01
 
 
 @dataclass
@@ -235,35 +230,54 @@ class VehicleModel:
         s = self.state
         v = s.v
 
-        # Насыщение шин (LOS-370): линейный велосипед решается с секущей
-        # жёсткостью C_eff = F_max/|α| для оси, вышедшей за предел, —
-        # неявный шаг остаётся A-устойчивым. Секущая уточняется по углам
-        # увода в конце шага в обе стороны: сила оси C_eff·|α| должна совпасть
-        # с насыщенной min(C·|α|, F_max) с точностью _SECANT_TOL от предела.
         if p.tire_mu <= 0.0:
             return self._solve_lateral(dt, delta, v, p.Caf, p.Car)
-        fy_max_f, fy_max_r = self._lateral_capacity(drive_accel)
-        alpha_f = delta - (s.vy + p.com_a * s.r) / v
-        alpha_r = -(s.vy - p.com_b * s.r) / v
-        Caf = _secant_stiffness(p.Caf, alpha_f, fy_max_f)
-        Car = _secant_stiffness(p.Car, alpha_r, fy_max_r)
+        return self._solve_lateral_saturated(
+            dt, delta, v, self._lateral_capacity(drive_accel))
+
+    def _solve_lateral_saturated(self, dt: float, delta: float, v: float,
+                                 caps: tuple[float, float]) -> float:
+        """Неявный шаг с насыщенными шинами F = clamp(C·α, ±F_max) (LOS-370).
+
+        Сила оси кусочно-линейна по состоянию, поэтому при заданном режиме
+        каждой оси (линейный / упёрся в +F_max / в −F_max) шаг backward Euler —
+        линейная система 2x2. Перебираются 9 режимов, принимается тот, чей
+        результат с ним согласован: решение точное, без итераций, при любом
+        dt. Если согласованного режима нет (не встречалось в прогонах), берётся
+        режим с наименьшей невязкой.
+        """
+        p = self.p
+        s = self.state
+        a, b = p.com_a, p.com_b
+        cap_f, cap_r = caps
         vy0, r0 = s.vy, s.r
-        for _ in range(_SECANT_ITERS):
-            s.vy, s.r = vy0, r0
-            lat_accel = self._solve_lateral(dt, delta, v, Caf, Car)
-            alpha_f = delta - (s.vy + p.com_a * s.r) / v
-            alpha_r = -(s.vy - p.com_b * s.r) / v
-            Caf_end = _secant_stiffness(p.Caf, alpha_f, fy_max_f)
-            Car_end = _secant_stiffness(p.Car, alpha_r, fy_max_r)
-            if (abs(Caf - Caf_end) * abs(alpha_f) <= _SECANT_TOL * fy_max_f
-                    and abs(Car - Car_end) * abs(alpha_r)
-                    <= _SECANT_TOL * fy_max_r):
-                return lat_accel
-            Caf, Car = Caf_end, Car_end
-        # Итерации исчерпаны (грубый dt fitting): последний шаг — с жёсткостью
-        # по последним углам увода, а не с той, что разошлась с пределом.
-        s.vy, s.r = vy0, r0
-        return self._solve_lateral(dt, delta, v, Caf, Car)
+        best = None
+        for mode_f, mode_r in itertools.product((0, 1, -1), repeat=2):
+            # Ось в режиме 0: F = C·α; в режиме ±1: F = ±F_max (k = 0).
+            kf = p.Caf if mode_f == 0 else 0.0
+            kr = p.Car if mode_r == 0 else 0.0
+            ff = mode_f * cap_f
+            fr = mode_r * cap_r
+            m11 = 1.0 + dt * (kf + kr) / (p.mass * v)
+            m12 = dt * ((a * kf - b * kr) / (p.mass * v) + v)
+            m21 = dt * (a * kf - b * kr) / (p.Iz * v)
+            m22 = 1.0 + dt * (a * a * kf + b * b * kr) / (p.Iz * v)
+            q1 = vy0 + dt * (kf * delta + ff + fr) / p.mass
+            q2 = r0 + dt * (a * (kf * delta + ff) - b * fr) / p.Iz
+            det = m11 * m22 - m12 * m21
+            vy = (q1 * m22 - m12 * q2) / det
+            r = (m11 * q2 - m21 * q1) / det
+            fy_f = kf * (delta - (vy + a * r) / v) + ff
+            fy_r = kr * (-(vy - b * r) / v) + fr
+            # Невязка: насколько сила режима расходится с кривой шины.
+            err = (abs(fy_f - _clamp(p.Caf * (delta - (vy + a * r) / v), cap_f))
+                   + abs(fy_r - _clamp(p.Car * (-(vy - b * r) / v), cap_r)))
+            if best is None or err < best[0]:
+                best = (err, vy, r, (fy_f + fy_r) / p.mass)
+            if err <= 1e-9 * (1.0 + cap_f + cap_r):
+                break
+        _, s.vy, s.r, lat_accel = best
+        return lat_accel
 
     def _solve_lateral(self, dt: float, delta: float, v: float,
                        Caf: float, Car: float) -> float:
@@ -298,8 +312,5 @@ class VehicleModel:
         return (Caf * alpha_f + Car * alpha_r) / p.mass
 
 
-def _secant_stiffness(c: float, alpha: float, f_max: float) -> float:
-    """Жёсткость увода, при которой C·|α| не выходит за предел оси."""
-    if c * abs(alpha) <= f_max:
-        return c
-    return f_max / abs(alpha)
+def _clamp(x: float, limit: float) -> float:
+    return max(-limit, min(limit, x))
