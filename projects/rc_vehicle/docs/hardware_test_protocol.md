@@ -76,7 +76,7 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
-| 2.1 | Потеря RC и Wi-Fi (TP Ф0, IC D1#10, D4#3) | моторы в нейтрали **≤ 250 мс** | PSRAM: `rc_ok, wifi_ok, failsafe_active, throttle, steering` (буфер переживает закрытие браузера — CSV скачать после) | `trial_metrics.py loss.csv --only failsafe` | `test_testing_program_scenarios.py::test_rc_loss_neutral_within_250_ms_and_recovers`, `::test_wifi_loss_neutral_within_250_ms` | [ ] ___ мс |
+| 2.1 | Потеря RC и Wi-Fi (TP Ф0, IC D1#10, D4#3): колёса подняты, перед обрывом держать газ ~0.2 и руль не в нуле | моторы в нейтрали **≤ 250 мс**; в выводе нет пометки «машина уже стояла» | PSRAM: `rc_ok, wifi_ok, failsafe_active, throttle, steering` (буфер переживает закрытие браузера — CSV скачать после) | `trial_metrics.py loss.csv --only failsafe` | `test_testing_program_scenarios.py::test_rc_loss_neutral_within_250_ms_and_recovers`, `::test_wifi_loss_neutral_within_250_ms` | [ ] ___ мс |
 | 2.2 | Восстановление (IC D1#11) | failsafe снят, управление вернулось | тот же | тот же | тот же rc_loss (≤ 60 мс) | [ ] |
 | 2.3 | То же в Kids (LOS-171) | как 2.1 | тот же | тот же | — | [ ] ___ мс |
 | 2.4 | Приоритет RC над Wi-Fi (IC D4#1–2, LOS-162) | RC перехватывает управление без рывка; без RC ведёт Wi-Fi, failsafe нет | PSRAM `throttle, steering, rc_ok` | вручную по графику | — | [ ] |
@@ -95,7 +95,7 @@ UI шлёт команды каждые 20 мс, инструмента для �
 | 3.1 | Дрейф bias gyro (TP Ф0) | < 0.5 °/с за минуту (порог ориентировочный, уточнить по этой записи) | PSRAM 8 мин | `trial_metrics.py rest.csv --only gyro-bias` | `test_trial_metrics.py::test_gyro_bias_on_sil_rest_log` | [ ] ___ °/с/мин |
 | 3.2 | Madgwick без дрейфа (RM Ф0) | pitch/roll < 1 °/мин, std < 1° | тот же | `gyro-bias` + `analyze_telemetry.py` | — | [ ] |
 | 3.3 | EKF и ZUPT в покое (IC D1#9, D5#3–4, 7) | \|vx\|, \|vy\| < 0.05 м/с; \|slip\| < 1°; std(gz) < 2 dps; \|a\| в [0.95, 1.05] g | тот же | `analyze_telemetry.py` (его порог ZUPT 0.1 мягче — смотреть 0.05) | `test_plausibility.py::test_coast_without_command_stays_stopped` | [ ] |
-| 3.4 | Baseline шумов (TP Ф0) | записан; PASS нет | тот же | `analyze_telemetry.py` (std по осям); шумовая модель SIL подгоняется только по логам с движением: `validate_logs.py --fit-road-noise --road-logs 7.0_*.csv` (нужны скорости ≥ 0.5 м/с в нескольких диапазонах) | — | [ ] |
+| 3.4 | Baseline шумов (TP Ф0) | записан; PASS нет | тот же | `analyze_telemetry.py` (std по осям); шумовая модель SIL подгоняется только по логам с движением: `validate_logs.py --fit-road-noise --road-logs *_7.0_*.csv` (нужны скорости ≥ 0.5 м/с в нескольких диапазонах) | — | [ ] |
 
 ## 4. ESC и мёртвая зона (подставка → пол)
 
@@ -142,7 +142,7 @@ UI шлёт команды каждые 20 мс, инструмента для �
 | 7.5e | Ребёнок (или имитация) в каждом пресете (TP Ф5) | субъективно: предсказуемо и безопасно | — | — | — | [ ] |
 | 7.6 | Калибровка rx/ry CoM по кругу (TP Ф2): web UI «калибровка CoM», CW и CCW, площадка ≥ 3×3 м | калибровка `valid`; \|rx\|, \|ry\| ≤ 0.3 м; на круге после коррекции slip ближе к нулю, чем до | PSRAM до и после (`ax, ay, gz, slip_deg`), `get_com_offset_status` | вручную | — (GTest `test_com_offset_calibration.cpp`) | [ ] rx ___ ry ___ |
 | 7.7 | Madgwick β = 0.05 / 0.1 / 0.2 (TP Ф3) | минимальный β, при котором pitch/roll успевают за манёвром (нет запаздывания на склоне и в повороте) | PSRAM на каждый β | вручную | — | [ ] β = ___ |
-| 7.8 | LPF cutoff, грунт против асфальта (TP Ф3), default 30 Гц | вибрация подвески в gz подавлена, шаг yaw rate (7.1) не хуже | PSRAM, одинаковый проезд на каждом cutoff | вручную (скрипта нет): спектр `gz` — мощность выше ~10 Гц падает с cutoff; overshoot/settling `trial_metrics.py --only yaw-step` не хуже, чем на 30 Гц | — | [ ] ___ Гц |
+| 7.8 | LPF cutoff, грунт против асфальта (TP Ф3), default 30 Гц | вибрация подвески в `yaw_rate_dps` (gz после LPF) подавлена, шаг yaw rate (7.1) не хуже | PSRAM, одинаковый проезд на каждом cutoff | вручную (скрипта нет): спектр `yaw_rate_dps` против сырого `gz` — мощность выше ~10 Гц падает с cutoff; overshoot/settling `trial_metrics.py cutoff.csv --only yaw-step` не хуже, чем на 30 Гц | — | [ ] ___ Гц |
 | 7.9 | EKF против мерной ленты 5–10 м (TP Ф3) | дистанция по `speed_ms` в пределах ±5 % | PSRAM; старт и финиш из покоя, участок `--from-ms/--to-ms` — от роста `speed_ms` до возврата к 0 | `trial_metrics.py run.csv --only ekf-dist --distance-m 5.0 [--from-ms --to-ms]` | `test_trial_metrics.py::test_ekf_distance_error` | [ ] ___ % |
 
 Oversteer guard в Normal **по умолчанию выключен** (`warn_enabled=false`,
