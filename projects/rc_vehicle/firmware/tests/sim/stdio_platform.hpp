@@ -88,6 +88,9 @@ class StdioPlatform : public VehicleControlPlatform {
   void SetStabilize(bool on) { stabilize_ = on; }
   /** Выключить accel limiter детского режима (эталон для SIL, LOS-362). */
   void SetKidsAccelLimit(bool on) { kids_accel_limit_ = on; }
+  /** Выключить anti-spin детского режима вместе с дублирующим его
+   *  oversteer-срезом газа (эталон для SIL, LOS-370). */
+  void SetKidsAntiSpin(bool on) { kids_anti_spin_ = on; }
   /** Явный oversteer-конфиг из provenance replay-эпизода. */
   void SetOversteerConfig(std::optional<OversteerConfig> cfg) {
     oversteer_config_ = cfg;
@@ -285,6 +288,12 @@ class StdioPlatform : public VehicleControlPlatform {
     if (pitch_comp_enabled_) cfg.pitch_comp.enabled = true;
     if (slip_target_deg_) cfg.slip_angle.target_deg = *slip_target_deg_;
     if (!kids_accel_limit_) cfg.kids_mode.accel_limit_enabled = false;
+    if (!kids_anti_spin_) {
+      cfg.kids_mode.anti_spin_enabled = false;
+      // В Kids oversteer-гард настроен из anti_spin_* и режет газ тем же
+      // сигналом (KidsModeStrategy::ApplyDefaults) — без него эталон не чист.
+      cfg.oversteer.throttle_reduction = 0.0f;
+    }
     return cfg;
   }
 
@@ -331,6 +340,7 @@ class StdioPlatform : public VehicleControlPlatform {
   float speed_limit_ms_{0.0f};
   bool stabilize_{false};
   bool kids_accel_limit_{true};
+  bool kids_anti_spin_{true};
   std::optional<OversteerConfig> oversteer_config_;
   bool pitch_comp_enabled_{false};
   std::optional<float> slip_target_deg_;

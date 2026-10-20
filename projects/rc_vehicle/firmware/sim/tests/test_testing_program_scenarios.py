@@ -3,8 +3,8 @@
 Те же критерии PASS, что проверяются на машине, но в SIL: это регрессия и
 эталон для сравнения с будущими заездами. Склон/pitch compensation, уставка
 угла заноса в Drift и пресеты Kids поддержаны через ClosedLoopSim/sim_host
-(LOS-367). Не покрыто (нет wheel-level slip-модели): Kids anti-spin — см.
-LOS-367. Критерии, которые в SIL не выполняются, помечены strict xfail:
+(LOS-367). Kids anti-spin на модели сцепления — test_kids_anti_spin.py
+(LOS-370). Критерии, которые в SIL не выполняются, помечены strict xfail:
 исправление сразу покажет XPASS.
 """
 

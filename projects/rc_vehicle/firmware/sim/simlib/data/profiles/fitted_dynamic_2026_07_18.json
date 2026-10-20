@@ -18,6 +18,8 @@
     "Iz": 0.17585775455303596,
     "Caf": 49.07021225034799,
     "Car": 36.66659484645788,
+    "tire_mu": 0.0,
+    "drive_front_share": 0.5,
     "max_accel": 8.94,
     "motor_tau": 0.0376,
     "motor_deadzone": 0.05,

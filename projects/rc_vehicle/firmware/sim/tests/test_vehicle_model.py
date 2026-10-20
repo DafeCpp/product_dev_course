@@ -123,3 +123,74 @@ def _DYN_MIN():
     from simlib.vehicle_model import _DYNAMIC_MIN_SPEED
 
     return _DYNAMIC_MIN_SPEED
+
+
+# ── Сцепление (LOS-370) ──────────────────────────────────────────────────────
+
+
+def test_default_tires_have_no_grip_limit():
+    """tire_mu=0 — прежние линейные шины: колёса не буксуют."""
+    m = VehicleModel(SimParams(), dynamic=True)
+    out = _run(m, throttle=1.0, steering=0.0, n=500)
+    assert out.slip_ratio == 0.0
+    assert out.wheel_speed == out.speed
+
+
+def test_low_grip_launch_spins_wheels_and_caps_accel():
+    """Газ в пол на льду: корпус разгоняется не быстрее μ·g, колёса буксуют."""
+    mu = 0.1
+    p = SimParams(tire_mu=mu)
+    m = VehicleModel(p, dynamic=True)
+    peak_accel = 0.0
+    peak_slip = 0.0
+    for _ in range(500):
+        out = m.step(DT, 1.0, 0.0)
+        peak_accel = max(peak_accel, out.long_accel)
+        peak_slip = max(peak_slip, out.slip_ratio)
+    assert peak_accel <= mu * p.gravity_ms2 + 1e-6
+    assert peak_slip > 0.3
+    assert out.wheel_speed > out.speed
+
+
+def test_wheels_regrip_once_body_catches_up():
+    """Пробуксовка кончается: при умеренном газе колёса снова сцепляются."""
+    m = VehicleModel(SimParams(tire_mu=0.3), dynamic=True)
+    _run(m, throttle=1.0, steering=0.0, n=100)
+    assert m.state.wheel_v > m.state.v
+    out = _run(m, throttle=0.2, steering=0.0, n=2000)
+    assert out.slip_ratio == 0.0
+    assert out.wheel_speed == out.speed
+
+
+def test_lateral_force_saturates_at_grip_limit():
+    """Боковое ускорение на низком μ не превышает μ·g."""
+    mu = 0.3
+    p = SimParams(tire_mu=mu)
+    m = VehicleModel(p, dynamic=True)
+    _run(m, throttle=0.6, steering=0.0, n=1000)
+    peak_lat = 0.0
+    for _ in range(1000):
+        out = m.step(DT, 0.6, 1.0)
+        peak_lat = max(peak_lat, abs(out.lat_accel))
+    assert peak_lat <= mu * p.gravity_ms2 + 1e-6
+
+    linear = VehicleModel(SimParams(), dynamic=True)
+    _run(linear, throttle=0.6, steering=0.0, n=1000)
+    out = _run(linear, throttle=0.6, steering=1.0, n=1000)
+    assert abs(out.lat_accel) > 2.0 * mu * p.gravity_ms2
+
+
+def test_rear_biased_drive_slides_rear_on_low_grip():
+    """Тяга на заднюю ось съедает её боковое сцепление: угол заноса растёт."""
+    def peak_beta(front_share: float) -> float:
+        m = VehicleModel(SimParams(tire_mu=0.2, drive_front_share=front_share),
+                         dynamic=True)
+        _run(m, throttle=0.5, steering=0.0, n=1000)
+        peak = 0.0
+        for _ in range(1000):
+            m.step(DT, 0.5, 1.0)
+            peak = max(peak, abs(math.degrees(
+                math.atan2(m.state.vy, m.state.v))))
+        return peak
+
+    assert peak_beta(0.2) > peak_beta(0.5) + 5.0
