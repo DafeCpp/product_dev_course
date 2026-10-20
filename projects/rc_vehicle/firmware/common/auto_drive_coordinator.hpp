@@ -96,7 +96,8 @@ class AutoDriveCoordinator {
 
   // ── CoM Offset Calibration ──────────────────────────────────────────
   bool StartComCalib(float target_accel_g, float steering_magnitude,
-                     float cruise_duration_sec, const float* gravity_vec);
+                     float cruise_duration_sec, const float* gravity_vec,
+                     const float* applied_offset = nullptr);
   void StopComCalib() { com_calib_.Stop(); }
   [[nodiscard]] bool IsComCalibActive() const { return com_calib_.IsActive(); }
   [[nodiscard]] ComOffsetCalibration::Result GetComCalibResult() const {

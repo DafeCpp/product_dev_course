@@ -1,7 +1,5 @@
 #include "control_loop_helpers.hpp"
 
-#include <cmath>
-
 namespace rc_vehicle {
 
 void HandleAutoDriveCompletion(const AutoDriveOutput& ad_out,
@@ -21,25 +19,12 @@ void HandleAutoDriveCompletion(const AutoDriveOutput& ad_out,
 
   if (ad_out.com_completed) {
     if (ad_out.com_result.valid) {
-      // Калибровка копит ax/ay, уже скорректированные текущим offset
-      // (CorrectImuForComOffset до BuildAutoDriveInput), а коррекция линейна
-      // по offset — значит результат есть остаток, и полный offset = старый +
-      // остаток. Иначе повторная калибровка затирала offset почти нулём
-      // (LOS-379).
       auto data = imu_calib.GetData();
-      const float rx = data.com_offset[0] + ad_out.com_result.rx;
-      const float ry = data.com_offset[1] + ad_out.com_result.ry;
-      constexpr float kMax = ComOffsetCalibration::kMaxOffsetM;
-      if (std::abs(rx) > kMax || std::abs(ry) > kMax) {
-        platform.Log(LogLevel::Warning,
-                     "CoM offset calibration: total offset out of range, kept");
-      } else {
-        data.com_offset[0] = rx;
-        data.com_offset[1] = ry;
-        imu_calib.SetData(data);
-        platform.SaveComOffset(data.com_offset);
-        platform.Log(LogLevel::Info, "CoM offset calibration done");
-      }
+      data.com_offset[0] = ad_out.com_result.rx;
+      data.com_offset[1] = ad_out.com_result.ry;
+      imu_calib.SetData(data);
+      platform.SaveComOffset(data.com_offset);
+      platform.Log(LogLevel::Info, "CoM offset calibration done");
     } else {
       platform.Log(LogLevel::Warning, "CoM offset calibration failed");
     }

@@ -413,42 +413,6 @@ TEST_F(HandleAutoDriveTest, ComCompleted_Valid_UpdatesCalib) {
   EXPECT_FLOAT_EQ(data.com_offset[1], -0.03f);
 }
 
-TEST_F(HandleAutoDriveTest, ComCompleted_Valid_AddsResidualToSavedOffset) {
-  // Повторная калибровка: данные уже скорректированы offset (0.05, -0.03),
-  // результат — остаток. Полный offset = старый + остаток (LOS-379).
-  auto data = imu_calib_.GetData();
-  data.com_offset[0] = 0.05f;
-  data.com_offset[1] = -0.03f;
-  imu_calib_.SetData(data);
-
-  AutoDriveOutput ad;
-  ad.com_completed = true;
-  ad.com_result.valid = true;
-  ad.com_result.rx = 0.01f;
-  ad.com_result.ry = 0.002f;
-  EXPECT_CALL(platform_, Log(LogLevel::Info, _)).Times(1);
-  EXPECT_CALL(platform_, SaveComOffset(_)).Times(1);
-  HandleAutoDriveCompletion(ad, &stab_mgr_, imu_calib_, platform_);
-  const auto& out = imu_calib_.GetData();
-  EXPECT_FLOAT_EQ(out.com_offset[0], 0.06f);
-  EXPECT_FLOAT_EQ(out.com_offset[1], -0.028f);
-}
-
-TEST_F(HandleAutoDriveTest, ComCompleted_TotalOutOfRange_KeepsOffset) {
-  auto data = imu_calib_.GetData();
-  data.com_offset[0] = 0.25f;
-  imu_calib_.SetData(data);
-
-  AutoDriveOutput ad;
-  ad.com_completed = true;
-  ad.com_result.valid = true;
-  ad.com_result.rx = 0.1f;  // остаток в пределах, но сумма 0.35 > 0.3
-  EXPECT_CALL(platform_, Log(LogLevel::Warning, _)).Times(1);
-  EXPECT_CALL(platform_, SaveComOffset(_)).Times(0);
-  HandleAutoDriveCompletion(ad, &stab_mgr_, imu_calib_, platform_);
-  EXPECT_FLOAT_EQ(imu_calib_.GetData().com_offset[0], 0.25f);
-}
-
 TEST_F(HandleAutoDriveTest, ComCompleted_Invalid_LogsWarning) {
   AutoDriveOutput ad;
   ad.com_completed = true;

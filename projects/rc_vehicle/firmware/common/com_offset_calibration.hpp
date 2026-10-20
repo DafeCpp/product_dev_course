@@ -67,11 +67,16 @@ class ComOffsetCalibration {
    * @param steering_magnitude Абсолютное значение руля [0.1..1.0]
    * @param cruise_duration_sec Длительность круизной фазы [3..30 с]
    * @param gravity_vec Вектор гравитации в СК датчика (из ImuCalibData)
+   * @param applied_offset Offset (rx, ry), которым уже скорректированы
+   *        cal_ax/cal_ay в Update() (ImuCalibration::CorrectForComOffset).
+   *        Коррекция линейна по offset, поэтому прогон измеряет остаток,
+   *        а результат — applied_offset + остаток (LOS-379). nullptr — (0, 0).
    * @return true при успешном запуске
    */
   bool Start(float target_accel_g = 0.1f, float steering_magnitude = 0.5f,
              float cruise_duration_sec = 5.0f,
-             const float* gravity_vec = nullptr);
+             const float* gravity_vec = nullptr,
+             const float* applied_offset = nullptr);
 
   /** Прервать калибровку. */
   void Stop();
@@ -120,6 +125,7 @@ class ComOffsetCalibration {
   float steering_magnitude_{0.5f};
   float cruise_duration_sec_{5.0f};
   float gravity_vec_[3]{0.f, 0.f, 1.f};
+  float applied_offset_[2]{0.f, 0.f};  ///< См. Start(applied_offset)
 
   // Аккумуляторы Pass 1 (CW: steering = +magnitude)
   double sum_ax_1_{0.0}, sum_ay_1_{0.0}, sum_gz_1_{0.0};
