@@ -513,6 +513,9 @@ function connectWebSocket() {
             startCommandSending();
             requestWakeLock();
             wsSend({ type: 'get_mag_calib_status' });
+            // Форма стабилизации отправляет все поля — сначала заполнить её
+            // сохранённым конфигом, иначе «Сохранить» затрёт его значениями HTML.
+            wsSend({ type: 'get_stab_config' });
         };
 
         ws.onmessage = (event) => {
