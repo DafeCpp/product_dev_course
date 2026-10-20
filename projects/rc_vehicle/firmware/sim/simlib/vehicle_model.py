@@ -117,7 +117,7 @@ class VehicleModel:
         if self.dynamic and s.v >= _DYNAMIC_MIN_SPEED:
             lat_accel = self._step_dynamic(dt, delta, long_accel)
         else:
-            lat_accel = self._step_kinematic(dt, delta)
+            lat_accel = self._step_kinematic(dt, delta, long_accel)
 
         s.psi += s.r * dt
         s.x += s.v * math.cos(s.psi) * dt
@@ -210,11 +210,21 @@ class VehicleModel:
             caps.append(math.sqrt(max(grip * grip - fx * fx, 0.0)))
         return caps[0], caps[1]
 
-    def _step_kinematic(self, dt: float, delta: float) -> float:
+    def _step_kinematic(self, dt: float, delta: float,
+                        drive_accel: float = 0.0) -> float:
+        p = self.p
         s = self.state
-        s.r = s.v * math.tan(delta) / self.p.wheelbase_L
+        s.r = s.v * math.tan(delta) / p.wheelbase_L
         s.vy = 0.0
-        return s.v * s.r  # центростремительное ускорение
+        lat_accel = s.v * s.r  # центростремительное ускорение
+        if p.tire_mu > 0.0:
+            # Предел сцепления (LOS-370): сверх суммарной боковой силы осей
+            # машина не поворачивает круче — снос (недостаточная поворачиваемость).
+            cap = sum(self._lateral_capacity(drive_accel)) / p.mass
+            if abs(lat_accel) > cap:
+                s.r *= cap / abs(lat_accel)
+                lat_accel = s.v * s.r
+        return lat_accel
 
     def _step_dynamic(self, dt: float, delta: float,
                       drive_accel: float = 0.0) -> float:

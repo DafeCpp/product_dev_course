@@ -214,3 +214,17 @@ def test_reverse_wheelspin_has_negative_slip_ratio():
         peak = min(peak, out.slip_ratio)
     assert out.speed < 0.0
     assert peak < -0.2
+
+
+def test_kinematic_model_respects_grip_limit():
+    """Кинематика с tire_mu > 0 тоже не поворачивает круче μ·g."""
+    mu = 0.1
+    p = SimParams(tire_mu=mu)
+    m = VehicleModel(p)
+    _run(m, throttle=0.2, steering=0.0, n=1000)
+    peak_lat = 0.0
+    for _ in range(500):
+        out = m.step(DT, 0.2, 1.0)
+        peak_lat = max(peak_lat, abs(out.lat_accel))
+        assert out.lat_accel == pytest.approx(m.state.v * m.state.r)
+    assert 0.0 < peak_lat <= mu * p.gravity_ms2 + 1e-9
