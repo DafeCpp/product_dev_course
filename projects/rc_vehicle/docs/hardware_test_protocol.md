@@ -76,7 +76,7 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
-| 2.1 | Потеря RC и Wi-Fi (TP Ф0, IC D1#10, D4#3): колёса подняты, перед обрывом держать газ ~0.2 и руль не в нуле | моторы в нейтрали **≤ 250 мс**; в выводе нет пометки «машина уже стояла» | PSRAM: `rc_ok, wifi_ok, failsafe_active, throttle, steering` (буфер переживает закрытие браузера — CSV скачать после) | `trial_metrics.py loss.csv --only failsafe` | `test_testing_program_scenarios.py::test_rc_loss_neutral_within_250_ms_and_recovers`, `::test_wifi_loss_neutral_within_250_ms` | [ ] ___ мс |
+| 2.1 | Потеря RC и Wi-Fi (TP Ф0, IC D1#10, D4#3): **два отдельных прогона**, другой источник выключен (failsafe — только когда пропали оба, RC в приоритете). (а) RC: браузер закрыт, газ ~0.2 и руль с пульта, выключить пульт; (б) Wi-Fi: пульт выключен, газ ~0.2 и руль слайдерами, закрыть браузер. Колёса подняты | моторы в нейтрали **≤ 250 мс**; в выводе нет пометки «машина уже стояла» | PSRAM: `rc_ok, wifi_ok, failsafe_active, throttle, steering` (буфер переживает закрытие браузера — CSV скачать после) | `trial_metrics.py loss.csv --only failsafe` | `test_testing_program_scenarios.py::test_rc_loss_neutral_within_250_ms_and_recovers`, `::test_wifi_loss_neutral_within_250_ms` | [ ] RC ___ мс, Wi-Fi ___ мс |
 | 2.2 | Восстановление (IC D1#11) | failsafe снят, управление вернулось | тот же | тот же | тот же rc_loss (≤ 60 мс) | [ ] |
 | 2.3 | То же в Kids (LOS-171) | как 2.1 | тот же | тот же | — | [ ] ___ мс |
 | 2.4 | Приоритет RC над Wi-Fi (IC D4#1–2, LOS-162) | RC перехватывает управление без рывка; без RC ведёт Wi-Fi, failsafe нет | PSRAM `throttle, steering, rc_ok` | вручную по графику | — | [ ] |
@@ -108,7 +108,8 @@ UI шлёт команды каждые 20 мс, инструмента для �
 
 Отдельная сборка на каждую частоту: `IMU_SPI_BAUD_HZ` в `firmware/esp32_s3/main/config.hpp` (сейчас
 500000), затем из `firmware/esp32_s3` `idf.py -DRC_PROFILE_LOOP=1 build flash monitor` — каждую
-частоту прошить, прежде чем мерить. Короткие провода.
+частоту прошить, прежде чем мерить. Короткие провода. **После этапа вернуть 500000 и прошить
+`make build && make flash`** — полевые этапы идут на базовой частоте `develop`.
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
@@ -144,7 +145,7 @@ UI шлёт команды каждые 20 мс, инструмента для �
 | 7.6 | Калибровка rx/ry CoM по кругу (TP Ф2): web UI «калибровка CoM», CW и CCW, площадка ≥ 3×3 м | калибровка `valid`; \|rx\|, \|ry\| ≤ 0.3 м; на круге после коррекции slip ближе к нулю, чем до | PSRAM до и после (`ax, ay, gz, slip_deg`), `get_com_offset_status` | вручную | — (GTest `test_com_offset_calibration.cpp`) | [ ] rx ___ ry ___ |
 | 7.7 | Madgwick β = 0.05 / 0.1 / 0.2 (TP Ф3) | минимальный β, при котором pitch/roll успевают за манёвром (нет запаздывания на склоне и в повороте) | PSRAM на каждый β | вручную | — | [ ] β = ___ |
 | 7.8 | LPF cutoff, грунт против асфальта (TP Ф3), default 30 Гц | вибрация подвески в `yaw_rate_dps` (gz после LPF) подавлена, шаг yaw rate (7.1) не хуже | PSRAM, одинаковый проезд на каждом cutoff | вручную (скрипта нет): спектр `yaw_rate_dps` против сырого `gz` — мощность выше ~10 Гц падает с cutoff; overshoot/settling `trial_metrics.py cutoff.csv --only yaw-step` не хуже, чем на 30 Гц | — | [ ] ___ Гц |
-| 7.9 | EKF против мерной ленты 5–10 м (TP Ф3) | дистанция по `speed_ms` в пределах ±5 % | PSRAM; старт и финиш из покоя, участок `--from-ms/--to-ms` — от роста `speed_ms` до возврата к 0 | `trial_metrics.py run.csv --only ekf-dist --distance-m 5.0 [--from-ms --to-ms]` | `test_trial_metrics.py::test_ekf_distance_error` | [ ] ___ % |
+| 7.9 | EKF против мерной ленты 5–10 м (TP Ф3) | дистанция по `speed_ms` в пределах ±5 % | PSRAM; старт и финиш из покоя, участок `--from-ms/--to-ms` — от роста `speed_ms` до возврата к 0 | `trial_metrics.py run.csv --only ekf-dist --distance-m 5.0 --from-ms <t0> --to-ms <t1>` (t0, t1 — `ts_ms` начала и конца участка) | `test_trial_metrics.py::test_ekf_distance_error` | [ ] ___ % |
 
 Oversteer guard в Normal **по умолчанию выключен** (`warn_enabled=false`,
 `throttle_reduction=0`). Перед 7.3 включить его в web UI и задать reduction,
