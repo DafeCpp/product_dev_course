@@ -744,3 +744,18 @@ async def test_same_role_replacement_keeps_expiry(service_client, database_url):
     finally:
         await conn.close()
     assert expires_at is not None
+
+
+@pytest.mark.asyncio
+async def test_targeted_swap_requires_old_role(service_client):
+    headers, project_id, _owner_id, member_id = await _project_with_member(
+        service_client, "swmiss", member_roles=(EDITOR_ROLE,),
+    )
+    for query, role in (("?old_role=viewer", VIEWER_ROLE), ("?old_role=viewer", EDITOR_ROLE)):
+        response = await service_client.put(
+            f"/projects/{project_id}/members/{member_id}/role{query}",
+            headers=headers,
+            json={"role_id": role},
+        )
+        assert response.status == 404
+    assert await _member_roles(service_client, headers, project_id, member_id) == ["editor"]

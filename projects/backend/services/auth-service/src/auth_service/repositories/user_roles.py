@@ -196,8 +196,8 @@ class UserRoleRepository(BaseRepository):
     ) -> UserProjectRole | None:
         """Swap one project role of a member for another, atomically.
 
-        Returns None if the user has no active role in the project. Swapping
-        a role for itself leaves an active assignment untouched.
+        Returns None if the user does not actively hold ``old_role_id`` in the
+        project. Swapping a role for itself leaves the assignment untouched.
         """
         async with self._pool.acquire() as conn:
             async with conn.transaction():
@@ -206,9 +206,10 @@ class UserRoleRepository(BaseRepository):
                     r["role_id"]: r
                     for r in await conn.fetch(self._ACTIVE_ROLES_SQL, user_id, project_id)
                 }
-                if not active:
+                # Not a member, or the role being swapped is not held
+                if old_role_id not in active:
                     return None
-                if old_role_id == new_role_id and new_role_id in active:
+                if old_role_id == new_role_id:
                     return UserProjectRole.from_row(dict(active[new_role_id]))
                 row = await conn.fetchrow(
                     "INSERT INTO user_project_roles (user_id, project_id, role_id, granted_by) "

@@ -271,7 +271,9 @@ class ProjectService:
                 member_user_id, project_id, old_role_id, new_role_id, requester_id,
             )
             if swapped is None:
-                raise NotFoundError(f"User {member_user_id} is not a member of the project")
+                raise NotFoundError(
+                    f"User {member_user_id} does not hold role {old_role_id} in the project"
+                )
             if old_role_id != new_role_id:
                 await self._audit(
                     requester_id, AuditAction.PROJECT_MEMBER_CHANGE_ROLE,
