@@ -272,6 +272,15 @@ def test_coarse_step_lateral_force_respects_grip(dt):
         implied = (s.vy - vy0) / dt + s.v * s.r
         assert out.lat_accel == pytest.approx(implied, abs=1e-6)
         assert abs(out.lat_accel) <= p.tire_mu * p.gravity_ms2 * 1.011
+        # Сила равна насыщенной кривой шины в конце шага — и не больше
+        # предела, и не меньше (разворот руля на грубом шаге).
+        alpha_f = out.delta_rad - (s.vy + p.com_a * s.r) / s.v
+        alpha_r = -(s.vy - p.com_b * s.r) / s.v
+        cap_f, cap_r = m._lateral_capacity(out.long_accel)
+        target = (max(-cap_f, min(cap_f, p.Caf * alpha_f))
+                  + max(-cap_r, min(cap_r, p.Car * alpha_r))) / p.mass
+        assert out.lat_accel == pytest.approx(
+            target, abs=0.011 * (cap_f + cap_r) / p.mass)
 
 
 def test_marginal_wheelspin_never_reports_body_ahead_of_wheels():

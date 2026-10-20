@@ -238,8 +238,8 @@ class VehicleModel:
         # Насыщение шин (LOS-370): линейный велосипед решается с секущей
         # жёсткостью C_eff = F_max/|α| для оси, вышедшей за предел, —
         # неявный шаг остаётся A-устойчивым. Секущая уточняется по углам
-        # увода в конце шага, чтобы проинтегрированная сила не превышала
-        # предел (больше чем на _SECANT_TOL).
+        # увода в конце шага в обе стороны: сила оси C_eff·|α| должна совпасть
+        # с насыщенной min(C·|α|, F_max) с точностью _SECANT_TOL от предела.
         if p.tire_mu <= 0.0:
             return self._solve_lateral(dt, delta, v, p.Caf, p.Car)
         fy_max_f, fy_max_r = self._lateral_capacity(drive_accel)
@@ -253,16 +253,15 @@ class VehicleModel:
             lat_accel = self._solve_lateral(dt, delta, v, Caf, Car)
             alpha_f = delta - (s.vy + p.com_a * s.r) / v
             alpha_r = -(s.vy - p.com_b * s.r) / v
-            over_f = Caf * abs(alpha_f) > fy_max_f * (1.0 + _SECANT_TOL)
-            over_r = Car * abs(alpha_r) > fy_max_r * (1.0 + _SECANT_TOL)
-            if not (over_f or over_r):
+            Caf_end = _secant_stiffness(p.Caf, alpha_f, fy_max_f)
+            Car_end = _secant_stiffness(p.Car, alpha_r, fy_max_r)
+            if (abs(Caf - Caf_end) * abs(alpha_f) <= _SECANT_TOL * fy_max_f
+                    and abs(Car - Car_end) * abs(alpha_r)
+                    <= _SECANT_TOL * fy_max_r):
                 return lat_accel
-            if over_f:
-                Caf = fy_max_f / abs(alpha_f)
-            if over_r:
-                Car = fy_max_r / abs(alpha_r)
-        # Итерации исчерпаны (грубый dt fitting): последний шаг — с уже
-        # исправленной жёсткостью, а не с той, что превысила предел.
+            Caf, Car = Caf_end, Car_end
+        # Итерации исчерпаны (грубый dt fitting): последний шаг — с жёсткостью
+        # по последним углам увода, а не с той, что разошлась с пределом.
         s.vy, s.r = vy0, r0
         return self._solve_lateral(dt, delta, v, Caf, Car)
 
