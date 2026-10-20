@@ -663,7 +663,13 @@ def check_pitch_comp(rows: list[Row]) -> list[MetricResult]:
 # ---------------------------------------------------------------------------
 
 def oversteer_episodes(rows: list[Row]) -> list[dict]:
-    """Эпизоды `oversteer_active` = 1 (разрывы < 200 мс склеиваются)."""
+    """Эпизоды `oversteer_active` = 1 (разрывы < 200 мс склеиваются).
+
+    Срез газа считается как «стик после мёртвой зоны минус cmd_throttle» и
+    включает всё, что сделала стабилизация. Pitch comp тоже снижает газ, а
+    её вклад в логе не виден (тангаж TiltEstimator не пишется), поэтому
+    протокол 7.3 требует прогона с выключенной pitch comp.
+    """
     for c in ("oversteer_active", "rc_throttle", "cmd_throttle", "slip_deg"):
         if not has_col(rows, c):
             raise ValueError(f"нет колонки {c}")
