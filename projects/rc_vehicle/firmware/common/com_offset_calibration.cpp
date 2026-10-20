@@ -21,8 +21,7 @@ MotionDriver::Config MakeDriverConfig(float target_accel_g) {
 }
 }  // namespace
 
-bool ComOffsetCalibration::Start(float target_accel_g,
-                                 float steering_magnitude,
+bool ComOffsetCalibration::Start(float target_accel_g, float steering_magnitude,
                                  float cruise_duration_sec,
                                  const float* gravity_vec,
                                  const float* applied_offset) {

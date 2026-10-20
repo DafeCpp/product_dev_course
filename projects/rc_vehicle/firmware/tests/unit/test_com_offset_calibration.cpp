@@ -311,8 +311,7 @@ TEST_F(ComOffsetCalibrationTest, TotalOffsetOutOfRangeFails) {
   float thr = 0, str = 0;
   for (int pass = 0; pass < 2; ++pass) {
     RunAccelPhase(thr, str);
-    RunCruisePhase(cal_ax, 0.0f, pass == 0 ? omega_dps : -omega_dps, thr,
-                   str);
+    RunCruisePhase(cal_ax, 0.0f, pass == 0 ? omega_dps : -omega_dps, thr, str);
     RunBrakePhase(thr, str);
   }
   EXPECT_FALSE(calib.GetResult().valid);
