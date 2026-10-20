@@ -126,7 +126,9 @@ class UserRoleRepository(BaseRepository):
         "SELECT user_id, project_id, role_id, granted_by, granted_at, expires_at "
         "FROM user_project_roles "
         "WHERE user_id = $1 AND project_id = $2 "
-        "AND (expires_at IS NULL OR expires_at > now())"
+        # clock_timestamp(), not now(): the check runs after waiting on the member
+        # lock, and now() would still be the transaction start time.
+        "AND (expires_at IS NULL OR expires_at > clock_timestamp())"
     )
 
     async def revoke_all_project_roles(self, user_id: UUID, project_id: UUID) -> int:
@@ -219,12 +221,11 @@ class UserRoleRepository(BaseRepository):
                     "RETURNING user_id, project_id, role_id, granted_by, granted_at, expires_at",
                     user_id, project_id, new_role_id, granted_by,
                 )
-                if old_role_id != new_role_id:
-                    await conn.execute(
-                        "DELETE FROM user_project_roles "
-                        "WHERE user_id = $1 AND project_id = $2 AND role_id = $3",
-                        user_id, project_id, old_role_id,
-                    )
+                await conn.execute(
+                    "DELETE FROM user_project_roles "
+                    "WHERE user_id = $1 AND project_id = $2 AND role_id = $3",
+                    user_id, project_id, old_role_id,
+                )
         assert row is not None
         return UserProjectRole.from_row(dict(row))
 
