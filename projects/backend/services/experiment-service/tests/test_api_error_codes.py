@@ -210,6 +210,31 @@ async def test_attach_unknown_sensor_or_run_is_404(service_client):
     assert resp.status == 201
 
 
+@pytest.mark.asyncio
+async def test_reattach_pair_of_another_project_is_404(service_client):
+    project_a = uuid.uuid4()
+    headers_a = make_headers(project_a)
+    experiment_id = await _create_experiment(service_client, project_a, headers_a)
+    run_id = await _create_run(service_client, experiment_id, headers_a)
+    sensor_id = await _create_sensor(service_client, project_a, headers_a)
+    resp = await service_client.post(
+        f"/api/v1/runs/{run_id}/sensors/{sensor_id}", json={"mode": "primary"}, headers=headers_a
+    )
+    assert resp.status == 201
+
+    # Same pair from another project must not hit the upsert path.
+    headers_b = make_headers(uuid.uuid4())
+    resp = await service_client.post(
+        f"/api/v1/runs/{run_id}/sensors/{sensor_id}", json={"mode": "passive"}, headers=headers_b
+    )
+    assert resp.status == 404
+
+    resp = await service_client.get(f"/api/v1/runs/{run_id}/sensors", headers=headers_a)
+    assert resp.status == 200
+    sensors = (await resp.json())["sensors"]
+    assert [s["mode"] for s in sensors] == ["primary"]
+
+
 # --- capture sessions -------------------------------------------------------
 
 
