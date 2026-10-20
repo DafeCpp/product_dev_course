@@ -868,6 +868,14 @@ def test_rc_events_blank_cells_are_zero(tmp_path):
     assert "0/0" in res[0].value
 
 
+def test_rc_events_only_startup_is_no_data(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        10: ("RcLost", "thr=no_pulses str=no_pulses since_boot", 0, 0),
+        50: ("RcRestored", "first_acquire", 0, 0)}))
+    res = tm.check_rc_events(log)
+    assert len(res) == 1 and res[0].no_data and res[0].passed is False
+
+
 def test_rc_events_without_event_columns(tmp_path):
     rows = [{"ts_ms": (i + 1) * DT_MS, "throttle": 0.0} for i in range(10)]
     assert tm.check_rc_events(_write_csv(tmp_path / "e.csv", rows))[0].no_data

@@ -801,6 +801,12 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
         # Восстановление и длительность потери не проверены — запись неполная.
         out.append(MetricResult(f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", False,
                                 f"{lost['param']}, до конца лога не восстановлена"))
+    if n == 0:
+        # Остались только события старта без пульта: цикла потеря/восстановление
+        # в записи нет, проверять нечего.
+        out.append(MetricResult(name, False, "РЕАЛЬНЫХ ПОТЕРЬ RC НЕТ (только старт без пульта)",
+                                no_data=True))
+        return out
     out.append(MetricResult(f"{name}: всего потерь", None,
                             f"{n} — сверить с числом выключений пульта"))
     return out
