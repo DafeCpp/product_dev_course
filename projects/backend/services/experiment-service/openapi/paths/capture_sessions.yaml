@@ -41,8 +41,8 @@ captureSessions:
     description: >
       run_id comes from the path and project_id from ?project_id or X-Project-Id (body values are
       overwritten). Defaults: status=running, started_at=now, initiated_by=calling user. Refused with
-      400 when the run is succeeded/failed/archived, when the project already has an active capture
-      session, or when the initial status is not reachable from draft. Records a
+      400 when the run is succeeded/failed/archived or when the initial status is not reachable from
+      draft, and with 409 when the project already has an active capture session. Records a
       capture_session.created event and emits the matching webhook.
     operationId: createCaptureSession
     parameters:
@@ -72,8 +72,9 @@ captureSessions:
         $ref: ../components/responses.yaml#/NotFound
       409:
         description: >
-          Idempotency-Key reused with another body or path (text/plain "Conflict"), or a capture
-          session with this ordinal_number already exists for the run (JSON Error).
+          Idempotency-Key reused with another body or path (text/plain "Conflict"), a capture
+          session with this ordinal_number already exists for the run, or the project already has an
+          active capture session (JSON Error).
         content:
           text/plain:
             schema:
@@ -90,9 +91,10 @@ captureSessionStop:
     summary: Stop capture session
     description: >
       Moves the session to `status` (default succeeded) and sets stopped_at (default now). An invalid
-      transition is reported by the error middleware as 409 JSON. The session is looked up by project
-      only; it is not checked to belong to run_id. A stopped_at that is not a valid date-time
-      currently fails with 500. Records a capture_session.stopped event and emits the matching webhook.
+      transition is reported by the error middleware as 409 JSON. 404 when the run or session is not
+      in the project, or the session belongs to another run. A stopped_at that is not a valid
+      date-time (or a non-string notes / non-boolean archived) gives 400 with the Pydantic error list.
+      Records a capture_session.stopped event and emits the matching webhook.
     operationId: stopCaptureSession
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
@@ -121,8 +123,6 @@ captureSessionStop:
         $ref: ../components/responses.yaml#/NotFound
       409:
         $ref: ../components/responses.yaml#/ServiceConflict
-      500:
-        $ref: ../components/responses.yaml#/InternalError
 
 captureSessionItem:
   delete:

@@ -25,7 +25,7 @@ collection:
         default: 0
     - name: status
       in: query
-      description: An unknown value currently fails with 500 (unhandled ValueError).
+      description: An unknown value is rejected with 400 (`Invalid status value`).
       schema:
         $ref: ../components/schemas.yaml#/ExperimentStatus
     - name: tags
@@ -175,7 +175,8 @@ item:
     summary: Update experiment
     description: >
       Partial update. A status change must be an allowed transition (400 otherwise). A body with no
-      non-null fields currently fails with 500.
+      non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`). A
+      rename onto a name another experiment of the project already has (case-insensitive) is 409.
     operationId: updateExperiment
     parameters:
     - $ref: ../components/parameters.yaml#/ExperimentId
@@ -201,8 +202,8 @@ item:
         $ref: ../components/responses.yaml#/Forbidden
       404:
         $ref: ../components/responses.yaml#/NotFound
-      500:
-        $ref: ../components/responses.yaml#/InternalError
+      409:
+        $ref: ../components/responses.yaml#/ServiceConflict
   delete:
     tags:
     - experiments

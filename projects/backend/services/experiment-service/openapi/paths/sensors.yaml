@@ -21,7 +21,7 @@ collection:
         type: string
     - name: status
       in: query
-      description: Filter by lifecycle status. An unknown value currently yields 500 (unhandled ValueError).
+      description: Filter by lifecycle status. An unknown value is rejected with 400 (`Invalid status value`).
       schema:
         $ref: ../components/schemas.yaml#/SensorStatus
     - name: created_after
@@ -245,7 +245,7 @@ item:
     summary: Update sensor
     description: |-
       Partial update. Fields sent as `null` are ignored (cannot clear a value). A body with no
-      non-null fields currently yields 500 (unhandled ValueError). Note: the returned
+      non-null fields is rejected with 400. Note: the returned
       `connection_status` is always `offline` (the UPDATE ... RETURNING row lacks the computed column).
     operationId: updateSensor
     parameters:
@@ -267,11 +267,14 @@ item:
       400:
         description: |-
           Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id; invalid JSON; Pydantic validation failure
-          (JSON-encoded error list as text/plain)
+          (JSON-encoded error list as text/plain); no non-null fields (JSON `{"error": "No fields provided for update"}`)
         content:
           text/plain:
             schema:
               type: string
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
       401:
         description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
         content:
@@ -285,15 +288,21 @@ item:
             schema:
               type: string
       404:
-        description: Sensor not found or not attached to the project (`Resource not found`)
+        description: Sensor not found or not attached to the project, or `active_profile_id` names no conversion profile (`Resource not found`)
         content:
           text/plain:
             schema:
               type: string
-      500:
+      409:
         description: |-
-          Unhandled error, including: empty update, duplicate name (unique index), unknown
-          active_profile_id (FK). Body `{"error": "Internal server error"}`.
+          Another sensor of the project already has this name (case-insensitive). JSON
+          `{"error": "Sensor with name '<name>' already exists in this project"}`.
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
         content:
           application/json:
             schema:
@@ -526,7 +535,7 @@ projects:
             schema:
               $ref: ../components/schemas.yaml#/SensorProjectRequest
       400:
-        description: 'Invalid header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id`'
+        description: 'Invalid header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id` (also for a non-string value)'
         content:
           text/plain:
             schema:
@@ -556,7 +565,7 @@ projects:
             schema:
               type: string
       500:
-        description: 'Unhandled error, including a non-string, non-null `project_id`. Body `{"error": "Internal server error"}`.'
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
         content:
           application/json:
             schema:
@@ -874,11 +883,18 @@ conversionProfiles:
           text/plain:
             schema:
               type: string
+      409:
+        description: |-
+          The sensor already has a profile with this `version`. JSON
+          `{"error": "Conversion profile version '<version>' already exists for this sensor"}`.
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
       500:
         description: |-
-          Unhandled error, including a duplicate `version` for the sensor, or a sensor attached to
-          this project only via `sensor_projects` (FK on sensor's primary project).
-          Body `{"error": "Internal server error"}`.
+          Unhandled error, including a sensor attached to this project only via `sensor_projects`
+          (FK on sensor's primary project). Body `{"error": "Internal server error"}`.
         content:
           application/json:
             schema:

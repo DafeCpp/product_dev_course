@@ -24,7 +24,7 @@ experimentRuns:
           default: 0
       - name: status
         in: query
-        description: An unknown value currently fails with 500 (unhandled ValueError).
+        description: An unknown value is rejected with 400 (`Invalid status value`).
         schema:
           $ref: ../components/schemas.yaml#/RunStatus
       - name: tags
@@ -130,7 +130,8 @@ run:
       Partial update. A status change must be an allowed transition, and moving to succeeded, failed
       or archived is refused while the run has an active (running/backfilling) capture session; both
       give 400. Status changes record a run.status_changed event and emit run.started / run.finished /
-      run.archived webhooks. A body with no non-null fields currently fails with 500.
+      run.archived webhooks. A body with no non-null fields is rejected with 400 (JSON
+      `{"error": "No fields provided for update"}`).
     operationId: updateRun
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
@@ -156,8 +157,6 @@ run:
         $ref: ../components/responses.yaml#/Forbidden
       404:
         $ref: ../components/responses.yaml#/NotFound
-      500:
-        $ref: ../components/responses.yaml#/InternalError
   delete:
     tags: [runs]
     summary: Delete run
@@ -314,7 +313,7 @@ runSensor:
     description: >
       Upsert: re-attaching a previously detached sensor clears detached_at and resets attached_at,
       mode and created_by. The body must be a JSON object (send `{}` for the default mode). A run or
-      sensor outside the project violates a foreign key and currently fails with 500.
+      sensor that is not in the project gives 404.
     operationId: attachRunSensor
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
@@ -339,8 +338,14 @@ runSensor:
         $ref: ../components/responses.yaml#/Unauthorized
       403:
         $ref: ../components/responses.yaml#/Forbidden
-      500:
-        $ref: ../components/responses.yaml#/InternalError
+      404:
+        description: >
+          Run or sensor not in the project (sensor primary project, by foreign key). Rendered by the
+          error middleware as JSON.
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
   delete:
     tags: [runs, sensors]
     summary: Detach sensor from run

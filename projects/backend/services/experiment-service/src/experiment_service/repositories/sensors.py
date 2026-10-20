@@ -6,9 +6,16 @@ from typing import Any, List, Tuple
 from uuid import UUID
 
 from asyncpg import Pool, Record  # type: ignore[import-untyped]
-from asyncpg.exceptions import UniqueViolationError  # type: ignore[import-untyped]
+from asyncpg.exceptions import (  # type: ignore[import-untyped]
+    ForeignKeyViolationError,
+    UniqueViolationError,
+)
 
-from experiment_service.core.exceptions import DuplicateResourceError, NotFoundError
+from experiment_service.core.exceptions import (
+    DuplicateResourceError,
+    EmptyUpdateError,
+    NotFoundError,
+)
 from experiment_service.domain.dto import SensorCreateDTO, SensorUpdateDTO
 from experiment_service.domain.enums import SensorStatus
 from experiment_service.domain.models import Sensor
@@ -301,7 +308,7 @@ class SensorRepository(BaseRepository):
         await self.get(project_id, sensor_id)
         payload = updates.model_dump(exclude_none=True)
         if not payload:
-            raise ValueError("No fields provided for update")
+            raise EmptyUpdateError()
         assignments = []
         values: list[Any] = []
         idx = 1
@@ -313,15 +320,24 @@ class SensorRepository(BaseRepository):
             idx += 1
         assignments.append("updated_at = now()")
         values.append(sensor_id)
-        record = await self._fetchrow(
-            f"""
-            UPDATE sensors
-            SET {', '.join(assignments)}
-            WHERE id = ${idx}
-            RETURNING *
-            """,
-            *values,
-        )
+        try:
+            record = await self._fetchrow(
+                f"""
+                UPDATE sensors
+                SET {', '.join(assignments)}
+                WHERE id = ${idx}
+                RETURNING *
+                """,
+                *values,
+            )
+        except UniqueViolationError as exc:
+            # Rename onto a name already taken (sensors_project_name_uindex).
+            raise DuplicateResourceError(
+                f"Sensor with name '{payload.get('name')}' already exists in this project"
+            ) from exc
+        except ForeignKeyViolationError as exc:
+            # active_profile_id must reference an existing conversion profile.
+            raise NotFoundError("Conversion profile not found") from exc
         if record is None:
             raise NotFoundError("Sensor not found")
         return self._to_model(record)

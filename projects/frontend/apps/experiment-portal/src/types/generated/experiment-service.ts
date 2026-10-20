@@ -91,7 +91,7 @@ export interface paths {
         /**
          * Update sensor
          * @description Partial update. Fields sent as `null` are ignored (cannot clear a value). A body with no
-         *     non-null fields currently yields 500 (unhandled ValueError). Note: the returned
+         *     non-null fields is rejected with 400. Note: the returned
          *     `connection_status` is always `offline` (the UPDATE ... RETURNING row lacks the computed column).
          */
         patch: operations["updateSensor"];
@@ -285,7 +285,7 @@ export interface paths {
         head?: never;
         /**
          * Update experiment
-         * @description Partial update. A status change must be an allowed transition (400 otherwise). A body with no non-null fields currently fails with 500.
+         * @description Partial update. A status change must be an allowed transition (400 otherwise). A body with no non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`). A rename onto a name another experiment of the project already has (case-insensitive) is 409.
          */
         patch: operations["updateExperiment"];
         trace?: never;
@@ -354,7 +354,7 @@ export interface paths {
         head?: never;
         /**
          * Update run
-         * @description Partial update. A status change must be an allowed transition, and moving to succeeded, failed or archived is refused while the run has an active (running/backfilling) capture session; both give 400. Status changes record a run.status_changed event and emit run.started / run.finished / run.archived webhooks. A body with no non-null fields currently fails with 500.
+         * @description Partial update. A status change must be an allowed transition, and moving to succeeded, failed or archived is refused while the run has an active (running/backfilling) capture session; both give 400. Status changes record a run.status_changed event and emit run.started / run.finished / run.archived webhooks. A body with no non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`).
          */
         patch: operations["updateRun"];
         trace?: never;
@@ -450,7 +450,7 @@ export interface paths {
         put?: never;
         /**
          * Attach sensor to run
-         * @description Upsert: re-attaching a previously detached sensor clears detached_at and resets attached_at, mode and created_by. The body must be a JSON object (send `{}` for the default mode). A run or sensor outside the project violates a foreign key and currently fails with 500.
+         * @description Upsert: re-attaching a previously detached sensor clears detached_at and resets attached_at, mode and created_by. The body must be a JSON object (send `{}` for the default mode). A run or sensor that is not in the project gives 404.
          */
         post: operations["attachRunSensor"];
         /**
@@ -478,7 +478,7 @@ export interface paths {
         put?: never;
         /**
          * Start capture session
-         * @description run_id comes from the path and project_id from ?project_id or X-Project-Id (body values are overwritten). Defaults: status=running, started_at=now, initiated_by=calling user. Refused with 400 when the run is succeeded/failed/archived, when the project already has an active capture session, or when the initial status is not reachable from draft. Records a capture_session.created event and emits the matching webhook.
+         * @description run_id comes from the path and project_id from ?project_id or X-Project-Id (body values are overwritten). Defaults: status=running, started_at=now, initiated_by=calling user. Refused with 400 when the run is succeeded/failed/archived or when the initial status is not reachable from draft, and with 409 when the project already has an active capture session. Records a capture_session.created event and emits the matching webhook.
          */
         post: operations["createCaptureSession"];
         delete?: never;
@@ -518,7 +518,7 @@ export interface paths {
         put?: never;
         /**
          * Stop capture session
-         * @description Moves the session to `status` (default succeeded) and sets stopped_at (default now). An invalid transition is reported by the error middleware as 409 JSON. The session is looked up by project only; it is not checked to belong to run_id. A stopped_at that is not a valid date-time currently fails with 500. Records a capture_session.stopped event and emits the matching webhook.
+         * @description Moves the session to `status` (default succeeded) and sets stopped_at (default now). An invalid transition is reported by the error middleware as 409 JSON. 404 when the run or session is not in the project, or the session belongs to another run. A stopped_at that is not a valid date-time (or a non-string notes / non-boolean archived) gives 400 with the Pydantic error list. Records a capture_session.stopped event and emits the matching webhook.
          */
         post: operations["stopCaptureSession"];
         delete?: never;
@@ -663,7 +663,7 @@ export interface paths {
         put?: never;
         /**
          * Compare metrics across runs (POST)
-         * @description Same rules as the GET. max_points_per_series is clamped into 100-2000. A from_step or to_step that is not an integer currently fails with 500.
+         * @description Same rules as the GET. max_points_per_series is clamped into 100-2000. A from_step or to_step that is not an integer gives 400.
          */
         post: operations["compareRunMetrics"];
         delete?: never;
@@ -2224,7 +2224,7 @@ export interface operations {
             query?: {
                 /** @description Override active project scope (requires owner/editor role). */
                 project_id?: components["parameters"]["ProjectIdQuery"];
-                /** @description Filter by lifecycle status. An unknown value currently yields 500 (unhandled ValueError). */
+                /** @description Filter by lifecycle status. An unknown value is rejected with 400 (`Invalid status value`). */
                 status?: components["schemas"]["SensorStatus"];
                 /** @description Inclusive lower bound on created_at (ISO-8601; naive values are treated as UTC). */
                 created_after?: string;
@@ -2610,7 +2610,7 @@ export interface operations {
             };
             /**
              * @description Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id; invalid JSON; Pydantic validation failure
-             *     (JSON-encoded error list as text/plain)
+             *     (JSON-encoded error list as text/plain); no non-null fields (JSON `{"error": "No fields provided for update"}`)
              */
             400: {
                 headers: {
@@ -2618,6 +2618,7 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`). */
@@ -2638,7 +2639,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Sensor not found or not attached to the project (`Resource not found`) */
+            /** @description Sensor not found or not attached to the project, or `active_profile_id` names no conversion profile (`Resource not found`) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2648,9 +2649,18 @@ export interface operations {
                 };
             };
             /**
-             * @description Unhandled error, including: empty update, duplicate name (unique index), unknown
-             *     active_profile_id (FK). Body `{"error": "Internal server error"}`.
+             * @description Another sensor of the project already has this name (case-insensitive). JSON
+             *     `{"error": "Sensor with name '<name>' already exists in this project"}`.
              */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2935,9 +2945,20 @@ export interface operations {
                 };
             };
             /**
-             * @description Unhandled error, including a duplicate `version` for the sensor, or a sensor attached to
-             *     this project only via `sensor_projects` (FK on sensor's primary project).
-             *     Body `{"error": "Internal server error"}`.
+             * @description The sensor already has a profile with this `version`. JSON
+             *     `{"error": "Conversion profile version '<version>' already exists for this sensor"}`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description Unhandled error, including a sensor attached to this project only via `sensor_projects`
+             *     (FK on sensor's primary project). Body `{"error": "Internal server error"}`.
              */
             500: {
                 headers: {
@@ -3108,7 +3129,7 @@ export interface operations {
                 project_id?: components["parameters"]["ProjectIdQuery"];
                 limit?: number;
                 offset?: number;
-                /** @description An unknown value currently fails with 500 (unhandled ValueError). */
+                /** @description An unknown value is rejected with 400 (`Invalid status value`). */
                 status?: components["schemas"]["ExperimentStatus"];
                 /** @description Comma separated tags; only experiments carrying all of them are returned. */
                 tags?: string;
@@ -3296,7 +3317,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            500: components["responses"]["InternalError"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     archiveExperiment: {
@@ -3336,7 +3357,7 @@ export interface operations {
                 project_id?: components["parameters"]["ProjectIdQuery"];
                 limit?: number;
                 offset?: number;
-                /** @description An unknown value currently fails with 500 (unhandled ValueError). */
+                /** @description An unknown value is rejected with 400 (`Invalid status value`). */
                 status?: components["schemas"]["RunStatus"];
                 /** @description Comma separated tags; only runs carrying all of them are returned. */
                 tags?: string;
@@ -3494,7 +3515,6 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            500: components["responses"]["InternalError"];
         };
     };
     batchUpdateRunStatus: {
@@ -3649,7 +3669,15 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            500: components["responses"]["InternalError"];
+            /** @description Run or sensor not in the project (sensor primary project, by foreign key). Rendered by the error middleware as JSON. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     detachRunSensor: {
@@ -3754,7 +3782,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description Idempotency-Key reused with another body or path (text/plain "Conflict"), or a capture session with this ordinal_number already exists for the run (JSON Error). */
+            /** @description Idempotency-Key reused with another body or path (text/plain "Conflict"), a capture session with this ordinal_number already exists for the run, or the project already has an active capture session (JSON Error). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3828,7 +3856,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["ServiceConflict"];
-            500: components["responses"]["InternalError"];
         };
     };
     listCaptureSessionEvents: {
@@ -4129,7 +4156,6 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            500: components["responses"]["InternalError"];
         };
     };
     exportComparison: {
@@ -4398,7 +4424,7 @@ export interface operations {
                 project_id?: components["parameters"]["ProjectIdQuery"];
                 /** @description Case-insensitive. */
                 format?: "csv" | "json";
-                /** @description An unknown value currently fails with 500 (unhandled ValueError). */
+                /** @description An unknown value is rejected with 400 (`Invalid status value`). */
                 status?: components["schemas"]["ExperimentStatus"];
                 /** @description Comma separated tags; only experiments carrying all of them are exported. */
                 tags?: string;
@@ -4469,7 +4495,7 @@ export interface operations {
                 project_id?: components["parameters"]["ProjectIdQuery"];
                 /** @description Case-insensitive. */
                 format?: "csv" | "json";
-                /** @description An unknown value currently fails with 500 (unhandled ValueError). */
+                /** @description An unknown value is rejected with 400 (`Invalid status value`). */
                 status?: components["schemas"]["RunStatus"];
                 /** @description Comma separated tags; only runs carrying all of them are exported. */
                 tags?: string;
@@ -4684,7 +4710,7 @@ export interface operations {
                     "application/json": components["schemas"]["SensorProjectRequest"];
                 };
             };
-            /** @description Invalid header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id` */
+            /** @description Invalid header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id` (also for a non-string value) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4729,7 +4755,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Unhandled error, including a non-string, non-null `project_id`. Body `{"error": "Internal server error"}`. */
+            /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
             500: {
                 headers: {
                     [name: string]: unknown;

@@ -8,10 +8,12 @@ from backend_common.core.exceptions import (
     NotFoundError,
     ServiceError,
     UnauthorizedError,
+    ValidationError,
 )
 
 __all__ = [
     "DuplicateResourceError",
+    "EmptyUpdateError",
     "ExperimentServiceError",
     "IdempotencyConflictError",
     "InvalidStatusTransitionError",
@@ -36,6 +38,13 @@ class DuplicateResourceError(ConflictError):
     surface as a 500) into a clean 409 — e.g. two concurrent creates racing on
     ``experiments_project_name_uindex`` / ``sensors_project_name_uindex``.
     """
+
+class EmptyUpdateError(ValidationError):
+    """Raised when a partial update carries no non-null fields (400)."""
+
+    def __init__(self) -> None:
+        super().__init__("No fields provided for update")
+
 
 class ScopeMismatchError(ForbiddenError):
     """Raised when entity belongs to a different project."""

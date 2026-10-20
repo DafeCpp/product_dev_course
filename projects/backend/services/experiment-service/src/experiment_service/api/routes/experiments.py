@@ -11,6 +11,7 @@ from experiment_service.api.utils import (
     paginated_response,
     pagination_params,
     parse_datetime,
+    parse_status_filter,
     parse_tags_filter,
     parse_uuid,
     read_json,
@@ -63,7 +64,7 @@ async def list_experiments(request: web.Request):
 
     # Optional filters
     status_raw = request.rel_url.query.get("status")
-    status = ExperimentStatus(status_raw) if status_raw else None
+    status = parse_status_filter(status_raw, ExperimentStatus)
     tags = parse_tags_filter(request.rel_url.query.get("tags"))
     created_after = parse_datetime(request.rel_url.query.get("created_after"), "created_after")
     created_before = parse_datetime(request.rel_url.query.get("created_before"), "created_before")

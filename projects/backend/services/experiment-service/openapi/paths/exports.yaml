@@ -19,7 +19,7 @@ experimentsExport:
           default: csv
       - name: status
         in: query
-        description: An unknown value currently fails with 500 (unhandled ValueError).
+        description: An unknown value is rejected with 400 (`Invalid status value`).
         schema:
           $ref: ../components/schemas.yaml#/ExperimentStatus
       - name: tags
@@ -85,7 +85,7 @@ experimentRunsExport:
           default: csv
       - name: status
         in: query
-        description: An unknown value currently fails with 500 (unhandled ValueError).
+        description: An unknown value is rejected with 400 (`Invalid status value`).
         schema:
           $ref: ../components/schemas.yaml#/RunStatus
       - name: tags

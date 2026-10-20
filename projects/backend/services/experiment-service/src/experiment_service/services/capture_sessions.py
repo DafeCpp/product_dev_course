@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import List
 from uuid import UUID
 
+from backend_common.core.exceptions import ConflictError
 from experiment_service.core.exceptions import InvalidStatusTransitionError
 from experiment_service.core.exceptions import ScopeMismatchError
 from experiment_service.domain.dto import (
@@ -44,7 +45,7 @@ class CaptureSessionService:
             )
         # Only one active capture session per project (recording window).
         if await self._repository.has_active_for_project(data.project_id):
-            raise InvalidStatusTransitionError("Active capture session already exists for this project")
+            raise ConflictError("Active capture session already exists for this project")
         if data.status != CaptureSessionStatus.DRAFT:
             validate_capture_transition(CaptureSessionStatus.DRAFT, data.status)
         session = await self._repository.create(data)
