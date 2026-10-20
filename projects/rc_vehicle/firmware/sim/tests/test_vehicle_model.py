@@ -228,3 +228,28 @@ def test_kinematic_model_respects_grip_limit():
         peak_lat = max(peak_lat, abs(out.lat_accel))
         assert out.lat_accel == pytest.approx(m.state.v * m.state.r)
     assert 0.0 < peak_lat <= mu * p.gravity_ms2 + 1e-9
+
+
+def test_axle_force_stays_within_grip_while_spinning_in_turn():
+    """Пробуксовка в повороте: |(Fx, Fy)| каждой оси не больше μ·N."""
+    mu = 0.2
+    p = SimParams(tire_mu=mu, drive_front_share=0.2)
+    m = VehicleModel(p, dynamic=True)
+    _run(m, throttle=0.3, steering=0.0, n=1000)
+    spin_ticks = 0
+    for _ in range(1000):
+        out = m.step(DT, 0.7, 1.0)
+        s = m.state
+        if s.v < 0.3 or out.slip_ratio <= 0.0:
+            continue
+        spin_ticks += 1
+        alpha_f = out.delta_rad - (s.vy + p.com_a * s.r) / s.v
+        alpha_r = -(s.vy - p.com_b * s.r) / s.v
+        caps = m._lateral_capacity(out.long_accel)
+        for n, share, alpha, c, cap in zip(
+                m._axle_loads(), m._drive_shares(), (alpha_f, alpha_r),
+                (p.Caf, p.Car), caps):
+            fx = p.mass * out.long_accel * share
+            fy = min(cap * 1.01, c * abs(alpha))
+            assert math.hypot(fx, fy) <= mu * n * 1.01
+    assert spin_ticks > 100
