@@ -27,7 +27,11 @@ FetchContent_Declare(
 set(ENABLE_CJSON_TEST OFF CACHE BOOL "" FORCE)
 set(ENABLE_CJSON_UTILS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# cJSON v1.7.18 declares cmake_minimum_required(VERSION 3.0); CMake >= 4 rejects
+# that without a policy floor. Scoped to cJSON so googletest keeps its own.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 FetchContent_MakeAvailable(cjson)
+unset(CMAKE_POLICY_VERSION_MINIMUM)
 
 include(GoogleTest)
 
