@@ -3313,7 +3313,16 @@ export interface operations {
                     "application/json": components["schemas"]["Experiment"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Invalid headers, ids, JSON or status transition (text/plain); no non-null fields (JSON Error). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -3511,7 +3520,16 @@ export interface operations {
                     "application/json": components["schemas"]["Run"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Invalid headers, ids, JSON or status transition (text/plain); no non-null fields (JSON Error). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

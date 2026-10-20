@@ -195,7 +195,14 @@ item:
             schema:
               $ref: ../components/schemas.yaml#/Experiment
       400:
-        $ref: ../components/responses.yaml#/BadRequest
+        description: Invalid headers, ids, JSON or status transition (text/plain); no non-null fields (JSON Error).
+        content:
+          text/plain:
+            schema:
+              type: string
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
       401:
         $ref: ../components/responses.yaml#/Unauthorized
       403:
