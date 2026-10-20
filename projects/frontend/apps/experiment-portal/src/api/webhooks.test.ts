@@ -51,7 +51,7 @@ describe('webhooksApi', () => {
     it('create POSTs payload to /api/v1/webhooks', async () => {
         const payload = { url: 'https://hook.example/cb', events: ['run.completed'] }
         mockAxiosInstance.post.mockResolvedValueOnce({
-            data: { id: 'wh-1', ...payload, secret: 'shh' },
+            data: { id: 'wh-1', ...payload, has_secret: true },
         })
 
         const result = await webhooksApi.create(payload as any)

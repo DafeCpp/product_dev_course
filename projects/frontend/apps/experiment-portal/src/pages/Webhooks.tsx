@@ -304,7 +304,7 @@ function Webhooks() {
                         </span>
                       ))}
                     </div>
-                    {wh.secret && (
+                    {wh.has_secret && (
                       <span className="webhook-card__secret-indicator">
                         secret: ****
                       </span>

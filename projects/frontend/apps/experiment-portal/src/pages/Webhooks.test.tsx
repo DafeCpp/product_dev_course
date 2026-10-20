@@ -56,7 +56,7 @@ const mockWebhook = {
     id: 'wh-1',
     project_id: 'proj-1',
     target_url: 'https://example.com/hook',
-    secret: null,
+    has_secret: false,
     event_types: ['run.started', 'run.finished'],
     is_active: true,
     created_at: '2024-01-01T00:00:00Z',
@@ -69,7 +69,7 @@ const mockDelivery = {
     project_id: 'proj-1',
     event_type: 'run.started',
     target_url: 'https://example.com/hook',
-    secret: null,
+    has_secret: false,
     request_body: {
         event_type: 'run.started',
         project_id: 'proj-1',

@@ -1451,7 +1451,7 @@ WebhookSubscription:
   - id
   - project_id
   - target_url
-  - secret
+  - has_secret
   - event_types
   - is_active
   - created_at
@@ -1465,11 +1465,9 @@ WebhookSubscription:
       format: uuid
     target_url:
       type: string
-    secret:
-      type:
-      - string
-      - 'null'
-      description: Returned in plaintext.
+    has_secret:
+      type: boolean
+      description: Whether deliveries are signed. The secret itself is write-only and never returned.
     event_types:
       type: array
       items:
@@ -1540,7 +1538,6 @@ WebhookDelivery:
   - project_id
   - event_type
   - target_url
-  - secret
   - request_body
   - status
   - attempt_count
@@ -1564,11 +1561,6 @@ WebhookDelivery:
       type: string
     target_url:
       type: string
-    secret:
-      type:
-      - string
-      - 'null'
-      description: Copied from the subscription; returned in plaintext.
     request_body:
       $ref: '#/WebhookEventEnvelope'
     status:

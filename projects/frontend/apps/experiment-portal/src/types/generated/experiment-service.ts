@@ -1089,7 +1089,7 @@ export interface paths {
         };
         /**
          * List webhook subscriptions
-         * @description Ordered by created_at DESC. Note: `secret` is returned in plaintext.
+         * @description Ordered by created_at DESC. The signing secret is never returned; `has_secret` tells whether one is set.
          */
         get: operations["listWebhooks"];
         put?: never;
@@ -1097,7 +1097,7 @@ export interface paths {
          * Create webhook subscription
          * @description Event types are trimmed, empty entries dropped and duplicates removed (order kept). The
          *     subscription is created active. Deliveries are signed with HMAC-SHA256 of the body when a
-         *     secret is set. Project comes from the `project_id` query or X-Project-Id header (a
+         *     secret is set; the secret is write-only and the response carries only `has_secret`. Project comes from the `project_id` query or X-Project-Id header (a
          *     `project_id` in the body is ignored).
          */
         post: operations["createWebhook"];
@@ -1136,7 +1136,7 @@ export interface paths {
         };
         /**
          * List webhook deliveries
-         * @description Outbox rows of the project, ordered by created_at DESC. Note: `secret` is returned in plaintext.
+         * @description Outbox rows of the project, ordered by created_at DESC. The signing secret is not returned.
          */
         get: operations["listWebhookDeliveries"];
         put?: never;
@@ -1943,8 +1943,8 @@ export interface components {
             /** Format: uuid */
             project_id: string;
             target_url: string;
-            /** @description Returned in plaintext. */
-            secret: string | null;
+            /** @description Whether deliveries are signed. The secret itself is write-only and never returned. */
+            has_secret: boolean;
             event_types: string[];
             is_active: boolean;
             /** Format: date-time */
@@ -1986,8 +1986,6 @@ export interface components {
             project_id: string;
             event_type: string;
             target_url: string;
-            /** @description Copied from the subscription; returned in plaintext. */
-            secret: string | null;
             request_body: components["schemas"]["WebhookEventEnvelope"];
             status: components["schemas"]["WebhookDeliveryStatus"];
             attempt_count: number;

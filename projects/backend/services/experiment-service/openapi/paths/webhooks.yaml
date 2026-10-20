@@ -4,7 +4,7 @@ collection:
     tags:
     - webhooks
     summary: List webhook subscriptions
-    description: 'Ordered by created_at DESC. Note: `secret` is returned in plaintext.'
+    description: Ordered by created_at DESC. The signing secret is never returned; `has_secret` tells whether one is set.
     operationId: listWebhooks
     parameters:
     - $ref: ../components/parameters.yaml#/ProjectIdQuery
@@ -61,7 +61,7 @@ collection:
     description: |-
       Event types are trimmed, empty entries dropped and duplicates removed (order kept). The
       subscription is created active. Deliveries are signed with HMAC-SHA256 of the body when a
-      secret is set. Project comes from the `project_id` query or X-Project-Id header (a
+      secret is set; the secret is write-only and the response carries only `has_secret`. Project comes from the `project_id` query or X-Project-Id header (a
       `project_id` in the body is ignored).
     operationId: createWebhook
     parameters:
@@ -154,7 +154,7 @@ deliveries:
     tags:
     - webhooks
     summary: List webhook deliveries
-    description: 'Outbox rows of the project, ordered by created_at DESC. Note: `secret` is returned in plaintext.'
+    description: Outbox rows of the project, ordered by created_at DESC. The signing secret is not returned.
     operationId: listWebhookDeliveries
     parameters:
     - $ref: ../components/parameters.yaml#/ProjectIdQuery

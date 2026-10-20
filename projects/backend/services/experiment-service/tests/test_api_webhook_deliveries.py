@@ -25,7 +25,10 @@ async def test_webhook_deliveries_list_and_retry(service_client, pgsql):
         headers=headers_owner,
     )
     assert resp.status == 201
-    sub_id = (await resp.json())["id"]
+    created = await resp.json()
+    sub_id = created["id"]
+    assert "secret" not in created
+    assert created["has_secret"] is True
 
     # Insert a failed delivery manually
     conninfo = pgsql["experiment_service"].conninfo
@@ -62,6 +65,15 @@ async def test_webhook_deliveries_list_and_retry(service_client, pgsql):
     assert body["total"] >= 1
     ids = [d["id"] for d in body["deliveries"]]
     assert str(delivery_id) in ids
+    assert all("secret" not in d for d in body["deliveries"])
+
+    # Viewer sees that a secret is set but not the secret itself
+    resp = await service_client.get("/api/v1/webhooks", headers=headers_viewer)
+    assert resp.status == 200
+    webhooks = (await resp.json())["webhooks"]
+    listed = next(w for w in webhooks if w["id"] == sub_id)
+    assert "secret" not in listed
+    assert listed["has_secret"] is True
 
     # Owner can retry (sets status pending)
     resp = await service_client.post(
@@ -80,3 +92,18 @@ async def test_webhook_deliveries_list_and_retry(service_client, pgsql):
     ids = [d["id"] for d in body["deliveries"]]
     assert str(delivery_id) in ids
 
+
+
+@pytest.mark.asyncio
+async def test_webhook_without_secret_reports_has_secret_false(service_client):
+    project_id = uuid.uuid4()
+    headers_owner = make_headers(project_id, role="owner")
+    resp = await service_client.post(
+        "/api/v1/webhooks",
+        json={"target_url": "http://example.com/hook", "event_types": ["run.started"]},
+        headers=headers_owner,
+    )
+    assert resp.status == 201
+    created = await resp.json()
+    assert "secret" not in created
+    assert created["has_secret"] is False

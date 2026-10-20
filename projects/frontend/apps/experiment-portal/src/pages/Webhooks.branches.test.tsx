@@ -124,7 +124,7 @@ describe('Webhooks — branches', () => {
         {
           id: 'wh-9',
           target_url: 'https://x.test/h',
-          secret: 's3cr3t',
+          has_secret: true,
           event_types: ['run.archived'],
           is_active: false,
         },
