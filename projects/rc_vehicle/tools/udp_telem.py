@@ -40,36 +40,70 @@ from pathlib import Path
 MAGIC = b"\x52\x54"  # "RT"
 PACKET_VERSION = 1
 HEADER_SIZE = 7  # 2 magic + 1 version + 4 seq
-FRAME_SIZE = 80  # sizeof(TelemetryLogFrame)
-PACKET_SIZE = HEADER_SIZE + FRAME_SIZE  # 87 bytes
+FRAME_SIZE = 132  # sizeof(TelemetryLogFrame), static_assert в telemetry_log.hpp
+PACKET_SIZE = HEADER_SIZE + FRAME_SIZE  # 139 bytes
 
 CONTROL_PORT = 5556
 DEFAULT_DATA_PORT = 5555
 
-# struct format for TelemetryLogFrame (little-endian):
-# uint32_t ts_ms + 19 x float
-FRAME_FMT = "<I19f"
-assert struct.calcsize(FRAME_FMT) == FRAME_SIZE
-
-HEADER_FMT = "<2sBIx"  # We'll parse header manually for clarity
-
-FIELD_NAMES = [
-    "ts_ms",
-    "ax", "ay", "az",
-    "gx", "gy", "gz",
-    "vx", "vy",
-    "slip_deg", "speed_ms",
-    "throttle", "steering",
-    "pitch_deg", "roll_deg", "yaw_deg",
-    "yaw_rate_dps",
-    "oversteer_active",
-    "rc_throttle", "rc_steering",
+# Раскладка TelemetryLogFrame (firmware/common/telemetry_log.hpp), little-endian.
+# Те же имена, смещения и биты флагов, что FIELD_OFFSETS в веб-парсере
+# (firmware/esp32_common/web/app.js), чтобы CSV по UDP совпадал по колонкам
+# с выгрузкой из PSRAM; совпадение проверяет sim/tests/test_udp_telem.py.
+# (name, offset, type, bit): type — "u32" | "f32" | "u8"; bit — None или номер бита.
+FIELDS: list[tuple[str, int, str, int | None]] = [
+    ("ts_ms", 0, "u32", None),
+    *[(name, 4 + 4 * i, "f32", None) for i, name in enumerate([
+        "ax", "ay", "az",
+        "gx", "gy", "gz",
+        "vx", "vy",
+        "slip_deg", "speed_ms",
+        "throttle", "steering",
+        "pitch_deg", "roll_deg", "yaw_deg",
+        "yaw_rate_dps",
+        "oversteer_active",
+        "rc_throttle", "rc_steering",
+        "cmd_throttle", "cmd_steering",
+        "ekf_vx_var", "ekf_vy_var", "ekf_r_var", "ekf_yaw_deg",
+        "mx", "my", "mz",
+        "heading_deg", "heading_rel_deg",
+    ])],
+    ("test_marker", 124, "u8", None),
+    ("zupt_status", 125, "u8", None),
+    ("ekf_diverged", 126, "u8", None),
+    ("drive_mode", 127, "u8", None),
+    ("stab_enabled", 128, "u8", None),
+    ("kids_anti_spin_active", 129, "u8", 0),
+    ("kids_accel_limit_active", 129, "u8", 1),
+    ("kids_speed_limit_active", 129, "u8", 2),
+    ("kids_limiters_enabled", 129, "u8", 3),
+    ("mag_rejected", 130, "u8", 0),
+    ("mag_gate_active", 130, "u8", 1),
+    ("rc_ok", 131, "u8", 0),
+    ("wifi_ok", 131, "u8", 1),
+    ("failsafe_active", 131, "u8", 2),
+    ("rc_init_failed", 131, "u8", 3),
 ]
+
+FIELD_NAMES = [name for name, _, _, _ in FIELDS]
+
+_TYPE_FMT = {"u32": "<I", "f32": "<f", "u8": "<B"}
 
 
 # ---------------------------------------------------------------------------
 # Decode
 # ---------------------------------------------------------------------------
+
+def decode_frame(frame: bytes) -> tuple:
+    """Decode one TelemetryLogFrame (FRAME_SIZE bytes) into FIELD_NAMES order."""
+    values = []
+    for _, off, typ, bit in FIELDS:
+        v = struct.unpack_from(_TYPE_FMT[typ], frame, off)[0]
+        if bit is not None:
+            v = (v >> bit) & 1
+        values.append(v)
+    return tuple(values)
+
 
 def decode_packet(data: bytes) -> tuple[int, tuple] | None:
     """Decode a UDP telemetry packet. Returns (seq, field_values) or None."""
@@ -81,8 +115,7 @@ def decode_packet(data: bytes) -> tuple[int, tuple] | None:
     if version != PACKET_VERSION:
         return None
     seq = struct.unpack_from("<I", data, 3)[0]
-    values = struct.unpack_from(FRAME_FMT, data, HEADER_SIZE)
-    return seq, values
+    return seq, decode_frame(data[HEADER_SIZE:PACKET_SIZE])
 
 
 # ---------------------------------------------------------------------------

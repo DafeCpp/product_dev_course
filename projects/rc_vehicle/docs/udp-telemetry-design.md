@@ -17,18 +17,18 @@
 
 - Нет потокового экспорта телеметрии в реальном времени на ПК.
 - Выгрузка из ring buffer -- пакетная, медленная (JSON over WebSocket), теряет данные при переполнении буфера.
-- JSON overhead: ~600 байт на кадр (vs 80 байт бинарных).
+- JSON overhead: ~600 байт на кадр (vs 132 байта бинарных).
 - WebSocket работает поверх TCP -- ретрансмиты добавляют латентность, непригодную для real-time визуализации.
 
 **Решение:** UDP-стриминг бинарных `TelemetryLogFrame` с частотой 100 Hz. UDP идеален для телеметрии: потеря пакета допустима (следующий придет через 10 мс), а латентность минимальна.
 
-**Пропускная способность:** 87 байт x 100 Hz = 8.7 КБ/с (~70 кбит/с) -- пренебрежимо мало для WiFi.
+**Пропускная способность:** 139 байт x 100 Hz = 13.9 КБ/с (~111 кбит/с) -- пренебрежимо мало для WiFi.
 
 ---
 
 ## 2. Формат пакета телеметрии
 
-### 2.1 Бинарный фрейм (87 байт)
+### 2.1 Бинарный фрейм (139 байт)
 
 ```
 Offset  Size  Type        Field
@@ -36,30 +36,13 @@ Offset  Size  Type        Field
 0       2     uint8[2]    Magic: 0x52, 0x54 ("RT")
 2       1     uint8       Version: 0x01
 3       4     uint32_t    Sequence number (LE, monotonic)
-7       80    bytes       TelemetryLogFrame (memcpy, LE)
+7       132   bytes       TelemetryLogFrame (memcpy, LE)
 ──────────────────────────────────────────────────────────
-Total: 87 bytes
+Total: 139 bytes
 ```
 
-**Структура `TelemetryLogFrame` (80 байт, little-endian):**
-
-| Offset (от начала frame) | Тип      | Поле              | Описание                       |
-|--------------------------|----------|-------------------|--------------------------------|
-| 0                        | uint32_t | ts_ms             | Timestamp [мс]                 |
-| 4                        | float    | ax, ay, az        | Ускорение IMU [g]              |
-| 16                       | float    | gx, gy, gz        | Угловая скорость IMU [dps]     |
-| 28                       | float    | vx, vy            | EKF: скорость [м/с]           |
-| 36                       | float    | slip_deg          | EKF: угол заноса [deg]        |
-| 40                       | float    | speed_ms          | EKF: полная скорость [м/с]    |
-| 44                       | float    | throttle          | Команда газа [-1..1]          |
-| 48                       | float    | steering          | Команда руля [-1..1]          |
-| 52                       | float    | pitch_deg         | Pitch [deg]                    |
-| 56                       | float    | roll_deg          | Roll [deg]                     |
-| 60                       | float    | yaw_deg           | Yaw [deg]                      |
-| 64                       | float    | yaw_rate_dps      | Gyro Z filtered [dps]          |
-| 68                       | float    | oversteer_active  | 1.0 = занос, 0.0 = нет        |
-| 72                       | float    | rc_throttle       | Сырой газ с RC-приёмника [-1..1] |
-| 76                       | float    | rc_steering       | Сырой руль с RC-приёмника [-1..1] |
+**Структура `TelemetryLogFrame` (132 байта, little-endian):** см. `firmware/common/telemetry_log.hpp`
+(30 float + uint32 `ts_ms` + 8 байт флагов). Смещения полей — `FIELDS` в `tools/udp_telem.py`.
 
 **Обоснование формата:**
 
@@ -306,7 +289,7 @@ if (imu_handler_ && imu_handler_->IsEnabled()) {
 ### 7.3 Влияние на control loop
 
 - `UdpTelemEnqueue` при неактивном стриминге: проверка `std::atomic<bool>` -- ~1 нс, пренебрежимо.
-- `UdpTelemEnqueue` при активном стриминге: `xQueueSend` с `timeout=0` (no-wait). Копирует 80 байт в очередь. Типичное время: <5 мкс. При бюджете итерации 2000 мкс (500 Hz) это 0.25%.
+- `UdpTelemEnqueue` при активном стриминге: `xQueueSend` с `timeout=0` (no-wait). Копирует 132 байта в очередь. Типичное время: <5 мкс. При бюджете итерации 2000 мкс (500 Hz) это 0.25%.
 - Никаких аллокаций, мьютексов или блокирующих вызовов в control loop.
 
 ---
@@ -324,7 +307,7 @@ if (imu_handler_ && imu_handler_->IsEnabled()) {
                               ▼
                      ┌──────────────────┐
                      │  FreeRTOS Queue  │
-                     │   64 x 80 bytes  │  ← 5 КБ RAM
+                     │   64 x 132 bytes │  ← 8.5 КБ RAM
                      └────────┬─────────┘
                               │ xQueueReceive (portMAX_DELAY)
                               ▼
@@ -413,32 +396,32 @@ void HandleUdpStreamStatus(cJSON* json, httpd_req_t* req);
 
 ## 10. Python receiver/controller
 
-Файл: `tools/udp_telem_receiver.py`
+Файл: `tools/udp_telem.py`
 
 ### 10.1 Режимы работы
 
 ```bash
 # Приём телеметрии + запись в CSV
-python udp_telem_receiver.py listen --port 5555 --csv output.csv
+python udp_telem.py listen --port 5555 --csv output.csv
 
 # Отправка команды start (ESP32 IP = 192.168.4.1)
-python udp_telem_receiver.py start --esp 192.168.4.1 --port 5555 --hz 100
+python udp_telem.py start --esp 192.168.4.1 --port 5555 --hz 100
 
 # Отправка команды stop
-python udp_telem_receiver.py stop --esp 192.168.4.1
+python udp_telem.py stop --esp 192.168.4.1
 
 # Запрос статуса
-python udp_telem_receiver.py status --esp 192.168.4.1
+python udp_telem.py status --esp 192.168.4.1
 
 # Полный цикл: start + listen + stop по Ctrl+C
-python udp_telem_receiver.py record --esp 192.168.4.1 --port 5555 --csv output.csv
+python udp_telem.py record --esp 192.168.4.1 --port 5555 --csv output.csv
 ```
 
 ### 10.2 Функциональность
 
-- **Декодирование пакетов:** `struct.unpack('<2sBIIffffffffffffffffff', data)` -- валидация magic, version.
+- **Декодирование пакетов:** таблица `FIELDS` (имя, смещение, тип, бит флага) — та же, что `FIELD_OFFSETS` веб-парсера; валидация magic, version. Совпадение с прошивкой и веб-парсером проверяет `firmware/sim/tests/test_udp_telem.py`.
 - **Детекция потерь:** сравнение seq с ожидаемым. Вывод в stderr: `[LOSS] expected seq=1234, got 1240 (lost 6 packets)`.
-- **CSV-запись:** заголовок из имен полей `TelemetryLogFrame`. Flush каждые N строк (настраиваемо).
+- **CSV-запись:** те же колонки, что выгрузка PSRAM из web UI (без `event_*`). Flush каждые N строк (настраиваемо).
 - **Статистика при завершении:** total packets, lost packets, loss %, duration, avg rate.
 - **Graceful shutdown:** по Ctrl+C отправляет `STOP` на ESP32, закрывает CSV.
 
@@ -551,7 +534,7 @@ struct UdpTelemConfig {
 ### 14.3 Ручные тесты
 
 - `nc -u 192.168.4.1 5556` + ввод `PING` -- проверка control port.
-- `python udp_telem_receiver.py record` -- полный цикл записи.
+- `python udp_telem.py record` -- полный цикл записи.
 
 ---
 
