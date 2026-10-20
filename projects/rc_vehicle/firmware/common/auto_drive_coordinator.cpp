@@ -136,12 +136,13 @@ bool AutoDriveCoordinator::StartTrimCalib(float target_accel_g,
 }
 
 bool AutoDriveCoordinator::StartComCalib(float target_accel_g,
-                                          float steering_magnitude,
-                                          float cruise_duration_sec,
-                                          const float* gravity_vec) {
+                                         float steering_magnitude,
+                                         float cruise_duration_sec,
+                                         const float* gravity_vec,
+                                         const float* applied_offset) {
   if (IsAnyActive() || last_rc_active_) return false;
-  if (!com_calib_.Start(target_accel_g, steering_magnitude,
-                        cruise_duration_sec, gravity_vec)) {
+  if (!com_calib_.Start(target_accel_g, steering_magnitude, cruise_duration_sec,
+                        gravity_vec, applied_offset)) {
     return false;
   }
   if (event_log_) {

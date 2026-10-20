@@ -21,10 +21,10 @@ MotionDriver::Config MakeDriverConfig(float target_accel_g) {
 }
 }  // namespace
 
-bool ComOffsetCalibration::Start(float target_accel_g,
-                                 float steering_magnitude,
+bool ComOffsetCalibration::Start(float target_accel_g, float steering_magnitude,
                                  float cruise_duration_sec,
-                                 const float* gravity_vec) {
+                                 const float* gravity_vec,
+                                 const float* applied_offset) {
   if (phase_ != Phase::Idle && phase_ != Phase::Done &&
       phase_ != Phase::Failed) {
     return false;
@@ -33,6 +33,9 @@ bool ComOffsetCalibration::Start(float target_accel_g,
   target_accel_g_ = std::clamp(target_accel_g, 0.02f, 0.3f);
   steering_magnitude_ = std::clamp(steering_magnitude, 0.1f, 1.0f);
   cruise_duration_sec_ = std::clamp(cruise_duration_sec, 3.0f, 30.0f);
+
+  applied_offset_[0] = applied_offset ? applied_offset[0] : 0.f;
+  applied_offset_[1] = applied_offset ? applied_offset[1] : 0.f;
 
   if (gravity_vec) {
     gravity_vec_[0] = gravity_vec[0];
@@ -233,8 +236,11 @@ void ComOffsetCalibration::ComputeResult() {
 
   // rx = -(sum_lin_ax) * g / omega_sq_sum
   // ry = -(sum_lin_ay) * g / omega_sq_sum
-  const float rx = -(lin_ax_1 + lin_ax_2) * kGravity / omega_sq_sum;
-  const float ry = -(lin_ay_1 + lin_ay_2) * kGravity / omega_sq_sum;
+  // Данные уже скорректированы applied_offset_, формула даёт остаток.
+  const float rx =
+      applied_offset_[0] - (lin_ax_1 + lin_ax_2) * kGravity / omega_sq_sum;
+  const float ry =
+      applied_offset_[1] - (lin_ay_1 + lin_ay_2) * kGravity / omega_sq_sum;
 
   // Валидация: offset не слишком большой
   if (std::abs(rx) > kMaxOffsetM || std::abs(ry) > kMaxOffsetM) {

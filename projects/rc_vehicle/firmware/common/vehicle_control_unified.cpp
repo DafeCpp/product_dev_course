@@ -68,8 +68,11 @@ bool VehicleControlUnified::StartComOffsetCalibration(
     float target_accel_g, float steering_magnitude, float cruise_duration_sec) {
   if (!stab_mgr_ || !imu_enabled_) return false;
   const auto& calib_data = imu_calib_.GetData();
+  // Цикл подаёт в калибровку ax/ay, уже скорректированные текущим offset
+  // (CorrectImuForComOffset) — калибровке нужно знать, каким (LOS-379).
   return auto_drive_.StartComCalib(target_accel_g, steering_magnitude,
-                                   cruise_duration_sec, calib_data.gravity_vec);
+                                   cruise_duration_sec, calib_data.gravity_vec,
+                                   calib_data.com_offset);
 }
 
 bool VehicleControlUnified::StartTest(const TestParams& params) {

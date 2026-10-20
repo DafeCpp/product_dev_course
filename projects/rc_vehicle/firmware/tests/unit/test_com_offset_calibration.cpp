@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "com_offset_calibration.hpp"
+#include "imu_calibration.hpp"
 
 namespace rc_vehicle {
 namespace {
@@ -257,6 +258,64 @@ TEST_F(ComOffsetCalibrationTest, KnownOffsetYRecovered) {
   EXPECT_TRUE(result.valid);
   EXPECT_NEAR(result.rx, 0.0f, 0.005f);
   EXPECT_NEAR(result.ry, ry_true, 0.005f);
+}
+
+TEST_F(ComOffsetCalibrationTest, RecalibrationOnCorrectedDataGivesTotal) {
+  // В цикле калибровка видит ax/ay после CorrectForComOffset текущим offset.
+  // Зная его (applied_offset), повторная калибровка поверх неточного offset
+  // возвращает полный истинный offset, а не остаток (LOS-379).
+  const float omega_dps = 50.0f;
+  const float omega_rad = omega_dps * kDegToRad;
+  const float omega_sq = omega_rad * omega_rad;
+  const float rx_true = 0.05f;
+  const float ry_true = -0.03f;
+  // Сырые данные на установившемся круге (α = 0): a = −ω²·r / g.
+  const float raw_ax = -(omega_sq * rx_true) / kGravity;
+  const float raw_ay = -(omega_sq * ry_true) / kGravity;
+
+  ImuCalibration imu_calib;
+  auto data = imu_calib.GetData();
+  data.com_offset[0] = 0.04f;  // первая калибровка ошиблась
+  data.com_offset[1] = -0.01f;
+  imu_calib.SetData(data);
+
+  ImuData corrected{};
+  corrected.ax = raw_ax;
+  corrected.ay = raw_ay;
+  imu_calib.CorrectForComOffset(corrected, omega_rad, 0.0f);
+
+  calib.Start(0.1f, 0.5f, 5.0f, gravity_vec_, data.com_offset);
+  float thr = 0, str = 0;
+  for (int pass = 0; pass < 2; ++pass) {
+    RunAccelPhase(thr, str);
+    RunCruisePhase(corrected.ax, corrected.ay,
+                   pass == 0 ? omega_dps : -omega_dps, thr, str);
+    RunBrakePhase(thr, str);
+  }
+  const auto result = calib.GetResult();
+  ASSERT_TRUE(result.valid);
+  EXPECT_NEAR(result.rx, rx_true, 0.002f);
+  EXPECT_NEAR(result.ry, ry_true, 0.002f);
+}
+
+TEST_F(ComOffsetCalibrationTest, TotalOffsetOutOfRangeFails) {
+  // Остаток в пределах, но applied + остаток > kMaxOffsetM → Failed, а не
+  // «успех» с несохранённым значением.
+  const float omega_dps = 50.0f;
+  const float omega_rad = omega_dps * kDegToRad;
+  const float residual = 0.1f;
+  const float cal_ax = -(omega_rad * omega_rad * residual) / kGravity;
+  const float applied[2] = {0.25f, 0.0f};
+
+  calib.Start(0.1f, 0.5f, 5.0f, gravity_vec_, applied);
+  float thr = 0, str = 0;
+  for (int pass = 0; pass < 2; ++pass) {
+    RunAccelPhase(thr, str);
+    RunCruisePhase(cal_ax, 0.0f, pass == 0 ? omega_dps : -omega_dps, thr, str);
+    RunBrakePhase(thr, str);
+  }
+  EXPECT_FALSE(calib.GetResult().valid);
+  EXPECT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Failed);
 }
 
 TEST_F(ComOffsetCalibrationTest, GravitySubtracted) {
