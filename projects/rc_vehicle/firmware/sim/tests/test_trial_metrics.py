@@ -663,7 +663,8 @@ def test_esc_start_finds_first_moving_step(tmp_path):
 def test_esc_start_never_moving(tmp_path):
     log = _write_csv(tmp_path / "esc.csv", _staircase_log(start_at=1.0))
     assert tm.esc_start_threshold(log)["threshold"] is None
-    assert "не тронулась" in tm.check_esc_start(log)[0].value
+    res = tm.check_esc_start(log)[0]
+    assert res.passed is False and "не тронулась" in res.value
 
 
 def test_esc_start_ignores_imu_orientation_in_plane(tmp_path):
@@ -823,7 +824,7 @@ def test_rc_events_unrestored_and_double_loss(tmp_path):
         300: ("RcLost", "thr=no_pulses str=no_pulses", 0, 0)}))
     res = tm.check_rc_events(log)
     assert res[0].passed is False  # вторая потеря без восстановления
-    assert res[1].passed is None and "не восстановлена" in res[1].value
+    assert res[1].passed is False and "не восстановлена" in res[1].value
 
 
 def test_rc_events_split_coalesced_frame(tmp_path):

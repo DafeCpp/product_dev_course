@@ -574,7 +574,7 @@ def check_esc_start(rows: list[Row]) -> list[MetricResult]:
         return [MetricResult(name, False, str(exc), no_data=True)]
     steps = ", ".join(f"{v:.2f}→{p:+.3f} g" for v, p in r["steps"])
     if r["threshold"] is None:
-        return [MetricResult(name, None,
+        return [MetricResult(name, False,
                              f"не тронулась до газа {r['steps'][-1][0]:.2f} ({steps})")]
     return [MetricResult(name, None,
                          f"порог {r['threshold']:.2f} (прирост ускорения > "
@@ -791,7 +791,8 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
             f"{e['v1']:.2f} с, дребезг {e['v2']:.0f}"))
         lost = None
     if lost is not None:
-        out.append(MetricResult(f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", None,
+        # Восстановление и длительность потери не проверены — запись неполная.
+        out.append(MetricResult(f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", False,
                                 f"{lost['param']}, до конца лога не восстановлена"))
     out.append(MetricResult(f"{name}: всего потерь", None,
                             f"{n} — сверить с числом выключений пульта"))
