@@ -53,7 +53,9 @@ REQUIRED_COLUMNS = ["ts_ms", "throttle", "steering", "speed_ms"]
 EXPECTED_COLUMNS = FRAME_COLUMNS + EVENT_COLUMNS
 
 # Columns kept as raw strings (everything else is coerced to float/NaN).
-TEXT_COLUMNS = {"event_type", "event_param", "event_config"}
+# event_value* too: several events in one frame are joined with "|" in every
+# event column ("0|1500"), which float() would turn into NaN.
+TEXT_COLUMNS = set(EVENT_COLUMNS)
 
 # DriveMode enum (firmware/common/stabilization_config.hpp).
 DRIVE_MODE_NAMES = {

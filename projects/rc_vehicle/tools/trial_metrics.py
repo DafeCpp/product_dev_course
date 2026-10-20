@@ -720,19 +720,29 @@ def _num(v) -> float:
         return math.nan
 
 
+def _cell(v) -> str:
+    return "" if v is None else str(v)
+
+
 def rc_link_events(rows: list[Row]) -> list[dict]:
     """События RcLost/RcRestored из колонок `event_*` (выгрузка web UI)."""
     if not has_col(rows, "event_type"):
         raise ValueError("нет колонки event_type (UDP-запись событий не содержит)")
     out = []
     for r in rows:
-        ev = r.get("event_type")
-        if ev not in ("RcLost", "RcRestored"):
-            continue
-        out.append({"type": ev, "t_ms": _num(r.get("ts_ms")),
-                    "param": r.get("event_param") or "",
-                    "v1": _num(r.get("event_value1")),
-                    "v2": _num(r.get("event_value2"))})
+        # Несколько событий одного кадра web UI склеивает через «|» по всем
+        # колонкам event_* (mergeFrameEvent в app.js) — разбираем по позициям.
+        types = _cell(r.get("event_type")).split("|")
+        params = _cell(r.get("event_param")).split("|")
+        v1s = _cell(r.get("event_value1")).split("|")
+        v2s = _cell(r.get("event_value2")).split("|")
+        for i, ev in enumerate(types):
+            if ev not in ("RcLost", "RcRestored"):
+                continue
+            out.append({"type": ev, "t_ms": _num(r.get("ts_ms")),
+                        "param": params[i] if i < len(params) else "",
+                        "v1": _num(v1s[i] if i < len(v1s) else None),
+                        "v2": _num(v2s[i] if i < len(v2s) else None)})
     return out
 
 
@@ -760,8 +770,12 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
                 out.append(MetricResult(f"{name}: RcRestored (t={e['t_ms']:.0f} мс)",
                                         False, "без предшествующей RcLost"))
             continue
+        # Протокол 2.5 требует причину, ширины импульсов и длительность
+        # потери: неполная диагностика — провал, а не «nan».
+        complete = bool(lost["param"]) and not any(
+            math.isnan(x) for x in (lost["v1"], lost["v2"], e["v1"], e["v2"]))
         out.append(MetricResult(
-            f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", True,
+            f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", complete,
             f"{lost['param'] or 'причина не указана'}, импульсы thr/str "
             f"{lost['v1']:.0f}/{lost['v2']:.0f} мкс; восстановлена через "
             f"{e['v1']:.2f} с, дребезг {e['v2']:.0f}"))
