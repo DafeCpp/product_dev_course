@@ -116,13 +116,34 @@ class UserRoleRepository(BaseRepository):
         )
         return result == "DELETE 1"
 
+    # Both whole-member operations take this per-member lock, so a removal and
+    # a replacement (or two replacements) for the same member never interleave.
+    _MEMBER_LOCK_SQL = (
+        "SELECT pg_advisory_xact_lock("
+        "hashtextextended($1::uuid::text || ':' || $2::uuid::text, 0))"
+    )
+    _ACTIVE_ROLES_SQL = (
+        "SELECT user_id, project_id, role_id, granted_by, granted_at, expires_at "
+        "FROM user_project_roles "
+        "WHERE user_id = $1 AND project_id = $2 "
+        "AND (expires_at IS NULL OR expires_at > now())"
+    )
+
     async def revoke_all_project_roles(self, user_id: UUID, project_id: UUID) -> int:
-        """Revoke every project role of a user. Returns the number of rows deleted."""
-        result = await self._execute(
-            "DELETE FROM user_project_roles WHERE user_id = $1 AND project_id = $2",
-            user_id, project_id,
-        )
-        return int(result.split()[-1])
+        """Revoke every project role of a user.
+
+        Returns the number of active roles revoked; 0 means the user was not
+        a member (stale expired rows are deleted as well).
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(self._MEMBER_LOCK_SQL, user_id, project_id)
+                active = await conn.fetch(self._ACTIVE_ROLES_SQL, user_id, project_id)
+                await conn.execute(
+                    "DELETE FROM user_project_roles WHERE user_id = $1 AND project_id = $2",
+                    user_id, project_id,
+                )
+        return len(active)
 
     async def replace_project_roles(
         self,
@@ -130,16 +151,25 @@ class UserRoleRepository(BaseRepository):
         project_id: UUID,
         role_id: UUID,
         granted_by: UUID,
-    ) -> UserProjectRole:
-        """Replace all project roles of a user with a single role, atomically."""
+    ) -> tuple[UserProjectRole, list[UUID]] | None:
+        """Replace all project roles of a user with a single role, atomically.
+
+        Returns the resulting assignment and the previously active role ids,
+        or None if the user has no active role in the project. If the only
+        active role already is ``role_id`` nothing is changed.
+        """
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                # Serialize concurrent replacements for the same member, otherwise
-                # two requests could each delete the other's role and keep both.
-                await conn.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text || ':' || $2::uuid::text, 0))",
-                    user_id, project_id,
-                )
+                await conn.execute(self._MEMBER_LOCK_SQL, user_id, project_id)
+                active = [
+                    UserProjectRole.from_row(dict(r))
+                    for r in await conn.fetch(self._ACTIVE_ROLES_SQL, user_id, project_id)
+                ]
+                if not active:
+                    return None
+                old_role_ids = [r.role_id for r in active]
+                if len(active) == 1 and active[0].role_id == role_id and active[0].expires_at is None:
+                    return active[0], old_role_ids
                 await conn.execute(
                     "DELETE FROM user_project_roles "
                     "WHERE user_id = $1 AND project_id = $2 AND role_id <> $3",
@@ -154,7 +184,7 @@ class UserRoleRepository(BaseRepository):
                     user_id, project_id, role_id, granted_by,
                 )
         assert row is not None
-        return UserProjectRole.from_row(dict(row))
+        return UserProjectRole.from_row(dict(row)), old_role_ids
 
     async def list_project_roles(
         self, user_id: UUID, project_id: UUID,

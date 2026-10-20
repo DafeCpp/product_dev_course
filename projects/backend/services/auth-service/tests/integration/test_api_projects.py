@@ -650,3 +650,47 @@ async def test_concurrent_role_replacements_leave_one_role(service_client, datab
     finally:
         await conn.close()
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_member_without_role_expired_member_not_found(service_client, database_url):
+    import asyncpg
+
+    headers, project_id, _owner_id, member_id = await _project_with_member(service_client, "rmexp")
+    conn = await asyncpg.connect(database_url)
+    try:
+        await conn.execute(
+            "UPDATE user_project_roles SET expires_at = now() - interval '1 day' "
+            "WHERE user_id = $1::uuid AND project_id = $2::uuid",
+            member_id, project_id,
+        )
+    finally:
+        await conn.close()
+
+    response = await service_client.delete(
+        f"/projects/{project_id}/members/{member_id}", headers=headers,
+    )
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_concurrent_remove_and_replace_never_keep_removed_member(service_client):
+    import asyncio
+
+    for attempt in range(5):
+        headers, project_id, _owner_id, member_id = await _project_with_member(
+            service_client, f"rmrace{attempt}", member_roles=(VIEWER_ROLE, EDITOR_ROLE),
+        )
+        remove, replace = await asyncio.gather(
+            service_client.delete(f"/projects/{project_id}/members/{member_id}", headers=headers),
+            service_client.put(
+                f"/projects/{project_id}/members/{member_id}/role",
+                headers=headers,
+                json={"role": "viewer"},
+            ),
+        )
+        # The member existed, so removal always succeeds; a replacement that
+        # ran after it must see no member (404) and must not re-add the role.
+        assert remove.status == 200
+        assert replace.status in (200, 404)
+        assert await _member_roles(service_client, headers, project_id, member_id) is None
