@@ -22,7 +22,7 @@
 
 ## Подготовка
 
-1. Прошить `develop`: `make rc-build && make rc-flash`; serial — `make rc-monitor`.
+1. Прошить `develop` (из `projects/rc_vehicle/`): `make build && make flash`; serial — `make monitor`.
 2. Ноутбук в AP машины, web UI открыт, WebSocket `Подключено`.
 3. **Лог.** Основной — кольцевой буфер PSRAM 100 Гц (кадр 132 байта, события
    в тех же строках). Перед каждой записью «Очистить», после — кнопка CSV
@@ -32,7 +32,7 @@
 4. **UDP-запись (`tools/udp_telem.py`) пока не использовать для разбора**:
    скрипт ждёт старый кадр на 80 байт, в CSV не попадают `drive_mode`, `rc_ok`,
    `wifi_ok`, `failsafe_active`, `kids_*`, `cmd_*`, `test_marker`. На нём верны
-   только `gyro-bias` и `ekf-dist`.
+   только `gyro-bias`, `ekf-dist` и `yaw-step` в Normal.
 5. Две батареи: полная и ~50 % (пункт 4.2).
 6. Площадки: стол/подставка, ровно 5×5 м, скользкое (плитка, линолеум),
    уклон 10–15°, мерная лента 5–10 м.
@@ -76,12 +76,15 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
-| 2.1 | Потеря RC и Wi-Fi (TP Ф0, IC D1#10, D4#3) | моторы в нейтрали **≤ 250 мс** | PSRAM: `rc_ok, wifi_ok, failsafe_active, throttle, steering`; serial `Failsafe active` | `trial_metrics.py loss.csv --only failsafe` | `test_testing_program_scenarios.py::test_rc_loss_neutral_within_250_ms_and_recovers`, `::test_wifi_loss_neutral_within_250_ms` | [ ] ___ мс |
+| 2.1 | Потеря RC и Wi-Fi (TP Ф0, IC D1#10, D4#3) | моторы в нейтрали **≤ 250 мс** | PSRAM: `rc_ok, wifi_ok, failsafe_active, throttle, steering` (буфер переживает закрытие браузера — CSV скачать после) | `trial_metrics.py loss.csv --only failsafe` | `test_testing_program_scenarios.py::test_rc_loss_neutral_within_250_ms_and_recovers`, `::test_wifi_loss_neutral_within_250_ms` | [ ] ___ мс |
 | 2.2 | Восстановление (IC D1#11) | failsafe снят, управление вернулось | тот же | тот же | тот же rc_loss (≤ 60 мс) | [ ] |
 | 2.3 | То же в Kids (LOS-171) | как 2.1 | тот же | тот же | — | [ ] ___ мс |
-| 2.4 | Пауза Wi-Fi меньше таймаута | при паузе команд 80–160 мс failsafe не срабатывает | PSRAM | `trial_metrics.py --only failsafe` | `::test_wifi_command_gap_does_not_trip_failsafe_below_timeout` | [ ] |
-| 2.5 | Приоритет RC над Wi-Fi (IC D4#1–2, LOS-162) | RC перехватывает управление без рывка; без RC ведёт Wi-Fi, failsafe нет | PSRAM `throttle, steering, rc_ok` | вручную по графику | — | [ ] |
-| 2.6 | Видимость потерь RC (**LOS-216**): выключить пульт, вынуть приёмник, держать стик у упора в Kids | каждое выключение → одно событие `RcLost` (21) с причиной и шириной импульса, `RcRestored` (22) с длительностью; `RC Losses` в UI +1; serial `RC LOST` / `RC restored`. Стик у упора — потерь нет, `rc_throttle/rc_steering` не нулевые | PSRAM (колонки `event_*`), serial | вручную по `event_type` | `test_rc_link.py::test_receiver_dropout_reported_with_cause_and_duration`, `::test_stick_at_end_stop_keeps_rc_in_kids_mode`, `::test_out_of_range_pulses_reported_with_width` | [ ] |
+| 2.4 | Приоритет RC над Wi-Fi (IC D4#1–2, LOS-162) | RC перехватывает управление без рывка; без RC ведёт Wi-Fi, failsafe нет | PSRAM `throttle, steering, rc_ok` | вручную по графику | — | [ ] |
+| 2.5 | Видимость потерь RC (**LOS-216**): выключить пульт, вынуть приёмник, держать стик у упора в Kids | каждое выключение → одно событие `RcLost` (21) с причиной и шириной импульса, `RcRestored` (22) с длительностью; `RC Losses` в UI +1; serial `RC LOST` / `RC restored`. Стик у упора — потерь нет, `rc_throttle/rc_steering` не нулевые | PSRAM (колонки `event_*`), serial | вручную по `event_type` | `test_rc_link.py::test_receiver_dropout_reported_with_cause_and_duration`, `::test_stick_at_end_stop_keeps_rc_in_kids_mode`, `::test_out_of_range_pulses_reported_with_width` | [ ] |
+
+Пауза Wi-Fi короче таймаута (80–160 мс без failsafe) на железе не задаётся —
+UI шлёт команды каждые 20 мс, инструмента для паузы заданной длины нет.
+Проверяется только SIL: `::test_wifi_command_gap_does_not_trip_failsafe_below_timeout`.
 
 ## 3. Покой (стол, без вибраций)
 
@@ -92,14 +95,14 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 | 3.1 | Дрейф bias gyro (TP Ф0) | < 0.5 °/с за минуту (порог ориентировочный, уточнить по этой записи) | PSRAM 8 мин | `trial_metrics.py rest.csv --only gyro-bias` | `test_trial_metrics.py::test_gyro_bias_on_sil_rest_log` | [ ] ___ °/с/мин |
 | 3.2 | Madgwick без дрейфа (RM Ф0) | pitch/roll < 1 °/мин, std < 1° | тот же | `gyro-bias` + `analyze_telemetry.py` | — | [ ] |
 | 3.3 | EKF и ZUPT в покое (IC D1#9, D5#3–4, 7) | \|vx\|, \|vy\| < 0.05 м/с; \|slip\| < 1°; std(gz) < 2 dps; \|a\| в [0.95, 1.05] g | тот же | `analyze_telemetry.py` (его порог ZUPT 0.1 мягче — смотреть 0.05) | `test_plausibility.py::test_coast_without_command_stays_stopped` | [ ] |
-| 3.4 | Baseline шумов (TP Ф0) | записан; PASS нет | тот же | `validate_logs.py --fit-road-noise --road-logs rest.csv` | — | [ ] |
+| 3.4 | Baseline шумов (TP Ф0) | записан; PASS нет | тот же | `analyze_telemetry.py` (std по осям); подгонка шумовой модели — только по логам с движением, см. 7.8 | — | [ ] |
 
 ## 4. ESC и мёртвая зона (подставка → пол)
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
 | 4.1 | Поведение ESC (IC D3#1–7) | таблица наблюдений заполнена (coast/brake, прямой реверс, пауза через нейтраль 300 мс / 1 с, тормозной газ) | — | — | — | [ ] |
-| 4.2 | Минимальный газ старта (LOS-169) на полной и ~50 % батарее | найден порог: газ ступенями 0.02 → 0.20 через 0.01, по 2 с; порог — первая ступень с `speed_ms` > 0.1 | PSRAM `throttle, cmd_throttle, speed_ms, ax` | вручную (скрипта нет) | `test_vehicle_model.py::test_deadzone_no_motion` (в SIL `motor_deadzone` = 0.05 — допущение, заменить измерением) | [ ] ___ / ___ |
+| 4.2 | Минимальный газ старта (LOS-169) на полной и ~50 % батарее | найден порог: газ ступенями 0.02 → 0.20 через 0.01, по 2 с; порог — первая ступень, на которой машина трогается (видно глазом, `ax` > 0.03 g). **Мотор-модель на время теста выключить** (`motor_model_enabled` = false, после — вернуть): иначе EKF подставляет её скорость и `speed_ms` растёт и без движения | PSRAM `throttle, cmd_throttle, ax, gx..gz`; видео | вручную (скрипта нет) | `test_vehicle_model.py::test_deadzone_no_motion` (в SIL `motor_deadzone` = 0.05 — допущение, заменить измерением) | [ ] ___ / ___ |
 
 ## 5. IMU SPI выше 500 кГц (стенд, LOS-255)
 
@@ -121,12 +124,14 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 
 ## 7. Полевые испытания
 
-Перед этапом: батарея полная, площадка 5×5 м, пульт RC для 7.1.
+Перед этапом: батарея полная, площадка 5×5 м, пульт RC для 7.1. 7.0 — в DirectLaw;
+для 7.1–7.4 **включить стабилизацию** (по умолчанию выключена; в логе `stab_enabled` = 1),
+иначе PID не работает и 7.1 даст ложный FAIL.
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
 | 7.0 | Базовое движение (TP Ф1, IC D2): прямая 5 м на 30 % (DirectLaw), стоп, задний ход, повороты на месте | прямо: vx > 0, vy ≈ 0, курс не уходит; стоп: ZUPT vx → 0 за 1 с; назад: vx < 0, slip ≈ 0; на месте: yaw_rate гироскопа совпадает по знаку с рулём | PSRAM | `analyze_telemetry.py` | `test_plausibility.py`, `test_scenario_replay.py::test_marked_straight_does_not_drift`, `test_closed_loop.py::test_step_steer_turns_symmetric` | [ ] |
-| 7.1 | Yaw-rate PID, шаг руля 0.3–0.5 на газе 0.4 (TP Ф4; **LOS-366** Normal, **LOS-371** Sport) | **overshoot < 20 %, settling < 200 мс** (полоса ±10 %), без раскачки | PSRAM, **управление с пульта** (по Wi-Fi `rc_steering` не пишется) | Normal: `trial_metrics.py run.csv --only yaw-step`; Sport: `... --gain-dps 120` | `test_testing_program_scenarios.py::test_yaw_rate_step_overshoot_under_20pct[normal\|sport]`, `::test_yaw_rate_step_settles_within_200_ms`, `::test_yaw_rate_step_no_limit_cycle` (SIL: Normal ≤ 7 % / 188 мс, Sport ≤ 2 % / 176 мс) | [ ] N ___ / ___ · S ___ / ___ |
+| 7.1 | Yaw-rate PID, шаг руля 0.3–0.5 на газе 0.4 (TP Ф4; **LOS-366** Normal, **LOS-371** Sport) | **overshoot < 20 %, settling < 200 мс** (полоса ±10 %), без раскачки | PSRAM, **управление с пульта** (по Wi-Fi `rc_steering` не пишется) | Normal: `trial_metrics.py run.csv --only yaw-step`; Sport: `... --gain-dps 120` | `test_testing_program_scenarios.py -k "yaw_rate_step and normal"` / `-k "yaw_rate_step and sport"` (overshoot, settling, без limit cycle; SIL: Normal ≤ 7.3 % / 188 мс, Sport ≤ 2 % / 150 мс) | [ ] N ___ / ___ · S ___ / ___ |
 | 7.2 | Склон 10–15°, pitch comp (TP Ф4; **LOS-369 п. 2**): заезд вверх и вниз с компенсацией и без | при том же стике (`rc_throttle`) `cmd_throttle` (команда после стабилизации) с комп. выше, чем без, больше чем на 0.05, и скорость выше; вниз: `cmd_throttle` меньше; на ровном разница < 0.02 | PSRAM `pitch_deg, rc_throttle, cmd_throttle, speed_ms`, управление с пульта | вручную (скрипта нет) | `::test_pitch_comp_adds_throttle_uphill`, `::test_pitch_comp_cuts_throttle_downhill`, `::test_pitch_comp_idle_on_flat`, `::test_pitch_comp_no_feedback_from_flat_acceleration` | [ ] |
 | 7.3 | Oversteer guard, Normal: резкий газ в повороте (TP Ф4) | `oversteer_active` = 1 во время заноса, газ ниже команды, max \|slip\| меньше, чем при reduction = 0 | PSRAM `oversteer_active, slip_deg, yaw_rate_dps, throttle, cmd_throttle` | вручную | `::test_oversteer_guard_cuts_throttle_and_slip`, `test_scenario_replay.py::test_recorded_oversteer_episode_triggers_guard` | [ ] |
 | 7.4 | Drift, slip-angle PID на скользком (TP Ф4, RM Ф3), `target_deg` 15° | устойчивый управляемый занос около уставки; угол сверить с видео сверху (EKF на скользком сильно занижает slip, LOS-370) | PSRAM `slip_deg, yaw_rate_dps, vx, vy`; видео | вручную | `::test_drift_slip_target_shifts_throttle_correction` (только знак) | [ ] |
@@ -138,11 +143,13 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 | 7.6 | Калибровка rx/ry CoM по кругу (TP Ф2): web UI «калибровка CoM», CW и CCW, площадка ≥ 3×3 м | калибровка `valid`; \|rx\|, \|ry\| ≤ 0.3 м; на круге после коррекции slip ближе к нулю, чем до | PSRAM до и после (`ax, ay, gz, slip_deg`), `get_com_offset_status` | вручную | — (GTest `test_com_offset_calibration.cpp`) | [ ] rx ___ ry ___ |
 | 7.7 | Madgwick β = 0.05 / 0.1 / 0.2 (TP Ф3) | минимальный β, при котором pitch/roll успевают за манёвром (нет запаздывания на склоне и в повороте) | PSRAM на каждый β | вручную | — | [ ] β = ___ |
 | 7.8 | LPF cutoff, грунт против асфальта (TP Ф3), default 30 Гц | вибрация подвески в gz подавлена, шаг yaw rate (7.1) не хуже | PSRAM | спектр gz; `validate_logs.py --fit-road-noise` | — | [ ] ___ Гц |
-| 7.9 | EKF против мерной ленты 5–10 м (TP Ф3) | дистанция по `speed_ms` в пределах ±5 % | PSRAM, `test_marker` на старте и финише | `trial_metrics.py run.csv --only ekf-dist --distance-m 5.0 [--from-ms --to-ms]` | `test_trial_metrics.py::test_ekf_distance_error` | [ ] ___ % |
+| 7.9 | EKF против мерной ленты 5–10 м (TP Ф3) | дистанция по `speed_ms` в пределах ±5 % | PSRAM; старт и финиш из покоя, участок `--from-ms/--to-ms` — от роста `speed_ms` до возврата к 0 | `trial_metrics.py run.csv --only ekf-dist --distance-m 5.0 [--from-ms --to-ms]` | `test_trial_metrics.py::test_ekf_distance_error` | [ ] ___ % |
 
 Oversteer guard в Normal **по умолчанию выключен** (`warn_enabled=false`,
 `throttle_reduction=0`). Перед 7.3 включить его в web UI и задать reduction,
-например 0.7 как в Kids, иначе тест ничего не проверит. Пункт IC D1#15 до этого
+например 0.7 как в Kids, иначе тест ничего не проверит. Пороги Normal
+(slip 20°, rate 50 °/с) выше, чем в SIL-тесте (5°, 10 °/с), а EKF занижает slip
+в заносе — снизить их, иначе `oversteer_active` может не включиться вовсе. Пункт IC D1#15 до этого
 проходит тривиально.
 
 ---
@@ -152,11 +159,11 @@ Oversteer guard в Normal **по умолчанию выключен** (`warn_en
 | Этап | PASS / всего | Блокеры |
 |---|---|---|
 | 1. Bring-up | ___ / 11 | |
-| 2. Связь и failsafe | ___ / 6 | |
+| 2. Связь и failsafe | ___ / 5 | |
 | 3. Покой | ___ / 4 | |
 | 4. ESC | ___ / 2 | |
 | 5. SPI | ___ / 1 | |
-| 7. Полевые | ___ / 15 | |
+| 7. Полевые | ___ / 14 | |
 
 После сессии: логи — в задачи, подтверждённые пункты закрыть (LOS-216, 227,
 255, 366, 369, 371), пороги 3.1 и 4.2 обновить в SIL и в этом документе.

@@ -16,7 +16,7 @@ SIL-эталонами): [`hardware_test_protocol.md`](hardware_test_protocol.md
 
 ## Необходимо
 
-- ESP32-S3 с прошивкой (`make rc-build && make rc-flash`)
+- ESP32-S3 с прошивкой (`make build && make flash` из `projects/rc_vehicle/`)
 - Смартфон/ноутбук с браузером
 - Ровная поверхность (стол, пол)
 - RC-пульт (опционально, для тестов переключения)
@@ -29,14 +29,14 @@ SIL-эталонами): [`hardware_test_protocol.md`](hardware_test_protocol.md
 |---|------|----------|---------------|-----------|---------|
 | 1 | WiFi подключение | Подключиться к AP машины, открыть web UI | WebSocket: `Подключено` | [ ] PASS / [ ] FAIL | |
 | 2 | Self-test | Нажать `Запустить Self-Test` в UI | Все 10 проверок зелёные | [ ] PASS / [ ] FAIL | |
-| 3 | Serial диагностика | `make rc-monitor`, подождать 5 сек | `DIAG: loop=500 Hz` в выводе | [ ] PASS / [ ] FAIL | loop=___ Hz |
+| 3 | Serial диагностика | `make monitor`, подождать 5 сек | `DIAG: loop=500 Hz` в выводе | [ ] PASS / [ ] FAIL | loop=___ Hz |
 | 4 | Калибровка gyro | Кнопка `Гироскоп`, не трогать 2 сек | status=done, bias < 5 dps | [ ] PASS / [ ] FAIL | bias=___ dps |
 | 5 | Калибровка full | Кнопка `Полная`, не трогать 2 сек | status=done, g-vector ~ [0,0,1] | [ ] PASS / [ ] FAIL | g=[___, ___, ___] |
 | 6 | Наклон pitch | Поднять нос на ~30° | pitch ~ −30° в телеметрии (нос вверх в прошивке отрицательный, LOS-369) | [ ] PASS / [ ] FAIL | pitch=___° |
 | 7 | Наклон roll | Наклонить набок ~30° | roll ~ 30° в телеметрии | [ ] PASS / [ ] FAIL | roll=___° |
 | 8 | Yaw вращение | Повернуть машину на ~90° | yaw изменился на ~90° | [ ] PASS / [ ] FAIL | delta_yaw=___° |
 | 9 | EKF покой | На столе, не трогать 10 сек | vx < 0.05, vy < 0.05 | [ ] PASS / [ ] FAIL | vx=___, vy=___ |
-| 10 | Failsafe | Закрыть браузер, смотреть serial | `Failsafe active` в течение ≤ 250 мс | [ ] PASS / [ ] FAIL | время=___ мс |
+| 10 | Failsafe | «Очистить» лог, закрыть браузер, через 5 с открыть и скачать CSV | `trial_metrics.py log.csv --only failsafe`: ≤ 250 мс | [ ] PASS / [ ] FAIL | время=___ мс |
 | 11 | Восстановление | Снова открыть браузер | Failsafe → Inactive, управление работает | [ ] PASS / [ ] FAIL | |
 | 12 | Kids mode | Переключить preset Toddler | `throttle_limit: 0.15` в телеметрии | [ ] PASS / [ ] FAIL | throttle_limit=___ |
 | 13 | Газ в воздухе | Slider газ = 0.3 | Колёса крутятся (визуально) | [ ] PASS / [ ] FAIL | |
@@ -72,7 +72,7 @@ SIL-эталонами): [`hardware_test_protocol.md`](hardware_test_protocol.md
 **Цель:** определить поведение конкретного ESC при торможении и реверсе — это необходимо
 для реализации активного торможения в прошивке.
 
-**Подготовка:** serial monitor (`make rc-monitor`), web UI открыт. Машина на столе, колёса свободны.
+**Подготовка:** serial monitor (`make monitor`), web UI открыт. Машина на столе, колёса свободны.
 
 | # | Тест | Действие | Что записать | Результат |
 |---|------|----------|--------------|-----------|
