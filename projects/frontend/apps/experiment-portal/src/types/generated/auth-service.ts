@@ -188,7 +188,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove member from project */
+        /**
+         * Remove member from project
+         * @description Without `role_id` the user loses every role in the project (leaves it). With `role_id` only that role is revoked. The project owner cannot be removed.
+         */
         delete: operations["removeProjectMember"];
         options?: never;
         head?: never;
@@ -203,7 +206,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update member role */
+        /**
+         * Update member role
+         * @description Without `old_role` all of the member's roles are replaced by the new role in one transaction; setting the role the member already has is a no-op. With `old_role` only that role is swapped. The project owner's role cannot be changed.
+         */
         put: operations["updateProjectMemberRole"];
         post?: never;
         delete?: never;
@@ -1137,7 +1143,10 @@ export interface operations {
     };
     removeProjectMember: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Revoke only this role instead of removing the member entirely. */
+                role_id?: string;
+            };
             header?: never;
             path: {
                 /** @description Project UUID */
@@ -1207,9 +1216,9 @@ export interface operations {
     };
     updateProjectMemberRole: {
         parameters: {
-            query: {
+            query?: {
                 /** @description Role being replaced, as a role name or role UUID (alias query parameter `old_role_id`). */
-                old_role: string;
+                old_role?: string;
             };
             header?: never;
             path: {

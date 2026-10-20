@@ -116,6 +116,119 @@ class UserRoleRepository(BaseRepository):
         )
         return result == "DELETE 1"
 
+    # Both whole-member operations take this per-member lock, so a removal and
+    # a replacement (or two replacements) for the same member never interleave.
+    _MEMBER_LOCK_SQL = (
+        "SELECT pg_advisory_xact_lock("
+        "hashtextextended($1::uuid::text || ':' || $2::uuid::text, 0))"
+    )
+    _ACTIVE_ROLES_SQL = (
+        "SELECT user_id, project_id, role_id, granted_by, granted_at, expires_at "
+        "FROM user_project_roles "
+        "WHERE user_id = $1 AND project_id = $2 "
+        # clock_timestamp(), not now(): the check runs after waiting on the member
+        # lock, and now() would still be the transaction start time.
+        "AND (expires_at IS NULL OR expires_at > clock_timestamp())"
+    )
+
+    async def revoke_all_project_roles(self, user_id: UUID, project_id: UUID) -> int:
+        """Revoke every project role of a user.
+
+        Returns the number of active roles revoked; 0 means the user was not
+        a member (stale expired rows are deleted as well).
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(self._MEMBER_LOCK_SQL, user_id, project_id)
+                active = await conn.fetch(self._ACTIVE_ROLES_SQL, user_id, project_id)
+                await conn.execute(
+                    "DELETE FROM user_project_roles WHERE user_id = $1 AND project_id = $2",
+                    user_id, project_id,
+                )
+        return len(active)
+
+    async def replace_project_roles(
+        self,
+        user_id: UUID,
+        project_id: UUID,
+        role_id: UUID,
+        granted_by: UUID,
+    ) -> tuple[UserProjectRole, list[UUID]] | None:
+        """Replace all project roles of a user with a single role, atomically.
+
+        Returns the resulting assignment and the previously active role ids,
+        or None if the user has no active role in the project. If the only
+        active role already is ``role_id`` nothing is changed.
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(self._MEMBER_LOCK_SQL, user_id, project_id)
+                active = [
+                    UserProjectRole.from_row(dict(r))
+                    for r in await conn.fetch(self._ACTIVE_ROLES_SQL, user_id, project_id)
+                ]
+                if not active:
+                    return None
+                old_role_ids = [r.role_id for r in active]
+                if old_role_ids == [role_id]:
+                    return active[0], old_role_ids
+                await conn.execute(
+                    "DELETE FROM user_project_roles "
+                    "WHERE user_id = $1 AND project_id = $2 AND role_id <> $3",
+                    user_id, project_id, role_id,
+                )
+                row = await conn.fetchrow(
+                    "INSERT INTO user_project_roles (user_id, project_id, role_id, granted_by) "
+                    "VALUES ($1, $2, $3, $4) "
+                    "ON CONFLICT (user_id, project_id, role_id) DO UPDATE "
+                    "SET granted_by = EXCLUDED.granted_by, granted_at = now(), expires_at = NULL "
+                    "RETURNING user_id, project_id, role_id, granted_by, granted_at, expires_at",
+                    user_id, project_id, role_id, granted_by,
+                )
+        assert row is not None
+        return UserProjectRole.from_row(dict(row)), old_role_ids
+
+    async def swap_project_role(
+        self,
+        user_id: UUID,
+        project_id: UUID,
+        old_role_id: UUID,
+        new_role_id: UUID,
+        granted_by: UUID,
+    ) -> UserProjectRole | None:
+        """Swap one project role of a member for another, atomically.
+
+        Returns None if the user does not actively hold ``old_role_id`` in the
+        project. Swapping a role for itself leaves the assignment untouched.
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(self._MEMBER_LOCK_SQL, user_id, project_id)
+                active = {
+                    r["role_id"]: r
+                    for r in await conn.fetch(self._ACTIVE_ROLES_SQL, user_id, project_id)
+                }
+                # Not a member, or the role being swapped is not held
+                if old_role_id not in active:
+                    return None
+                if old_role_id == new_role_id:
+                    return UserProjectRole.from_row(dict(active[new_role_id]))
+                row = await conn.fetchrow(
+                    "INSERT INTO user_project_roles (user_id, project_id, role_id, granted_by) "
+                    "VALUES ($1, $2, $3, $4) "
+                    "ON CONFLICT (user_id, project_id, role_id) DO UPDATE "
+                    "SET granted_by = EXCLUDED.granted_by, granted_at = now(), expires_at = NULL "
+                    "RETURNING user_id, project_id, role_id, granted_by, granted_at, expires_at",
+                    user_id, project_id, new_role_id, granted_by,
+                )
+                await conn.execute(
+                    "DELETE FROM user_project_roles "
+                    "WHERE user_id = $1 AND project_id = $2 AND role_id = $3",
+                    user_id, project_id, old_role_id,
+                )
+        assert row is not None
+        return UserProjectRole.from_row(dict(row))
+
     async def list_project_roles(
         self, user_id: UUID, project_id: UUID,
     ) -> list[UserProjectRole]:
