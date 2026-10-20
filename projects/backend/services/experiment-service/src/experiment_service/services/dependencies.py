@@ -24,6 +24,7 @@ from experiment_service.repositories.artifacts import ArtifactRepository
 from experiment_service.repositories.backfill_tasks import BackfillTaskRepository
 from experiment_service.repositories.webhooks import WebhookDeliveryRepository, WebhookSubscriptionRepository
 from experiment_service.repositories.idempotency import IdempotencyRepository
+from experiment_service.repositories.sensor_project_requests import SensorProjectRequestRepository
 from experiment_service.services import (
     CaptureSessionService,
     CaptureSessionEventService,
@@ -39,6 +40,7 @@ from experiment_service.services import (
 from experiment_service.services.artifacts import ArtifactService
 from experiment_service.services.backfill import BackfillService
 from experiment_service.services.idempotency import IdempotencyService
+from experiment_service.services.sensor_project_requests import SensorProjectRequestService
 
 TService = TypeVar("TService")
 
@@ -50,6 +52,7 @@ _CAPTURE_EVENT_SERVICE_KEY = "capture_session_event_service"
 _WEBHOOK_SERVICE_KEY = "webhook_service"
 _IDEMPOTENCY_SERVICE_KEY = "idempotency_service"
 _SENSOR_SERVICE_KEY = "sensor_service"
+_SENSOR_PROJECT_REQUEST_SERVICE_KEY = "sensor_project_request_service"
 _PROFILE_SERVICE_KEY = "conversion_profile_service"
 _TELEMETRY_SERVICE_KEY = "telemetry_service"
 _METRICS_SERVICE_KEY = "metrics_service"
@@ -267,6 +270,16 @@ async def get_sensor_service(request: web.Request) -> SensorService:
         return SensorService(sensor_repo, profile_repo)
 
     return await _get_or_create_service(request, _SENSOR_SERVICE_KEY, builder)
+
+
+async def get_sensor_project_request_service(request: web.Request) -> SensorProjectRequestService:
+    async def builder(_: web.Request) -> SensorProjectRequestService:
+        pool = await get_pool()
+        return SensorProjectRequestService(
+            SensorProjectRequestRepository(pool), SensorRepository(pool)
+        )
+
+    return await _get_or_create_service(request, _SENSOR_PROJECT_REQUEST_SERVICE_KEY, builder)
 
 
 async def get_conversion_profile_service(request: web.Request) -> ConversionProfileService:

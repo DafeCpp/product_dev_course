@@ -104,6 +104,14 @@ paths:
     $ref: ./paths/sensors.yaml#/projects
   /api/v1/sensors/{sensor_id}/projects/{project_id}:
     $ref: ./paths/sensors.yaml#/projectItem
+  /api/v1/sensor-project-requests:
+    $ref: ./paths/sensors.yaml#/projectRequests
+  /api/v1/sensor-project-requests/{request_id}/approve:
+    $ref: ./paths/sensors.yaml#/projectRequestApprove
+  /api/v1/sensor-project-requests/{request_id}/reject:
+    $ref: ./paths/sensors.yaml#/projectRequestReject
+  /api/v1/sensor-project-requests/{request_id}/cancel:
+    $ref: ./paths/sensors.yaml#/projectRequestCancel
   /api/v1/sensors/{sensor_id}/backfill:
     $ref: ./paths/sensors.yaml#/backfill
   /api/v1/sensors/{sensor_id}/backfill/{task_id}:
@@ -277,6 +285,12 @@ components:
       $ref: ./components/schemas.yaml#/SensorProjectsResponse
     SensorProjectAddRequest:
       $ref: ./components/schemas.yaml#/SensorProjectAddRequest
+    SensorProjectRequestStatus:
+      $ref: ./components/schemas.yaml#/SensorProjectRequestStatus
+    SensorProjectRequest:
+      $ref: ./components/schemas.yaml#/SensorProjectRequest
+    SensorProjectRequestListResponse:
+      $ref: ./components/schemas.yaml#/SensorProjectRequestListResponse
     BackfillTaskStatus:
       $ref: ./components/schemas.yaml#/BackfillTaskStatus
     BackfillTask:

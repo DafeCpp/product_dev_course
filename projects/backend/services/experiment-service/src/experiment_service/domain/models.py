@@ -13,6 +13,7 @@ from experiment_service.domain.enums import (
     ConversionProfileStatus,
     ExperimentStatus,
     RunStatus,
+    SensorProjectRequestStatus,
     SensorStatus,
     TelemetryConversionStatus,
 )
@@ -94,6 +95,20 @@ class Sensor(BaseModel):
     connection_status: ConnectionStatus = ConnectionStatus.OFFLINE
     created_at: datetime
     updated_at: datetime
+
+
+class SensorProjectRequest(BaseModel):
+    id: UUID
+    sensor_id: UUID
+    project_id: UUID
+    requested_by: UUID
+    status: SensorProjectRequestStatus
+    decided_by: UUID | None = None
+    decided_in_project_id: UUID | None = None
+    created_at: datetime
+    decided_at: datetime | None = None
+    # Only filled for incoming requests, where the caller's project owns the sensor.
+    sensor_name: str | None = None
 
 
 class ConversionProfile(BaseModel):

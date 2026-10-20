@@ -13,6 +13,7 @@ from experiment_service.api.utils import (
     parse_uuid,
     read_json,
 )
+from backend_common.core.exceptions import ConflictError
 from experiment_service.core.exceptions import (
     IdempotencyConflictError,
     InvalidStatusTransitionError,
@@ -23,12 +24,13 @@ from experiment_service.domain.dto import (
     SensorCreateDTO,
     SensorUpdateDTO,
 )
-from experiment_service.domain.enums import SensorStatus
-from experiment_service.domain.models import Sensor
+from experiment_service.domain.enums import SensorProjectRequestStatus, SensorStatus
+from experiment_service.domain.models import Sensor, SensorProjectRequest
 from experiment_service.services.dependencies import (
     ensure_permission,
     ensure_project_context,
     get_idempotency_service,
+    get_sensor_project_request_service,
     get_sensor_service,
     require_current_user,
     resolve_project_id,
@@ -219,9 +221,18 @@ async def rotate_sensor_token(request: web.Request):
     return web.json_response({"sensor": _sensor_response(sensor), "token": token})
 
 
+def _request_response(item: SensorProjectRequest) -> dict:
+    return item.model_dump(mode="json")
+
+
 @routes.post("/api/v1/sensors/{sensor_id}/projects")
 async def add_sensor_project(request: web.Request):
-    """Add a sensor to a project."""
+    """Request to attach a sensor to the caller's project.
+
+    The sensor is attached only after a member of a project it already belongs
+    to approves the request, so knowing a sensor UUID is not enough to read
+    its telemetry.
+    """
     user = await require_current_user(request)
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     body = await read_json(request)
@@ -229,49 +240,103 @@ async def add_sensor_project(request: web.Request):
     if "project_id" not in body:
         raise web.HTTPBadRequest(text="project_id is required")
 
-    # Verify user has permission to add sensor to the target project
     project_id = resolve_project_id(user, body["project_id"])
     ensure_permission(user, "experiments.create")
 
-    # Verify sensor exists
-    # We don't require access to existing projects - if user has owner/editor role
-    # in the target project, they can add the sensor to it
-    service = await get_sensor_service(request)
+    service = await get_sensor_project_request_service(request)
     try:
-        # Just verify sensor exists by trying to get it
-        # We use get_by_id which doesn't require project_id
-        from experiment_service.repositories.sensors import SensorRepository
-        from backend_common.db.pool import get_pool_service as get_pool
-        pool = await get_pool()
-        repo = SensorRepository(pool)
-        await repo.get_by_id(sensor_id)
+        item = await service.request_attach(sensor_id, project_id, user.user_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
-
-    try:
-        await service.add_sensor_project(sensor_id, project_id)
-    except Exception as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
-
-    return web.Response(status=204)
+    except ConflictError as exc:
+        raise web.HTTPConflict(text=str(exc)) from exc
+    return web.json_response(_request_response(item), status=202)
 
 
 @routes.delete("/api/v1/sensors/{sensor_id}/projects/{project_id}")
 async def remove_sensor_project(request: web.Request):
-    """Remove a sensor from a project."""
+    """Remove a sensor from a project.
+
+    Allowed from that project itself or from the sensor's primary project.
+    """
     user = await require_current_user(request)
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
     project_id = parse_uuid(request.match_info["project_id"], "project_id")
+    caller_project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
 
     ensure_permission(user, "experiments.delete")
 
     service = await get_sensor_service(request)
+    if caller_project_id != project_id and not user.is_superadmin:
+        try:
+            sensor = await service.get_sensor(caller_project_id, sensor_id)
+        except NotFoundError as exc:
+            raise web.HTTPNotFound(text="Resource not found") from exc
+        if sensor.project_id != caller_project_id:
+            raise web.HTTPForbidden(text="Only the sensor's primary project can detach it from other projects")
     try:
         await service.remove_sensor_project(sensor_id, project_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
 
     return web.Response(status=204)
+
+
+@routes.get("/api/v1/sensor-project-requests")
+async def list_sensor_project_requests(request: web.Request):
+    """Incoming requests (for sensors of this project) or outgoing ones (made by it)."""
+    user = await require_current_user(request)
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    ensure_permission(user, "experiments.view")
+    direction = request.rel_url.query.get("direction", "incoming")
+    if direction not in ("incoming", "outgoing"):
+        raise web.HTTPBadRequest(text="direction must be 'incoming' or 'outgoing'")
+    status_raw = request.rel_url.query.get("status")
+    try:
+        status = SensorProjectRequestStatus(status_raw) if status_raw else None
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="Invalid status") from exc
+
+    service = await get_sensor_project_request_service(request)
+    items = await service.list_requests(project_id, direction, status)  # type: ignore[arg-type]
+    return web.json_response({"requests": [_request_response(i) for i in items]})
+
+
+async def _decide_request(request: web.Request, status: SensorProjectRequestStatus) -> web.Response:
+    user = await require_current_user(request)
+    request_id = parse_uuid(request.match_info["request_id"], "request_id")
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
+    service = await get_sensor_project_request_service(request)
+    try:
+        if status is SensorProjectRequestStatus.CANCELLED:
+            ensure_permission(user, "experiments.create")
+            item = await service.cancel(request_id, project_id, user.user_id)
+        else:
+            ensure_permission(user, "experiments.update")
+            item = await service.decide(request_id, project_id, user.user_id, status)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text="Resource not found") from exc
+    except ConflictError as exc:
+        raise web.HTTPConflict(text=str(exc)) from exc
+    return web.json_response(_request_response(item))
+
+
+@routes.post("/api/v1/sensor-project-requests/{request_id}/approve")
+async def approve_sensor_project_request(request: web.Request):
+    """Approve from a project the sensor belongs to; attaches the sensor."""
+    return await _decide_request(request, SensorProjectRequestStatus.APPROVED)
+
+
+@routes.post("/api/v1/sensor-project-requests/{request_id}/reject")
+async def reject_sensor_project_request(request: web.Request):
+    """Reject from a project the sensor belongs to."""
+    return await _decide_request(request, SensorProjectRequestStatus.REJECTED)
+
+
+@routes.post("/api/v1/sensor-project-requests/{request_id}/cancel")
+async def cancel_sensor_project_request(request: web.Request):
+    """Withdraw a request from the project that made it."""
+    return await _decide_request(request, SensorProjectRequestStatus.CANCELLED)
 
 
 @routes.get("/api/v1/sensors/status-summary")

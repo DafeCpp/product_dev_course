@@ -44,6 +44,15 @@ class ConversionProfileStatus(str, Enum):
     DEPRECATED = "deprecated"
 
 
+class SensorProjectRequestStatus(str, Enum):
+    """States of a request to attach a sensor to another project."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
 class SensorStatus(str, Enum):
     """Sensor lifecycle states."""
 

@@ -503,12 +503,12 @@ projects:
   post:
     tags:
     - sensors
-    summary: Attach sensor to a project
+    summary: Request to attach sensor to a project
     description: |-
-      Adds a `sensor_projects` link (no-op when it already exists). The sensor is looked up
-      globally (no membership check on its current projects). `experiments.create` is checked
-      against the caller's header permissions, not against the target project. If `project_id`
-      is `null` the X-Project-Id header is used.
+      Opens a pending attach request from the target project (`project_id`, or the X-Project-Id
+      header when it is `null`); the sensor is NOT attached yet. A member of any project the sensor
+      already belongs to approves it via `POST /api/v1/sensor-project-requests/{request_id}/approve`.
+      Repeating the call while a request is pending returns that same request.
     operationId: addSensorProject
     parameters:
     - $ref: ../components/parameters.yaml#/SensorId
@@ -519,30 +519,38 @@ projects:
           schema:
             $ref: ../components/schemas.yaml#/SensorProjectAddRequest
     responses:
-      204:
-        description: Sensor attached (or already attached)
+      202:
+        description: Pending request (new or already open)
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorProjectRequest
       400:
-        description: |-
-          Invalid X-User-Id / X-Project-Id header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id`;
-          any failure while inserting the link (`Bad request`)
+        description: 'Invalid header; invalid sensor_id; invalid JSON; `project_id is required`; `Invalid project_id`'
         content:
           text/plain:
             schema:
               type: string
       401:
-        description: 'Missing X-User-Id header (aiohttp text body `401: Header X-User-Id is required`).'
+        description: 'Missing X-User-Id header'
         content:
           text/plain:
             schema:
               type: string
       403:
-        description: 'Caller lacks `experiments.create` permission (text body `403: Missing permission: experiments.create`).'
+        description: 'Caller lacks `experiments.create` in the target project'
         content:
           text/plain:
             schema:
               type: string
       404:
-        description: Sensor not found (`Resource not found`)
+        description: 'Sensor not found (`Resource not found`)'
+        content:
+          text/plain:
+            schema:
+              type: string
+      409:
+        description: 'Sensor already belongs to the target project'
         content:
           text/plain:
             schema:
@@ -559,13 +567,21 @@ projectItem:
     - sensors
     summary: Detach sensor from a project
     description: |-
-      Deletes the `sensor_projects` link. No project-scope check: only `experiments.delete` in the
-      caller's header permissions is required. Removing the link to the sensor's primary project
-      does not change `sensors.project_id`, so the sensor stays visible there.
+      Deletes the `sensor_projects` link. Allowed with `experiments.delete` from the project being
+      detached (caller project = path `project_id`) or from the sensor's primary project. Removing the
+      link to the sensor's primary project does not change `sensors.project_id`, so the sensor stays
+      visible there.
     operationId: removeSensorProject
     parameters:
     - $ref: ../components/parameters.yaml#/SensorId
     - $ref: ../components/parameters.yaml#/ProjectIdPath
+    - name: project_id
+      in: query
+      required: false
+      description: Caller's project (defaults to X-Project-Id).
+      schema:
+        type: string
+        format: uuid
     responses:
       204:
         description: Link removed
@@ -582,13 +598,13 @@ projectItem:
             schema:
               type: string
       403:
-        description: 'Caller lacks `experiments.delete` permission (text body `403: Missing permission: experiments.delete`).'
+        description: 'Caller lacks `experiments.delete`, or detaches another project without being the sensor''s primary project.'
         content:
           text/plain:
             schema:
               type: string
       404:
-        description: Sensor-project link not found (`Resource not found`)
+        description: Sensor-project link not found, or the sensor is not in the caller's project (`Resource not found`)
         content:
           text/plain:
             schema:
@@ -909,6 +925,258 @@ conversionProfilePublish:
               type: string
       404:
         description: Profile not found for this sensor and project (`Resource not found`)
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+projectRequests:
+  get:
+    tags:
+    - sensors
+    summary: List sensor attach requests
+    description: |-
+      `incoming`: requests for sensors that belong to the caller's project (includes `sensor_name`).
+      `outgoing`: requests made by the caller's project (`sensor_name` is null). Newest first.
+    operationId: listSensorProjectRequests
+    parameters:
+    - name: project_id
+      in: query
+      required: false
+      description: Caller's project (defaults to X-Project-Id).
+      schema:
+        type: string
+        format: uuid
+    - name: direction
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [incoming, outgoing]
+        default: incoming
+    - name: status
+      in: query
+      required: false
+      schema:
+        $ref: ../components/schemas.yaml#/SensorProjectRequestStatus
+    responses:
+      200:
+        description: Requests
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorProjectRequestListResponse
+      400:
+        description: 'Invalid project_id, direction or status'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.view`'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+projectRequestApprove:
+  post:
+    tags:
+    - sensors
+    summary: Approve sensor attach request
+    description: Called from a project the sensor already belongs to (not the requesting one); attaches the sensor.
+    operationId: approveSensorProjectRequest
+    parameters:
+    - name: request_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project_id
+      in: query
+      required: false
+      description: Caller's project (defaults to X-Project-Id).
+      schema:
+        type: string
+        format: uuid
+    responses:
+      200:
+        description: Updated request
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorProjectRequest
+      400:
+        description: 'Invalid request_id or project_id'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.update`'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: 'Request not found or the sensor is not in the caller''s project'
+        content:
+          text/plain:
+            schema:
+              type: string
+      409:
+        description: 'Request is no longer pending'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+projectRequestReject:
+  post:
+    tags:
+    - sensors
+    summary: Reject sensor attach request
+    description: Called from a project the sensor already belongs to (not the requesting one).
+    operationId: rejectSensorProjectRequest
+    parameters:
+    - name: request_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project_id
+      in: query
+      required: false
+      description: Caller's project (defaults to X-Project-Id).
+      schema:
+        type: string
+        format: uuid
+    responses:
+      200:
+        description: Updated request
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorProjectRequest
+      400:
+        description: 'Invalid request_id or project_id'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.update`'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: 'Request not found or the sensor is not in the caller''s project'
+        content:
+          text/plain:
+            schema:
+              type: string
+      409:
+        description: 'Request is no longer pending'
+        content:
+          text/plain:
+            schema:
+              type: string
+      500:
+        description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
+projectRequestCancel:
+  post:
+    tags:
+    - sensors
+    summary: Cancel sensor attach request
+    description: Called from the project that made the request.
+    operationId: cancelSensorProjectRequest
+    parameters:
+    - name: request_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project_id
+      in: query
+      required: false
+      description: Caller's project (defaults to X-Project-Id).
+      schema:
+        type: string
+        format: uuid
+    responses:
+      200:
+        description: Updated request
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SensorProjectRequest
+      400:
+        description: 'Invalid request_id or project_id'
+        content:
+          text/plain:
+            schema:
+              type: string
+      401:
+        description: 'Missing X-User-Id header'
+        content:
+          text/plain:
+            schema:
+              type: string
+      403:
+        description: 'Caller lacks `experiments.create`'
+        content:
+          text/plain:
+            schema:
+              type: string
+      404:
+        description: 'Request not found or not made by the caller''s project'
+        content:
+          text/plain:
+            schema:
+              type: string
+      409:
+        description: 'Request is no longer pending'
         content:
           text/plain:
             schema:

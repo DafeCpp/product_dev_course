@@ -77,11 +77,27 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
         errorFallback: 'Ошибка ротации токена',
     })
 
-    const addProjectMutation = useApiMutation<unknown, string>({
-        mutationFn: (projectId) => sensorsApi.addProject(sensorId, projectId),
-        invalidateKeys: [['sensor', sensorId, 'projects']],
-        successMessage: 'Проект добавлен',
-        onSuccess: () => {
+    // Attaching goes through a request. When the user may approve it from the
+    // sensor's primary project, approve right away; otherwise it waits for the
+    // sensor owner.
+    const addProjectMutation = useApiMutation<boolean, string>({
+        mutationFn: async (projectId) => {
+            const request = await sensorsApi.addProject(sensorId, projectId)
+            if (!sensor?.project_id) return false
+            try {
+                await sensorsApi.decideProjectRequest(request.id, 'approve', sensor.project_id)
+                return true
+            } catch {
+                return false
+            }
+        },
+        invalidateKeys: [['sensor', sensorId, 'projects'], ['sensor-project-requests']],
+        onSuccess: (attached) => {
+            if (attached) {
+                notifySuccess('Проект добавлен')
+            } else {
+                notifySuccess('Запрос отправлен, проект добавится после подтверждения владельцем датчика')
+            }
             setShowAddProjectModal(false)
             setSelectedProjectId('')
         },
