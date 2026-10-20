@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from simlib import SimParams, VehicleModel
 
 
@@ -123,3 +125,186 @@ def _DYN_MIN():
     from simlib.vehicle_model import _DYNAMIC_MIN_SPEED
 
     return _DYNAMIC_MIN_SPEED
+
+
+# ── Сцепление (LOS-370) ──────────────────────────────────────────────────────
+
+
+def test_default_tires_have_no_grip_limit():
+    """tire_mu=0 — прежние линейные шины: колёса не буксуют."""
+    m = VehicleModel(SimParams(), dynamic=True)
+    out = _run(m, throttle=1.0, steering=0.0, n=500)
+    assert out.slip_ratio == 0.0
+    assert out.wheel_speed == out.speed
+
+
+def test_low_grip_launch_spins_wheels_and_caps_accel():
+    """Газ в пол на льду: корпус разгоняется не быстрее μ·g, колёса буксуют."""
+    mu = 0.1
+    p = SimParams(tire_mu=mu)
+    m = VehicleModel(p, dynamic=True)
+    peak_accel = 0.0
+    peak_slip = 0.0
+    for _ in range(500):
+        out = m.step(DT, 1.0, 0.0)
+        peak_accel = max(peak_accel, out.long_accel)
+        peak_slip = max(peak_slip, out.slip_ratio)
+    assert peak_accel <= mu * p.gravity_ms2 + 1e-6
+    assert peak_slip > 0.3
+    assert out.wheel_speed > out.speed
+
+
+def test_wheels_regrip_once_body_catches_up():
+    """Пробуксовка кончается: при умеренном газе колёса снова сцепляются."""
+    m = VehicleModel(SimParams(tire_mu=0.3), dynamic=True)
+    _run(m, throttle=1.0, steering=0.0, n=100)
+    assert m.state.wheel_v > m.state.v
+    out = _run(m, throttle=0.2, steering=0.0, n=2000)
+    assert out.slip_ratio == 0.0
+    assert out.wheel_speed == out.speed
+
+
+def test_lateral_force_saturates_at_grip_limit():
+    """Боковое ускорение на низком μ не превышает μ·g — и в выходе, и в
+    проинтегрированной динамике (vy_dot + v·r)."""
+    mu = 0.3
+    p = SimParams(tire_mu=mu)
+    for throttle in (0.3, 0.6, 1.0):
+        m = VehicleModel(p, dynamic=True)
+        _run(m, throttle=throttle, steering=0.0, n=1000)
+        peak_lat = 0.0
+        for i in range(1000):
+            steering = 1.0 if (i // 250) % 2 == 0 else -1.0  # слалом
+            vy0 = m.state.vy
+            out = m.step(DT, throttle, steering)
+            peak_lat = max(peak_lat, abs(out.lat_accel))
+            if m.state.v >= 0.3:
+                implied = (m.state.vy - vy0) / DT + m.state.v * m.state.r
+                assert out.lat_accel == pytest.approx(implied, abs=1e-6)
+        assert peak_lat <= mu * p.gravity_ms2 * 1.011
+
+    linear = VehicleModel(SimParams(), dynamic=True)
+    _run(linear, throttle=0.6, steering=0.0, n=1000)
+    out = _run(linear, throttle=0.6, steering=1.0, n=1000)
+    assert abs(out.lat_accel) > 2.0 * mu * p.gravity_ms2
+
+
+def test_rear_biased_drive_slides_rear_on_low_grip():
+    """Тяга на заднюю ось съедает её боковое сцепление: угол заноса растёт."""
+    def peak_beta(front_share: float) -> float:
+        m = VehicleModel(SimParams(tire_mu=0.2, drive_front_share=front_share),
+                         dynamic=True)
+        _run(m, throttle=0.5, steering=0.0, n=1000)
+        peak = 0.0
+        for _ in range(1000):
+            m.step(DT, 0.5, 1.0)
+            peak = max(peak, abs(math.degrees(
+                math.atan2(m.state.vy, m.state.v))))
+        return peak
+
+    assert peak_beta(0.2) > peak_beta(0.5) + 5.0
+
+
+def test_reverse_wheelspin_has_negative_slip_ratio():
+    """Пробуксовка назад: колёса обгоняют корпус в сторону реверса."""
+    m = VehicleModel(SimParams(tire_mu=0.1))
+    peak = 0.0
+    for _ in range(500):
+        out = m.step(DT, -1.0, 0.0)
+        peak = min(peak, out.slip_ratio)
+    assert out.speed < 0.0
+    assert peak < -0.2
+
+
+def test_kinematic_model_respects_grip_limit():
+    """Кинематика с tire_mu > 0 тоже не поворачивает круче μ·g."""
+    mu = 0.1
+    p = SimParams(tire_mu=mu)
+    m = VehicleModel(p)
+    _run(m, throttle=0.2, steering=0.0, n=1000)
+    peak_lat = 0.0
+    for _ in range(500):
+        out = m.step(DT, 0.2, 1.0)
+        peak_lat = max(peak_lat, abs(out.lat_accel))
+        assert out.lat_accel == pytest.approx(m.state.v * m.state.r)
+    assert 0.0 < peak_lat <= mu * p.gravity_ms2 + 1e-9
+
+
+def test_axle_force_stays_within_grip_while_spinning_in_turn():
+    """Пробуксовка в повороте: |(Fx, Fy)| каждой оси не больше μ·N."""
+    mu = 0.2
+    p = SimParams(tire_mu=mu, drive_front_share=0.2)
+    m = VehicleModel(p, dynamic=True)
+    _run(m, throttle=0.3, steering=0.0, n=1000)
+    spin_ticks = 0
+    for _ in range(1000):
+        out = m.step(DT, 0.7, 1.0)
+        s = m.state
+        if s.v < 0.3 or out.slip_ratio <= 0.0:
+            continue
+        spin_ticks += 1
+        alpha_f = out.delta_rad - (s.vy + p.com_a * s.r) / s.v
+        alpha_r = -(s.vy - p.com_b * s.r) / s.v
+        caps = m._lateral_capacity(out.long_accel)
+        for n, share, alpha, c, cap in zip(
+                m._axle_loads(), m._drive_shares(), (alpha_f, alpha_r),
+                (p.Caf, p.Car), caps):
+            fx = p.mass * out.long_accel * share
+            fy = min(cap * 1.01, c * abs(alpha))
+            assert math.hypot(fx, fy) <= mu * n * 1.01
+    assert spin_ticks > 100
+
+
+@pytest.mark.parametrize("dt", [0.02, 0.1])
+def test_coarse_step_lateral_force_respects_grip(dt):
+    """Грубый шаг fitting: проинтегрированная боковая сила оси в пределе."""
+    p = SimParams(tire_mu=0.4, drive_front_share=0.5)
+    m = VehicleModel(p, dynamic=True)
+    for _ in range(int(2.0 / dt)):
+        m.step(dt, 0.8, 0.0)
+    for i in range(int(6.0 / dt)):
+        steering = (1.0, -1.0, 0.3)[i * 3 // int(6.0 / dt)]
+        vy0 = m.state.vy
+        out = m.step(dt, 0.8, steering)
+        s = m.state
+        if s.v < 0.3:
+            continue
+        implied = (s.vy - vy0) / dt + s.v * s.r
+        assert out.lat_accel == pytest.approx(implied, abs=1e-6)
+        assert abs(out.lat_accel) <= p.tire_mu * p.gravity_ms2 * 1.011
+        # Сила равна насыщенной кривой шины в конце шага — и не больше
+        # предела, и не меньше (разворот руля на грубом шаге).
+        alpha_f = out.delta_rad - (s.vy + p.com_a * s.r) / s.v
+        alpha_r = -(s.vy - p.com_b * s.r) / s.v
+        cap_f, cap_r = m._lateral_capacity(out.long_accel)
+        target = (max(-cap_f, min(cap_f, p.Caf * alpha_f))
+                  + max(-cap_r, min(cap_r, p.Car * alpha_r))) / p.mass
+        assert out.lat_accel == pytest.approx(target, abs=1e-9)
+
+
+def test_marginal_wheelspin_never_reports_body_ahead_of_wheels():
+    """Тяга чуть выше предела: slip ratio при разгоне не уходит в минус."""
+    p = SimParams(tire_mu=0.2)
+    for throttle in (0.34, 0.36, 0.38, 0.4):
+        m = VehicleModel(p)
+        for _ in range(1500):
+            out = m.step(DT, throttle, 0.0)
+            assert out.slip_ratio >= 0.0
+
+
+def test_coarse_reversal_matches_saturated_tire_curve():
+    """Разворот газа и руля на шаге 100 мс: сила по кривой шины, а не
+    недобор от несошедшейся итерации."""
+    p = SimParams(tire_mu=1.0, drive_front_share=0.2)
+    m = VehicleModel(p, dynamic=True)
+    for _ in range(20):
+        m.step(0.1, 1.0, 0.0)
+    out = m.step(0.1, -1.0, -0.5)
+    s = m.state
+    alpha_f = out.delta_rad - (s.vy + p.com_a * s.r) / s.v
+    alpha_r = -(s.vy - p.com_b * s.r) / s.v
+    cap_f, cap_r = m._lateral_capacity(out.long_accel)
+    target = (max(-cap_f, min(cap_f, p.Caf * alpha_f))
+              + max(-cap_r, min(cap_r, p.Car * alpha_r))) / p.mass
+    assert out.lat_accel == pytest.approx(target, abs=1e-9)
+    assert out.lat_accel < -4.0

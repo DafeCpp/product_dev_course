@@ -16,6 +16,8 @@
     "Iz": 0.10,
     "Caf": 120.0,
     "Car": 120.0,
+    "tire_mu": 0.0,
+    "drive_front_share": 0.5,
     "max_accel": 4.47,
     "motor_tau": 0.0376,
     "motor_deadzone": 0.05,

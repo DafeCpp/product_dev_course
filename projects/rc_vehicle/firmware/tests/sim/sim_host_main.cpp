@@ -21,6 +21,8 @@
 //       — воспроизвести oversteer-конфиг, записанный в provenance эпизода.
 //   --no-kids-accel-limit — выключить accel limiter детского режима (эталон
 //       для SIL-сценария LOS-362).
+//   --no-kids-anti-spin — выключить anti-spin детского режима и его
+//       oversteer-срез газа (эталон для SIL-сценария LOS-370).
 //   --start-test <straight|circle|step> [--target-accel g]
 //       [--test-duration s] [--test-steering v] — запустить авто-манёвр
 //       (аналог start_test по WebSocket) до первого кадра; машина едет сама,
@@ -110,6 +112,7 @@ int main(int argc, char** argv) {
   float speed_limit = 0.0f;
   bool stabilize = false;
   bool kids_accel_limit = true;
+  bool kids_anti_spin = true;
   bool oversteer = false;
   float oversteer_slip_thresh_deg = 10.0f;
   float oversteer_rate_thresh_deg_s = 30.0f;
@@ -151,6 +154,8 @@ int main(int argc, char** argv) {
       stabilize = true;
     else if (a == "--no-kids-accel-limit")
       kids_accel_limit = false;
+    else if (a == "--no-kids-anti-spin")
+      kids_anti_spin = false;
     else if (a == "--oversteer")
       oversteer = true;
     else if (a == "--oversteer-slip-thresh" && i + 1 < argc) {
@@ -191,6 +196,7 @@ int main(int argc, char** argv) {
   p->SetSpeedLimit(speed_limit);
   p->SetStabilize(stabilize);
   p->SetKidsAccelLimit(kids_accel_limit);
+  p->SetKidsAntiSpin(kids_anti_spin);
   p->SetPitchComp(pitch_comp);
   if (slip_target_deg) p->SetSlipTargetDeg(*slip_target_deg);
   p->SetKidsPreset(kids_preset);

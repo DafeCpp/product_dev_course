@@ -38,6 +38,7 @@ class ClosedLoopSim:
                  noise_seed: int = 0,
                  oversteer: OversteerReplayConfig | None = None,
                  kids_accel_limit: bool = True,
+                 kids_anti_spin: bool = True,
                  pitch_comp: bool = False,
                  slip_target_deg: float | None = None,
                  kids_preset: str | None = None,
@@ -60,6 +61,8 @@ class ClosedLoopSim:
             args.append("--stabilize")
         if not kids_accel_limit:
             args.append("--no-kids-accel-limit")
+        if not kids_anti_spin:
+            args.append("--no-kids-anti-spin")
         if pitch_comp:
             args.append("--pitch-comp")
         if slip_target_deg is not None:
