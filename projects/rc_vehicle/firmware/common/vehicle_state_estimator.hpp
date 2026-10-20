@@ -54,12 +54,18 @@ struct VehicleStateEstimatorInput {
   float motor_model_throttle{0.0f};
   bool ekf_available{false};
   bool speed_calibration_active{false};
+  // Мотор-модель ведёт counterfactual-газ (Kids speed limiter срезает PWM):
+  // её ускорение не годится как якорь TiltEstimator (LOS-369).
+  bool motor_model_counterfactual{false};
 };
 
 /** Immutable result consumed by control, stabilization and telemetry stages. */
 struct VehicleStateEstimate {
   bool imu_valid{false};
   bool tilt_valid{false};
+  /** TiltEstimator снимал с акселерометра продольное ускорение мотор-модели.
+   *  Без этого якоря разгон читается как наклон (LOS-369). */
+  bool tilt_accel_anchored{false};
   float pitch_rad{0.0f};
   float roll_rad{0.0f};
   float yaw_rad{0.0f};
@@ -114,8 +120,8 @@ class VehicleStateEstimator {
 
  private:
   [[nodiscard]] VehicleStateEstimate BuildEstimate(
-      bool imu_valid, bool tilt_valid, float pitch_rad, float roll_rad,
-      float forward_accel_g) const noexcept;
+      bool imu_valid, bool tilt_valid, bool tilt_accel_anchored,
+      float pitch_rad, float roll_rad, float forward_accel_g) const noexcept;
 
   ImuCalibration& imu_calib_;
   MadgwickFilter& madgwick_;
@@ -127,6 +133,10 @@ class VehicleStateEstimator {
   float a_lin_prev_g_{0.0f};
   uint32_t last_mag_sample_sequence_{0};
   bool tilt_was_enabled_{false};
+  // Якорь TiltEstimator на прошлом тике и остаток выдержки после его
+  // появления в постоянных времени accel-коррекции (LOS-369).
+  bool prev_tick_anchored_{false};
+  float anchor_settle_left_tau_{0.0f};
 #ifdef RC_PROFILE_LOOP
   VehicleStateEstimatorProfile profile_;
 #endif

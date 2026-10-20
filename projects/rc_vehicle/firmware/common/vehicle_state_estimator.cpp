@@ -1,5 +1,6 @@
 #include "vehicle_state_estimator.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "control_loop_helpers.hpp"
@@ -13,6 +14,8 @@ namespace {
 constexpr float kG = 9.80665f;
 constexpr float kDegToRad = 3.14159265358979f / 180.0f;
 constexpr float kNhcMaxYawRateRps = 1.0f;
+// Выдержка якоря TiltEstimator в постоянных времени accel-коррекции (LOS-369).
+constexpr float kTiltAnchorSettleTimeConstants = 3.0f;
 }  // namespace
 
 VehicleStateEstimate VehicleStateEstimator::Update(
@@ -58,6 +61,7 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   }
 
   bool tilt_active_this_tick = false;
+  bool tilt_anchored_this_tick = false;
   float pitch_rad = 0.0f;
   float roll_rad = 0.0f;
   if (imu_tick_valid && input.filter.tilt_comp_enabled) {
@@ -66,9 +70,23 @@ VehicleStateEstimate VehicleStateEstimator::Update(
       tilt_est_.Reset();
     }
 
-    const bool motor_model_anchor_active = ekf_active &&
-                                           input.filter.motor_model_enabled &&
-                                           !input.speed_calibration_active;
+    const bool motor_model_anchor_active =
+        ekf_active && input.filter.motor_model_enabled &&
+        !input.speed_calibration_active && !input.motor_model_counterfactual;
+    // После перехода «без якоря → с якорем» в оценке ещё сидит наклон,
+    // накопленный, пока разгон не вычитался (мотор-модель была выключена,
+    // шла калибровка скорости или Kids speed limiter вёл counterfactual-газ).
+    // Якорным pitch считается только после ~3 постоянных времени
+    // accel-коррекции (τ = 1/corr_gain), причём считаются лишь тики, где
+    // коррекция прошла гейт 1g: иначе компенсация тангажа добавляла бы газ по
+    // ложному подъёму (LOS-369). После Reset() (старт, повторное включение
+    // tilt) копить было нечего — выдержки нет.
+    if (motor_model_anchor_active && tilt_was_enabled_ &&
+        !prev_tick_anchored_) {
+      anchor_settle_left_tau_ = kTiltAnchorSettleTimeConstants;
+    }
+    if (!motor_model_anchor_active) anchor_settle_left_tau_ = 0.0f;
+    prev_tick_anchored_ = motor_model_anchor_active;
     const float a_lin_g = motor_model_anchor_active ? a_lin_prev_g_ : 0.0f;
     const float a_lin_lat_g =
         ekf_active ? (vehicle_imu.gz * kDegToRad) * prev_vx_ / kG : 0.0f;
@@ -84,6 +102,15 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 #endif
     pitch_rad = tilt_est_.GetPitchRad();
     roll_rad = tilt_est_.GetRollRad();
+    if (motor_model_anchor_active && tilt_est_.LastUpdateAccelCorrected()) {
+      // Выдержка в постоянных времени: k = gain·dt — доля τ за тик, поэтому
+      // смена tilt_corr_gain_hz на ходу её не обманывает.
+      anchor_settle_left_tau_ = std::max(
+          anchor_settle_left_tau_ - input.filter.tilt_corr_gain_hz * dt_sec,
+          0.0f);
+    }
+    tilt_anchored_this_tick =
+        motor_model_anchor_active && anchor_settle_left_tau_ <= 0.0f;
   }
   tilt_was_enabled_ = tilt_active_this_tick;
 
@@ -170,8 +197,9 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     last_mag_sample_sequence_ = sensors.mag_sample_sequence;
   }
 
-  return BuildEstimate(sensors.imu_enabled, tilt_active_this_tick, pitch_rad,
-                       roll_rad, forward_accel_g);
+  return BuildEstimate(sensors.imu_enabled, tilt_active_this_tick,
+                       tilt_anchored_this_tick, pitch_rad, roll_rad,
+                       forward_accel_g);
 }
 
 void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
@@ -180,6 +208,8 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
   a_lin_prev_g_ = 0.0f;
   last_mag_sample_sequence_ = 0;
   tilt_was_enabled_ = false;
+  prev_tick_anchored_ = false;
+  anchor_settle_left_tau_ = 0.0f;
 }
 
 void VehicleStateEstimator::RefreshEkfFields(
@@ -195,11 +225,12 @@ void VehicleStateEstimator::RefreshEkfFields(
 }
 
 VehicleStateEstimate VehicleStateEstimator::BuildEstimate(
-    bool imu_valid, bool tilt_valid, float pitch_rad, float roll_rad,
-    float forward_accel_g) const noexcept {
+    bool imu_valid, bool tilt_valid, bool tilt_accel_anchored, float pitch_rad,
+    float roll_rad, float forward_accel_g) const noexcept {
   VehicleStateEstimate estimate;
   estimate.imu_valid = imu_valid;
   estimate.tilt_valid = tilt_valid;
+  estimate.tilt_accel_anchored = tilt_accel_anchored;
   estimate.pitch_rad = pitch_rad;
   estimate.roll_rad = roll_rad;
   estimate.forward_accel_g = forward_accel_g;

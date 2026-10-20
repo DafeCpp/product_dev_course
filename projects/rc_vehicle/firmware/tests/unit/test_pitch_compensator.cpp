@@ -49,11 +49,12 @@ class PitchCompensatorTest : public ::testing::Test {
   /// Feed flat IMU data (no pitch, no roll)
   void FeedFlat(int n = 200) { FeedImuData(0.0f, 0.0f, 1.0f, 0, 0, 0, n); }
 
-  /// Feed tilted IMU data: nose up by pitch_deg degrees
-  /// accel_x = -sin(pitch) * g, accel_z = cos(pitch) * g
+  /// Feed tilted IMU data: nose up by pitch_deg degrees.
+  /// Акселерометр меряет specific force: при носе вверх ось «вперёд» видит
+  /// +sin (тот же знак, что при разгоне), accel_z = cos (LOS-369).
   void FeedPitchUp(float pitch_deg, int n = 300) {
     const float rad = pitch_deg * static_cast<float>(M_PI) / 180.0f;
-    FeedImuData(-std::sin(rad), 0.0f, std::cos(rad), 0, 0, 0, n);
+    FeedImuData(std::sin(rad), 0.0f, std::cos(rad), 0, 0, 0, n);
   }
 
   /// Feed tilted IMU data: nose down
@@ -87,7 +88,7 @@ TEST_F(PitchCompensatorTest, IncreasesThrottle_WhenNoseUp) {
   float throttle = 0.5f;
   comp_.Process(cfg_, throttle, 1.0f);
   EXPECT_GT(throttle, 0.5f)
-      << "Nose up (positive pitch) should increase throttle";
+      << "Nose up (negative pitch, LOS-369) should increase throttle";
 }
 
 TEST_F(PitchCompensatorTest, DecreasesThrottle_WhenNoseDown) {
@@ -95,7 +96,7 @@ TEST_F(PitchCompensatorTest, DecreasesThrottle_WhenNoseDown) {
   float throttle = 0.5f;
   comp_.Process(cfg_, throttle, 1.0f);
   EXPECT_LT(throttle, 0.5f)
-      << "Nose down (negative pitch) should decrease throttle";
+      << "Nose down (positive pitch, LOS-369) should decrease throttle";
 }
 
 // FW-R23: процессор НЕ хранит указатель на конфиг — читает переданный per-tick.

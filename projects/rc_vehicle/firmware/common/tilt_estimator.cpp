@@ -14,10 +14,12 @@ constexpr float kDegToRad = kPi / 180.0f;
 void TiltEstimator::Reset() noexcept {
   pitch_rad_ = 0.0f;
   roll_rad_ = 0.0f;
+  accel_corrected_ = false;
 }
 
 void TiltEstimator::Update(const ImuData& imu, float a_lin_long_g,
                            float a_lin_lat_g, float dt_sec) noexcept {
+  accel_corrected_ = false;
   if (dt_sec <= 0.0f) {
     return;
   }
@@ -50,6 +52,7 @@ void TiltEstimator::Update(const ImuData& imu, float a_lin_long_g,
   const float pitch_acc = std::atan2(-ax_grav, horiz);
   const float roll_acc = std::atan2(ay_grav, az);
 
+  accel_corrected_ = true;
   const float k = params_.corr_gain_hz * dt_sec;
   pitch_rad_ = ClampTilt(pitch_rad_ + k * WrapAngle(pitch_acc - pitch_rad_));
   roll_rad_ = ClampTilt(roll_rad_ + k * WrapAngle(roll_acc - roll_rad_));

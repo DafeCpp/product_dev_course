@@ -60,6 +60,12 @@
 
 namespace rc_vehicle {
 
+namespace {
+// Расхождение counterfactual-газа мотор-модели и реального PWM, начиная с
+// которого Kids speed limiter считается вмешавшимся (LOS-369).
+constexpr float kCounterfactualThrottleTol = 0.01f;
+}  // namespace
+
 void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   // PROF_START() — самая первая строка (код-ревью PR #297): GetConfig()
   // ниже берёт config_mutex_, который также берёт SetConfig() из WS-потока
@@ -214,6 +220,12 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(ControlTickInput& input,
       .motor_model_throttle = persistent_.motor_model_throttle,
       .ekf_available = ctx_.stab_mgr != nullptr,
       .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
+      // Пока Kids speed limiter срезает газ, мотор-модель ведёт
+      // counterfactual-цель до лимита, и её ускорение — не реальное.
+      .motor_model_counterfactual =
+          input.config.KidsSpeedLimiterActive() &&
+          std::abs(persistent_.motor_model_throttle -
+                   persistent_.applied.throttle) > kCounterfactualThrottleTol,
   };
   state.estimate = state_estimator_.Update(input.sensors, estimator_input
 #ifdef RC_PROFILE_LOOP
@@ -277,14 +289,18 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
 
   const ModeTraits policy =
       DriveModeRegistry::Get(input.config.mode).GetTraits();
-  float pitch_deg = 0.0f;
-  if (policy.pitch_comp_active && input.sensors.imu_enabled) {
-    float roll_deg = 0.0f;
-    float yaw_deg = 0.0f;
-    ctx_.madgwick.GetEulerDeg(pitch_deg, roll_deg, yaw_deg);
-  }
-
   constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
+  // Тангаж для pitch compensation — только от TiltEstimator, и только пока
+  // он снимает продольное ускорение мотор-модели. Madgwick (и TiltEstimator
+  // без этого якоря: мотор-модель выключена или идёт калибровка скорости) на
+  // разгоне по ровному читает «нос вверх», и компенсация добавляла бы газ в
+  // ответ на собственное ускорение — положительная обратная связь (LOS-369).
+  // Без такой оценки наклона компенсация не работает.
+  float pitch_deg = 0.0f;
+  if (policy.pitch_comp_active && input.sensors.imu_enabled &&
+      state.estimate.tilt_valid && state.estimate.tilt_accel_anchored) {
+    pitch_deg = state.estimate.pitch_rad * kRadToDeg;
+  }
   const StabilizationInput stabilization_input{
       .command = state.command,
       .dt_ms = input.dt_ms,

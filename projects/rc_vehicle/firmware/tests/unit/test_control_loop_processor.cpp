@@ -821,7 +821,7 @@ TEST_F(ProcessorTest, MadgwickDisabled_NoStaleGravityCompensation) {
   imu_handler.SetEnabled(true);
   ctx_->imu_handler = &imu_handler;
 
-  // Накреняем Madgwick напрямую (нос вверх ~30°): ax=-sin, az=cos.
+  // Накреняем Madgwick напрямую (ax=-sin, az=cos — нос вниз ~30°, LOS-369).
   constexpr float kPitch = 30.0f * 3.14159265358979f / 180.0f;
   for (int i = 0; i < 6000; ++i) {
     madgwick_.Update(-std::sin(kPitch), 0.0f, std::cos(kPitch), 0.0f, 0.0f,
@@ -1251,6 +1251,34 @@ TEST_F(KidsAccelLimitTest, StaticNoseDownTilt_DoesNotTriggerAccelLimit) {
       << "accel-лимитер сработал на статическом наклоне без ускорения";
 }
 
+TEST_F(KidsAccelLimitTest, PitchCompensationNeedsMotorModelAnchor) {
+  // LOS-369: без мотор-модели TiltEstimator не снимает продольное ускорение
+  // и разгон для него — наклон; компенсация тогда не работает вовсе.
+  wifi_handler_ = std::make_unique<WifiCommandHandler>(platform_, 4);
+  ctx_->wifi_handler = wifi_handler_.get();
+
+  auto run = [&](bool motor_model) {
+    auto cfg = stab_mgr_->GetConfig();
+    cfg.mode = DriveMode::Normal;
+    EXPECT_TRUE(stab_mgr_->SetConfig(cfg));
+    cfg = stab_mgr_->GetConfig();
+    cfg.enabled = true;
+    cfg.pitch_comp.enabled = true;
+    cfg.filter.motor_model_enabled = motor_model;
+    cfg.slew_throttle = 10.0f;
+    EXPECT_TRUE(stab_mgr_->SetConfig(cfg));
+
+    constexpr float kPitchRad = -18.f * 3.14159265358979f / 180.f;
+    platform_.SetImuData(AtRestWithPitch(kPitchRad));
+    platform_.SetWifiCommand(RcCommand{0.1f, 0.0f});
+    RunSteps(3000);
+    return platform_.GetLastSnap().cmd_throttle;
+  };
+
+  EXPECT_GT(run(true), 0.15f) << "с мотор-моделью компенсация работает";
+  EXPECT_NEAR(run(false), 0.1f, 1e-3f) << "без якоря компенсации нет";
+}
+
 TEST_F(KidsAccelLimitTest,
        LostSourceDuringFailsafeGraceDoesNotAccumulatePitchCorrection) {
   wifi_handler_ = std::make_unique<WifiCommandHandler>(platform_, 4);
@@ -1268,7 +1296,7 @@ TEST_F(KidsAccelLimitTest,
   constexpr float kPitchRad = 18.f * 3.14159265358979f / 180.f;
   platform_.SetImuData(AtRestWithPitch(kPitchRad));
   platform_.SetWifiCommand(RcCommand{0.1f, 0.0f});
-  RunSteps(3000);  // Madgwick и вес стабилизации сходятся.
+  RunSteps(3000);  // TiltEstimator и вес стабилизации сходятся.
 
   const float with_source = platform_.GetLastSnap().cmd_throttle;
   ASSERT_GT(std::abs(with_source - 0.1f), 0.05f)

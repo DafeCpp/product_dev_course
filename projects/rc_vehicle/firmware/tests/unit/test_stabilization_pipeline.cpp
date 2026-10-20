@@ -91,7 +91,7 @@ TEST_F(StabilizationPipelineTest, PitchUsesExplicitOrientationSnapshot) {
       .slip_angle_active = false,
       .oversteer_guard_active = false,
   };
-  input_.pitch_deg = 10.0f;
+  input_.pitch_deg = -10.0f;  // нос вверх (LOS-369)
 
   const auto output = pipeline_.Process(cfg_, policy, input_);
 
@@ -118,6 +118,139 @@ TEST_F(StabilizationPipelineTest, KidsPolicyExportsPreSpeedLimitMotorTarget) {
   EXPECT_FLOAT_EQ(output.command.throttle, 0.4f);
   EXPECT_FLOAT_EQ(output.command.steering, 0.5f);
   EXPECT_FLOAT_EQ(output.motor_model_target_throttle, 0.4f);
+}
+
+TEST_F(StabilizationPipelineTest, KidsPitchCompensationKeepsThrottleCap) {
+  // LOS-369: в гору компенсация добавляет газ, но предел Kids не обходит.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.throttle_limit = 0.4f;
+  cfg_.kids_mode.speed_limit_enabled = false;
+  cfg_.kids_mode.accel_limit_enabled = false;
+  input_.command = {.throttle = 0.9f, .steering = 0.0f};
+  input_.pitch_deg = -10.0f;  // нос вверх
+  input_.dt_ms = 0;
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+
+  EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                  0.4f);
+
+  // Ниже предела компенсация по-прежнему добавляет газ.
+  input_.command.throttle = 0.2f;
+  EXPECT_NEAR(pipeline_.Process(cfg_, policy, input_).command.throttle, 0.3f,
+              1e-5f);
+}
+
+TEST_F(StabilizationPipelineTest, PitchCompensationIdleAtNeutralThrottle) {
+  // LOS-369: отпущенный стик на склоне не толкает машину ни вперёд, ни назад.
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+  };
+  input_.command = {.throttle = 0.0f, .steering = 0.0f};
+  for (const float pitch : {-10.0f, 10.0f}) {
+    input_.pitch_deg = pitch;
+    EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                    0.0f);
+  }
+}
+
+TEST_F(StabilizationPipelineTest, PitchCompensationRampsInNearNeutral) {
+  // LOS-369: стик, едва вышедший из мёртвой зоны, не получает скачком полную
+  // добавку — до |throttle| = 0.2 коррекция нарастает линейно.
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+  };
+  input_.pitch_deg = -10.0f;  // подъём: полная коррекция 0.01 * 10 = 0.1
+  input_.command = {.throttle = 0.02f, .steering = 0.0f};
+  EXPECT_NEAR(pipeline_.Process(cfg_, policy, input_).command.throttle, 0.03f,
+              1e-5f);
+  input_.command = {.throttle = 0.4f, .steering = 0.0f};
+  EXPECT_NEAR(pipeline_.Process(cfg_, policy, input_).command.throttle, 0.5f,
+              1e-5f);
+}
+
+TEST_F(StabilizationPipelineTest, PitchCompensationNeverFlipsThrottleSign) {
+  // LOS-369: под гору газ вперёд снижается максимум до нуля, а задний ход
+  // в гору не превращается в газ вперёд.
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+  };
+  input_.pitch_deg = 30.0f;  // спуск: коррекция −0.25
+  input_.command = {.throttle = 0.1f, .steering = 0.0f};
+  EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                  0.0f);
+  input_.pitch_deg = -30.0f;  // подъём: коррекция +0.25
+  input_.command = {.throttle = -0.1f, .steering = 0.0f};
+  EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, policy, input_).command.throttle,
+                  0.0f);
+}
+
+TEST_F(StabilizationPipelineTest, KidsYawReverseGateUsesOriginalCommand) {
+  // LOS-369: на подъёме компенсация обнуляет малый задний ход, но yaw-PID
+  // всё равно должен считать, что машина едет назад, и не трогать руль.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.limiters_enabled = false;
+  const ModeTraits policy{
+      .yaw_rate_active = true,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+  input_.pitch_deg = -30.0f;  // подъём: коррекция +0.25
+  input_.command = {.throttle = -0.1f, .steering = 0.5f};
+  const auto output = pipeline_.Process(cfg_, policy, input_);
+  EXPECT_FLOAT_EQ(output.command.throttle, 0.0f);
+  EXPECT_FLOAT_EQ(output.command.steering, 0.5f);
+}
+
+TEST_F(StabilizationPipelineTest, KidsPitchCompensationDoesNotUndoReducers) {
+  // LOS-369: accel limiter и anti-spin режут газ уже после компенсации, а
+  // не до неё, — добавленный в гору газ их срез не отменяет.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.throttle_limit = 0.4f;
+  cfg_.kids_mode.speed_limit_enabled = false;
+  cfg_.kids_mode.anti_spin_enabled = true;
+  cfg_.kids_mode.anti_spin_threshold_deg = 10.0f;
+  cfg_.kids_mode.anti_spin_reduction = 0.5f;
+  cfg_.kids_mode.accel_limit_enabled = true;
+  cfg_.kids_mode.accel_threshold_g = 0.15f;
+  cfg_.kids_mode.accel_limit_gain = 3.0f;
+  cfg_.kids_mode.accel_max_reduction = 0.5f;
+  input_.command = {.throttle = 0.9f, .steering = 0.0f};
+  input_.slip_angle_deg = 25.0f;
+  input_.forward_accel_g = 0.25f;
+  input_.dt_ms = 0;
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+
+  input_.pitch_deg = 0.0f;
+  const float level = pipeline_.Process(cfg_, policy, input_).command.throttle;
+  input_.pitch_deg = -10.0f;  // нос вверх
+  const float uphill = pipeline_.Process(cfg_, policy, input_).command.throttle;
+
+  // 0.4 × (1 − 0.5) × (1 − 0.3) на ровном и в гору одинаково.
+  EXPECT_NEAR(level, 0.14f, 1e-5f);
+  EXPECT_NEAR(uphill, level, 1e-5f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

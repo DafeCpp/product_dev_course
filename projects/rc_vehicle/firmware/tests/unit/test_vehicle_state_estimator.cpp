@@ -161,6 +161,85 @@ TEST_F(VehicleStateEstimatorTest, MotorModelAnchorsForwardSpeed) {
   EXPECT_LT(estimate.vx_ms, VehicleEkf::kMaxSpeedMs);
 }
 
+TEST_F(VehicleStateEstimatorTest, TiltAnchorSettlesAfterMotorModelReturns) {
+  // LOS-369: пока якоря не было, разгон мог завалить pitch. После возврата
+  // мотор-модели оценка считается якорной только через 3τ = 3 / corr_gain.
+  input_.filter.motor_model_enabled = true;
+  input_.filter.tilt_corr_gain_hz = 1.0f;  // выдержка 3 с = 1500 тиков
+  EXPECT_TRUE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+      << "после Reset() на старте выдержка не нужна";
+
+  input_.filter.motor_model_enabled = false;
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
+  }
+
+  input_.filter.motor_model_enabled = true;
+  for (int i = 0; i < 1499; ++i) {
+    ASSERT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+        << "тик " << i;
+  }
+  EXPECT_TRUE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
+}
+
+TEST_F(VehicleStateEstimatorTest,
+       TiltAnchorSettleCountsOnlyAcceptedCorrections) {
+  // LOS-369: пока accel-коррекция отбрасывается гейтом 1g (ухабы, ошибка
+  // мотор-модели), устаревший pitch не сходится — выдержка не идёт.
+  input_.filter.motor_model_enabled = true;
+  input_.filter.tilt_corr_gain_hz = 1.0f;
+  (void)estimator_.Update(sensors_, input_);
+  input_.filter.motor_model_enabled = false;
+  (void)estimator_.Update(sensors_, input_);
+
+  input_.filter.motor_model_enabled = true;
+  sensors_.imu_data.az = 1.6f;  // |a| вне гейта
+  for (int i = 0; i < 3000; ++i) {
+    ASSERT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+        << "тик " << i;
+  }
+  sensors_.imu_data.az = 1.0f;
+  bool anchored = false;
+  for (int i = 0; i < 1500 && !anchored; ++i) {
+    anchored = estimator_.Update(sensors_, input_).tilt_accel_anchored;
+  }
+  EXPECT_TRUE(anchored);
+}
+
+TEST_F(VehicleStateEstimatorTest, TiltAnchorSettleTracksGainChanges) {
+  // LOS-369: выдержка считается в постоянных времени, а не в секундах —
+  // снижение tilt_corr_gain_hz на ходу её удлиняет.
+  input_.filter.motor_model_enabled = true;
+  input_.filter.tilt_corr_gain_hz = 5.0f;  // 3τ = 0.6 с
+  (void)estimator_.Update(sensors_, input_);
+  input_.filter.motor_model_enabled = false;
+  (void)estimator_.Update(sensors_, input_);
+
+  input_.filter.motor_model_enabled = true;
+  (void)estimator_.Update(sensors_, input_);
+  input_.filter.tilt_corr_gain_hz = 0.5f;  // 3τ = 6 с
+  for (int i = 0; i < 2000; ++i) {         // 4 с
+    ASSERT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+        << "тик " << i;
+  }
+  bool anchored = false;
+  for (int i = 0; i < 1500 && !anchored; ++i) {
+    anchored = estimator_.Update(sensors_, input_).tilt_accel_anchored;
+  }
+  EXPECT_TRUE(anchored);
+}
+
+TEST_F(VehicleStateEstimatorTest, CounterfactualMotorModelIsNotTiltAnchor) {
+  // LOS-369: пока Kids speed limiter срезает PWM, ускорение мотор-модели
+  // counterfactual — pitch по нему для компенсации не годится.
+  input_.filter.motor_model_enabled = true;
+  input_.motor_model_counterfactual = true;
+  EXPECT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored);
+  input_.motor_model_counterfactual = false;
+  EXPECT_FALSE(estimator_.Update(sensors_, input_).tilt_accel_anchored)
+      << "после вмешательства лимитера нужна выдержка якоря";
+}
+
 TEST_F(VehicleStateEstimatorTest, FrameChangeResetsTiltHistory) {
   sensors_.imu_data.ax = -0.5f;
   sensors_.imu_data.az = 0.8660254f;

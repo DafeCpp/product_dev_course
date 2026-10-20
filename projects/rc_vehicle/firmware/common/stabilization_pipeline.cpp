@@ -13,6 +13,8 @@ constexpr float kStabEngageSpeedMs = 0.30f;
 constexpr float kStabDisengageSpeedMs = 0.15f;
 constexpr float kStabRampInSec = 0.25f;
 constexpr float kYawErrorCutoffHz = 10.0f;
+// |throttle|, при котором pitch-компенсация действует в полную силу (LOS-369).
+constexpr float kPitchCompRampThrottle = 0.2f;
 constexpr float kTwoPi = 6.28318530717958647692f;
 }  // namespace
 
@@ -162,14 +164,31 @@ void PitchCompensator::Process(const StabilizationConfig& cfg, float& throttle,
   if (!cfg.pitch_comp.enabled) return;
   if (input.stabilization_weight <= 0.0f) return;
   if (!input.imu_enabled) return;
+  // Нейтраль (шум стика уже снят в SelectControlSource): компенсация не
+  // трогается с места сама — в гору поехала бы вперёд, под гору назад, и
+  // ненулевая команда блокировала бы ZUPT (LOS-369).
+  if (throttle == 0.0f) return;
 
+  // pitch_deg > 0 — нос ВНИЗ (конвенция Madgwick/TiltEstimator: pitch =
+  // atan2(-ax, …), а на подъёме акселерометр видит ax = +sin). Подъём даёт
+  // отрицательный pitch, поэтому знак меняем: gain > 0 добавляет газ в гору
+  // (LOS-369).
+  const float nose_up_deg = -input.pitch_deg;
   // Fix #8 (REFACTORING.md): std::clamp вместо ручного if/else
   const float correction =
-      std::clamp(cfg.pitch_comp.gain * input.pitch_deg,
+      std::clamp(cfg.pitch_comp.gain * nose_up_deg,
                  -cfg.pitch_comp.max_correction, cfg.pitch_comp.max_correction);
 
-  throttle = std::clamp(throttle + correction * input.stabilization_weight,
-                        -1.0f, 1.0f);
+  // У нейтрали коррекция нарастает линейно с |throttle|: иначе стик, едва
+  // вышедший из мёртвой зоны, на склоне сразу получал бы полную добавку
+  // (скачок 0 → max_correction).
+  const float ramp =
+      std::min(std::fabs(throttle) / kPitchCompRampThrottle, 1.0f);
+  const float compensated = std::clamp(
+      throttle + correction * ramp * input.stabilization_weight, -1.0f, 1.0f);
+  // Компенсация не разворачивает команду: под гору газ вперёд снижается
+  // максимум до нуля, но не превращается в задний ход/тормоз.
+  throttle = (compensated * throttle < 0.0f) ? 0.0f : compensated;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -294,6 +313,15 @@ StabilizationOutput StabilizationPipeline::Process(
       .motor_model_target_throttle = input.command.throttle,
   };
 
+  // В Kids компенсация тангажа идёт ДО ограничителей: предел газа,
+  // anti-spin и accel limiter — защита ребёнка, и добавленный в гору газ не
+  // должен её обходить (LOS-369). В остальных режимах порядок прежний.
+  const bool pitch_before_limits =
+      policy.pitch_comp_active && policy.apply_input_limits;
+  if (pitch_before_limits) {
+    pitch_ctrl_.Process(cfg, output.command.throttle, input);
+  }
+
   if (policy.apply_input_limits) {
     kids_processor_.Process(cfg, output.command.throttle,
                             output.command.steering, input, nullptr,
@@ -308,10 +336,15 @@ StabilizationOutput StabilizationPipeline::Process(
   }
 
   if (policy.yaw_rate_active) {
-    yaw_ctrl_.Process(cfg, output.command.steering, input,
-                      output.command.throttle < 0.0f, policy.yaw_ref_cutoff_hz);
+    // Направление берём и по исходной команде: в Kids компенсация тангажа на
+    // подъёме может обнулить малый задний ход, но машина всё ещё едет назад,
+    // и yaw-PID с инвертированной связью включать нельзя (LOS-369).
+    const bool reversing =
+        input.command.throttle < 0.0f || output.command.throttle < 0.0f;
+    yaw_ctrl_.Process(cfg, output.command.steering, input, reversing,
+                      policy.yaw_ref_cutoff_hz);
   }
-  if (policy.pitch_comp_active) {
+  if (policy.pitch_comp_active && !pitch_before_limits) {
     pitch_ctrl_.Process(cfg, output.command.throttle, input);
   }
   if (policy.slip_angle_active) {
