@@ -513,6 +513,9 @@ function connectWebSocket() {
             startCommandSending();
             requestWakeLock();
             wsSend({ type: 'get_mag_calib_status' });
+            // Форма стабилизации отправляет все поля — сначала заполнить её
+            // сохранённым конфигом, иначе «Сохранить» затрёт его значениями HTML.
+            wsSend({ type: 'get_stab_config' });
         };
 
         ws.onmessage = (event) => {
@@ -546,6 +549,13 @@ function connectWebSocket() {
                         showStabSaveStatus('Сохранено', 'toast-ok');
                     } else {
                         showStabSaveStatus('Ошибка сохранения', 'toast-err');
+                    }
+                } else if (data.type === 'set_kids_preset_ack') {
+                    if (data.ok) {
+                        applyStabConfig(data);
+                        showStabSaveStatus('Пресет применён', 'toast-ok');
+                    } else {
+                        showStabSaveStatus('Ошибка пресета', 'toast-err');
                     }
                 } else if (data.type === 'log_info') {
                     updateLogInfo(data.count, data.capacity);
@@ -1427,6 +1437,9 @@ function applyStabConfig(cfg) {
     set('adapt-speed-ref', cfg.adaptive?.speed_ref_ms ?? '');
     setChk('madgwick-enabled', cfg.filter?.madgwick_enabled ?? true);
     setChk('ekf-enabled', cfg.filter?.ekf_enabled ?? true);
+    setChk('motor-model-enabled', cfg.filter?.motor_model_enabled ?? true);
+    set('madgwick-beta', cfg.filter?.madgwick_beta ?? '');
+    set('lpf-cutoff', cfg.filter?.lpf_cutoff_hz ?? '');
     setChk('adaptive-beta-enabled', cfg.filter?.adaptive_beta_enabled ?? true);
     set('adaptive-accel-thresh', cfg.filter?.adaptive_accel_threshold_g ?? '');
     setChk('pitch-comp-enabled', cfg.pitch_comp?.enabled);
@@ -1494,6 +1507,9 @@ function applyStabConfig(cfg) {
         if (kidsSteerEl) kidsSteerEl.textContent = kidsSlewSteering.toFixed(1);
         if (kidsThrottleEl) kidsThrottleEl.textContent = kidsSlewThrottle.toFixed(1);
         updateKidsEffectiveSlew();
+
+        const accelChk = $('kids-accel-limit-enabled');
+        if (accelChk) accelChk.checked = km.accel_limit_enabled ?? true;
 
         const speedEnabled = km.speed_limit_enabled ?? false;
         const maxSpeedMs = km.max_speed_ms ?? 1.5;
@@ -1566,6 +1582,9 @@ function saveStabConfig() {
         filter: {
             madgwick_enabled: getChk('madgwick-enabled'),
             ekf_enabled: getChk('ekf-enabled'),
+            motor_model_enabled: getChk('motor-model-enabled'),
+            madgwick_beta: getF('madgwick-beta'),
+            lpf_cutoff_hz: getF('lpf-cutoff'),
             adaptive_beta_enabled: getChk('adaptive-beta-enabled'),
             adaptive_accel_threshold_g: getF('adaptive-accel-thresh'),
         },
@@ -1588,6 +1607,7 @@ function saveStabConfig() {
             steering_limit: kidsSteeringLimit,
             slew_steering: getF('kids-slew-steering'),
             slew_throttle: getF('kids-slew-throttle'),
+            accel_limit_enabled: $('kids-accel-limit-enabled')?.checked ?? true,
             speed_limit_enabled: $('kids-speed-limit-enabled')?.checked ?? false,
             max_speed_ms: ($('kids-max-speed') ? parseInt($('kids-max-speed').value) / 10.0 : 1.5),
         },
@@ -2058,6 +2078,12 @@ const btnLoadStab = $('btn-load-stab');
 const btnSaveStab = $('btn-save-stab');
 if (btnLoadStab) btnLoadStab.addEventListener('click', loadStabConfig);
 if (btnSaveStab) btnSaveStab.addEventListener('click', saveStabConfig);
+
+document.querySelectorAll('.kids-preset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        wsSend({ type: 'set_kids_preset', preset: parseInt(btn.dataset.preset, 10) });
+    });
+});
 
 const kidsThrottleSliderEl = $('kids-throttle-limit');
 const kidsSteeringSliderEl = $('kids-steering-limit');
