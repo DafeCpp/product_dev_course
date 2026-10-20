@@ -547,6 +547,13 @@ function connectWebSocket() {
                     } else {
                         showStabSaveStatus('Ошибка сохранения', 'toast-err');
                     }
+                } else if (data.type === 'set_kids_preset_ack') {
+                    if (data.ok) {
+                        applyStabConfig(data);
+                        showStabSaveStatus('Пресет применён', 'toast-ok');
+                    } else {
+                        showStabSaveStatus('Ошибка пресета', 'toast-err');
+                    }
                 } else if (data.type === 'log_info') {
                     updateLogInfo(data.count, data.capacity);
                     if (pendingLogTotal === -2) {
@@ -1427,6 +1434,7 @@ function applyStabConfig(cfg) {
     set('adapt-speed-ref', cfg.adaptive?.speed_ref_ms ?? '');
     setChk('madgwick-enabled', cfg.filter?.madgwick_enabled ?? true);
     setChk('ekf-enabled', cfg.filter?.ekf_enabled ?? true);
+    setChk('motor-model-enabled', cfg.filter?.motor_model_enabled ?? true);
     set('madgwick-beta', cfg.filter?.madgwick_beta ?? '');
     set('lpf-cutoff', cfg.filter?.lpf_cutoff_hz ?? '');
     setChk('adaptive-beta-enabled', cfg.filter?.adaptive_beta_enabled ?? true);
@@ -1571,6 +1579,7 @@ function saveStabConfig() {
         filter: {
             madgwick_enabled: getChk('madgwick-enabled'),
             ekf_enabled: getChk('ekf-enabled'),
+            motor_model_enabled: getChk('motor-model-enabled'),
             madgwick_beta: getF('madgwick-beta'),
             lpf_cutoff_hz: getF('lpf-cutoff'),
             adaptive_beta_enabled: getChk('adaptive-beta-enabled'),
@@ -2066,6 +2075,12 @@ const btnLoadStab = $('btn-load-stab');
 const btnSaveStab = $('btn-save-stab');
 if (btnLoadStab) btnLoadStab.addEventListener('click', loadStabConfig);
 if (btnSaveStab) btnSaveStab.addEventListener('click', saveStabConfig);
+
+document.querySelectorAll('.kids-preset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        wsSend({ type: 'set_kids_preset', preset: parseInt(btn.dataset.preset, 10) });
+    });
+});
 
 const kidsThrottleSliderEl = $('kids-throttle-limit');
 const kidsSteeringSliderEl = $('kids-steering-limit');

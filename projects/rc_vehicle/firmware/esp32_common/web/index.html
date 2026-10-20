@@ -82,6 +82,12 @@
 
                 <div id="kids-mode-settings" class="sub-card sub-card-warn" style="display:none">
                     <div class="field-row">
+                        Пресет:
+                        <button class="btn btn-sm btn-muted kids-preset-btn" data-preset="1">Toddler</button>
+                        <button class="btn btn-sm btn-muted kids-preset-btn" data-preset="2">Child</button>
+                        <button class="btn btn-sm btn-muted kids-preset-btn" data-preset="3">Preteen</button>
+                    </div>
+                    <div class="field-row">
                         <label class="chk"><input type="checkbox" id="kids-limiters-enabled" checked> Ограничители Kids включены</label>
                     </div>
                     <div class="field-row" id="kids-limiters-hint" style="font-size:0.85em">
@@ -161,6 +167,7 @@
 
                 <div class="field-row">
                     <label class="chk"><input type="checkbox" id="ekf-enabled" checked> EKF (скорость, slip angle)</label>
+                    <label class="chk"><input type="checkbox" id="motor-model-enabled" checked> Мотор-модель в EKF</label>
                 </div>
 
                 <div class="field-row">
