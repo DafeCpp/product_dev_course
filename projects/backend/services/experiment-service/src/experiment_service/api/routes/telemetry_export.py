@@ -404,10 +404,19 @@ async def export_run_telemetry(request: web.Request):
 
     # Resolve capture session IDs
     cs_filter_raw = request.rel_url.query.get("capture_session_id")
+    cs_service = await get_capture_session_service(request)
     if cs_filter_raw:
-        session_ids = [parse_uuid(cs_filter_raw, "capture_session_id")]
+        session_id = parse_uuid(cs_filter_raw, "capture_session_id")
+        # The session must belong to this project and run, otherwise the
+        # filter would expose telemetry of any session by its ID.
+        try:
+            session = await cs_service.get_session(project_id, session_id)
+        except NotFoundError as exc:
+            raise web.HTTPNotFound(text="Resource not found") from exc
+        if session.run_id != run_id:
+            raise web.HTTPNotFound(text="Resource not found")
+        session_ids = [session_id]
     else:
-        cs_service = await get_capture_session_service(request)
         sessions, _total = await cs_service.list_sessions_for_run(
             project_id, run_id, limit=500, offset=0,
         )
