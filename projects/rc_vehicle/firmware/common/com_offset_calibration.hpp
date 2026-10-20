@@ -57,6 +57,8 @@ class ComOffsetCalibration {
     bool valid{false};
   };
 
+  static constexpr float kMaxOffsetM = 0.3f;  ///< Макс. допустимый offset [м]
+
   ComOffsetCalibration() = default;
 
   /**
@@ -132,7 +134,6 @@ class ComOffsetCalibration {
   static constexpr float kSettleSkipSec = 0.5f;  ///< Пропустить начало круиза
   static constexpr int kMinSamples = 500;
   static constexpr float kMinOmegaDps = 10.0f;  ///< Мин. ω для расчёта
-  static constexpr float kMaxOffsetM = 0.3f;     ///< Макс. допустимый offset
   static constexpr float kGravity = 9.80665f;
 
   void TransitionTo(Phase next);

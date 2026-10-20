@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "com_offset_calibration.hpp"
+#include "imu_calibration.hpp"
 
 namespace rc_vehicle {
 namespace {
@@ -257,6 +258,39 @@ TEST_F(ComOffsetCalibrationTest, KnownOffsetYRecovered) {
   EXPECT_TRUE(result.valid);
   EXPECT_NEAR(result.rx, 0.0f, 0.005f);
   EXPECT_NEAR(result.ry, ry_true, 0.005f);
+}
+
+TEST_F(ComOffsetCalibrationTest, RecalibrationOnCorrectedDataGivesResidual) {
+  // В цикле калибровка видит ax/ay после CorrectForComOffset текущим offset.
+  // Повторная калибровка поверх неточного offset даёт остаток, и
+  // старый + остаток = истинный offset (LOS-379).
+  const float omega_dps = 50.0f;
+  const float omega_rad = omega_dps * kDegToRad;
+  const float omega_sq = omega_rad * omega_rad;
+  const float rx_true = 0.05f;
+  const float ry_true = -0.03f;
+  // Сырые данные на установившемся круге (α = 0): a = −ω²·r / g.
+  const float raw_ax = -(omega_sq * rx_true) / kGravity;
+  const float raw_ay = -(omega_sq * ry_true) / kGravity;
+
+  ImuCalibration imu_calib;
+  auto data = imu_calib.GetData();
+  data.com_offset[0] = 0.04f;  // первая калибровка ошиблась
+  data.com_offset[1] = -0.01f;
+  imu_calib.SetData(data);
+
+  ImuData corrected{};
+  corrected.ax = raw_ax;
+  corrected.ay = raw_ay;
+  imu_calib.CorrectForComOffset(corrected, omega_rad, 0.0f);
+
+  auto result = RunFullCalibration(corrected.ax, corrected.ay, omega_dps,
+                                   corrected.ax, corrected.ay, -omega_dps);
+  ASSERT_TRUE(result.valid);
+  EXPECT_NEAR(result.rx, rx_true - 0.04f, 0.002f);
+  EXPECT_NEAR(result.ry, ry_true + 0.01f, 0.002f);
+  EXPECT_NEAR(data.com_offset[0] + result.rx, rx_true, 0.002f);
+  EXPECT_NEAR(data.com_offset[1] + result.ry, ry_true, 0.002f);
 }
 
 TEST_F(ComOffsetCalibrationTest, GravitySubtracted) {
