@@ -841,7 +841,7 @@ def test_rc_events_incomplete_diagnostics_fail(tmp_path):
     log = _write_csv(tmp_path / "e.csv", _event_log({
         100: ("RcLost", "", 1500, 1500),
         300: ("RcRestored", "", 0.4, 0),
-        500: ("RcLost", "thr=no_pulses str=ok", "", 1500),
+        500: ("RcLost", "thr=no_pulses str=ok", "junk", 1500),
         600: ("RcRestored", "", 0.2, 0)}))
     res = tm.check_rc_events(log)
     assert [r.passed for r in res] == [False, False, None]
@@ -856,6 +856,16 @@ def test_rc_events_ignore_startup_without_transmitter(tmp_path):
     res = tm.check_rc_events(log)
     assert [r.passed for r in res] == [True, None]
     assert res[-1].value.startswith("1 ")
+
+
+def test_rc_events_blank_cells_are_zero(tmp_path):
+    # web UI выгружает нулевые value1/value2 пустыми ячейками.
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "thr=no_pulses str=no_pulses", "", ""),
+        300: ("RcRestored", "", 0.4, "")}))
+    res = tm.check_rc_events(log)
+    assert [r.passed for r in res] == [True, None]
+    assert "0/0" in res[0].value
 
 
 def test_rc_events_without_event_columns(tmp_path):

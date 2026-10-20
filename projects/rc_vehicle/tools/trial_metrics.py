@@ -730,6 +730,14 @@ def _cell(v) -> str:
     return "" if v is None else str(v)
 
 
+def _event_value(cells: list[str], i: int) -> float:
+    # Экспортёр web UI пишет и 0, и NaN пустой ячейкой (app.js, парсер
+    # событий), а 0 у RcLost/RcRestored штатный (нет импульсов, нет дребезга).
+    # Пустую ячейку читаем как 0; NaN остаётся только для нечислового мусора.
+    cell = cells[i].strip() if i < len(cells) else ""
+    return 0.0 if cell == "" else _num(cell)
+
+
 def rc_link_events(rows: list[Row]) -> list[dict]:
     """События RcLost/RcRestored из колонок `event_*` (выгрузка web UI)."""
     if not has_col(rows, "event_type"):
@@ -747,8 +755,7 @@ def rc_link_events(rows: list[Row]) -> list[dict]:
                 continue
             out.append({"type": ev, "t_ms": _num(r.get("ts_ms")),
                         "param": params[i] if i < len(params) else "",
-                        "v1": _num(v1s[i] if i < len(v1s) else None),
-                        "v2": _num(v2s[i] if i < len(v2s) else None)})
+                        "v1": _event_value(v1s, i), "v2": _event_value(v2s, i)})
     return out
 
 
