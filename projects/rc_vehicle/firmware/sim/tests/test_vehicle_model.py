@@ -253,3 +253,32 @@ def test_axle_force_stays_within_grip_while_spinning_in_turn():
             fy = min(cap * 1.01, c * abs(alpha))
             assert math.hypot(fx, fy) <= mu * n * 1.01
     assert spin_ticks > 100
+
+
+@pytest.mark.parametrize("dt", [0.02, 0.1])
+def test_coarse_step_lateral_force_respects_grip(dt):
+    """Грубый шаг fitting: проинтегрированная боковая сила оси в пределе."""
+    p = SimParams(tire_mu=0.4, drive_front_share=0.5)
+    m = VehicleModel(p, dynamic=True)
+    for _ in range(int(2.0 / dt)):
+        m.step(dt, 0.8, 0.0)
+    for i in range(int(6.0 / dt)):
+        steering = (1.0, -1.0, 0.3)[i * 3 // int(6.0 / dt)]
+        vy0 = m.state.vy
+        out = m.step(dt, 0.8, steering)
+        s = m.state
+        if s.v < 0.3:
+            continue
+        implied = (s.vy - vy0) / dt + s.v * s.r
+        assert out.lat_accel == pytest.approx(implied, abs=1e-6)
+        assert abs(out.lat_accel) <= p.tire_mu * p.gravity_ms2 * 1.011
+
+
+def test_marginal_wheelspin_never_reports_body_ahead_of_wheels():
+    """Тяга чуть выше предела: slip ratio при разгоне не уходит в минус."""
+    p = SimParams(tire_mu=0.2)
+    for throttle in (0.34, 0.36, 0.38, 0.4):
+        m = VehicleModel(p)
+        for _ in range(1500):
+            out = m.step(DT, throttle, 0.0)
+            assert out.slip_ratio >= 0.0

@@ -18,9 +18,10 @@ _DYNAMIC_MIN_SPEED = 0.3  # м/с
 # (LOS-370). Точное значение влияет только на величину slip ratio.
 _WHEEL_SPIN_GAIN = 5.0
 
-# Уточнение секущей жёсткости шин: число решений шага и допуск превышения
-# предела боковой силы оси.
-_SECANT_ITERS = 4
+# Уточнение секущей жёсткости шин: наибольшее число решений шага (лишние
+# решения — только пока ось за пределом; 16 хватает до dt = 0.1 с fitting)
+# и допуск превышения предела боковой силы оси.
+_SECANT_ITERS = 16
 _SECANT_TOL = 0.01
 
 
@@ -102,8 +103,8 @@ class VehicleModel:
         # long_accel — specific force по X корпуса (тяга минус сопротивление):
         # именно её меряет акселерометр. Тяжесть вдоль склона меняет скорость,
         # но акселерометром не видна (свободное падение по склону).
-        long_accel = self._traction_limited_accel(dt)
         grade_accel = p.gravity_ms2 * math.sin(self.slope_rad)
+        long_accel = self._traction_limited_accel(dt, grade_accel)
         s.v += (long_accel - grade_accel) * dt
         if not self._wheels_spinning:
             s.wheel_v = s.v
@@ -156,7 +157,7 @@ class VehicleModel:
                   if share > 0.0]
         return min(limits) / p.mass if limits else 0.0
 
-    def _traction_limited_accel(self, dt: float) -> float:
+    def _traction_limited_accel(self, dt: float, grade_accel: float) -> float:
         """Продольная specific force корпуса с учётом предела сцепления.
 
         Сопротивление drag_coeff — противо-ЭДС мотора, оно тормозит колёса,
@@ -164,7 +165,8 @@ class VehicleModel:
         пределе μ·N, колёса катятся без проскальзывания (wheel_v = v). Сверх
         предела колёса срываются: корпус тянет сила трения скольжения, а
         остаток тяги раскручивает колёса, пока противо-ЭДС не уравняет её с
-        трением. Сцепление возвращается, когда корпус догнал колёса.
+        трением. Сцепление возвращается, когда корпус догнал колёса к концу
+        шага (скорость корпуса после интегрирования, с учётом склона).
         """
         p = self.p
         s = self.state
@@ -182,7 +184,8 @@ class VehicleModel:
         friction = self._spin_dir * limit
         s.wheel_v += ((s.accel - p.drag_coeff * s.wheel_v - friction)
                       * _WHEEL_SPIN_GAIN * dt)
-        if (s.wheel_v - s.v) * self._spin_dir <= 0.0:
+        v_next = s.v + (friction - grade_accel) * dt
+        if (s.wheel_v - v_next) * self._spin_dir <= 0.0:
             self._wheels_spinning = False  # корпус догнал колёса — сцепление
             return max(-limit, min(limit, s.accel - p.drag_coeff * s.v))
         return friction
@@ -253,12 +256,15 @@ class VehicleModel:
             over_f = Caf * abs(alpha_f) > fy_max_f * (1.0 + _SECANT_TOL)
             over_r = Car * abs(alpha_r) > fy_max_r * (1.0 + _SECANT_TOL)
             if not (over_f or over_r):
-                break
+                return lat_accel
             if over_f:
                 Caf = fy_max_f / abs(alpha_f)
             if over_r:
                 Car = fy_max_r / abs(alpha_r)
-        return lat_accel
+        # Итерации исчерпаны (грубый dt fitting): последний шаг — с уже
+        # исправленной жёсткостью, а не с той, что превысила предел.
+        s.vy, s.r = vy0, r0
+        return self._solve_lateral(dt, delta, v, Caf, Car)
 
     def _solve_lateral(self, dt: float, delta: float, v: float,
                        Caf: float, Car: float) -> float:
