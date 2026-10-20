@@ -111,6 +111,9 @@
                         Эффективно: руль 3.0/с, газ 0.3/с
                     </div>
                     <div class="field-row" style="margin-top:6px">
+                        <label class="chk"><input type="checkbox" id="kids-accel-limit-enabled" checked> Ограничение ускорения</label>
+                    </div>
+                    <div class="field-row" style="margin-top:6px">
                         <label class="chk"><input type="checkbox" id="kids-speed-limit-enabled"> Ограничение скорости (EKF)</label>
                     </div>
                     <div class="mini-slider-row" id="kids-speed-row">
@@ -158,6 +161,11 @@
 
                 <div class="field-row">
                     <label class="chk"><input type="checkbox" id="ekf-enabled" checked> EKF (скорость, slip angle)</label>
+                </div>
+
+                <div class="field-row">
+                    <label>Madgwick β <input type="text" id="madgwick-beta" size="6"></label>
+                    <label>LPF gz, Гц <input type="text" id="lpf-cutoff" size="6"></label>
                 </div>
 
                 <div class="field-row">
