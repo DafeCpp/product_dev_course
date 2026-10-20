@@ -64,7 +64,7 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 | 1.2 | Self-test (IC D1#2) | все 10 проверок зелёные | — | — | GTest `test_self_test.cpp` | [ ] |
 | 1.3 | Частота цикла (IC D1#3) | `DIAG: loop=500 Hz` (≥ 490) | serial, 1 мин PSRAM | `analyze_telemetry.py` (loop rate, cadence 10 мс, срывов ≤ 0.5 %) | — | [ ] |
 | 1.4 | Калибровка gyro, затем full (IC D1#4–5) | status=done, bias < 5 dps; full: g ≈ [0, 0, 1] | события ImuCalib* | — | — | [ ] |
-| 1.5 | Калибровка переживает ребут (LOS-227): перед ребутом записать значения калибровки из web UI | в `make monitor` при старте `IMU calibration loaded from NVS`, а не `No saved IMU calibration`; значения калибровки после ребута те же (автокалибровка на старте делает `calib_valid` зелёным и без NVS, поэтому self-test не доказывает) | — | — | GTest | [ ] |
+| 1.5 | Калибровка переживает ребут (LOS-227) | в `make monitor` при старте `IMU calibration loaded from NVS` (а не `No saved IMU calibration`) и нет `Saved forward axis rejected`. Self-test и значения в web UI не доказывают: на старте сразу идёт автокалибровка, она делает `calib_valid` зелёным и перезаписывает значения | — | — | GTest | [ ] |
 | 1.6 | Конфиг после прошивки (LOS-171, миграции NVS v13/v14) | ручной тюнинг сохранён, нетронутые пресеты Normal/Sport получили новые коэффициенты | `get_stab_config` / web UI | — | GTest миграций | [ ] |
 | 1.7 | Знак pitch: нос вверх ~30° (IC D1#6, **LOS-369 п. 1**) | **pitch ≈ −30°** (нос вверх — отрицательный) | web UI / CSV `pitch_deg` | вручную | `test_testing_program_scenarios.py::test_slope_is_seen_as_pitch` | [ ] |
 | 1.8 | Roll и yaw (IC D1#7–8) | наклон 30° → roll ≈ 30°; поворот 90° → Δyaw ≈ 90° | web UI | вручную | — | [ ] |
