@@ -1,11 +1,14 @@
 """Webhook subscription endpoints."""
 from __future__ import annotations
 
+from typing import Any
+
 from aiohttp import web
 from pydantic import BaseModel, Field, ValidationError
 
 from experiment_service.api.utils import paginated_response, pagination_params, parse_uuid, read_json
 from experiment_service.core.exceptions import NotFoundError
+from experiment_service.domain.webhooks import WebhookDelivery, WebhookSubscription
 from experiment_service.services.dependencies import (
     ensure_permission,
     get_webhook_service,
@@ -14,6 +17,17 @@ from experiment_service.services.dependencies import (
 )
 
 routes = web.RouteTableDef()
+
+
+def _subscription_json(sub: WebhookSubscription) -> dict[str, Any]:
+    # The signing secret is write-only: readers of the project must not be able to forge deliveries.
+    data = sub.model_dump(mode="json", exclude={"secret"})
+    data["has_secret"] = bool(sub.secret)
+    return data
+
+
+def _delivery_json(delivery: WebhookDelivery) -> dict[str, Any]:
+    return delivery.model_dump(mode="json", exclude={"secret"})
 
 
 class WebhookCreateDTO(BaseModel):
@@ -31,7 +45,7 @@ async def list_webhooks(request: web.Request):
     limit, offset = pagination_params(request)
     items, total = await service.list_subscriptions(project_id, limit=limit, offset=offset)
     payload = paginated_response(
-        [item.model_dump(mode="json") for item in items],
+        [_subscription_json(item) for item in items],
         limit=limit,
         offset=offset,
         key="webhooks",
@@ -64,7 +78,7 @@ async def create_webhook(request: web.Request):
         event_types=event_types,
         secret=dto.secret,
     )
-    return web.json_response(sub.model_dump(mode="json"), status=201)
+    return web.json_response(_subscription_json(sub), status=201)
 
 
 @routes.delete("/api/v1/webhooks/{webhook_id}")
@@ -91,7 +105,7 @@ async def list_webhook_deliveries(request: web.Request):
     service = await get_webhook_service(request)
     items, total = await service.list_deliveries(project_id, status=status, limit=limit, offset=offset)
     payload = paginated_response(
-        [item.model_dump(mode="json") for item in items],
+        [_delivery_json(item) for item in items],
         limit=limit,
         offset=offset,
         key="deliveries",
