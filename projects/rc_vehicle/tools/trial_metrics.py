@@ -758,6 +758,10 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
     lost = None
     n = 0
     for e in events:
+        if e["type"] == "RcLost" and "since_boot" in e["param"]:
+            # Пульт не включён при старте: прошивка не считает это потерей
+            # (LossCount), парный RcRestored(first_acquire) тоже пропускаем.
+            continue
         if e["type"] == "RcLost":
             if lost is not None:
                 out.append(MetricResult(f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)",

@@ -846,6 +846,17 @@ def test_rc_events_incomplete_diagnostics_fail(tmp_path):
     assert [r.passed for r in res] == [False, False, None]
 
 
+def test_rc_events_ignore_startup_without_transmitter(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        10: ("RcLost", "thr=no_pulses str=no_pulses since_boot", 0, 0),
+        50: ("RcRestored", "first_acquire", 0, 0),
+        100: ("RcLost", "thr=no_pulses str=no_pulses", 1500, 1500),
+        300: ("RcRestored", "", 0.4, 0)}))
+    res = tm.check_rc_events(log)
+    assert [r.passed for r in res] == [True, None]
+    assert res[-1].value.startswith("1 ")
+
+
 def test_rc_events_without_event_columns(tmp_path):
     rows = [{"ts_ms": (i + 1) * DT_MS, "throttle": 0.0} for i in range(10)]
     assert tm.check_rc_events(_write_csv(tmp_path / "e.csv", rows))[0].no_data
