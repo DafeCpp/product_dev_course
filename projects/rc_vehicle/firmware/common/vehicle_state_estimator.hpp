@@ -154,6 +154,9 @@ class VehicleStateEstimator {
   // появления в постоянных времени accel-коррекции (LOS-369).
   bool prev_tick_anchored_{false};
   float anchor_settle_left_tau_{0.0f};
+  // Остаток схождения TiltEstimator после Reset() в постоянных времени
+  // accel-коррекции: до него детектор пробуксовки молчит (LOS-385).
+  float tilt_acquire_left_tau_{0.0f};
   // Установившаяся скорость мотор-модели, она же после инерционного звена
   // (LOS-378), и признак, что мотор-модель работала на прошлом тике.
   float motor_model_target_ms_{0.0f};

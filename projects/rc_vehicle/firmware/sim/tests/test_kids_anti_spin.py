@@ -38,7 +38,9 @@ DT_MS = 2
 # Авто-калибровка IMU при старте — 1000 семплов (2 с, CalibrationManager::
 # StartAutoCalibration) плюс сход фильтров. Меньше — и калибровка захватывала
 # разгон: gravity_vec наклонялся на ~2°, и в поворот yaw rate утекал в gx.
-SETTLE_TICKS = 1500
+# После калибровки TiltEstimator сходится 3τ = 6 с, и до этого детектор
+# пробуксовки молчит (LOS-385), отсюда 9 с.
+SETTLE_TICKS = 4500
 # Kids по умолчанию (common/stabilization_config.hpp, KidsModeConfig).
 ANTI_SPIN_THRESHOLD_DEG = 10.0
 

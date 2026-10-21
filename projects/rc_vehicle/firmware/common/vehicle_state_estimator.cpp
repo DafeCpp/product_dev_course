@@ -96,6 +96,9 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     tilt_active_this_tick = true;
     if (!tilt_was_enabled_) {
       tilt_est_.Reset();
+      // После Reset() pitch = 0, и на склоне гравитация остаётся в
+      // продольном ускорении, пока оценка не сойдётся (LOS-385).
+      tilt_acquire_left_tau_ = kTiltAnchorSettleTimeConstants;
     }
 
     const bool motor_model_anchor_active =
@@ -130,6 +133,11 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 #endif
     pitch_rad = tilt_est_.GetPitchRad();
     roll_rad = tilt_est_.GetRollRad();
+    if (tilt_est_.LastUpdateAccelCorrected()) {
+      tilt_acquire_left_tau_ = std::max(
+          tilt_acquire_left_tau_ - input.filter.tilt_corr_gain_hz * dt_sec,
+          0.0f);
+    }
     if (motor_model_anchor_active && tilt_est_.LastUpdateAccelCorrected()) {
       // Выдержка в постоянных времени: k = gain·dt — доля τ за тик, поэтому
       // смена tilt_corr_gain_hz на ходу её не обманывает.
@@ -242,9 +250,10 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   // повороте продольное ускорение кузова — это v̇x − vy·r, и без верного vy
   // интеграл уходил бы вниз (в SIL до 0.09 в повороте на асфальте); занос
   // там ловит угол заноса EKF, поэтому детектор ждёт выхода на прямую. Без
-  // TiltEstimator гравитация на склоне не снимается с продольного
-  // ускорения, и под горку корпус «отставал» бы от колёс.
+  // сошедшегося TiltEstimator гравитация на склоне не снимается с
+  // продольного ускорения, и под горку корпус «отставал» бы от колёс.
   if (motor_model_ran && tilt_active_this_tick &&
+      tilt_acquire_left_tau_ <= 0.0f &&
       std::abs(ekf_.GetYawRate()) < kWheelspinMaxYawRateRps) {
     wheelspin_.Update(wheel_speed_ms_, wheel_target_ms, forward_accel_g,
                       dt_sec);

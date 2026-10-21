@@ -90,6 +90,8 @@ TEST_F(VehicleStateEstimatorTest, MotionCapableThrottleRejectsZupt) {
 // LOS-385: колёса по мотор-модели разгоняются, корпус стоит (машина на
 // подставке) — это пробуксовка.
 TEST_F(VehicleStateEstimatorTest, WheelsDrivenWithBodyStillIsWheelspin) {
+  // Сначала TiltEstimator сходится в покое: 3τ при corr_gain 0.5 Гц — 6 с.
+  for (int i = 0; i < 3100; ++i) (void)estimator_.Update(sensors_, input_);
   input_.applied_throttle = 0.3f;
   input_.motor_model_throttle = 0.3f;
   VehicleStateEstimate estimate;
@@ -104,6 +106,18 @@ TEST_F(VehicleStateEstimatorTest, WheelsDrivenWithBodyStillIsWheelspin) {
 // продольном ускорении, и детектору нечему верить.
 TEST_F(VehicleStateEstimatorTest, NoWheelspinWithoutTiltCompensation) {
   input_.filter.tilt_comp_enabled = false;
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_FALSE(estimate.wheels_driven);
+  EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
+}
+
+// Код-ревью PR #402: сразу после Reset() TiltEstimator держит pitch = 0, и
+// на склоне гравитация ещё в продольном ускорении — детектор ждёт.
+TEST_F(VehicleStateEstimatorTest, NoWheelspinWhileTiltAcquires) {
   input_.applied_throttle = 0.3f;
   input_.motor_model_throttle = 0.3f;
   VehicleStateEstimate estimate;
