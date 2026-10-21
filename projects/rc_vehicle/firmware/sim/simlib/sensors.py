@@ -203,6 +203,21 @@ def synth_mag(psi_rad: float, p: SimParams,
     return float(meas[0]), float(meas[1]), float(meas[2])
 
 
+def lever_arm_accel(out: StepOutput, p: SimParams) -> tuple[float, float]:
+    """Добавка к ускорению (м/с², X и Y корпуса) от IMU вне центра масс.
+
+    a_imu = a_cm + α×r + ω×(ω×r) при ω = (0, 0, r): по X −r²·rx − α·ry, по Y
+    −r²·ry + α·rx. Знаки те же, что снимает ImuCalibration::
+    CorrectForComOffset в прошивке (LOS-384).
+    """
+    rx, ry = p.imu_offset_x_m, p.imu_offset_y_m
+    if rx == 0.0 and ry == 0.0:
+        return 0.0, 0.0
+    w2 = out.yaw_rate * out.yaw_rate
+    alpha = out.yaw_accel
+    return -w2 * rx - alpha * ry, -w2 * ry + alpha * rx
+
+
 def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
                rc_throttle: float | None = None,
                rc_steering: float | None = None,
@@ -224,8 +239,9 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
     """
     excitation = road_noise.sample(out.speed, dt_ms) if road_noise else None
     road_attitude = excitation.attitude_rad if excitation else None
+    lever_x, lever_y = lever_arm_accel(out, p)
     ax, ay, az = synth_accel(
-        out.long_accel, out.lat_accel, p,
+        out.long_accel + lever_x, out.lat_accel + lever_y, p,
         excitation.accel_g if excitation else None,
         road_attitude, slope_rad)
     # Yaw rate — вокруг нормали к склону, т.е. уже ось Z корпуса: уклон

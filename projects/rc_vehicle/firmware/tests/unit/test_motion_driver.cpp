@@ -52,6 +52,13 @@ static void RunTicks(MotionDriver& d, int n, float dt,
   }
 }
 
+// Покой чуть дольше zupt.confirm_sec (0.2 с = 100 тиков по 2 мс).
+static constexpr int kZuptConfirmTicks = 101;
+
+static void HoldStill(MotionDriver& d, float gz = 0.0f) {
+  RunTicks(d, kZuptConfirmTicks, 0.002f, 0.0f, 1.0f, gz);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Basic lifecycle
 // ═══════════════════════════════════════════════════════════════════════════
@@ -429,9 +436,31 @@ TEST(MotionDriverTest, Brake_ZuptStopsWhenBothBelow) {
   d.Start(DefaultPidConfig());
   RunTicks(d, 760, 0.002f, 0.0f);
   d.EndCruise();
-  // accel_mag ≈ 1.0g, gyro ≈ 0 → ZUPT triggers
-  d.Update(0, 1.0f, 0.0f, 0.002f);
+  // accel_mag ≈ 1.0g, gyro ≈ 0 дольше confirm_sec → ZUPT triggers
+  HoldStill(d);
   EXPECT_EQ(d.GetPhase(), MotionPhase::Stopped);
+}
+
+TEST(MotionDriverTest, Brake_SingleStillSampleDoesNotStop) {
+  MotionDriver d;
+  d.Start(DefaultPidConfig());
+  RunTicks(d, 760, 0.002f, 0.0f);
+  d.EndCruise();
+  // На ходу вибрация на один тик попадает в полосу ZUPT: это не остановка.
+  d.Update(0, 1.0f, 0.0f, 0.002f);
+  EXPECT_EQ(d.GetPhase(), MotionPhase::Brake);
+}
+
+TEST(MotionDriverTest, Brake_MotionResetsZuptConfirm) {
+  MotionDriver d;
+  d.Start(DefaultPidConfig());
+  RunTicks(d, 760, 0.002f, 0.0f);
+  d.EndCruise();
+  for (int i = 0; i < 10; ++i) {
+    RunTicks(d, kZuptConfirmTicks - 2, 0.002f, 0.0f, 1.0f, 0.0f);
+    d.Update(0, 1.3f, 0.0f, 0.002f);  // толчок: ещё едем
+  }
+  EXPECT_EQ(d.GetPhase(), MotionPhase::Brake);
 }
 
 TEST(MotionDriverTest, Brake_NotStoppedIfGyroHigh) {
@@ -474,7 +503,7 @@ TEST(MotionDriverTest, NoGyroZupt_StopsWithAccelOnly) {
   RunTicks(d, 760, 0.002f);
   d.EndCruise();
   // accel_mag ≈ 1g, gyro high but ignored (gyro_thresh=0)
-  d.Update(0, 1.0f, 100.0f, 0.002f);
+  HoldStill(d, 100.0f);
   EXPECT_EQ(d.GetPhase(), MotionPhase::Stopped);
 }
 
@@ -487,7 +516,7 @@ TEST(MotionDriverTest, RepeatedStart_ResetsCompletely) {
   d.Start(DefaultPidConfig());
   RunTicks(d, 760, 0.002f, 0.0f);
   d.EndCruise();
-  d.Update(0, 1.0f, 0.0f, 0.002f);
+  HoldStill(d);
   ASSERT_EQ(d.GetPhase(), MotionPhase::Stopped);
 
   // Start again
@@ -518,7 +547,7 @@ TEST(MotionDriverTest, FullCycle_PidCoastBrake) {
   ASSERT_EQ(d.GetPhase(), MotionPhase::Brake);
 
   // ZUPT: stopped
-  d.Update(0, 1.0f, 0.0f, 0.002f);
+  HoldStill(d);
   EXPECT_EQ(d.GetPhase(), MotionPhase::Stopped);
 }
 
@@ -540,7 +569,7 @@ TEST(MotionDriverTest, FullCycle_LinearRampReverseBrake) {
   EXPECT_EQ(d.GetPhase(), MotionPhase::Brake);
 
   // Stopped (accel_mag ≈ 1g, gyro ignored)
-  d.Update(0, 1.0f, 100.0f, 0.002f);
+  HoldStill(d, 100.0f);
   EXPECT_EQ(d.GetPhase(), MotionPhase::Stopped);
 }
 
@@ -549,7 +578,7 @@ TEST(MotionDriverTest, Stopped_UpdateReturnsZero) {
   d.Start(DefaultPidConfig());
   RunTicks(d, 760, 0.002f, 0.0f);
   d.EndCruise();
-  d.Update(0, 1.0f, 0.0f, 0.002f);
+  HoldStill(d);
   ASSERT_EQ(d.GetPhase(), MotionPhase::Stopped);
   EXPECT_FLOAT_EQ(d.Update(0, 1.0f, 0.0f, 0.002f), 0.0f);
 }

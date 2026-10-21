@@ -33,6 +33,17 @@
 //       только с --drive-mode drift (в остальных режимах slip-PID выключен).
 //   --kids-preset <toddler|child|preteen> — возрастной пресет Kids Mode
 //       (KidsModeConfig::ApplyPreset), LOS-367.
+//   --madgwick-beta <β> — filter.madgwick_beta с выключенным adaptive β, как
+//       в пункте 7.7 протокола (LOS-384).
+//   --lpf-cutoff-hz <Гц> — filter.lpf_cutoff_hz, LPF gyro Z (LOS-384).
+//   --com-offset <rx> <ry> — сохранённый offset IMU от центра масс [м], как
+//       после прошлой калибровки (LOS-384).
+//   --start-com-calib <ms> [--target-accel g] [--test-steering v]
+//       [--test-duration s] — запустить калибровку offset IMU от центра масс
+//       по кругу (аналог start_com_calib по WebSocket), когда логическое
+//       время дойдёт до <ms>: сначала должна пройти калибровка IMU в покое.
+//       |руль| и длительность круиза берутся из --test-steering и
+//       --test-duration (по умолчанию 0.5 и 5 с, как в прошивке).
 //   --log — печатать Log() прошивки (в т.ч. события RC-связи LOS-216) в
 //       stderr с логическим временем.
 //
@@ -44,6 +55,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "stdio_platform.hpp"
@@ -74,8 +86,8 @@ std::string StepAndFormat(VehicleControlUnified& u, StdioPlatform& p,
   ApplyFrame(p, f);
   u.HostStep(f.dt_ms);
   return FormatOutputLine(p.GetLastSnap(), p.GetLastThrottle(),
-                          p.GetLastSteering(), p.WasNeutral(),
-                          u.IsTestActive());
+                          p.GetLastSteering(), p.WasNeutral(), u.IsTestActive(),
+                          u.IsComOffsetCalibActive());
 }
 
 }  // namespace
@@ -122,6 +134,14 @@ int main(int argc, char** argv) {
   bool pitch_comp = false;
   std::optional<float> slip_target_deg;
   rc_vehicle::KidsPreset kids_preset = rc_vehicle::KidsPreset::Custom;
+  std::optional<float> madgwick_beta;
+  std::optional<float> lpf_cutoff_hz;
+  std::optional<std::pair<float, float>> com_offset;
+  std::optional<uint32_t> start_com_calib_at_ms;
+  // Дефолты калибровки CoM как у ComOffsetCalibration::Start(), а не как у
+  // TestParams (там руль 0 и 3 с).
+  float com_steering = 0.5f;
+  float com_cruise_sec = 5.0f;
   rc_vehicle::TestParams test_params;
   for (int i = 1; i < argc; ++i) {
     const std::string_view a = argv[i];
@@ -172,16 +192,29 @@ int main(int argc, char** argv) {
       test_params.type = ParseTestType(argv[++i]);
     } else if (a == "--target-accel" && i + 1 < argc)
       test_params.target_accel_g = std::strtof(argv[++i], nullptr);
-    else if (a == "--test-duration" && i + 1 < argc)
+    else if (a == "--test-duration" && i + 1 < argc) {
       test_params.duration_sec = std::strtof(argv[++i], nullptr);
-    else if (a == "--test-steering" && i + 1 < argc)
+      com_cruise_sec = test_params.duration_sec;
+    } else if (a == "--test-steering" && i + 1 < argc) {
       test_params.steering = std::strtof(argv[++i], nullptr);
-    else if (a == "--pitch-comp")
+      com_steering = test_params.steering;
+    } else if (a == "--pitch-comp")
       pitch_comp = true;
     else if (a == "--slip-target-deg" && i + 1 < argc)
       slip_target_deg = std::strtof(argv[++i], nullptr);
     else if (a == "--kids-preset" && i + 1 < argc)
       kids_preset = ParseKidsPreset(argv[++i]);
+    else if (a == "--madgwick-beta" && i + 1 < argc)
+      madgwick_beta = std::strtof(argv[++i], nullptr);
+    else if (a == "--lpf-cutoff-hz" && i + 1 < argc)
+      lpf_cutoff_hz = std::strtof(argv[++i], nullptr);
+    else if (a == "--com-offset" && i + 2 < argc) {
+      const float rx = std::strtof(argv[++i], nullptr);
+      const float ry = std::strtof(argv[++i], nullptr);
+      com_offset = std::pair{rx, ry};
+    } else if (a == "--start-com-calib" && i + 1 < argc)
+      start_com_calib_at_ms =
+          static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
   }
 
   auto platform = std::make_unique<StdioPlatform>();
@@ -200,6 +233,9 @@ int main(int argc, char** argv) {
   p->SetPitchComp(pitch_comp);
   if (slip_target_deg) p->SetSlipTargetDeg(*slip_target_deg);
   p->SetKidsPreset(kids_preset);
+  if (madgwick_beta) p->SetMadgwickBeta(*madgwick_beta);
+  if (lpf_cutoff_hz) p->SetLpfCutoffHz(*lpf_cutoff_hz);
+  if (com_offset) p->SetComOffset(com_offset->first, com_offset->second);
   if (oversteer) {
     rc_vehicle::OversteerConfig cfg;
     cfg.warn_enabled = true;
@@ -223,6 +259,19 @@ int main(int argc, char** argv) {
     std::cerr << "sim_host: StartTest() rejected\n";
     return 1;
   }
+  // Калибровка CoM стартует по логическому времени, перед тиком: к этому
+  // моменту калибровка IMU в покое уже должна завершиться.
+  auto step = [&](const InputFrame& f) {
+    if (start_com_calib_at_ms && p->GetTimeMs() >= *start_com_calib_at_ms) {
+      start_com_calib_at_ms.reset();
+      if (!unified.StartComOffsetCalibration(test_params.target_accel_g,
+                                             com_steering, com_cruise_sec)) {
+        std::cerr << "sim_host: StartComOffsetCalibration() rejected\n";
+        std::exit(1);
+      }
+    }
+    return StepAndFormat(unified, *p, f);
+  };
 
   std::cout << OutputHeader() << '\n';
 
@@ -235,7 +284,7 @@ int main(int argc, char** argv) {
     }
     std::string out;
     for (const InputFrame& f : frames) {
-      out += StepAndFormat(unified, *p, f);
+      out += step(f);
       out += '\n';
     }
     std::cout << out;
@@ -245,7 +294,7 @@ int main(int argc, char** argv) {
     while (std::getline(std::cin, line)) {
       InputFrame f;
       if (!ParseInputLine(line, f)) continue;
-      std::cout << StepAndFormat(unified, *p, f) << '\n';
+      std::cout << step(f) << '\n';
       std::cout.flush();
     }
   }

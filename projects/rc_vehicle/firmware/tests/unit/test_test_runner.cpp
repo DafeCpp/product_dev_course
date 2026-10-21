@@ -49,9 +49,13 @@ class TestRunnerTest : public ::testing::Test {
     }
   }
 
-  // Single step with stopped-vehicle ZUPT conditions → immediate Done
+  // Stopped-vehicle ZUPT conditions until ZUPT confirms the stop
+  // (zupt.confirm_sec, LOS-384) → Done
   void RunBrakePhase(float& throttle, float& steering) {
-    Step(throttle, steering, 0.0f, 1.0f, 0.0f);
+    for (int i = 0; i < 1000 && runner.GetPhase() == TestRunner::Phase::Brake;
+         ++i) {
+      Step(throttle, steering, 0.0f, 1.0f, 0.0f);
+    }
   }
 
   // Helper: build a minimal valid Straight test
@@ -307,7 +311,7 @@ TEST_F(TestRunnerTest, CruiseHoldsThrottle_PositiveAndConstant) {
 // 12. BrakeZupt
 // ═══════════════════════════════════════════════════════════════════════════
 
-TEST_F(TestRunnerTest, BrakeZupt_ImmediatelyDone_WhenVehicleStopped) {
+TEST_F(TestRunnerTest, BrakeZupt_DoneAfterConfirm_WhenVehicleStopped) {
   runner.Start(MakeStraight());
 
   float throttle = 0.0f, steering = 0.0f;
@@ -315,8 +319,11 @@ TEST_F(TestRunnerTest, BrakeZupt_ImmediatelyDone_WhenVehicleStopped) {
   RunCruisePhase(throttle, steering, 1500);
   ASSERT_EQ(runner.GetPhase(), TestRunner::Phase::Brake);
 
-  // accel_mag=1.0 → |1.0-1.0|=0.0 < 0.05, gyro_z=0.0 < 3.0 → ZUPT
+  // accel_mag=1.0 → |1.0-1.0|=0.0 < 0.05, gyro_z=0.0 < 3.0 → ZUPT, но
+  // остановка засчитывается только через zupt.confirm_sec = 0.2 с.
   Step(throttle, steering, 0.0f, 1.0f, 0.0f);
+  EXPECT_EQ(runner.GetPhase(), TestRunner::Phase::Brake);
+  RunBrakePhase(throttle, steering);
 
   EXPECT_EQ(runner.GetPhase(), TestRunner::Phase::Done);
   EXPECT_FLOAT_EQ(throttle, 0.0f);

@@ -45,6 +45,7 @@ class StepOutput:
     # (пробуксовка при разгоне), <0 — отстают (юз при торможении или
     # пробуксовка назад на реверсе). 0 — катятся без проскальзывания.
     slip_ratio: float = 0.0
+    yaw_accel: float = 0.0  # рад/с², для акселерометра вне центра масс (LOS-384)
 
 
 class VehicleModel:
@@ -105,6 +106,7 @@ class VehicleModel:
             s.wheel_v = s.v
 
         delta = self._servo_angle(steering, dt)
+        r_prev = s.r
 
         # Линеаризация боковой динамики ниже выведена для движения вперёд.
         # На малой скорости она вырождается (1/v), а на реверсе меняются роли
@@ -127,6 +129,7 @@ class VehicleModel:
             delta_rad=delta,
             wheel_speed=s.wheel_v,
             slip_ratio=self._slip_ratio(),
+            yaw_accel=(s.r - r_prev) / dt if dt > 0.0 else 0.0,
         )
 
     # ── Сцепление (LOS-370) ──────────────────────────────────────────────────
