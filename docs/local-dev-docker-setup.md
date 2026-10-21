@@ -81,9 +81,11 @@ docker-compose up
 docker-compose logs auth-migrate
 docker-compose logs experiment-migrate
 
-# Повторно применить миграции, например после добавления нового SQL-файла
-docker-compose run --rm experiment-migrate
-docker-compose run --rm telemetry-ingest-migrate
+# Повторно применить миграции, например после добавления нового SQL-файла.
+# Каталог migrations/ копируется в образ при сборке и не монтируется в контейнер,
+# поэтому без --build новый файл не будет виден и прогон скажет "No pending migrations."
+docker-compose run --rm --build experiment-migrate
+docker-compose run --rm --build telemetry-ingest-migrate
 ```
 
 Если init-контейнер упал, зависящий от него сервис не стартует: смотрите логи init-контейнера,
@@ -92,7 +94,9 @@ docker-compose run --rm telemetry-ingest-migrate
 ### Make-таргеты
 
 Make-таргеты выполняют `python -m bin.migrate` внутри уже запущенного рантайм-контейнера
-(`docker-compose exec`), поэтому нужны, когда стек уже поднят:
+(`docker-compose exec`), поэтому нужны, когда стек уже поднят. Они видят те миграции,
+что были в образе на момент сборки: после добавления SQL-файла сначала пересоберите
+сервис (`make dev-rebuild` или `docker-compose up -d --build experiment-service`).
 
 ```bash
 make auth-migrate              # auth_db
@@ -104,7 +108,7 @@ make auth-init                 # создать auth_db + миграции + п�
 ```
 
 Список ожидающих миграций без применения: добавьте `--dry-run`, например
-`docker-compose run --rm experiment-migrate python -m bin.migrate --dry-run`.
+`docker-compose run --rm --build experiment-migrate python -m bin.migrate --dry-run`.
 
 ## Архитектура Hot-Reload
 
