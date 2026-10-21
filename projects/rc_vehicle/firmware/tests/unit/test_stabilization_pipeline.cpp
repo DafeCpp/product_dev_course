@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "grip_loss_detector.hpp"
 #include "stabilization_pipeline.hpp"
 
 namespace rc_vehicle {
@@ -218,6 +219,31 @@ TEST_F(StabilizationPipelineTest, KidsYawReverseGateUsesOriginalCommand) {
   const auto output = pipeline_.Process(cfg_, policy, input_);
   EXPECT_FLOAT_EQ(output.command.throttle, 0.0f);
   EXPECT_FLOAT_EQ(output.command.steering, 0.5f);
+}
+
+TEST_F(StabilizationPipelineTest, KidsYawCorrectionRespectsGripSteerCap) {
+  // LOS-378: yaw-PID идёт после Kids-ограничений и не должен поднимать руль
+  // выше потолка по сцеплению.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.steering_limit = 1.0f;
+  cfg_.kids_mode.accel_limit_enabled = false;
+  const ModeTraits policy{
+      .yaw_rate_active = true,
+      .pitch_comp_active = false,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+  input_.command = {.throttle = 0.2f, .steering = 1.0f};
+  input_.yaw_rate_rps = 0.3f;
+  input_.lateral_grip_lost = true;
+  const float cap = KidsModeProcessor::kGripSteerYawRatio *
+                    GripLossDetector::SteeringForYawRate(0.3f, 1.0f);
+  for (int i = 0; i < 100; ++i) {
+    const auto output = pipeline_.Process(cfg_, policy, input_);
+    ASSERT_LE(output.command.steering, cap + 1e-6f) << "tick " << i;
+  }
+  EXPECT_TRUE(kids_.IsGripSteerLimitActive());
 }
 
 TEST_F(StabilizationPipelineTest, KidsPitchCompensationDoesNotUndoReducers) {

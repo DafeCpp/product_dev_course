@@ -388,9 +388,10 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   // Флаги лимитеров Kids (LOS-13) съели прежний запас до 1024 почти целиком.
   // LOS-216: RC-счётчики в "link" — до ~220 байт сверху (счётчики uint32 на
   // максимуме), отсюда 1344. LOS-385: пробуксовка в "kids_mode" — ещё
-  // ~50 байт, отсюда 1408.
+  // ~50 байт, отсюда 1408. LOS-378: "grip_lost" в "ekf" и
+  // "grip_steer_limit_active" в "kids_mode" — ещё ~45 байт, отсюда 1472.
   std::string result;
-  result.reserve(1408);
+  result.reserve(1472);
   firmware_common::JsonWriter w(result);
 
   w.BeginObject();
@@ -527,6 +528,7 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
     w.Bool("anti_spin_active", snap.kids_anti_spin_active);
     w.Bool("wheelspin_active", snap.kids_wheelspin_active);
     w.Fixed("wheel_slip_ratio", snap.kids_wheel_slip_ratio, 3);
+    w.Bool("grip_steer_limit_active", snap.kids_grip_steer_limit_active);
     w.Bool("accel_limit_active", snap.kids_accel_limit_active);
     w.Bool("speed_limit_active", snap.kids_speed_limit_active);
     w.Bool("limiters_enabled", snap.kids_limiters_enabled);

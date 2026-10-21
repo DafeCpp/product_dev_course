@@ -123,6 +123,41 @@ class KidsModeProcessor {
     return wheelspin_active_;
   }
 
+  /**
+   * @brief Руль ограничен по сцеплению (LOS-378)
+   *
+   * Пока yaw rate расходится с рулём (StabilizationInput::lateral_grip_lost),
+   * потолок руля опускается до kGripSteerYawRatio от руля, который дал бы
+   * измеренный yaw rate: передняя ось выходит из насыщения, и машина
+   * поворачивает на пределе сцепления, а не скользит. Газом медленный занос не
+   * уменьшить: ниже наката противо-ЭДС тормозит заднюю ось, и занос только
+   * растёт (LOS-389).
+   */
+  [[nodiscard]] bool IsGripSteerLimitActive() const noexcept {
+    return grip_steer_limit_active_;
+  }
+
+  /**
+   * @brief Повторно ограничить руль потолком по сцеплению этого тика.
+   *
+   * Yaw-PID в Kids работает после Process() и добавляет коррекцию к уже
+   * ограниченному рулю; без повторного ограничения он вернул бы шины в
+   * насыщение (LOS-378). Руль против вращения (контрруль) не ограничивается.
+   */
+  void ClampToGripSteerCap(float& steering) noexcept;
+
+  /** Доля руля от соответствующего измеренному yaw rate, до которой
+   *  опускается потолок. При 1.0 передняя ось остаётся в насыщении, и
+   *  занос в SIL растёт дальше. */
+  static constexpr float kGripSteerYawRatio = 0.9f;
+  /** Скорость возврата потолка руля, пока сцепление есть [1/с]: плавно, иначе
+   *  полный руль сразу снова срывал бы шины. */
+  static constexpr float kGripSteerRecoveryPerS = 0.5f;
+  /** Контрруль — руль против yaw rate выше этого порога [рад/с]. Около нуля
+   *  знак yaw rate задаёт шум гироскопа, а полный снос передней оси (yaw ≈ 0)
+   *  потолок ограничивать обязан. */
+  static constexpr float kCounterSteerMinYawRps = 0.1f;
+
   /** Доля пробуксовки колёс на последнем Process() (LOS-385). */
   [[nodiscard]] float GetWheelSlipRatio() const noexcept {
     return wheel_slip_ratio_;
@@ -156,6 +191,11 @@ class KidsModeProcessor {
   void Reset() noexcept;
 
  private:
+  void ApplyGripSteerLimit(const StabilizationConfig& cfg, float& steering,
+                           const StabilizationInput& input) noexcept;
+  /** Руль явно против вращения: контрруль при развороте, его не режем. */
+  [[nodiscard]] bool IsCounterSteer(float steering) const noexcept;
+
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
 
@@ -164,6 +204,11 @@ class KidsModeProcessor {
   bool speed_limit_active_{false};
   bool wheelspin_active_{false};
   float wheel_slip_ratio_{0.0f};
+  bool grip_steer_limit_active_{false};
+  // Потолок |руля| по сцеплению [0..1], 1.0 = не ограничен (LOS-378).
+  float grip_steer_cap_{1.0f};
+  // Yaw rate этого тика: по нему отличается контрруль (IsCounterSteer).
+  float yaw_rate_rps_{0.0f};
 
   /**
    * Адаптивный потолок газа speed limiter'а [0..1], 1.0 = не ограничен.
