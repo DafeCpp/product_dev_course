@@ -15,8 +15,17 @@ const FOCUSABLE =
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // Only one radio per group is a Tab stop: the checked one, or the first if none is checked.
+// Popups that a control in the dialog has open (e.g. a select's listbox portaled to <body>)
+// belong to the dialog too; they are rendered after it, so they come last in Tab order.
 function tabStops(root: HTMLElement): HTMLElement[] {
-    const candidates = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
+    const popups = Array.from(
+        root.querySelectorAll<HTMLElement>('[aria-expanded="true"][aria-controls]'),
+    )
+        .map((control) => document.getElementById(control.getAttribute('aria-controls') ?? ''))
+        .filter((popup): popup is HTMLElement => !!popup && !root.contains(popup))
+    const candidates = [root, ...popups].flatMap((container) =>
+        Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)),
+    )
     return candidates.filter((el) => {
         if (!(el instanceof HTMLInputElement) || el.type !== 'radio' || !el.name) return true
         const group = candidates.filter(

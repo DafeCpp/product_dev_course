@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import Modal from './Modal'
+import MaterialSelect from './common/MaterialSelect'
 
 function Harness() {
   const [open, setOpen] = useState(false)
@@ -113,5 +114,25 @@ describe('Modal', () => {
     screen.getByLabelText('Физ').focus()
     await user.tab()
     expect(screen.getByRole('button', { name: '×' })).toHaveFocus()
+  })
+
+  it('lets Tab reach the options of an open select portaled outside the dialog', async () => {
+    const user = userEvent.setup()
+    render(
+      <Modal isOpen onClose={vi.fn()} title="Диалог">
+        <MaterialSelect id="kind" label="Тип" value="" onChange={vi.fn()}>
+          <option value="a">Альфа</option>
+        </MaterialSelect>
+        <button>Последняя</button>
+      </Modal>,
+    )
+    await user.click(screen.getByRole('button', { name: /Тип/ }))
+    screen.getByRole('button', { name: 'Последняя' }).focus()
+    await user.tab()
+    expect(screen.getByRole('option', { name: 'Альфа' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: '×' })).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(screen.getByRole('option', { name: 'Альфа' })).toHaveFocus()
   })
 })
