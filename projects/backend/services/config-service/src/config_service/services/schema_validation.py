@@ -8,7 +8,7 @@ import jsonschema
 import jsonschema.validators
 from referencing import Registry, Resource
 from referencing.exceptions import Unresolvable
-from referencing.jsonschema import UnknownDialect, specification_with
+from referencing.jsonschema import DynamicAnchor, UnknownDialect, specification_with
 from rfc3986_validator import validate_rfc3986
 
 from config_service.core.exceptions import InvalidSchemaError
@@ -92,6 +92,31 @@ def _resolved_with_dialect(resolved: Any, default: Any, dialects: dict[int, Any]
     return resolved
 
 
+class _SchemaResolver:
+    """Preserve inherited dialects for every lookup, including bare resource IDs."""
+
+    def __init__(self, resolver: Any, validator: Any, dialects: dict[int, Any]) -> None:
+        self.resolver = resolver
+        self.validator = validator
+        self.dialects = dialects
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.resolver, name)
+
+    def lookup(self, reference: str) -> Any:
+        resolved = _resolved_with_dialect(
+            self.resolver.lookup(reference), self.validator, self.dialects
+        )
+        return type(resolved)(contents=resolved.contents, resolver=_SchemaResolver(
+            resolved.resolver, self.validator, self.dialects
+        ))
+
+    def in_subresource(self, resource: Any) -> Any:
+        return _SchemaResolver(
+            self.resolver.in_subresource(resource), self.validator, self.dialects
+        )
+
+
 class _SchemaAnchor:
     def __init__(self, anchor: Any, validator: Any, dialects: dict[int, Any]) -> None:
         self.anchor = anchor
@@ -127,7 +152,12 @@ class _SchemaResource:
 
     def anchors(self) -> Iterable[Any]:
         for anchor in self.resource.anchors():
-            yield _SchemaAnchor(anchor, self.validator, self.dialects)
+            # DynamicAnchor.resolve checks anchor types when walking dynamic scope.
+            # Preserve its identity so dynamic references can rebind correctly.
+            if isinstance(anchor, DynamicAnchor):
+                yield anchor
+            else:
+                yield _SchemaAnchor(anchor, self.validator, self.dialects)
 
     def subresources(self) -> Iterable[Resource[Any]]:
         import jsonschema.validators
@@ -202,7 +232,7 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
                         if not isinstance(resolved.contents, (dict, bool)):
                             raise InvalidSchemaError("Reference target must be a schema object or boolean")
                         target_root = resolved.resolver.lookup("").contents
-                        target_validator = jsonschema.validators.validator_for(target_root, default=current_validator)  # type: ignore[no-untyped-call, unused-ignore]
+                        target_validator = jsonschema.validators.validator_for(target_root, default=dialects.get(id(resolved.contents), dialects.get(id(target_root), current_validator)))  # type: ignore[no-untyped-call, unused-ignore]
                         if isinstance(resolved.contents, dict) and "$schema" in resolved.contents:
                             if not isinstance(resolved.contents["$schema"], str):
                                 raise InvalidSchemaError("$schema must be a string")
@@ -222,4 +252,4 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
     except (Unresolvable, UnknownDialect, ValueError, jsonschema.exceptions.SchemaError) as exc:
         raise InvalidSchemaError(str(exc)) from exc
     # Keep our root adapter: the default constructor replaces it with a plain Resource.
-    return validator_cls(new_schema, registry=registry, _resolver=registry.resolver_with_root(resource))  # type: ignore[call-arg, unused-ignore]
+    return validator_cls(new_schema, registry=registry, _resolver=_SchemaResolver(registry.resolver_with_root(resource), validator_cls, dialects))  # type: ignore[call-arg, unused-ignore]
