@@ -44,17 +44,29 @@ constexpr float kSpeedLimitHysteresisMs = 0.1f;
 constexpr float kDegToRad = 3.14159265358979f / 180.0f;
 
 // Газ, при котором мотор-модель держит текущую продольную скорость: ниже него
-// противо-ЭДС тормозит ведущие колёса (LOS-389). 0 — модель неприменима.
+// противо-ЭДС тормозит ведущие колёса (LOS-389). 0 — модель неприменима или
+// скорости EKF нельзя верить: завышенная скорость подняла бы пол выше
+// команды и выключила бы срез совсем (тот же гейт, что в ApplySpeedLimit).
 float CoastThrottle(const StabilizationConfig& cfg,
                     const StabilizationInput& input) noexcept {
   const float dz = cfg.filter.motor_deadzone;
   if (dz >= 1.0f || cfg.filter.motor_speed_gain <= 0.0f) return 0.0f;
+  if (input.ekf_diverged || input.vx_variance > kSpeedTrustVarMax) {
+    return 0.0f;
+  }
   const float vx = input.speed_ms * std::cos(input.slip_angle_deg * kDegToRad);
   if (vx <= 0.0f) return 0.0f;
   return dz + vx * (1.0f - dz) / cfg.filter.motor_speed_gain;
 }
 
 }  // namespace
+
+float KidsModeProcessor::FloorSkidCut(const StabilizationConfig& cfg,
+                                      const StabilizationInput& input,
+                                      float commanded, float reduced) noexcept {
+  if (commanded <= 0.0f) return reduced;
+  return std::min(commanded, std::max(reduced, CoastThrottle(cfg, input)));
+}
 
 void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
   ekf_ = &ekf;
@@ -127,11 +139,8 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
       // газа наката: резкий срез ниже него тормозит ведущие колёса
       // противо-ЭДС, задняя ось теряет боковое сцепление, и занос
       // переходит в разворот (LOS-389).
-      const float reduced = throttle * (1.0f - km.anti_spin_reduction);
-      throttle =
-          throttle > 0.0f
-              ? std::min(throttle, std::max(reduced, CoastThrottle(cfg, input)))
-              : reduced;
+      throttle = FloorSkidCut(cfg, input, throttle,
+                              throttle * (1.0f - km.anti_spin_reduction));
     }
   }
 

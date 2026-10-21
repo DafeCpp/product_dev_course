@@ -60,6 +60,19 @@ class KidsModeProcessor {
                bool apply_speed_limit = true) noexcept;
 
   /**
+   * @brief Ограничить срез газа при заносе снизу газом наката (LOS-389).
+   *
+   * Ниже газа, при котором мотор держит текущую скорость, противо-ЭДС
+   * тормозит ведущие колёса, и занос переходит в разворот. Газ вперёд
+   * режется до max(reduced, накат), но не выше commanded; реверс и
+   * недоверенная скорость EKF — без пола.
+   */
+  [[nodiscard]] static float FloorSkidCut(const StabilizationConfig& cfg,
+                                          const StabilizationInput& input,
+                                          float commanded,
+                                          float reduced) noexcept;
+
+  /**
    * @brief Применить feedback speed limiter к фактической команде.
    *
    * dt_ms обязателен (без дефолта): при выключенной мотор-модели адаптивный

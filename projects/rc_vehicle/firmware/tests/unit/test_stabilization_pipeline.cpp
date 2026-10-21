@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include "stabilization_pipeline.hpp"
 
 namespace rc_vehicle {
@@ -356,6 +358,25 @@ class KidsOversteerCutTest : public StabilizationPipelineTest {
 };
 
 TEST_F(KidsOversteerCutTest, CutsThrottleWhenLimitersEnabled) {
+  input_.speed_ms = 0.5f;  // накат ниже среза
+  EXPECT_NEAR(RunTwoTicks(kKidsPolicy), 0.5f * (1.0f - 0.7f), 1e-5f);
+}
+
+TEST_F(KidsOversteerCutTest, CutStopsAtCoastThrottle) {
+  // LOS-389: на 2 м/с при заносе 30° накат = 0.05 + 2·cos30°·0.95/8 ≈ 0.256,
+  // выше среза 0.15; ниже наката противо-ЭДС тормозила бы колёса.
+  const float vx = 2.0f * std::cos(30.0f * 3.14159265f / 180.0f);
+  const float coast =
+      cfg_.filter.motor_deadzone +
+      vx * (1.0f - cfg_.filter.motor_deadzone) / cfg_.filter.motor_speed_gain;
+  EXPECT_NEAR(RunTwoTicks(kKidsPolicy), coast, 1e-4f);
+}
+
+TEST_F(KidsOversteerCutTest, UntrustedSpeedGetsNoCoastFloor) {
+  input_.vx_variance = 100.0f;
+  EXPECT_NEAR(RunTwoTicks(kKidsPolicy), 0.5f * (1.0f - 0.7f), 1e-5f);
+  input_.vx_variance = 0.0f;
+  input_.ekf_diverged = true;
   EXPECT_NEAR(RunTwoTicks(kKidsPolicy), 0.5f * (1.0f - 0.7f), 1e-5f);
 }
 
