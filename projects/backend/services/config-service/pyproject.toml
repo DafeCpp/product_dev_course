@@ -16,6 +16,8 @@ pydantic-settings = "^2.4.0"
 structlog = "^24.2.0"
 prometheus-client = "^0.24.1"
 jsonschema = "^4.21.0"
+referencing = "^0.37.0"
+rfc3986-validator = "^0.1.1"
 backend-common = { path = "../../common", develop = true }
 
 [tool.poetry.group.dev.dependencies]
