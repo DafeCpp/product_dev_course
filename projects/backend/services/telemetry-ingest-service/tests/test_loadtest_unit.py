@@ -26,9 +26,15 @@ def test_paced_offsets_follow_rate() -> None:
 
 
 def test_burst_offsets_group_sends_per_period() -> None:
-    sc = Scenario(name="t", burst_size=3, burst_every_s=10.0, duration_s=25.0)
-    assert sc.send_offsets() == [0.0] * 3 + [10.0] * 3
-    assert sc.batches_per_sensor() == 6
+    sc = Scenario(name="t", burst_size=3, burst_every_s=10.0, duration_s=30.0)
+    assert sc.send_offsets() == [0.0] * 3 + [10.0] * 3 + [20.0] * 3
+    assert sc.batches_per_sensor() == 9
+
+
+def test_burst_offsets_include_final_partial_period() -> None:
+    sc = Scenario(name="t", burst_size=2, burst_every_s=20.0, duration_s=25.0)
+    assert sc.send_offsets() == [0.0, 0.0, 20.0, 20.0]
+    assert sc.batches_per_sensor() == 4
 
 
 def test_unpaced_scenario_has_no_target() -> None:
@@ -200,6 +206,15 @@ def test_credentials_roundtrip(tmp_path) -> None:
     save_credentials(path, creds)
     assert load_credentials(path) == creds
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_credentials_tighten_existing_file(tmp_path) -> None:
+    path = tmp_path / "s.json"
+    path.write_text("old")
+    path.chmod(0o644)
+    save_credentials(path, [SensorCredential("a", "t")])
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert load_credentials(path) == [SensorCredential("a", "t")]
 
 
 @pytest.mark.parametrize("content", ['{"sensor_id": "a"}', '[{"sensor_id": "a"}]', "[1]"])

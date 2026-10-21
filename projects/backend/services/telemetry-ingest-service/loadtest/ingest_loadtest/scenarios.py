@@ -1,6 +1,7 @@
 """Load scenarios and their acceptance thresholds (SLA)."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
@@ -64,10 +65,15 @@ class Scenario:
     def paced(self) -> bool:
         return self.rate > 0 or self.burst_size > 0
 
+    def _burst_periods(self) -> int:
+        """Bursts whose start falls inside the run, including a final partial period."""
+        # The epsilon keeps an exact multiple (60 / 20) from rounding up to an extra burst.
+        return max(1, math.ceil(self.duration_s / self.burst_every_s - 1e-9))
+
     def batches_per_sensor(self) -> int | None:
         """Planned batches per sensor, or ``None`` for back-to-back mode."""
         if self.burst_size:
-            periods = int(self.duration_s // self.burst_every_s) or 1
+            periods = self._burst_periods()
             return periods * self.burst_size
         if self.rate:
             return max(1, int(self.duration_s * self.rate))
@@ -82,7 +88,7 @@ class Scenario:
     def send_offsets(self) -> list[float]:
         """Planned send times (seconds from start) for one sensor."""
         if self.burst_size:
-            periods = int(self.duration_s // self.burst_every_s) or 1
+            periods = self._burst_periods()
             return [k * self.burst_every_s for k in range(periods) for _ in range(self.burst_size)]
         planned = self.batches_per_sensor()
         assert planned is not None, "send_offsets() needs a paced scenario"

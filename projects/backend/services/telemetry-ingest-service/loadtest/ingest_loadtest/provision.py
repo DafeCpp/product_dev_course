@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -75,8 +76,11 @@ async def cleanup_sensors(database_url: str) -> int:
 
 def save_credentials(path: Path, creds: list[SensorCredential]) -> None:
     payload = [{"sensor_id": c.sensor_id, "token": c.token} for c in creds]
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    path.chmod(0o600)
+    # Create the file as 0600 before any token is written; fchmod also tightens an existing file.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        os.fchmod(fh.fileno(), 0o600)
+        fh.write(json.dumps(payload, indent=2) + "\n")
 
 
 def load_credentials(path: Path) -> list[SensorCredential]:
