@@ -204,7 +204,7 @@ async def test_reference_inherits_dialect_during_config_validation(reference):
     schema = {'$schema': 'https://json-schema.org/draft/2020-12/schema', '$ref': reference,
               '$defs': {'legacy': {'$schema': 'http://json-schema.org/draft-04/schema#',
                                   'id': 'legacy', 'properties': {'x': {
-                                      'id': '#target', 'id': '#target', 'type': 'object', 'dependencies': {'a': ['b']}}}}}}
+                                      'id': '#target', 'type': 'object', 'dependencies': {'a': ['b']}}}}}}
     schema_repo = AsyncMock()
     schema_repo.get_active.return_value = None
     config_repo = AsyncMock()
