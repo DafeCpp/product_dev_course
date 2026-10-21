@@ -34,3 +34,8 @@ cd projects/backend/services/telemetry-ingest-service
 poetry install
 poetry run pytest --postgresql postgresql://postgres:postgres@localhost:5433/postgres
 ```
+
+## Load testing
+
+`loadtest/` holds a REST/WebSocket load generator with baseline, burst, sustained and
+ceiling scenarios and their SLA thresholds. See [loadtest/README.md](loadtest/README.md).
