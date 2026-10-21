@@ -360,9 +360,16 @@ StabilizationOutput StabilizationPipeline::Process(
     // предупреждения в телеметрии.
     const bool kids_limiters_off =
         cfg.mode == DriveMode::Kids && !cfg.kids_mode.limiters_enabled;
+    const float before_guard = output.command.throttle;
     oversteer_guard_.Process(
         cfg, output.command.throttle, input,
         policy.oversteer_reduces_throttle && !kids_limiters_off);
+    // Повторный срез гарда не должен опускать газ ниже наката, который
+    // оставил anti-spin, иначе возвращается торможение противо-ЭДС (LOS-389).
+    if (policy.apply_input_limits) {
+      output.command.throttle = KidsModeProcessor::FloorSkidCut(
+          cfg, input, before_guard, output.command.throttle);
+    }
   }
 
   if (policy.apply_input_limits) {

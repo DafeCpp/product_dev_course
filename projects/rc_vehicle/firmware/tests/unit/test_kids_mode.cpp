@@ -614,6 +614,63 @@ TEST_F(KidsModeLimiterSlewTest, AntiSpinAppliesBeforePwmSlew) {
   EXPECT_FLOAT_EQ(throttle, 0.25f);
 }
 
+TEST_F(KidsModeLimiterSlewTest, AntiSpinKeepsCoastThrottle) {
+  // LOS-389: срез ниже газа наката тормозит ведущие колёса противо-ЭДС, и
+  // занос переходит в разворот. При vx = 3 м/с накат — 0.05 + 3·0.95/8.
+  cfg_.kids_mode.accel_limit_enabled = false;
+  ReachThrottleLimit();
+  ekf_.SetState(3.0f, 0.6f, 0.0f);  // slip ≈ 11° > 5°
+
+  float throttle = 0.5f;
+  float steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 100);
+
+  EXPECT_TRUE(processor_.IsAntiSpinActive());
+  const float coast =
+      cfg_.filter.motor_deadzone +
+      3.0f * (1.0f - cfg_.filter.motor_deadzone) / cfg_.filter.motor_speed_gain;
+  EXPECT_NEAR(throttle, coast, 1e-3f);
+  EXPECT_GT(throttle, 0.5f * (1.0f - cfg_.kids_mode.anti_spin_reduction));
+}
+
+TEST_F(KidsModeLimiterSlewTest, AccelLimitDoesNotUndoCoastFloor) {
+  // Код-ревью PR #399: лимитер ускорения на том же тике не опускает газ в
+  // заносе ниже наката. Срез 0.5 → 0.25, затем ×0.5 → 0.125 < наката.
+  ekf_.SetState(3.0f, 0.6f, 0.0f);  // slip ≈ 11° > 5°
+  const StabilizationInput input{
+      .dt_ms = 10,
+      .speed_ms = ekf_.GetSpeedMs(),
+      .slip_angle_deg = ekf_.GetSlipAngleDeg(),
+      .vx_variance = 0.0f,
+      .forward_accel_g = 1.0f,
+      .imu_enabled = true,
+  };
+
+  float throttle = 0.5f;
+  float steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, input);
+
+  EXPECT_TRUE(processor_.IsAntiSpinActive());
+  EXPECT_TRUE(processor_.IsAccelLimitActive());
+  const float coast =
+      cfg_.filter.motor_deadzone +
+      3.0f * (1.0f - cfg_.filter.motor_deadzone) / cfg_.filter.motor_speed_gain;
+  EXPECT_NEAR(throttle, coast, 1e-3f);
+}
+
+TEST_F(KidsModeLimiterSlewTest, AntiSpinNeverRaisesThrottleAboveCommand) {
+  cfg_.kids_mode.accel_limit_enabled = false;
+  ReachThrottleLimit();
+  ekf_.SetState(3.0f, 0.6f, 0.0f);  // накат ≈ 0.41 — выше команды
+
+  float throttle = 0.2f;
+  float steering = 0.0f;
+  processor_.Process(cfg_, throttle, steering, 100);
+
+  EXPECT_TRUE(processor_.IsAntiSpinActive());
+  EXPECT_FLOAT_EQ(throttle, 0.2f);
+}
+
 TEST_F(KidsModeLimiterSlewTest, AccelLimitAppliesBeforePwmSlew) {
   cfg_.kids_mode.anti_spin_enabled = false;
   ReachThrottleLimit();
