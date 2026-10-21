@@ -59,10 +59,10 @@ docker-compose up
 
 Каталог `migrations/` копируется в образ при сборке, а `docker-compose up` и `make dev-up`
 образы не пересобирают. Если после `git pull` или вашей правки появились новые SQL-файлы,
-поднимайте стек с пересборкой: `docker-compose up -d --build`. `make dev-rebuild` для этого
-не подходит: он не пересобирает образы `*-migrate`.
-Иначе init-контейнер проверит старый список миграций, завершится успешно, и API
-стартует без новой схемы.
+поднимайте стек с пересборкой: `docker-compose up -d --build`. Иначе init-контейнер
+проверит старый список миграций, завершится успешно, и API стартует без новой схемы.
+`make dev-rebuild` для этого не подходит: он не пересобирает образы `*-migrate`
+и `script-service`.
 
 | Init-контейнер | База | Блокирует старт |
 |---|---|---|
@@ -75,7 +75,8 @@ docker-compose up
 поэтому запускается строго после `experiment-migrate`.
 
 Исключение: у `script-service` в локальном compose нет init-контейнера, и он применяет
-миграции сам при старте. В продакшене для него есть `script-migrate`
+миграции сам при старте. Чтобы он подхватил новый SQL-файл, пересоберите и перезапустите
+его: `docker-compose up -d --build script-service`. В продакшене для него есть `script-migrate`
 (см. [deployment-yandex-cloud.md](deployment-yandex-cloud.md#миграции-бд-и-инициализация)).
 
 Миграции идемпотентны: повторный прогон на актуальной схеме печатает `No pending migrations.`
@@ -96,14 +97,16 @@ docker-compose run --rm --build telemetry-ingest-migrate
 ```
 
 Если init-контейнер упал, зависящий от него сервис не стартует: смотрите логи init-контейнера,
-исправьте миграцию или `DATABASE_URL` и перезапустите `docker-compose up`.
+исправьте миграцию или `DATABASE_URL` и перезапустите стек с пересборкой
+(`docker-compose up -d --build`): без неё init-контейнер снова прогонит старый SQL из образа.
 
 ### Make-таргеты
 
 Make-таргеты выполняют `python -m bin.migrate` внутри уже запущенного рантайм-контейнера
 (`docker-compose exec`), поэтому нужны, когда стек уже поднят. Они видят те миграции,
 что были в образе на момент сборки: после добавления SQL-файла сначала пересоберите
-сервис (`make dev-rebuild` или `docker-compose up -d --build experiment-service`).
+этот сервис: `docker-compose up -d --build <service>`, например `experiment-service`
+для `make experiment-migrate` или `script-service` для `make script-migrate`.
 
 ```bash
 make auth-migrate              # auth_db
@@ -405,7 +408,7 @@ psql -h localhost -p 5433 -U postgres -d experiment_db
 psql -h localhost -p 5433 -U postgres -d auth_db
 ```
 
-Миграции применяются автоматически при `docker-compose up`, см. [Миграции БД](#миграции-бд).
+Миграции применяются init-контейнерами при старте стека; после появления новых SQL-файлов поднимайте его с `--build`, см. [Миграции БД](#миграции-бд).
 
 ### Очистка
 
