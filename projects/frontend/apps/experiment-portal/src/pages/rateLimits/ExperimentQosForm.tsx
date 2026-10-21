@@ -17,7 +17,7 @@ export function ExperimentQosForm({ config, onSave, isSaving, errors: apiErrors 
 
   const [form, setForm] = useState({
     rate_limit_max_requests: defaultValue.rate_limit_max_requests?.toString() || '1000',
-    downstream_timeout_seconds: defaultValue.downstream_timeout_seconds?.toString() || '30.0',
+    downstream_timeout_seconds: defaultValue.downstream_timeout_seconds?.toString() || '5.0',
   })
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({})
