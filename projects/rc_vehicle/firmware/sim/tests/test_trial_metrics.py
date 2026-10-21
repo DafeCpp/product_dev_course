@@ -893,6 +893,13 @@ def test_rc_events_unknown_cause_fails(tmp_path):
     assert tm.check_rc_events(log)[0].passed is False
 
 
+def test_rc_events_blank_outage_duration_fails(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "thr=no_pulses str=no_pulses", "", ""),
+        300: ("RcRestored", "", "", "")}))
+    assert tm.check_rc_events(log)[0].passed is False
+
+
 def test_rc_events_without_event_columns(tmp_path):
     rows = [{"ts_ms": (i + 1) * DT_MS, "throttle": 0.0} for i in range(10)]
     assert tm.check_rc_events(_write_csv(tmp_path / "e.csv", rows))[0].no_data

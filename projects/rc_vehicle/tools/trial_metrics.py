@@ -795,8 +795,12 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
         # потери: неполная диагностика — провал, а не «nan».
         # «unknown» — платформа не отдала счётчики декодера: причины и ширин
         # импульсов фактически нет.
-        complete = bool(lost["param"]) and "unknown" not in lost["param"] and not any(
-            math.isnan(x) for x in (lost["v1"], lost["v2"], e["v1"], e["v2"]))
+        # Длительность 0 прошивка пишет только при первом захвате; у парного
+        # восстановления пустая ячейка value1 — потерянное значение, а не 0 с.
+        complete = (bool(lost["param"]) and "unknown" not in lost["param"]
+                    and not any(math.isnan(x) for x in
+                                (lost["v1"], lost["v2"], e["v1"], e["v2"]))
+                    and e["v1"] > 0.0)
         out.append(MetricResult(
             f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", complete,
             f"{lost['param'] or 'причина не указана'}, импульсы thr/str "
