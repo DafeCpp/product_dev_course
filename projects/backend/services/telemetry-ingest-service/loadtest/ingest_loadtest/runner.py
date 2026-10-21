@@ -48,32 +48,48 @@ class ReadingFactory:
         return readings
 
 
-SendFn = Callable[[list[dict[str, Any]]], Awaitable[None]]
+Batch = list[dict[str, Any]]
+# Sends a group of batches planned for the same instant (one batch outside a burst).
+SendFn = Callable[[list[Batch]], Awaitable[None]]
 
 
 class _StopWorker(Exception):
     """The connection is unusable; the worker stops sending."""
 
 
+def _group_offsets(offsets: list[float]) -> list[tuple[float, int]]:
+    """Collapse equal consecutive offsets into ``(offset, count)`` groups."""
+    groups: list[tuple[float, int]] = []
+    for offset in offsets:
+        if groups and groups[-1][0] == offset:
+            groups[-1] = (offset, groups[-1][1] + 1)
+        else:
+            groups.append((offset, 1))
+    return groups
+
+
 async def _drive(scenario: Scenario, recorder: Recorder, send: SendFn, t0: float) -> None:
-    """Call ``send`` on the scenario's schedule, or back-to-back when unpaced."""
+    """Call ``send`` on the scenario's schedule, or back-to-back when unpaced.
+
+    All batches of one burst go to ``send`` together so the worker can put
+    them on the wire at once instead of one response at a time.
+    """
     factory = ReadingFactory()
     if scenario.paced:
-        offsets = scenario.send_offsets()
         # A send is "late" when it starts more than one interval behind plan,
         # i.e. the client (or a slow server) cannot keep the requested rate.
         slack = (1.0 / scenario.rate) if scenario.rate else scenario.burst_every_s
-        for offset in offsets:
+        for offset, size in _group_offsets(scenario.send_offsets()):
             delay = t0 + offset - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)
             elif -delay > slack:
                 recorder.late()
-            await send(factory.batch(scenario.batch_size))
+            await send([factory.batch(scenario.batch_size) for _ in range(size)])
     else:
         deadline = t0 + scenario.duration_s
         while time.monotonic() < deadline:
-            await send(factory.batch(scenario.batch_size))
+            await send([factory.batch(scenario.batch_size)])
 
 
 _Worker = Callable[
@@ -95,7 +111,7 @@ async def _rest_worker(
     url = f"{base_url}/api/v1/telemetry"
     headers = {"Authorization": f"Bearer {cred.token}"}
 
-    async def send(readings: list[dict[str, Any]]) -> None:
+    async def post(readings: Batch) -> None:
         body = {"sensor_id": cred.sensor_id, "readings": readings}
         started = time.perf_counter()
         try:
@@ -112,6 +128,9 @@ async def _rest_worker(
             recorder.error("timeout")
         except aiohttp.ClientError as exc:
             recorder.error(type(exc).__name__)
+
+    async def send(batches: list[Batch]) -> None:
+        await asyncio.gather(*(post(b) for b in batches))
 
     await _drive(scenario, recorder, send, t0)
 
@@ -133,19 +152,33 @@ async def _ws_worker(
         )
     except aiohttp.WSServerHandshakeError as exc:
         recorder.error(f"ws_handshake_{exc.status}")
+        recorder.abort()
         return
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
         recorder.error(f"ws_connect_{type(exc).__name__}")
+        recorder.abort()
         return
 
     seq = count()
 
-    async def send(readings: list[dict[str, Any]]) -> None:
-        n = next(seq)
-        started = time.perf_counter()
+    async def send(batches: list[Batch]) -> None:
+        # The server answers every text frame exactly once, in order, so a
+        # burst is pipelined: write all frames, then read the replies in order.
+        sent: list[tuple[float, int]] = []
         try:
-            await ws.send_str(json.dumps({"readings": readings, "seq": n}))
-            reply = await ws.receive_json(timeout=timeout_s)
+            for readings in batches:
+                frame = json.dumps({"readings": readings, "seq": next(seq)})
+                sent.append((time.perf_counter(), len(readings)))
+                await ws.send_str(frame)
+            for started, size in sent:
+                reply = await ws.receive_json(timeout=timeout_s)
+                latency_ms = (time.perf_counter() - started) * 1000
+                if reply.get("status") == "accepted":
+                    recorder.accepted(latency_ms, size)
+                elif reply.get("code") == "rate_limited":
+                    recorder.limited()
+                else:
+                    recorder.error(f"ws_{reply.get('code', 'unknown')}")
         except asyncio.TimeoutError:
             # A late ack would be matched to the next frame, so stop here.
             recorder.error("timeout")
@@ -154,18 +187,12 @@ async def _ws_worker(
             # TypeError: a non-text frame (e.g. CLOSE) arrived instead of JSON.
             recorder.error(f"ws_{type(exc).__name__}")
             raise _StopWorker from None
-        latency_ms = (time.perf_counter() - started) * 1000
-        if reply.get("status") == "accepted":
-            recorder.accepted(latency_ms, len(readings))
-        elif reply.get("code") == "rate_limited":
-            recorder.limited()
-        else:
-            recorder.error(f"ws_{reply.get('code', 'unknown')}")
 
     try:
         await _drive(scenario, recorder, send, t0)
     except _StopWorker:
-        pass
+        # The rest of this sensor's schedule is not sent; the report fails on it.
+        recorder.abort()
     finally:
         await ws.close()
 

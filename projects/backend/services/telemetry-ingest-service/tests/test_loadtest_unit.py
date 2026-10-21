@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -9,7 +10,7 @@ import pytest
 
 from ingest_loadtest import cli
 from ingest_loadtest.provision import load_credentials, save_credentials
-from ingest_loadtest.runner import ReadingFactory, SensorCredential
+from ingest_loadtest.runner import ReadingFactory, SensorCredential, _drive, _group_offsets
 from ingest_loadtest.scenarios import PRESETS, Scenario, SlaThresholds
 from ingest_loadtest.stats import Recorder, build_report, evaluate_sla, format_report, percentile
 from telemetry_ingest_service.settings import Settings
@@ -236,6 +237,43 @@ def test_cli_run_exit_code_and_json(tmp_path, monkeypatch, capsys, passed: bool)
     assert seen["timeout"] == 3.0
     assert json.loads(out.read_text())["passed"] is passed
     assert ("SLA: PASS" if passed else "SLA: FAIL") in capsys.readouterr().out
+
+
+def test_group_offsets_collapses_bursts() -> None:
+    assert _group_offsets([0.0, 0.0, 0.0, 1.0, 2.0, 2.0]) == [(0.0, 3), (1.0, 1), (2.0, 2)]
+    assert _group_offsets([]) == []
+
+
+async def test_drive_sends_a_burst_as_one_group() -> None:
+    sc = Scenario(name="t", burst_size=3, burst_every_s=0.05, duration_s=0.1, batch_size=2)
+    groups: list[int] = []
+
+    async def send(batches) -> None:
+        groups.append(len(batches))
+
+    await _drive(sc, Recorder(), send, time.monotonic())
+    assert groups == [3, 3]
+
+
+def test_aborted_workers_fail_the_run() -> None:
+    rec = _recorder(accepted=3)
+    rec.abort()
+    report = build_report(Scenario(name="t", sensors=2), rec, 1.0)
+    assert report.violations == ["1 of 2 sensor workers stopped early"]
+    assert "aborted_workers=1" in format_report(report)
+
+
+def test_ceiling_fails_when_throttled() -> None:
+    report = build_report(PRESETS["ceiling"], _recorder(accepted=9, limited=1), 1.0)
+    assert any("rate-limited" in v for v in report.violations)
+
+
+def test_burst_fails_without_throttling() -> None:
+    sc = PRESETS["burst"]
+    unthrottled = build_report(sc, _recorder(accepted=100), 60.0)
+    assert any("did not throttle" in v for v in unthrottled.violations)
+    throttled = build_report(sc, _recorder(accepted=80, limited=20), 60.0)
+    assert throttled.passed, throttled.violations
 
 
 def test_recorder_counts_errors_by_kind() -> None:

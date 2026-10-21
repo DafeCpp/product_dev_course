@@ -12,13 +12,15 @@ class SlaThresholds:
     """Acceptance thresholds; ``None`` disables a check.
 
     Rates are fractions of attempted batches (0.001 = 0.1%). Latency is
-    measured on accepted batches only.
+    measured on accepted batches only. A run whose sensor workers stopped
+    early always fails, whatever the thresholds.
     """
 
     max_p95_ms: float | None = None
     max_p99_ms: float | None = None
     max_error_rate: float | None = None
     max_rate_limited_rate: float | None = None
+    min_rate_limited_rate: float | None = None
     min_throughput_ratio: float | None = None
 
 
@@ -120,7 +122,9 @@ PRESETS: dict[str, Scenario] = {
         duration_s=60.0,
         burst_size=150,
         burst_every_s=20.0,
-        sla=SlaThresholds(max_p99_ms=1000.0, max_error_rate=0.001),
+        # Each burst overflows the bucket, so a run without 429s means the
+        # limiter is off or misconfigured.
+        sla=SlaThresholds(max_p99_ms=1000.0, max_error_rate=0.001, min_rate_limited_rate=0.05),
     ),
     "sustained": Scenario(
         name="sustained",
@@ -137,6 +141,8 @@ PRESETS: dict[str, Scenario] = {
         rate=0.0,
         batch_size=500,
         duration_s=60.0,
-        sla=SlaThresholds(max_error_rate=0.01),
+        # Any 429 means the limiter, not the service, set the ceiling: lift
+        # the limits first (loadtest/README.md).
+        sla=SlaThresholds(max_error_rate=0.01, max_rate_limited_rate=0.0),
     ),
 }

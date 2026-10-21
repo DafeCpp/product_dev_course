@@ -28,6 +28,7 @@ class Recorder:
     rate_limited: int = 0
     errors: Counter[str] = field(default_factory=Counter)
     late_sends: int = 0
+    aborted_workers: int = 0
 
     def accepted(self, latency_ms: float, readings: int) -> None:
         self.accepted_batches += 1
@@ -43,6 +44,10 @@ class Recorder:
     def late(self) -> None:
         self.late_sends += 1
 
+    def abort(self) -> None:
+        """A sensor worker stopped before finishing its schedule."""
+        self.aborted_workers += 1
+
 
 @dataclass
 class Report:
@@ -57,6 +62,7 @@ class Report:
     rate_limited: int
     errors: dict[str, int]
     late_sends: int
+    aborted_workers: int
     latency_ms: dict[str, float | None]
     throughput_readings_per_s: float
     target_readings_per_s: float | None
@@ -103,6 +109,7 @@ def build_report(scenario: Scenario, recorder: Recorder, elapsed_s: float) -> Re
         rate_limited=recorder.rate_limited,
         errors=dict(recorder.errors),
         late_sends=recorder.late_sends,
+        aborted_workers=recorder.aborted_workers,
         latency_ms={
             "p50": percentile(lat, 50),
             "p95": percentile(lat, 95),
@@ -121,6 +128,11 @@ def evaluate_sla(report: Report, sla: SlaThresholds) -> list[str]:
     violations: list[str] = []
     if report.attempted_batches == 0:
         return ["no batches were attempted"]
+    if report.aborted_workers:
+        # The run is shorter than planned, so every other number understates the load.
+        violations.append(
+            f"{report.aborted_workers} of {report.sensors} sensor workers stopped early"
+        )
 
     def _latency(name: str, limit: float | None) -> None:
         value = report.latency_ms.get(name)
@@ -141,6 +153,11 @@ def evaluate_sla(report: Report, sla: SlaThresholds) -> list[str]:
     if sla.max_rate_limited_rate is not None and report.rate_limited_rate > sla.max_rate_limited_rate:
         violations.append(
             f"rate-limited {report.rate_limited_rate:.4%} > {sla.max_rate_limited_rate:.4%}"
+        )
+    if sla.min_rate_limited_rate is not None and report.rate_limited_rate < sla.min_rate_limited_rate:
+        violations.append(
+            f"rate-limited {report.rate_limited_rate:.4%} < {sla.min_rate_limited_rate:.4%}: "
+            "the limiter did not throttle the load"
         )
     if sla.min_throughput_ratio is not None and report.target_readings_per_s:
         ratio = report.throughput_readings_per_s / report.target_readings_per_s
@@ -163,7 +180,8 @@ def format_report(report: Report) -> str:
         f"scenario={report.scenario} transport={report.transport} sensors={report.sensors} "
         f"batch_size={report.batch_size} elapsed={report.elapsed_s:.1f}s",
         f"batches: attempted={report.attempted_batches} accepted={report.accepted_batches} "
-        f"rate_limited={report.rate_limited} errors={report.error_count} late_sends={report.late_sends}",
+        f"rate_limited={report.rate_limited} errors={report.error_count} late_sends={report.late_sends} "
+        f"aborted_workers={report.aborted_workers}",
         f"latency ms: p50={_ms(lat['p50'])} p95={_ms(lat['p95'])} p99={_ms(lat['p99'])} "
         f"max={_ms(lat['max'])}",
         f"throughput: {report.throughput_readings_per_s:.1f} readings/s"
