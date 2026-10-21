@@ -90,7 +90,6 @@ vi.mock('./run-detail/RunCaptureSessions', () => ({
     setExportTarget: (
       t: { mode: 'session'; sessionId: string; sessionOrdinal: number } | { mode: 'run' }
     ) => void
-    formatSessionDuration: (a?: string | null, b?: string | null) => string
   }) => (
     <div>
       <button onClick={() => p.createSessionMutation.mutate('note-x')}>cs-create</button>
@@ -101,17 +100,6 @@ vi.mock('./run-detail/RunCaptureSessions', () => ({
       >
         cs-export-session
       </button>
-      <span data-testid="dur-none">{p.formatSessionDuration(null, null)}</span>
-      <span data-testid="dur-zero">
-        {p.formatSessionDuration('2024-01-01T10:00:00Z', '2024-01-01T10:00:00Z')}
-      </span>
-      <span data-testid="dur-min">
-        {p.formatSessionDuration('2024-01-01T10:00:00Z', '2024-01-01T10:02:05Z')}
-      </span>
-      <span data-testid="dur-hour">
-        {p.formatSessionDuration('2024-01-01T10:00:00Z', '2024-01-01T11:01:01Z')}
-      </span>
-      <span data-testid="dur-open">{p.formatSessionDuration(new Date().toISOString())}</span>
     </div>
   ),
 }))
@@ -287,14 +275,9 @@ describe('RunDetail branches', () => {
     expect(screen.queryByText(/Автозавершение/)).not.toBeInTheDocument()
   })
 
-  it('formats session durations', async () => {
+  it('hides the start-capture button for a finished run', async () => {
     setup({ status: 'succeeded' })
     await screen.findByText('My Run')
-    expect(screen.getByTestId('dur-none')).toHaveTextContent('-')
-    expect(screen.getByTestId('dur-zero')).toHaveTextContent('-')
-    expect(screen.getByTestId('dur-min')).toHaveTextContent('2м 5с')
-    expect(screen.getByTestId('dur-hour')).toHaveTextContent('1ч 1м 1с')
-    expect(screen.getByTestId('dur-open')).toHaveTextContent(/^(-|\d+с)$/)
     expect(screen.queryByRole('button', { name: 'Старт отсчёта' })).not.toBeInTheDocument()
   })
 

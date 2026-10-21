@@ -1,7 +1,14 @@
+import { useMemo, useState } from 'react'
 import type { CaptureSession, Experiment } from '../../types'
 import { StatusBadge, Loading, EmptyState, InfoRow, captureSessionStatusMap } from '../../components/common'
 import AuditLog from '../../components/AuditLog'
-import { formatDateTimeSeconds } from '../../utils/format'
+import { formatDateTimeSeconds, formatSessionDuration } from '../../utils/format'
+
+/**
+ * Finished sessions render in pages: each card carries its own audit log, so
+ * a run with hundreds of sessions would otherwise mount them all at once.
+ */
+export const SESSIONS_PAGE_SIZE = 20
 
 interface SessionMutation<TVar = void> {
   mutate: (variables: TVar) => void
@@ -23,7 +30,6 @@ interface RunCaptureSessionsProps {
   setExportTarget: (
     target: { mode: 'session'; sessionId: string; sessionOrdinal: number } | { mode: 'run' }
   ) => void
-  formatSessionDuration: (startedAt?: string | null, stoppedAt?: string | null) => string
 }
 
 export default function RunCaptureSessions({
@@ -38,8 +44,17 @@ export default function RunCaptureSessions({
   stopSessionMutation,
   deleteSessionMutation,
   setExportTarget,
-  formatSessionDuration,
 }: RunCaptureSessionsProps) {
+  const [visibleCount, setVisibleCount] = useState(SESSIONS_PAGE_SIZE)
+  const finishedSessions = useMemo(
+    () =>
+      sessions
+        .filter((s) => s.status !== 'running' && s.status !== 'backfilling')
+        .sort((a, b) => b.ordinal_number - a.ordinal_number),
+    [sessions]
+  )
+  const hiddenCount = Math.max(0, finishedSessions.length - visibleCount)
+
   return (
     <section className="capture-sessions-section card detail-card">
       <div className="detail-section-header">
@@ -108,68 +123,73 @@ export default function RunCaptureSessions({
             </div>
           )}
 
-          {sessions
-            .filter(
-              (s: CaptureSession) => s.status !== 'running' && s.status !== 'backfilling'
-            )
-            .sort((a: CaptureSession, b: CaptureSession) => b.ordinal_number - a.ordinal_number)
-            .map((session: CaptureSession) => (
-              <div key={session.id} className="session-card">
-                <div className="session-header">
-                  <div>
-                    <h4>Сессия #{session.ordinal_number}</h4>
-                    <StatusBadge status={session.status} statusMap={captureSessionStatusMap} />
-                  </div>
-                  <div className="session-actions">
+          {finishedSessions.slice(0, visibleCount).map((session: CaptureSession) => (
+            <div key={session.id} className="session-card">
+              <div className="session-header">
+                <div>
+                  <h4>Сессия #{session.ordinal_number}</h4>
+                  <StatusBadge status={session.status} statusMap={captureSessionStatusMap} />
+                </div>
+                <div className="session-actions">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() =>
+                      setExportTarget({
+                        mode: 'session',
+                        sessionId: session.id,
+                        sessionOrdinal: session.ordinal_number,
+                      })
+                    }
+                  >
+                    Экспорт телеметрии…
+                  </button>
+                  {session.status !== 'archived' && (
                     <button
                       className="btn btn-secondary btn-sm"
-                      onClick={() =>
-                        setExportTarget({
-                          mode: 'session',
-                          sessionId: session.id,
-                          sessionOrdinal: session.ordinal_number,
-                        })
-                      }
+                      onClick={() => {
+                        if (confirm('Удалить сессию?')) {
+                          deleteSessionMutation.mutate(session.id)
+                        }
+                      }}
+                      disabled={deleteSessionMutation.isPending}
                     >
-                      Экспорт телеметрии…
+                      Удалить
                     </button>
-                    {session.status !== 'archived' && (
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          if (confirm('Удалить сессию?')) {
-                            deleteSessionMutation.mutate(session.id)
-                          }
-                        }}
-                        disabled={deleteSessionMutation.isPending}
-                      >
-                        Удалить
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
-                <div className="session-info">
-                  {session.started_at && (
-                    <InfoRow label="Начало" value={formatDateTimeSeconds(session.started_at)} />
-                  )}
-                  {session.stopped_at && (
-                    <InfoRow label="Остановка" value={formatDateTimeSeconds(session.stopped_at)} />
-                  )}
-                  {session.started_at && (
-                    <InfoRow
-                      label="Длительность"
-                      value={formatSessionDuration(session.started_at, session.stopped_at)}
-                    />
-                  )}
-                  {session.notes && <InfoRow label="Заметки" value={session.notes} />}
-                </div>
-                <AuditLog
-                  runId={runId}
-                  captureSessionId={session.id}
-                  title={`События сессии #${session.ordinal_number}`}
-                />
               </div>
-            ))}
+              <div className="session-info">
+                {session.started_at && (
+                  <InfoRow label="Начало" value={formatDateTimeSeconds(session.started_at)} />
+                )}
+                {session.stopped_at && (
+                  <InfoRow label="Остановка" value={formatDateTimeSeconds(session.stopped_at)} />
+                )}
+                {session.started_at && (
+                  <InfoRow
+                    label="Длительность"
+                    value={formatSessionDuration(session.started_at, session.stopped_at)}
+                  />
+                )}
+                {session.notes && <InfoRow label="Заметки" value={session.notes} />}
+              </div>
+              <AuditLog
+                runId={runId}
+                captureSessionId={session.id}
+                title={`События сессии #${session.ordinal_number}`}
+              />
+            </div>
+          ))}
+
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="btn btn-secondary sessions-list__more"
+              onClick={() => setVisibleCount((n) => n + SESSIONS_PAGE_SIZE)}
+            >
+              Показать ещё {Math.min(hiddenCount, SESSIONS_PAGE_SIZE)} из {hiddenCount}
+            </button>
+          )}
         </div>
       )}
     </section>

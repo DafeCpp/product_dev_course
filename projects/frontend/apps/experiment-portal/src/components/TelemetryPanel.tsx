@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Plotly from 'plotly.js-dist-min'
 import { useTelemetryStream, type TelemetryStreamOpener, type TelemetryStreamStatus } from 'frontend-common'
 import type { Sensor, TelemetryStreamRecord } from '../types'
 import { telemetryApi } from '../api/client'
 import { MaterialSelect, PlayCircleIcon, StopCircleIcon, SettingsIcon, XIcon } from './common'
 import { getStreamErrorMessage, streamResponseError } from '../utils/streamError'
+import LiveTelemetryChart, { MAX_POINTS_CAP } from './telemetry/LiveTelemetryChart'
+import { createTelemetryRecordsStore } from './telemetry/telemetryRecordsStore'
 import './TelemetryPanel.scss'
 
 type TelemetryPanelProps = {
@@ -39,26 +40,7 @@ type TelemetryPanelState = {
     size?: { width: number; height: number }
 }
 
-/** Internal safety cap — prevents chart from rendering too many DOM elements. */
-const MAX_POINTS_CAP = 5000
-
-const SERIES_COLORS = [
-    '#2563eb',
-    '#16a34a',
-    '#f97316',
-    '#a855f7',
-    '#06b6d4',
-    '#e11d48',
-    '#ca8a04',
-    '#0ea5e9',
-]
 const TIME_WINDOWS_SECONDS = [5, 10, 30, 60, 120, 300, 600] as const
-
-
-function parseTimestampMs(value: string) {
-    const parsed = Date.parse(value)
-    return Number.isFinite(parsed) ? parsed : null
-}
 
 type SensorStreamInitialCursor = { sinceTs?: string; sinceId?: number }
 
@@ -164,7 +146,7 @@ export default function TelemetryPanel({
     const [timeWindowSeconds, setTimeWindowSeconds] = useState<TimeWindowSeconds>(300)
     const [useLatestAnchor, setUseLatestAnchor] = useState(true)
     const [error, setError] = useState<string | null>(null)
-    const [recordsBySensor, setRecordsBySensor] = useState<Record<string, TelemetryStreamRecord[]>>({})
+    const [recordsStore] = useState(createTelemetryRecordsStore)
     const [runningSensorIds, setRunningSensorIds] = useState<string[]>([])
     const [statusBySensor, setStatusBySensor] = useState<Record<string, TelemetryStreamStatus>>({})
     const [showSettings, setShowSettings] = useState(false)
@@ -176,8 +158,6 @@ export default function TelemetryPanel({
     )
 
     const initialCursorsRef = useRef<Record<string, SensorStreamInitialCursor>>({})
-    const plotRef = useRef<HTMLDivElement | null>(null)
-    const scrollAnimRef = useRef<number | null>(null)
     const panelRef = useRef<HTMLDivElement | null>(null)
     const stateLoadedRef = useRef(false)
     const skipInitialSaveRef = useRef(true)
@@ -327,14 +307,8 @@ export default function TelemetryPanel({
     }, [panelSize, onSizeChange])
 
     useEffect(() => {
-        setRecordsBySensor((prev) => {
-            const next: Record<string, TelemetryStreamRecord[]> = {}
-            selectedSensorIds.forEach((id) => {
-                if (prev[id]) next[id] = prev[id]
-            })
-            return next
-        })
-    }, [selectedSensorIds])
+        recordsStore.retain(selectedSensorIds)
+    }, [recordsStore, selectedSensorIds])
 
     useEffect(() => {
         const element = panelRef.current
@@ -378,9 +352,10 @@ export default function TelemetryPanel({
         setStatusBySensor({})
     }
 
-    const onSensorRecords = useCallback((sensorId: string, points: TelemetryStreamRecord[]) => {
-        setRecordsBySensor((prev) => ({ ...prev, [sensorId]: points }))
-    }, [])
+    const onSensorRecords = useCallback(
+        (sensorId: string, points: TelemetryStreamRecord[]) => recordsStore.set(sensorId, points),
+        [recordsStore],
+    )
 
     const onSensorStatusChange = useCallback((sensorId: string, sensorStatus: TelemetryStreamStatus) => {
         setStatusBySensor((prev) => (prev[sensorId] === sensorStatus ? prev : { ...prev, [sensorId]: sensorStatus }))
@@ -392,7 +367,7 @@ export default function TelemetryPanel({
 
     const startStreams = () => {
         setError(null)
-        setRecordsBySensor({})
+        recordsStore.clear()
         setStatusBySensor({})
         const defaultSinceTs = startFromTimestamp ?? new Date().toISOString()
 
@@ -427,184 +402,6 @@ export default function TelemetryPanel({
         const byId = new Map(sensors.map((s) => [s.id, s]))
         return selectedSensorIds.map((id) => byId.get(id)).filter(Boolean) as Sensor[]
     }, [selectedSensorIds, sensors])
-
-    const seriesData = useMemo(() => {
-        const allRecords = filteredSensors.flatMap((sensor) => recordsBySensor[sensor.id] || [])
-        const latestTimestampMs = allRecords.reduce((latest, record) => {
-            const ts = parseTimestampMs(record.timestamp)
-            if (ts === null) return latest
-            return ts > latest ? ts : latest
-        }, Number.NEGATIVE_INFINITY)
-        const nowMs = Date.now()
-        const windowMs = timeWindowSeconds * 1000
-        const anchorMs = useLatestAnchor ? latestTimestampMs : nowMs
-        const hasWindowAnchor = Number.isFinite(anchorMs) && anchorMs > 0
-
-        return filteredSensors.map((sensor) => {
-            const records = recordsBySensor[sensor.id] || []
-            const points = records
-                .map((r) => ({
-                    x: r.timestamp,
-                    y: valueMode === 'physical' ? r.physical_value : r.raw_value,
-                    ts: parseTimestampMs(r.timestamp),
-                }))
-                .filter((point): point is { x: string; y: number; ts: number } => {
-                    if (typeof point.y !== 'number' || !Number.isFinite(point.y)) return false
-                    return typeof point.ts === 'number' && Number.isFinite(point.ts)
-                })
-                .filter((point) => {
-                    if (!hasWindowAnchor) return true
-                    return point.ts >= anchorMs - windowMs
-                })
-                .slice(-MAX_POINTS_CAP)
-            return {
-                id: sensor.id,
-                name: sensor.name,
-                x: points.map((point) => point.x),
-                y: points.map((point) => point.y),
-            }
-        })
-    }, [filteredSensors, recordsBySensor, valueMode, timeWindowSeconds, useLatestAnchor])
-
-    const plotlyData = useMemo(
-        () =>
-            seriesData.map((series, index) => ({
-                x: series.x,
-                y: series.y,
-                type: 'scattergl' as const,
-                mode: 'lines' as const,
-                name: series.name,
-                line: {
-                    color: SERIES_COLORS[index % SERIES_COLORS.length],
-                    width: 2,
-                },
-                hovertemplate: '%{x}<br>%{y:.3f}<extra></extra>',
-            })),
-        [seriesData]
-    )
-
-    const hasData = useMemo(() => seriesData.some((series) => series.y.length > 0), [seriesData])
-
-    const plotlyLayout = useMemo(() => {
-        const isStreaming = status === 'streaming'
-        const nowMs = Date.now()
-        const windowMs = timeWindowSeconds * 1000
-
-        return {
-            autosize: true,
-            margin: { l: 42, r: 14, t: 12, b: 24 },
-            showlegend: false,
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(15, 23, 42, 0.04)',
-            xaxis: {
-                showgrid: true,
-                zeroline: false,
-                gridcolor: 'rgba(15, 23, 42, 0.12)',
-                tickfont: { size: 10, color: '#475569' },
-                ticks: 'outside' as const,
-                tickcolor: 'rgba(15, 23, 42, 0.12)',
-                ...(isStreaming
-                    ? {
-                          range: [
-                              new Date(nowMs - windowMs).toISOString(),
-                              new Date(nowMs).toISOString(),
-                          ],
-                          autorange: false,
-                      }
-                    : { autorange: true }),
-            },
-            yaxis: {
-                showgrid: true,
-                zeroline: false,
-                gridcolor: 'rgba(15, 23, 42, 0.12)',
-                tickfont: { size: 10, color: '#475569' },
-                ticks: 'outside' as const,
-                tickcolor: 'rgba(15, 23, 42, 0.12)',
-            },
-        }
-    }, [status, timeWindowSeconds])
-
-    const plotlyConfig = useMemo(
-        () => ({
-            responsive: true,
-            displayModeBar: false,
-            displaylogo: false,
-        }),
-        []
-    )
-
-    useEffect(() => {
-        const element = plotRef.current
-        if (!element) return
-        const data = hasData ? plotlyData : []
-        Plotly.react(element, data, plotlyLayout, plotlyConfig)
-    }, [plotlyData, plotlyLayout, plotlyConfig, hasData])
-
-    useEffect(() => {
-        const element = plotRef.current
-        const panel = panelRef.current
-        if (!element || typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver(() => {
-            Plotly.Plots.resize(element)
-        })
-        observer.observe(element)
-        if (panel) observer.observe(panel)
-        return () => observer.disconnect()
-    }, [])
-
-    // ---- Smooth x-axis scroll during live streaming ----
-    useEffect(() => {
-        if (status !== 'streaming') {
-            // When streaming stops, restore auto-range so the chart fits the data
-            if (scrollAnimRef.current !== null) {
-                cancelAnimationFrame(scrollAnimRef.current)
-                scrollAnimRef.current = null
-            }
-            const element = plotRef.current
-            if (element && hasData) {
-                Plotly.relayout(element, { 'xaxis.autorange': true })
-            }
-            return
-        }
-
-        const element = plotRef.current
-        if (!element) return
-
-        const FRAME_INTERVAL_MS = 50 // ~20 fps
-        let lastFrame = 0
-
-        const animate = (timestamp: number) => {
-            if (timestamp - lastFrame >= FRAME_INTERVAL_MS) {
-                lastFrame = timestamp
-                const nowMs = Date.now()
-                const windowMs = timeWindowSeconds * 1000
-                const startIso = new Date(nowMs - windowMs).toISOString()
-                const endIso = new Date(nowMs).toISOString()
-                Plotly.relayout(element, {
-                    'xaxis.range': [startIso, endIso],
-                    'xaxis.autorange': false,
-                })
-            }
-            scrollAnimRef.current = requestAnimationFrame(animate)
-        }
-
-        scrollAnimRef.current = requestAnimationFrame(animate)
-
-        return () => {
-            if (scrollAnimRef.current !== null) {
-                cancelAnimationFrame(scrollAnimRef.current)
-                scrollAnimRef.current = null
-            }
-        }
-    }, [status, timeWindowSeconds, hasData])
-
-    useEffect(() => {
-        return () => {
-            const element = plotRef.current
-            if (element) Plotly.purge(element)
-            if (scrollAnimRef.current !== null) cancelAnimationFrame(scrollAnimRef.current)
-        }
-    }, [])
 
     useEffect(() => {
         if (!showSettings) return
@@ -776,29 +573,14 @@ export default function TelemetryPanel({
 
             {error && <div className="telemetry-panel__error" role="alert">{error}</div>}
 
-            <div className="telemetry-panel__chart">
-                <div className="telemetry-panel__chart-area">
-                    <div ref={plotRef} className="telemetry-panel__plotly" />
-                    {!hasData && <div className="telemetry-panel__empty">Нет данных — нажмите «Старт»</div>}
-                </div>
-
-                <div className="telemetry-panel__legend">
-                    {seriesData.map((series, index) => (
-                        <span key={series.id} className="telemetry-panel__legend-item">
-                            <span
-                                className="telemetry-panel__legend-dot"
-                                style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }}
-                            />
-                            {series.name}
-                            {series.y.length > 0 && (
-                                <span className="telemetry-panel__legend-value">
-                                    last={series.y[series.y.length - 1]?.toFixed(3)}
-                                </span>
-                            )}
-                        </span>
-                    ))}
-                </div>
-            </div>
+            <LiveTelemetryChart
+                store={recordsStore}
+                sensors={filteredSensors}
+                valueMode={valueMode}
+                timeWindowSeconds={timeWindowSeconds}
+                useLatestAnchor={useLatestAnchor}
+                streaming={status === 'streaming'}
+            />
 
         </div>
     )
