@@ -11,6 +11,9 @@ from config_service.services.schema_service import SchemaService
 
 @pytest.mark.parametrize('schema', [
     {'type': 'not-a-type'},
+    {'$defs': {'child': {'$id': []}}},
+    {'$defs': {'child': {'$schema': []}}},
+    {'$defs': {'child': {'type': 'not-a-type'}}},
     {'$ref': '#/default', 'default': 42},
     {'$ref': '#/default', 'default': {'type': 'invalid'}},
     {'$ref': '#/default', 'default': {'$ref': '#/missing'}},
@@ -76,6 +79,10 @@ async def test_valid_first_schema_is_activated(draft):
      'dependencies': {'b': ['x'], 'a': {'type': 'object'}}},
     {'$ref': '#/default', 'default': {'type': 'string'}},
     {'$ref': '#/default', 'default': True},
+    {'$schema': 'https://json-schema.org/draft/2020-12/schema',
+     '$ref': '#/$defs/legacy', '$defs': {'legacy': {
+         '$schema': 'http://json-schema.org/draft-04/schema#',
+         'id': 'legacy', 'type': 'number', 'minimum': 0, 'exclusiveMinimum': True}}},
     {'$schema': 'http://json-schema.org/draft-07/schema#', '$ref': '#anchor',
      'dependencies': {'a': {'type': 'object'}, 'b': ['x']},
      'definitions': {'x': {'$id': '#anchor', 'type': 'object'}}},
