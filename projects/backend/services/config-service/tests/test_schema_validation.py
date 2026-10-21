@@ -176,3 +176,56 @@ async def test_draft3_schema_entries_work_after_activation(keyword):
     else:
         with pytest.raises(ConfigValidationError):
             await validator.validate_strict(ConfigType.feature_flag, {})
+
+
+@pytest.mark.parametrize('keyword', ['type', 'disallow'])
+def test_draft3_union_preserves_uniqueness(keyword):
+    from config_service.services.schema_validation import build_schema_validator
+    draft = {'$schema': 'http://json-schema.org/draft-03/schema#'}
+    validator = build_schema_validator({**draft, keyword: [{'type': 'string'}, {'type': 'number'}]})
+    assert validator.is_valid('text') == (keyword == 'type')
+    assert validator.is_valid(1) == (keyword == 'type')
+    with pytest.raises(ValidationError):
+        build_schema_validator({**draft, keyword: [{'type': 'string'}, {'type': 'string'}]})
+
+
+def test_draft3_object_extends():
+    from config_service.services.schema_validation import build_schema_validator
+    validator = build_schema_validator({'$schema': 'http://json-schema.org/draft-03/schema#',
+                                        'extends': {'type': 'string'}})
+    assert validator.is_valid('text')
+    assert not validator.is_valid(42)
+
+
+@pytest.mark.parametrize('reference', ['legacy#/properties/x', '#/$defs/legacy/properties/x', 'legacy#target'])
+async def test_reference_inherits_dialect_during_config_validation(reference):
+    from config_service.core.exceptions import ConfigValidationError
+    from config_service.services.validation_service import ValidationService
+    schema = {'$schema': 'https://json-schema.org/draft/2020-12/schema', '$ref': reference,
+              '$defs': {'legacy': {'$schema': 'http://json-schema.org/draft-04/schema#',
+                                  'id': 'legacy', 'properties': {'x': {
+                                      'id': '#target', 'id': '#target', 'type': 'object', 'dependencies': {'a': ['b']}}}}}}
+    schema_repo = AsyncMock()
+    schema_repo.get_active.return_value = None
+    config_repo = AsyncMock()
+    config_repo.list_by_type.return_value = [SimpleNamespace(id='config', key='key', value={'a': 1})]
+    from config_service.core.exceptions import SchemaSanityFailedError
+    with pytest.raises(SchemaSanityFailedError):
+        await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
+    schema_repo.insert_new_version_and_activate.assert_not_awaited()
+    schema_repo.get_active.return_value = SimpleNamespace(schema=schema)
+    service = ValidationService(schema_repo)
+    await service.validate_strict(ConfigType.feature_flag, {'a': 1, 'b': 2})
+    with pytest.raises(ConfigValidationError):
+        await service.validate_strict(ConfigType.feature_flag, {'a': 1})
+
+
+def test_reference_dialect_annotation_does_not_change_const_data():
+    from copy import deepcopy
+    from config_service.services.schema_validation import build_schema_validator
+    schema = {'const': {'type': 'object'}, 'allOf': [{'$ref': '#/const'}]}
+    original = deepcopy(schema)
+    validator = build_schema_validator(schema)
+    assert validator.is_valid({'type': 'object'})
+    assert not validator.is_valid({'type': 'object', '$schema': 'extra'})
+    assert schema == original
