@@ -248,11 +248,16 @@ def test_dynamic_anchor_rebinding_is_preserved():
 
 
 @pytest.mark.parametrize('keyword', ['type', 'disallow', 'extends'])
-def test_draft3_pointer_enters_legacy_schema_positions(keyword):
+@pytest.mark.parametrize('intermediate', [False, True])
+def test_draft3_pointer_enters_legacy_schema_positions(keyword, intermediate):
     from config_service.services.schema_validation import build_schema_validator
     child = {'id': 'dir/', 'extends': {'$ref': 'target'}}
+    if intermediate:
+        child = {'properties': {'x': child}}
     union = {keyword: child if keyword == 'extends' else [child]}
     suffix = '' if keyword == 'extends' else '/0'
+    if intermediate:
+        suffix += '/properties/x'
     schema = {
         '$schema': 'http://json-schema.org/draft-03/schema#',
         'id': 'https://example.com/root',
