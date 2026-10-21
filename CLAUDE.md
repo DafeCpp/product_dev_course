@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Обязательный рабочий процесс
 
+Для поручения сопровождать PR до merge используйте `/pr-review-merge`: [навык Claude Code](.claude/skills/pr-review-merge/SKILL.md) читает общий алгоритм из `docs/pr-guidelines.md`.
+
 Перед работой с задачами Linear, изменениями кода или PR обязательно прочитайте и соблюдайте [docs/pr-guidelines.md](docs/pr-guidelines.md), включая переходы статусов, сопровождение CI/review до merge и условия перевода в `Done`.
 
 Это единый регламент для Claude Code и Codex; для Codex он также указан в корневом [AGENTS.md](AGENTS.md). Изменяйте правила в общем документе, сохраняя ссылки в обоих файлах. Выполняйте действия в пределах запроса пользователя; при блокировке сообщайте конкретную причину и оставшийся шаг.
