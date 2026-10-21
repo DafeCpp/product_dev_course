@@ -135,4 +135,21 @@ describe('Modal', () => {
     await user.tab({ shift: true })
     expect(screen.getByRole('option', { name: 'Альфа' })).toHaveFocus()
   })
+
+  it('returns focus to the select after an option is picked', async () => {
+    const user = userEvent.setup()
+    render(
+      <Modal isOpen onClose={vi.fn()} title="Диалог">
+        <MaterialSelect id="kind" label="Тип" value="" onChange={vi.fn()}>
+          <option value="a">Альфа</option>
+        </MaterialSelect>
+      </Modal>,
+    )
+    const trigger = screen.getByRole('button', { name: /Тип/ })
+    await user.click(trigger)
+    screen.getByRole('option', { name: 'Альфа' }).focus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
 })
