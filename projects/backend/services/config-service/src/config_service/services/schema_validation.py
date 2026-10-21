@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import jsonschema
 import jsonschema.validators
-from referencing import Registry, Resource
+from referencing import Registry, Resource, Specification
 from referencing.exceptions import Unresolvable
 from referencing.jsonschema import DynamicAnchor, UnknownDialect, specification_with
 from rfc3986_validator import validate_rfc3986
@@ -85,7 +85,11 @@ def _resolved_with_dialect(resolved: Any, default: Any, dialects: dict[int, Any]
     """Give jsonschema.evolve the target dialect without changing stored data."""
     contents = resolved.contents
     if isinstance(contents, dict) and "$schema" not in contents:
-        root = resolved.resolver.lookup("").contents
+        try:
+            root = resolved.resolver.lookup("").contents
+        except Unresolvable:
+            # A pointer can enter an ID under an unindexed extension keyword.
+            root = contents
         validator = dialects.get(id(contents), dialects.get(id(root), default))
         dialect = validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
         return type(resolved)(contents={**contents, "$schema": dialect}, resolver=resolved.resolver)
@@ -146,8 +150,30 @@ class _SchemaResource:
         return getattr(self.resource, name)
 
     def pointer(self, pointer: str, resolver: Any) -> Any:
+        resource = self.resource
+        if self.validator is jsonschema.Draft3Validator:
+            specification = specification_with("http://json-schema.org/draft-03/schema#")
+
+            def enter(segments: Any, resolver: Any, subresource: Any) -> Any:
+                # Upstream omits schema unions and treats extends only as an array.
+                # Strip the corrected position, then let it validate the enclosing path.
+                if isinstance(subresource.contents, dict):
+                    if len(segments) >= 2 and segments[-2] in {"type", "disallow"} and isinstance(segments[-1], int):
+                        segments = segments[:-2]
+                    elif segments and segments[-1] == "extends":
+                        segments = segments[:-1]
+                return specification.maybe_in_subresource(segments, resolver, subresource)
+
+            pointer_specification = Specification(  # type: ignore[call-arg, unused-ignore]
+                name=specification.name,
+                id_of=specification.id_of,
+                subresources_of=specification.subresources_of,
+                maybe_in_subresource=enter,
+                anchors_in=lambda _spec, contents: specification.anchors_in(contents),
+            )
+            resource = pointer_specification.create_resource(resource.contents)
         return _resolved_with_dialect(
-            self.resource.pointer(pointer, resolver), self.validator, self.dialects
+            resource.pointer(pointer, resolver), self.validator, self.dialects
         )
 
     def anchors(self) -> Iterable[Any]:
@@ -231,7 +257,10 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
                         resolved = resolver.lookup(contents[keyword])
                         if not isinstance(resolved.contents, (dict, bool)):
                             raise InvalidSchemaError("Reference target must be a schema object or boolean")
-                        target_root = resolved.resolver.lookup("").contents
+                        try:
+                            target_root = resolved.resolver.lookup("").contents
+                        except Unresolvable:
+                            target_root = resolved.contents
                         target_validator = jsonschema.validators.validator_for(target_root, default=dialects.get(id(resolved.contents), dialects.get(id(target_root), current_validator)))  # type: ignore[no-untyped-call, unused-ignore]
                         if isinstance(resolved.contents, dict) and "$schema" in resolved.contents:
                             if not isinstance(resolved.contents["$schema"], str):
