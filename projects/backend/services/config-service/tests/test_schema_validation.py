@@ -11,6 +11,15 @@ from config_service.services.schema_service import SchemaService
 
 @pytest.mark.parametrize('schema', [
     {'type': 'not-a-type'},
+    {'$ref': '#/default', 'default': 42},
+    {'$ref': '#/default', 'default': {'type': 'invalid'}},
+    {'$ref': '#/default', 'default': {'$ref': '#/missing'}},
+    {'$id': 'http://[invalid', '$ref': 'child'},
+    {'$defs': {'child': {'$id': 'child', '$schema': 'https://example.com/unknown'}}},
+    {'$schema': 'http://json-schema.org/draft-07/schema#',
+     'definitions': {'child': {'$id': 'child',
+         '$schema': 'https://json-schema.org/draft/2020-12/schema',
+         '$dynamicRef': '#missing'}}},
     {'$schema': []},
     {'$schema': 'https://example.com/unknown-draft'},
     {'$ref': '#/$defs/missing'},
@@ -61,6 +70,12 @@ async def test_valid_first_schema_is_activated(draft):
     {'$id': 'https://example.com/root', '$ref': 'child',
      '$defs': {'child': {'$id': 'child', 'type': 'string'}}},
     {'default': {'$ref': '#/missing'}, 'const': {'$ref': '#/missing'}},
+    {'$schema': 'http://json-schema.org/draft-07/schema#',
+     'dependencies': {'a': {'type': 'object'}, 'b': ['x']}},
+    {'$schema': 'http://json-schema.org/draft-07/schema#',
+     'dependencies': {'b': ['x'], 'a': {'type': 'object'}}},
+    {'$ref': '#/default', 'default': {'type': 'string'}},
+    {'$ref': '#/default', 'default': True},
 ])
 async def test_valid_references_and_literal_data_are_accepted(schema):
     schema_repo = AsyncMock()
