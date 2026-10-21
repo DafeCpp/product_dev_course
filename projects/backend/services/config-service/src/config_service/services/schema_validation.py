@@ -27,6 +27,8 @@ def _schema_children(schema: Any, validator: Any) -> Iterable[Any]:
         }}
     if specification.name == "draft-03" and isinstance(traversal, dict):
         traversal = {key: value for key, value in traversal.items() if key != "definitions"}
+        if isinstance(traversal.get("extends"), dict):
+            traversal = {**traversal, "extends": [traversal["extends"]]}
     yield from specification.subresources_of(traversal)
     if specification.name == "draft-03" and isinstance(schema, dict):
         for keyword in ("type", "disallow"):
@@ -50,11 +52,22 @@ def _check_schema_node(schema: Any, validator: Any) -> None:
     except (AttributeError, TypeError):
         validator.check_schema(schema)
         return
-    child_ids = {id(child) for child in children if isinstance(child, dict)}
+    placeholders: dict[int, dict[str, int]] = {}
+    distinct_children: list[Any] = []
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        for index, existing in enumerate(distinct_children):
+            if jsonschema.Draft202012Validator({"enum": [existing]}).is_valid(child):
+                break
+        else:
+            index = len(distinct_children)
+            distinct_children.append(child)
+        placeholders[id(child)] = {"x-preflight-child": index}
 
     def view(value: Any) -> Any:
-        if id(value) in child_ids:
-            return {}
+        if id(value) in placeholders:
+            return placeholders[id(value)]
         if isinstance(value, dict):
             return {key: view(item) for key, item in value.items()}
         if isinstance(value, list):
@@ -68,6 +81,28 @@ def _check_schema_node(schema: Any, validator: Any) -> None:
             raise InvalidSchemaError(f"Invalid URI-reference in {keyword}: {schema[keyword]}")
 
 
+def _resolved_with_dialect(resolved: Any, default: Any, dialects: dict[int, Any]) -> Any:
+    """Give jsonschema.evolve the target dialect without changing stored data."""
+    contents = resolved.contents
+    if isinstance(contents, dict) and "$schema" not in contents:
+        root = resolved.resolver.lookup("").contents
+        validator = dialects.get(id(contents), dialects.get(id(root), default))
+        dialect = validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
+        return type(resolved)(contents={**contents, "$schema": dialect}, resolver=resolved.resolver)
+    return resolved
+
+
+class _SchemaAnchor:
+    def __init__(self, anchor: Any, validator: Any, dialects: dict[int, Any]) -> None:
+        self.anchor = anchor
+        self.name = anchor.name
+        self.validator = validator
+        self.dialects = dialects
+
+    def resolve(self, resolver: Any) -> Any:
+        return _resolved_with_dialect(self.anchor.resolve(resolver), self.validator, self.dialects)
+
+
 class _SchemaResource:
     """Resource adapter for referencing's legacy dependencies enumeration bug.
 
@@ -76,12 +111,23 @@ class _SchemaResource:
     Composition is intentional: referencing does not support subclassing.
     """
 
-    def __init__(self, resource: Resource[Any], validator: Any) -> None:
+    def __init__(self, resource: Resource[Any], validator: Any, dialects: dict[int, Any]) -> None:
         self.resource = resource
         self.validator = validator
+        self.dialects = dialects
+        self.dialects[id(resource.contents)] = validator
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.resource, name)
+
+    def pointer(self, pointer: str, resolver: Any) -> Any:
+        return _resolved_with_dialect(
+            self.resource.pointer(pointer, resolver), self.validator, self.dialects
+        )
+
+    def anchors(self) -> Iterable[Any]:
+        for anchor in self.resource.anchors():
+            yield _SchemaAnchor(anchor, self.validator, self.dialects)
 
     def subresources(self) -> Iterable[Resource[Any]]:
         import jsonschema.validators
@@ -101,7 +147,7 @@ class _SchemaResource:
                     raise InvalidSchemaError(f"Unsupported $schema: {contents['$schema']}")
             _check_schema_node(contents, child_validator)
             child = Resource.from_contents(contents, default_specification=specification)
-            yield cast(Resource[Any], _SchemaResource(child, child_validator))
+            yield cast(Resource[Any], _SchemaResource(child, child_validator, self.dialects))
 
 
 def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.Validator:
@@ -124,8 +170,9 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
         validator_cls.META_SCHEMA["$id"]
         if "$id" in validator_cls.META_SCHEMA else validator_cls.META_SCHEMA["id"]
     )
+    dialects: dict[int, Any] = {}
     resource = cast(Resource[Any], _SchemaResource(
-        specification.create_resource(new_schema), validator_cls
+        specification.create_resource(new_schema), validator_cls, dialects
     ))
     registry: Registry[Any] = Registry()
     pending = [(resource, registry.resolver_with_root(resource), validator_cls)]
@@ -169,9 +216,10 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
                         pending.append((target, resolved.resolver, target_validator))
             pending.extend(
                 (child, resolver.in_subresource(child), current_validator)
-                for child in cast(Resource[Any], _SchemaResource(current_resource, current_validator)).subresources()
+                for child in cast(Resource[Any], _SchemaResource(current_resource, current_validator, dialects)).subresources()
             )
         registry = registry.with_resource(resource.id() or "", resource).crawl()
     except (Unresolvable, UnknownDialect, ValueError, jsonschema.exceptions.SchemaError) as exc:
         raise InvalidSchemaError(str(exc)) from exc
-    return validator_cls(new_schema, registry=registry)
+    # Keep our root adapter: the default constructor replaces it with a plain Resource.
+    return validator_cls(new_schema, registry=registry, _resolver=registry.resolver_with_root(resource))  # type: ignore[call-arg, unused-ignore]
