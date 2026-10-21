@@ -10,7 +10,8 @@ The bucket stores how many tokens are *used* (draining at the refill rate)
 rather than how many are left, and the capacity and window are passed on
 every call. So a limit changed at runtime applies to the current usage at
 once: raising it frees headroom immediately, lowering it below the usage
-blocks the next request. A capacity of ``0`` means *unlimited*.
+blocks the next request for at most one window (usage is clamped to the new
+capacity). A capacity of ``0`` means *unlimited*.
 """
 from __future__ import annotations
 
@@ -27,6 +28,9 @@ class TokenBucket:
         if self.updated_at is not None:
             elapsed = max(0.0, now - self.updated_at)
             self.used = max(0.0, self.used - elapsed * capacity / window_seconds)
+        # A lowered limit never leaves more than one full bucket to drain, so a
+        # live config change delays a sensor by at most one window.
+        self.used = min(self.used, float(capacity))
         self.updated_at = now
 
     def retry_after(

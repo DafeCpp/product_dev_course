@@ -116,6 +116,21 @@ def test_rest_lowered_limit_counts_current_usage(clock: _Clock) -> None:
     assert limiter.check(sensor, 1)[0]
 
 
+def test_rest_sharply_lowered_limit_blocks_at_most_one_window(clock: _Clock) -> None:
+    config = _config(rest_max_requests=600, rest_window_seconds=60.0)
+    limiter = IngestRateLimiter(config)
+    sensor = uuid4()
+    assert all(limiter.check(sensor, 1)[0] for _ in range(600))
+
+    config.rest_max_requests = 1
+    allowed, retry_after = limiter.check(sensor, 1)
+    assert not allowed
+    assert retry_after == 60
+
+    clock.now += 60.0
+    assert limiter.check(sensor, 1) == (True, 0)
+
+
 def test_rest_zero_means_unlimited(clock: _Clock) -> None:
     limiter = IngestRateLimiter(_config())
     sensor = uuid4()
