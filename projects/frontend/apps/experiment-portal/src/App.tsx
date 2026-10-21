@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import ErrorBoundary from './components/ErrorBoundary'
 import './App.scss'
 
 const Login = lazy(() => import('./pages/Login'))
@@ -32,52 +33,60 @@ function PageLoader() {
 }
 
 function App() {
+  const { pathname } = useLocation()
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route
-          path="/change-password"
-          element={
-            <ProtectedRoute requirePasswordChanged={false}>
-              <ChangePassword />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <Layout>
-                <Routes>
-                  <Route path="/" element={<Navigate to="/experiments" replace />} />
-                  <Route path="/projects" element={<ProjectsList />} />
-                  <Route path="/experiments" element={<ExperimentsList />} />
-                  <Route path="/experiments/:id" element={<ExperimentDetail />} />
-                  <Route path="/experiments/:experimentId/compare" element={<ComparisonPage />} />
-                  <Route path="/runs/:id" element={<RunDetail />} />
-                  <Route path="/sensors" element={<SensorsList />} />
-                  <Route path="/sensors/new" element={<CreateSensor />} />
-                  <Route path="/sensors/:id" element={<SensorDetail />} />
-                  <Route path="/sensor-monitor" element={<SensorMonitor />} />
-                  <Route path="/telemetry" element={<TelemetryViewer />} />
-                  <Route path="/webhooks" element={<Webhooks />} />
-                  <Route path="/admin/users" element={<AdminUsers />} />
-                  <Route path="/admin/system-roles" element={<SystemRoles />} />
-                  <Route path="/admin/audit" element={<AuditLog />} />
-                  <Route path="/admin/scripts" element={<Scripts />} />
-                  <Route path="/admin/configs" element={<Configs />} />
-                  <Route path="/admin/rate-limits" element={<RateLimitsQos />} />
-                </Routes>
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </Suspense>
+    <ErrorBoundary resetKey={pathname}>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route
+            path="/change-password"
+            element={
+              <ProtectedRoute requirePasswordChanged={false}>
+                <ChangePassword />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  {/* Inner boundary keeps the header and navigation usable when a page fails. */}
+                  <ErrorBoundary resetKey={pathname}>
+                    <Suspense fallback={<PageLoader />}>
+                      <Routes>
+                        <Route path="/" element={<Navigate to="/experiments" replace />} />
+                        <Route path="/projects" element={<ProjectsList />} />
+                        <Route path="/experiments" element={<ExperimentsList />} />
+                        <Route path="/experiments/:id" element={<ExperimentDetail />} />
+                        <Route path="/experiments/:experimentId/compare" element={<ComparisonPage />} />
+                        <Route path="/runs/:id" element={<RunDetail />} />
+                        <Route path="/sensors" element={<SensorsList />} />
+                        <Route path="/sensors/new" element={<CreateSensor />} />
+                        <Route path="/sensors/:id" element={<SensorDetail />} />
+                        <Route path="/sensor-monitor" element={<SensorMonitor />} />
+                        <Route path="/telemetry" element={<TelemetryViewer />} />
+                        <Route path="/webhooks" element={<Webhooks />} />
+                        <Route path="/admin/users" element={<AdminUsers />} />
+                        <Route path="/admin/system-roles" element={<SystemRoles />} />
+                        <Route path="/admin/audit" element={<AuditLog />} />
+                        <Route path="/admin/scripts" element={<Scripts />} />
+                        <Route path="/admin/configs" element={<Configs />} />
+                        <Route path="/admin/rate-limits" element={<RateLimitsQos />} />
+                      </Routes>
+                    </Suspense>
+                  </ErrorBoundary>
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 
