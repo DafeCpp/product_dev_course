@@ -2,6 +2,15 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ErrorState } from '@lostpointer/web-react'
 
+// A page chunk that failed to download: React caches the rejected lazy import,
+// so only a full reload fetches it again.
+const CHUNK_LOAD_ERROR =
+    /dynamically imported module|Importing a module script failed|Loading (CSS )?chunk .* failed/i
+
+export function isChunkLoadError(error: Error): boolean {
+    return error.name === 'ChunkLoadError' || CHUNK_LOAD_ERROR.test(error.message)
+}
+
 interface ErrorBoundaryProps {
     children: ReactNode
     // A change of this key (e.g. the current path) clears a caught error, so navigating away recovers.
@@ -37,6 +46,15 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     }
 
     private retry = () => {
+        if (this.state.error && isChunkLoadError(this.state.error)) {
+            window.location.reload()
+            return
+        }
+        this.setState({ error: null })
+    }
+
+    // The link may point at the current path, where the reset key does not change.
+    private leave = () => {
         this.setState({ error: null })
     }
 
@@ -50,7 +68,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
                 onRetry={this.retry}
                 retryLabel="Повторить"
                 action={
-                    <Link to="/experiments" className="btn btn-secondary">
+                    <Link to="/experiments" className="btn btn-secondary" onClick={this.leave}>
                         К экспериментам
                     </Link>
                 }
