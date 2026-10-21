@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useId, useRef } from 'react'
+import { ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './Modal.scss'
 
@@ -18,6 +18,15 @@ function Modal({ isOpen, onClose, title, children, disabled = false, className =
     const mouseDownOnOverlay = useRef(false)
     const contentRef = useRef<HTMLDivElement>(null)
     const titleId = useId()
+    // Remember the trigger during render, before a child's autoFocus moves focus into the dialog.
+    const [wasOpen, setWasOpen] = useState(isOpen)
+    const [returnFocusTo, setReturnFocusTo] = useState<HTMLElement | null>(() =>
+        isOpen ? (document.activeElement as HTMLElement | null) : null,
+    )
+    if (isOpen !== wasOpen) {
+        setWasOpen(isOpen)
+        if (isOpen) setReturnFocusTo(document.activeElement as HTMLElement | null)
+    }
 
     useEffect(() => {
         const handleEscape = (event: KeyboardEvent) => {
@@ -35,15 +44,14 @@ function Modal({ isOpen, onClose, title, children, disabled = false, className =
     // Move focus into the dialog on open (unless a child autofocused) and give it back on close.
     useEffect(() => {
         if (!isOpen) return
-        const previouslyFocused = document.activeElement as HTMLElement | null
         const content = contentRef.current
         if (content && !content.contains(document.activeElement)) {
             content.focus()
         }
         return () => {
-            previouslyFocused?.focus?.()
+            returnFocusTo?.focus?.()
         }
-    }, [isOpen])
+    }, [isOpen, returnFocusTo])
 
     if (!isOpen) {
         return null

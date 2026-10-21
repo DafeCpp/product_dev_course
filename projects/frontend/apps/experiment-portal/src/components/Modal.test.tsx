@@ -18,6 +18,18 @@ function Harness() {
   )
 }
 
+function AutofocusHarness() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Открыть</button>
+      <Modal isOpen={open} onClose={() => setOpen(false)} title="Диалог">
+        <input aria-label="Поле" autoFocus />
+      </Modal>
+    </>
+  )
+}
+
 describe('Modal', () => {
   it('is announced as a modal dialog labelled by its title', async () => {
     render(<Modal isOpen onClose={vi.fn()} title="Диалог">тело</Modal>)
@@ -45,6 +57,16 @@ describe('Modal', () => {
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+  })
+
+  it('restores focus to the trigger when a child autofocuses', async () => {
+    const user = userEvent.setup()
+    render(<AutofocusHarness />)
+    const opener = screen.getByRole('button', { name: 'Открыть' })
+    await user.click(opener)
+    expect(screen.getByLabelText('Поле')).toHaveFocus()
+    await user.keyboard('{Escape}')
     expect(opener).toHaveFocus()
   })
 })
