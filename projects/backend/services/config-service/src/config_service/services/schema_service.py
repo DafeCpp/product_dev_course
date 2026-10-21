@@ -79,6 +79,41 @@ def _check_compat(old_schema: dict[str, Any], new_schema: dict[str, Any]) -> lis
 
 
 
+def _check_schema_node(schema: Any, validator: Any) -> None:
+    """Check one schema node without imposing its dialect on child resources.
+
+    Child schema objects are checked separately by the preflight traversal.
+    Keep non-object children intact so malformed keyword containers and scalar
+    schema values are still rejected by the selected metaschema.
+    """
+    specification = specification_with(
+        validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
+    )
+    try:
+        traversal = schema
+        if isinstance(schema, dict) and "dependencies" in validator.VALIDATORS:
+            traversal = {**schema, "dependencies": {
+                name: child for name, child in schema.get("dependencies", {}).items()
+                if isinstance(child, dict)
+            }}
+        children = list(specification.subresources_of(traversal))
+    except (AttributeError, TypeError):
+        validator.check_schema(schema)
+        return
+    child_ids = {id(child) for child in children if isinstance(child, dict)}
+
+    def view(value: Any) -> Any:
+        if id(value) in child_ids:
+            return {}
+        if isinstance(value, dict):
+            return {key: view(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [view(item) for item in value]
+        return value
+
+    validator.check_schema(view(schema))
+
+
 class _SchemaResource:
     """Resource adapter for referencing's legacy dependencies enumeration bug.
 
@@ -108,8 +143,17 @@ class _SchemaResource:
         specification = specification_with(
             validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
         )
-        for child in Resource.from_contents(traversal, default_specification=specification).subresources():
-            yield cast(Resource[Any], _SchemaResource(child, validator))
+        for contents in specification.subresources_of(traversal):
+            child_validator = validator
+            if isinstance(contents, dict) and "$schema" in contents:
+                if not isinstance(contents["$schema"], str):
+                    raise InvalidSchemaError("$schema must be a string")
+                child_validator = jsonschema.validators.validator_for(contents, default=None)  # type: ignore[arg-type, no-untyped-call, unused-ignore]
+                if child_validator is None:
+                    raise InvalidSchemaError(f"Unsupported $schema: {contents['$schema']}")
+            _check_schema_node(contents, child_validator)
+            child = Resource.from_contents(contents, default_specification=specification)
+            yield cast(Resource[Any], _SchemaResource(child, child_validator))
 
 
 class SchemaService:
@@ -149,7 +193,7 @@ class SchemaService:
         else:
             validator_cls = jsonschema.validators.validator_for(new_schema)  # type: ignore[no-untyped-call, unused-ignore]
         try:
-            validator_cls.check_schema(new_schema)
+            _check_schema_node(new_schema, validator_cls)
         except jsonschema.exceptions.SchemaError as exc:
             raise InvalidSchemaError(exc.message) from exc
         # Resolve references without network access, including nested resource IDs.
@@ -173,7 +217,7 @@ class SchemaService:
                     current_validator = jsonschema.validators.validator_for(contents, default=None)  # type: ignore[arg-type, no-untyped-call, unused-ignore]
                     if current_validator is None:
                         raise InvalidSchemaError(f"Unsupported $schema: {contents['$schema']}")
-                current_validator.check_schema(contents)
+                _check_schema_node(contents, current_validator)
                 key = (id(contents), current_validator)
                 if key in visited:
                     continue
