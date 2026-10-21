@@ -37,14 +37,25 @@ TEST(WheelspinDetectorTest, BodyLaggingWheelsIsSlip) {
 }
 
 TEST(WheelspinDetectorTest, AccelBiasIsBoundedByLeak) {
-  // Смещение акселерометра 0.02 g при постоянной скорости 2 м/с: интеграл
-  // не уходит дальше bias·g·τ ≈ 0.4 м/с, и доля остаётся ниже 0.25.
+  // Смещение акселерометра 0.02 g на разгоне: интеграл не уходит дальше
+  // bias·g·τ ≈ 0.4 м/с, и при колёсах 2 м/с доля остаётся ниже 0.25.
+  WheelspinDetector d;
+  d.Reset(2.0f);
+  for (int i = 0; i < 10000; ++i) d.Update(2.0f, 3.0f, -0.02f, kDt);
+  EXPECT_LT(d.GetSlipRatio(), 0.25f);
+}
+
+TEST(WheelspinDetectorTest, SteadyDriveForgetsAccelBias) {
+  // Код-ревью PR #402: на ровном ходу смещение не копится в долю, и
+  // следующий разгон начинается с нуля, а не со старого дрейфа.
   WheelspinDetector d;
   d.Reset(2.0f);
   for (int i = 0; i < 10000; ++i) d.Update(2.0f, 2.0f, -0.02f, kDt);
-  EXPECT_LT(d.GetSlipRatio(), 0.25f);
-  // ...и это не разгон: начать срез по такой доле нельзя.
+  EXPECT_FLOAT_EQ(d.GetSlipRatio(), 0.0f);
   EXPECT_FALSE(d.IsDriving());
+  d.Update(2.0f, 3.0f, -0.02f, kDt);
+  EXPECT_TRUE(d.IsDriving());
+  EXPECT_LT(d.GetSlipRatio(), 0.01f);
 }
 
 TEST(WheelspinDetectorTest, NoSlipWhenStoppedOrReversing) {
