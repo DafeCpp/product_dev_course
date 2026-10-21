@@ -7,6 +7,7 @@ import aiohttp
 import structlog
 
 from telemetry_ingest_service.core.exceptions import AuthServiceError, NotFoundError, UnauthorizedError
+from backend_common.auth_service import auth_service_root
 from backend_common.core.exceptions import ForbiddenError
 from telemetry_ingest_service.settings import settings
 
@@ -25,9 +26,7 @@ def normalize_bearer(value: str | None) -> str | None:
 
 class UserTokenAuthorizer:
     async def authorize(self, *, token: str, project_id: UUID) -> None:
-        base = settings.auth_service_url.rstrip("/")
-        if base.endswith("/api/v1"):
-            base = base[:-len("/api/v1")]
+        base = auth_service_root(settings.auth_service_url)
         headers = {"Authorization": f"Bearer {token}"}
         try:
             async with aiohttp.ClientSession() as session:

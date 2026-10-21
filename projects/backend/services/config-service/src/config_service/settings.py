@@ -19,7 +19,7 @@ class Settings(BaseServiceSettings):
     )
 
     auth_service_url: AnyHttpUrl = Field(
-        default=cast(AnyHttpUrl, "http://localhost:8001/api/v1")
+        default=cast(AnyHttpUrl, "http://localhost:8001")
     )
 
     # Idempotency key TTL

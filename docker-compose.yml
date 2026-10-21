@@ -263,7 +263,7 @@ services:
       - HOST=${EXPERIMENT_SERVICE_HOST:-0.0.0.0}
       - PORT=${EXPERIMENT_SERVICE_PORT:-8002}
       - DB_POOL_SIZE=${EXPERIMENT_SERVICE_DB_POOL_SIZE:-20}
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001}
       - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       - TELEMETRY_BROKER_URL=${TELEMETRY_BROKER_URL:-redis://redis:6379/0}
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
@@ -339,7 +339,7 @@ services:
       - HOST=${SCRIPT_SERVICE_HOST:-0.0.0.0}
       - PORT=${SCRIPT_SERVICE_PORT:-8004}
       - DB_POOL_SIZE=${SCRIPT_SERVICE_DB_POOL_SIZE:-10}
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001}
       - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
     command: ["python", "-m", "script_service.main"]
     ports:
@@ -371,7 +371,7 @@ services:
       - HOST=${CONFIG_SERVICE_HOST:-0.0.0.0}
       - PORT=${CONFIG_SERVICE_PORT:-8005}
       - DB_POOL_SIZE=${CONFIG_SERVICE_DB_POOL_SIZE:-10}
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001/api/v1}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
     command: ["python", "-m", "config_service.main"]
     ports:
