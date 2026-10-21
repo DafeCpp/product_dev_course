@@ -12,18 +12,23 @@ from config_service.services.schema_service import SchemaService
 @pytest.mark.parametrize('schema', [
     {'type': 'not-a-type'},
     {'$schema': []},
+    {'$schema': 'https://example.com/unknown-draft'},
+    {'$ref': '#/$defs/missing'},
+    {'properties': {'child': {'$ref': '#/missing'}}},
+    {'$ref': 'https://example.com/unavailable'},
     {'required': 42},
     {'properties': {'enabled': 42}},
 ])
 @pytest.mark.parametrize('has_current', [False, True])
-async def test_invalid_schema_never_reaches_storage(schema, has_current):
+@pytest.mark.parametrize('has_configs', [False, True])
+async def test_invalid_schema_never_reaches_storage(schema, has_current, has_configs):
     schema_repo = AsyncMock()
     schema_repo.get_active.return_value = (
         SimpleNamespace(schema={'type': 'object', 'properties': {'enabled': {'type': 'boolean'}}})
         if has_current else None
     )
     config_repo = AsyncMock()
-    config_repo.list_by_type.return_value = []
+    config_repo.list_by_type.return_value = [SimpleNamespace(value={})] if has_configs else []
     service = SchemaService(schema_repo, config_repo)
 
     with pytest.raises(ValidationError, match='Invalid JSON Schema'):
@@ -46,3 +51,22 @@ async def test_valid_first_schema_is_activated(draft):
     config_repo.list_by_type.return_value = []
     await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
     schema_repo.insert_new_version_and_activate.assert_awaited_once_with(ConfigType.feature_flag, schema, 'admin')
+
+
+@pytest.mark.parametrize('schema', [
+    {'$ref': '#/$defs/value', '$defs': {'value': {'type': 'string'}}},
+    {'$ref': '#/$defs/a~1b', '$defs': {'a/b': {'type': 'string'}}},
+    {'$ref': '#value', '$defs': {'value': {'$anchor': 'value', 'type': 'string'}}},
+    {'type': 'object', 'properties': {'child': {'$ref': '#'}}},
+    {'$id': 'https://example.com/root', '$ref': 'child',
+     '$defs': {'child': {'$id': 'child', 'type': 'string'}}},
+    {'default': {'$ref': '#/missing'}, 'const': {'$ref': '#/missing'}},
+])
+async def test_valid_references_and_literal_data_are_accepted(schema):
+    schema_repo = AsyncMock()
+    schema_repo.get_active.return_value = None
+    schema_repo.insert_new_version_and_activate.return_value = SimpleNamespace(version=1)
+    config_repo = AsyncMock()
+    config_repo.list_by_type.return_value = []
+    await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
+    schema_repo.insert_new_version_and_activate.assert_awaited_once()
