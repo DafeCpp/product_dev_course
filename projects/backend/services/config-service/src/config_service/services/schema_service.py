@@ -6,7 +6,7 @@ from typing import Any
 import structlog
 from referencing import Registry, Resource
 from referencing.exceptions import Unresolvable
-from referencing.jsonschema import specification_with
+from referencing.jsonschema import specification_with, UnknownDialect
 
 from config_service.core.exceptions import (
     InvalidSchemaError,
@@ -76,6 +76,8 @@ def _check_compat(old_schema: dict[str, Any], new_schema: dict[str, Any]) -> lis
     return violations
 
 
+
+
 class SchemaService:
     def __init__(
         self,
@@ -118,31 +120,56 @@ class SchemaService:
             raise InvalidSchemaError(exc.message) from exc
         # Resolve references without network access, including nested resource IDs.
         # Traverse schema keywords only: examples/default/const contain instance data.
-        resource = Resource.from_contents(
-            new_schema,
-            default_specification=specification_with(
-                validator_cls.META_SCHEMA["$id"]
-                if "$id" in validator_cls.META_SCHEMA else validator_cls.META_SCHEMA["id"]
-            ),
+        specification = specification_with(
+            validator_cls.META_SCHEMA["$id"]
+            if "$id" in validator_cls.META_SCHEMA else validator_cls.META_SCHEMA["id"]
         )
+        resource = specification.create_resource(new_schema)
         registry: Registry[Any] = Registry()
-        pending = [(resource, registry.resolver_with_root(resource))]
-        while pending:
-            current_resource, resolver = pending.pop()
-            contents = current_resource.contents
-            if isinstance(contents, dict):
-                for keyword in ("$ref", "$dynamicRef", "$recursiveRef"):
-                    if keyword in contents and keyword in validator_cls.VALIDATORS:
-                        try:
-                            resolver.lookup(contents[keyword])
-                        except Unresolvable as exc:
-                            raise InvalidSchemaError(
-                                f"Unresolvable {keyword}: {contents[keyword]}"
-                            ) from exc
-            pending.extend(
-                (child, resolver.in_subresource(child))
-                for child in current_resource.subresources()
-            )
+        pending = [(resource, registry.resolver_with_root(resource), validator_cls)]
+        visited: set[tuple[int, type[Any]]] = set()
+        try:
+            while pending:
+                current_resource, resolver, inherited_validator = pending.pop()
+                contents = current_resource.contents
+                current_validator = jsonschema.validators.validator_for(contents, default=inherited_validator)  # type: ignore[no-untyped-call, unused-ignore]
+                if isinstance(contents, dict) and "$schema" in contents:
+                    current_validator = jsonschema.validators.validator_for(contents, default=None)  # type: ignore[arg-type, no-untyped-call, unused-ignore]
+                    if current_validator is None:
+                        raise InvalidSchemaError(f"Unsupported $schema: {contents['$schema']}")
+                current_validator.check_schema(contents)
+                key = (id(contents), current_validator)
+                if key in visited:
+                    continue
+                visited.add(key)
+                if isinstance(contents, dict):
+                    for keyword in ("$ref", "$dynamicRef", "$recursiveRef"):
+                        if keyword in contents and keyword in current_validator.VALIDATORS:
+                            resolved = resolver.lookup(contents[keyword])
+                            current_validator.check_schema(resolved.contents)
+                            target = Resource.from_contents(resolved.contents, default_specification=specification_with(
+                                current_validator.META_SCHEMA.get("$id") or current_validator.META_SCHEMA["id"]
+                            ))
+                            pending.append((target, resolved.resolver, current_validator))
+                traversal_contents = contents
+                if isinstance(contents, dict) and "dependencies" in current_validator.VALIDATORS:
+                    dependencies = contents.get("dependencies", {})
+                    traversal_contents = {**contents, "dependencies": {
+                        name: dependency for name, dependency in dependencies.items()
+                        if isinstance(dependency, dict)
+                    }}
+                traversal_resource = Resource.from_contents(
+                    traversal_contents,
+                    default_specification=specification_with(
+                        current_validator.META_SCHEMA.get("$id") or current_validator.META_SCHEMA["id"]
+                    ),
+                )
+                pending.extend(
+                    (child, resolver.in_subresource(child), current_validator)
+                    for child in traversal_resource.subresources()
+                )
+        except (Unresolvable, UnknownDialect, ValueError, jsonschema.exceptions.SchemaError) as exc:
+            raise InvalidSchemaError(str(exc)) from exc
         validator = validator_cls(new_schema, registry=registry)
 
         current = await self._schema_repo.get_active(config_type)
