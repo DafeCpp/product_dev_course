@@ -69,6 +69,19 @@ def test_overrides_ignore_none_and_revalidate() -> None:
         base.with_overrides(batch_size=0)
 
 
+def test_burst_scenario_rejects_rate_override() -> None:
+    with pytest.raises(ValueError, match="rate cannot be overridden"):
+        PRESETS["burst"].with_overrides(rate=5.0)
+    assert PRESETS["burst"].with_overrides(rate=None, sensors=2).sensors == 2
+
+
+def test_cli_rejects_rate_for_burst(tmp_path, capsys) -> None:
+    path = tmp_path / "s.json"
+    save_credentials(path, [SensorCredential("a", "t")])
+    assert cli.main(["run", "burst", "--sensors-file", str(path), "--rate", "5"]) == 2
+    assert "rate cannot be overridden" in capsys.readouterr().err
+
+
 def _per_window(sc: Scenario, window_s: float) -> tuple[float, float]:
     """Peak batches and readings one sensor sends within any window of ``window_s``."""
     offsets = sc.send_offsets()

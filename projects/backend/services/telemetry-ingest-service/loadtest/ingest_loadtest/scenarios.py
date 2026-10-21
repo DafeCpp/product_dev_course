@@ -90,6 +90,9 @@ class Scenario:
 
     def with_overrides(self, **overrides: object) -> Scenario:
         clean = {k: v for k, v in overrides.items() if v is not None}
+        if self.burst_size and "rate" in clean:
+            # Bursts take precedence over rate in send_offsets(), so the override would be ignored.
+            raise ValueError(f"scenario {self.name!r} sends bursts; rate cannot be overridden")
         return replace(self, **clean)  # type: ignore[arg-type]
 
 
