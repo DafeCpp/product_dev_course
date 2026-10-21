@@ -109,7 +109,8 @@ def create_app() -> web.Application:
     )
 
     app.on_startup.append(init_pool)
-    app.on_startup.append(init_s3_bucket)
+    if settings.s3_ensure_bucket_on_startup:
+        app.on_startup.append(init_s3_bucket)
     app.on_startup.append(start_webhook_dispatcher)
     app.on_startup.append(start_background_worker)
     app.on_startup.append(start_audit_client)

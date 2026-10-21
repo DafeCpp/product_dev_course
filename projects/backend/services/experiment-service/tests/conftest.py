@@ -67,6 +67,8 @@ async def service_client(aiohttp_client, pgsql):
     """Testsuite-style client for calling the service API."""
     conninfo = pgsql["experiment_service"].conninfo
     settings.database_url = conninfo.get_uri()
+    # No MinIO in tests; the startup bucket check would spend ~20 s in botocore retries.
+    settings.s3_ensure_bucket_on_startup = False
     app = create_app()
     return await aiohttp_client(app)
 
