@@ -118,6 +118,8 @@ async def test_list_schemas_requires_auth(service_client):
 
 
 @pytest.mark.parametrize('invalid_part', [
+    {'$ref': '#/$defs/missing'},
+    {'$schema': 'https://example.com/unknown-draft'},
     {'properties': {'enabled': {'type': 'not-a-type'}}},
     {'required': 42},
     {'properties': {'enabled': 42}},
