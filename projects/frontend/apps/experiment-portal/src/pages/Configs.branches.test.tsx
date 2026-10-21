@@ -234,20 +234,28 @@ describe('Configs page — branches', () => {
   })
 
   it('rollback: cancel, invalid input and valid target', async () => {
-    const promptSpy = vi
-      .spyOn(window, 'prompt')
-      .mockReturnValueOnce(null)
-      .mockReturnValueOnce('abc')
-      .mockReturnValueOnce('0')
-      .mockReturnValueOnce('3')
-      .mockReturnValueOnce('2')
     const user = userEvent.setup()
     renderPage()
     await screen.findByText('flag_x')
     const btn = screen.getByRole('button', { name: 'Откат' })
-    for (let i = 0; i < 4; i++) await user.click(btn)
-    expect(api.rollback).not.toHaveBeenCalled()
+
     await user.click(btn)
+    expect(screen.getByRole('heading', { name: 'Откат «login_rate_limit» (текущая v3)' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(screen.queryByRole('heading', { name: /Откат «login_rate_limit»/ })).not.toBeInTheDocument()
+
+    await user.click(btn)
+    const input = screen.getByLabelText('Целевая версия')
+    for (const bad of ['', '0', '3']) {
+      await user.clear(input)
+      if (bad) await user.type(input, bad)
+      await user.click(screen.getByRole('button', { name: 'Откатить' }))
+      expect(screen.getByRole('alert')).toHaveTextContent('Укажите версию от 1 до 2')
+    }
+    expect(api.rollback).not.toHaveBeenCalled()
+
+    await user.clear(input)
+    await user.type(input, '2{Enter}')
     await waitFor(() =>
       expect(api.rollback).toHaveBeenCalledWith('c1', {
         version: 3,
@@ -255,7 +263,7 @@ describe('Configs page — branches', () => {
         changeReason: 'rollback to v2 via portal',
       }),
     )
-    expect(promptSpy).toHaveBeenCalledTimes(5)
+    expect(screen.queryByLabelText('Целевая версия')).not.toBeInTheDocument()
   })
 
   it('opens edit modal, closes it and saves', async () => {

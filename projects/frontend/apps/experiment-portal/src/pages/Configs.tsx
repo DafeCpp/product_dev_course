@@ -12,9 +12,10 @@ import {
   LiveSwitch,
   ListSearchIcon,
 } from '../components/common'
-import { notifySuccess, notifyError } from '../utils/notify'
+import { notifySuccess } from '../utils/notify'
 import ConfigFormModal from './configs/ConfigFormModal'
 import ConfigHistoryModal from './configs/ConfigHistoryModal'
+import PromptDialog from '../components/PromptDialog'
 import './Configs.scss'
 import { getApiErrorMessage } from '../utils/apiError'
 
@@ -28,6 +29,7 @@ function Configs() {
   // undefined = modal closed, null = create, ConfigResponse = edit
   const [editing, setEditing] = useState<ConfigResponse | null | undefined>(undefined)
   const [historyFor, setHistoryFor] = useState<ConfigResponse | null>(null)
+  const [rollbackFor, setRollbackFor] = useState<ConfigResponse | null>(null)
 
   const canCreate = hasSystemPermission('configs.create')
   const canUpdate = hasSystemPermission('configs.update')
@@ -92,15 +94,13 @@ function Configs() {
     )
   }
 
-  const handleRollback = (c: ConfigResponse) => {
-    const raw = prompt(`Откатить «${c.key}» (текущая v${c.version}) к версии:`)
-    if (raw === null) return
+  const validateRollbackTarget = (raw: string): string | null => {
     const target = Number(raw)
-    if (!Number.isInteger(target) || target < 1 || target >= c.version) {
-      notifyError(`Некорректная целевая версия: ${raw}`)
-      return
+    if (!rollbackFor) return null
+    if (raw.trim() === '' || !Number.isInteger(target) || target < 1 || target >= rollbackFor.version) {
+      return `Укажите версию от 1 до ${rollbackFor.version - 1}`
     }
-    rollbackMutation.mutate({ c, target })
+    return null
   }
 
   return (
@@ -201,7 +201,7 @@ function Configs() {
                     <button
                       className="btn btn-ghost btn-xs"
                       disabled={rollbackMutation.isPending}
-                      onClick={() => handleRollback(c)}
+                      onClick={() => setRollbackFor(c)}
                     >
                       Откат
                     </button>
@@ -234,6 +234,20 @@ function Configs() {
           }}
         />
       )}
+
+      <PromptDialog
+        isOpen={rollbackFor !== null}
+        title={rollbackFor ? `Откат «${rollbackFor.key}» (текущая v${rollbackFor.version})` : ''}
+        label="Целевая версия"
+        submitLabel="Откатить"
+        inputType="number"
+        validate={validateRollbackTarget}
+        onSubmit={(raw) => {
+          if (rollbackFor) rollbackMutation.mutate({ c: rollbackFor, target: Number(raw) })
+          setRollbackFor(null)
+        }}
+        onCancel={() => setRollbackFor(null)}
+      />
 
       {historyFor && (
         <ConfigHistoryModal config={historyFor} onClose={() => setHistoryFor(null)} />
