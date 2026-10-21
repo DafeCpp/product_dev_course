@@ -380,6 +380,14 @@ TEST_F(KidsOversteerCutTest, UntrustedSpeedGetsNoCoastFloor) {
   EXPECT_NEAR(RunTwoTicks(kKidsPolicy), 0.5f * (1.0f - 0.7f), 1e-5f);
 }
 
+TEST_F(KidsOversteerCutTest, UnavailableMotorModelGetsNoCoastFloor) {
+  cfg_.filter.motor_model_enabled = false;
+  EXPECT_NEAR(RunTwoTicks(kKidsPolicy), 0.5f * (1.0f - 0.7f), 1e-5f);
+  cfg_.filter.motor_model_enabled = true;
+  input_.speed_calibration_active = true;
+  EXPECT_NEAR(RunTwoTicks(kKidsPolicy), 0.5f * (1.0f - 0.7f), 1e-5f);
+}
+
 TEST_F(KidsOversteerCutTest, DoesNotCutThrottleWhenLimitersDisabled) {
   cfg_.kids_mode.limiters_enabled = false;
 
