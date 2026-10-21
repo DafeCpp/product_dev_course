@@ -1187,6 +1187,40 @@ def test_lpf_raw_yaw_rate_from_tilted_mount(tmp_path):
     assert tm.lpf_attenuation_db(log) == pytest.approx(20 * math.log10(0.5), abs=0.3)
 
 
+def test_lpf_raw_yaw_axis_is_unit_for_collinear_gyro(tmp_path):
+    """Только повороты: медленные gx и gz коллинеарны. Ось — единичная, и
+    вибрация крена в gx не уходит в сырой yaw rate."""
+    tilt = math.radians(20.0)
+    rows = []
+    for i in range(3000):
+        t = i / 100
+        yaw = 40.0 * math.sin(2 * math.pi * 0.5 * t)
+        roll = 20.0 * math.sin(2 * math.pi * 23.0 * t)
+        rows.append({"ts_ms": i * 10, "gx": -yaw * math.sin(tilt) + roll * math.cos(tilt),
+                     "gy": 0.0, "gz": yaw * math.cos(tilt) + roll * math.sin(tilt),
+                     "yaw_rate_dps": yaw})
+    raw = tm.raw_vehicle_yaw_rate(_write_csv(tmp_path / "c.csv", rows))
+    assert max(abs(r - row["yaw_rate_dps"]) for r, row in zip(raw, rows)) < 0.01
+
+
+def test_band_power_skips_timestamp_stalls(tmp_path):
+    """Задержки записи PSRAM: окна со стыком не считаются, иначе скачок
+    медленной части дал бы одинаковую мощность в обоих сигналах."""
+    rows, t = [], 0.0
+    for i in range(3000):
+        t += 200.0 if i % 300 == 0 and i else 10.0
+        slow = 40.0 * math.sin(2 * math.pi * 1.0 * t / 1000)
+        fast = 8.0 * math.sin(2 * math.pi * 20.0 * t / 1000)
+        rows.append({"ts_ms": t, "gz": slow + fast, "yaw_rate_dps": slow + 0.5 * fast})
+    db = tm.lpf_attenuation_db(_write_csv(tmp_path / "gaps.csv", rows))
+    assert db == pytest.approx(20 * math.log10(0.5), abs=0.1)
+
+    ts = [r["ts_ms"] for r in rows[:600]]
+    ts[100:] = [v + 200.0 for v in ts[100:]]  # стык в каждом окне
+    with pytest.raises(ValueError, match="задержек записи"):
+        tm.band_power([0.0] * 600, ts, 100.0, 10.0, nperseg=512)
+
+
 def test_lpf_without_turns_has_no_yaw_axis(tmp_path):
     rows = [{"ts_ms": i * 10, "gz": math.sin(i), "yaw_rate_dps": 0.0}
             for i in range(1000)]

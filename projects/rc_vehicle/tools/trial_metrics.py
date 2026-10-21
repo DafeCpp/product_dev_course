@@ -104,6 +104,7 @@ TILT_TURN_RATE_DPS = 30.0
 LPF_BAND_HZ = 10.0
 LPF_NPERSEG = 256
 LPF_FIT_SMOOTH_MS = 250.0
+LPF_FIT_MIN_CORR = 0.95
 LPF_OVERSHOOT_TOL = 0.05     # доля уставки
 LPF_SETTLING_TOL_MS = 20.0   # два отсчёта лога 100 Гц
 
@@ -1152,45 +1153,33 @@ def _fft(x: list[complex]) -> list[complex]:
     return out
 
 
-def band_power(values: list[float], rate_hz: float, f_lo_hz: float,
-               nperseg: int = LPF_NPERSEG) -> float:
+def band_power(values: list[float], ts: list[float], rate_hz: float,
+               f_lo_hz: float, nperseg: int = LPF_NPERSEG) -> float:
     """Мощность выше `f_lo_hz` по Уэлчу: окна Ханна, перекрытие 50 %.
 
-    Окна с NaN пропускаются. Абсолютный масштаб не нужен — сравниваются
-    сигналы одного лога.
+    Окна с NaN или с неровным шагом `ts` (в логах PSRAM бывают задержки
+    записи) пропускаются: скачок на стыке дал бы ложную мощность на всех
+    частотах. Абсолютный масштаб не нужен — сравниваются сигналы одного лога.
     """
     if len(values) < nperseg:
         raise ValueError(f"лог короче {nperseg} отсчётов")
+    step = 1000.0 / rate_hz
+    even = [0.5 * step <= b - a <= 1.5 * step for a, b in zip(ts, ts[1:])]
     win = [0.5 - 0.5 * math.cos(2 * math.pi * k / nperseg) for k in range(nperseg)]
     k_lo = math.ceil(f_lo_hz * nperseg / rate_hz)
     total, segs = 0.0, 0
     for s in range(0, len(values) - nperseg + 1, nperseg // 2):
         seg = values[s:s + nperseg]
-        if any(math.isnan(v) for v in seg):
+        if any(math.isnan(v) for v in seg) or not all(even[s:s + nperseg - 1]):
             continue
         mean = sum(seg) / nperseg
         spec = _fft([complex((v - mean) * w) for v, w in zip(seg, win)])
         total += sum(abs(spec[k]) ** 2 for k in range(k_lo, nperseg // 2 + 1))
         segs += 1
     if not segs:
-        raise ValueError("нет окна без пропусков")
+        raise ValueError(f"нет окна в {nperseg} отсчётов без пропусков и "
+                         "задержек записи")
     return total / segs
-
-
-def _solve(a: list[list[float]], b: list[float]) -> list[float]:
-    """Гаусс с выбором ведущего; вырожденная ось даёт 0."""
-    n = len(b)
-    m = [row[:] + [v] for row, v in zip(a, b)]
-    for c in range(n):
-        p = max(range(c, n), key=lambda r: abs(m[r][c]))
-        m[c], m[p] = m[p], m[c]
-        if abs(m[c][c]) < 1e-12:
-            continue
-        for r in range(n):
-            if r != c:
-                f = m[r][c] / m[c][c]
-                m[r] = [x - f * y for x, y in zip(m[r], m[c])]
-    return [m[c][n] / m[c][c] if abs(m[c][c]) >= 1e-12 else 0.0 for c in range(n)]
 
 
 def raw_vehicle_yaw_rate(rows: list[Row]) -> list[float]:
@@ -1198,9 +1187,12 @@ def raw_vehicle_yaw_rate(rows: list[Row]) -> list[float]:
 
     `yaw_rate_dps` — проекция гироскопа на вертикаль машины (gravity_vec
     калибровки), и уже потом LPF; `gz` — ось датчика, при наклонном монтаже
-    в неё подмешаны крен и тангаж. Вертикали в логе нет, поэтому её
-    коэффициенты подбираются МНК по медленной части (скользящее среднее
-    250 мс, где LPF ≥ 5 Гц почти не влияет): yaw_rate_dps ≈ u·(gx, gy, gz).
+    в неё подмешаны крен и тангаж. Вертикали в логе нет, поэтому она
+    оценивается по медленной части (скользящее среднее 250 мс, где LPF ≥ 5 Гц
+    почти не влияет): yaw_rate_dps ≈ u·g, |u| = 1. При поворотах медленный
+    вектор гироскопа лежит вдоль u, и u — нормированная взаимная корреляция
+    Σ g·yaw_rate_dps; свободный МНК тут вырожден (gx, gy, gz коллинеарны).
+    Если проекция плохо повторяет yaw_rate_dps, оси нет.
     """
     axes = [c for c in ("gx", "gy", "gz") if has_col(rows, c)]
     if "gz" not in axes or not has_col(rows, "yaw_rate_dps"):
@@ -1212,12 +1204,18 @@ def raw_vehicle_yaw_rate(rows: list[Row]) -> list[float]:
     slow_yaw = _moving_average(ts, yaw, LPF_FIT_SMOOTH_MS)
     idx = [k for k in range(len(rows))
            if not math.isnan(slow_yaw[k]) and not any(math.isnan(v[k]) for v in slow)]
-    a = [[sum(slow[r][k] * slow[c][k] for k in idx) for c in range(len(axes))]
-         for r in range(len(axes))]
-    b = [sum(slow[r][k] * slow_yaw[k] for k in idx) for r in range(len(axes))]
-    u = _solve(a, b)
-    if math.hypot(*u) < 0.5:
-        raise ValueError("ось yaw не найдена: в логе мало поворотов")
+    b = [sum(v[k] * slow_yaw[k] for k in idx) for v in slow]
+    norm = math.hypot(*b)
+    proj = [sum(bi * v[k] for bi, v in zip(b, slow)) / norm if norm else 0.0
+            for k in idx]
+    yy = sum(slow_yaw[k] ** 2 for k in idx)
+    pp = sum(p * p for p in proj)
+    corr = (sum(p * slow_yaw[k] for p, k in zip(proj, idx)) / math.sqrt(yy * pp)
+            if yy > 0 and pp > 0 else 0.0)
+    if corr < LPF_FIT_MIN_CORR:
+        raise ValueError(f"ось yaw не найдена: в логе мало поворотов "
+                         f"(корреляция {corr:.2f} < {LPF_FIT_MIN_CORR})")
+    u = [bi / norm for bi in b]
     return [sum(w * v[k] for w, v in zip(u, raw)) for k in range(len(rows))]
 
 
@@ -1230,8 +1228,9 @@ def lpf_attenuation_db(rows: list[Row]) -> float:
     if rate <= 2 * LPF_BAND_HZ:
         raise ValueError(f"частота лога {rate:.0f} Гц: выше {LPF_BAND_HZ:.0f} Гц "
                          "спектра нет")
-    raw = band_power(raw_vehicle_yaw_rate(rows), rate, LPF_BAND_HZ)
-    filt = band_power(col_raw(rows, "yaw_rate_dps"), rate, LPF_BAND_HZ)
+    ts = _ts(rows)
+    raw = band_power(raw_vehicle_yaw_rate(rows), ts, rate, LPF_BAND_HZ)
+    filt = band_power(col_raw(rows, "yaw_rate_dps"), ts, rate, LPF_BAND_HZ)
     if raw <= 0.0:
         raise ValueError(f"в сыром gz нет мощности выше {LPF_BAND_HZ:.0f} Гц")
     return 10.0 * math.log10(max(filt, 1e-30) / raw)
