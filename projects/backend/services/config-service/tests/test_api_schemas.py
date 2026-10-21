@@ -118,6 +118,13 @@ async def test_list_schemas_requires_auth(service_client):
 
 
 @pytest.mark.parametrize('invalid_part', [
+    {'$ref': '#/default', 'default': 42},
+    {'$id': 'http://[invalid', '$ref': 'child'},
+    {'$defs': {'child': {'$id': 'child', '$schema': 'https://example.com/unknown'}}},
+    {'$schema': 'http://json-schema.org/draft-07/schema#',
+     'definitions': {'child': {'$id': 'child',
+         '$schema': 'https://json-schema.org/draft/2020-12/schema',
+         '$dynamicRef': '#missing'}}},
     {'$ref': '#/$defs/missing'},
     {'$schema': 'https://example.com/unknown-draft'},
     {'properties': {'enabled': {'type': 'not-a-type'}}},
