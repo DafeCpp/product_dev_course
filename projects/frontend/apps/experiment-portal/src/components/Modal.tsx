@@ -14,6 +14,25 @@ interface ModalProps {
 const FOCUSABLE =
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+// Give focus back to the element that opened the dialog. A trigger that is disabled while the
+// submitted action runs cannot hold focus, so it gets focus back once it is enabled again,
+// unless the user has moved focus somewhere else meanwhile.
+function restoreFocus(target: HTMLElement | null) {
+    if (!target?.isConnected) return
+    const isDisabled = () => (target as HTMLButtonElement).disabled === true
+    if (!isDisabled()) target.focus()
+    const focusLost = () => !document.activeElement || document.activeElement === document.body
+    const observer = new MutationObserver(() => {
+        if (!target.isConnected) {
+            observer.disconnect()
+        } else if (!isDisabled()) {
+            observer.disconnect()
+            if (focusLost()) target.focus()
+        }
+    })
+    observer.observe(target, { attributes: true, attributeFilter: ['disabled'] })
+}
+
 function Modal({ isOpen, onClose, title, children, disabled = false, className = '' }: ModalProps) {
     const mouseDownOnOverlay = useRef(false)
     const contentRef = useRef<HTMLDivElement>(null)
@@ -49,7 +68,7 @@ function Modal({ isOpen, onClose, title, children, disabled = false, className =
             content.focus()
         }
         return () => {
-            returnFocusTo?.focus?.()
+            restoreFocus(returnFocusTo)
         }
     }, [isOpen, returnFocusTo])
 
