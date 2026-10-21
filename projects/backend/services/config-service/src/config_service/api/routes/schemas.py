@@ -1,9 +1,12 @@
 """Schema management endpoints."""
 from __future__ import annotations
 
+import json
+
 from aiohttp import web
 
 from config_service.core.exceptions import (
+    InvalidSchemaError,
     SchemaBreakingChangeError,
     SchemaSanityFailedError,
 )
@@ -93,6 +96,11 @@ async def update_schema(request: web.Request) -> web.Response:
 
     try:
         schema = await svc.update(config_type, dto.schema_, created_by=user.user_id)
+    except InvalidSchemaError as exc:
+        raise web.HTTPUnprocessableEntity(
+            text=json.dumps({"error": "Invalid JSON Schema", "detail": exc.detail}),
+            content_type="application/json",
+        ) from exc
     except SchemaBreakingChangeError as exc:
         raise web.HTTPUnprocessableEntity(
             text=str({"error": "Breaking schema changes", "violations": exc.violations}),

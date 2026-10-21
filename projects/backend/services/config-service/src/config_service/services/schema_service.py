@@ -17,6 +17,7 @@ from config_service.prometheus_metrics import (
 )
 from config_service.repositories.config_repo import ConfigRepository
 from config_service.repositories.schema_repo import SchemaRepository
+from config_service.services.schema_validation import build_schema_validator
 
 logger = structlog.get_logger(__name__)
 
@@ -72,6 +73,8 @@ def _check_compat(old_schema: dict[str, Any], new_schema: dict[str, Any]) -> lis
     return violations
 
 
+
+
 class SchemaService:
     def __init__(
         self,
@@ -96,6 +99,8 @@ class SchemaService:
         new_schema: dict[str, Any],
         created_by: str,
     ) -> ConfigSchema:
+        validator = build_schema_validator(new_schema)
+
         current = await self._schema_repo.get_active(config_type)
 
         if current is not None:
@@ -107,12 +112,6 @@ class SchemaService:
                         rule=v[:64],
                     ).inc()
                 raise SchemaBreakingChangeError(violations)
-
-        import jsonschema
-        import jsonschema.validators
-
-        validator_cls = jsonschema.validators.validator_for(new_schema)  # type: ignore[no-untyped-call, unused-ignore]
-        validator = validator_cls(new_schema)
 
         existing_configs = await self._config_repo.list_by_type(config_type)
         failures: list[dict[str, Any]] = []

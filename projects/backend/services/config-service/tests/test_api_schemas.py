@@ -115,3 +115,41 @@ async def test_update_schema_requires_permission(service_client):
 async def test_list_schemas_requires_auth(service_client):
     resp = await service_client.get("/api/v1/schemas")
     assert resp.status == 401
+
+
+@pytest.mark.parametrize('invalid_part', [
+    *[{'$schema': 'http://json-schema.org/draft-03/schema#', 'required': False, keyword: value}
+      for keyword in ('type', 'disallow') for value in ('unknown', ['string', 'unknown'])],
+    {'$schema': 'http://json-schema.org/draft-03/schema#', 'required': False,
+     'type': [{'$ref': '#/missing'}]},
+    {'$schema': 'http://json-schema.org/draft-03/schema#', 'required': False,
+     'disallow': [{'$ref': '#/missing'}]},
+    {'$id': 'not a uri'},
+    {'$ref': '#/default', 'default': {'$schema': []}},
+    {'$ref': '#/default', 'default': 42},
+    {'$id': 'http://[invalid', '$ref': 'child'},
+    {'$defs': {'child': {'$id': 'child', '$schema': 'https://example.com/unknown'}}},
+    {'$schema': 'http://json-schema.org/draft-07/schema#',
+     'definitions': {'child': {'$id': 'child',
+         '$schema': 'https://json-schema.org/draft/2020-12/schema',
+         '$dynamicRef': '#missing'}}},
+    {'$ref': '#/$defs/missing'},
+    {'$schema': 'https://example.com/unknown-draft'},
+    {'properties': {'enabled': {'type': 'not-a-type'}}},
+    {'required': 42},
+    {'properties': {'enabled': 42}},
+])
+@pytest.mark.asyncio
+async def test_invalid_schema_rejected_without_changing_active_or_history(service_client, invalid_part):
+    """Reject malformed schemas even with no configs, before compatibility checks."""
+    url = '/api/v1/schemas/feature_flag'
+    current = await (await service_client.get(url, headers=ADMIN_HEADERS)).json()
+    history = await (await service_client.get(url + '/history', headers=ADMIN_HEADERS)).json()
+    response = await service_client.put(
+        url, json={'schema': {**current['schema'], **invalid_part}},
+        headers=_SCHEMA_ADMIN_HEADERS,
+    )
+    assert response.status == 422, await response.text()
+    assert (await response.json())['error'] == 'Invalid JSON Schema'
+    assert await (await service_client.get(url, headers=ADMIN_HEADERS)).json() == current
+    assert await (await service_client.get(url + '/history', headers=ADMIN_HEADERS)).json() == history

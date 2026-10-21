@@ -67,3 +67,13 @@ class SchemaNotFoundError(NotFoundError):
     def __init__(self, config_type: str) -> None:
         super().__init__(f"Schema not found for type: {config_type}")
         self.config_type = config_type
+
+
+class InvalidSchemaError(ValidationError):
+    """Raised when a proposed JSON Schema does not satisfy its metaschema."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"Invalid JSON Schema: {detail}")
+        self.detail = detail
+
+    status_code = 422

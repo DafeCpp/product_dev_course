@@ -38,4 +38,6 @@ must only be reached over the internal network: auth-proxy returns `404` for the
 route, and the development Docker publication is bound to `127.0.0.1`.
 
 - `GET /api/v1/schemas` — list active JSON schemas
-- `PUT /api/v1/schemas/{type}` — update schema (additive changes only)
+- `PUT /api/v1/schemas/{type}` — update schema (additive changes only). Invalid JSON Schema is rejected with 422 before compatibility checks or activation; the active version and history remain unchanged
+
+Schema updates accept supported JSON Schema dialects only. References must resolve within the submitted schema (including embedded resource IDs); remote schemas are not fetched. Invalid schemas, unknown dialects and unresolved references return 422 without changing the active version or history.
