@@ -55,7 +55,11 @@ void TiltEstimator::Update(const ImuData& imu, float a_lin_long_g,
   accel_corrected_ = true;
   const float k = params_.corr_gain_hz * dt_sec;
   pitch_rad_ = ClampTilt(pitch_rad_ + k * WrapAngle(pitch_acc - pitch_rad_));
-  roll_rad_ = ClampTilt(roll_rad_ + k * WrapAngle(roll_acc - roll_rad_));
+  // В повороте боковой якорь не отличает крен от заноса (LOS-378): крен
+  // держится на гироскопе до выхода на прямую.
+  if (std::abs(a_lin_lat_g) <= kRollCorrMaxLatG) {
+    roll_rad_ = ClampTilt(roll_rad_ + k * WrapAngle(roll_acc - roll_rad_));
+  }
 }
 
 float TiltEstimator::WrapAngle(float a) noexcept {

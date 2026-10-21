@@ -138,17 +138,59 @@ TEST(TiltEstimatorTest, TiltedLateralAccel_RollStaysAccurate) {
   ImuData imu{};
   imu.gx = imu.gy = imu.gz = 0.0f;
 
+  // Крен 15° находится на прямой (бокового ускорения нет)...
   const float roll_true = DegToRad(15.0f);
-  const float a_lat_g = 0.2f;
   imu.ax = 0.0f;
-  imu.ay = std::sin(roll_true) + a_lat_g;
+  imu.ay = std::sin(roll_true);
   imu.az = std::cos(roll_true);
+  for (int i = 0; i < 5000; ++i) {
+    est.Update(imu, 0.0f, 0.0f, kDt);
+  }
+  ASSERT_NEAR(RadToDeg(est.GetRollRad()), 15.0f, 1.5f);
 
+  // ...и держится в повороте с известным боковым ускорением 0.2 g.
+  const float a_lat_g = 0.2f;
+  imu.ay = std::sin(roll_true) + a_lat_g;
   for (int i = 0; i < 5000; ++i) {
     est.Update(imu, 0.0f, a_lat_g, kDt);
   }
-
   EXPECT_NEAR(RadToDeg(est.GetRollRad()), 15.0f, 1.5f);
+}
+
+// LOS-378: в заносе ay = vx·r + vy_dot, и якорь vx·r не объясняет остаток.
+// Крен не должен его поглощать: иначе EKF вычитает тот же остаток из ay как
+// гравитацию, и угол заноса не растёт.
+TEST(TiltEstimatorTest, SlideResidualInTurn_NotAbsorbedIntoRoll) {
+  TiltEstimator est;
+  ImuData imu{};
+  imu.gx = imu.gy = imu.gz = 0.0f;
+  imu.ax = 0.0f;
+  imu.az = 1.0f;
+
+  const float a_lat_anchor_g = 0.27f;  // vx·r
+  imu.ay = 0.20f;                      // измерено: vy_dot = −0.07 g
+  for (int i = 0; i < 5000; ++i) {  // 10 с — много постоянных времени
+    est.Update(imu, 0.0f, a_lat_anchor_g, kDt);
+  }
+  EXPECT_NEAR(RadToDeg(est.GetRollRad()), 0.0f, 0.1f);
+  // Тангаж при этом корректируется как обычно.
+  EXPECT_TRUE(est.LastUpdateAccelCorrected());
+}
+
+// На прямой (|a_lin_lat| ниже порога) крен по-прежнему тянется к accel.
+TEST(TiltEstimatorTest, SmallLateralAnchor_RollStillCorrected) {
+  TiltEstimator est;
+  ImuData imu{};
+  imu.gx = imu.gy = imu.gz = 0.0f;
+  const float roll_true = DegToRad(5.0f);
+  const float a_lat_g = 0.03f;
+  imu.ax = 0.0f;
+  imu.ay = std::sin(roll_true) + a_lat_g;
+  imu.az = std::cos(roll_true);
+  for (int i = 0; i < 5000; ++i) {
+    est.Update(imu, 0.0f, a_lat_g, kDt);
+  }
+  EXPECT_NEAR(RadToDeg(est.GetRollRad()), 5.0f, 0.5f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

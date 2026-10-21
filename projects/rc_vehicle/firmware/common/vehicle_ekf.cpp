@@ -213,6 +213,32 @@ void VehicleEkf::ScalarMeasUpdate(int col, float z, float r) noexcept {
   }
 }
 
+void VehicleEkf::ScalarMeasUpdateExcept(int col, float z, float r,
+                                        int skip_col) noexcept {
+  const float S = P_[col * 4 + col] + r;
+  if (S < kPDiagMin) return;
+
+  const float Pcol[4] = {P_[col], P_[4 + col], P_[8 + col], P_[12 + col]};
+  float K[4] = {Pcol[0] / S, Pcol[1] / S, Pcol[2] / S, Pcol[3] / S};
+  K[skip_col] = 0.0f;
+
+  const float innov = z - x_[col];
+  x_[0] += K[0] * innov;
+  x_[1] += K[1] * innov;
+  x_[2] += K[2] * innov;
+  x_[3] = WrapAngle(x_[3] + K[3] * innov);
+
+  // Joseph form верна для произвольного K: P' = P − K·Pcolᵀ − Pcol·Kᵀ + K·S·Kᵀ.
+  for (int i = 0; i < 4; ++i) {
+    for (int j = i; j < 4; ++j) {
+      const float val =
+          P_[i * 4 + j] - K[i] * Pcol[j] - K[j] * Pcol[i] + K[i] * K[j] * S;
+      P_[i * 4 + j] = val;
+      P_[j * 4 + i] = val;
+    }
+  }
+}
+
 void VehicleEkf::ScalarZeroUpdate(int col, float r) noexcept {
   ScalarMeasUpdate(col, 0.0f, r);  // z = 0
 }
@@ -225,7 +251,7 @@ void VehicleEkf::UpdateZeroVelocity(float r_zupt) noexcept {
 
 void VehicleEkf::UpdateSpeed(float v_meas, float r_speed) noexcept {
   last_speed_meas_ = v_meas;
-  ScalarMeasUpdate(0, v_meas, r_speed);  // vx → v_meas
+  ScalarMeasUpdateExcept(0, v_meas, r_speed, 1);  // vx → v_meas, vy не трогаем
   ClampP();
   // Guard и после измерения: v_meas (до 30 м/с по клемпу gain) не должен
   // утянуть vx выше физического максимума до следующего Predict.
