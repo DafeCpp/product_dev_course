@@ -75,6 +75,17 @@ def _check_schema_node(schema: Any, validator: Any) -> None:
         return value
 
     validator.check_schema(view(schema))
+    if isinstance(schema, dict) and specification.name == "draft-03":
+        for keyword in ("type", "disallow"):
+            entries = schema.get(keyword, [])
+            if isinstance(entries, str):
+                entries = [entries]
+            for entry in entries:
+                if isinstance(entry, str):
+                    try:
+                        validator.TYPE_CHECKER.is_type(None, entry)
+                    except jsonschema.exceptions.UndefinedTypeCheck as exc:
+                        raise InvalidSchemaError(f"Unsupported Draft 3 {keyword}: {entry}") from exc
     if isinstance(schema, dict):
         keyword = "id" if specification.name in {"draft-03", "draft-04"} else "$id"
         if keyword in schema and not validate_rfc3986(schema[keyword], rule="URI_reference"):
