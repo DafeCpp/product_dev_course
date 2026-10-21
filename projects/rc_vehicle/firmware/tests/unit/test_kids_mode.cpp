@@ -790,10 +790,17 @@ TEST_F(KidsGripSteerTest, CapRecoversGraduallyWithGrip) {
 
 TEST_F(KidsGripSteerTest, CounterSteerAgainstYawIsNotCapped) {
   // Разворот: машину крутит вправо, водитель рулит влево.
-  EXPECT_FLOAT_EQ(Tick(1.0f, true, -0.05f), 1.0f);
+  EXPECT_FLOAT_EQ(Tick(1.0f, true, -0.5f), 1.0f);
   EXPECT_FALSE(processor_.IsGripSteerLimitActive());
   // И потолок за это время не опустился: руль по вращению — без среза.
   EXPECT_NEAR(Tick(1.0f, true, 1.0f), CapFor(1.0f), 1e-5f);
+}
+
+TEST_F(KidsGripSteerTest, WashoutWithoutYawIsCapped) {
+  // Полный снос передней оси: yaw ≈ 0, знак — шум гироскопа.
+  EXPECT_NEAR(Tick(1.0f, true, -0.02f), CapFor(0.02f), 1e-5f);
+  EXPECT_NEAR(Tick(1.0f, true, 0.01f), CapFor(0.01f), 1e-5f);
+  EXPECT_TRUE(processor_.IsGripSteerLimitActive());
 }
 
 TEST_F(KidsGripSteerTest, AntiSpinDisabledLeavesSteering) {

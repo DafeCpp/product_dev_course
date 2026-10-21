@@ -153,6 +153,10 @@ class KidsModeProcessor {
   /** Скорость возврата потолка руля, пока сцепление есть [1/с]: плавно, иначе
    *  полный руль сразу снова срывал бы шины. */
   static constexpr float kGripSteerRecoveryPerS = 0.5f;
+  /** Контрруль — руль против yaw rate выше этого порога [рад/с]. Около нуля
+   *  знак yaw rate задаёт шум гироскопа, а полный снос передней оси (yaw ≈ 0)
+   *  потолок ограничивать обязан. */
+  static constexpr float kCounterSteerMinYawRps = 0.1f;
 
   /** Доля пробуксовки колёс на последнем Process() (LOS-385). */
   [[nodiscard]] float GetWheelSlipRatio() const noexcept {
@@ -189,6 +193,8 @@ class KidsModeProcessor {
  private:
   void ApplyGripSteerLimit(const StabilizationConfig& cfg, float& steering,
                            const StabilizationInput& input) noexcept;
+  /** Руль явно против вращения: контрруль при развороте, его не режем. */
+  [[nodiscard]] bool IsCounterSteer(float steering) const noexcept;
 
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
@@ -201,8 +207,8 @@ class KidsModeProcessor {
   bool grip_steer_limit_active_{false};
   // Потолок |руля| по сцеплению [0..1], 1.0 = не ограничен (LOS-378).
   float grip_steer_cap_{1.0f};
-  // Знак yaw rate этого тика: потолок держит только руль в ту же сторону.
-  float yaw_sign_{0.0f};
+  // Yaw rate этого тика: по нему отличается контрруль (IsCounterSteer).
+  float yaw_rate_rps_{0.0f};
 
   /**
    * Адаптивный потолок газа speed limiter'а [0..1], 1.0 = не ограничен.
