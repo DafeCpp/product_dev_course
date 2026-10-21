@@ -27,37 +27,44 @@ export default function ExecutionsTable({
           </tr>
         </thead>
         <tbody>
-          {executions.map((ex) => (
-            <tr
-              key={ex.id}
-              className="scripts-table__row"
-              onClick={() => onRowClick(ex)}
-            >
-              <td className="scripts-table__name">
-                {/* Keyboard entry point to the row; its click bubbles to the row's handler. */}
-                <button type="button" className="table-row-open">
-                  {scriptName(ex.script_id)}
-                </button>
-              </td>
-              <td>
-                <span className={`exec-status ${executionStatusClass(ex.status)}`}>
-                  {executionStatusLabel(ex.status)}
-                </span>
-              </td>
-              <td>{ex.requested_by}</td>
-              <td>
-                <span className="scripts-table__service">
-                  {ex.target_instance ?? '—'}
-                </span>
-              </td>
-              <td className="scripts-table__time">
-                {ex.started_at
-                  ? formatShortDateTime(ex.started_at, { seconds: true })
-                  : '—'}
-              </td>
-              <td>{calcDuration(ex.started_at, ex.finished_at)}</td>
-            </tr>
-          ))}
+          {executions.map((ex) => {
+            const name = scriptName(ex.script_id)
+            const started = ex.started_at
+              ? formatShortDateTime(ex.started_at, { seconds: true })
+              : '—'
+            return (
+              <tr
+                key={ex.id}
+                className="scripts-table__row"
+                onClick={() => onRowClick(ex)}
+              >
+                <td className="scripts-table__name">
+                  {/* Keyboard entry point to the row; its click bubbles to the row's handler.
+                      The name repeats across runs of one script, so the label adds status and start. */}
+                  <button
+                    type="button"
+                    className="table-row-open"
+                    aria-label={`${name}, ${executionStatusLabel(ex.status)}, начало ${started}`}
+                  >
+                    {name}
+                  </button>
+                </td>
+                <td>
+                  <span className={`exec-status ${executionStatusClass(ex.status)}`}>
+                    {executionStatusLabel(ex.status)}
+                  </span>
+                </td>
+                <td>{ex.requested_by}</td>
+                <td>
+                  <span className="scripts-table__service">
+                    {ex.target_instance ?? '—'}
+                  </span>
+                </td>
+                <td className="scripts-table__time">{started}</td>
+                <td>{calcDuration(ex.started_at, ex.finished_at)}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
