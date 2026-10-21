@@ -82,7 +82,8 @@ class TiltEstimator {
    *                      симметрично заваливает roll тем же путём, что и
    *                      продольный разгон заваливал pitch (см. класс).
    *                      Пока |a_lin_lat_g| > kRollCorrMaxLatG, крен
-   *                      accel-коррекцией не подтягивается (LOS-378).
+   *                      accel-коррекцией не подтягивается (LOS-378), кроме
+   *                      захвата после Reset().
    * @param dt_sec        Шаг времени [с] > 0.
    */
   void Update(const ImuData& imu, float a_lin_long_g, float a_lin_lat_g,
@@ -106,6 +107,8 @@ class TiltEstimator {
   float pitch_rad_{0.0f};
   float roll_rad_{0.0f};
   bool accel_corrected_{false};
+  /** Остаток захвата крена после Reset() в постоянных времени коррекции. */
+  float roll_acquire_left_tau_{kRollAcquireTimeConstants};
   Params params_;
 
   /**
@@ -117,6 +120,14 @@ class TiltEstimator {
    * 0.1–0.3 g. На прямой (и в покое) коррекция крена работает как раньше.
    */
   static constexpr float kRollCorrMaxLatG = 0.05f;
+
+  /**
+   * Сколько постоянных времени accel-коррекции крен после Reset()
+   * подтягивается без гейта kRollCorrMaxLatG. Иначе фильтр, сброшенный
+   * в повороте на наклонной площадке, держал бы roll = 0 до выхода на
+   * прямую, и EKF принимал бы гравитацию за боковое ускорение.
+   */
+  static constexpr float kRollAcquireTimeConstants = 3.0f;
 
   /** Физический предел |pitch|,|roll| для клемпа против разноса гиро [рад]
    * (~60°, с запасом выше любого реалистичного наклона RC-машины). */

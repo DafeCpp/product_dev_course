@@ -1,5 +1,6 @@
 #include "tilt_estimator.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "imu_sensor.hpp"
@@ -14,6 +15,7 @@ constexpr float kDegToRad = kPi / 180.0f;
 void TiltEstimator::Reset() noexcept {
   pitch_rad_ = 0.0f;
   roll_rad_ = 0.0f;
+  roll_acquire_left_tau_ = kRollAcquireTimeConstants;
   accel_corrected_ = false;
 }
 
@@ -56,9 +58,13 @@ void TiltEstimator::Update(const ImuData& imu, float a_lin_long_g,
   const float k = params_.corr_gain_hz * dt_sec;
   pitch_rad_ = ClampTilt(pitch_rad_ + k * WrapAngle(pitch_acc - pitch_rad_));
   // В повороте боковой якорь не отличает крен от заноса (LOS-378): крен
-  // держится на гироскопе до выхода на прямую.
-  if (std::abs(a_lin_lat_g) <= kRollCorrMaxLatG) {
+  // держится на гироскопе до выхода на прямую. Но после Reset() крен ещё не
+  // найден, и гироскоп постоянный наклон не восстановит — пока не накоплено
+  // kRollAcquireTimeConstants постоянных времени коррекции, гейта нет.
+  if (std::abs(a_lin_lat_g) <= kRollCorrMaxLatG ||
+      roll_acquire_left_tau_ > 0.0f) {
     roll_rad_ = ClampTilt(roll_rad_ + k * WrapAngle(roll_acc - roll_rad_));
+    roll_acquire_left_tau_ = std::max(roll_acquire_left_tau_ - k, 0.0f);
   }
 }
 

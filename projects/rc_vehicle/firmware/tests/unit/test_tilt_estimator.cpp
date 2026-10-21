@@ -166,6 +166,10 @@ TEST(TiltEstimatorTest, SlideResidualInTurn_NotAbsorbedIntoRoll) {
   imu.gx = imu.gy = imu.gz = 0.0f;
   imu.ax = 0.0f;
   imu.az = 1.0f;
+  imu.ay = 0.0f;
+  for (int i = 0; i < 5000; ++i) {  // захват крена на прямой после Reset()
+    est.Update(imu, 0.0f, 0.0f, kDt);
+  }
 
   const float a_lat_anchor_g = 0.27f;  // vx·r
   imu.ay = 0.20f;                      // измерено: vy_dot = −0.07 g
@@ -175,6 +179,24 @@ TEST(TiltEstimatorTest, SlideResidualInTurn_NotAbsorbedIntoRoll) {
   EXPECT_NEAR(RadToDeg(est.GetRollRad()), 0.0f, 0.1f);
   // Тангаж при этом корректируется как обычно.
   EXPECT_TRUE(est.LastUpdateAccelCorrected());
+}
+
+// После Reset() в повороте на наклонной площадке крен ещё не найден, и
+// гироскоп постоянный наклон не восстановит: захват идёт и без гейта.
+TEST(TiltEstimatorTest, ResetInTurn_RollStillAcquired) {
+  TiltEstimator est;
+  ImuData imu{};
+  imu.gx = imu.gy = imu.gz = 0.0f;
+  const float roll_true = DegToRad(8.0f);
+  const float a_lat_g = 0.2f;
+  imu.ax = 0.0f;
+  imu.ay = std::sin(roll_true) + a_lat_g;
+  imu.az = std::cos(roll_true);
+  for (int i = 0; i < 5000; ++i) {
+    est.Update(imu, 0.0f, a_lat_g, kDt);
+  }
+  EXPECT_NEAR(RadToDeg(est.GetRollRad()), 8.0f * (1.0f - std::exp(-3.0f)),
+              0.3f);
 }
 
 // На прямой (|a_lin_lat| ниже порога) крен по-прежнему тянется к accel.
