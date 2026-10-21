@@ -28,6 +28,7 @@ import type { SelectChangeEvent } from '@mui/material'
 import Plotly from 'plotly.js-dist-min'
 import { runsApi, comparisonApi } from '../api/client'
 import type { ComparisonResponse, ComparisonRunEntry } from '../types'
+import MissingRouteParam from '../components/MissingRouteParam'
 
 // Standard Plotly palette colours
 const PLOTLY_COLORS = [
@@ -119,8 +120,7 @@ function OverlayChart({
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
-export default function ComparisonPage() {
-  const { experimentId } = useParams<{ experimentId: string }>()
+function ComparisonView({ experimentId }: { experimentId: string }) {
   const navigate = useNavigate()
 
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
@@ -129,8 +129,7 @@ export default function ComparisonPage() {
 
   const { data: runsData, isLoading: runsLoading } = useQuery({
     queryKey: ['runs', experimentId],
-    queryFn: () => runsApi.list(experimentId!, { page_size: 100 }),
-    enabled: !!experimentId,
+    queryFn: () => runsApi.list(experimentId, { page_size: 100 }),
   })
 
   const runs = runsData?.runs ?? []
@@ -144,7 +143,7 @@ export default function ComparisonPage() {
 
   const compareMutation = useApiMutation({
     mutationFn: (body: { run_ids: string[]; metric_names: string[] }) =>
-      comparisonApi.compare(experimentId!, body),
+      comparisonApi.compare(experimentId, body),
     errorFallback: 'Ошибка сравнения',
     onSuccess: (data) => {
       setComparisonResult(data)
@@ -297,7 +296,7 @@ export default function ComparisonPage() {
               size="small"
               onClick={() =>
                 window.open(
-                  comparisonApi.exportUrl(experimentId!, {
+                  comparisonApi.exportUrl(experimentId, {
                     run_ids: selectedRunIds,
                     metric_names: selectedMetrics.length > 0 ? selectedMetrics : comparisonResult.metric_names,
                     format: 'csv',
@@ -313,7 +312,7 @@ export default function ComparisonPage() {
               size="small"
               onClick={() =>
                 window.open(
-                  comparisonApi.exportUrl(experimentId!, {
+                  comparisonApi.exportUrl(experimentId, {
                     run_ids: selectedRunIds,
                     metric_names: selectedMetrics.length > 0 ? selectedMetrics : comparisonResult.metric_names,
                     format: 'json',
@@ -426,4 +425,10 @@ export default function ComparisonPage() {
       )}
     </Box>
   )
+}
+
+export default function ComparisonPage() {
+  const { experimentId } = useParams<{ experimentId: string }>()
+  if (!experimentId) return <MissingRouteParam />
+  return <ComparisonView experimentId={experimentId} />
 }

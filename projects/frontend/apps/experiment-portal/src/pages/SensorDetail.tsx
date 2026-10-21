@@ -21,10 +21,10 @@ import SensorBackfillSection from './sensor-detail/SensorBackfillSection'
 import './SensorDetail.scss'
 import { notifyError, notifySuccessSticky } from '../utils/notify'
 import { getApiErrorMessage, isNotFoundError } from '../utils/apiError'
+import MissingRouteParam from '../components/MissingRouteParam'
 import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 
-function SensorDetail() {
-    const { id } = useParams<{ id: string }>()
+function SensorDetailView({ id }: { id: string }) {
     const navigate = useNavigate()
     const [showToken, setShowToken] = useState(false)
     const [newToken, setNewToken] = useState<string | null>(null)
@@ -36,8 +36,7 @@ function SensorDetail() {
 
     const { data: sensor, isLoading, error } = useQuery({
         queryKey: ['sensor', id],
-        queryFn: () => sensorsApi.get(id!),
-        enabled: !!id,
+        queryFn: () => sensorsApi.get(id),
     })
 
     // Получаем список проектов датчика
@@ -46,8 +45,7 @@ function SensorDetail() {
         isLoading: isLoadingProjects,
     } = useQuery({
         queryKey: ['sensor', id, 'projects'],
-        queryFn: () => sensorsApi.getProjects(id!),
-        enabled: !!id,
+        queryFn: () => sensorsApi.getProjects(id),
     })
 
     // Получаем список всех доступных проектов для добавления
@@ -57,7 +55,7 @@ function SensorDetail() {
     })
 
     const deleteMutation = useApiMutation({
-        mutationFn: () => sensorsApi.delete(id!),
+        mutationFn: () => sensorsApi.delete(id),
         invalidateKeys: [['sensors']],
         successMessage: 'Датчик удалён',
         errorFallback: 'Ошибка удаления датчика',
@@ -65,7 +63,7 @@ function SensorDetail() {
     })
 
     const rotateTokenMutation = useApiMutation<SensorTokenResponse>({
-        mutationFn: () => sensorsApi.rotateToken(id!),
+        mutationFn: () => sensorsApi.rotateToken(id),
         invalidateKeys: [['sensor', id]],
         successMessage: 'Токен обновлён',
         errorFallback: 'Ошибка ротации токена',
@@ -74,7 +72,7 @@ function SensorDetail() {
 
     // Мутации для управления проектами
     const addProjectMutation = useApiMutation<unknown, string>({
-        mutationFn: (projectId: string) => sensorsApi.addProject(id!, projectId),
+        mutationFn: (projectId: string) => sensorsApi.addProject(id, projectId),
         invalidateKeys: [['sensor', id, 'projects']],
         successMessage: 'Проект добавлен',
         errorFallback: 'Ошибка добавления проекта',
@@ -82,7 +80,7 @@ function SensorDetail() {
     })
 
     const removeProjectMutation = useApiMutation<unknown, string>({
-        mutationFn: (projectId: string) => sensorsApi.removeProject(id!, projectId),
+        mutationFn: (projectId: string) => sensorsApi.removeProject(id, projectId),
         invalidateKeys: [['sensor', id, 'projects']],
         successMessage: 'Проект удалён',
         errorFallback: 'Ошибка удаления проекта',
@@ -94,12 +92,11 @@ function SensorDetail() {
         isLoading: isLoadingProfiles,
     } = useQuery({
         queryKey: ['sensor', id, 'profiles'],
-        queryFn: () => conversionProfilesApi.list(id!),
-        enabled: !!id,
+        queryFn: () => conversionProfilesApi.list(id),
     })
 
     const publishProfileMutation = useApiMutation<unknown, string>({
-        mutationFn: (profileId: string) => conversionProfilesApi.publish(id!, profileId),
+        mutationFn: (profileId: string) => conversionProfilesApi.publish(id, profileId),
         invalidateKeys: [['sensor', id, 'profiles'], ['sensor', id]],
         successMessage: 'Профиль опубликован',
         errorFallback: 'Ошибка публикации профиля',
@@ -111,8 +108,7 @@ function SensorDetail() {
         isLoading: isLoadingBackfill,
     } = useQuery({
         queryKey: ['sensor', id, 'backfill'],
-        queryFn: () => backfillApi.list(id!),
-        enabled: !!id,
+        queryFn: () => backfillApi.list(id),
         refetchInterval: (query) => {
             // Auto-refresh while there are running/pending tasks
             const tasks = query.state.data?.backfill_tasks
@@ -131,14 +127,13 @@ function SensorDetail() {
         isLoading: isLoadingErrorLog,
     } = useQuery({
         queryKey: ['sensor', id, 'error-log', errorLogPage],
-        queryFn: () => sensorsApi.getErrorLog(id!, { limit: ERROR_LOG_LIMIT, offset: errorLogPage * ERROR_LOG_LIMIT }),
-        enabled: !!id,
+        queryFn: () => sensorsApi.getErrorLog(id, { limit: ERROR_LOG_LIMIT, offset: errorLogPage * ERROR_LOG_LIMIT }),
         refetchInterval: 30_000,
         staleTime: 15_000,
     })
 
     const startBackfillMutation = useApiMutation({
-        mutationFn: () => backfillApi.start(id!),
+        mutationFn: () => backfillApi.start(id),
         invalidateKeys: [['sensor', id, 'backfill']],
         successMessage: 'Задача пересчёта создана',
         errorFallback: 'Ошибка запуска пересчёта',
@@ -364,6 +359,12 @@ function SensorDetail() {
             )}
         </div>
     )
+}
+
+function SensorDetail() {
+    const { id } = useParams<{ id: string }>()
+    if (!id) return <MissingRouteParam />
+    return <SensorDetailView id={id} />
 }
 
 export default SensorDetail

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { getApiErrorMessage, isNotFoundError, UserFacingError } from '../utils/apiError'
+import MissingRouteParam from '../components/MissingRouteParam'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import type { CaptureSession } from '../types'
 import {
@@ -29,8 +30,7 @@ import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 
 // Run actions show the error in the banner under the header and as a toast:
 // the page is long and the capture-session buttons sit far below the banner.
-function RunDetail() {
-  const { id } = useParams<{ id: string }>()
+function RunDetail({ id }: { id: string }) {
   const [actionError, setActionError] = useState<string | null>(null)
   const actionErrorOptions = { inlineError: setActionError, notifyOnError: true }
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<string | null>(null)
@@ -39,8 +39,7 @@ function RunDetail() {
 
   const { data: run, isLoading, error } = useQuery({
     queryKey: ['run', id],
-    queryFn: () => runsApi.get(id!),
-    enabled: !!id,
+    queryFn: () => runsApi.get(id),
   })
 
   // Получаем эксперимент для project_id
@@ -66,8 +65,7 @@ function RunDetail() {
   // Получаем список capture sessions
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
     queryKey: ['capture-sessions', id],
-    queryFn: () => captureSessionsApi.list(id!),
-    enabled: !!id,
+    queryFn: () => captureSessionsApi.list(id),
   })
 
   const sessions = sessionsData?.capture_sessions || []
@@ -90,7 +88,7 @@ function RunDetail() {
   }, [sensors, selectedSensorId])
 
   const completeMutation = useApiMutation({
-    mutationFn: () => runsApi.complete(id!),
+    mutationFn: () => runsApi.complete(id),
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run завершён',
     errorFallback: 'Не удалось завершить run',
@@ -98,7 +96,7 @@ function RunDetail() {
   })
 
   const startRunMutation = useApiMutation({
-    mutationFn: () => runsApi.update(id!, { status: 'running' }),
+    mutationFn: () => runsApi.update(id, { status: 'running' }),
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run запущен',
     errorFallback: 'Не удалось запустить run',
@@ -108,7 +106,7 @@ function RunDetail() {
   const [promptFor, setPromptFor] = useState<'fail' | 'session' | null>(null)
 
   const failMutation = useApiMutation<unknown, string | undefined>({
-    mutationFn: (reason) => runsApi.fail(id!, reason),
+    mutationFn: (reason) => runsApi.fail(id, reason),
     invalidateKeys: [['run', id], ['runs']],
     successMessage: 'Run помечен как failed',
     errorFallback: 'Не удалось пометить run как failed',
@@ -122,7 +120,7 @@ function RunDetail() {
       const nextOrdinal = sessions.length > 0
         ? Math.max(...sessions.map((s: CaptureSession) => s.ordinal_number)) + 1
         : 1
-      return captureSessionsApi.create(id!, {
+      return captureSessionsApi.create(id, {
         ordinal_number: nextOrdinal,
         notes: notes || undefined,
       }, { project_id: experiment.project_id })
@@ -135,7 +133,7 @@ function RunDetail() {
 
   // Остановка capture session
   const stopSessionMutation = useApiMutation<unknown, string>({
-    mutationFn: (sessionId) => captureSessionsApi.stop(id!, sessionId),
+    mutationFn: (sessionId) => captureSessionsApi.stop(id, sessionId),
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Отсчёт остановлен',
     errorFallback: 'Не удалось остановить отсчёт',
@@ -145,7 +143,7 @@ function RunDetail() {
 
   // Удаление capture session
   const deleteSessionMutation = useApiMutation<unknown, string>({
-    mutationFn: (sessionId) => captureSessionsApi.delete(id!, sessionId),
+    mutationFn: (sessionId) => captureSessionsApi.delete(id, sessionId),
     invalidateKeys: [['capture-sessions', id]],
     successMessage: 'Сессия удалена',
     errorFallback: 'Не удалось удалить сессию',
@@ -340,7 +338,7 @@ function RunDetail() {
             <p>Визуальный срез записанных значений по текущему запуску.</p>
           </div>
         </div>
-        <RunMetrics runId={id!} />
+        <RunMetrics runId={id} />
       </section>
 
       <section className="telemetry-section card detail-card">
@@ -426,7 +424,7 @@ function RunDetail() {
       />
 
       <RunCaptureSessions
-        runId={id!}
+        runId={id}
         sessions={sessions}
         activeSession={activeSession}
         sessionsLoading={sessionsLoading}
@@ -448,7 +446,7 @@ function RunDetail() {
             <p>Датчики, привязанные к этому запуску для аннотации телеметрии.</p>
           </div>
         </div>
-        <RunSensorsPanel runId={id!} projectId={experiment?.project_id ?? ''} />
+        <RunSensorsPanel runId={id} projectId={experiment?.project_id ?? ''} />
       </section>
 
       <section className="card detail-card">
@@ -460,7 +458,7 @@ function RunDetail() {
           </div>
         </div>
         <ArtifactsPanel
-          runId={id!}
+          runId={id}
           projectId={experiment?.project_id ?? ''}
           isOwner={false}
         />
@@ -474,14 +472,14 @@ function RunDetail() {
             <p>Полная история событий запуска для отладки, расследования инцидентов и ретроспектив.</p>
           </div>
         </div>
-        <AuditLog runId={id!} title="История событий запуска" />
+        <AuditLog runId={id} title="История событий запуска" />
       </section>
 
       {exportTarget && (
         <TelemetryExportModal
           isOpen
           onClose={() => setExportTarget(null)}
-          runId={id!}
+          runId={id}
           mode={exportTarget.mode}
           sessionId={exportTarget.mode === 'session' ? exportTarget.sessionId : undefined}
           sessionOrdinal={exportTarget.mode === 'session' ? exportTarget.sessionOrdinal : undefined}
@@ -497,7 +495,8 @@ function RunDetail() {
 // still-running action of the previous run holds) never leaks across runs.
 function RunDetailPage() {
   const { id } = useParams<{ id: string }>()
-  return <RunDetail key={id} />
+  if (!id) return <MissingRouteParam />
+  return <RunDetail key={id} id={id} />
 }
 
 export default RunDetailPage

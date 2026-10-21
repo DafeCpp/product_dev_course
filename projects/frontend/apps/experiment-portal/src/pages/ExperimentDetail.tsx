@@ -17,18 +17,17 @@ import './ExperimentDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { getApiErrorMessage, isNotFoundError } from '../utils/apiError'
+import MissingRouteParam from '../components/MissingRouteParam'
 import { formatDateTime } from '../utils/format'
 
-function ExperimentDetail() {
-  const { id } = useParams<{ id: string }>()
+function ExperimentDetailView({ id }: { id: string }) {
   const navigate = useNavigate()
   const [showEditForm, setShowEditForm] = useState(false)
   const [showCreateRunModal, setShowCreateRunModal] = useState(false)
 
   const { data: experiment, isLoading, error } = useQuery({
     queryKey: ['experiment', id],
-    queryFn: () => experimentsApi.get(id!),
-    enabled: !!id,
+    queryFn: () => experimentsApi.get(id),
   })
 
   useEffect(() => {
@@ -37,7 +36,7 @@ function ExperimentDetail() {
   }, [experiment?.project_id])
 
   const deleteMutation = useApiMutation({
-    mutationFn: () => experimentsApi.delete(id!),
+    mutationFn: () => experimentsApi.delete(id),
     invalidateKeys: [['experiments']],
     successMessage: 'Эксперимент удалён',
     errorFallback: 'Ошибка удаления эксперимента',
@@ -186,7 +185,7 @@ function ExperimentDetail() {
             </button>
           </div>
         </div>
-        <RunsList experimentId={id!} />
+        <RunsList experimentId={id} />
       </section>
 
       {id && (
@@ -206,6 +205,12 @@ function ExperimentDetail() {
       )}
     </div>
   )
+}
+
+function ExperimentDetail() {
+  const { id } = useParams<{ id: string }>()
+  if (!id) return <MissingRouteParam />
+  return <ExperimentDetailView id={id} />
 }
 
 export default ExperimentDetail
