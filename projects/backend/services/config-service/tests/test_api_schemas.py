@@ -118,6 +118,8 @@ async def test_list_schemas_requires_auth(service_client):
 
 
 @pytest.mark.parametrize('invalid_part', [
+    {'$id': 'not a uri'},
+    {'$ref': '#/default', 'default': {'$schema': []}},
     {'$ref': '#/default', 'default': 42},
     {'$id': 'http://[invalid', '$ref': 'child'},
     {'$defs': {'child': {'$id': 'child', '$schema': 'https://example.com/unknown'}}},
