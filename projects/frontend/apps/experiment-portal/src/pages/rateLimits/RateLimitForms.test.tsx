@@ -54,7 +54,7 @@ describe('ExperimentQosForm', () => {
     render(<ExperimentQosForm config={null} onSave={onSave} />)
     const [limit, timeout] = screen.getAllByRole('spinbutton')
     expect(limit).toHaveValue(1000)
-    expect(timeout).toHaveValue(30)
+    expect(timeout).toHaveValue(5)
     await setNumber(limit, '50')
     await setNumber(timeout, '2.5')
     await userEvent.click(screen.getByText('Сохранить'))

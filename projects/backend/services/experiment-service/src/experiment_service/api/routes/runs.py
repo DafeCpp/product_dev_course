@@ -24,6 +24,7 @@ from experiment_service.core.exceptions import (
 from experiment_service.domain.dto import RunCreateDTO, RunUpdateDTO
 from experiment_service.domain.enums import RunStatus
 from experiment_service.domain.models import Run
+from experiment_service.middleware import api_rate_limit
 from experiment_service.repositories.runs import RunRepository
 from experiment_service.services.dependencies import (
     ensure_permission,
@@ -103,6 +104,7 @@ async def list_runs(request: web.Request):
 @routes.post("/api/v1/experiments/{experiment_id}/runs")
 async def create_run(request: web.Request):
     user = await require_current_user(request)
+    api_rate_limit.api_rate_limiter.check(user.user_id)
     project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
     ensure_permission(user, "runs.create")
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
