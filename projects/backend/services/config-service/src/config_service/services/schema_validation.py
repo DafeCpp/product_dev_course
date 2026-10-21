@@ -144,6 +144,8 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
                     if keyword in contents and keyword in current_validator.VALIDATORS:
                         if not isinstance(contents[keyword], str):
                             raise InvalidSchemaError(f"{keyword} must be a string")
+                        if not validate_rfc3986(contents[keyword], rule="URI_reference"):
+                            raise InvalidSchemaError(f"Invalid URI-reference in {keyword}: {contents[keyword]}")
                         resolved = resolver.lookup(contents[keyword])
                         if not isinstance(resolved.contents, (dict, bool)):
                             raise InvalidSchemaError("Reference target must be a schema object or boolean")
