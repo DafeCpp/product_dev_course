@@ -1,7 +1,8 @@
 """Schema management with additive-only compat checker."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
+from collections.abc import Iterable
 
 import structlog
 from referencing import Registry, Resource
@@ -78,6 +79,39 @@ def _check_compat(old_schema: dict[str, Any], new_schema: dict[str, Any]) -> lis
 
 
 
+class _SchemaResource:
+    """Resource adapter for referencing's legacy dependencies enumeration bug.
+
+    Delegate reference/anchor semantics to Resource, retaining original contents.
+    Both our preflight and Registry.crawl use the corrected child enumeration.
+    Composition is intentional: referencing does not support subclassing.
+    """
+
+    def __init__(self, resource: Resource[Any], validator: Any) -> None:
+        self.resource = resource
+        self.validator = validator
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.resource, name)
+
+    def subresources(self) -> Iterable[Resource[Any]]:
+        import jsonschema.validators
+
+        contents = self.resource.contents
+        validator = jsonschema.validators.validator_for(contents, default=self.validator)  # type: ignore[no-untyped-call, unused-ignore]
+        traversal = contents
+        if isinstance(contents, dict) and "dependencies" in validator.VALIDATORS:
+            traversal = {**contents, "dependencies": {
+                name: dependency for name, dependency in contents.get("dependencies", {}).items()
+                if isinstance(dependency, dict)
+            }}
+        specification = specification_with(
+            validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
+        )
+        for child in Resource.from_contents(traversal, default_specification=specification).subresources():
+            yield cast(Resource[Any], _SchemaResource(child, validator))
+
+
 class SchemaService:
     def __init__(
         self,
@@ -124,7 +158,9 @@ class SchemaService:
             validator_cls.META_SCHEMA["$id"]
             if "$id" in validator_cls.META_SCHEMA else validator_cls.META_SCHEMA["id"]
         )
-        resource = specification.create_resource(new_schema)
+        resource = cast(Resource[Any], _SchemaResource(
+            specification.create_resource(new_schema), validator_cls
+        ))
         registry: Registry[Any] = Registry()
         pending = [(resource, registry.resolver_with_root(resource), validator_cls)]
         visited: set[tuple[int, type[Any]]] = set()
@@ -146,28 +182,17 @@ class SchemaService:
                     for keyword in ("$ref", "$dynamicRef", "$recursiveRef"):
                         if keyword in contents and keyword in current_validator.VALIDATORS:
                             resolved = resolver.lookup(contents[keyword])
-                            current_validator.check_schema(resolved.contents)
+                            if not isinstance(resolved.contents, (dict, bool)):
+                                raise InvalidSchemaError("Reference target must be a schema object or boolean")
                             target = Resource.from_contents(resolved.contents, default_specification=specification_with(
                                 current_validator.META_SCHEMA.get("$id") or current_validator.META_SCHEMA["id"]
                             ))
                             pending.append((target, resolved.resolver, current_validator))
-                traversal_contents = contents
-                if isinstance(contents, dict) and "dependencies" in current_validator.VALIDATORS:
-                    dependencies = contents.get("dependencies", {})
-                    traversal_contents = {**contents, "dependencies": {
-                        name: dependency for name, dependency in dependencies.items()
-                        if isinstance(dependency, dict)
-                    }}
-                traversal_resource = Resource.from_contents(
-                    traversal_contents,
-                    default_specification=specification_with(
-                        current_validator.META_SCHEMA.get("$id") or current_validator.META_SCHEMA["id"]
-                    ),
-                )
                 pending.extend(
                     (child, resolver.in_subresource(child), current_validator)
-                    for child in traversal_resource.subresources()
+                    for child in cast(Resource[Any], _SchemaResource(current_resource, current_validator)).subresources()
                 )
+            registry = registry.with_resource(resource.id() or "", resource).crawl()
         except (Unresolvable, UnknownDialect, ValueError, jsonschema.exceptions.SchemaError) as exc:
             raise InvalidSchemaError(str(exc)) from exc
         validator = validator_cls(new_schema, registry=registry)
