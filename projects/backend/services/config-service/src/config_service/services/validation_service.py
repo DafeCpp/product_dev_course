@@ -4,13 +4,13 @@ from __future__ import annotations
 from typing import Any
 
 import jsonschema
-import jsonschema.validators
 import structlog
 
 from config_service.core.exceptions import ConfigValidationError, SchemaNotFoundError
 from config_service.domain.enums import ConfigType
 from config_service.prometheus_metrics import config_read_schema_violations_total
 from config_service.repositories.schema_repo import SchemaRepository
+from config_service.services.schema_validation import build_schema_validator
 
 logger = structlog.get_logger(__name__)
 
@@ -66,8 +66,6 @@ class ValidationService:
         if schema_obj is None:
             raise SchemaNotFoundError(config_type.value)
 
-        validator_cls = jsonschema.validators.validator_for(schema_obj.schema)
-        validator_cls.check_schema(schema_obj.schema)
-        validator = validator_cls(schema_obj.schema)
+        validator = build_schema_validator(schema_obj.schema)
         self._validators[config_type.value] = validator
         return validator
