@@ -11,6 +11,8 @@ from config_service.services.schema_service import SchemaService
 
 @pytest.mark.parametrize('schema', [
     {'type': 'not-a-type'},
+    {'$schema': 'http://json-schema.org/draft-03/schema#', 'type': [{'$ref': '#/missing'}]},
+    {'$schema': 'http://json-schema.org/draft-03/schema#', 'disallow': [{'$ref': '#/missing'}]},
     {'$schema': 'http://json-schema.org/draft-04/schema#',
      '$ref': '#/default/a b', 'default': {'a b': {'type': 'object'}}},
     {'$schema': 'http://json-schema.org/draft-04/schema#', '$ref': []},
@@ -152,3 +154,25 @@ async def test_activated_schema_is_usable_by_validation_service(schema, value):
     await service.validate_paranoid(ConfigType.feature_flag, value, 'test-config')
     service.invalidate_cache(ConfigType.feature_flag)
     await service.validate_strict(ConfigType.feature_flag, value)
+
+
+@pytest.mark.parametrize('keyword', ['type', 'disallow'])
+async def test_draft3_schema_entries_work_after_activation(keyword):
+    from config_service.core.exceptions import ConfigValidationError
+    from config_service.services.validation_service import ValidationService
+
+    schema = {'$schema': 'http://json-schema.org/draft-03/schema#',
+              keyword: [{'$ref': '#/default'}], 'default': {'type': 'object'}}
+    schema_repo = AsyncMock()
+    schema_repo.get_active.return_value = None
+    schema_repo.insert_new_version_and_activate.return_value = SimpleNamespace(version=1)
+    config_repo = AsyncMock()
+    config_repo.list_by_type.return_value = []
+    await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
+    schema_repo.get_active.return_value = SimpleNamespace(schema=schema)
+    validator = ValidationService(schema_repo)
+    if keyword == 'type':
+        await validator.validate_strict(ConfigType.feature_flag, {})
+    else:
+        with pytest.raises(ConfigValidationError):
+            await validator.validate_strict(ConfigType.feature_flag, {})
