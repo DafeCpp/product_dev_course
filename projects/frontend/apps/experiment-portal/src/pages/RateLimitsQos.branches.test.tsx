@@ -128,6 +128,42 @@ describe('RateLimitsQos — branches', () => {
     )
   })
 
+  it.each([false, true])('creates telemetry config under the poller name (legacy config: %s)', async (hasLegacy) => {
+    const legacy = { ...EXP_CFG, id: 'legacy', service_name: 'telemetry-ingest-service', key: 'rate_limits' }
+    mockListConfigs.mockResolvedValue({ items: hasLegacy ? [legacy] : [], next_cursor: null })
+    mockDryRunCreate.mockResolvedValue({ dry_run: true, preview: {} })
+    mockCreateConfig.mockResolvedValue({ config: { ...legacy, id: 'canonical', service_name: 'telemetry-ingest' } })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByText('Telemetry Ingest'))
+    await user.click(await screen.findByText('save-telemetry'))
+    const payload = { service_name: 'telemetry-ingest', key: 'rate_limits', config_type: 'qos', value: { rps: 5 }, is_critical: true }
+    await waitFor(() => expect(mockDryRunCreate).toHaveBeenCalledWith(payload))
+    await user.click(await screen.findByRole('button', { name: 'Подтвердить сохранение' }))
+    await waitFor(() => expect(mockCreateConfig).toHaveBeenCalledWith(payload))
+    expect(mockDryRunPatch).not.toHaveBeenCalled()
+    expect(mockPatchConfig).not.toHaveBeenCalled()
+  })
+
+  it('updates the canonical telemetry config even when a legacy config is listed first', async () => {
+    const legacy = { ...EXP_CFG, id: 'legacy', service_name: 'telemetry-ingest-service', key: 'rate_limits' }
+    const canonical = { ...legacy, id: 'canonical', service_name: 'telemetry-ingest', version: 7 }
+    mockListConfigs.mockResolvedValue({ items: [legacy, canonical], next_cursor: null })
+    mockDryRunPatch.mockResolvedValue({ dry_run: true, preview: {} })
+    mockPatchConfig.mockResolvedValue({ config: canonical })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByText('Telemetry Ingest'))
+    expect(await screen.findByText('cfg:canonical')).toBeInTheDocument()
+    await user.click(screen.getByText('save-telemetry'))
+    const payload = { version: 7, value: { rps: 5 }, change_reason: 'Updated via rate-limits page' }
+    await waitFor(() => expect(mockDryRunPatch).toHaveBeenCalledWith('canonical', payload))
+    await user.click(await screen.findByRole('button', { name: 'Подтвердить сохранение' }))
+    await waitFor(() => expect(mockPatchConfig).toHaveBeenCalledWith('canonical', payload))
+    expect(mockDryRunCreate).not.toHaveBeenCalled()
+    expect(mockCreateConfig).not.toHaveBeenCalled()
+  })
+
   it('patch flow: dry-run patch with pending state, then confirm patch', async () => {
     let resolveDry: (v: unknown) => void = () => {}
     mockDryRunPatch.mockReturnValue(new Promise((r) => (resolveDry = r)))
