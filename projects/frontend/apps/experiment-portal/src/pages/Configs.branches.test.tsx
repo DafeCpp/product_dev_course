@@ -190,9 +190,19 @@ describe('Configs page — branches', () => {
     renderPage()
     await screen.findByText('flag_x')
     await user.click(screen.getByRole('button', { name: 'Деактивировать' }))
-    await waitFor(() => expect(api.deactivate).toHaveBeenCalledWith('c1', { version: 3 }))
+    await waitFor(() =>
+      expect(api.deactivate).toHaveBeenCalledWith('c1', {
+        version: 3,
+        changeReason: 'deactivated via portal',
+      }),
+    )
     await user.click(screen.getByRole('button', { name: 'Активировать' }))
-    await waitFor(() => expect(api.activate).toHaveBeenCalledWith('c2', { version: 1 }))
+    await waitFor(() =>
+      expect(api.activate).toHaveBeenCalledWith('c2', {
+        version: 1,
+        changeReason: 'activated via portal',
+      }),
+    )
   })
 
   it('toggle error path does not crash', async () => {

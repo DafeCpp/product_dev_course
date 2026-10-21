@@ -67,6 +67,8 @@ function RateLimitsQos() {
 
   // Mutations for create/patch/dry-run
   const [dryRunPreview, setDryRunPreview] = useState<unknown | null>(null)
+  // The value the operator entered and dry-ran; confirm saves this, not the preview object.
+  const [dryRunValue, setDryRunValue] = useState<Record<string, unknown> | null>(null)
   const [dryRunError, setDryRunError] = useState<string | null>(null)
 
   const dryRunMutation = useApiMutation<
@@ -93,14 +95,16 @@ function RateLimitsQos() {
       }
     },
     invalidateKeys: [],
-    onSuccess: (result) => {
+    onSuccess: (result, args) => {
       setDryRunPreview(result.preview)
+      setDryRunValue(args.value)
     },
     errorFallback: (error) =>
       isClientRequestError(error) ? 'конфигурация отклонена сервером' : 'сервис недоступен, попробуйте позже',
     inlineError: setDryRunError,
     onError: () => {
       setDryRunPreview(null)
+      setDryRunValue(null)
     },
   })
 
@@ -174,6 +178,7 @@ function RateLimitsQos() {
             onClick={() => {
               setSelectedService(svc.type)
               setDryRunPreview(null)
+              setDryRunValue(null)
               setDryRunError(null)
             }}
           >
@@ -213,13 +218,13 @@ function RateLimitsQos() {
           )}
 
           {/* Dry-run preview & confirm */}
-          {dryRunPreview && (
+          {dryRunPreview && dryRunValue && (
             <div className="rate-limits-page__preview">
               <div className="rate-limits-page__preview-header">
                 <h4>Проверка конфигурации</h4>
                 <button
                   className="btn btn-primary"
-                  onClick={() => handleConfirmSave(dryRunPreview as Record<string, unknown>)}
+                  onClick={() => handleConfirmSave(dryRunValue)}
                   disabled={saveMutation.isPending}
                 >
                   {saveMutation.isPending ? 'Сохраняю...' : 'Подтвердить сохранение'}

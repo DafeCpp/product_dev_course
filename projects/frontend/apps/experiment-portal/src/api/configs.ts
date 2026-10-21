@@ -89,7 +89,7 @@ export const configsApi = {
 
   activate: async (
     id: string,
-    opts: { version: number; changeReason?: string },
+    opts: { version: number; changeReason: string },
   ): Promise<ConfigResponse> => {
     const res = await client.post<ConfigResponse>(
       `${BASE}/config/${id}/activate`,
@@ -101,7 +101,7 @@ export const configsApi = {
 
   deactivate: async (
     id: string,
-    opts: { version: number; changeReason?: string },
+    opts: { version: number; changeReason: string },
   ): Promise<ConfigResponse> => {
     const res = await client.post<ConfigResponse>(
       `${BASE}/config/${id}/deactivate`,
