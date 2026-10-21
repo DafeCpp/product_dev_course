@@ -46,6 +46,11 @@
   transition: width 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
 }
 
+// The global primary focus outline is under 3:1 on the dark sidebar gradient.
+.sidebar :focus-visible {
+  outline-color: #fff;
+}
+
 .sidebar::before {
   content: '';
   position: absolute;

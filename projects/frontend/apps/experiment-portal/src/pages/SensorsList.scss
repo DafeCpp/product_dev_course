@@ -19,6 +19,7 @@
 }
 
 .sensor-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -28,11 +29,38 @@
 }
 
 .sensor-card:hover,
-.sensor-card:focus-visible {
+.sensor-card:focus-within {
   transform: translateY(-4px);
   box-shadow: var(--lp-shadows-2);
   border-color: color-mix(in srgb, var(--lp-primary) 18%, transparent);
-  outline: none;
+}
+
+.sensor-card:has(.sensor-card__open:focus-visible) {
+  box-shadow: var(--focus-ring-strong);
+}
+
+.sensor-card__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  // Covers the whole card: the title is taken out of `.card > *` positioning and stacking,
+  // so the card is the containing block and z-index lifts the overlay above the other children.
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
 }
 
 .sensor-card__topline {
@@ -40,6 +68,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.sensor-card > .sensor-card__title {
+  position: static;
+  // A flex item with a z-index forms its own stacking context, which would trap the overlay.
+  z-index: auto;
 }
 
 .sensor-card__title {

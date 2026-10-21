@@ -173,14 +173,17 @@ function AuditLog() {
                     key={entry.id}
                     className="audit-log-table__row"
                     onClick={() => setSelectedEntry(entry)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') setSelectedEntry(entry)
-                    }}
                   >
                     <td className="audit-log-table__time">
-                      {formatDateTimeSeconds(entry.timestamp)}
+                      {/* Keyboard entry point to the row; its click bubbles to the row's handler. */}
+                      {/* Several entries can share a second, so the label adds action and actor. */}
+                      <button
+                        type="button"
+                        className="table-row-open"
+                        aria-label={`${formatDateTimeSeconds(entry.timestamp)}, ${entry.action}, ${entry.actor_id}`}
+                      >
+                        {formatDateTimeSeconds(entry.timestamp)}
+                      </button>
                     </td>
                     <td>{entry.actor_id}</td>
                     <td>

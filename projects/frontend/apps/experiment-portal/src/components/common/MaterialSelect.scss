@@ -59,7 +59,7 @@
 }
 
 .md-select__value.is-placeholder {
-  color: rgba(91, 105, 118, 0.82);
+  color: var(--portal-text-hint);
 }
 
 .md-select__control--multiple .md-select__field {

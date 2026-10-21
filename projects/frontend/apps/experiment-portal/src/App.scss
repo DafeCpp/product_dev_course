@@ -113,9 +113,26 @@
   background: var(--portal-success-hover);
 }
 
+// Visible keyboard focus everywhere; components with their own focus style override it.
+:where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex='-1'])):focus-visible {
+  outline: 2px solid var(--lp-primary);
+  outline-offset: 2px;
+}
+
 .btn:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring);
+  box-shadow: var(--focus-ring-strong);
+}
+
+// A button that opens a table row's details, styled as the cell's text.
+.table-row-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .btn:active:not(:disabled) {
@@ -202,8 +219,8 @@
 .form-group input::placeholder,
 .form-group textarea::placeholder,
 .form-group select::placeholder {
-  color: var(--lp-text-secondary);
-  opacity: 0.6;
+  color: var(--portal-text-hint);
+  opacity: 1;
 }
 
 .form-group input:focus,

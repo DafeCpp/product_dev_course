@@ -75,4 +75,13 @@ describe('ExecutionsTable', () => {
     expect(onRowClick).toHaveBeenCalledTimes(3)
     expect(onRowClick).toHaveBeenCalledWith(ex)
   })
+
+  it('gives each run of the same script a distinct accessible name', () => {
+    render(<ExecutionsTable executions={[execution(), execution({ id: 'e2', status: 'pending', started_at: null, finished_at: null })]}
+      scriptName={() => 'Backup'} onRowClick={vi.fn()} />)
+    const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(names[0]).toMatch(/^Backup, Завершён, начало \d/)
+    expect(names[1]).toMatch(/^Backup, .+, начало —$/)
+    expect(new Set(names).size).toBe(2)
+  })
 })

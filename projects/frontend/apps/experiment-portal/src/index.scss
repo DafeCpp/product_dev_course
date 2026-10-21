@@ -8,15 +8,18 @@
     --shadow-soft: 0 2px 8px rgba(15, 23, 42, 0.06);
     --shadow-strong: 0 4px 16px rgba(15, 23, 42, 0.1);
     --focus-ring: 0 0 0 3px var(--lp-focus-ring);
+    // Keyboard focus on controls without a border to recolour: a solid ring (AA 3:1) with a gap.
+    --focus-ring-strong: 0 0 0 2px var(--lp-surface), 0 0 0 4px var(--lp-primary);
     --page-max: 1360px;
     --font-display: var(--lp-typography-font-family);
     --button-gradient: linear-gradient(135deg, #4f46e5 0%, #6366f1 60%, #818cf8 140%);
     --card-gradient: linear-gradient(160deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.88) 50%, rgba(241, 245, 249, 0.92) 100%);
     --sidebar-gradient: linear-gradient(180deg, #0f172a 0%, #1e293b 52%, #312e81 100%);
     --portal-outline-muted: #94a3b8;
-    --portal-text-hint: #94a3b8;
+    // Hint and dim text meet WCAG AA (≥4.5:1) on surface and panel backgrounds.
+    --portal-text-hint: #5f6d82;
     --portal-text-body: #1e293b;
-    --portal-text-dim: #94a3b8;
+    --portal-text-dim: #5f6d82;
     --portal-text-warning: #b45309;
     --portal-text-warning-strong: #92400e;
     --portal-accent-blue-ring: rgba(79, 70, 229, 0.14);
