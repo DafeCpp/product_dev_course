@@ -39,7 +39,8 @@ const SERVICES: ServiceConfig[] = [
   {
     type: 'telemetry',
     label: 'Telemetry Ingest',
-    service_name: 'telemetry-ingest-service',
+    // Must match telemetry-ingest workers/config_poller.py.
+    service_name: 'telemetry-ingest',
     key: 'rate_limits',
     description: 'Ограничения приёма телеметрии (REST/WS)',
   },
