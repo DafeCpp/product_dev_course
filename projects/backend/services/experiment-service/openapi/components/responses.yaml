@@ -47,8 +47,10 @@ IdempotencyConflict:
       example: Conflict
 ServiceConflict:
   description: >
-    Domain conflict raised by the service layer and rendered by the error middleware, e.g. an invalid
-    status transition or a uniqueness violation.
+    Domain conflict raised by the service layer and rendered by the error middleware as JSON
+    `{"error": "<reason>"}`: an invalid status transition (e.g. `Invalid run status transition: draft
+    → succeeded`), an action refused while a related entity is still active (e.g. `Cannot delete run
+    while it has an active capture session`), or a uniqueness violation.
   content:
     application/json:
       schema:

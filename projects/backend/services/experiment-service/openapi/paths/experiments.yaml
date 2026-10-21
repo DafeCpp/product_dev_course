@@ -66,7 +66,9 @@ collection:
     summary: Create experiment
     description: >
       owner_id is always set to the calling user. project_id may be given in the body, otherwise
-      ?project_id is not read here and the X-Project-Id header is used. With an Idempotency-Key, a
+      ?project_id is not read here and the X-Project-Id header is used. A non-draft initial status
+      must be reachable from draft (running or archived); otherwise 400 with a JSON Error such as
+      `{"error": "Experiment cannot be created in 'succeeded' status"}`. With an Idempotency-Key, a
       repeat with the same body replays the stored 201 response.
     operationId: createExperiment
     parameters:
@@ -174,7 +176,8 @@ item:
     - experiments
     summary: Update experiment
     description: >
-      Partial update. A status change must be an allowed transition (400 otherwise). A body with no
+      Partial update. A status change must be an allowed transition (409 JSON Error otherwise, e.g.
+      `{"error": "Invalid experiment status transition: draft → succeeded"}`). A body with no
       non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`). A
       rename onto a name another experiment of the project already has (case-insensitive) is 409.
     operationId: updateExperiment
@@ -195,7 +198,7 @@ item:
             schema:
               $ref: ../components/schemas.yaml#/Experiment
       400:
-        description: Invalid headers, ids, JSON or status transition (text/plain); no non-null fields (JSON Error).
+        description: Invalid headers, ids or JSON (text/plain); no non-null fields (JSON Error).
         content:
           text/plain:
             schema:
@@ -215,7 +218,9 @@ item:
     tags:
     - experiments
     summary: Delete experiment
-    description: Refused with 400 while the experiment has a run in running status.
+    description: >
+      Refused with 409 (JSON `{"error": "Cannot delete experiment while it has runs in 'running'
+      status"}`) while the experiment has a run in running status.
     operationId: deleteExperiment
     parameters:
     - $ref: ../components/parameters.yaml#/ExperimentId
@@ -231,14 +236,17 @@ item:
         $ref: ../components/responses.yaml#/Forbidden
       404:
         $ref: ../components/responses.yaml#/NotFound
+      409:
+        $ref: ../components/responses.yaml#/ServiceConflict
 archive:
   post:
     tags:
     - experiments
     summary: Archive experiment
     description: >
-      Sets status=archived and archived_at=now. Allowed from draft, succeeded and failed; archiving an
-      archived experiment is a no-op that returns 200. No request body is read.
+      Sets status=archived and archived_at=now. Allowed from draft, succeeded and failed (409 JSON
+      Error from running); archiving an archived experiment is a no-op that returns 200. No request
+      body is read.
     operationId: archiveExperiment
     parameters:
     - $ref: ../components/parameters.yaml#/ExperimentId

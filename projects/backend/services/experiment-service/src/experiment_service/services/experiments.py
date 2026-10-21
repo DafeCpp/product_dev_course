@@ -5,7 +5,11 @@ from datetime import datetime
 from typing import List
 from uuid import UUID
 
-from experiment_service.core.exceptions import InvalidStatusTransitionError
+from experiment_service.core.exceptions import (
+    ActiveStateConflictError,
+    InvalidInitialStatusError,
+    InvalidStatusTransitionError,
+)
 from experiment_service.domain.dto import (
     ExperimentCreateDTO,
     ExperimentUpdateDTO,
@@ -31,7 +35,12 @@ class ExperimentService:
 
     async def create_experiment(self, data: ExperimentCreateDTO) -> Experiment:
         if data.status != ExperimentStatus.DRAFT:
-            validate_experiment_transition(ExperimentStatus.DRAFT, data.status)
+            try:
+                validate_experiment_transition(ExperimentStatus.DRAFT, data.status)
+            except InvalidStatusTransitionError as exc:
+                raise InvalidInitialStatusError(
+                    f"Experiment cannot be created in '{data.status.value}' status"
+                ) from exc
         experiment = await self._repository.create(data)
         EXPERIMENTS_CREATED.inc()
         return experiment
@@ -89,7 +98,7 @@ class ExperimentService:
             if await self._run_repository.has_running_runs_for_experiment(
                 project_id, experiment_id
             ):
-                raise InvalidStatusTransitionError(
+                raise ActiveStateConflictError(
                     "Cannot delete experiment while it has runs in 'running' status"
                 )
         await self._repository.delete(project_id, experiment_id)

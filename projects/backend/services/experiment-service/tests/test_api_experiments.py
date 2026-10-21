@@ -169,7 +169,10 @@ async def test_capture_session_cannot_be_deleted_while_active(service_client):
         f"/api/v1/runs/{run_id}/capture-sessions/{session_id}",
         headers=headers,
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert (await resp.json())["error"] == (
+        "Cannot delete capture session while it is active (status 'running')"
+    )
 
     # Stop (becomes final) then delete should work
     resp = await service_client.post(
@@ -334,7 +337,10 @@ async def test_update_experiment_invalid_status_transition(service_client):
         json={"status": "succeeded"},
         headers=headers,
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert (await resp.json())["error"] == (
+        "Invalid experiment status transition: draft → succeeded"
+    )
 
 
 @pytest.mark.asyncio
@@ -417,7 +423,8 @@ async def test_delete_run_blocked_while_active_capture_session(service_client):
     assert resp.status == 201
 
     resp = await service_client.delete(f"/api/v1/runs/{run_id}", headers=headers)
-    assert resp.status == 400
+    assert resp.status == 409
+    assert "active capture session" in (await resp.json())["error"]
 
 
 @pytest.mark.asyncio
@@ -458,7 +465,8 @@ async def test_delete_experiment_blocked_while_run_is_running(service_client):
     resp = await service_client.delete(
         f"/api/v1/experiments/{experiment_id}", headers=headers
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert "running" in (await resp.json())["error"]
 
 
 @pytest.mark.asyncio
@@ -495,7 +503,8 @@ async def test_create_capture_session_blocked_for_succeeded_run(service_client):
         json={"ordinal_number": 1, "status": "running"},
         headers=headers,
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert "succeeded" in (await resp.json())["error"]
 
 
 @pytest.mark.asyncio
@@ -518,7 +527,8 @@ async def test_create_capture_session_blocked_for_failed_run(service_client):
         json={"ordinal_number": 1, "status": "running"},
         headers=headers,
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert "failed" in (await resp.json())["error"]
 
 
 @pytest.mark.asyncio

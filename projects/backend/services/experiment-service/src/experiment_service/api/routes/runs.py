@@ -18,7 +18,6 @@ from experiment_service.api.utils import (
 )
 from experiment_service.core.exceptions import (
     IdempotencyConflictError,
-    InvalidStatusTransitionError,
     NotFoundError,
     ScopeMismatchError,
 )
@@ -135,8 +134,6 @@ async def create_run(request: web.Request):
             run = await service.create_run(dto)
         except ScopeMismatchError as exc:
             raise web.HTTPForbidden(text="Forbidden") from exc
-        except InvalidStatusTransitionError as exc:
-            raise web.HTTPBadRequest(text="Bad request") from exc
     response_payload = _run_response(run)
     if reservation is not None:
         await idempotency_service.complete_response(reservation, 201, response_payload)
@@ -177,8 +174,6 @@ async def update_run(request: web.Request):
             raise web.HTTPNotFound(text="Resource not found") from exc
     try:
         run = await service.update_run(project_id, run_id, dto)
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     if dto.status is not None:
@@ -242,8 +237,6 @@ async def batch_update_status(request: web.Request):
         before_status[rid] = current.status.value
     try:
         updated_runs = await service.batch_update_status(project_id, run_ids, status)
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     audit = await get_run_event_service(request)
@@ -400,8 +393,6 @@ async def delete_run(request: web.Request):
     service = await get_run_service(request)
     try:
         await service.delete_run(project_id, run_id)
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)

@@ -236,7 +236,7 @@ export interface paths {
         put?: never;
         /**
          * Create experiment
-         * @description owner_id is always set to the calling user. project_id may be given in the body, otherwise ?project_id is not read here and the X-Project-Id header is used. With an Idempotency-Key, a repeat with the same body replays the stored 201 response.
+         * @description owner_id is always set to the calling user. project_id may be given in the body, otherwise ?project_id is not read here and the X-Project-Id header is used. A non-draft initial status must be reachable from draft (running or archived); otherwise 400 with a JSON Error such as `{"error": "Experiment cannot be created in 'succeeded' status"}`. With an Idempotency-Key, a repeat with the same body replays the stored 201 response.
          */
         post: operations["createExperiment"];
         delete?: never;
@@ -278,14 +278,14 @@ export interface paths {
         post?: never;
         /**
          * Delete experiment
-         * @description Refused with 400 while the experiment has a run in running status.
+         * @description Refused with 409 (JSON `{"error": "Cannot delete experiment while it has runs in 'running' status"}`) while the experiment has a run in running status.
          */
         delete: operations["deleteExperiment"];
         options?: never;
         head?: never;
         /**
          * Update experiment
-         * @description Partial update. A status change must be an allowed transition (400 otherwise). A body with no non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`). A rename onto a name another experiment of the project already has (case-insensitive) is 409.
+         * @description Partial update. A status change must be an allowed transition (409 JSON Error otherwise, e.g. `{"error": "Invalid experiment status transition: draft → succeeded"}`). A body with no non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`). A rename onto a name another experiment of the project already has (case-insensitive) is 409.
          */
         patch: operations["updateExperiment"];
         trace?: never;
@@ -301,7 +301,7 @@ export interface paths {
         put?: never;
         /**
          * Archive experiment
-         * @description Sets status=archived and archived_at=now. Allowed from draft, succeeded and failed; archiving an archived experiment is a no-op that returns 200. No request body is read.
+         * @description Sets status=archived and archived_at=now. Allowed from draft, succeeded and failed (409 JSON Error from running); archiving an archived experiment is a no-op that returns 200. No request body is read.
          */
         post: operations["archiveExperiment"];
         delete?: never;
@@ -325,7 +325,7 @@ export interface paths {
         put?: never;
         /**
          * Create run
-         * @description experiment_id comes from the path, project_id from ?project_id or X-Project-Id, created_by is the calling user; any of these in the body is overwritten. A non-draft initial status must be reachable from draft. With an Idempotency-Key, a repeat with the same body replays the stored 201 response.
+         * @description experiment_id comes from the path, project_id from ?project_id or X-Project-Id, created_by is the calling user; any of these in the body is overwritten. A non-draft initial status must be reachable from draft (400 JSON Error otherwise, e.g. `{"error": "Run cannot be created in 'failed' status"}`). With an Idempotency-Key, a repeat with the same body replays the stored 201 response.
          */
         post: operations["createRun"];
         delete?: never;
@@ -347,14 +347,14 @@ export interface paths {
         post?: never;
         /**
          * Delete run
-         * @description Refused with 400 while the run has an active (running/backfilling) capture session.
+         * @description Refused with 409 (JSON `{"error": "Cannot delete run while it has an active capture session"}`) while the run has an active (running/backfilling) capture session.
          */
         delete: operations["deleteRun"];
         options?: never;
         head?: never;
         /**
          * Update run
-         * @description Partial update. A status change must be an allowed transition, and moving to succeeded, failed or archived is refused while the run has an active (running/backfilling) capture session; both give 400. Status changes record a run.status_changed event and emit run.started / run.finished / run.archived webhooks. A body with no non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`).
+         * @description Partial update. A status change must be an allowed transition, and moving to succeeded, failed or archived is refused while the run has an active (running/backfilling) capture session; both give 409 with a JSON Error naming the reason (e.g. `Invalid run status transition: draft → succeeded`, `Cannot finish run while it has an active capture session`). Status changes record a run.status_changed event and emit run.started / run.finished / run.archived webhooks. A body with no non-null fields is rejected with 400 (JSON `{"error": "No fields provided for update"}`).
          */
         patch: operations["updateRun"];
         trace?: never;
@@ -370,7 +370,7 @@ export interface paths {
         put?: never;
         /**
          * Batch status update
-         * @description Applies one status to every listed run in a single transaction. Every run must exist in the project (404 otherwise) and the transition must be valid for each (400 otherwise). Returned runs are in database order, not request order.
+         * @description Applies one status to every listed run in a single transaction. Every run must exist in the project (404 otherwise), and the transition must be valid for each and, for succeeded/failed/ archived, no run may have an active capture session. The batch is all-or-nothing: the first refused run fails the whole request with 409 and a JSON Error prefixed with its id (e.g. `Run <id>: Invalid run status transition: draft → succeeded`); no run is changed. Returned runs are in database order, not request order.
          */
         post: operations["batchUpdateRunStatus"];
         delete?: never;
@@ -478,7 +478,7 @@ export interface paths {
         put?: never;
         /**
          * Start capture session
-         * @description run_id comes from the path and project_id from ?project_id or X-Project-Id (body values are overwritten). Defaults: status=running, started_at=now, initiated_by=calling user. Refused with 400 when the run is succeeded/failed/archived or when the initial status is not reachable from draft, and with 409 when the project already has an active capture session. Records a capture_session.created event and emits the matching webhook.
+         * @description run_id comes from the path and project_id from ?project_id or X-Project-Id (body values are overwritten). Defaults: status=running, started_at=now, initiated_by=calling user. Refused with 400 (JSON Error) when the initial status is not reachable from draft, and with 409 (JSON Error) when the run is succeeded/failed/archived or the project already has an active capture session. Records a capture_session.created event and emits the matching webhook.
          */
         post: operations["createCaptureSession"];
         delete?: never;
@@ -499,7 +499,7 @@ export interface paths {
         post?: never;
         /**
          * Delete capture session
-         * @description Refused with 400 while the session is running or backfilling.
+         * @description Refused with 409 (JSON `{"error": "Cannot delete capture session while it is active (status 'running')"}`) while the session is running or backfilling.
          */
         delete: operations["deleteCaptureSession"];
         options?: never;
@@ -558,7 +558,7 @@ export interface paths {
         put?: never;
         /**
          * Start backfill for a capture session
-         * @description Moves a succeeded session to backfilling; while backfilling, telemetry-ingest-service treats incoming readings for it as normal rather than late. No request body is read. 400 when the session is not in succeeded (or already backfilling). Records a capture_session.backfill_started event and emits the matching webhook.
+         * @description Moves a succeeded session to backfilling; while backfilling, telemetry-ingest-service treats incoming readings for it as normal rather than late. No request body is read. 409 (JSON Error) when the session is not in succeeded (or already backfilling). Records a capture_session.backfill_started event and emits the matching webhook.
          */
         post: operations["startCaptureSessionBackfill"];
         delete?: never;
@@ -578,7 +578,7 @@ export interface paths {
         put?: never;
         /**
          * Complete backfill for a capture session
-         * @description Attaches late telemetry rows recorded for this session and moves it back to succeeded. No request body is read. 400 when the session is not backfilling. Records a capture_session.backfill_completed event and emits the matching webhook.
+         * @description Attaches late telemetry rows recorded for this session and moves it back to succeeded. No request body is read. 409 (JSON Error) when the session is not backfilling. Records a capture_session.backfill_completed event and emits the matching webhook.
          */
         post: operations["completeCaptureSessionBackfill"];
         delete?: never;
@@ -2122,7 +2122,7 @@ export interface components {
                 "text/plain": string;
             };
         };
-        /** @description Domain conflict raised by the service layer and rendered by the error middleware, e.g. an invalid status transition or a uniqueness violation. */
+        /** @description Domain conflict raised by the service layer and rendered by the error middleware as JSON `{"error": "<reason>"}`: an invalid status transition (e.g. `Invalid run status transition: draft → succeeded`), an action refused while a related entity is still active (e.g. `Cannot delete run while it has an active capture session`), or a uniqueness violation. */
         ServiceConflict: {
             headers: {
                 [name: string]: unknown;
@@ -2316,8 +2316,7 @@ export interface operations {
             };
             /**
              * @description Invalid X-User-Id / X-Project-Id header; invalid JSON / non-object body; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; Pydantic validation failure of the
-             *     sensor or `conversion_profile` (body is the JSON-encoded Pydantic error list, sent as text/plain);
-             *     invalid initial profile status transition (`Bad request`).
+             *     sensor or `conversion_profile` (body is the JSON-encoded Pydantic error list, sent as text/plain).
              */
             400: {
                 headers: {
@@ -2529,10 +2528,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /**
-             * @description Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id; sensor participates in a draft/running/backfilling
-             *     capture session (`Bad request`)
-             */
+            /** @description Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2566,6 +2562,15 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
+                };
+            };
+            /** @description Sensor participates in a draft/running/backfilling capture session. Body `{"error": "Cannot delete sensor while it has active capture sessions"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
@@ -2992,7 +2997,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConversionProfile"];
                 };
             };
-            /** @description Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id or profile_id; profile is `deprecated` (`Bad request`) */
+            /** @description Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id or profile_id */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3026,6 +3031,15 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
+                };
+            };
+            /** @description Profile is `deprecated`. Body `{"error": "Invalid conversion profile status transition: deprecated → active"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Unhandled error. Body `{"error": "Internal server error"}`. */
@@ -3282,6 +3296,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     updateExperiment: {
@@ -3311,7 +3326,7 @@ export interface operations {
                     "application/json": components["schemas"]["Experiment"];
                 };
             };
-            /** @description Invalid headers, ids, JSON or status transition (text/plain); no non-null fields (JSON Error). */
+            /** @description Invalid headers, ids or JSON (text/plain); no non-null fields (JSON Error). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3489,6 +3504,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     updateRun: {
@@ -3518,7 +3534,7 @@ export interface operations {
                     "application/json": components["schemas"]["Run"];
                 };
             };
-            /** @description Invalid headers, ids, JSON or status transition (text/plain); no non-null fields (JSON Error). */
+            /** @description Invalid headers, ids or JSON (text/plain); no non-null fields (JSON Error). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3531,6 +3547,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     batchUpdateRunStatus: {
@@ -3562,6 +3579,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     bulkUpdateRunTags: {
@@ -3798,7 +3816,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description Idempotency-Key reused with another body or path (text/plain "Conflict"), a capture session with this ordinal_number already exists for the run, or the project already has an active capture session (JSON Error). */
+            /** @description Idempotency-Key reused with another body or path (text/plain "Conflict"), a capture session with this ordinal_number already exists for the run, the run is succeeded/failed/archived, or the project already has an active capture session (JSON Error). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3837,6 +3855,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     stopCaptureSession: {
@@ -3934,6 +3953,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     completeCaptureSessionBackfill: {
@@ -3964,6 +3984,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ServiceConflict"];
         };
     };
     queryMetrics: {

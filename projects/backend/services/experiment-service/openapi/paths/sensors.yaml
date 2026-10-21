@@ -110,8 +110,7 @@ collection:
       400:
         description: |-
           Invalid X-User-Id / X-Project-Id header; invalid JSON / non-object body; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; Pydantic validation failure of the
-          sensor or `conversion_profile` (body is the JSON-encoded Pydantic error list, sent as text/plain);
-          invalid initial profile status transition (`Bad request`).
+          sensor or `conversion_profile` (body is the JSON-encoded Pydantic error list, sent as text/plain).
         content:
           text/plain:
             schema:
@@ -323,8 +322,7 @@ item:
         description: Sensor deleted
       400:
         description: |-
-          Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id; sensor participates in a draft/running/backfilling
-          capture session (`Bad request`)
+          Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id header) or not a UUID; invalid sensor_id
         content:
           text/plain:
             schema:
@@ -347,6 +345,12 @@ item:
           text/plain:
             schema:
               type: string
+      409:
+        description: 'Sensor participates in a draft/running/backfilling capture session. Body `{"error": "Cannot delete sensor while it has active capture sessions"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
       500:
         description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
         content:
@@ -922,7 +926,7 @@ conversionProfilePublish:
               $ref: ../components/schemas.yaml#/ConversionProfile
       400:
         description: Invalid X-User-Id / X-Project-Id header; project_id missing (neither `project_id` query nor X-Project-Id
-          header) or not a UUID; invalid sensor_id or profile_id; profile is `deprecated` (`Bad request`)
+          header) or not a UUID; invalid sensor_id or profile_id
         content:
           text/plain:
             schema:
@@ -945,6 +949,12 @@ conversionProfilePublish:
           text/plain:
             schema:
               type: string
+      409:
+        description: 'Profile is `deprecated`. Body `{"error": "Invalid conversion profile status transition: deprecated → active"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Error
       500:
         description: 'Unhandled error. Body `{"error": "Internal server error"}`.'
         content:

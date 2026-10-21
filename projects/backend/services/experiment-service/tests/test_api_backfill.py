@@ -116,7 +116,8 @@ async def test_backfill_start_requires_succeeded_status(service_client):
         json={},
         headers=headers,
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert "running → backfilling" in (await resp.json())["error"]
 
 
 @pytest.mark.asyncio
@@ -134,7 +135,8 @@ async def test_backfill_complete_requires_backfilling_status(service_client):
         json={},
         headers=headers,
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert "succeeded" in (await resp.json())["error"]
 
 
 @pytest.mark.asyncio

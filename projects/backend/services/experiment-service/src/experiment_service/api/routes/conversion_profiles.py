@@ -5,7 +5,7 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from experiment_service.api.utils import paginated_response, pagination_params, parse_uuid, read_json
-from experiment_service.core.exceptions import InvalidStatusTransitionError, NotFoundError
+from experiment_service.core.exceptions import NotFoundError
 from experiment_service.domain.dto import ConversionProfileInputDTO
 from experiment_service.domain.models import ConversionProfile
 from experiment_service.services.dependencies import (
@@ -41,8 +41,6 @@ async def create_profile(request: web.Request):
             dto,
             created_by=user.user_id,
         )
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_profile_response(profile), status=201)
@@ -84,8 +82,6 @@ async def publish_profile(request: web.Request):
             profile_id,
             published_by=user.user_id,
         )
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.json_response(_profile_response(profile))

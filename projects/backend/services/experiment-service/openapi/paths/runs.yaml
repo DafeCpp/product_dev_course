@@ -67,7 +67,8 @@ experimentRuns:
     description: >
       experiment_id comes from the path, project_id from ?project_id or X-Project-Id, created_by is
       the calling user; any of these in the body is overwritten. A non-draft initial status must be
-      reachable from draft. With an Idempotency-Key, a repeat with the same body replays the stored
+      reachable from draft (400 JSON Error otherwise, e.g. `{"error": "Run cannot be created in
+      'failed' status"}`). With an Idempotency-Key, a repeat with the same body replays the stored
       201 response.
     operationId: createRun
     parameters:
@@ -129,7 +130,8 @@ run:
     description: >
       Partial update. A status change must be an allowed transition, and moving to succeeded, failed
       or archived is refused while the run has an active (running/backfilling) capture session; both
-      give 400. Status changes record a run.status_changed event and emit run.started / run.finished /
+      give 409 with a JSON Error naming the reason (e.g. `Invalid run status transition: draft →
+      succeeded`, `Cannot finish run while it has an active capture session`). Status changes record a run.status_changed event and emit run.started / run.finished /
       run.archived webhooks. A body with no non-null fields is rejected with 400 (JSON
       `{"error": "No fields provided for update"}`).
     operationId: updateRun
@@ -150,7 +152,7 @@ run:
             schema:
               $ref: ../components/schemas.yaml#/Run
       400:
-        description: Invalid headers, ids, JSON or status transition (text/plain); no non-null fields (JSON Error).
+        description: Invalid headers, ids or JSON (text/plain); no non-null fields (JSON Error).
         content:
           text/plain:
             schema:
@@ -164,10 +166,14 @@ run:
         $ref: ../components/responses.yaml#/Forbidden
       404:
         $ref: ../components/responses.yaml#/NotFound
+      409:
+        $ref: ../components/responses.yaml#/ServiceConflict
   delete:
     tags: [runs]
     summary: Delete run
-    description: Refused with 400 while the run has an active (running/backfilling) capture session.
+    description: >
+      Refused with 409 (JSON `{"error": "Cannot delete run while it has an active capture
+      session"}`) while the run has an active (running/backfilling) capture session.
     operationId: deleteRun
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
@@ -183,6 +189,8 @@ run:
         $ref: ../components/responses.yaml#/Forbidden
       404:
         $ref: ../components/responses.yaml#/NotFound
+      409:
+        $ref: ../components/responses.yaml#/ServiceConflict
 
 batchStatus:
   post:
@@ -190,7 +198,10 @@ batchStatus:
     summary: Batch status update
     description: >
       Applies one status to every listed run in a single transaction. Every run must exist in the
-      project (404 otherwise) and the transition must be valid for each (400 otherwise). Returned runs
+      project (404 otherwise), and the transition must be valid for each and, for succeeded/failed/
+      archived, no run may have an active capture session. The batch is all-or-nothing: the first
+      refused run fails the whole request with 409 and a JSON Error prefixed with its id (e.g.
+      `Run <id>: Invalid run status transition: draft → succeeded`); no run is changed. Returned runs
       are in database order, not request order.
     operationId: batchUpdateRunStatus
     parameters:
@@ -216,6 +227,8 @@ batchStatus:
         $ref: ../components/responses.yaml#/Forbidden
       404:
         $ref: ../components/responses.yaml#/NotFound
+      409:
+        $ref: ../components/responses.yaml#/ServiceConflict
 
 bulkTags:
   post:

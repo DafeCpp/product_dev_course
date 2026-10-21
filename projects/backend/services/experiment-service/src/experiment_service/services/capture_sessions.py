@@ -4,8 +4,11 @@ from __future__ import annotations
 from typing import List
 from uuid import UUID
 
-from backend_common.core.exceptions import ConflictError
-from experiment_service.core.exceptions import InvalidStatusTransitionError
+from experiment_service.core.exceptions import (
+    ActiveStateConflictError,
+    InvalidInitialStatusError,
+    InvalidStatusTransitionError,
+)
 from experiment_service.core.exceptions import ScopeMismatchError
 from experiment_service.domain.dto import (
     CaptureSessionCreateDTO,
@@ -45,9 +48,16 @@ class CaptureSessionService:
             )
         # Only one active capture session per project (recording window).
         if await self._repository.has_active_for_project(data.project_id):
-            raise ConflictError("Active capture session already exists for this project")
+            raise ActiveStateConflictError(
+                "Active capture session already exists for this project"
+            )
         if data.status != CaptureSessionStatus.DRAFT:
-            validate_capture_transition(CaptureSessionStatus.DRAFT, data.status)
+            try:
+                validate_capture_transition(CaptureSessionStatus.DRAFT, data.status)
+            except InvalidStatusTransitionError as exc:
+                raise InvalidInitialStatusError(
+                    f"Capture session cannot be created in '{data.status.value}' status"
+                ) from exc
         session = await self._repository.create(data)
         CAPTURE_SESSIONS_ACTIVE.inc()
         return session
@@ -91,8 +101,9 @@ class CaptureSessionService:
     async def delete_session(self, project_id: UUID, capture_session_id: UUID) -> None:
         session = await self._repository.get(project_id, capture_session_id)
         if session.status in (CaptureSessionStatus.RUNNING, CaptureSessionStatus.BACKFILLING):
-            raise InvalidStatusTransitionError(
-                "Cannot delete capture session while it is active"
+            raise ActiveStateConflictError(
+                f"Cannot delete capture session while it is active "
+                f"(status '{session.status.value}')"
             )
         await self._repository.delete(project_id, capture_session_id)
 

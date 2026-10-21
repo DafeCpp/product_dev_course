@@ -18,7 +18,7 @@ from experiment_service.domain.models import ConversionProfile, Sensor
 from experiment_service.repositories.conversion_profiles import ConversionProfileRepository
 from experiment_service.repositories.sensors import SensorRepository
 from experiment_service.services.state_machine import validate_conversion_profile_transition
-from experiment_service.core.exceptions import InvalidStatusTransitionError
+from experiment_service.core.exceptions import ActiveStateConflictError
 
 
 def generate_sensor_token() -> str:
@@ -129,7 +129,7 @@ class SensorService:
 
     async def delete_sensor(self, project_id: UUID, sensor_id: UUID) -> None:
         if await self._sensor_repository.has_active_capture_sessions(project_id, sensor_id):
-            raise InvalidStatusTransitionError(
+            raise ActiveStateConflictError(
                 "Cannot delete sensor while it has active capture sessions"
             )
         await self._sensor_repository.delete(project_id, sensor_id)
