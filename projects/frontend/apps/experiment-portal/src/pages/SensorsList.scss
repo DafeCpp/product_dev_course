@@ -49,11 +49,13 @@
   text-align: left;
   cursor: pointer;
 
+  // Covers the whole card: the title is taken out of `.card > *` positioning and stacking,
+  // so the card is the containing block and z-index lifts the overlay above the other children.
   &::after {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: inherit;
+    z-index: 2;
   }
 
   &:focus-visible {
@@ -66,6 +68,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.sensor-card > .sensor-card__title {
+  position: static;
+  // A flex item with a z-index forms its own stacking context, which would trap the overlay.
+  z-index: auto;
 }
 
 .sensor-card__title {
