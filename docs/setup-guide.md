@@ -514,7 +514,8 @@ python --version
 
 1. Прочитайте [Code Style Guide](code-style-guide.md)
 2. Ознакомьтесь с [PR Guidelines](pr-guidelines.md)
-3. Перейдите к [Неделе 1](../course-materials/semester-1/module-1-web-api/week-01/README.md)
+3. Поднимите стек по [локальной разработке с Docker](local-dev-docker-setup.md): миграции БД применяются init-контейнерами `*-migrate`, а не при старте сервисов
+4. Перейдите к [Неделе 1](../course-materials/semester-1/module-1-web-api/week-01/README.md)
 
 ## Полезные ссылки
 

@@ -49,6 +49,77 @@ mv docker-compose.override.yml docker-compose.override.yml.bak
 docker-compose up
 ```
 
+## Миграции БД
+
+Сервисы не применяют миграции при старте приложения. Вместо этого в `docker-compose.yml`
+есть одноразовые (one-shot) init-контейнеры: каждый выполняет `python -m bin.migrate`,
+применяет SQL-файлы из `migrations/` своего сервиса и завершается. Рантайм-сервис ждёт
+успешного завершения своего init-контейнера (`condition: service_completed_successfully`),
+поэтому API стартует только после того, как применены все миграции, лежащие в образе.
+
+Каталог `migrations/` копируется в образ при сборке, а `docker-compose up` и `make dev-up`
+образы не пересобирают. Если после `git pull` или вашей правки появились новые SQL-файлы,
+поднимайте стек с пересборкой: `docker-compose up -d --build`. Иначе init-контейнер
+проверит старый список миграций, завершится успешно, и API стартует без новой схемы.
+`make dev-rebuild` для этого не подходит: он не пересобирает образы `*-migrate`
+и `script-service`.
+
+| Init-контейнер | База | Блокирует старт |
+|---|---|---|
+| `auth-migrate` | `auth_db` | `auth-service` |
+| `config-migrate` | `config_db` | `config-service` |
+| `experiment-migrate` | `experiment_db` | `experiment-service` |
+| `telemetry-ingest-migrate` | `experiment_db` | `telemetry-ingest-service` |
+
+`telemetry-ingest-migrate` пишет в ту же `experiment_db` и общую таблицу `schema_migrations`,
+поэтому запускается строго после `experiment-migrate`.
+
+Исключение: у `script-service` в локальном compose нет init-контейнера, и он применяет
+миграции сам при старте. Чтобы он подхватил новый SQL-файл, пересоберите и перезапустите
+его: `docker-compose up -d --build script-service`. В продакшене для него есть `script-migrate`
+(см. [deployment-yandex-cloud.md](deployment-yandex-cloud.md#миграции-бд-и-инициализация)).
+
+Миграции идемпотентны: повторный прогон на актуальной схеме печатает `No pending migrations.`
+
+### Проверка и повторный прогон
+
+```bash
+# Логи init-контейнера (успешный прогон заканчивается "Applied N migration(s)."
+# или "No pending migrations.")
+docker-compose logs auth-migrate
+docker-compose logs experiment-migrate
+
+# Повторно применить миграции, например после добавления нового SQL-файла.
+# Каталог migrations/ копируется в образ при сборке и не монтируется в контейнер,
+# поэтому без --build новый файл не будет виден и прогон скажет "No pending migrations."
+docker-compose run --rm --build experiment-migrate
+docker-compose run --rm --build telemetry-ingest-migrate
+```
+
+Если init-контейнер упал, зависящий от него сервис не стартует: смотрите логи init-контейнера,
+исправьте миграцию или `DATABASE_URL` и перезапустите стек с пересборкой
+(`docker-compose up -d --build`): без неё init-контейнер снова прогонит старый SQL из образа.
+
+### Make-таргеты
+
+Make-таргеты выполняют `python -m bin.migrate` внутри уже запущенного рантайм-контейнера
+(`docker-compose exec`), поэтому нужны, когда стек уже поднят. Они видят те миграции,
+что были в образе на момент сборки: после добавления SQL-файла сначала пересоберите
+этот сервис: `docker-compose up -d --build <service>`, например `experiment-service`
+для `make experiment-migrate` или `script-service` для `make script-migrate`.
+
+```bash
+make auth-migrate              # auth_db
+make experiment-migrate        # experiment_db
+make telemetry-ingest-migrate  # experiment_db (после experiment-migrate)
+make config-migrate            # config_db
+make script-migrate            # script_db
+make auth-init                 # создать auth_db + миграции + первый админ
+```
+
+Список ожидающих миграций без применения: добавьте `--dry-run`, например
+`docker-compose run --rm --build experiment-migrate python -m bin.migrate --dry-run`.
+
 ## Архитектура Hot-Reload
 
 ### Auth Service (Python/aiohttp)
@@ -335,11 +406,9 @@ docker-compose exec postgres psql -U postgres -d auth_db
 # Или с хоста (если установлен psql)
 psql -h localhost -p 5433 -U postgres -d experiment_db
 psql -h localhost -p 5433 -U postgres -d auth_db
-
-# Выполнение миграций
-docker-compose exec experiment-service python bin/migrate.py
-docker-compose exec auth-service python bin/migrate.py
 ```
+
+Миграции применяются init-контейнерами при старте стека; после появления новых SQL-файлов поднимайте его с `--build`, см. [Миграции БД](#миграции-бд).
 
 ### Очистка
 
