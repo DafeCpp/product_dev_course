@@ -132,6 +132,11 @@ function RateLimitsQos() {
       }
     },
     invalidateKeys: [['configs', 'qos']],
+    // A validated value is confirmed once; saving again needs a new dry-run.
+    onSuccess: () => {
+      setDryRunPreview(null)
+      setDryRunValue(null)
+    },
     successMessage: currentConfig ? 'Конфиг обновлён' : 'Конфиг создан',
     errorFallback: currentConfig ? 'Не удалось обновить конфиг' : 'Не удалось создать конфиг',
   })

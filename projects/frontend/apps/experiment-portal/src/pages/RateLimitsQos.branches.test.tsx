@@ -154,7 +154,10 @@ describe('RateLimitsQos — branches', () => {
     await act(async () => {
       resolveSave({ config: EXP_CFG })
     })
-    expect(await screen.findByRole('button', { name: 'Подтвердить сохранение' })).toBeEnabled()
+    // The confirmed value cannot be saved twice without a new dry-run.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Подтвердить сохранение' })).not.toBeInTheDocument(),
+    )
   })
 
   it('dry-run 4xx error shows rejected message; switching service clears it', async () => {
