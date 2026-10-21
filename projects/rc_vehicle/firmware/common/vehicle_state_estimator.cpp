@@ -249,20 +249,21 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     wheel_speed_ms_ = MotorLagStep(wheel_speed_ms_, wheel_target_ms, dt_sec);
   }
 
-  // Пробуксовка: мотор-модель за скорость колёс против интеграла ускорения
-  // корпуса (LOS-385). Без мотор-модели скорость колёс неизвестна. В
-  // повороте продольное ускорение кузова — это v̇x − vy·r, и без верного vy
-  // интеграл уходил бы вниз (в SIL до 0.09 в повороте на асфальте); занос
-  // там ловит угол заноса EKF, поэтому детектор ждёт выхода на прямую. Без
-  // сошедшегося TiltEstimator гравитация на склоне не снимается с
-  // продольного ускорения, и под горку корпус «отставал» бы от колёс; на
-  // склоне мотор-модели не хватает нагрузки (kWheelspinMaxPitchRad).
+  // Пробуксовка: мотор-модель за скорость колёс против интеграла тяги
+  // корпуса — показания акселерометра без вычета гравитации, оно от уклона
+  // не зависит (LOS-385, см. WheelspinDetector). Без мотор-модели скорость
+  // колёс неизвестна. В повороте продольное ускорение кузова — это
+  // v̇x − vy·r, и без верного vy интеграл уходил бы вниз (в SIL до 0.09 в
+  // повороте на асфальте); занос там ловит угол заноса EKF, поэтому детектор
+  // ждёт выхода на прямую. На крутом склоне скорость машины уходит от
+  // мотор-модели, и тяга перестаёт ей соответствовать: под уклон корпус
+  // «отставал» бы от колёс. Уклон известен только от сошедшегося
+  // TiltEstimator (kWheelspinMaxPitchRad).
   if (motor_model_ran && tilt_active_this_tick &&
       tilt_acquire_left_tau_ <= 0.0f &&
       std::abs(tilt_est_.GetPitchRad()) < kWheelspinMaxPitchRad &&
       std::abs(ekf_.GetYawRate()) < kWheelspinMaxYawRateRps) {
-    wheelspin_.Update(wheel_speed_ms_, wheel_target_ms, forward_accel_g,
-                      dt_sec);
+    wheelspin_.Update(wheel_speed_ms_, wheel_target_ms, vehicle_imu.ax, dt_sec);
   } else {
     wheelspin_.Reset(wheel_speed_ms_);
   }

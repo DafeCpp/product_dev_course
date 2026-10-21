@@ -81,7 +81,8 @@ struct VehicleStateEstimate {
   float wheel_slip_ratio{0.0f};
   /** Мотор разгоняет колёса — только тогда пробуксовка может начаться. */
   bool wheels_driven{false};
-  /** Скорость корпуса по интегралу ускорения IMU [м/с] (LOS-385); пока
+  /** Скорость корпуса «как на ровном» по интегралу тяги [м/с] (LOS-385,
+   *  см. WheelspinDetector); пока
    *  детектор пробуксовки не работает — скорость колёс по мотор-модели. */
   float ground_speed_ms{0.0f};
   ZuptStatus zupt_status{ZuptStatus::NotEvaluated};

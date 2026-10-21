@@ -16,7 +16,7 @@ void WheelspinDetector::Reset(float wheel_speed_ms) noexcept {
 }
 
 void WheelspinDetector::Update(float wheel_speed_ms, float wheel_target_ms,
-                               float forward_accel_g, float dt_sec) noexcept {
+                               float traction_accel_g, float dt_sec) noexcept {
   if (dt_sec <= 0.0f) return;
   const float drive_gap_ms = wheel_target_ms - wheel_speed_ms;
   driving_ = drive_gap_ms > kMinDriveGapMs;
@@ -27,7 +27,7 @@ void WheelspinDetector::Update(float wheel_speed_ms, float wheel_target_ms,
     Reset(wheel_speed_ms);
     return;
   }
-  ground_speed_ms_ += forward_accel_g * kG * dt_sec +
+  ground_speed_ms_ += traction_accel_g * kG * dt_sec +
                       (wheel_speed_ms - ground_speed_ms_) * dt_sec / kLeakTauS;
   if (wheel_speed_ms <= 0.0f) {
     slip_ratio_ = 0.0f;
