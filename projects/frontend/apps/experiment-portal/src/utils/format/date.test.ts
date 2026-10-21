@@ -92,8 +92,11 @@ describe('formatRelative', () => {
 })
 
 describe('formatDateTimeSeconds', () => {
+  // Local-time Date, so the expectation holds in any timezone.
+  const local = new Date(2026, 3, 27, 15, 30, 45)
+
   it('formats as dd.MM.yyyy HH:mm:ss', () => {
-    expect(formatDateTimeSeconds('2026-04-27T15:30:45Z')).toMatch(/^27\.04\.2026 \d{2}:30:45$/)
+    expect(formatDateTimeSeconds(local)).toBe('27.04.2026 15:30:45')
   })
 
   it('returns "—" for invalid dates', () => {
@@ -102,12 +105,14 @@ describe('formatDateTimeSeconds', () => {
 })
 
 describe('formatShortDateTime', () => {
+  const local = new Date(2026, 3, 27, 15, 30, 45)
+
   it('formats as dd.MM HH:mm without the year', () => {
-    expect(formatShortDateTime('2026-04-27T15:30:45Z')).toMatch(/^27\.04 \d{2}:30$/)
+    expect(formatShortDateTime(local)).toBe('27.04 15:30')
   })
 
   it('adds seconds on request', () => {
-    expect(formatShortDateTime('2026-04-27T15:30:45Z', { seconds: true })).toMatch(/^27\.04 \d{2}:30:45$/)
+    expect(formatShortDateTime(local, { seconds: true })).toBe('27.04 15:30:45')
   })
 
   it('returns "—" for invalid dates', () => {
