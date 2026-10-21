@@ -14,6 +14,20 @@ interface ModalProps {
 const FOCUSABLE =
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+// Only one radio per group is a Tab stop: the checked one, or the first if none is checked.
+function tabStops(root: HTMLElement): HTMLElement[] {
+    const candidates = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
+    return candidates.filter((el) => {
+        if (!(el instanceof HTMLInputElement) || el.type !== 'radio' || !el.name) return true
+        const group = candidates.filter(
+            (other): other is HTMLInputElement =>
+                other instanceof HTMLInputElement && other.type === 'radio' && other.name === el.name,
+        )
+        const checked = group.find((radio) => radio.checked)
+        return checked ? checked === el : group[0] === el
+    })
+}
+
 // Give focus back to the element that opened the dialog. A trigger that is disabled while the
 // submitted action runs cannot hold focus, so it gets focus back once it is enabled again,
 // unless the user has moved focus somewhere else meanwhile. The wait is capped so a trigger
@@ -97,7 +111,7 @@ function Modal({ isOpen, onClose, title, children, disabled = false, className =
     // Keep Tab / Shift+Tab inside the dialog.
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
         if (e.key !== 'Tab' || !contentRef.current) return
-        const focusable = Array.from(contentRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+        const focusable = tabStops(contentRef.current)
         if (focusable.length === 0) {
             e.preventDefault()
             return

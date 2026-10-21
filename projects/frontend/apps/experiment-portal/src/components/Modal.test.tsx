@@ -101,4 +101,17 @@ describe('Modal', () => {
     await waitFor(() => expect(opener).toBeEnabled())
     expect(opener).toHaveFocus()
   })
+
+  it('wraps Tab from the checked radio when a radio group ends the dialog', async () => {
+    const user = userEvent.setup()
+    render(
+      <Modal isOpen onClose={vi.fn()} title="Диалог">
+        <input type="radio" name="mode" aria-label="Физ" defaultChecked />
+        <input type="radio" name="mode" aria-label="Сырые" />
+      </Modal>,
+    )
+    screen.getByLabelText('Физ').focus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: '×' })).toHaveFocus()
+  })
 })
