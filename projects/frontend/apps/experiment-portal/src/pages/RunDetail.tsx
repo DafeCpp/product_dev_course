@@ -26,7 +26,12 @@ import PromptDialog from '../components/PromptDialog'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { useCountdown } from '../hooks/useCountdown'
-import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
+import {
+  formatCountdown,
+  formatDateTime,
+  formatDateTimeSeconds,
+  formatSecondsDuration,
+} from '../utils/format'
 
 // Run actions show the error in the banner under the header and as a toast:
 // the page is long and the capture-session buttons sit far below the banner.
@@ -165,35 +170,6 @@ function RunDetail({ id }: { id: string }) {
   const { remaining: countdownRemaining, isWarning: countdownIsWarning, isExpired: countdownIsExpired } =
     useCountdown(countdownDeadline)
 
-  const formatCountdown = (ms: number): string => {
-    const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
-    const minutes = Math.floor(totalSeconds / 60)
-    const seconds = totalSeconds % 60
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-  }
-
-  const formatDuration = (seconds?: number | null) => {
-    if (!seconds) return '-'
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const secs = seconds % 60
-    if (hours > 0) {
-      return `${hours}ч ${minutes}м ${secs}с`
-    }
-    if (minutes > 0) {
-      return `${minutes}м ${secs}с`
-    }
-    return `${secs}с`
-  }
-
-  const formatSessionDuration = (startedAt?: string | null, stoppedAt?: string | null) => {
-    if (!startedAt) return '-'
-    const start = new Date(startedAt)
-    const end = stoppedAt ? new Date(stoppedAt) : new Date()
-    const seconds = Math.floor((end.getTime() - start.getTime()) / 1000)
-    return formatDuration(seconds)
-  }
-
   // Состояние диалога экспорта телеметрии
   type ExportTarget = { mode: 'session'; sessionId: string; sessionOrdinal: number } | { mode: 'run' }
   const [exportTarget, setExportTarget] = useState<ExportTarget | null>(null)
@@ -218,7 +194,7 @@ function RunDetail({ id }: { id: string }) {
     ? formatDateTimeSeconds(run.finished_at)
     : '—'
   const formattedCreatedAt = formatDateTime(run.created_at)
-  const formattedDuration = run.duration_seconds ? formatDuration(run.duration_seconds) : '—'
+  const formattedDuration = run.duration_seconds ? formatSecondsDuration(run.duration_seconds) : '—'
   const completedSessionsCount = sessions.filter(
     (session: CaptureSession) => session.status !== 'running' && session.status !== 'backfilling'
   ).length
@@ -435,7 +411,6 @@ function RunDetail({ id }: { id: string }) {
         stopSessionMutation={stopSessionMutation}
         deleteSessionMutation={deleteSessionMutation}
         setExportTarget={setExportTarget}
-        formatSessionDuration={formatSessionDuration}
       />
 
       <section className="card detail-card">

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  formatCountdown,
+  formatSecondsDuration,
+  formatSessionDuration,
   formatDate,
   formatDateTime,
   formatDateTimeSeconds,
@@ -117,5 +120,42 @@ describe('formatShortDateTime', () => {
 
   it('returns "—" for invalid dates', () => {
     expect(formatShortDateTime(new Date('invalid'))).toBe('—')
+  })
+})
+
+describe('formatSecondsDuration', () => {
+  it('renders missing or zero as "-"', () => {
+    expect(formatSecondsDuration(null)).toBe('-')
+    expect(formatSecondsDuration(undefined)).toBe('-')
+    expect(formatSecondsDuration(0)).toBe('-')
+  })
+
+  it('keeps every unit below the largest one', () => {
+    expect(formatSecondsDuration(5)).toBe('5с')
+    expect(formatSecondsDuration(125)).toBe('2м 5с')
+    expect(formatSecondsDuration(3661)).toBe('1ч 1м 1с')
+    expect(formatSecondsDuration(3605)).toBe('1ч 0м 5с')
+  })
+})
+
+describe('formatSessionDuration', () => {
+  it('measures closed sessions', () => {
+    expect(formatSessionDuration(null, null)).toBe('-')
+    expect(formatSessionDuration('2024-01-01T10:00:00Z', '2024-01-01T10:00:00Z')).toBe('-')
+    expect(formatSessionDuration('2024-01-01T10:00:00Z', '2024-01-01T10:02:05Z')).toBe('2м 5с')
+    expect(formatSessionDuration('2024-01-01T10:00:00Z', '2024-01-01T11:01:01Z')).toBe('1ч 1м 1с')
+  })
+
+  it('measures an open session up to now', () => {
+    const started = new Date(Date.now() - 90_000).toISOString()
+    expect(formatSessionDuration(started)).toMatch(/^1м 3\dс$/)
+  })
+})
+
+describe('formatCountdown', () => {
+  it('pads, rounds up and clamps at zero', () => {
+    expect(formatCountdown(61_000)).toBe('01:01')
+    expect(formatCountdown(500)).toBe('00:01')
+    expect(formatCountdown(-5)).toBe('00:00')
   })
 })

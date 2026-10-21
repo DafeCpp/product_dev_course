@@ -90,3 +90,32 @@ export function formatRelative(input: DateInput): string {
   }
   return formatDistanceToNow(date, { locale: ru, addSuffix: true })
 }
+
+/**
+ * Format whole seconds as "1ч 2м 3с" / "2м 3с" / "3с" (all units below the
+ * largest are kept). Missing or zero seconds render as "-".
+ */
+export function formatSecondsDuration(seconds?: number | null): string {
+  if (!seconds) return '-'
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  if (hours > 0) return `${hours}ч ${minutes}м ${secs}с`
+  if (minutes > 0) return `${minutes}м ${secs}с`
+  return `${secs}с`
+}
+
+/** Duration of an interval; a missing end means it is still running (until now). */
+export function formatSessionDuration(startedAt?: string | null, stoppedAt?: string | null): string {
+  if (!startedAt) return '-'
+  const end = stoppedAt ? new Date(stoppedAt) : new Date()
+  return formatSecondsDuration(Math.floor((end.getTime() - new Date(startedAt).getTime()) / 1000))
+}
+
+/** Format remaining milliseconds as a "MM:SS" countdown, rounding up and clamping at zero. */
+export function formatCountdown(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}

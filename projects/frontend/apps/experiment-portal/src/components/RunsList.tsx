@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { runsApi } from '../api/client'
 import { StatusBadge, Loading, Error, EmptyState, runStatusMap } from './common'
@@ -9,11 +9,78 @@ import Tags from './common/Tags'
 import BulkRunTagsModal from './BulkRunTagsModal'
 import './RunsList.scss'
 import { getApiErrorMessage } from '../utils/apiError'
-import { formatShortDateTime } from '../utils/format'
+import { formatSecondsDuration, formatShortDateTime } from '../utils/format'
+import type { Run } from '../types'
 
 interface RunsListProps {
   experimentId: string
 }
+
+interface RunRowProps {
+  run: Run
+  checked: boolean
+  onToggle: (runId: string, checked: boolean) => void
+}
+
+// Memoized so toggling one row's checkbox re-renders only that row.
+const RunRow = memo(function RunRow({ run, checked, onToggle }: RunRowProps) {
+  return (
+    <tr>
+      <td className="runs-select-col">
+        <input
+          type="checkbox"
+          aria-label={`select run ${run.id}`}
+          checked={checked}
+          onChange={(e) => onToggle(run.id, e.target.checked)}
+        />
+      </td>
+      <td>
+        <Link to={`/runs/${run.id}`} className="run-link">
+          {run.name}
+        </Link>
+      </td>
+      <td>
+        <StatusBadge status={run.status} statusMap={runStatusMap} />
+      </td>
+      <td>
+        <Tags tags={run.tags || []} />
+      </td>
+      <td>
+        <div className="parameters-preview">
+          {Object.keys(run.params).slice(0, 3).map((key) => (
+            <span key={key} className="param-item">
+              {key}: {String(run.params[key]).substring(0, 20)}
+            </span>
+          ))}
+          {Object.keys(run.params).length > 3 && (
+            <span className="param-more">
+              +{Object.keys(run.params).length - 3}
+            </span>
+          )}
+        </div>
+      </td>
+      <td>
+        {run.started_at
+          ? formatShortDateTime(run.started_at)
+          : '-'}
+      </td>
+      <td>
+        {run.finished_at
+          ? formatShortDateTime(run.finished_at)
+          : '-'}
+      </td>
+      <td>{formatSecondsDuration(run.duration_seconds)}</td>
+      <td>
+        <Link
+          to={`/runs/${run.id}`}
+          className="btn btn-secondary btn-sm"
+        >
+          Подробнее
+        </Link>
+      </td>
+    </tr>
+  )
+})
 
 function RunsList({ experimentId }: RunsListProps) {
   const { data, isLoading, error } = useQuery({
@@ -47,19 +114,9 @@ function RunsList({ experimentId }: RunsListProps) {
   )
   const allSelected = runs.length > 0 && selectedRunIds.length === runs.length
 
-  const formatDuration = (seconds?: number | null) => {
-    if (!seconds) return '-'
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const secs = seconds % 60
-    if (hours > 0) {
-      return `${hours}ч ${minutes}м ${secs}с`
-    }
-    if (minutes > 0) {
-      return `${minutes}м ${secs}с`
-    }
-    return `${secs}с`
-  }
+  const toggleRun = useCallback((runId: string, checked: boolean) => {
+    setSelected((prev) => ({ ...prev, [runId]: checked }))
+  }, [])
 
   if (isLoading) {
     return <Loading message="Загрузка запусков..." />
@@ -131,62 +188,7 @@ function RunsList({ experimentId }: RunsListProps) {
           </thead>
           <tbody>
             {runs.map((run) => (
-              <tr key={run.id}>
-                <td className="runs-select-col">
-                  <input
-                    type="checkbox"
-                    aria-label={`select run ${run.id}`}
-                    checked={!!selected[run.id]}
-                    onChange={(e) => {
-                      setSelected((prev) => ({ ...prev, [run.id]: e.target.checked }))
-                    }}
-                  />
-                </td>
-                <td>
-                  <Link to={`/runs/${run.id}`} className="run-link">
-                    {run.name}
-                  </Link>
-                </td>
-                <td>
-                  <StatusBadge status={run.status} statusMap={runStatusMap} />
-                </td>
-                <td>
-                  <Tags tags={run.tags || []} />
-                </td>
-                <td>
-                  <div className="parameters-preview">
-                    {Object.keys(run.params).slice(0, 3).map((key) => (
-                      <span key={key} className="param-item">
-                        {key}: {String(run.params[key]).substring(0, 20)}
-                      </span>
-                    ))}
-                    {Object.keys(run.params).length > 3 && (
-                      <span className="param-more">
-                        +{Object.keys(run.params).length - 3}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  {run.started_at
-                    ? formatShortDateTime(run.started_at)
-                    : '-'}
-                </td>
-                <td>
-                  {run.finished_at
-                    ? formatShortDateTime(run.finished_at)
-                    : '-'}
-                </td>
-                <td>{formatDuration(run.duration_seconds)}</td>
-                <td>
-                  <Link
-                    to={`/runs/${run.id}`}
-                    className="btn btn-secondary btn-sm"
-                  >
-                    Подробнее
-                  </Link>
-                </td>
-              </tr>
+              <RunRow key={run.id} run={run} checked={!!selected[run.id]} onToggle={toggleRun} />
             ))}
           </tbody>
         </table>
