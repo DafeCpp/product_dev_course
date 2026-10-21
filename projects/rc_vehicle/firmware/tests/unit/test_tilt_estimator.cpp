@@ -169,7 +169,7 @@ TEST(TiltEstimatorTest, SlideResidualInTurn_NotAbsorbedIntoRoll) {
 
   const float a_lat_anchor_g = 0.27f;  // vx·r
   imu.ay = 0.20f;                      // измерено: vy_dot = −0.07 g
-  for (int i = 0; i < 5000; ++i) {  // 10 с — много постоянных времени
+  for (int i = 0; i < 5000; ++i) {     // 10 с — много постоянных времени
     est.Update(imu, 0.0f, a_lat_anchor_g, kDt);
   }
   EXPECT_NEAR(RadToDeg(est.GetRollRad()), 0.0f, 0.1f);
