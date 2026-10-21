@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Review and Merge"
+  short_description: "Fix CI and Codex findings, then merge the reviewed PR"
+  default_prompt: "Use $pr-review-merge to fix CI and Codex review findings, then merge this PR once the current commit passes both gates."
