@@ -1,13 +1,14 @@
 """Schema management with additive-only compat checker."""
 from __future__ import annotations
 
-from typing import Any, cast
 from collections.abc import Iterable
+from typing import Any, cast
 
 import structlog
 from referencing import Registry, Resource
 from referencing.exceptions import Unresolvable
-from referencing.jsonschema import specification_with, UnknownDialect
+from referencing.jsonschema import UnknownDialect, specification_with
+from rfc3986_validator import validate_rfc3986
 
 from config_service.core.exceptions import (
     InvalidSchemaError,
@@ -112,6 +113,10 @@ def _check_schema_node(schema: Any, validator: Any) -> None:
         return value
 
     validator.check_schema(view(schema))
+    if isinstance(schema, dict):
+        keyword = "id" if specification.name in {"draft-03", "draft-04"} else "$id"
+        if keyword in schema and not validate_rfc3986(schema[keyword], rule="URI_reference"):
+            raise InvalidSchemaError(f"Invalid URI-reference in {keyword}: {schema[keyword]}")
 
 
 class _SchemaResource:
@@ -228,6 +233,14 @@ class SchemaService:
                             resolved = resolver.lookup(contents[keyword])
                             if not isinstance(resolved.contents, (dict, bool)):
                                 raise InvalidSchemaError("Reference target must be a schema object or boolean")
+                            target_validator = current_validator
+                            if isinstance(resolved.contents, dict) and "$schema" in resolved.contents:
+                                if not isinstance(resolved.contents["$schema"], str):
+                                    raise InvalidSchemaError("$schema must be a string")
+                                target_validator = jsonschema.validators.validator_for(resolved.contents, default=None)  # type: ignore[arg-type, no-untyped-call, unused-ignore]
+                                if target_validator is None:
+                                    raise InvalidSchemaError(f"Unsupported $schema: {resolved.contents['$schema']}")
+                            _check_schema_node(resolved.contents, target_validator)
                             target = Resource.from_contents(resolved.contents, default_specification=specification_with(
                                 current_validator.META_SCHEMA.get("$id") or current_validator.META_SCHEMA["id"]
                             ))
