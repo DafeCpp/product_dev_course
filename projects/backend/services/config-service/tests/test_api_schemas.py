@@ -118,6 +118,10 @@ async def test_list_schemas_requires_auth(service_client):
 
 
 @pytest.mark.parametrize('invalid_part', [
+    {'$schema': 'http://json-schema.org/draft-03/schema#', 'required': False,
+     'type': [{'$ref': '#/missing'}]},
+    {'$schema': 'http://json-schema.org/draft-03/schema#', 'required': False,
+     'disallow': [{'$ref': '#/missing'}]},
     {'$id': 'not a uri'},
     {'$ref': '#/default', 'default': {'$schema': []}},
     {'$ref': '#/default', 'default': 42},
