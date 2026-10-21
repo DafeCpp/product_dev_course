@@ -76,6 +76,9 @@ async def test_valid_first_schema_is_activated(draft):
      'dependencies': {'b': ['x'], 'a': {'type': 'object'}}},
     {'$ref': '#/default', 'default': {'type': 'string'}},
     {'$ref': '#/default', 'default': True},
+    {'$schema': 'http://json-schema.org/draft-07/schema#', '$ref': '#anchor',
+     'dependencies': {'a': {'type': 'object'}, 'b': ['x']},
+     'definitions': {'x': {'$id': '#anchor', 'type': 'object'}}},
 ])
 async def test_valid_references_and_literal_data_are_accepted(schema):
     schema_repo = AsyncMock()
@@ -83,5 +86,18 @@ async def test_valid_references_and_literal_data_are_accepted(schema):
     schema_repo.insert_new_version_and_activate.return_value = SimpleNamespace(version=1)
     config_repo = AsyncMock()
     config_repo.list_by_type.return_value = []
+    await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
+    schema_repo.insert_new_version_and_activate.assert_awaited_once()
+
+
+async def test_mixed_dependencies_anchor_with_existing_config():
+    schema = {'$schema': 'http://json-schema.org/draft-07/schema#', '$ref': '#anchor',
+              'dependencies': {'a': {'type': 'object'}, 'b': ['x']},
+              'definitions': {'x': {'$id': '#anchor', 'type': 'object'}}}
+    schema_repo = AsyncMock()
+    schema_repo.get_active.return_value = None
+    schema_repo.insert_new_version_and_activate.return_value = SimpleNamespace(version=1)
+    config_repo = AsyncMock()
+    config_repo.list_by_type.return_value = [SimpleNamespace(value={})]
     await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
     schema_repo.insert_new_version_and_activate.assert_awaited_once()
