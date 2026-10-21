@@ -43,8 +43,8 @@ class Settings(BaseServiceSettings):
     # WebSocket ingest limits
     ws_max_message_bytes: int = 1 * 1024 * 1024  # 1 MB per message
 
-    # Per-sensor rate limiting (fixed window).  A limit of 0 means "unlimited"
-    # for that counter.  Values are loaded at startup; a future config-service
+    # Per-sensor rate limiting (token bucket: N per window, burst capped at N).
+    # A limit of 0 means "unlimited" for that counter.  Values are loaded at startup; a future config-service
     # poller may override them at runtime via the shared RateLimitConfig holder.
 
     # WebSocket per-sensor rate limiting

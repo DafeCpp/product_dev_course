@@ -1,4 +1,4 @@
-"""Unit tests for IngestRateLimiter (REST per-sensor fixed-window rate limiter).
+"""Unit tests for IngestRateLimiter (REST per-sensor token-bucket rate limiter).
 
 No DB or aiohttp required — pure unit tests.
 

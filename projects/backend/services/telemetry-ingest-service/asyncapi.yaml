@@ -82,7 +82,8 @@ channels:
 
       **Protocol:** JSON text frames only. Binary frames are rejected.
 
-      **Rate limits (per sensor, fixed window):**
+      **Rate limits (per sensor, token bucket refilled over the window,
+      so a burst never exceeds the limit):**
       - Max 600 messages / 1 s window
       - Max 60 000 readings / 1 s window
       - Max message size: 1 MB
