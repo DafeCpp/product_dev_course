@@ -36,7 +36,11 @@ class ExportRateLimiter:
         window_seconds: float,
         message: str = "Export rate limit exceeded. Try again later.",
     ) -> None:
-        self._max = max_requests
+        if callable(max_requests):
+            self._limit = max_requests
+        else:
+            static_limit = max_requests
+            self._limit = lambda: static_limit
         self._window = window_seconds
         self._message = message
         self._buckets: dict[UUID, _Window] = defaultdict(
@@ -50,7 +54,7 @@ class ExportRateLimiter:
         ``X-RateLimit-Limit``, ``X-RateLimit-Remaining``, and
         ``X-RateLimit-Reset`` headers when the limit is exceeded.
         """
-        limit = self._max() if callable(self._max) else self._max
+        limit = self._limit()
         now = time.monotonic()
         bucket = self._buckets[user_id]
 
