@@ -6,6 +6,7 @@ from typing import Any
 import structlog
 
 from config_service.core.exceptions import (
+    InvalidSchemaError,
     SchemaBreakingChangeError,
     SchemaSanityFailedError,
 )
@@ -96,6 +97,19 @@ class SchemaService:
         new_schema: dict[str, Any],
         created_by: str,
     ) -> ConfigSchema:
+        import jsonschema
+        import jsonschema.validators
+
+        if "$schema" in new_schema and not isinstance(new_schema["$schema"], str):
+            raise InvalidSchemaError("$schema must be a string")
+
+        validator_cls = jsonschema.validators.validator_for(new_schema)  # type: ignore[no-untyped-call, unused-ignore]
+        try:
+            validator_cls.check_schema(new_schema)
+        except jsonschema.exceptions.SchemaError as exc:
+            raise InvalidSchemaError(exc.message) from exc
+        validator = validator_cls(new_schema)
+
         current = await self._schema_repo.get_active(config_type)
 
         if current is not None:
@@ -107,12 +121,6 @@ class SchemaService:
                         rule=v[:64],
                     ).inc()
                 raise SchemaBreakingChangeError(violations)
-
-        import jsonschema
-        import jsonschema.validators
-
-        validator_cls = jsonschema.validators.validator_for(new_schema)  # type: ignore[no-untyped-call, unused-ignore]
-        validator = validator_cls(new_schema)
 
         existing_configs = await self._config_repo.list_by_type(config_type)
         failures: list[dict[str, Any]] = []
