@@ -8,6 +8,8 @@ from uuid import UUID
 import structlog
 from aiohttp import ClientSession, ClientTimeout
 
+from backend_common.auth_service import auth_service_root
+
 logger = structlog.get_logger(__name__)
 
 _AUDIT_SESSION_KEY = "audit_client_session"
@@ -18,11 +20,7 @@ class AuditClient:
     """Fire-and-forget audit client that sends entries to auth-service."""
 
     def __init__(self, auth_service_url: str, session: ClientSession) -> None:
-        # Accept both auth-service root URLs and API-versioned URLs.
-        base = str(auth_service_url).rstrip("/")
-        if not base.endswith("/api/v1"):
-            base = f"{base}/api/v1"
-        self._endpoint = f"{base}/internal/audit"
+        self._endpoint = f"{auth_service_root(auth_service_url)}/api/v1/internal/audit"
         self._session = session
 
     def log_action(

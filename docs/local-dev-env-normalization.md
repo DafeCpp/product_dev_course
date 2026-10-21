@@ -77,9 +77,17 @@ cp env.docker.example .env
 |--------------------------------|----------------------------------|----------|
 | `DATABASE_URL` | `DATABASE_URL` | URL подключения к PostgreSQL |
 | `EXPERIMENT_SERVICE_PORT` | `PORT` | Порт сервиса |
-| `AUTH_SERVICE_URL` | `AUTH_SERVICE_URL` | URL Auth Service |
+| `AUTH_SERVICE_URL` | `AUTH_SERVICE_URL` | Корень Auth Service без `/api/v1` (`http://auth-service:8001`), см. ниже |
 | `RABBITMQ_URL` | `RABBITMQ_URL` | URL RabbitMQ |
 | `TELEMETRY_BROKER_URL` | `TELEMETRY_BROKER_URL` | URL Redis |
+
+**Контракт `AUTH_SERVICE_URL`.** Во всех бэкенд-сервисах это корень auth-service без API-префикса, например `http://auth-service:8001`. Клиент сам дописывает полный путь, который вызывает, через `backend_common.auth_service.auth_service_root`. Старое значение с `/api/v1` на конце тоже принимается и сводится к корню.
+
+| Сервис | Вызовы auth-service |
+|--------|---------------------|
+| experiment-service | `POST /api/v1/internal/audit` (аудит-лог) |
+| telemetry-ingest-service | `GET /auth/me`, `GET /projects/{id}/members` (проверка пользовательского токена) |
+| config-service, script-service | переменная объявлена в настройках, но сейчас не используется |
 
 ### Auth Proxy
 
