@@ -241,8 +241,10 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   // корпуса (LOS-385). Без мотор-модели скорость колёс неизвестна. В
   // повороте продольное ускорение кузова — это v̇x − vy·r, и без верного vy
   // интеграл уходил бы вниз (в SIL до 0.09 в повороте на асфальте); занос
-  // там ловит угол заноса EKF, поэтому детектор ждёт выхода на прямую.
-  if (motor_model_ran &&
+  // там ловит угол заноса EKF, поэтому детектор ждёт выхода на прямую. Без
+  // TiltEstimator гравитация на склоне не снимается с продольного
+  // ускорения, и под горку корпус «отставал» бы от колёс.
+  if (motor_model_ran && tilt_active_this_tick &&
       std::abs(ekf_.GetYawRate()) < kWheelspinMaxYawRateRps) {
     wheelspin_.Update(wheel_speed_ms_, wheel_target_ms, forward_accel_g,
                       dt_sec);

@@ -87,6 +87,32 @@ TEST_F(VehicleStateEstimatorTest, MotionCapableThrottleRejectsZupt) {
   EXPECT_EQ(estimate.zupt_status, ZuptStatus::ThrottleRejected);
 }
 
+// LOS-385: колёса по мотор-модели разгоняются, корпус стоит (машина на
+// подставке) — это пробуксовка.
+TEST_F(VehicleStateEstimatorTest, WheelsDrivenWithBodyStillIsWheelspin) {
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_TRUE(estimate.wheels_driven);
+  EXPECT_GT(estimate.wheel_slip_ratio, 0.5f);
+  EXPECT_LT(estimate.ground_speed_ms, 0.5f);
+}
+
+// Код-ревью PR #402: без TiltEstimator гравитация на склоне остаётся в
+// продольном ускорении, и детектору нечему верить.
+TEST_F(VehicleStateEstimatorTest, NoWheelspinWithoutTiltCompensation) {
+  input_.filter.tilt_comp_enabled = false;
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_FALSE(estimate.wheels_driven);
+  EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
+}
+
 TEST_F(VehicleStateEstimatorTest, TiltRunsWhenEkfIsDisabled) {
   input_.filter.ekf_enabled = false;
   sensors_.imu_data.ax = -0.17364818f;
