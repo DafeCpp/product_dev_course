@@ -119,6 +119,7 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     wheel_slip_ratio_ = 0.0f;
     grip_steer_limit_active_ = false;
     grip_steer_cap_ = 1.0f;
+    yaw_sign_ = 0.0f;
     speed_trim_ = 1.0f;
     return;
   }
@@ -320,28 +321,37 @@ void KidsModeProcessor::ApplyGripSteerLimit(
   if (!(km.anti_spin_enabled && input.imu_enabled && !input.ekf_diverged)) {
     grip_steer_limit_active_ = false;
     grip_steer_cap_ = 1.0f;
+    yaw_sign_ = 0.0f;
     return;
   }
   const float vx = input.speed_ms * std::cos(input.slip_angle_deg * kDegToRad);
-  if (input.lateral_grip_lost && vx >= GripLossDetector::kMinSpeedMs) {
+  // Потолок держит только руль в сторону вращения. Руль против вращения —
+  // контрруль при развороте, и его ограничивать нельзя.
+  yaw_sign_ = (input.yaw_rate_rps > 0.0f) - (input.yaw_rate_rps < 0.0f);
+  const bool grip_lost =
+      input.lateral_grip_lost && vx >= GripLossDetector::kMinSpeedMs;
+  if (grip_lost && steering * yaw_sign_ > 0.0f) {
     // Только вниз: пока сцепления нет, yaw rate падает вслед за рулём, и
     // потолок, поднятый обратно по нему, снова загнал бы шины в насыщение.
     grip_steer_cap_ =
         std::min(grip_steer_cap_,
                  kGripSteerYawRatio * GripLossDetector::SteeringForYawRate(
                                           input.yaw_rate_rps, vx));
-  } else {
+  } else if (!grip_lost) {
     grip_steer_cap_ = std::min(
         grip_steer_cap_ + kGripSteerRecoveryPerS * (input.dt_ms / 1000.0f),
         1.0f);
   }
-  grip_steer_limit_active_ = std::abs(steering) > grip_steer_cap_;
-  steering = std::clamp(steering, -grip_steer_cap_, grip_steer_cap_);
+  grip_steer_limit_active_ = false;
+  ClampToGripSteerCap(steering);
 }
 
 void KidsModeProcessor::ClampToGripSteerCap(float& steering) noexcept {
-  if (std::abs(steering) > grip_steer_cap_) grip_steer_limit_active_ = true;
-  steering = std::clamp(steering, -grip_steer_cap_, grip_steer_cap_);
+  if (steering * yaw_sign_ <= 0.0f || std::abs(steering) <= grip_steer_cap_) {
+    return;
+  }
+  grip_steer_limit_active_ = true;
+  steering = std::copysign(grip_steer_cap_, steering);
 }
 
 void KidsModeProcessor::Reset() noexcept {
@@ -350,6 +360,7 @@ void KidsModeProcessor::Reset() noexcept {
   wheel_slip_ratio_ = 0.0f;
   grip_steer_limit_active_ = false;
   grip_steer_cap_ = 1.0f;
+  yaw_sign_ = 0.0f;
   accel_limit_active_ = false;
   speed_limit_active_ = false;
   speed_trim_ = 1.0f;

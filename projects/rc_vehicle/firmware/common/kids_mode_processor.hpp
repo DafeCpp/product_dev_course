@@ -142,7 +142,7 @@ class KidsModeProcessor {
    *
    * Yaw-PID в Kids работает после Process() и добавляет коррекцию к уже
    * ограниченному рулю; без повторного ограничения он вернул бы шины в
-   * насыщение (LOS-378).
+   * насыщение (LOS-378). Руль против вращения (контрруль) не ограничивается.
    */
   void ClampToGripSteerCap(float& steering) noexcept;
 
@@ -201,6 +201,8 @@ class KidsModeProcessor {
   bool grip_steer_limit_active_{false};
   // Потолок |руля| по сцеплению [0..1], 1.0 = не ограничен (LOS-378).
   float grip_steer_cap_{1.0f};
+  // Знак yaw rate этого тика: потолок держит только руль в ту же сторону.
+  float yaw_sign_{0.0f};
 
   /**
    * Адаптивный потолок газа speed limiter'а [0..1], 1.0 = не ограничен.

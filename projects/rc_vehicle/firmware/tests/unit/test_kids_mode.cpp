@@ -765,7 +765,7 @@ TEST_F(KidsGripSteerTest, GripKeepsDriverSteering) {
 
 TEST_F(KidsGripSteerTest, GripLossCapsSteeringBelowMeasuredYawRate) {
   EXPECT_NEAR(Tick(1.0f, true), CapFor(1.0f), 1e-5f);
-  EXPECT_NEAR(Tick(-1.0f, true), -CapFor(1.0f), 1e-5f);
+  EXPECT_NEAR(Tick(-1.0f, true, -1.0f), -CapFor(1.0f), 1e-5f);
   EXPECT_TRUE(processor_.IsGripSteerLimitActive());
   // Меньший руль водителя потолок не трогает.
   EXPECT_FLOAT_EQ(Tick(0.1f, true), 0.1f);
@@ -786,6 +786,14 @@ TEST_F(KidsGripSteerTest, CapRecoversGraduallyWithGrip) {
               1e-5f);
   for (int i = 0; i < 30; ++i) (void)Tick(1.0f, false, 0.5f, 100);
   EXPECT_FLOAT_EQ(Tick(1.0f, false), 1.0f);
+}
+
+TEST_F(KidsGripSteerTest, CounterSteerAgainstYawIsNotCapped) {
+  // Разворот: машину крутит вправо, водитель рулит влево.
+  EXPECT_FLOAT_EQ(Tick(1.0f, true, -0.05f), 1.0f);
+  EXPECT_FALSE(processor_.IsGripSteerLimitActive());
+  // И потолок за это время не опустился: руль по вращению — без среза.
+  EXPECT_NEAR(Tick(1.0f, true, 1.0f), CapFor(1.0f), 1e-5f);
 }
 
 TEST_F(KidsGripSteerTest, AntiSpinDisabledLeavesSteering) {
