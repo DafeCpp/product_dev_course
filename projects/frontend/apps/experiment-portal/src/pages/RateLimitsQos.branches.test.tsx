@@ -109,7 +109,7 @@ describe('RateLimitsQos — branches', () => {
   })
 
   it('create flow: dry-run create, then confirm create', async () => {
-    mockDryRunCreate.mockResolvedValue({ dry_run: true, preview: { rps: 5 } })
+    mockDryRunCreate.mockResolvedValue({ dry_run: true, preview: { id: 'preview-1', key: 'auth_qos', value: { rps: 5 } } })
     mockCreateConfig.mockResolvedValue({ config: EXP_CFG })
     const user = userEvent.setup()
     renderPage()
@@ -123,7 +123,7 @@ describe('RateLimitsQos — branches', () => {
     await user.click(screen.getByRole('button', { name: 'Подтвердить сохранение' }))
     await waitFor(() =>
       expect(mockCreateConfig).toHaveBeenCalledWith(
-        expect.objectContaining({ service_name: 'auth-service', key: 'auth_qos' }),
+        expect.objectContaining({ service_name: 'auth-service', key: 'auth_qos', value: { rps: 5 } }),
       ),
     )
   })
@@ -149,11 +149,15 @@ describe('RateLimitsQos — branches', () => {
     expect(await screen.findByText(/"rps": 7/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Подтвердить сохранение' }))
     expect(await screen.findByRole('button', { name: 'Сохраняю...' })).toBeDisabled()
-    expect(mockPatchConfig).toHaveBeenCalledWith('exp1', expect.objectContaining({ value: { rps: 7 } }))
+    // Confirm saves the entered value, not the dry-run preview object.
+    expect(mockPatchConfig).toHaveBeenCalledWith('exp1', expect.objectContaining({ value: { rps: 5 } }))
     await act(async () => {
       resolveSave({ config: EXP_CFG })
     })
-    expect(await screen.findByRole('button', { name: 'Подтвердить сохранение' })).toBeEnabled()
+    // The confirmed value cannot be saved twice without a new dry-run.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Подтвердить сохранение' })).not.toBeInTheDocument(),
+    )
   })
 
   it('dry-run 4xx error shows rejected message; switching service clears it', async () => {

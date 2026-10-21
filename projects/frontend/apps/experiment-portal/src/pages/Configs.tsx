@@ -51,8 +51,8 @@ function Configs() {
   const toggleActiveMutation = useApiMutation<ConfigResponse, ConfigResponse>({
     mutationFn: (c) =>
       c.is_active
-        ? configsApi.deactivate(c.id, { version: c.version })
-        : configsApi.activate(c.id, { version: c.version }),
+        ? configsApi.deactivate(c.id, { version: c.version, changeReason: 'deactivated via portal' })
+        : configsApi.activate(c.id, { version: c.version, changeReason: 'activated via portal' }),
     invalidateKeys: [['configs']],
     errorFallback: 'Не удалось изменить статус (возможен конфликт версий)',
     onSuccess: (updated) =>
