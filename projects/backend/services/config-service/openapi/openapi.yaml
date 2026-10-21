@@ -469,7 +469,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '422':
-          description: Breaking schema change or sanity check failure
+          description: Invalid JSON Schema (fails its metaschema), breaking schema change or sanity check failure
 
   /api/v1/schemas/{config_type}/history:
     parameters:

@@ -115,3 +115,36 @@ async def test_update_schema_requires_permission(service_client):
 async def test_list_schemas_requires_auth(service_client):
     resp = await service_client.get("/api/v1/schemas")
     assert resp.status == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_property",
+    [
+        {"type": "not-a-type"},
+        {"minimum": "zero"},
+    ],
+)
+async def test_update_schema_invalid_json_schema_rejected(service_client, invalid_property):
+    """A schema that fails its metaschema is rejected with 422 and never activated."""
+    current = await (
+        await service_client.get("/api/v1/schemas/feature_flag", headers=ADMIN_HEADERS)
+    ).json()
+
+    invalid_schema = {
+        **current["schema"],
+        "properties": {**current["schema"]["properties"], "broken": invalid_property},
+    }
+
+    resp = await service_client.put(
+        "/api/v1/schemas/feature_flag",
+        json={"schema": invalid_schema},
+        headers={**ADMIN_HEADERS, "X-User-System-Permissions": "configs.schemas.manage"},
+    )
+    assert resp.status == 422, await resp.text()
+    assert (await resp.json())["error"] == "Invalid JSON Schema"
+
+    after = await (
+        await service_client.get("/api/v1/schemas/feature_flag", headers=ADMIN_HEADERS)
+    ).json()
+    assert after["version"] == current["version"]

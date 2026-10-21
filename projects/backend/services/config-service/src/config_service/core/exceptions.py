@@ -37,6 +37,16 @@ class SchemaBreakingChangeError(ValidationError):
     status_code = 422
 
 
+class InvalidSchemaError(ValidationError):
+    """Raised when a new schema is not a valid JSON Schema (fails its metaschema)."""
+
+    def __init__(self, error: str) -> None:
+        super().__init__(f"Invalid JSON Schema: {error}")
+        self.error = error
+
+    status_code = 422
+
+
 class SchemaSanityFailedError(ServiceError):
     """Raised when existing configs fail validation against new schema."""
 
