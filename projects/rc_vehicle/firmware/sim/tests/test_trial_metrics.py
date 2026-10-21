@@ -711,6 +711,15 @@ def test_pitch_comp_wrong_sign_fails_uphill(tmp_path):
     assert res[0].passed is False and res[1].no_data and res[2].no_data
 
 
+def test_pitch_comp_skips_saturated_throttle(tmp_path):
+    # Полный стик в гору: cmd обрезан до 1.0, добавку не измерить.
+    rows = [{"ts_ms": (i + 1) * DT_MS, "rc_throttle": 1.0, "cmd_throttle": 1.0,
+             "pitch_deg": -8.0, "rc_ok": 1} for i in range(300)]
+    log = _write_csv(tmp_path / "p.csv", rows)
+    assert tm.pitch_comp_windows(log)["uphill"] == []
+    assert tm.check_pitch_comp(log)[0].no_data
+
+
 def test_pitch_comp_skips_settling_pitch(tmp_path):
     # Тангаж сходится к склону (Madgwick): окна с разбросом > 1° не считаются.
     rows = _pitch_log([(3000, 0.0, 0.0)])
@@ -874,6 +883,14 @@ def test_rc_events_only_startup_is_no_data(tmp_path):
         50: ("RcRestored", "first_acquire", 0, 0)}))
     res = tm.check_rc_events(log)
     assert len(res) == 1 and res[0].no_data and res[0].passed is False
+
+
+def test_rc_events_unknown_cause_fails(tmp_path):
+    # Платформа без счётчиков декодера: причина «unknown», ширины пустые.
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "thr=unknown str=unknown", "", ""),
+        300: ("RcRestored", "", 0.4, "")}))
+    assert tm.check_rc_events(log)[0].passed is False
 
 
 def test_rc_events_without_event_columns(tmp_path):

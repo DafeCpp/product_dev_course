@@ -75,6 +75,7 @@ PITCH_FLAT_DEG = 2.0    # |тангаж| меньше — ровно
 PITCH_WINDOW_MS = 500.0
 PITCH_MIN_STICK = 0.1
 PITCH_MAX_SPREAD_DEG = 1.0  # окно, где тангаж ещё сходится, не годится
+PITCH_CMD_SATURATED = 0.99   # cmd_throttle на упоре: добавку не измерить
 # Мёртвая зона газа RC (ApplyRcThrottleDeadzone, control_loop_helpers.hpp):
 # стик 0.5 даёт команду 0.457 ещё до стабилизации.
 RC_THROTTLE_DEADZONE = 0.08
@@ -615,7 +616,10 @@ def pitch_comp_windows(rows: list[Row]) -> dict[str, list[float]]:
                and not math.isnan(cmd[k]) and not math.isnan(pitch[k])]
         if ts[j] - ts[i] >= 0.8 * PITCH_WINDOW_MS and len(idx) == j - i + 1:
             ps = sorted(pitch[k] for k in idx)
-            if ps[-1] - ps[0] > PITCH_MAX_SPREAD_DEG:
+            # Упёрлись в полный газ — прошивка обрезала cmd до 1.0, и добавку
+            # компенсации по такому окну не измерить.
+            saturated = any(cmd[k] >= PITCH_CMD_SATURATED for k in idx)
+            if ps[-1] - ps[0] > PITCH_MAX_SPREAD_DEG or saturated:
                 i = j + 1
                 continue
             p = ps[len(ps) // 2]
@@ -789,7 +793,9 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
             continue
         # Протокол 2.5 требует причину, ширины импульсов и длительность
         # потери: неполная диагностика — провал, а не «nan».
-        complete = bool(lost["param"]) and not any(
+        # «unknown» — платформа не отдала счётчики декодера: причины и ширин
+        # импульсов фактически нет.
+        complete = bool(lost["param"]) and "unknown" not in lost["param"] and not any(
             math.isnan(x) for x in (lost["v1"], lost["v2"], e["v1"], e["v2"]))
         out.append(MetricResult(
             f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", complete,
