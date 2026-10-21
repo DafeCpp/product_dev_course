@@ -23,6 +23,7 @@ from experiment_service.core.exceptions import (
 from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateDTO
 from experiment_service.domain.enums import ExperimentStatus
 from experiment_service.domain.models import Experiment
+from experiment_service.middleware import api_rate_limit
 from experiment_service.services.dependencies import (
     ensure_permission,
     get_idempotency_service,
@@ -45,6 +46,7 @@ def _experiment_response(experiment: Experiment) -> dict:
 @routes.get("/api/v1/experiments")
 async def list_experiments(request: web.Request):
     user = await require_current_user(request)
+    api_rate_limit.api_rate_limiter.check(user.user_id)
     service = await get_experiment_service(request)
     limit, offset = pagination_params(request)
 

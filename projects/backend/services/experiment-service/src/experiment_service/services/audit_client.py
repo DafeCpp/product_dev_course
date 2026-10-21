@@ -9,6 +9,7 @@ import structlog
 from aiohttp import ClientSession, ClientTimeout
 
 from backend_common.auth_service import auth_service_root
+from experiment_service.middleware.qos_config import QOS_CONFIG
 
 logger = structlog.get_logger(__name__)
 
@@ -59,7 +60,8 @@ class AuditClient:
 
     async def _send(self, payload: dict[str, Any]) -> None:
         try:
-            async with self._session.post(self._endpoint, json=payload) as resp:
+            timeout = ClientTimeout(total=QOS_CONFIG.downstream_timeout_seconds)
+            async with self._session.post(self._endpoint, json=payload, timeout=timeout) as resp:
                 if resp.status >= 400:
                     text = await resp.text()
                     logger.warning(

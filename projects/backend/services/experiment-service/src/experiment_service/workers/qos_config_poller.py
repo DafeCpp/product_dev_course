@@ -8,7 +8,7 @@ Expected value shape for key ``"experiment_qos"`` in config-service
 
     {
         "rate_limit_max_requests": 1000,
-        "downstream_timeout_seconds": 30.0
+        "downstream_timeout_seconds": 5.0
     }
 
 Any field may be omitted; missing fields keep their current value.

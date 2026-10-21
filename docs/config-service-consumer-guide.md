@@ -146,6 +146,15 @@ def build_qos_client(url: str, poll_interval: float) -> ConfigClient:
 
 **Важно:** не переприсваивайте глобал (`QOS_CONFIG = new_config`). Потребители держат ссылку на исходный объект — хелпер мутирует его поля in-place.
 
+### Пример: `experiment_qos` (experiment-service)
+
+| Поле | Где применяется | По умолчанию |
+|------|-----------------|--------------|
+| `rate_limit_max_requests` | Лимит запросов на пользователя в минуту, общий для `GET /api/v1/experiments` и `POST /api/v1/experiments/{id}/runs`; сверх лимита ответ 429 с `Retry-After` | 1000 |
+| `downstream_timeout_seconds` | Общий таймаут каждой записи аудита в auth-service | 5.0 |
+
+Лимит читается на каждом запросе, поэтому новое значение действует со следующего опроса config-service, без рестарта.
+
 ---
 
 ## Fallback (cold-start без config-service)
