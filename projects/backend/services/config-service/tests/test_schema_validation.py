@@ -11,6 +11,11 @@ from config_service.services.schema_service import SchemaService
 
 @pytest.mark.parametrize('schema', [
     {'type': 'not-a-type'},
+    {'$ref': '#/default', 'default': {'$schema': []}},
+    {'$ref': '#/default', 'default': {'$schema': 'https://example.com/unknown'}},
+    {'$id': 'not a uri', 'type': 'object'},
+    {'$defs': {'child': {'$id': 'not a uri', 'type': 'object'}}},
+    {'$id': 'invalid%ZZ'},
     {'$defs': {'child': {'$id': []}}},
     {'$defs': {'child': {'$schema': []}}},
     {'$defs': {'child': {'type': 'not-a-type'}}},
