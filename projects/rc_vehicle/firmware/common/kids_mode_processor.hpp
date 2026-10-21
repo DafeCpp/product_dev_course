@@ -65,7 +65,8 @@ class KidsModeProcessor {
    * Ниже газа, при котором мотор держит текущую скорость, противо-ЭДС
    * тормозит ведущие колёса, и занос переходит в разворот. Газ вперёд
    * режется до max(reduced, накат), но не выше commanded; реверс и
-   * недоверенная скорость EKF — без пола.
+   * недоверенная скорость EKF — без пола. Пока колёса буксуют, накат
+   * считается по скорости корпуса: скорость EKF идёт за колёсами (LOS-385).
    */
   [[nodiscard]] static float FloorSkidCut(const StabilizationConfig& cfg,
                                           const StabilizationInput& input,
@@ -111,6 +112,29 @@ class KidsModeProcessor {
   }
 
   /**
+   * @brief Пробуксовка колёс держит anti-spin включённым (LOS-385)
+   *
+   * Срабатывает выше kWheelspinOnRatio, пока мотор разгоняет колёса
+   * (StabilizationInput::wheels_driven), отпускает ниже kWheelspinOffRatio:
+   * после среза газа колёса догоняют корпус, и без гистерезиса anti-spin
+   * включался бы и выключался каждые несколько тиков.
+   */
+  [[nodiscard]] bool IsWheelspinActive() const noexcept {
+    return wheelspin_active_;
+  }
+
+  /** Доля пробуксовки колёс на последнем Process() (LOS-385). */
+  [[nodiscard]] float GetWheelSlipRatio() const noexcept {
+    return wheel_slip_ratio_;
+  }
+
+  /** Порог включения anti-spin по пробуксовке колёс (LOS-385). На асфальте
+   *  в SIL доля не выше 0.08, на льду при старте доходит до 0.2. */
+  static constexpr float kWheelspinOnRatio = 0.12f;
+  /** Порог выключения: ниже него колёса считаются догнавшими корпус. */
+  static constexpr float kWheelspinOffRatio = 0.05f;
+
+  /**
    * @brief Проверить, сработало ли ограничение по ускорению
    * @return true если accel limiter снижает throttle
    */
@@ -138,6 +162,8 @@ class KidsModeProcessor {
   bool anti_spin_active_{false};
   bool accel_limit_active_{false};
   bool speed_limit_active_{false};
+  bool wheelspin_active_{false};
+  float wheel_slip_ratio_{0.0f};
 
   /**
    * Адаптивный потолок газа speed limiter'а [0..1], 1.0 = не ограничен.

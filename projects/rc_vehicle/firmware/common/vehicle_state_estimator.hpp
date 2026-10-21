@@ -8,6 +8,7 @@
 #include "stabilization_config.hpp"
 #include "tilt_estimator.hpp"
 #include "vehicle_ekf.hpp"
+#include "wheelspin_detector.hpp"
 
 namespace rc_vehicle {
 
@@ -75,6 +76,15 @@ struct VehicleStateEstimate {
   float yaw_rate_rps{0.0f};
   float slip_angle_rad{0.0f};
   float forward_accel_g{0.0f};
+  /** Доля пробуксовки ведущих колёс (LOS-385); 0, пока мотор-модель
+   *  не работает: без неё скорости колёс не от чего считать. */
+  float wheel_slip_ratio{0.0f};
+  /** Мотор разгоняет колёса — только тогда пробуксовка может начаться. */
+  bool wheels_driven{false};
+  /** Скорость корпуса «как на ровном» по интегралу тяги [м/с] (LOS-385,
+   *  см. WheelspinDetector); пока
+   *  детектор пробуксовки не работает — скорость колёс по мотор-модели. */
+  float ground_speed_ms{0.0f};
   ZuptStatus zupt_status{ZuptStatus::NotEvaluated};
   bool ekf_diverged{false};
 };
@@ -145,11 +155,18 @@ class VehicleStateEstimator {
   // появления в постоянных времени accel-коррекции (LOS-369).
   bool prev_tick_anchored_{false};
   float anchor_settle_left_tau_{0.0f};
+  // Остаток схождения TiltEstimator после Reset() в постоянных времени
+  // accel-коррекции: до него детектор пробуксовки молчит (LOS-385).
+  float tilt_acquire_left_tau_{0.0f};
   // Установившаяся скорость мотор-модели, она же после инерционного звена
   // (LOS-378), и признак, что мотор-модель работала на прошлом тике.
   float motor_model_target_ms_{0.0f};
   float motor_model_speed_ms_{0.0f};
   bool motor_model_was_active_{false};
+  // Мотор-модель на фактическом PWM — скорость колёс для детектора
+  // пробуксовки (LOS-385).
+  float wheel_speed_ms_{0.0f};
+  WheelspinDetector wheelspin_;
 #ifdef RC_PROFILE_LOOP
   VehicleStateEstimatorProfile profile_;
 #endif

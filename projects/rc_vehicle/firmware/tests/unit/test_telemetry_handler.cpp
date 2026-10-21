@@ -367,6 +367,8 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
 
   snap.kids_mode_active = true;
   snap.kids_anti_spin_active = true;
+  snap.kids_wheelspin_active = true;
+  snap.kids_wheel_slip_ratio = 0.125f;
   snap.kids_accel_limit_active = true;
   snap.kids_speed_limit_active = true;
   snap.kids_limiters_enabled = true;
@@ -467,6 +469,9 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
   cJSON* kids = cJSON_GetObjectItem(root, "kids_mode");
   ASSERT_NE(kids, nullptr);
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "anti_spin_active")));
+  EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "wheelspin_active")));
+  EXPECT_NEAR(cJSON_GetObjectItem(kids, "wheel_slip_ratio")->valuedouble, 0.125,
+              0.001);
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "accel_limit_active")));
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "speed_limit_active")));
   EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(kids, "limiters_enabled")));
@@ -489,8 +494,8 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
 
   // Регресс-гейт: полный кадр должен оставаться заметно короче старого
   // cJSON-вывода (тот легко уходил за 2 КБ из-за 17-значных double).
-  // 1344 — reserve() в BuildTelemJson: полный кадр не должен его превышать.
-  EXPECT_LE(json.size(), 1344u) << "frame: " << json;
+  // 1408 — reserve() в BuildTelemJson: полный кадр не должен его превышать.
+  EXPECT_LE(json.size(), 1408u) << "frame: " << json;
 }
 
 // Все блоки imu/calib/mag/ekf/warn сгруппированы под imu_enabled — при

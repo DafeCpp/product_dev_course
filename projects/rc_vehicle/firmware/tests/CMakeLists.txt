@@ -78,6 +78,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/mpu6050_spi.cpp
     ${COMMON_DIR}/mag_calibration.cpp
     ${COMMON_DIR}/tilt_estimator.cpp
+    ${COMMON_DIR}/wheelspin_detector.cpp
 )
 
 # Include directories
@@ -116,6 +117,7 @@ add_executable(unit_tests
     unit/test_vehicle_ekf.cpp
     unit/test_vehicle_state_estimator.cpp
     unit/test_tilt_estimator.cpp
+    unit/test_wheelspin_detector.cpp
     unit/test_telemetry_log.cpp
     unit/test_oversteer_guard.cpp
     unit/test_kids_mode.cpp

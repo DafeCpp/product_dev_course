@@ -28,6 +28,8 @@ TelemetrySnapshot BuildTelemetrySnapshot(
 
   snap.kids_mode_active = (drive_mode == DriveMode::Kids);
   snap.kids_anti_spin_active = ctx.kids_processor.IsAntiSpinActive();
+  snap.kids_wheelspin_active = ctx.kids_processor.IsWheelspinActive();
+  snap.kids_wheel_slip_ratio = ctx.kids_processor.GetWheelSlipRatio();
   snap.kids_accel_limit_active = ctx.kids_processor.IsAccelLimitActive();
   snap.kids_speed_limit_active = ctx.kids_processor.IsSpeedLimitActive();
   snap.kids_limiters_enabled = stab_cfg.KidsLimitersActive();

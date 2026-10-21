@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "vehicle_state_estimator.hpp"
@@ -85,6 +86,92 @@ TEST_F(VehicleStateEstimatorTest, MotionCapableThrottleRejectsZupt) {
   const auto estimate = estimator_.Update(sensors_, input_);
 
   EXPECT_EQ(estimate.zupt_status, ZuptStatus::ThrottleRejected);
+}
+
+// LOS-385: колёса по мотор-модели разгоняются, корпус стоит (машина на
+// подставке) — это пробуксовка.
+TEST_F(VehicleStateEstimatorTest, WheelsDrivenWithBodyStillIsWheelspin) {
+  // Сначала TiltEstimator сходится в покое: 3τ при corr_gain 0.5 Гц — 6 с.
+  for (int i = 0; i < 3100; ++i) (void)estimator_.Update(sensors_, input_);
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_TRUE(estimate.wheels_driven);
+  EXPECT_GT(estimate.wheel_slip_ratio, 0.5f);
+  EXPECT_LT(estimate.ground_speed_ms, 0.5f);
+}
+
+// Код-ревью PR #402: без TiltEstimator гравитация на склоне остаётся в
+// продольном ускорении, и детектору нечему верить.
+TEST_F(VehicleStateEstimatorTest, NoWheelspinWithoutTiltCompensation) {
+  input_.filter.tilt_comp_enabled = false;
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_FALSE(estimate.wheels_driven);
+  EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
+}
+
+// Код-ревью PR #402: мотор-модель не знает про нагрузку склона — в гору
+// колёса по ней обгоняют корпус и при полном сцеплении.
+TEST_F(VehicleStateEstimatorTest, NoWheelspinOnSlope) {
+  sensors_.imu_data.ax = -0.17364818f;  // нос вверх 10°
+  sensors_.imu_data.az = 0.98480775f;
+  for (int i = 0; i < 3100; ++i) (void)estimator_.Update(sensors_, input_);
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_FALSE(estimate.wheels_driven);
+  EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
+}
+
+// Код-ревью PR #402: на пологом подъёме (внутри гейта по тангажу) машина
+// разгоняется медленнее мотор-модели. С вычетом гравитации это выглядело бы
+// как пробуксовка; тяга по акселерометру от уклона не зависит.
+TEST_F(VehicleStateEstimatorTest, NoWheelspinOnGentleUphillLaunch) {
+  constexpr float kG = 9.80665f;
+  constexpr float kTauS = 0.9f;
+  constexpr float kDt = 0.002f;
+  const float slope_sin = std::sin(2.0f * 3.14159265f / 180.0f);
+  sensors_.imu_data.ax = slope_sin;  // стоит на тормозе носом в подъём
+  sensors_.imu_data.az = std::sqrt(1.0f - slope_sin * slope_sin);
+  for (int i = 0; i < 3100; ++i) (void)estimator_.Update(sensors_, input_);
+
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  const float target_ms = 8.0f * (0.3f - 0.05f) / (1.0f - 0.05f);
+  float speed_ms = 0.0f;
+  float max_ratio = 0.0f;
+  bool driven = false;
+  for (int i = 0; i < 1000; ++i) {
+    const float traction_ms2 = (target_ms - speed_ms) / kTauS;
+    sensors_.imu_data.ax = traction_ms2 / kG;
+    speed_ms += (traction_ms2 - kG * slope_sin) * kDt;
+    const auto estimate = estimator_.Update(sensors_, input_);
+    max_ratio = std::max(max_ratio, estimate.wheel_slip_ratio);
+    driven = driven || estimate.wheels_driven;
+  }
+
+  EXPECT_TRUE(driven);  // детектор работал, а не стоял за гейтом
+  EXPECT_LT(max_ratio, 0.05f);
+}
+
+// Код-ревью PR #402: сразу после Reset() TiltEstimator держит pitch = 0, и
+// на склоне гравитация ещё в продольном ускорении — детектор ждёт.
+TEST_F(VehicleStateEstimatorTest, NoWheelspinWhileTiltAcquires) {
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_FALSE(estimate.wheels_driven);
+  EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
 }
 
 TEST_F(VehicleStateEstimatorTest, TiltRunsWhenEkfIsDisabled) {

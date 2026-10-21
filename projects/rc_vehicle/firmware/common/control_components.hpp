@@ -488,6 +488,8 @@ struct TelemetrySnapshot {
   // Kids Mode
   bool kids_mode_active{false};
   bool kids_anti_spin_active{false};
+  bool kids_wheelspin_active{false};  // anti-spin по пробуксовке (LOS-385)
+  float kids_wheel_slip_ratio{0.0f};
   bool kids_accel_limit_active{false};
   bool kids_speed_limit_active{false};
   bool kids_limiters_enabled{false};
