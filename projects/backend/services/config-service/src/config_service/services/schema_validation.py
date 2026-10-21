@@ -149,7 +149,8 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
                         resolved = resolver.lookup(contents[keyword])
                         if not isinstance(resolved.contents, (dict, bool)):
                             raise InvalidSchemaError("Reference target must be a schema object or boolean")
-                        target_validator = current_validator
+                        target_root = resolved.resolver.lookup("").contents
+                        target_validator = jsonschema.validators.validator_for(target_root, default=current_validator)  # type: ignore[no-untyped-call, unused-ignore]
                         if isinstance(resolved.contents, dict) and "$schema" in resolved.contents:
                             if not isinstance(resolved.contents["$schema"], str):
                                 raise InvalidSchemaError("$schema must be a string")
@@ -158,9 +159,9 @@ def build_schema_validator(new_schema: dict[str, Any]) -> jsonschema.protocols.V
                                 raise InvalidSchemaError(f"Unsupported $schema: {resolved.contents['$schema']}")
                         _check_schema_node(resolved.contents, target_validator)
                         target = Resource.from_contents(resolved.contents, default_specification=specification_with(
-                            current_validator.META_SCHEMA.get("$id") or current_validator.META_SCHEMA["id"]
+                            target_validator.META_SCHEMA.get("$id") or target_validator.META_SCHEMA["id"]
                         ))
-                        pending.append((target, resolved.resolver, current_validator))
+                        pending.append((target, resolved.resolver, target_validator))
             pending.extend(
                 (child, resolver.in_subresource(child), current_validator)
                 for child in cast(Resource[Any], _SchemaResource(current_resource, current_validator)).subresources()
