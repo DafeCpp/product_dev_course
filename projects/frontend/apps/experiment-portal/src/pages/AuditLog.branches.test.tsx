@@ -107,7 +107,7 @@ describe('AuditLog — branches', () => {
   it('renders scope/target/ip variants in the table', async () => {
     renderPage()
     await screen.findByText('project.update')
-    const rows = screen.getAllByRole('button').filter((el) => el.tagName === 'TR')
+    const rows = screen.getAllByRole('row').slice(1)
     expect(rows).toHaveLength(3)
     expect(within(rows[0]).getByText('project / p-1')).toBeInTheDocument()
     expect(within(rows[0]).getByText('experiment / x-1')).toBeInTheDocument()
@@ -173,12 +173,15 @@ describe('AuditLog — branches', () => {
     const user = userEvent.setup()
     renderPage()
     await screen.findByText('project.update')
-    const rows = screen.getAllByRole('button').filter((el) => el.tagName === 'TR')
+    const rows = screen.getAllByRole('row').slice(1)
+    const openButton = (row: HTMLElement) =>
+      within(row).getByRole('button', { name: /\d{2}\.\d{2}\.\d{4}/ })
 
-    fireEvent.keyDown(rows[0], { key: 'a' })
+    openButton(rows[0]).focus()
+    await user.keyboard('a')
     expect(screen.queryByText('Детали записи аудита')).not.toBeInTheDocument()
 
-    fireEvent.keyDown(rows[0], { key: 'Enter' })
+    await user.keyboard('{Enter}')
     const modal = document.querySelector('.audit-log-detail') as HTMLElement
     expect(within(modal).getByText('project / p-1')).toBeInTheDocument()
     expect(within(modal).getByText('experiment / x-1')).toBeInTheDocument()
@@ -186,7 +189,8 @@ describe('AuditLog — branches', () => {
     await user.click(screen.getByRole('button', { name: '×' }))
     expect(screen.queryByText('Детали записи аудита')).not.toBeInTheDocument()
 
-    fireEvent.keyDown(rows[1], { key: ' ' })
+    openButton(rows[1]).focus()
+    await user.keyboard(' ')
     let m = document.querySelector('.audit-log-detail') as HTMLElement
     expect(within(m).getByText('system')).toBeInTheDocument()
     expect(within(m).getByText('user')).toBeInTheDocument()

@@ -19,6 +19,7 @@
 }
 
 .sensor-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -28,11 +29,36 @@
 }
 
 .sensor-card:hover,
-.sensor-card:focus-visible {
+.sensor-card:focus-within {
   transform: translateY(-4px);
   box-shadow: var(--lp-shadows-2);
   border-color: color-mix(in srgb, var(--lp-primary) 18%, transparent);
-  outline: none;
+}
+
+.sensor-card:has(.sensor-card__open:focus-visible) {
+  box-shadow: var(--focus-ring-strong);
+}
+
+.sensor-card__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
 }
 
 .sensor-card__topline {

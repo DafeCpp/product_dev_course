@@ -155,19 +155,7 @@ function SensorsList() {
             <>
               <div className="sensors-grid">
                 {filteredSensors.map((sensor: Sensor) => (
-                  <div
-                    key={sensor.id}
-                    className="sensor-card card"
-                    onClick={() => setSelectedSensorId(sensor.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        setSelectedSensorId(sensor.id)
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
+                  <article key={sensor.id} className="sensor-card card">
                     <div className="sensor-card__topline">
                       <span className="meta-chip">{sensor.type}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -181,7 +169,16 @@ function SensorsList() {
                       </div>
                     </div>
 
-                    <h3 className="sensor-card__title">{sensor.name}</h3>
+                    <h3 className="sensor-card__title">
+                      {/* Stretched over the whole card, so the card stays clickable. */}
+                      <button
+                        type="button"
+                        className="sensor-card__open"
+                        onClick={() => setSelectedSensorId(sensor.id)}
+                      >
+                        {sensor.name}
+                      </button>
+                    </h3>
 
                     <div className="sensor-card__heartbeat">
                       <span
@@ -219,9 +216,11 @@ function SensorsList() {
                         <span>Создан</span>
                         <strong>{formatDateTime(sensor.created_at)}</strong>
                       </div>
-                      <span className="sensor-meta__cta">Подробнее</span>
+                      <span className="sensor-meta__cta" aria-hidden="true">
+                        Подробнее
+                      </span>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
 

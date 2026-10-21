@@ -110,13 +110,13 @@ describe('SensorsList branches', () => {
     it('opens detail modal via click and keyboard', async () => {
         const user = userEvent.setup()
         render(<SensorsList />, { wrapper })
-        const alpha = (await screen.findByText('Alpha')).closest('.sensor-card') as HTMLElement
-        await user.click(alpha)
+        // The card's click target is the sensor-name button stretched over it.
+        await user.click(await screen.findByRole('button', { name: 'Alpha' }))
         expect(screen.getByTestId('detail-modal')).toHaveTextContent('s1')
         await user.click(screen.getByRole('button', { name: 'close-detail' }))
         expect(screen.queryByTestId('detail-modal')).not.toBeInTheDocument()
 
-        const beta = screen.getByText('Beta').closest('.sensor-card') as HTMLElement
+        const beta = screen.getByRole('button', { name: 'Beta' })
         beta.focus()
         await user.keyboard('a')
         expect(screen.queryByTestId('detail-modal')).not.toBeInTheDocument()
@@ -124,7 +124,7 @@ describe('SensorsList branches', () => {
         expect(screen.getByTestId('detail-modal')).toHaveTextContent('s2')
         await user.click(screen.getByRole('button', { name: 'close-detail' }))
 
-        const gamma = screen.getByText('Gamma').closest('.sensor-card') as HTMLElement
+        const gamma = screen.getByRole('button', { name: 'Gamma' })
         gamma.focus()
         await user.keyboard(' ')
         expect(screen.getByTestId('detail-modal')).toHaveTextContent('s3')

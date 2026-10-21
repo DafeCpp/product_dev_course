@@ -110,9 +110,11 @@ export default function CaptureSessionTimeline({
 
                     const color = STATUS_COLORS[session.status] || '#94a3b8'
                     const label = STATUS_LABELS[session.status] || session.status
+                    const summary = `#${session.ordinal_number} · ${label} · ${formatDuration(session.started_at, session.stopped_at)}`
 
                     return (
-                        <div
+                        <button
+                            type="button"
                             key={session.id}
                             className="cs-timeline__bar"
                             style={{
@@ -120,23 +122,16 @@ export default function CaptureSessionTimeline({
                                 width: `${widthPct}%`,
                                 backgroundColor: color,
                             }}
-                            title={`#${session.ordinal_number} · ${label} · ${formatDuration(session.started_at, session.stopped_at)}`}
+                            title={summary}
+                            aria-label={`Сессия ${summary}`}
                             onClick={() => onSessionClick?.(session.id)}
-                            role="button"
-                            tabIndex={0}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault()
-                                    onSessionClick?.(session.id)
-                                }
-                            }}
                         >
                             {widthPct > 8 && (
                                 <span className="cs-timeline__label">
                                     #{session.ordinal_number}
                                 </span>
                             )}
-                        </div>
+                        </button>
                     )
                 })}
             </div>

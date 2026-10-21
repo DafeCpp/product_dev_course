@@ -20,7 +20,7 @@
 
   &:focus-visible {
     outline: none;
-    box-shadow: var(--focus-ring);
+    box-shadow: var(--focus-ring-strong);
     border-color: lp.$lp-color-primary;
   }
 }

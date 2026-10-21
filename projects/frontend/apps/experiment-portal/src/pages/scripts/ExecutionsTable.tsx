@@ -32,13 +32,13 @@ export default function ExecutionsTable({
               key={ex.id}
               className="scripts-table__row"
               onClick={() => onRowClick(ex)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') onRowClick(ex)
-              }}
             >
-              <td className="scripts-table__name">{scriptName(ex.script_id)}</td>
+              <td className="scripts-table__name">
+                {/* Keyboard entry point to the row; its click bubbles to the row's handler. */}
+                <button type="button" className="table-row-open">
+                  {scriptName(ex.script_id)}
+                </button>
+              </td>
               <td>
                 <span className={`exec-status ${executionStatusClass(ex.status)}`}>
                   {executionStatusLabel(ex.status)}
