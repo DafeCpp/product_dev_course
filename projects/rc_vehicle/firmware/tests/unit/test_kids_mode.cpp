@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "control_components.hpp"
+#include "grip_loss_detector.hpp"
 #include "imu_calibration.hpp"
 #include "kids_mode_processor.hpp"
 #include "mock_platform.hpp"
@@ -726,6 +727,78 @@ TEST_F(KidsWheelspinTest, CoastFloorUsesSlowerOfEkfAndBody) {
   processor_.Reset();
   EXPECT_NEAR(Tick(0.2f, true, 2.0f),
               dz + 1.0f * (1.0f - dz) / cfg_.filter.motor_speed_gain, 1e-5f);
+}
+
+// LOS-378: в медленном заносе руль опускается до того, что шины держат.
+class KidsGripSteerTest : public KidsModeLimiterSlewTest {
+ protected:
+  void SetUp() override {
+    KidsModeLimiterSlewTest::SetUp();
+    cfg_.kids_mode.accel_limit_enabled = false;
+    cfg_.kids_mode.steering_limit = 1.0f;
+  }
+
+  float Tick(float steering, bool grip_lost, float yaw_rate_rps = 1.0f,
+             uint32_t dt_ms = 2) {
+    const StabilizationInput input{
+        .dt_ms = dt_ms,
+        .speed_ms = 2.0f,
+        .yaw_rate_rps = yaw_rate_rps,
+        .lateral_grip_lost = grip_lost,
+        .imu_enabled = true,
+    };
+    float throttle = 0.3f;
+    processor_.Process(cfg_, throttle, steering, input);
+    return steering;
+  }
+
+  static float CapFor(float yaw_rate_rps) {
+    return KidsModeProcessor::kGripSteerYawRatio *
+           GripLossDetector::SteeringForYawRate(yaw_rate_rps, 2.0f);
+  }
+};
+
+TEST_F(KidsGripSteerTest, GripKeepsDriverSteering) {
+  EXPECT_FLOAT_EQ(Tick(1.0f, false), 1.0f);
+  EXPECT_FALSE(processor_.IsGripSteerLimitActive());
+}
+
+TEST_F(KidsGripSteerTest, GripLossCapsSteeringBelowMeasuredYawRate) {
+  EXPECT_NEAR(Tick(1.0f, true), CapFor(1.0f), 1e-5f);
+  EXPECT_NEAR(Tick(-1.0f, true), -CapFor(1.0f), 1e-5f);
+  EXPECT_TRUE(processor_.IsGripSteerLimitActive());
+  // Меньший руль водителя потолок не трогает.
+  EXPECT_FLOAT_EQ(Tick(0.1f, true), 0.1f);
+  EXPECT_FALSE(processor_.IsGripSteerLimitActive());
+}
+
+TEST_F(KidsGripSteerTest, CapOnlyFallsWhileGripIsLost) {
+  (void)Tick(1.0f, true, 1.0f);
+  // Yaw rate упал вслед за рулём — потолок по нему не поднимается.
+  EXPECT_NEAR(Tick(1.0f, true, 2.0f), CapFor(1.0f), 1e-5f);
+  EXPECT_NEAR(Tick(1.0f, true, 0.5f), CapFor(0.5f), 1e-5f);
+}
+
+TEST_F(KidsGripSteerTest, CapRecoversGraduallyWithGrip) {
+  const float cap = Tick(1.0f, true, 0.5f);
+  const float after = Tick(1.0f, false, 0.5f, 100);
+  EXPECT_NEAR(after, cap + KidsModeProcessor::kGripSteerRecoveryPerS * 0.1f,
+              1e-5f);
+  for (int i = 0; i < 30; ++i) (void)Tick(1.0f, false, 0.5f, 100);
+  EXPECT_FLOAT_EQ(Tick(1.0f, false), 1.0f);
+}
+
+TEST_F(KidsGripSteerTest, AntiSpinDisabledLeavesSteering) {
+  cfg_.kids_mode.anti_spin_enabled = false;
+  EXPECT_FLOAT_EQ(Tick(1.0f, true), 1.0f);
+  EXPECT_FALSE(processor_.IsGripSteerLimitActive());
+}
+
+TEST_F(KidsGripSteerTest, ResetReleasesCap) {
+  (void)Tick(1.0f, true);
+  processor_.Reset();
+  EXPECT_FALSE(processor_.IsGripSteerLimitActive());
+  EXPECT_FLOAT_EQ(Tick(1.0f, false), 1.0f);
 }
 
 TEST_F(KidsModeLimiterSlewTest, AccelLimitAppliesBeforePwmSlew) {

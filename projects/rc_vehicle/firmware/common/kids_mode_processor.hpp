@@ -123,6 +123,28 @@ class KidsModeProcessor {
     return wheelspin_active_;
   }
 
+  /**
+   * @brief Руль ограничен по сцеплению (LOS-378)
+   *
+   * Пока yaw rate расходится с рулём (StabilizationInput::lateral_grip_lost),
+   * потолок руля опускается до kGripSteerYawRatio от руля, который дал бы
+   * измеренный yaw rate: передняя ось выходит из насыщения, и машина
+   * поворачивает на пределе сцепления, а не скользит. Газом медленный занос не
+   * уменьшить: ниже наката противо-ЭДС тормозит заднюю ось, и занос только
+   * растёт (LOS-389).
+   */
+  [[nodiscard]] bool IsGripSteerLimitActive() const noexcept {
+    return grip_steer_limit_active_;
+  }
+
+  /** Доля руля от соответствующего измеренному yaw rate, до которой
+   *  опускается потолок. При 1.0 передняя ось остаётся в насыщении, и
+   *  занос в SIL растёт дальше. */
+  static constexpr float kGripSteerYawRatio = 0.9f;
+  /** Скорость возврата потолка руля, пока сцепление есть [1/с]: плавно, иначе
+   *  полный руль сразу снова срывал бы шины. */
+  static constexpr float kGripSteerRecoveryPerS = 0.5f;
+
   /** Доля пробуксовки колёс на последнем Process() (LOS-385). */
   [[nodiscard]] float GetWheelSlipRatio() const noexcept {
     return wheel_slip_ratio_;
@@ -156,6 +178,9 @@ class KidsModeProcessor {
   void Reset() noexcept;
 
  private:
+  void ApplyGripSteerLimit(const StabilizationConfig& cfg, float& steering,
+                           const StabilizationInput& input) noexcept;
+
   const VehicleEkf* ekf_{nullptr};
   const ImuHandler* imu_{nullptr};
 
@@ -164,6 +189,9 @@ class KidsModeProcessor {
   bool speed_limit_active_{false};
   bool wheelspin_active_{false};
   float wheel_slip_ratio_{0.0f};
+  bool grip_steer_limit_active_{false};
+  // Потолок |руля| по сцеплению [0..1], 1.0 = не ограничен (LOS-378).
+  float grip_steer_cap_{1.0f};
 
   /**
    * Адаптивный потолок газа speed limiter'а [0..1], 1.0 = не ограничен.

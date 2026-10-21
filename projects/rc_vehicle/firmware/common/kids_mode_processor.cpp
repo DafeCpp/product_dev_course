@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "grip_loss_detector.hpp"
 #include "stabilization_pipeline.hpp"
 
 namespace rc_vehicle {
@@ -91,8 +92,10 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
       .dt_ms = dt_ms,
       .speed_ms = ekf_ ? ekf_->GetSpeedMs() : 0.0f,
       .slip_angle_deg = ekf_ ? ekf_->GetSlipAngleDeg() : 0.0f,
+      .yaw_rate_rps = ekf_ ? ekf_->GetYawRate() : 0.0f,
       .vx_variance = ekf_ ? ekf_->GetVxVariance() : 0.0f,
       .forward_accel_g = forward_accel,
+      .lateral_grip_lost = ekf_ && ekf_->IsLateralGripLost(),
       .imu_enabled = imu_ && imu_->IsEnabled(),
       .ekf_diverged = ekf_ && ekf_->IsDiverged(),
   };
@@ -114,6 +117,8 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     speed_limit_active_ = false;
     wheelspin_active_ = false;
     wheel_slip_ratio_ = 0.0f;
+    grip_steer_limit_active_ = false;
+    grip_steer_cap_ = 1.0f;
     speed_trim_ = 1.0f;
     return;
   }
@@ -133,6 +138,7 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
 
   // Ограничение руля
   steering = std::clamp(steering, -km.steering_limit, km.steering_limit);
+  ApplyGripSteerLimit(cfg, steering, input);
 
   // ─────────────────────────────────────────────────────────────────────────
   // 2. Anti-spin защита (снижение газа при заносе)
@@ -307,10 +313,38 @@ void KidsModeProcessor::ApplySpeedLimit(
       std::max(limited, commanded * (1.0f - kMaxThrottleReductionFraction));
 }
 
+void KidsModeProcessor::ApplyGripSteerLimit(
+    const StabilizationConfig& cfg, float& steering,
+    const StabilizationInput& input) noexcept {
+  const auto& km = cfg.kids_mode;
+  if (!(km.anti_spin_enabled && input.imu_enabled && !input.ekf_diverged)) {
+    grip_steer_limit_active_ = false;
+    grip_steer_cap_ = 1.0f;
+    return;
+  }
+  const float vx = input.speed_ms * std::cos(input.slip_angle_deg * kDegToRad);
+  if (input.lateral_grip_lost && vx >= GripLossDetector::kMinSpeedMs) {
+    // Только вниз: пока сцепления нет, yaw rate падает вслед за рулём, и
+    // потолок, поднятый обратно по нему, снова загнал бы шины в насыщение.
+    grip_steer_cap_ =
+        std::min(grip_steer_cap_,
+                 kGripSteerYawRatio * GripLossDetector::SteeringForYawRate(
+                                          input.yaw_rate_rps, vx));
+  } else {
+    grip_steer_cap_ = std::min(
+        grip_steer_cap_ + kGripSteerRecoveryPerS * (input.dt_ms / 1000.0f),
+        1.0f);
+  }
+  grip_steer_limit_active_ = std::abs(steering) > grip_steer_cap_;
+  steering = std::clamp(steering, -grip_steer_cap_, grip_steer_cap_);
+}
+
 void KidsModeProcessor::Reset() noexcept {
   anti_spin_active_ = false;
   wheelspin_active_ = false;
   wheel_slip_ratio_ = 0.0f;
+  grip_steer_limit_active_ = false;
+  grip_steer_cap_ = 1.0f;
   accel_limit_active_ = false;
   speed_limit_active_ = false;
   speed_trim_ = 1.0f;

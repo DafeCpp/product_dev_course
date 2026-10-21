@@ -14,13 +14,14 @@
 скорость (LOS-378). Пока шины держат, vy гасится с 5 Гц, иначе тряска дороги
 в акселерометре (≈0.43 g на 2 м/с) давала бы ложный занос на асфальте.
 
-Что сейчас не так: в медленном заносе anti-spin срабатывает вовремя, но газ
-наката, ниже которого он не режет (LOS-389), на 2 м/с — те же 0.29, и занос
-не уменьшается.
+Медленный занос газом не уменьшить: газ наката на 2 м/с — те же 0.29, а
+срез ниже наката тормозит заднюю ось противо-ЭДС, и занос растёт (LOS-389).
+Поэтому при потере сцепления Kids опускает потолок руля ниже руля, который
+дал бы измеренный yaw rate: передняя ось выходит из насыщения, и машина идёт
+по дуге на пределе сцепления, а не скользит (LOS-378).
 Срез газа anti-spin не опускается ниже газа наката (LOS-389): раньше резкий
 срез 0.30 → 0.09 тормозил заднюю ось противо-ЭДС, и занос переходил в
 разворот. Это проверяется на быстром заносе, где anti-spin срабатывает.
-Такие критерии помечены strict xfail: исправление сразу покажет XPASS.
 Отдельные тесты проверяют, что модель действительно буксует и заносит, то
 есть xfail падает по названной причине, а не из-за слабого сценария.
 """
@@ -66,7 +67,8 @@ def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
                        sensor_noise=sensor_noise) as sim:
         sim.run(SETTLE_TICKS, DT_MS, rc_throttle=0.0, rc_steering=0.0)
         slip_ratio, beta, ekf_slip, active = [], [], [], 0
-        wheelspin = 0
+        wheelspin = steer_limit = 0
+        yaw_rate = []
         beta_at_trigger = None
         for i in range(straight_ticks + turn_ticks):
             row = sim.step(DT_MS, 1.0, 0.0 if i < straight_ticks else 1.0)
@@ -76,7 +78,9 @@ def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
             ekf_slip.append(abs(row["ekf_slip_deg"]))
             active += int(row["kids_anti_spin_active"])
             wheelspin += int(row["kids_wheelspin_active"])
-            if active and beta_at_trigger is None:
+            steer_limit += int(row["kids_grip_steer_limit_active"])
+            yaw_rate.append(abs(st.r))
+            if (active or steer_limit) and beta_at_trigger is None:
                 beta_at_trigger = beta[-1]
     return {
         "peak_slip_ratio": max(slip_ratio),
@@ -85,6 +89,9 @@ def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
         "peak_ekf_slip_deg": max(ekf_slip),
         "anti_spin_ticks": active,
         "wheelspin_ticks": wheelspin,
+        "steer_limit_ticks": steer_limit,
+        # Последняя секунда: машина всё ещё поворачивает, а не едет прямо.
+        "final_yaw_rate_rps": sum(yaw_rate[-500:]) / 500,
         "beta_at_trigger_deg": beta_at_trigger,
     }
 
@@ -120,6 +127,7 @@ def test_no_wheelspin_on_asphalt(turn_ticks):
     kids = _run(mu=0.0, anti_spin=True, straight_ticks=1000,
                 turn_ticks=turn_ticks, sensor_noise=True)
     assert kids["wheelspin_ticks"] == 0
+    assert kids["steer_limit_ticks"] == 0
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
@@ -136,6 +144,7 @@ def test_no_false_slip_on_asphalt(seed):
                 for i in range(4500)]
     assert max(abs(r["ekf_slip_deg"]) for r in rows) < ANTI_SPIN_THRESHOLD_DEG
     assert sum(r["kids_anti_spin_active"] for r in rows) == 0
+    assert sum(r["kids_grip_steer_limit_active"] for r in rows) == 0
 
 
 def test_slippery_turn_slides_past_anti_spin_threshold():
@@ -145,9 +154,9 @@ def test_slippery_turn_slides_past_anti_spin_threshold():
 
 
 def test_anti_spin_triggers_early_on_slippery_turn():
-    """LOS-378: угол заноса EKF доходит до порога раньше, чем β до 20°."""
+    """LOS-378: защита от заноса включается раньше, чем β дойдёт до 20°."""
     kids = _slippery_turn(anti_spin=True)
-    assert kids["anti_spin_ticks"] > 0
+    assert kids["anti_spin_ticks"] + kids["steer_limit_ticks"] > 0
     assert kids["beta_at_trigger_deg"] < 2.0 * ANTI_SPIN_THRESHOLD_DEG
 
 
@@ -176,11 +185,13 @@ def test_anti_spin_does_not_worsen_fast_spin():
     assert kids["peak_beta_deg"] < ref["peak_beta_deg"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "anti-spin срабатывает при β ≈ 9°, но пол наката (LOS-389) на 2 м/с "
-    "держит газ 0.29 из 0.30, и занос не уменьшается"))
 def test_anti_spin_reduces_slide_on_slippery_turn():
+    """LOS-378: руль по сцеплению не даёт заносу развиться, машина поворачивает.
+
+    На μ = 0.2 и 2 м/с шины держат yaw rate до μ·g/v ≈ 1 рад/с.
+    """
     ref = _slippery_turn(anti_spin=False)
     kids = _slippery_turn(anti_spin=True)
-    assert kids["anti_spin_ticks"] > 0
+    assert kids["steer_limit_ticks"] > 0
     assert kids["peak_beta_deg"] < 0.8 * ref["peak_beta_deg"]
+    assert kids["final_yaw_rate_rps"] > 0.7

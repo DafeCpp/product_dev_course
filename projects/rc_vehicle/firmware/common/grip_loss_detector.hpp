@@ -37,7 +37,17 @@ class GripLossDetector {
 
   [[nodiscard]] bool IsGripLost() const noexcept { return grip_lost_; }
 
-  /** Yaw rate, который дал бы руль при сцеплении [рад/с]. */
+  /**
+   * @brief Руль в [0, 1], при котором шины дали бы этот |yaw rate|.
+   *
+   * Обратная к r_ref: tan(δ) = |r|·(L + K·vx²) / vx. При vx <= 0 — 1
+   * (не ограничивает).
+   */
+  [[nodiscard]] static float SteeringForYawRate(float yaw_rate_rps,
+                                                float vx_ms) noexcept;
+
+  /** Yaw rate, который дал бы руль при сцеплении, с запаздыванием
+   *  kYawResponseTauS [рад/с]. */
   [[nodiscard]] float GetReferenceYawRateRps() const noexcept {
     return reference_yaw_rate_rps_;
   }
@@ -56,10 +66,17 @@ class GripLossDetector {
   static constexpr float kMaxYawDevRatio = 0.15f;
   static constexpr float kMinYawDevRps = 0.15f;
   /**
-   * Сколько расхождение должно держаться [с]. На входе в поворот yaw rate
-   * отстаёт от руля на десятки мс (инерция кузова), это ещё не срыв.
+   * Сколько расхождение должно держаться [с]: одиночные выбросы гироскопа
+   * и руля — ещё не срыв.
    */
   static constexpr float kHoldS = 0.15f;
+  /**
+   * Постоянная времени отклика yaw rate на руль [с]: эталон сравнивается с
+   * задержкой. Пока руль поворачивается со slew rate, yaw rate отстаёт от
+   * установившегося на ~50 мс (инерция кузова, фильтр гироскопа), и без
+   * задержки в SIL на асфальте вход в поворот выглядел как срыв.
+   */
+  static constexpr float kYawResponseTauS = 0.06f;
   /** Ниже этой скорости вперёд признак не считается [м/с]. */
   static constexpr float kMinSpeedMs = 0.5f;
 
@@ -69,6 +86,8 @@ class GripLossDetector {
   // убывает без него, так что одиночные выбросы не переключают признак.
   float deviation_time_s_{0.0f};
   bool grip_lost_{false};
+  // Эталон уже инициализирован установившимся значением (после Reset — нет).
+  bool primed_{false};
 };
 
 }  // namespace rc_vehicle

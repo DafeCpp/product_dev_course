@@ -27,6 +27,8 @@ struct StabilizationInput {
   float wheel_slip_ratio{0.0f};
   float ground_speed_ms{0.0f};
   bool wheels_driven{false};
+  /** Yaw rate разошёлся с рулём: шины на пределе (LOS-378). */
+  bool lateral_grip_lost{false};
   float stabilization_weight{0.0f};
   float mode_transition_weight{0.0f};
   bool imu_enabled{false};
