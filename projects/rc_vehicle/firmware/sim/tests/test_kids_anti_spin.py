@@ -9,12 +9,14 @@
 включается ещё и по пробуксовке колёс: мотор-модель против интеграла
 продольного ускорения IMU (LOS-385). На асфальте этот признак молчать обязан.
 
-Что сейчас не так:
-- угол заноса EKF в медленном заносе занижен: боковая скорость vy
-  затухает с vy_decay_hz = 5 Гц, а при 1 Гц тряска дороги в акселерометре
-  (≈0.5 g на 2 м/с) даёт ложный занос выше порога на асфальте (LOS-378);
-- поэтому в медленном заносе anti-spin не срабатывает вовсе, и проверить,
-  уменьшает ли он занос, можно только после LOS-378.
+Угол заноса EKF в медленном заносе держится за счёт признака потери
+сцепления: yaw rate разошёлся с рулём, и EKF перестаёт гасить боковую
+скорость (LOS-378). Пока шины держат, vy гасится с 5 Гц, иначе тряска дороги
+в акселерометре (≈0.43 g на 2 м/с) давала бы ложный занос на асфальте.
+
+Что сейчас не так: в медленном заносе anti-spin срабатывает вовремя, но газ
+наката, ниже которого он не режет (LOS-389), на 2 м/с — те же 0.29, и занос
+не уменьшается.
 Срез газа anti-spin не опускается ниже газа наката (LOS-389): раньше резкий
 срез 0.30 → 0.09 тормозил заднюю ось противо-ЭДС, и занос переходил в
 разворот. Это проверяется на быстром заносе, где anti-spin срабатывает.
@@ -120,15 +122,28 @@ def test_no_wheelspin_on_asphalt(turn_ticks):
     assert kids["wheelspin_ticks"] == 0
 
 
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_no_false_slip_on_asphalt(seed):
+    """LOS-378: в повороте на асфальте с тряской дороги угол EKF ниже порога.
+
+    Шины держат, признак потери сцепления молчит, и vy гасится с 5 Гц.
+    """
+    p = get_profile("fitted_2026_08_02")
+    with ClosedLoopSim(BIN, params=p, dynamic=True, drive_mode="kids",
+                       sensor_noise=True, noise_seed=seed) as sim:
+        sim.run(SETTLE_TICKS, DT_MS, rc_throttle=0.0, rc_steering=0.0)
+        rows = [sim.step(DT_MS, 1.0, 0.0 if i < 1000 else 1.0)
+                for i in range(4500)]
+    assert max(abs(r["ekf_slip_deg"]) for r in rows) < ANTI_SPIN_THRESHOLD_DEG
+    assert sum(r["kids_anti_spin_active"] for r in rows) == 0
+
+
 def test_slippery_turn_slides_past_anti_spin_threshold():
     """Модель: на скользком под газом машину заносит сильнее порога."""
     ref = _slippery_turn(anti_spin=False)
     assert ref["peak_beta_deg"] > 2.0 * ANTI_SPIN_THRESHOLD_DEG
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "LOS-378: vy в EKF затухает с vy_decay_hz = 5 Гц; при меньшем "
-    "затухании шум акселерометра даёт ложный занос на асфальте"))
 def test_anti_spin_triggers_early_on_slippery_turn():
     """LOS-378: угол заноса EKF доходит до порога раньше, чем β до 20°."""
     kids = _slippery_turn(anti_spin=True)
@@ -136,9 +151,6 @@ def test_anti_spin_triggers_early_on_slippery_turn():
     assert kids["beta_at_trigger_deg"] < 2.0 * ANTI_SPIN_THRESHOLD_DEG
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "LOS-378: vy в EKF затухает с vy_decay_hz = 5 Гц; при меньшем "
-    "затухании шум акселерометра даёт ложный занос на асфальте"))
 def test_ekf_slip_tracks_slide_without_anti_spin():
     """LOS-378: в заносе ~27° угол EKF не застревает на единицах градусов."""
     ref = _slippery_turn(anti_spin=False)
@@ -165,8 +177,8 @@ def test_anti_spin_does_not_worsen_fast_spin():
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "LOS-378: в медленном заносе угол EKF не доходит до порога, и anti-spin "
-    "не срабатывает"))
+    "anti-spin срабатывает при β ≈ 9°, но пол наката (LOS-389) на 2 м/с "
+    "держит газ 0.29 из 0.30, и занос не уменьшается"))
 def test_anti_spin_reduces_slide_on_slippery_turn():
     ref = _slippery_turn(anti_spin=False)
     kids = _slippery_turn(anti_spin=True)

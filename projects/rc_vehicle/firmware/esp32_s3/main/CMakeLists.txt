@@ -37,6 +37,7 @@ idf_component_register(
         "../../common/vehicle_state_estimator.cpp"
         "../../common/tilt_estimator.cpp"
         "../../common/wheelspin_detector.cpp"
+        "../../common/grip_loss_detector.cpp"
         "vehicle_control_platform_esp32.cpp"
         "pwm_control.cpp"
         "rc_input.cpp"

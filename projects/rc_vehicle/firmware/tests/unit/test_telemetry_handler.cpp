@@ -461,6 +461,7 @@ TEST(BuildTelemJsonTest, FullSnapshotProducesValidJsonWithAllKeys) {
   EXPECT_NEAR(cJSON_GetObjectItem(ekf, "vx_var")->valuedouble, 1.23e-7, 1e-8);
   EXPECT_STREQ(cJSON_GetObjectItem(ekf, "zupt_status")->valuestring, "applied");
   EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(ekf, "diverged")));
+  EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(ekf, "grip_lost")));
 
   cJSON* warn = cJSON_GetObjectItem(root, "warn");
   ASSERT_NE(warn, nullptr);

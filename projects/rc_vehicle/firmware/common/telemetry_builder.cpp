@@ -70,6 +70,7 @@ TelemetrySnapshot BuildTelemetrySnapshot(
     snap.ekf_r_var = ctx.ekf.GetRVariance();
     snap.ekf_speed_meas = ctx.ekf.GetLastSpeedMeas();
     snap.ekf_diverged = ctx.ekf.IsDiverged();
+    snap.ekf_grip_lost = ctx.ekf.IsLateralGripLost();
     snap.oversteer_available = true;
     snap.oversteer_active = ctx.oversteer_guard.IsActive();
   }

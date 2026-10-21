@@ -87,9 +87,11 @@ def _number(row: dict[str, str], key: str) -> float:
 def _phase(episode: Episode, row: dict[str, str], index: int) -> str:
     if episode.scenario == "oversteer":
         # Внутри большой Drift-вырезки фиксируем один устойчивый эпизод:
-        # чистый recorded-inactive pre-roll 64:92 и записанное
-        # срабатывание 151:181.
-        if 64 <= index < 92:
+        # чистый recorded-inactive pre-roll 64:74 и записанное
+        # срабатывание 151:181. С 74 yaw rate идёт против руля — корма уже
+        # уходит; прошивка записи этого не видела, а с признаком потери
+        # сцепления (LOS-378) guard срабатывает здесь же.
+        if 64 <= index < 74:
             return "pre"
         if 151 <= index < 181:
             return "assert"

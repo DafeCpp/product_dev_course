@@ -33,14 +33,22 @@ struct VehicleEkfNoiseParams {
    * несмотря на демпфирование — реальный занос всё равно обнаруживается.
    * По умолчанию 5.0 с⁻¹ → постоянная времени ~200 мс.
    *
-   * Ограничение (LOS-378): установившийся vy = (ay − r·vx)/vy_decay_hz, и в
-   * медленном заносе на скользком угол EKF отстаёт от реального вдвое и
-   * больше. Снижать затухание пока нельзя: vy — чистый интеграл ay, и при
-   * 1 Гц тряска дороги в акселерометре (≈0.5 g на 2 м/с, профиль
+   * Установившийся vy = (ay − r·vx)/vy_decay_hz, поэтому при потере
+   * сцепления (SetLateralGripLost) затухание сменяется на
+   * vy_decay_grip_lost_hz. Снизить его всегда нельзя: vy — чистый интеграл
+   * ay, и при 1 Гц тряска дороги в акселерометре (≈0.43 g на 2 м/с, профиль
    * fitted_2026_08_02) даёт в обычном повороте на асфальте ложный угол
-   * выше порога Kids anti-spin (10°).
+   * выше порога Kids anti-spin (10°) (LOS-378).
    */
   float vy_decay_hz{5.0f};
+  /**
+   * Демпфирование боковой скорости, пока шины не держат [с⁻¹] (LOS-378).
+   * Боковой силы, возвращающей vy к нулю, у насыщенных шин нет; малое
+   * затухание только ограничивает дрейф интеграла. При 0.5 с⁻¹ в медленном
+   * заносе на скользком (SIL) угол EKF доходит до 10° при реальных ~10°,
+   * а при 5 с⁻¹ застревал на 3–7° при реальных 29°.
+   */
+  float vy_decay_grip_lost_hz{0.5f};
   /**
    * Шум процесса курсового угла ψ [рад²].
    * Малый — ψ хорошо интегрируется из r; ненулевой для стабильности.
@@ -247,6 +255,16 @@ class VehicleEkf {
   void SetNoiseParams(NoiseParams params) noexcept { params_ = params; }
 
   /**
+   * @brief Шины потеряли боковое сцепление (LOS-378, GripLossDetector).
+   * Следующие Predict гасят vy с vy_decay_grip_lost_hz вместо vy_decay_hz.
+   */
+  void SetLateralGripLost(bool lost) noexcept { lateral_grip_lost_ = lost; }
+
+  [[nodiscard]] bool IsLateralGripLost() const noexcept {
+    return lateral_grip_lost_;
+  }
+
+  /**
    * @brief Сработал ли guard на расходимость в последнем цикле Predict.
    * true → оценка скорости/рыскания была ограничена физическим максимумом или
    * сброшена по NaN; потребителям (drive modes) отдаётся уже безопасное
@@ -274,6 +292,9 @@ class VehicleEkf {
 
   // Параметры шума
   NoiseParams params_;
+
+  // Затухание vy по потере сцепления (SetLateralGripLost).
+  bool lateral_grip_lost_{false};
 
   // Диагностика ZUPT; обновляется вместе с каждым UpdateFromImu().
   ZuptStatus zupt_status_{ZuptStatus::NotEvaluated};

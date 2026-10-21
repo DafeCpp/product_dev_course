@@ -508,6 +508,7 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
       w.RawStr("zupt_status", ZuptStatusToString(snap.ekf_zupt_status));
       w.Fixed("speed_meas", snap.ekf_speed_meas, 3);
       w.Bool("diverged", snap.ekf_diverged);
+      w.Bool("grip_lost", snap.ekf_grip_lost);
       w.EndObject();
     }
 

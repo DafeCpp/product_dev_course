@@ -155,6 +155,12 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   tilt_was_enabled_ = tilt_active_this_tick;
 
   if (ekf_active && imu_tick_valid) {
+    // Потеря сцепления — по прошлому vx: признак нужен до Predict, чтобы
+    // EKF уже на этом тике не гасил vy (LOS-378).
+    grip_.Update(sensors.filtered_gz * kDegToRad, ekf_.GetVx(),
+                 input.applied_steering, dt_sec);
+    ekf_.SetLateralGripLost(grip_.IsGripLost());
+
     const bool motor_model_active =
         input.filter.motor_model_enabled && !input.speed_calibration_active;
 
@@ -200,7 +206,8 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 #endif
     }
 
-    if (input.filter.nhc_enabled &&
+    // Без сцепления машина как раз едет боком, и vy = 0 было бы ложью.
+    if (input.filter.nhc_enabled && !grip_.IsGripLost() &&
         std::abs(ekf_.GetYawRate()) < kNhcMaxYawRateRps) {
 #ifdef RC_PROFILE_LOOP
       profile_call(profile_.nhc, [&] {
@@ -216,6 +223,10 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     prev_vx_ = vx_now;
   }
 
+  if (!ekf_active) {
+    grip_.Reset();
+    ekf_.SetLateralGripLost(false);
+  }
   motor_model_was_active_ = motor_model_ran;
 
   float forward_accel_g = 0.0f;
@@ -285,6 +296,7 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
 
 void VehicleStateEstimator::OnEkfReset() noexcept {
   motor_model_was_active_ = false;
+  grip_.Reset();
   wheelspin_.Reset(wheel_speed_ms_);
 }
 
@@ -298,6 +310,7 @@ void VehicleStateEstimator::RefreshEkfFields(
   estimate.slip_angle_rad = ekf_.GetSlipAngleRad();
   estimate.zupt_status = ekf_.GetZuptStatus();
   estimate.ekf_diverged = ekf_.IsDiverged();
+  estimate.lateral_grip_lost = ekf_.IsLateralGripLost();
 }
 
 VehicleStateEstimate VehicleStateEstimator::BuildEstimate(

@@ -174,6 +174,29 @@ TEST_F(VehicleStateEstimatorTest, NoWheelspinWhileTiltAcquires) {
   EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
 }
 
+// LOS-378: руль влево до упора, а машина не поворачивает — шины не держат,
+// и EKF перестаёт гасить боковую скорость; yaw rate по рулю — держат.
+TEST_F(VehicleStateEstimatorTest, YawRateAgainstSteeringIsGripLoss) {
+  input_.applied_steering = 0.7f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 100; ++i) {
+    ekf_.SetState(2.0f, 0.0f, ekf_.GetYawRate());
+    estimate = estimator_.Update(sensors_, input_);
+  }
+  EXPECT_TRUE(estimate.lateral_grip_lost);
+  EXPECT_TRUE(ekf_.IsLateralGripLost());
+
+  const float grip_rate_rps = 2.0f *
+                              std::tan(0.7f * GripLossDetector::kMaxSteerRad) /
+                              GripLossDetector::kWheelbaseM;
+  sensors_.filtered_gz = grip_rate_rps * 180.0f / 3.14159265f;
+  for (int i = 0; i < 200; ++i) {
+    ekf_.SetState(2.0f, 0.0f, ekf_.GetYawRate());
+    estimate = estimator_.Update(sensors_, input_);
+  }
+  EXPECT_FALSE(estimate.lateral_grip_lost);
+}
+
 TEST_F(VehicleStateEstimatorTest, TiltRunsWhenEkfIsDisabled) {
   input_.filter.ekf_enabled = false;
   sensors_.imu_data.ax = -0.17364818f;

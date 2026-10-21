@@ -577,6 +577,33 @@ TEST_F(ProcessorTest, ZuptUsesAppliedThrottleIncludingTrim) {
   EXPECT_EQ(ekf_.GetZuptStatus(), ZuptStatus::ThrottleRejected);
 }
 
+TEST_F(ProcessorTest, SteeringTrimIsNotGripLossInDirectLaw) {
+  // LOS-378: в DirectLaw applied.steering включает trim нейтрали. Если отдать
+  // его детектору сцепления как угол колёс, прямая езда с trim 0.1 на 2 м/с
+  // ждала бы yaw rate 0.24 рад/с и ложно считала бы сцепление потерянным.
+  SetDirectLaw();
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.steering_trim = 0.1f;
+  cfg.filter.motor_model_enabled = false;
+  stab_mgr_->SetConfig(cfg);
+
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  Step();
+  ekf_.SetState(2.0f, 0.0f, 0.0f);
+  RunSteps(200);
+
+  ASSERT_NEAR(platform_.GetLastSteering(), 0.1f, 1e-6f);
+  ASSERT_GT(ekf_.GetVx(), 1.5f);
+  EXPECT_FALSE(ekf_.IsLateralGripLost());
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Телеметрия
 // ═══════════════════════════════════════════════════════════════════════════

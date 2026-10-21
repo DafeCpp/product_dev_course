@@ -95,6 +95,23 @@ TEST(VehicleEkfTest, Predict_LateralAccel_IncreasesVy) {
   EXPECT_NEAR(ekf.GetVy(), 0.5f, 1e-5f);
 }
 
+// LOS-378: без сцепления vy не гасится к нулю шинами — затухание слабое, и
+// установившийся vy = (ay − r·vx)/decay вырастает в разы.
+TEST(VehicleEkfTest, Predict_GripLostDecaysVyWeaker) {
+  VehicleEkf grip;
+  VehicleEkf lost;
+  lost.SetLateralGripLost(true);
+  for (int i = 0; i < 2500; ++i) {  // 5 с — до установившегося
+    grip.Predict(0.0f, -0.5f, 0.002f);
+    lost.Predict(0.0f, -0.5f, 0.002f);
+  }
+  const VehicleEkfNoiseParams p;
+  EXPECT_NEAR(grip.GetVy(), -0.5f / p.vy_decay_hz, 0.01f);
+  EXPECT_NEAR(lost.GetVy(), -0.5f / p.vy_decay_grip_lost_hz, 0.1f);
+  lost.Reset();
+  EXPECT_FALSE(lost.IsLateralGripLost());
+}
+
 TEST(VehicleEkfTest, Predict_YawRate_Unchanged) {
   // r — random walk, без измерения не меняется
   VehicleEkf ekf;

@@ -32,6 +32,7 @@ void VehicleEkf::Reset() noexcept {
   InitP();
   diverged_ = false;
   last_speed_meas_ = 0.0f;
+  lateral_grip_lost_ = false;
 }
 
 void VehicleEkf::SetState(float vx, float vy, float r) noexcept {
@@ -60,7 +61,9 @@ void VehicleEkf::Predict(float ax, float ay, float dt) noexcept {
   const float r  = x_[2];
   const float psi = x_[3];
 
-  const float vy_damp = 1.0f - params_.vy_decay_hz * dt;
+  const float vy_decay_hz =
+      lateral_grip_lost_ ? params_.vy_decay_grip_lost_hz : params_.vy_decay_hz;
+  const float vy_damp = 1.0f - vy_decay_hz * dt;
 
   // ── Нелинейная модель f(x, u) ─────────────────────────────────────────
   x_[0] = vx + dt * (ax + r * vy);
