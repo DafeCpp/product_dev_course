@@ -629,3 +629,277 @@ def test_yaw_step_from_held_opposite_turn(tmp_path, before, after):
     assert r["setpoint_dps"] == pytest.approx(abs(after) * gain)
     # Реальный отклик: от -45 до +27 °/с за ~3τ, а не мгновенный «PASS 0 мс».
     assert 80 <= r["settling_ms"] <= 200
+
+
+# ── ESC: газ старта (протокол 4.2) ───────────────────────────────────────
+
+def _staircase_log(start_at: float, n_rest=500, step_ms=2000):
+    """Синтетика: газ ступенями 0.02 → 0.20; с `start_at` машина толкается."""
+    rows, t = [], 0
+    for _ in range(n_rest):
+        t += DT_MS
+        rows.append({"ts_ms": t, "throttle": 0.0, "ax": 0.002, "ay": -0.001})
+    thr = 0.02
+    while thr <= 0.2001:
+        for k in range(step_ms // DT_MS):
+            t += DT_MS
+            # Рывок на старте ступени, затухающий за ~0.3 с.
+            push = 0.08 * math.exp(-k * DT_MS / 300.0) if thr >= start_at - 1e-9 else 0.0
+            rows.append({"ts_ms": t, "throttle": round(thr, 2),
+                         "ax": 0.002 + push, "ay": -0.001})
+        thr += 0.01
+    return rows
+
+
+def test_esc_start_finds_first_moving_step(tmp_path):
+    log = _write_csv(tmp_path / "esc.csv", _staircase_log(start_at=0.07))
+    r = tm.esc_start_threshold(log)
+    assert r["threshold"] == pytest.approx(0.07)
+    assert len(r["steps"]) == 19
+    res = tm.check_esc_start(log)
+    assert res[0].passed is None and "порог 0.07" in res[0].value
+
+
+def test_esc_start_never_moving(tmp_path):
+    log = _write_csv(tmp_path / "esc.csv", _staircase_log(start_at=1.0))
+    assert tm.esc_start_threshold(log)["threshold"] is None
+    res = tm.check_esc_start(log)[0]
+    assert res.passed is False and "не тронулась" in res.value
+
+
+def test_esc_start_ignores_imu_orientation_in_plane(tmp_path):
+    rows = _staircase_log(start_at=0.05)
+    for r in rows:  # IMU повёрнут на 90° вокруг вертикали
+        r["ax"], r["ay"] = -r["ay"], r["ax"]
+    assert tm.esc_start_threshold(_write_csv(tmp_path / "rot.csv", rows))["threshold"] \
+        == pytest.approx(0.05)
+
+
+def test_esc_start_without_steps(tmp_path):
+    rows = [{"ts_ms": (i + 1) * DT_MS, "throttle": 0.0, "ax": 0.0, "ay": 0.0}
+            for i in range(500)]
+    assert tm.check_esc_start(_write_csv(tmp_path / "x.csv", rows))[0].no_data
+
+
+# ── Pitch compensation (протокол 7.2) ────────────────────────────────────
+
+def _pitch_log(segments):
+    """segments: [(мс, pitch_deg, добавка к газу)] при стике 0.5 с пульта."""
+    rows, t = [], 0
+    stick = tm.rc_stick_command(0.5)
+    for ms, pitch, add in segments:
+        for _ in range(ms // DT_MS):
+            t += DT_MS
+            rows.append({"ts_ms": t, "rc_throttle": 0.5, "cmd_throttle": stick + add,
+                         "pitch_deg": pitch, "rc_ok": 1})
+    return rows
+
+
+def test_pitch_comp_classifies_by_nose_up(tmp_path):
+    # pitch_deg > 0 — нос вниз: −8° — подъём, +8° — спуск.
+    log = _write_csv(tmp_path / "p.csv", _pitch_log(
+        [(3000, 0.0, 0.0), (3000, -8.0, 0.12), (3000, 8.0, -0.06)]))
+    w = tm.pitch_comp_windows(log)
+    assert len(w["uphill"]) == 6 and len(w["downhill"]) == 6 and len(w["flat"]) == 6
+    assert [r.passed for r in tm.check_pitch_comp(log)] == [True, True, True]
+
+
+def test_pitch_comp_wrong_sign_fails_uphill(tmp_path):
+    # LOS-369: компенсация с неверным знаком убирает газ в гору.
+    log = _write_csv(tmp_path / "p.csv", _pitch_log([(3000, -8.0, -0.12)]))
+    res = tm.check_pitch_comp(log)
+    assert res[0].passed is False and res[1].no_data and res[2].no_data
+
+
+def test_pitch_comp_skips_saturated_throttle(tmp_path):
+    # Полный стик в гору: cmd обрезан до 1.0, добавку не измерить.
+    rows = [{"ts_ms": (i + 1) * DT_MS, "rc_throttle": 1.0, "cmd_throttle": 1.0,
+             "pitch_deg": -8.0, "rc_ok": 1} for i in range(300)]
+    log = _write_csv(tmp_path / "p.csv", rows)
+    assert tm.pitch_comp_windows(log)["uphill"] == []
+    assert tm.check_pitch_comp(log)[0].no_data
+
+
+def test_pitch_comp_skips_settling_pitch(tmp_path):
+    # Тангаж сходится к склону (Madgwick): окна с разбросом > 1° не считаются.
+    rows = _pitch_log([(3000, 0.0, 0.0)])
+    for k, r in enumerate(rows):
+        r["pitch_deg"] = -8.0 * k / len(rows)
+    assert not tm.pitch_comp_windows(_write_csv(tmp_path / "p.csv", rows))["uphill"]
+
+
+def test_rc_stick_command_matches_firmware_deadzone():
+    # ApplyRcThrottleDeadzone: 0.08 → 0, 0.5 → 0.4565, −1 → −1.
+    assert tm.rc_stick_command(0.08) == 0.0
+    assert tm.rc_stick_command(0.5) == pytest.approx(0.42 / 0.92)
+    assert tm.rc_stick_command(-1.0) == pytest.approx(-1.0)
+
+
+def test_pitch_comp_ignores_wifi_and_idle(tmp_path):
+    rows = _pitch_log([(3000, -8.0, 0.12)])
+    for r in rows[:750]:
+        r["rc_ok"] = 0
+    for r in rows[750:]:
+        r["rc_throttle"] = 0.0
+    assert tm.check_pitch_comp(_write_csv(tmp_path / "p.csv", rows))[0].no_data
+
+
+@needs_sim
+def test_pitch_comp_on_sil_climb(tmp_path):
+    """SIL: тот же подъём, что в test_pitch_comp_adds_throttle_uphill."""
+    with ClosedLoopSim(BIN, dynamic=True, sensor_noise=False, stabilize=True,
+                       pitch_comp=True) as sim:
+        sim.run(1000, rc_throttle=0.0, rc_steering=0.0)
+        flat = sim.run(2000, rc_throttle=0.5, rc_steering=0.0)
+        sim.set_slope(10.0)
+        climb = sim.run(3000, rc_throttle=0.5, rc_steering=0.0)
+    log = _write_csv(tmp_path / "sil.csv", _sil_to_log(flat + climb, rc_ok=1))
+    w = tm.pitch_comp_windows(log)
+    assert w["uphill"], "SIL-подъём не распознан по pitch_deg"
+    assert sum(w["uphill"]) / len(w["uphill"]) > tm.PITCH_UPHILL_MIN_ADD
+
+
+# ── Oversteer guard (протокол 7.3) ───────────────────────────────────────
+
+@needs_sim
+def test_oversteer_on_sil_corner(tmp_path):
+    """SIL: тот же поворот, что в test_oversteer_guard_cuts_throttle_and_slip."""
+    from simlib.closed_loop import OversteerReplayConfig
+
+    def corner(reduction):
+        with ClosedLoopSim(BIN, dynamic=True, stabilize=True, sensor_noise=False,
+                           oversteer=OversteerReplayConfig(5.0, 10.0, reduction)) as sim:
+            sim.run(2000, rc_throttle=0.5, rc_steering=0.0)
+            rows = sim.run(1500, rc_throttle=1.0, rc_steering=1.0)
+        return _write_csv(tmp_path / f"os{reduction}.csv", _sil_to_log(
+            rows, oversteer_active=lambda i, r: r["oversteer_active"],
+            slip_deg=lambda i, r: r["ekf_slip_deg"]))
+
+    guarded = tm.check_oversteer(corner(0.7))
+    assert guarded and all(r.passed for r in guarded)
+    # reduction = 0: детектор срабатывает, газ не срезан — так и должно выйти.
+    detect_only = tm.check_oversteer(corner(0.0))
+    assert detect_only and not any(r.passed for r in detect_only)
+
+
+def test_oversteer_merges_short_gaps(tmp_path):
+    rows = []
+    for i in range(600):
+        act = 1 if 100 <= i < 200 or 250 <= i < 300 or 500 <= i < 550 else 0
+        rows.append({"ts_ms": (i + 1) * DT_MS, "oversteer_active": act,
+                     "rc_throttle": 1.0, "cmd_throttle": 0.6 if act else 1.0,  # стик 1 → 1
+                     "slip_deg": 12.0 if act else 2.0})
+    eps = tm.oversteer_episodes(_write_csv(tmp_path / "o.csv", rows))
+    assert len(eps) == 2  # разрыв 100 мс склеен, 400 мс — нет
+    assert eps[0]["max_cut"] == pytest.approx(0.4)
+    assert eps[0]["max_slip_deg"] == pytest.approx(12.0)
+
+
+def test_oversteer_without_episodes(tmp_path):
+    rows = [{"ts_ms": (i + 1) * DT_MS, "oversteer_active": 0, "rc_throttle": 1.0,
+             "cmd_throttle": 1.0, "slip_deg": 1.0} for i in range(100)]
+    assert tm.check_oversteer(_write_csv(tmp_path / "o.csv", rows))[0].no_data
+
+
+# ── События RC (протокол 2.5) ────────────────────────────────────────────
+
+def _event_log(events):
+    """events: {индекс: (тип, param, v1, v2)} поверх 1000 кадров."""
+    rows = []
+    for i in range(1000):
+        ev = events.get(i, ("", "", "", ""))
+        rows.append({"ts_ms": (i + 1) * DT_MS, "throttle": 0.0,
+                     "event_type": ev[0], "event_param": ev[1],
+                     "event_value1": ev[2], "event_value2": ev[3]})
+    return rows
+
+
+def test_rc_events_pairs_loss_and_restore(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        10: ("RcRestored", "first_acquire", 0, 0),
+        100: ("RcLost", "thr=no_pulses str=no_pulses", 1500, 1500),
+        300: ("RcRestored", "", 0.4, 2),
+        500: ("RcLost", "thr=out_of_range str=ok", 2300, 1500),
+        600: ("RcRestored", "", 0.2, 0)}))
+    res = tm.check_rc_events(log)
+    assert [r.passed for r in res] == [True, True, None]
+    assert "no_pulses" in res[0].value and "0.40 с" in res[0].value
+    assert res[-1].value.startswith("2 ")
+
+
+def test_rc_events_unrestored_and_double_loss(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "thr=no_pulses str=no_pulses", 0, 0),
+        300: ("RcLost", "thr=no_pulses str=no_pulses", 0, 0)}))
+    res = tm.check_rc_events(log)
+    assert res[0].passed is False  # вторая потеря без восстановления
+    assert res[1].passed is False and "не восстановлена" in res[1].value
+
+
+def test_rc_events_split_coalesced_frame(tmp_path):
+    # Два события в одном кадре web UI склеивает через «|».
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("TestStart|RcLost", "|thr=no_pulses str=ok", "0|1500", "0|1500"),
+        300: ("RcRestored", "", 0.4, 0)}))
+    res = tm.check_rc_events(log)
+    assert [r.passed for r in res] == [True, None]
+    assert "1500/1500" in res[0].value
+
+
+def test_rc_events_incomplete_diagnostics_fail(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "", 1500, 1500),
+        300: ("RcRestored", "", 0.4, 0),
+        500: ("RcLost", "thr=no_pulses str=ok", "junk", 1500),
+        600: ("RcRestored", "", 0.2, 0)}))
+    res = tm.check_rc_events(log)
+    assert [r.passed for r in res] == [False, False, None]
+
+
+def test_rc_events_ignore_startup_without_transmitter(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        10: ("RcLost", "thr=no_pulses str=no_pulses since_boot", 0, 0),
+        50: ("RcRestored", "first_acquire", 0, 0),
+        100: ("RcLost", "thr=no_pulses str=no_pulses", 1500, 1500),
+        300: ("RcRestored", "", 0.4, 0)}))
+    res = tm.check_rc_events(log)
+    assert [r.passed for r in res] == [True, None]
+    assert res[-1].value.startswith("1 ")
+
+
+def test_rc_events_blank_cells_are_zero(tmp_path):
+    # web UI выгружает нулевые value1/value2 пустыми ячейками.
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "thr=no_pulses str=no_pulses", "", ""),
+        300: ("RcRestored", "", 0.4, "")}))
+    res = tm.check_rc_events(log)
+    assert [r.passed for r in res] == [True, None]
+    assert "0/0" in res[0].value
+
+
+def test_rc_events_only_startup_is_no_data(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        10: ("RcLost", "thr=no_pulses str=no_pulses since_boot", 0, 0),
+        50: ("RcRestored", "first_acquire", 0, 0)}))
+    res = tm.check_rc_events(log)
+    assert len(res) == 1 and res[0].no_data and res[0].passed is False
+
+
+def test_rc_events_unknown_cause_fails(tmp_path):
+    # Платформа без счётчиков декодера: причина «unknown», ширины пустые.
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "thr=unknown str=unknown", "", ""),
+        300: ("RcRestored", "", 0.4, "")}))
+    assert tm.check_rc_events(log)[0].passed is False
+
+
+def test_rc_events_blank_outage_duration_fails(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("RcLost", "thr=no_pulses str=no_pulses", "", ""),
+        300: ("RcRestored", "", "", "")}))
+    assert tm.check_rc_events(log)[0].passed is False
+
+
+def test_rc_events_without_event_columns(tmp_path):
+    rows = [{"ts_ms": (i + 1) * DT_MS, "throttle": 0.0} for i in range(10)]
+    assert tm.check_rc_events(_write_csv(tmp_path / "e.csv", rows))[0].no_data

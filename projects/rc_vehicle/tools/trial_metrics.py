@@ -18,6 +18,10 @@
   failsafe    время от пропадания источников до нейтрали (≤250 мс)
   kids        максимальные скорость и ускорение в Kids Mode
   ekf-dist    интеграл EKF speed_ms против известной дистанции (нужен --distance-m)
+  esc-start   минимальный газ старта по ступеням газа (протокол 4.2)
+  pitch-comp  добавка pitch compensation к газу в гору, под гору и на ровном (7.2)
+  oversteer   эпизоды oversteer guard: срезан ли газ, пик заноса (7.3)
+  rc-events   события RcLost/RcRestored: причины, длительности, парность (2.5)
 """
 
 from __future__ import annotations
@@ -59,6 +63,24 @@ STEP_MIN_TARGET = 0.1
 # Покой короче этого не годится для тренда bias (программа: 5-10 мин).
 MIN_REST_S = 60.0
 DRIVE_MODE_KIDS = 3  # DRIVE_MODE_NAMES в analyze_telemetry.py
+# Протокол 4.2: машина тронулась, если горизонтальное ускорение выросло на 0.03 g.
+ESC_START_ACCEL_G = 0.03
+ESC_STEP_MIN_MS = 1500.0  # ступень газа короче — не ступень (протокол: по 2 с)
+ESC_ACCEL_SMOOTH_MS = 100.0
+# Протокол 7.2: добавка с компенсацией > 0.05 в гору, < 0 под гору, < 0.02 на ровном.
+PITCH_UPHILL_MIN_ADD = 0.05
+PITCH_FLAT_MAX_ADD = 0.02
+PITCH_SLOPE_DEG = 5.0   # |тангаж| больше — склон
+PITCH_FLAT_DEG = 2.0    # |тангаж| меньше — ровно
+PITCH_WINDOW_MS = 500.0
+PITCH_MIN_STICK = 0.1
+PITCH_MAX_SPREAD_DEG = 1.0  # окно, где тангаж ещё сходится, не годится
+PITCH_CMD_SATURATED = 0.99   # cmd_throttle на упоре: добавку не измерить
+# Мёртвая зона газа RC (ApplyRcThrottleDeadzone, control_loop_helpers.hpp):
+# стик 0.5 даёт команду 0.457 ещё до стабилизации.
+RC_THROTTLE_DEADZONE = 0.08
+OVERSTEER_MIN_CUT = 0.01
+OVERSTEER_MERGE_MS = 200.0
 
 
 @dataclass(frozen=True)
@@ -78,6 +100,15 @@ def _ts(rows: list[Row]) -> list[float]:
 
 def _finite(values: list[float]) -> list[float]:
     return [v for v in values if not math.isnan(v)]
+
+
+def rc_stick_command(rc_throttle: float) -> float:
+    """Команда газа из стика RC до стабилизации (ApplyRcThrottleDeadzone)."""
+    mag = abs(rc_throttle)
+    if mag <= RC_THROTTLE_DEADZONE:
+        return 0.0
+    return math.copysign((mag - RC_THROTTLE_DEADZONE) / (1.0 - RC_THROTTLE_DEADZONE),
+                         rc_throttle)
 
 
 # ---------------------------------------------------------------------------
@@ -469,10 +500,334 @@ def check_ekf_distance(rows: list[Row], distance_m: float, tolerance: float = 0.
 
 
 # ---------------------------------------------------------------------------
+# ESC: минимальный газ старта (протокол 4.2)
+# ---------------------------------------------------------------------------
+
+def _moving_average(ts: list[float], v: list[float], window_ms: float) -> list[float]:
+    out, acc, n, j = [], 0.0, 0, 0
+    for i in range(len(v)):
+        if not math.isnan(v[i]):
+            acc += v[i]
+            n += 1
+        while ts[i] - ts[j] > window_ms:
+            if not math.isnan(v[j]):
+                acc -= v[j]
+                n -= 1
+            j += 1
+        out.append(acc / n if n else math.nan)
+    return out
+
+
+def throttle_plateaus(rows: list[Row], min_ms: float = ESC_STEP_MIN_MS,
+                      eps: float = 0.003) -> list[tuple[int, int, float]]:
+    """Ступени применённого газа: (начало, конец, газ) длительностью ≥ min_ms."""
+    ts, thr = _ts(rows), col_raw(rows, "throttle")
+    out = []
+    i = 0
+    while i < len(rows):
+        j = i
+        while j + 1 < len(rows) and abs(thr[j + 1] - thr[i]) <= eps:
+            j += 1
+        if thr[i] > eps and ts[j] - ts[i] >= min_ms:
+            out.append((i, j, thr[i]))
+        i = j + 1
+    return out
+
+
+def esc_start_threshold(rows: list[Row]) -> dict:
+    """Первая ступень газа, на которой машина тронулась.
+
+    Тронулась — пик горизонтального ускорения √(ax²+ay²), сглаженного за
+    100 мс, выше покоя (газ 0) на `ESC_START_ACCEL_G`. После калибровки покой
+    приведён к (0, 0, 1), поэтому горизонталь не зависит от того, как IMU
+    повёрнут в плоскости машины.
+    """
+    for c in ("throttle", "ax", "ay"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    ts, thr = _ts(rows), col_raw(rows, "throttle")
+    ax, ay = col_raw(rows, "ax"), col_raw(rows, "ay")
+    horiz = _moving_average(ts, [math.hypot(a, b) for a, b in zip(ax, ay)],
+                            ESC_ACCEL_SMOOTH_MS)
+    steps = throttle_plateaus(rows)
+    if not steps:
+        raise ValueError("ступеней газа ≥ 1.5 с не найдено")
+    rest = _finite([horiz[i] for i in range(steps[0][0]) if abs(thr[i]) < 1e-3])
+    if not rest:
+        raise ValueError("нет покоя (газ 0) перед первой ступенью")
+    rest.sort()
+    base = rest[len(rest) // 2]
+    table = []
+    threshold = None
+    for start, end, value in steps:
+        peak = max(_finite(horiz[start:end + 1]), default=math.nan) - base
+        table.append((value, peak))
+        if threshold is None and peak > ESC_START_ACCEL_G:
+            threshold = value
+    return {"threshold": threshold, "steps": table, "rest_g": base}
+
+
+def check_esc_start(rows: list[Row]) -> list[MetricResult]:
+    name = "ESC: газ старта"
+    try:
+        r = esc_start_threshold(rows)
+    except ValueError as exc:
+        return [MetricResult(name, False, str(exc), no_data=True)]
+    steps = ", ".join(f"{v:.2f}→{p:+.3f} g" for v, p in r["steps"])
+    if r["threshold"] is None:
+        return [MetricResult(name, False,
+                             f"не тронулась до газа {r['steps'][-1][0]:.2f} ({steps})")]
+    return [MetricResult(name, None,
+                         f"порог {r['threshold']:.2f} (прирост ускорения > "
+                         f"{ESC_START_ACCEL_G} g; ступени: {steps})")]
+
+
+# ---------------------------------------------------------------------------
+# Pitch compensation (протокол 7.2)
+# ---------------------------------------------------------------------------
+
+def pitch_comp_windows(rows: list[Row]) -> dict[str, list[float]]:
+    """Добавка компенсации к газу по окнам 500 мс.
+
+    Добавка — `cmd_throttle` минус команда стика после мёртвой зоны RC
+    (`rc_stick_command`). В Normal между ними из газовых звеньев стоят только
+    pitch compensation и oversteer guard (по умолчанию выключен), так что без
+    компенсации добавка ≈ 0. Окно попадает в «подъём»/«спуск»/«ровно» по
+    медиане `pitch_deg` (> 0 — нос вниз, stabilization_pipeline.cpp). Берутся
+    окна с газом вперёд от пульта и устоявшимся тангажем (разброс < 1°):
+    `pitch_deg` в логе — Madgwick, на разгоне он заваливается «носом вверх» и
+    сходится к склону не сразу.
+    """
+    for c in ("rc_throttle", "cmd_throttle", "pitch_deg"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    ts = _ts(rows)
+    rc, cmd = col_raw(rows, "rc_throttle"), col_raw(rows, "cmd_throttle")
+    pitch = col_raw(rows, "pitch_deg")
+    rc_ok = col_raw(rows, "rc_ok") if has_col(rows, "rc_ok") else [1.0] * len(rows)
+    out: dict[str, list[float]] = {"uphill": [], "downhill": [], "flat": []}
+    i = 0
+    while i < len(rows):
+        j = i
+        while j + 1 < len(rows) and ts[j + 1] - ts[i] < PITCH_WINDOW_MS:
+            j += 1
+        idx = [k for k in range(i, j + 1)
+               if rc_ok[k] == 1.0 and rc[k] >= PITCH_MIN_STICK
+               and not math.isnan(cmd[k]) and not math.isnan(pitch[k])]
+        if ts[j] - ts[i] >= 0.8 * PITCH_WINDOW_MS and len(idx) == j - i + 1:
+            ps = sorted(pitch[k] for k in idx)
+            # Упёрлись в полный газ — прошивка обрезала cmd до 1.0, и добавку
+            # компенсации по такому окну не измерить.
+            saturated = any(cmd[k] >= PITCH_CMD_SATURATED for k in idx)
+            if ps[-1] - ps[0] > PITCH_MAX_SPREAD_DEG or saturated:
+                i = j + 1
+                continue
+            p = ps[len(ps) // 2]
+            add = sum(cmd[k] - rc_stick_command(rc[k]) for k in idx) / len(idx)
+            nose_up = -p
+            if nose_up > PITCH_SLOPE_DEG:
+                out["uphill"].append(add)
+            elif nose_up < -PITCH_SLOPE_DEG:
+                out["downhill"].append(add)
+            elif abs(p) < PITCH_FLAT_DEG:
+                out["flat"].append(add)
+        i = j + 1
+    return out
+
+
+def check_pitch_comp(rows: list[Row]) -> list[MetricResult]:
+    name = "Pitch comp"
+    try:
+        w = pitch_comp_windows(rows)
+    except ValueError as exc:
+        return [MetricResult(name, False, str(exc), no_data=True)]
+    if not any(w.values()):
+        return [MetricResult(name, False, "НЕТ ОКОН С ГАЗОМ ВПЕРЁД ОТ ПУЛЬТА",
+                             no_data=True)]
+    out = []
+    labels = {"uphill": "в гору", "downhill": "под гору", "flat": "ровно"}
+    for key, ok, crit in (
+            ("uphill", lambda a: a > PITCH_UPHILL_MIN_ADD, f"> {PITCH_UPHILL_MIN_ADD}"),
+            ("downhill", lambda a: a < 0.0, "< 0"),
+            ("flat", lambda a: abs(a) < PITCH_FLAT_MAX_ADD, f"|·| < {PITCH_FLAT_MAX_ADD}")):
+        vals = w[key]
+        label = f"{name}: {labels[key]}"
+        if not vals:
+            out.append(MetricResult(label, False, "окон нет", no_data=True))
+            continue
+        mean_add = sum(vals) / len(vals)
+        out.append(MetricResult(
+            label, ok(mean_add),
+            f"добавка к газу {mean_add:+.3f} ({crit}), окон {len(vals)}"))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Oversteer guard (протокол 7.3)
+# ---------------------------------------------------------------------------
+
+def oversteer_episodes(rows: list[Row]) -> list[dict]:
+    """Эпизоды `oversteer_active` = 1 (разрывы < 200 мс склеиваются).
+
+    Срез газа считается как «стик после мёртвой зоны минус cmd_throttle» и
+    включает всё, что сделала стабилизация. Pitch comp тоже снижает газ, а
+    её вклад в логе не виден (тангаж TiltEstimator не пишется), поэтому
+    протокол 7.3 требует прогона с выключенной pitch comp.
+    """
+    for c in ("oversteer_active", "rc_throttle", "cmd_throttle", "slip_deg"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    ts = _ts(rows)
+    act = col_raw(rows, "oversteer_active")
+    rc, cmd = col_raw(rows, "rc_throttle"), col_raw(rows, "cmd_throttle")
+    slip = col_raw(rows, "slip_deg")
+    spans: list[list[int]] = []
+    for i, a in enumerate(act):
+        if a != 1.0:
+            continue
+        if spans and ts[i] - ts[spans[-1][1]] <= OVERSTEER_MERGE_MS:
+            spans[-1][1] = i
+        else:
+            spans.append([i, i])
+    out = []
+    for a, b in spans:
+        cuts = _finite([rc_stick_command(rc[k]) - cmd[k]
+                        for k in range(a, b + 1) if act[k] == 1.0])
+        slips = _finite([abs(slip[k]) for k in range(a, b + 1)])
+        out.append({"t_ms": ts[a], "duration_ms": ts[b] - ts[a],
+                    "max_cut": max(cuts, default=math.nan),
+                    "max_slip_deg": max(slips, default=math.nan)})
+    return out
+
+
+def check_oversteer(rows: list[Row]) -> list[MetricResult]:
+    name = "Oversteer guard"
+    try:
+        eps = oversteer_episodes(rows)
+    except ValueError as exc:
+        return [MetricResult(name, False, str(exc), no_data=True)]
+    if not eps:
+        return [MetricResult(name, False, "ЭПИЗОДОВ oversteer_active НЕТ", no_data=True)]
+    out = []
+    for n, e in enumerate(eps, 1):
+        cut = e["max_cut"]
+        out.append(MetricResult(
+            f"{name} #{n} (t={e['t_ms']:.0f} мс)",
+            not math.isnan(cut) and cut >= OVERSTEER_MIN_CUT,
+            f"газ срезан на {cut:.3f} (стик − cmd ≥ {OVERSTEER_MIN_CUT}), "
+            f"{e['duration_ms']:.0f} мс, max |slip| {e['max_slip_deg']:.1f}°"))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# События потери RC (протокол 2.5, LOS-216)
+# ---------------------------------------------------------------------------
+
+def _num(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return math.nan
+
+
+def _cell(v) -> str:
+    return "" if v is None else str(v)
+
+
+def _event_value(cells: list[str], i: int) -> float:
+    # Экспортёр web UI пишет и 0, и NaN пустой ячейкой (app.js, парсер
+    # событий), а 0 у RcLost/RcRestored штатный (нет импульсов, нет дребезга).
+    # Пустую ячейку читаем как 0; NaN остаётся только для нечислового мусора.
+    cell = cells[i].strip() if i < len(cells) else ""
+    return 0.0 if cell == "" else _num(cell)
+
+
+def rc_link_events(rows: list[Row]) -> list[dict]:
+    """События RcLost/RcRestored из колонок `event_*` (выгрузка web UI)."""
+    if not has_col(rows, "event_type"):
+        raise ValueError("нет колонки event_type (UDP-запись событий не содержит)")
+    out = []
+    for r in rows:
+        # Несколько событий одного кадра web UI склеивает через «|» по всем
+        # колонкам event_* (mergeFrameEvent в app.js) — разбираем по позициям.
+        types = _cell(r.get("event_type")).split("|")
+        params = _cell(r.get("event_param")).split("|")
+        v1s = _cell(r.get("event_value1")).split("|")
+        v2s = _cell(r.get("event_value2")).split("|")
+        for i, ev in enumerate(types):
+            if ev not in ("RcLost", "RcRestored"):
+                continue
+            out.append({"type": ev, "t_ms": _num(r.get("ts_ms")),
+                        "param": params[i] if i < len(params) else "",
+                        "v1": _event_value(v1s, i), "v2": _event_value(v2s, i)})
+    return out
+
+
+def check_rc_events(rows: list[Row]) -> list[MetricResult]:
+    name = "RC-связь"
+    try:
+        events = rc_link_events(rows)
+    except ValueError as exc:
+        return [MetricResult(name, False, str(exc), no_data=True)]
+    if not events:
+        return [MetricResult(name, False, "СОБЫТИЙ RcLost/RcRestored НЕТ", no_data=True)]
+    out = []
+    lost = None
+    n = 0
+    for e in events:
+        if e["type"] == "RcLost" and "since_boot" in e["param"]:
+            # Пульт не включён при старте: прошивка не считает это потерей
+            # (LossCount), парный RcRestored(first_acquire) тоже пропускаем.
+            continue
+        if e["type"] == "RcLost":
+            if lost is not None:
+                out.append(MetricResult(f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)",
+                                        False, "нет RcRestored до следующей потери"))
+            n += 1
+            lost = e
+            continue
+        if lost is None:
+            if e["param"] != "first_acquire":
+                out.append(MetricResult(f"{name}: RcRestored (t={e['t_ms']:.0f} мс)",
+                                        False, "без предшествующей RcLost"))
+            continue
+        # Протокол 2.5 требует причину, ширины импульсов и длительность
+        # потери: неполная диагностика — провал, а не «nan».
+        # «unknown» — платформа не отдала счётчики декодера: причины и ширин
+        # импульсов фактически нет.
+        # Длительность 0 прошивка пишет только при первом захвате; у парного
+        # восстановления пустая ячейка value1 — потерянное значение, а не 0 с.
+        complete = (bool(lost["param"]) and "unknown" not in lost["param"]
+                    and not any(math.isnan(x) for x in
+                                (lost["v1"], lost["v2"], e["v1"], e["v2"]))
+                    and e["v1"] > 0.0)
+        out.append(MetricResult(
+            f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", complete,
+            f"{lost['param'] or 'причина не указана'}, импульсы thr/str "
+            f"{lost['v1']:.0f}/{lost['v2']:.0f} мкс; восстановлена через "
+            f"{e['v1']:.2f} с, дребезг {e['v2']:.0f}"))
+        lost = None
+    if lost is not None:
+        # Восстановление и длительность потери не проверены — запись неполная.
+        out.append(MetricResult(f"{name}: потеря #{n} (t={lost['t_ms']:.0f} мс)", False,
+                                f"{lost['param']}, до конца лога не восстановлена"))
+    if n == 0:
+        # Остались только события старта без пульта: цикла потеря/восстановление
+        # в записи нет, проверять нечего.
+        out.append(MetricResult(name, False, "РЕАЛЬНЫХ ПОТЕРЬ RC НЕТ (только старт без пульта)",
+                                no_data=True))
+        return out
+    out.append(MetricResult(f"{name}: всего потерь", None,
+                            f"{n} — сверить с числом выключений пульта"))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
-METRICS = ("yaw-step", "gyro-bias", "failsafe", "kids", "ekf-dist")
+METRICS = ("yaw-step", "gyro-bias", "failsafe", "kids", "ekf-dist",
+           "esc-start", "pitch-comp", "oversteer", "rc-events")
 
 
 def run_metrics(rows: list[Row], only: list[str] | None = None,
@@ -489,6 +844,14 @@ def run_metrics(rows: list[Row], only: list[str] | None = None,
         out += check_failsafe(rows)
     if "kids" in wanted:
         out += check_kids(rows, kw.get("kids_max_speed"), kw.get("kids_max_accel"))
+    if "esc-start" in wanted:
+        out += check_esc_start(rows)
+    if "pitch-comp" in wanted:
+        out += check_pitch_comp(rows)
+    if "oversteer" in wanted:
+        out += check_oversteer(rows)
+    if "rc-events" in wanted:
+        out += check_rc_events(rows)
     if "ekf-dist" in wanted and distance_m is not None:
         out += check_ekf_distance(rows, distance_m, kw.get("tolerance", 0.05),
                                   kw.get("t_from_ms"), kw.get("t_to_ms"))
