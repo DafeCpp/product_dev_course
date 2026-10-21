@@ -131,6 +131,33 @@ def test_rest_sharply_lowered_limit_blocks_at_most_one_window(clock: _Clock) -> 
     assert limiter.check(sensor, 1) == (True, 0)
 
 
+def test_rest_retry_after_is_the_longer_wait(clock: _Clock) -> None:
+    limiter = IngestRateLimiter(
+        _config(rest_max_requests=10, rest_max_readings=100, rest_window_seconds=60.0)
+    )
+    sensor = uuid4()
+    assert all(limiter.check(sensor, 10)[0] for _ in range(10))
+
+    # Requests refill in 6 s, but 100 readings need the full 60 s.
+    allowed, retry_after = limiter.check(sensor, 100)
+    assert not allowed
+    assert retry_after == 60
+
+
+def test_ws_retry_after_is_the_longer_wait(clock: _Clock) -> None:
+    limiter = WsRateLimiter(
+        _config(ws_max_messages=10, ws_max_readings=100, ws_window_seconds=60.0)
+    )
+    sensor = uuid4()
+    assert all(limiter.check(sensor, 10) is None for _ in range(10))
+
+    hit = limiter.check(sensor, 100)
+    assert hit is not None
+    assert hit.reason == "readings"
+    assert hit.limit == 100
+    assert hit.retry_after == 60
+
+
 def test_rest_zero_means_unlimited(clock: _Clock) -> None:
     limiter = IngestRateLimiter(_config())
     sensor = uuid4()

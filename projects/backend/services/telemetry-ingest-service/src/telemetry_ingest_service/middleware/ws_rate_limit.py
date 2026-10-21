@@ -71,13 +71,15 @@ class WsRateLimiter:
         now = time.monotonic()
         buckets = self._buckets[sensor_id]
 
-        retry_after = buckets.messages.retry_after(1, now, max_messages, window)
-        if retry_after is not None:
-            return RateLimitExceeded(reason="messages", limit=max_messages, retry_after=retry_after)
+        # Check both buckets so retry_after covers the longer of the two waits.
+        messages_wait = buckets.messages.retry_after(1, now, max_messages, window)
+        readings_wait = buckets.readings.retry_after(reading_count, now, max_readings, window)
 
-        retry_after = buckets.readings.retry_after(reading_count, now, max_readings, window)
-        if retry_after is not None:
-            return RateLimitExceeded(reason="readings", limit=max_readings, retry_after=retry_after)
+        if messages_wait is not None and (readings_wait is None or messages_wait >= readings_wait):
+            return RateLimitExceeded(reason="messages", limit=max_messages, retry_after=messages_wait)
+
+        if readings_wait is not None:
+            return RateLimitExceeded(reason="readings", limit=max_readings, retry_after=readings_wait)
 
         buckets.messages.take(1, max_messages)
         buckets.readings.take(reading_count, max_readings)

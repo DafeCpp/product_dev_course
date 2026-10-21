@@ -77,28 +77,30 @@ class IngestRateLimiter:
         now = time.monotonic()
         buckets = self._buckets[sensor_id]
 
-        retry_after = buckets.requests.retry_after(1, now, max_requests, window)
-        if retry_after is not None:
+        # Check both buckets so Retry-After covers the longer of the two waits.
+        requests_wait = buckets.requests.retry_after(1, now, max_requests, window)
+        readings_wait = buckets.readings.retry_after(readings_count, now, max_readings, window)
+
+        if requests_wait is not None and (readings_wait is None or requests_wait >= readings_wait):
             logger.warning(
                 "REST ingest rate limit exceeded (requests): sensor_id=%s "
                 "limit=%d retry_after=%ds",
                 sensor_id,
                 max_requests,
-                retry_after,
+                requests_wait,
             )
-            return False, retry_after
+            return False, requests_wait
 
-        retry_after = buckets.readings.retry_after(readings_count, now, max_readings, window)
-        if retry_after is not None:
+        if readings_wait is not None:
             logger.warning(
                 "REST ingest rate limit exceeded (readings): sensor_id=%s "
                 "incoming=%d limit=%d retry_after=%ds",
                 sensor_id,
                 readings_count,
                 max_readings,
-                retry_after,
+                readings_wait,
             )
-            return False, retry_after
+            return False, readings_wait
 
         buckets.requests.take(1, max_requests)
         buckets.readings.take(readings_count, max_readings)
