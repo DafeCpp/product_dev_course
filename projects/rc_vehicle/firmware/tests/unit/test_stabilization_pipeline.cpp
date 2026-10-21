@@ -236,6 +236,7 @@ TEST_F(StabilizationPipelineTest, KidsPitchCompensationDoesNotUndoReducers) {
   input_.command = {.throttle = 0.9f, .steering = 0.0f};
   input_.slip_angle_deg = 25.0f;
   input_.forward_accel_g = 0.25f;
+  input_.speed_ms = 0.3f;  // накат ниже среза (LOS-389)
   input_.dt_ms = 0;
   const ModeTraits policy{
       .yaw_rate_active = false,
