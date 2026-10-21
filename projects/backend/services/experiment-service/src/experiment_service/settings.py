@@ -32,6 +32,8 @@ class Settings(BaseServiceSettings):
     s3_bucket: str = "artifacts"
     s3_presign_expire_seconds: int = 3600
     s3_public_endpoint_url: str = "http://localhost:9000"
+    # Create the bucket on startup. Off in tests: with no MinIO, botocore retries take ~20 s per app start.
+    s3_ensure_bucket_on_startup: bool = True
 
     # Webhooks (MVP)
     webhook_dispatch_interval_seconds: float = 0.2
