@@ -176,3 +176,8 @@
         cursor: pointer;
     }
 }
+
+// The dialog container takes focus on open only so Tab starts inside it; no ring needed.
+.modal-content:focus {
+    outline: none;
+}
