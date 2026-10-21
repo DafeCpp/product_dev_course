@@ -25,6 +25,10 @@ constexpr float kMotorSpeedTauS = 0.9f;
 // Детектор пробуксовки работает только на прямой (LOS-385): поворот Kids
 // на полном руле — около 1.2 рад/с, шум на прямой — сотые.
 constexpr float kWheelspinMaxYawRateRps = 0.3f;
+// ...и только на ровном: мотор-модель не знает про нагрузку склона, и в
+// гору колёса по ней обгоняли бы корпус и при полном сцеплении (LOS-385).
+// 3° — заведомо выше ошибки оценки тангажа на ровной площадке.
+constexpr float kWheelspinMaxPitchRad = 3.0f * kDegToRad;
 
 // Установившаяся скорость мотор-модели на газ throttle [м/с].
 float MotorModelSpeedMs(float throttle, const FilterConfig& filter) noexcept {
@@ -251,9 +255,11 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   // интеграл уходил бы вниз (в SIL до 0.09 в повороте на асфальте); занос
   // там ловит угол заноса EKF, поэтому детектор ждёт выхода на прямую. Без
   // сошедшегося TiltEstimator гравитация на склоне не снимается с
-  // продольного ускорения, и под горку корпус «отставал» бы от колёс.
+  // продольного ускорения, и под горку корпус «отставал» бы от колёс; на
+  // склоне мотор-модели не хватает нагрузки (kWheelspinMaxPitchRad).
   if (motor_model_ran && tilt_active_this_tick &&
       tilt_acquire_left_tau_ <= 0.0f &&
+      std::abs(tilt_est_.GetPitchRad()) < kWheelspinMaxPitchRad &&
       std::abs(ekf_.GetYawRate()) < kWheelspinMaxYawRateRps) {
     wheelspin_.Update(wheel_speed_ms_, wheel_target_ms, forward_accel_g,
                       dt_sec);

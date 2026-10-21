@@ -115,6 +115,21 @@ TEST_F(VehicleStateEstimatorTest, NoWheelspinWithoutTiltCompensation) {
   EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
 }
 
+// Код-ревью PR #402: мотор-модель не знает про нагрузку склона — в гору
+// колёса по ней обгоняют корпус и при полном сцеплении.
+TEST_F(VehicleStateEstimatorTest, NoWheelspinOnSlope) {
+  sensors_.imu_data.ax = -0.17364818f;  // нос вверх 10°
+  sensors_.imu_data.az = 0.98480775f;
+  for (int i = 0; i < 3100; ++i) (void)estimator_.Update(sensors_, input_);
+  input_.applied_throttle = 0.3f;
+  input_.motor_model_throttle = 0.3f;
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 250; ++i) estimate = estimator_.Update(sensors_, input_);
+
+  EXPECT_FALSE(estimate.wheels_driven);
+  EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
+}
+
 // Код-ревью PR #402: сразу после Reset() TiltEstimator держит pitch = 0, и
 // на склоне гравитация ещё в продольном ускорении — детектор ждёт.
 TEST_F(VehicleStateEstimatorTest, NoWheelspinWhileTiltAcquires) {
