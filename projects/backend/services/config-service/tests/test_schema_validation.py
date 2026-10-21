@@ -245,3 +245,21 @@ def test_dynamic_anchor_rebinding_is_preserved():
     validator = build_schema_validator(schema)
     assert validator.is_valid({'children': [{'data': 1}]})
     assert not validator.is_valid({'children': [{'extra': 1}]})
+
+
+@pytest.mark.parametrize('keyword', ['type', 'disallow', 'extends'])
+def test_draft3_pointer_enters_legacy_schema_positions(keyword):
+    from config_service.services.schema_validation import build_schema_validator
+    child = {'id': 'dir/', 'extends': {'$ref': 'target'}}
+    union = {keyword: child if keyword == 'extends' else [child]}
+    suffix = '' if keyword == 'extends' else '/0'
+    schema = {
+        '$schema': 'http://json-schema.org/draft-03/schema#',
+        'id': 'https://example.com/root',
+        '$ref': f'#/definitions/u/{keyword}{suffix}',
+        'definitions': {'u': union},
+        'properties': {'target': {'id': 'dir/target', 'type': 'string'}},
+    }
+    validator = build_schema_validator(schema)
+    assert validator.is_valid('text')
+    assert not validator.is_valid(42)
