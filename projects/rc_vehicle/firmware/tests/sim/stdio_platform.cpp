@@ -76,7 +76,8 @@ std::string OutputHeader() {
          "kids_speed_limit_active,kids_limiters_enabled,"
          "forward_accel,test_active,kids_wheelspin_active,"
          "kids_wheel_slip_ratio,kids_grip_steer_limit_active,ekf_grip_lost,"
-         "com_calib_active,com_offset_rx,com_offset_ry";
+         "com_calib_active,com_offset_rx,com_offset_ry,"
+         "imu_ax,imu_ay,imu_az,imu_gx,imu_gy,imu_gz";
 }
 
 std::string FormatOutputLine(const TelemetrySnapshot& s, float throttle,
@@ -104,7 +105,9 @@ std::string FormatOutputLine(const TelemetrySnapshot& s, float throttle,
      << s.kids_wheel_slip_ratio << ','
      << (s.kids_grip_steer_limit_active ? 1 : 0) << ','
      << (s.ekf_grip_lost ? 1 : 0) << ',' << (com_calib_active ? 1 : 0) << ','
-     << s.calib_data.com_offset[0] << ',' << s.calib_data.com_offset[1];
+     << s.calib_data.com_offset[0] << ',' << s.calib_data.com_offset[1] << ','
+     << s.imu_data.ax << ',' << s.imu_data.ay << ',' << s.imu_data.az << ','
+     << s.imu_data.gx << ',' << s.imu_data.gy << ',' << s.imu_data.gz;
   return os.str();
 }
 

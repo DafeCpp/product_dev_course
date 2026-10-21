@@ -22,11 +22,18 @@
   pitch-comp  добавка pitch compensation к газу в гору, под гору и на ровном (7.2)
   oversteer   эпизоды oversteer guard: срезан ли газ, пик заноса (7.3)
   rc-events   события RcLost/RcRestored: причины, длительности, парность (2.5)
+  com-offset  итог калибровки CoM и остаточное смещение по кругам CW и CCW (7.6)
+  madgwick-beta  схождение pitch/roll в покое (запаздывание), крен в повороте (7.7)
+  lpf         подавление yaw rate выше 10 Гц и шаг yaw rate против эталона (7.8)
+
+--baseline other.csv добавляет лог для сравнения: до калибровки CoM, с другим β,
+с cutoff 30 Гц.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import sys
@@ -40,6 +47,7 @@ from analyze_telemetry import (  # noqa: E402
     detect_stationary_mask,
     has_col,
     load_csv,
+    sample_rate_hz,
 )
 
 G = 9.80665
@@ -81,6 +89,24 @@ PITCH_CMD_SATURATED = 0.99   # cmd_throttle на упоре: добавку не
 RC_THROTTLE_DEADZONE = 0.08
 OVERSTEER_MIN_CUT = 0.01
 OVERSTEER_MERGE_MS = 200.0
+
+COM_MIN_RATE_DPS = 30.0
+COM_SETTLE_MS = 3000.0    # начало круга — разгон, продольное ускорение сдвигает rx
+COM_MIN_TURN_MS = 2000.0  # установившегося круга в каждую сторону
+COM_RESIDUAL_LIMIT_M = 0.05
+COM_OFFSET_LIMIT_M = 0.3  # протокол 7.6
+
+TILT_OK_DEG = 1.0
+TILT_MIN_REST_MS = 2000.0
+TILT_FINAL_MS = 500.0
+TILT_TURN_RATE_DPS = 30.0
+
+LPF_BAND_HZ = 10.0
+LPF_NPERSEG = 256
+LPF_FIT_SMOOTH_MS = 250.0
+LPF_FIT_MIN_CORR = 0.95
+LPF_OVERSHOOT_TOL = 0.05     # доля уставки
+LPF_SETTLING_TOL_MS = 20.0   # два отсчёта лога 100 Гц
 
 
 @dataclass(frozen=True)
@@ -204,33 +230,22 @@ def yaw_step_response(rows: list[Row], start: int, window_ms: float = 1000.0,
             "settling_ms": settling, "t0_ms": t0}
 
 
-def check_yaw_step(rows: list[Row], gain_dps: float | None = None
-                   ) -> list[MetricResult]:
-    """Overshoot/settling для каждого шага руля из `rc_steering`.
+def yaw_step_responses(rows: list[Row], gain_dps: float | None = None
+                       ) -> list[tuple[int, dict | str]]:
+    """(начало шага, отклик или причина пропуска) для каждого шага руля.
 
     `gain_dps=None` — уставка Normal-режима (90 °/с на единицу руля); в логе с
     колонкой `drive_mode` шаги в других режимах пропускаются: их коэффициент
     другой, его задают явно через `--gain-dps`.
     """
-    name = "Yaw PID step"
-    if not has_col(rows, "yaw_rate_dps"):
-        return [MetricResult(name, False, "НЕТ КОЛОНКИ yaw_rate_dps", no_data=True)]
     steps = find_steering_steps(rows)
-    if not steps:
-        return [MetricResult(
-            name, False,
-            "ШАГ РУЛЯ НЕ НАЙДЕН (в лог пишется только команда с пульта RC; при "
-            "управлении по Wi-Fi её нет)", no_data=True)]
     ts = _ts(rows)
     mode = col_raw(rows, "drive_mode") if has_col(rows, "drive_mode") else None
-    out = []
+    out: list[tuple[int, dict | str]] = []
     for n, start in enumerate(steps, 1):
-        label = f"{name} #{n} (t={ts[start]:.0f} мс)"
         if gain_dps is None and mode is not None and mode[start + 1] != 0:
-            out.append(MetricResult(
-                label, None,
-                f"режим {mode[start + 1]:.0f} не Normal: уставка не 90 °/с, "
-                "задайте --gain-dps", no_data=True))
+            out.append((start, (f"режим {mode[start + 1]:.0f} не Normal: "
+                                "уставка не 90 °/с, задайте --gain-dps")))
             continue
         gain = NORMAL_STEER_TO_YAW_DPS if gain_dps is None else gain_dps
         # Окно кончается на следующем шаге, чтобы не мерить чужой переходный процесс.
@@ -238,9 +253,31 @@ def check_yaw_step(rows: list[Row], gain_dps: float | None = None
         if n < len(steps):
             window = min(window, ts[steps[n]] - ts[start])
         try:
-            r = yaw_step_response(rows, start, window_ms=window, gain_dps=gain)
+            out.append((start, yaw_step_response(rows, start, window_ms=window,
+                                                 gain_dps=gain)))
         except ValueError as exc:
-            out.append(MetricResult(label, None, str(exc), no_data=True))
+            out.append((start, str(exc)))
+    return out
+
+
+def check_yaw_step(rows: list[Row], gain_dps: float | None = None
+                   ) -> list[MetricResult]:
+    """Overshoot/settling для каждого шага руля из `rc_steering`."""
+    name = "Yaw PID step"
+    if not has_col(rows, "yaw_rate_dps"):
+        return [MetricResult(name, False, "НЕТ КОЛОНКИ yaw_rate_dps", no_data=True)]
+    responses = yaw_step_responses(rows, gain_dps)
+    if not responses:
+        return [MetricResult(
+            name, False,
+            "ШАГ РУЛЯ НЕ НАЙДЕН (в лог пишется только команда с пульта RC; при "
+            "управлении по Wi-Fi её нет)", no_data=True)]
+    ts = _ts(rows)
+    out = []
+    for n, (start, r) in enumerate(responses, 1):
+        label = f"{name} #{n} (t={ts[start]:.0f} мс)"
+        if isinstance(r, str):
+            out.append(MetricResult(label, None, r, no_data=True))
             continue
         ok_over = r["overshoot"] < YAW_OVERSHOOT_LIMIT
         ok_settle = r["settling_ms"] < YAW_SETTLING_LIMIT_MS
@@ -736,14 +773,15 @@ def _cell(v) -> str:
 
 def _event_value(cells: list[str], i: int) -> float:
     # Экспортёр web UI пишет и 0, и NaN пустой ячейкой (app.js, парсер
-    # событий), а 0 у RcLost/RcRestored штатный (нет импульсов, нет дребезга).
+    # событий), а 0 штатный (у RcLost/RcRestored — нет импульсов, нет
+    # дребезга; у ComCalibDone — нулевое смещение).
     # Пустую ячейку читаем как 0; NaN остаётся только для нечислового мусора.
     cell = cells[i].strip() if i < len(cells) else ""
     return 0.0 if cell == "" else _num(cell)
 
 
-def rc_link_events(rows: list[Row]) -> list[dict]:
-    """События RcLost/RcRestored из колонок `event_*` (выгрузка web UI)."""
+def log_events(rows: list[Row]) -> list[dict]:
+    """События из колонок `event_*` (выгрузка web UI)."""
     if not has_col(rows, "event_type"):
         raise ValueError("нет колонки event_type (UDP-запись событий не содержит)")
     out = []
@@ -755,12 +793,17 @@ def rc_link_events(rows: list[Row]) -> list[dict]:
         v1s = _cell(r.get("event_value1")).split("|")
         v2s = _cell(r.get("event_value2")).split("|")
         for i, ev in enumerate(types):
-            if ev not in ("RcLost", "RcRestored"):
+            if not ev:
                 continue
             out.append({"type": ev, "t_ms": _num(r.get("ts_ms")),
                         "param": params[i] if i < len(params) else "",
                         "v1": _event_value(v1s, i), "v2": _event_value(v2s, i)})
     return out
+
+
+def rc_link_events(rows: list[Row]) -> list[dict]:
+    """События RcLost/RcRestored."""
+    return [e for e in log_events(rows) if e["type"] in ("RcLost", "RcRestored")]
 
 
 def check_rc_events(rows: list[Row]) -> list[MetricResult]:
@@ -823,11 +866,442 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
 
 
 # ---------------------------------------------------------------------------
+# Снапшоты конфигурации и события калибровок (выгрузка web UI)
+# ---------------------------------------------------------------------------
+
+def config_values(rows: list[Row], key: str) -> list[float]:
+    """Значения поля `filter.<key>` из снапшотов `event_config`, по порядку.
+
+    Web UI пишет снапшоты конфигурации стабилизации JSON-массивом в колонку
+    `event_config` (parseConfigSnapshot в app.js): первый — на старте лога,
+    дальше — при каждом изменении. Подряд идущие одинаковые значения
+    склеиваются.
+    """
+    out: list[float] = []
+    for r in rows:
+        cell = _cell(r.get("event_config")).strip()
+        if not cell:
+            continue
+        try:
+            configs = json.loads(cell)
+        except ValueError:
+            continue
+        for cfg in configs if isinstance(configs, list) else []:
+            v = cfg.get("filter", {}).get(key) if isinstance(cfg, dict) else None
+            if v is None:
+                continue
+            v = float(v)
+            if not out or out[-1] != v:
+                out.append(v)
+    return out
+
+
+def _config_note(rows: list[Row], key: str, label: str, unit: str = "") -> str:
+    vals = config_values(rows, key)
+    if not vals:
+        return f"{label} в логе нет"
+    return f"{label} " + " → ".join(f"{v:g}" for v in vals) + unit
+
+
+# ---------------------------------------------------------------------------
+# CoM offset: остаточное смещение по кругам CW и CCW (протокол 7.6)
+# ---------------------------------------------------------------------------
+
+def com_residual(rows: list[Row]) -> dict:
+    """Остаточное смещение IMU от центра масс по установившимся кругам.
+
+    В логе `ax`/`ay` уже исправлены на сохранённый offset (CorrectForComOffset),
+    поэтому на круге они = центростремительное ускорение ЦМ − ω²·r_ост. Как
+    и в ComOffsetCalibration, круги в обе стороны: центростремительное
+    меняет знак, а −ω²·r_ост нет, и r_ост = −(a_CW/ω²_CW + a_CCW/ω²_CCW)/2.
+    Берётся `yaw_rate_dps` ≥ 30 °/с одного знака после 3 с поворота: в начале
+    круга машина ещё разгоняется, и продольное ускорение сдвигает rx.
+    Подходит лог самой калибровки CoM (она едет CW и CCW) или два круга с
+    пульта с одинаковыми газом и рулём.
+    """
+    for c in ("ax", "ay", "yaw_rate_dps"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    ts = _ts(rows)
+    ax, ay = col_raw(rows, "ax"), col_raw(rows, "ay")
+    rate = col_raw(rows, "yaw_rate_dps")
+    slip = col_raw(rows, "slip_deg") if has_col(rows, "slip_deg") else None
+    acc: dict[int, dict[str, list[float]]] = {
+        s: {"ax": [], "ay": [], "w2": [], "slip": []} for s in (1, -1)}
+    turn_start, prev = 0.0, 0
+    for i in range(len(rows)):
+        r = rate[i]
+        s = 0 if math.isnan(r) or abs(r) < COM_MIN_RATE_DPS else (1 if r > 0 else -1)
+        if s != prev:
+            turn_start, prev = ts[i], s
+        if not s or ts[i] - turn_start < COM_SETTLE_MS:
+            continue
+        if math.isnan(ax[i]) or math.isnan(ay[i]):
+            continue
+        w = math.radians(r)
+        acc[s]["ax"].append(ax[i] * G)
+        acc[s]["ay"].append(ay[i] * G)
+        acc[s]["w2"].append(w * w)
+        if slip is not None and not math.isnan(slip[i]):
+            acc[s]["slip"].append(abs(slip[i]))
+    hz = sample_rate_hz(rows)
+    dt = 1000.0 / hz if hz > 0 else 0.0
+    for s, label in ((1, "влево (CCW)"), (-1, "вправо (CW)")):
+        if len(acc[s]["w2"]) * dt < COM_MIN_TURN_MS:
+            raise ValueError(
+                f"нет установившегося круга {label}: нужно ≥ "
+                f"{COM_MIN_TURN_MS / 1000:.0f} с с |yaw rate| ≥ "
+                f"{COM_MIN_RATE_DPS:.0f} °/с после первых "
+                f"{COM_SETTLE_MS / 1000:.0f} с поворота")
+
+    def mean(v: list[float]) -> float:
+        return sum(v) / len(v)
+
+    def sem(v: list[float]) -> float:
+        if len(v) < 2:
+            return math.nan
+        m = mean(v)
+        return math.sqrt(sum((x - m) ** 2 for x in v) / (len(v) - 1) / len(v))
+
+    per = {s: (mean(a["ax"]) / mean(a["w2"]), mean(a["ay"]) / mean(a["w2"]))
+           for s, a in acc.items()}
+    # Тряска на круге — десятые g: на логе 100 Гц это сантиметры в r.
+    err = {k: math.hypot(*(sem(acc[s][k]) / mean(acc[s]["w2"]) for s in (1, -1))) / 2
+           for k in ("ax", "ay")}
+    slips = sorted(acc[1]["slip"] + acc[-1]["slip"])
+    return {"rx": -(per[1][0] + per[-1][0]) / 2,
+            "ry": -(per[1][1] + per[-1][1]) / 2,
+            "rx_err": err["ax"], "ry_err": err["ay"],
+            "rate_dps": {s: math.degrees(math.sqrt(mean(a["w2"])))
+                         for s, a in acc.items()},
+            "median_slip_deg": slips[len(slips) // 2] if slips else math.nan}
+
+
+def com_calib_events(rows: list[Row]) -> list[dict]:
+    """Итоги ComCalibDone/ComCalibFailed; rx/ry — в value1/value2 (LOS-382)."""
+    return [e for e in log_events(rows) if e["type"] in ("ComCalibDone", "ComCalibFailed")]
+
+
+def _com_residual_line(name: str, rows: list[Row], judge: bool) -> MetricResult:
+    try:
+        r = com_residual(rows)
+    except ValueError as exc:
+        return MetricResult(name, False, str(exc), no_data=True)
+    norm = math.hypot(r["rx"], r["ry"])
+    ok = norm <= COM_RESIDUAL_LIMIT_M
+    slip = r["median_slip_deg"]
+    return MetricResult(
+        name, ok if judge else None,
+        f"rx {r['rx']:+.3f} ± {r['rx_err']:.3f} м, ry {r['ry']:+.3f} ± "
+        f"{r['ry_err']:.3f} м (|r| {norm:.3f} м"
+        + (f", ≤ {COM_RESIDUAL_LIMIT_M} м{'' if ok else ', НЕ ВЫПОЛНЕНО'}" if judge else "")
+        + f"); круги {r['rate_dps'][1]:.0f}/{r['rate_dps'][-1]:.0f} °/с, "
+        f"медиана |slip| {slip:.2f}°")
+
+
+def check_com_offset(rows: list[Row], baseline: list[Row] | None = None
+                     ) -> list[MetricResult]:
+    name = "CoM offset"
+    out = []
+    try:
+        events = com_calib_events(rows)
+    except ValueError as exc:
+        events, why = [], str(exc)
+    else:
+        why = "событий ComCalibDone/ComCalibFailed нет: нужен лог самой калибровки"
+    if not events:
+        out.append(MetricResult(f"{name}: калибровка", False, why, no_data=True))
+    for n, e in enumerate(events, 1):
+        label = f"{name}: калибровка #{n} (t={e['t_ms']:.0f} мс)"
+        if e["type"] == "ComCalibFailed":
+            out.append(MetricResult(label, False, "failed"))
+            continue
+        ok = abs(e["v1"]) <= COM_OFFSET_LIMIT_M and abs(e["v2"]) <= COM_OFFSET_LIMIT_M
+        out.append(MetricResult(
+            label, ok, f"valid, rx {e['v1']:+.3f} м, ry {e['v2']:+.3f} м "
+            f"(|·| ≤ {COM_OFFSET_LIMIT_M} м{'' if ok else ', НЕ ВЫПОЛНЕНО'})"))
+    if baseline is not None:
+        out.append(_com_residual_line(f"{name}: до калибровки (--baseline)",
+                                      baseline, judge=False))
+    out.append(_com_residual_line(f"{name}: остаточное смещение", rows,
+                                  judge=True))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Madgwick β: запаздывание и ложный наклон (протокол 7.7)
+# ---------------------------------------------------------------------------
+
+def tilt_errors(rows: list[Row]) -> dict:
+    """Схождение pitch/roll Madgwick в покое и крен в повороте.
+
+    Опора — сам Madgwick в конце покоя (среднее за последние 500 мс): к этому
+    моменту он сходится к наклону площадки, а сравнивать с `ax/ay/az` нельзя —
+    они в СК датчика, а `pitch_deg`/`roll_deg` в СК машины, и при наклонном
+    монтаже IMU разница была бы постоянной. Расхождение в начале покоя — то,
+    что Madgwick не догнал: малый β медленно сходится после склона или
+    манёвра, большой успевает, но сильнее уводится манёвром (это видно по
+    крену в повороте на ровном). Покой короче 2 с не годится: опоры нет.
+
+    Опора по хвосту честная, потому что Madgwick нормирует градиент: в покое
+    угол идёт к наклону по акселерометру со скоростью ~2β рад/с (5.7 °/с при
+    β = 0.05), сколько бы ни осталось, и не застывает в стороне. Хвост, что
+    ещё ползёт (размах > 0.25° за 500 мс, т. е. > 0.5 °/с), — «не сошёлся».
+    """
+    for c in ("pitch_deg", "roll_deg"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    ts = _ts(rows)
+    pitch, roll = col_raw(rows, "pitch_deg"), col_raw(rows, "roll_deg")
+    mask = detect_stationary_mask(rows)
+    max_err, settle, rests = math.nan, 0.0, 0
+    i = 0
+    while i < len(rows):
+        if not mask[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(rows) and mask[j + 1]:
+            j += 1
+        seg = [k for k in range(i, j + 1)
+               if not math.isnan(pitch[k]) and not math.isnan(roll[k])]
+        if not seg or ts[seg[-1]] - ts[seg[0]] < TILT_MIN_REST_MS:
+            i = j + 1
+            continue
+        rests += 1
+        tail = [k for k in seg if ts[seg[-1]] - ts[k] < TILT_FINAL_MS]
+        ref_p = sum(pitch[k] for k in tail) / len(tail)
+        ref_r = sum(roll[k] for k in tail) / len(tail)
+        err = {k: max(abs(pitch[k] - ref_p), abs(roll[k] - ref_r)) for k in seg}
+        max_err = max(err.values()) if math.isnan(max_err) else max(
+            max_err, *err.values())
+        over = [k for k in seg if err[k] > TILT_OK_DEG]
+        tail_p, tail_r = [pitch[k] for k in tail], [roll[k] for k in tail]
+        if max(max(tail_p) - min(tail_p), max(tail_r) - min(tail_r)) > TILT_OK_DEG / 4:
+            settle = math.inf  # ещё сходится в конце покоя: опора не годится
+        elif over:
+            settle = max(settle, ts[over[-1]] - ts[i])
+        i = j + 1
+    turn_roll: list[float] = []
+    if has_col(rows, "yaw_rate_dps"):
+        rate = col_raw(rows, "yaw_rate_dps")
+        turn_roll = sorted(abs(roll[k]) for k in range(len(rows))
+                           if abs(rate[k]) >= TILT_TURN_RATE_DPS
+                           and not math.isnan(roll[k]))
+    return {"rests": rests, "max_err_deg": max_err, "settle_ms": settle,
+            "turn_roll_p95_deg": turn_roll[int(0.95 * (len(turn_roll) - 1))]
+            if turn_roll else math.nan}
+
+
+def _tilt_lines(name: str, rows: list[Row]) -> list[MetricResult]:
+    note = _config_note(rows, "madgwick_beta", "β")
+    adaptive = config_values(rows, "adaptive_beta_enabled")
+    if any(adaptive):
+        note += " (adaptive β включён: на манёвре β обнуляется, выключите)"
+    try:
+        t = tilt_errors(rows)
+    except ValueError as exc:
+        return [MetricResult(name, False, str(exc), no_data=True)]
+    out = []
+    if t["rests"]:
+        settle = ("не сошёлся до конца покоя, нужен покой дольше"
+                  if math.isinf(t["settle_ms"])
+                  else f"сходится за {t['settle_ms']:.0f} мс")
+        out.append(MetricResult(
+            f"{name}: в покое", None,
+            f"{note}; в начале покоя pitch/roll дальше от установившихся на "
+            f"{t['max_err_deg']:.1f}°, {settle} (до {TILT_OK_DEG:.0f}°), "
+            f"участков покоя {t['rests']}"))
+    else:
+        out.append(MetricResult(
+            f"{name}: в покое", False,
+            f"{note}; покоя ≥ {TILT_MIN_REST_MS / 1000:.0f} с нет", no_data=True))
+    if math.isnan(t["turn_roll_p95_deg"]):
+        out.append(MetricResult(f"{name}: в повороте", False,
+                                f"поворотов ≥ {TILT_TURN_RATE_DPS:.0f} °/с нет",
+                                no_data=True))
+    else:
+        out.append(MetricResult(
+            f"{name}: в повороте", None,
+            f"крен Madgwick (p95) {t['turn_roll_p95_deg']:.1f}° при |yaw rate| ≥ "
+            f"{TILT_TURN_RATE_DPS:.0f} °/с — на ровном это ложный наклон"))
+    return out
+
+
+def check_madgwick_beta(rows: list[Row], baseline: list[Row] | None = None
+                        ) -> list[MetricResult]:
+    out = []
+    if baseline is not None:
+        out += _tilt_lines("Madgwick β (--baseline)", baseline)
+    return out + _tilt_lines("Madgwick β", rows)
+
+
+# ---------------------------------------------------------------------------
+# LPF gz: подавление вибрации и шаг yaw rate (протокол 7.8)
+# ---------------------------------------------------------------------------
+
+def _fft(x: list[complex]) -> list[complex]:
+    n = len(x)
+    if n == 1:
+        return list(x)
+    even, odd = _fft(x[0::2]), _fft(x[1::2])
+    out = [0j] * n
+    for k in range(n // 2):
+        t = complex(math.cos(-2 * math.pi * k / n), math.sin(-2 * math.pi * k / n)) * odd[k]
+        out[k] = even[k] + t
+        out[k + n // 2] = even[k] - t
+    return out
+
+
+def band_power(values: list[float], ts: list[float], rate_hz: float,
+               f_lo_hz: float, nperseg: int = LPF_NPERSEG) -> float:
+    """Мощность выше `f_lo_hz` по Уэлчу: окна Ханна, перекрытие 50 %.
+
+    Окна с NaN или с неровным шагом `ts` (в логах PSRAM бывают задержки
+    записи) пропускаются: скачок на стыке дал бы ложную мощность на всех
+    частотах. Абсолютный масштаб не нужен — сравниваются сигналы одного лога.
+    """
+    if len(values) < nperseg:
+        raise ValueError(f"лог короче {nperseg} отсчётов")
+    step = 1000.0 / rate_hz
+    even = [0.5 * step <= b - a <= 1.5 * step for a, b in zip(ts, ts[1:])]
+    win = [0.5 - 0.5 * math.cos(2 * math.pi * k / nperseg) for k in range(nperseg)]
+    k_lo = math.ceil(f_lo_hz * nperseg / rate_hz)
+    total, segs = 0.0, 0
+    for s in range(0, len(values) - nperseg + 1, nperseg // 2):
+        seg = values[s:s + nperseg]
+        if any(math.isnan(v) for v in seg) or not all(even[s:s + nperseg - 1]):
+            continue
+        mean = sum(seg) / nperseg
+        spec = _fft([complex((v - mean) * w) for v, w in zip(seg, win)])
+        total += sum(abs(spec[k]) ** 2 for k in range(k_lo, nperseg // 2 + 1))
+        segs += 1
+    if not segs:
+        raise ValueError(f"нет окна в {nperseg} отсчётов без пропусков и "
+                         "задержек записи")
+    return total / segs
+
+
+def raw_vehicle_yaw_rate(rows: list[Row]) -> list[float]:
+    """Yaw rate машины до LPF из `gx/gy/gz` датчика.
+
+    `yaw_rate_dps` — проекция гироскопа на вертикаль машины (gravity_vec
+    калибровки), и уже потом LPF; `gz` — ось датчика, при наклонном монтаже
+    в неё подмешаны крен и тангаж. Вертикали в логе нет, поэтому она
+    оценивается по медленной части (скользящее среднее 250 мс, где LPF ≥ 5 Гц
+    почти не влияет): yaw_rate_dps ≈ u·g, |u| = 1. При поворотах медленный
+    вектор гироскопа лежит вдоль u, и u — нормированная взаимная корреляция
+    Σ g·yaw_rate_dps; свободный МНК тут вырожден (gx, gy, gz коллинеарны).
+    Если проекция плохо повторяет yaw_rate_dps, оси нет.
+    """
+    axes = [c for c in ("gx", "gy", "gz") if has_col(rows, c)]
+    if "gz" not in axes or not has_col(rows, "yaw_rate_dps"):
+        raise ValueError("нет колонок gz и yaw_rate_dps")
+    ts = _ts(rows)
+    raw = [col_raw(rows, c) for c in axes]
+    yaw = col_raw(rows, "yaw_rate_dps")
+    slow = [_moving_average(ts, v, LPF_FIT_SMOOTH_MS) for v in raw]
+    slow_yaw = _moving_average(ts, yaw, LPF_FIT_SMOOTH_MS)
+    idx = [k for k in range(len(rows))
+           if not math.isnan(slow_yaw[k]) and not any(math.isnan(v[k]) for v in slow)]
+    b = [sum(v[k] * slow_yaw[k] for k in idx) for v in slow]
+    norm = math.hypot(*b)
+    proj = [sum(bi * v[k] for bi, v in zip(b, slow)) / norm if norm else 0.0
+            for k in idx]
+    yy = sum(slow_yaw[k] ** 2 for k in idx)
+    pp = sum(p * p for p in proj)
+    corr = (sum(p * slow_yaw[k] for p, k in zip(proj, idx)) / math.sqrt(yy * pp)
+            if yy > 0 and pp > 0 else 0.0)
+    if corr < LPF_FIT_MIN_CORR:
+        raise ValueError(f"ось yaw не найдена: в логе мало поворотов "
+                         f"(корреляция {corr:.2f} < {LPF_FIT_MIN_CORR})")
+    u = [bi / norm for bi in b]
+    return [sum(w * v[k] for w, v in zip(u, raw)) for k in range(len(rows))]
+
+
+def lpf_attenuation_db(rows: list[Row]) -> float:
+    """Во сколько `yaw_rate_dps` тише yaw rate до LPF выше 10 Гц, дБ."""
+    for c in ("gz", "yaw_rate_dps"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    rate = sample_rate_hz(rows)
+    if rate <= 2 * LPF_BAND_HZ:
+        raise ValueError(f"частота лога {rate:.0f} Гц: выше {LPF_BAND_HZ:.0f} Гц "
+                         "спектра нет")
+    ts = _ts(rows)
+    raw = band_power(raw_vehicle_yaw_rate(rows), ts, rate, LPF_BAND_HZ)
+    filt = band_power(col_raw(rows, "yaw_rate_dps"), ts, rate, LPF_BAND_HZ)
+    if raw <= 0.0:
+        raise ValueError(f"в сыром gz нет мощности выше {LPF_BAND_HZ:.0f} Гц")
+    return 10.0 * math.log10(max(filt, 1e-30) / raw)
+
+
+def yaw_step_summary(rows: list[Row], gain_dps: float | None = None) -> dict:
+    """Худшие overshoot и settling по шагам руля в Normal: среднее или
+    медиана спрятали бы один раскачавшийся шаг."""
+    if not has_col(rows, "yaw_rate_dps"):
+        raise ValueError("нет колонки yaw_rate_dps")
+    over, settle = [], []
+    for _, r in yaw_step_responses(rows, gain_dps):
+        if isinstance(r, dict):
+            over.append(r["overshoot"])
+            settle.append(r["settling_ms"])
+    if not over:
+        raise ValueError("шагов руля в Normal нет")
+    return {"steps": len(over), "overshoot": max(over),
+            "settling_ms": max(settle)}
+
+
+def check_lpf(rows: list[Row], baseline: list[Row] | None = None,
+              gain_dps: float | None = None) -> list[MetricResult]:
+    name = "LPF gz"
+    out = []
+    for label, log in ((f"{name} (--baseline)", baseline), (name, rows)):
+        if log is None:
+            continue
+        note = _config_note(log, "lpf_cutoff_hz", "cutoff", " Гц")
+        try:
+            db = lpf_attenuation_db(log)
+        except ValueError as exc:
+            out.append(MetricResult(f"{label}: вибрация", False, f"{note}; {exc}",
+                                    no_data=True))
+            continue
+        out.append(MetricResult(
+            f"{label}: вибрация", None,
+            f"{note}; мощность yaw_rate_dps выше {LPF_BAND_HZ:.0f} Гц "
+            f"относительно yaw rate до LPF {db:+.1f} дБ"))
+    try:
+        cur = yaw_step_summary(rows, gain_dps)
+    except ValueError as exc:
+        return out + [MetricResult(f"{name}: шаг yaw rate", False, str(exc),
+                                   no_data=True)]
+    text = (f"худшие overshoot {cur['overshoot'] * 100:.1f} %, settling "
+            f"{cur['settling_ms']:.0f} мс (шагов {cur['steps']})")
+    if baseline is None:
+        return out + [MetricResult(f"{name}: шаг yaw rate", None,
+                                   text + "; эталон 30 Гц — через --baseline")]
+    try:
+        base = yaw_step_summary(baseline, gain_dps)
+    except ValueError as exc:
+        return out + [MetricResult(f"{name}: шаг yaw rate", False,
+                                   f"{text}; эталон: {exc}", no_data=True)]
+    ok_over = cur["overshoot"] <= base["overshoot"] + LPF_OVERSHOOT_TOL
+    ok_settle = cur["settling_ms"] <= base["settling_ms"] + LPF_SETTLING_TOL_MS
+    return out + [MetricResult(
+        f"{name}: шаг yaw rate против эталона", ok_over and ok_settle,
+        f"{text}; эталон {base['overshoot'] * 100:.1f} %, "
+        f"{base['settling_ms']:.0f} мс (не хуже на {LPF_OVERSHOOT_TOL * 100:.0f} п.п. "
+        f"и {LPF_SETTLING_TOL_MS:.0f} мс"
+        f"{'' if ok_over and ok_settle else ', НЕ ВЫПОЛНЕНО'})")]
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 METRICS = ("yaw-step", "gyro-bias", "failsafe", "kids", "ekf-dist",
-           "esc-start", "pitch-comp", "oversteer", "rc-events")
+           "esc-start", "pitch-comp", "oversteer", "rc-events", "com-offset",
+           "madgwick-beta", "lpf")
 
 
 def run_metrics(rows: list[Row], only: list[str] | None = None,
@@ -852,6 +1326,13 @@ def run_metrics(rows: list[Row], only: list[str] | None = None,
         out += check_oversteer(rows)
     if "rc-events" in wanted:
         out += check_rc_events(rows)
+    baseline = kw.get("baseline")
+    if "com-offset" in wanted:
+        out += check_com_offset(rows, baseline)
+    if "madgwick-beta" in wanted:
+        out += check_madgwick_beta(rows, baseline)
+    if "lpf" in wanted:
+        out += check_lpf(rows, baseline, kw.get("gain_dps"))
     if "ekf-dist" in wanted and distance_m is not None:
         out += check_ekf_distance(rows, distance_m, kw.get("tolerance", 0.05),
                                   kw.get("t_from_ms"), kw.get("t_to_ms"))
@@ -890,26 +1371,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          f"(по умолчанию {MIN_REST_S:.0f})")
     ap.add_argument("--kids-max-speed", type=float, help="лимит скорости Kids, м/с")
     ap.add_argument("--kids-max-accel", type=float, help="лимит ускорения Kids, м/с²")
+    ap.add_argument("--baseline", metavar="CSV",
+                    help="лог для сравнения: до калибровки (com-offset), другой β "
+                         "(madgwick-beta), cutoff 30 Гц (lpf)")
     return ap.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    if not os.path.isfile(args.csv_path):
-        print(f"ERROR: файл не найден: {args.csv_path}", file=sys.stderr)
-        return 1
     if args.distance_m is not None and args.distance_m <= 0:
         print("ERROR: --distance-m должна быть > 0", file=sys.stderr)
         return 1
-    _, rows = load_csv(args.csv_path)
-    if not rows or "ts_ms" not in rows[0]:
-        print("ERROR: пустой лог или нет колонки ts_ms", file=sys.stderr)
-        return 1
+    logs = []
+    for path in (args.csv_path, args.baseline):
+        if path is None:
+            logs.append(None)
+            continue
+        if not os.path.isfile(path):
+            print(f"ERROR: файл не найден: {path}", file=sys.stderr)
+            return 1
+        _, log = load_csv(path)
+        if not log or "ts_ms" not in log[0]:
+            print(f"ERROR: пустой лог или нет колонки ts_ms: {path}", file=sys.stderr)
+            return 1
+        logs.append(log)
+    rows, baseline = logs
     results = run_metrics(
         rows, args.only, args.distance_m, gain_dps=args.gain_dps,
         kids_max_speed=args.kids_max_speed, kids_max_accel=args.kids_max_accel,
         tolerance=args.tolerance, t_from_ms=args.from_ms, t_to_ms=args.to_ms,
-        min_rest_s=args.min_rest_s)
+        min_rest_s=args.min_rest_s, baseline=baseline)
     print_results(results)
     failed = [r for r in results if r.passed is False]
     checked = [r for r in results if r.passed is not None]

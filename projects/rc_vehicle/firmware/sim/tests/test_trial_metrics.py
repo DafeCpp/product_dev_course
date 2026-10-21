@@ -6,13 +6,14 @@
 """
 
 import csv
+import json
 import math
 import os
 import sys
 
 import pytest
 
-from simlib import ClosedLoopSim, find_sim_host
+from simlib import ClosedLoopSim, find_sim_host, get_profile
 from simlib.frame import SensorFrame
 from simlib.sim_host_runner import run_batch
 
@@ -908,3 +909,363 @@ def test_rc_events_blank_outage_duration_fails(tmp_path):
 def test_rc_events_without_event_columns(tmp_path):
     rows = [{"ts_ms": (i + 1) * DT_MS, "throttle": 0.0} for i in range(10)]
     assert tm.check_rc_events(_write_csv(tmp_path / "e.csv", rows))[0].no_data
+
+
+# ── 7.6–7.8: CoM offset, Madgwick β, LPF gz (LOS-382) ────────────────────
+
+PSRAM_EVERY = 5  # 500 Гц SIL → 100 Гц, как пишет PSRAM
+
+
+def _sil_to_frames(rows: list[dict], every: int = PSRAM_EVERY) -> list[dict]:
+    """Строки sim_host → кадры TelemetryLogFrame с теми же источниками, что у
+    прошивки (telemetry_builder.cpp): ax/ay/az/gz — imu_data после поправки
+    CoM, yaw_rate_dps — filtered_gz, pitch/roll — Madgwick."""
+    return [{"ts_ms": (i + 1) * DT_MS,
+             "ax": r["imu_ax"], "ay": r["imu_ay"], "az": r["imu_az"],
+             "gz": r["imu_gz"], "yaw_rate_dps": r["filtered_gz"],
+             "pitch_deg": r["pitch_deg"], "roll_deg": r["roll_deg"],
+             "slip_deg": r["ekf_slip_deg"], "speed_ms": r["ekf_speed_ms"],
+             "throttle": r["throttle"], "steering": r["steering"],
+             "rc_steering": r["rc_steering"]}
+            for i, r in enumerate(rows) if i % every == 0]
+
+
+COM_OFFSET_M = (-0.10, 0.08)
+
+
+def _com_circles(saved_offset_m):
+    """Круг влево и круг вправо с пульта; IMU смещён на COM_OFFSET_M."""
+    p = get_profile("fitted_2026_08_02")
+    p.imu_offset_x_m, p.imu_offset_y_m = COM_OFFSET_M
+    with ClosedLoopSim(BIN, params=p, dynamic=True, identity_calib=True,
+                       com_offset=saved_offset_m) as sim:
+        sim.run(4500, rc_throttle=0.0, rc_steering=0.0)
+        rows = sim.run(5000, rc_throttle=0.4, rc_steering=0.5)
+        rows += sim.run(1500, rc_throttle=0.0, rc_steering=0.0)
+        rows += sim.run(5000, rc_throttle=0.4, rc_steering=-0.5)
+    # 500 Гц: на 100 Гц по 7 с круга тряска даёт разброс ~0.05 м (rx_err).
+    return _sil_to_frames(rows, every=1)
+
+
+@needs_sim
+def test_com_residual_before_and_after_calibration(tmp_path):
+    """7.6: без сохранённого offset остаток — смещение IMU, с ним — ноль."""
+    before = _write_csv(tmp_path / "before.csv", _com_circles(None))
+    after = _write_csv(tmp_path / "after.csv", _com_circles(COM_OFFSET_M))
+    rb, ra = tm.com_residual(before), tm.com_residual(after)
+    assert (rb["rx"], rb["ry"]) == pytest.approx(COM_OFFSET_M, abs=0.03)
+    assert (ra["rx"], ra["ry"]) == pytest.approx((0.0, 0.0), abs=0.03)
+    assert 0.0 < ra["rx_err"] < 0.03 and 0.0 < ra["ry_err"] < 0.03
+
+    res = tm.check_com_offset(after, before)
+    # Круги с пульта, не калибровка: событий ComCalibDone нет.
+    assert [(r.name, r.passed, r.no_data) for r in res] == [
+        ("CoM offset: калибровка", False, True),
+        ("CoM offset: до калибровки (--baseline)", None, False),
+        ("CoM offset: остаточное смещение", True, False)]
+    assert tm.check_com_offset(before)[-1].passed is False
+
+
+def _circle_log(rate_dps, ay_g, n=1000, step_ms=10):
+    return [{"ts_ms": i * step_ms, "ax": 0.0, "ay": ay_g, "yaw_rate_dps": rate_dps}
+            for i in range(n)]
+
+
+def test_com_residual_needs_both_directions(tmp_path):
+    log = _write_csv(tmp_path / "ccw.csv", _circle_log(60.0, 0.2))
+    with pytest.raises(ValueError, match="вправо"):
+        tm.com_residual(log)
+    res = tm.check_com_offset(log)
+    assert res[-1].no_data and res[-1].passed is False
+
+
+def test_com_residual_skips_turn_entry(tmp_path):
+    """Первые 3 с поворота не идут в расчёт: на них машина ещё разгоняется."""
+    rows = _circle_log(60.0, 0.2) + _circle_log(-60.0, -0.2)
+    for i, r in enumerate(rows):
+        r["ts_ms"] = i * 10
+        if i % 1000 < 300:
+            r["ax"] = 0.3  # разгон
+    r = tm.com_residual(_write_csv(tmp_path / "c.csv", rows))
+    assert (r["rx"], r["ry"]) == pytest.approx((0.0, 0.0), abs=1e-9)
+
+
+def test_com_residual_recovers_lever_arm(tmp_path):
+    """a = ±v·ω − ω²·r: симметричная часть делится на ω² и даёт r."""
+    rx, ry, w = 0.05, -0.04, math.radians(90.0)
+    lever = (-w * w * rx / tm.G, -w * w * ry / tm.G)
+    rows = []
+    for k, sign in enumerate((1, -1)):
+        for i in range(600):
+            jitter = 0.01 * (-1) ** i  # без разброса не посчитать погрешность
+            rows.append({"ts_ms": (k * 600 + i) * 10, "ax": lever[0] + jitter,
+                         "ay": sign * 0.3 + lever[1] + jitter,
+                         "yaw_rate_dps": sign * 90.0})
+    r = tm.com_residual(_write_csv(tmp_path / "c.csv", rows))
+    assert (r["rx"], r["ry"]) == pytest.approx((rx, ry), abs=1e-6)
+    assert r["rate_dps"] == pytest.approx({1: 90.0, -1: 90.0})
+
+
+@pytest.mark.parametrize("v1, v2, passed", [
+    ("-0.1000", "0.0800", True), ("0.4000", "", False)])
+def test_com_calibration_event_offset(tmp_path, v1, v2, passed):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("ComCalibStart", "", 0.1, 0.5), 900: ("ComCalibDone", "", v1, v2)}))
+    res = tm.check_com_offset(log)
+    assert res[0].name.startswith("CoM offset: калибровка #1")
+    assert res[0].passed is passed
+
+
+def test_com_calibration_failed_event(tmp_path):
+    log = _write_csv(tmp_path / "e.csv", _event_log({
+        100: ("ComCalibStart|RcRestored", "|", "0.1|", "0.5|"),
+        900: ("ComCalibFailed", "", "", "")}))
+    res = tm.check_com_offset(log)
+    assert [r.passed for r in res[:1]] == [False] and len(
+        [r for r in res if "калибровка" in r.name]) == 1
+
+
+def _tilt_step_at_rest(beta: float, slope_deg: float = 10.0, ticks: int = 3000):
+    """Покой на ровном, затем акселерометр сразу показывает уклон без
+    вращения — как ошибка наклона, которую Madgwick должен догнать."""
+    s, c = math.sin(math.radians(slope_deg)), math.cos(math.radians(slope_deg))
+    frames = [SensorFrame(dt_ms=DT_MS, az=1.0, rc_present=True)
+              for _ in range(4500)]
+    frames += [SensorFrame(dt_ms=DT_MS, ax=s, az=c, rc_present=True)
+               for _ in range(ticks)]
+    rows = run_batch(frames, BIN, identity_calib=True, madgwick_beta=beta)
+    return _sil_to_frames(rows[4000:])
+
+
+@needs_sim
+def test_tilt_errors_flag_rest_too_short_for_low_beta(tmp_path):
+    """Madgwick нормирует градиент: в покое угол идёт к истине со скоростью
+    ~2β рад/с, сколько бы ни осталось. Покой кончился раньше — хвост ещё
+    ползёт, и опору по нему не берут."""
+    r = tm.tilt_errors(_write_csv(tmp_path / "short.csv",
+                                  _tilt_step_at_rest(0.05, 30.0, 1500)))
+    assert r["rests"] == 1 and math.isinf(r["settle_ms"])
+
+
+def _turn(beta: float):
+    """Разгон в поворот на ровном."""
+    with ClosedLoopSim(BIN, madgwick_beta=beta, sensor_noise=False,
+                       dynamic=True) as sim:
+        sim.run(4500, rc_throttle=0.0, rc_steering=0.0)
+        rows = sim.run(4000, rc_throttle=0.5, rc_steering=0.6)
+    return _sil_to_frames(rows)
+
+
+@needs_sim
+def test_tilt_errors_show_beta_tradeoff(tmp_path):
+    """7.7: β = 0.05 дольше сходится в покое, β = 0.2 сильнее кренится в
+    повороте — то же направление, что в test_filter_tuning.py."""
+    low = tm.tilt_errors(_write_csv(tmp_path / "r005.csv", _tilt_step_at_rest(0.05)))
+    high = tm.tilt_errors(_write_csv(tmp_path / "r02.csv", _tilt_step_at_rest(0.2)))
+    assert low["rests"] == high["rests"] == 1
+    assert low["max_err_deg"] == pytest.approx(10.0, abs=1.0)
+    assert low["settle_ms"] > high["settle_ms"] + 500 > 500
+    low_turn = tm.tilt_errors(_write_csv(tmp_path / "t005.csv", _turn(0.05)))
+    high_turn = tm.tilt_errors(_write_csv(tmp_path / "t02.csv", _turn(0.2)))
+    assert high_turn["turn_roll_p95_deg"] > 2.0 * low_turn["turn_roll_p95_deg"]
+
+
+def _level_log(n=500, pitch_err=0.0, decay_ms=None):
+    """Покой на ровном; Madgwick pitch начинает с pitch_err и сходится."""
+    rows = []
+    for i in range(n):
+        t = i * 10
+        p = pitch_err * (math.exp(-t / decay_ms) if decay_ms else 1.0)
+        rows.append({"ts_ms": t, "ax": 0.0, "ay": 0.0, "az": 1.0,
+                     "pitch_deg": p, "roll_deg": 0.0, "throttle": 0.0,
+                     "speed_ms": 0.0})
+    return rows
+
+
+def test_tilt_errors_settle_time(tmp_path):
+    r = tm.tilt_errors(_write_csv(tmp_path / "t.csv",
+                                  _level_log(pitch_err=5.0, decay_ms=500)))
+    # 5·e^(−t/500) = 1 при t ≈ 805 мс.
+    assert 790 <= r["settle_ms"] <= 820
+    assert r["max_err_deg"] == pytest.approx(5.0, abs=0.05)
+
+
+def test_tilt_errors_still_converging_at_end_of_rest(tmp_path):
+    rows = _level_log()
+    for i, row in enumerate(rows):
+        row["pitch_deg"] = 0.01 * i  # 5° за 5 с покоя, и всё ещё ползёт
+    r = tm.tilt_errors(_write_csv(tmp_path / "s.csv", rows))
+    assert math.isinf(r["settle_ms"])
+    lines = tm.check_madgwick_beta(_write_csv(tmp_path / "s2.csv", rows))
+    assert "не сошёлся" in lines[0].value
+
+
+def test_tilt_errors_ignore_mounting_and_slope(tmp_path):
+    """Постоянный наклон (склон, монтаж IMU, ax/az в СК датчика) — не ошибка:
+    опора — установившийся Madgwick, а не акселерометр."""
+    rows = _level_log()
+    for r in rows:
+        r["pitch_deg"], r["roll_deg"], r["ax"] = -10.0, 3.0, 0.5
+    r = tm.tilt_errors(_write_csv(tmp_path / "up.csv", rows))
+    assert r["max_err_deg"] == pytest.approx(0.0, abs=1e-6)
+    assert r["settle_ms"] == 0.0
+
+
+def test_tilt_errors_skip_short_rest(tmp_path):
+    r = tm.tilt_errors(_write_csv(tmp_path / "short.csv", _level_log(n=150)))
+    assert r["rests"] == 0
+    assert tm.check_madgwick_beta(_write_csv(tmp_path / "s.csv", _level_log(n=150)))[0].no_data
+
+
+def test_madgwick_beta_reports_config_and_adaptive(tmp_path):
+    rows = _level_log()
+    cfg = [{"filter": {"madgwick_beta": 0.1, "adaptive_beta_enabled": True}}]
+    rows[0]["event_config"] = json.dumps(cfg)
+    cfg2 = [{"filter": {"madgwick_beta": 0.05, "adaptive_beta_enabled": False}}]
+    rows[200]["event_config"] = json.dumps(cfg2)
+    log = _write_csv(tmp_path / "cfg.csv", rows)
+    assert tm.config_values(log, "madgwick_beta") == [0.1, 0.05]
+    line = tm.check_madgwick_beta(log)[0].value
+    assert "β 0.1 → 0.05" in line and "adaptive β включён" in line
+
+
+def _vibration_frames(n=6000):
+    """Шаги yaw rate и вибрация 15 + 35 Гц все 12 с."""
+    frames = []
+    for i in range(n):
+        t = i * DT_MS / 1000
+        gz = 30.0 * math.sin(2 * math.pi * 0.5 * t)
+        gz += 10.0 * math.sin(2 * math.pi * 15.0 * t)
+        gz += 10.0 * math.sin(2 * math.pi * 35.0 * t)
+        frames.append(SensorFrame(dt_ms=DT_MS, az=1.0, gz=gz, rc_present=True))
+    return frames
+
+
+@needs_sim
+def test_lpf_attenuation_grows_as_cutoff_drops(tmp_path):
+    """7.8: на логе 100 Гц мощность yaw_rate_dps выше 10 Гц падает с cutoff."""
+    db = {}
+    for cutoff in (10.0, 30.0, 60.0):
+        rows = run_batch(_vibration_frames(), BIN, identity_calib=True,
+                         lpf_cutoff_hz=cutoff)
+        db[cutoff] = tm.lpf_attenuation_db(
+            _write_csv(tmp_path / f"c{cutoff:.0f}.csv", _sil_to_frames(rows)))
+    assert db[10.0] < db[30.0] - 6 < db[60.0] - 6
+
+
+def test_band_power_scales_with_amplitude(tmp_path):
+    """yaw_rate = половина gz выше 10 Гц → −6 дБ; медленная часть не в счёт."""
+    rows = []
+    for i in range(3000):
+        t = i / 100
+        slow = 40.0 * math.sin(2 * math.pi * 1.0 * t)
+        fast = 8.0 * math.sin(2 * math.pi * 20.0 * t)
+        rows.append({"ts_ms": i * 10, "gz": slow + fast,
+                     "yaw_rate_dps": slow + 0.5 * fast})
+    db = tm.lpf_attenuation_db(_write_csv(tmp_path / "b.csv", rows))
+    assert db == pytest.approx(20 * math.log10(0.5), abs=0.1)
+
+
+def test_lpf_raw_yaw_rate_from_tilted_mount(tmp_path):
+    """IMU наклонён на 30°: в gz датчика подмешан крен подвески. Сырой yaw
+    rate восстанавливается из gx/gy/gz, и ослабление считается по нему."""
+    tilt = math.radians(30.0)
+    rows = []
+    for i in range(3000):
+        t = i / 100
+        slow = 40.0 * math.sin(2 * math.pi * 0.7 * t)
+        fast = 8.0 * math.sin(2 * math.pi * 20.0 * t)
+        roll = 30.0 * math.sin(2 * math.pi * 17.0 * t)  # тряска по крену
+        yaw = slow + fast
+        rows.append({"ts_ms": i * 10, "gx": roll * math.cos(tilt) - yaw * math.sin(tilt),
+                     "gy": 0.0, "gz": yaw * math.cos(tilt) + roll * math.sin(tilt),
+                     "yaw_rate_dps": slow + 0.5 * fast})
+    log = _write_csv(tmp_path / "tilt.csv", rows)
+    raw = tm.raw_vehicle_yaw_rate(log)
+    assert raw[1000] == pytest.approx(rows[1000]["gz"] * math.cos(tilt)
+                                      - rows[1000]["gx"] * math.sin(tilt), abs=0.5)
+    assert tm.lpf_attenuation_db(log) == pytest.approx(20 * math.log10(0.5), abs=0.3)
+
+
+def test_lpf_raw_yaw_axis_is_unit_for_collinear_gyro(tmp_path):
+    """Только повороты: медленные gx и gz коллинеарны. Ось — единичная, и
+    вибрация крена в gx не уходит в сырой yaw rate."""
+    tilt = math.radians(20.0)
+    rows = []
+    for i in range(3000):
+        t = i / 100
+        yaw = 40.0 * math.sin(2 * math.pi * 0.5 * t)
+        roll = 20.0 * math.sin(2 * math.pi * 23.0 * t)
+        rows.append({"ts_ms": i * 10, "gx": -yaw * math.sin(tilt) + roll * math.cos(tilt),
+                     "gy": 0.0, "gz": yaw * math.cos(tilt) + roll * math.sin(tilt),
+                     "yaw_rate_dps": yaw})
+    raw = tm.raw_vehicle_yaw_rate(_write_csv(tmp_path / "c.csv", rows))
+    assert max(abs(r - row["yaw_rate_dps"]) for r, row in zip(raw, rows)) < 0.01
+
+
+def test_band_power_skips_timestamp_stalls(tmp_path):
+    """Задержки записи PSRAM: окна со стыком не считаются, иначе скачок
+    медленной части дал бы одинаковую мощность в обоих сигналах."""
+    rows, t = [], 0.0
+    for i in range(3000):
+        t += 200.0 if i % 300 == 0 and i else 10.0
+        slow = 40.0 * math.sin(2 * math.pi * 1.0 * t / 1000)
+        fast = 8.0 * math.sin(2 * math.pi * 20.0 * t / 1000)
+        rows.append({"ts_ms": t, "gz": slow + fast, "yaw_rate_dps": slow + 0.5 * fast})
+    db = tm.lpf_attenuation_db(_write_csv(tmp_path / "gaps.csv", rows))
+    assert db == pytest.approx(20 * math.log10(0.5), abs=0.1)
+
+    ts = [r["ts_ms"] for r in rows[:600]]
+    ts[100:] = [v + 200.0 for v in ts[100:]]  # стык в каждом окне
+    with pytest.raises(ValueError, match="задержек записи"):
+        tm.band_power([0.0] * 600, ts, 100.0, 10.0, nperseg=512)
+
+
+def test_lpf_without_turns_has_no_yaw_axis(tmp_path):
+    rows = [{"ts_ms": i * 10, "gz": math.sin(i), "yaw_rate_dps": 0.0}
+            for i in range(1000)]
+    with pytest.raises(ValueError, match="ось yaw"):
+        tm.lpf_attenuation_db(_write_csv(tmp_path / "flat.csv", rows))
+
+
+def test_yaw_step_summary_takes_worst_step(monkeypatch):
+    """Один нераскачавшийся шаг из трёх не прячется за медианой."""
+    ok = {"overshoot": 0.0, "settling_ms": 0.0}
+    monkeypatch.setattr(tm, "yaw_step_responses", lambda rows, gain: [
+        (0, ok), (1, ok), (2, {"overshoot": 0.3, "settling_ms": math.inf}),
+        (3, "режим 3 не Normal")])
+    s = tm.yaw_step_summary([{"yaw_rate_dps": 0.0}])
+    assert s == {"steps": 3, "overshoot": 0.3, "settling_ms": math.inf}
+
+
+def test_lpf_needs_fast_log(tmp_path):
+    rows = [{"ts_ms": i * 100, "gz": 0.0, "yaw_rate_dps": 0.0} for i in range(500)]
+    res = tm.check_lpf(_write_csv(tmp_path / "slow.csv", rows))
+    assert res[0].no_data and "частота лога 10 Гц" in res[0].value
+
+
+def _step_log(zeta, tmp_path, name):
+    rows, _, _ = _second_order_log(zeta, wn=60.0, steer=0.4)
+    for r in rows:
+        r["gz"] = r["yaw_rate_dps"]
+    return _write_csv(tmp_path / name, rows)
+
+
+def test_lpf_yaw_step_against_baseline(tmp_path):
+    good, ringing = _step_log(0.9, tmp_path, "g.csv"), _step_log(0.5, tmp_path, "r.csv")
+    step = tm.check_lpf(ringing, good)[-1]
+    assert step.name == "LPF gz: шаг yaw rate против эталона"
+    assert step.passed is False and "НЕ ВЫПОЛНЕНО" in step.value
+    assert tm.check_lpf(good, ringing)[-1].passed is True
+    alone = tm.check_lpf(good)[-1]
+    assert alone.passed is None and "--baseline" in alone.value
+
+
+def test_cli_baseline(tmp_path, capsys):
+    good, ringing = tmp_path / "g.csv", tmp_path / "r.csv"
+    _step_log(0.9, tmp_path, "g.csv")
+    _step_log(0.5, tmp_path, "r.csv")
+    assert tm.main([str(ringing), "--only", "lpf", "--baseline", str(good)]) == 2
+    assert "LPF gz (--baseline): вибрация" in capsys.readouterr().out
+    assert tm.main([str(good), "--only", "lpf", "--baseline",
+                    str(tmp_path / "missing.csv")]) == 1
