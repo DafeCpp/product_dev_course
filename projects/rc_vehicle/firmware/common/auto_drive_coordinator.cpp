@@ -83,7 +83,9 @@ AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
         TelemetryEventType t = out.com_result.valid
                                    ? TelemetryEventType::ComCalibDone
                                    : TelemetryEventType::ComCalibFailed;
-        event_log_->Push({input.ts_ms, t, 0});
+        // rx/ry в событии — итог калибровки в выгрузке лога (7.6, LOS-382).
+        event_log_->Push(
+            {input.ts_ms, t, 0, {}, out.com_result.rx, out.com_result.ry});
       }
     }
     return out;

@@ -511,6 +511,36 @@ TEST(AutoDriveCoordinatorTest, EventLog_ComCalibStart_LogsEvent) {
   EXPECT_NEAR(ev.value2, 0.5f, 1e-5f);
 }
 
+TEST(AutoDriveCoordinatorTest, EventLog_ComCalibDone_CarriesOffset) {
+  // Итог калибровки CoM нужен в выгрузке лога для разбора 7.6 (LOS-382).
+  AutoDriveCoordinator adc;
+  TelemetryEventLog log;
+  adc.SetEventLog(&log);
+  ASSERT_TRUE(adc.StartComCalib(0.1f, 0.5f, 3.0f, nullptr));
+
+  // На ходу — круг с постоянным ускорением от смещения IMU, на тормозе и
+  // перед разгоном — покой.
+  AutoDriveOutput out = adc.Update(IdleInput());
+  for (int i = 0; i < 20000 && !out.com_completed; ++i) {
+    AutoDriveInput in = IdleInput();
+    if (out.throttle > 0.0f) {
+      in.gyro_z = out.steering > 0.0f ? 60.0f : -60.0f;
+      in.cal_ax = 0.02f;
+      in.cal_ay = 0.01f;
+    }
+    out = adc.Update(in);
+  }
+  ASSERT_TRUE(out.com_completed);
+  ASSERT_TRUE(out.com_result.valid);
+  ASSERT_NE(out.com_result.rx, 0.0f);
+
+  TelemetryEvent ev{};
+  ASSERT_TRUE(log.GetEvent(log.Count() - 1, ev));
+  EXPECT_EQ(ev.type, TelemetryEventType::ComCalibDone);
+  EXPECT_FLOAT_EQ(ev.value1, out.com_result.rx);
+  EXPECT_FLOAT_EQ(ev.value2, out.com_result.ry);
+}
+
 TEST(AutoDriveCoordinatorTest, EventLog_StopAll_LogsActiveFailedEvent) {
   AutoDriveCoordinator adc;
   TelemetryEventLog log;
