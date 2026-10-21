@@ -155,14 +155,30 @@ class _SchemaResource:
             specification = specification_with("http://json-schema.org/draft-03/schema#")
 
             def enter(segments: Any, resolver: Any, subresource: Any) -> Any:
-                # Upstream omits schema unions and treats extends only as an array.
-                # Strip the corrected position, then let it validate the enclosing path.
-                if isinstance(subresource.contents, dict):
-                    if len(segments) >= 2 and segments[-2] in {"type", "disallow"} and isinstance(segments[-1], int):
-                        segments = segments[:-2]
-                    elif segments and segments[-1] == "extends":
-                        segments = segments[:-1]
-                return specification.maybe_in_subresource(segments, resolver, subresource)
+                # Resource.pointer retains the entire path while schemas lack IDs.
+                # Normalize every schema-position prefix, not only the final one.
+                normalized = []
+                index = 0
+                while index < len(segments):
+                    keyword = segments[index]
+                    following = segments[index + 1] if index + 1 < len(segments) else None
+                    if keyword in {"type", "disallow"} and isinstance(following, int):
+                        index += 2
+                    elif keyword == "extends" and not isinstance(following, int):
+                        index += 1
+                    elif keyword in {"properties", "patternProperties", "definitions", "dependencies"}:
+                        normalized.extend(segments[index:index + 2])
+                        index += 2
+                    elif keyword in {"items", "extends"} and isinstance(following, int):
+                        normalized.extend(segments[index:index + 2])
+                        index += 2
+                    elif keyword in {"items", "additionalItems", "additionalProperties"}:
+                        normalized.append(keyword)
+                        index += 1
+                    else:
+                        normalized.extend(segments[index:])
+                        break
+                return specification.maybe_in_subresource(normalized, resolver, subresource)
 
             pointer_specification = Specification(  # type: ignore[call-arg, unused-ignore]
                 name=specification.name,
