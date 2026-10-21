@@ -11,6 +11,12 @@ from config_service.services.schema_service import SchemaService
 
 @pytest.mark.parametrize('schema', [
     {'type': 'not-a-type'},
+    *[{'$schema': 'http://json-schema.org/draft-03/schema#', keyword: value}
+      for keyword in ('type', 'disallow') for value in ('unknown', ['string', 'unknown'])],
+    {'$schema': 'http://json-schema.org/draft-03/schema#',
+     'properties': {'x': {'type': 'unknown'}}},
+    {'$schema': 'http://json-schema.org/draft-03/schema#',
+     '$ref': '#/default', 'default': {'disallow': 'unknown'}},
     {'$schema': 'http://json-schema.org/draft-03/schema#', 'type': [{'$ref': '#/missing'}]},
     {'$schema': 'http://json-schema.org/draft-03/schema#', 'disallow': [{'$ref': '#/missing'}]},
     {'$schema': 'http://json-schema.org/draft-04/schema#',
@@ -268,3 +274,14 @@ def test_draft3_pointer_enters_legacy_schema_positions(keyword, intermediate):
     validator = build_schema_validator(schema)
     assert validator.is_valid('text')
     assert not validator.is_valid(42)
+
+
+@pytest.mark.parametrize('keyword', ['type', 'disallow'])
+@pytest.mark.parametrize('name', ['any', 'array', 'boolean', 'integer', 'null', 'number', 'object', 'string'])
+def test_draft3_known_type_names_remain_supported(keyword, name):
+    from config_service.services.schema_validation import build_schema_validator
+    validator = build_schema_validator({
+        '$schema': 'http://json-schema.org/draft-03/schema#', keyword: name,
+    })
+    # Exercise runtime type lookup as well as compilation.
+    assert isinstance(validator.is_valid(None), bool)
