@@ -14,6 +14,27 @@ from rfc3986_validator import validate_rfc3986
 from config_service.core.exceptions import InvalidSchemaError
 
 
+def _schema_children(schema: Any, validator: Any) -> Iterable[Any]:
+    """Enumerate schema positions, including legacy Draft 3 schema unions."""
+    specification = specification_with(
+        validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
+    )
+    traversal = schema
+    if isinstance(schema, dict) and "dependencies" in validator.VALIDATORS:
+        traversal = {**schema, "dependencies": {
+            name: child for name, child in schema.get("dependencies", {}).items()
+            if isinstance(child, dict)
+        }}
+    if specification.name == "draft-03" and isinstance(traversal, dict):
+        traversal = {key: value for key, value in traversal.items() if key != "definitions"}
+    yield from specification.subresources_of(traversal)
+    if specification.name == "draft-03" and isinstance(schema, dict):
+        for keyword in ("type", "disallow"):
+            entries = schema.get(keyword, [])
+            if isinstance(entries, list):
+                yield from (entry for entry in entries if isinstance(entry, dict))
+
+
 def _check_schema_node(schema: Any, validator: Any) -> None:
     """Check one schema node without imposing its dialect on child resources.
 
@@ -25,15 +46,7 @@ def _check_schema_node(schema: Any, validator: Any) -> None:
         validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
     )
     try:
-        traversal = schema
-        if isinstance(schema, dict) and "dependencies" in validator.VALIDATORS:
-            traversal = {**schema, "dependencies": {
-                name: child for name, child in schema.get("dependencies", {}).items()
-                if isinstance(child, dict)
-            }}
-        if specification.name == "draft-03" and isinstance(traversal, dict):
-            traversal = {key: value for key, value in traversal.items() if key != "definitions"}
-        children = list(specification.subresources_of(traversal))
+        children = list(_schema_children(schema, validator))
     except (AttributeError, TypeError):
         validator.check_schema(schema)
         return
@@ -75,18 +88,10 @@ class _SchemaResource:
 
         contents = self.resource.contents
         validator = jsonschema.validators.validator_for(contents, default=self.validator)  # type: ignore[no-untyped-call, unused-ignore]
-        traversal = contents
-        if isinstance(contents, dict) and "dependencies" in validator.VALIDATORS:
-            traversal = {**contents, "dependencies": {
-                name: dependency for name, dependency in contents.get("dependencies", {}).items()
-                if isinstance(dependency, dict)
-            }}
         specification = specification_with(
             validator.META_SCHEMA.get("$id") or validator.META_SCHEMA["id"]
         )
-        if specification.name == "draft-03" and isinstance(traversal, dict):
-            traversal = {key: value for key, value in traversal.items() if key != "definitions"}
-        for contents in specification.subresources_of(traversal):
+        for contents in _schema_children(contents, validator):
             child_validator = validator
             if isinstance(contents, dict) and "$schema" in contents:
                 if not isinstance(contents["$schema"], str):
