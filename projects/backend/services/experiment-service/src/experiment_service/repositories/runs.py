@@ -387,15 +387,16 @@ class RunRepository(BaseRepository):
         )
         return [self._to_model(record) for record in records]
 
-    async def list_sensors(self, run_id: UUID) -> list[RunSensor]:
-        """List sensors attached to a run (not detached)."""
+    async def list_sensors(self, project_id: UUID, run_id: UUID) -> list[RunSensor]:
+        """List sensors attached to a run of the project (not detached)."""
         rows = await self._fetch(
             """
             SELECT run_id, sensor_id, project_id, mode, attached_at, detached_at, created_by
             FROM run_sensors
-            WHERE run_id = $1 AND detached_at IS NULL
+            WHERE project_id = $1 AND run_id = $2 AND detached_at IS NULL
             ORDER BY attached_at
             """,
+            project_id,
             run_id,
         )
         return [RunSensor(**dict(row)) for row in rows]
@@ -432,13 +433,13 @@ class RunRepository(BaseRepository):
             raise NotFoundError("Run or sensor not found in this project")
         return RunSensor(**dict(row))
 
-    async def detach_sensor(self, run_id: UUID, sensor_id: UUID) -> bool:
-        """Detach a sensor from a run (soft delete). Returns True if row existed."""
+    async def detach_sensor(self, project_id: UUID, run_id: UUID, sensor_id: UUID) -> bool:
+        """Detach a sensor from a run of the project (soft delete). Returns True if row existed."""
         result = await self._execute(
             """
             UPDATE run_sensors SET detached_at = now()
-            WHERE run_id = $1 AND sensor_id = $2 AND detached_at IS NULL
+            WHERE project_id = $1 AND run_id = $2 AND sensor_id = $3 AND detached_at IS NULL
             """,
-            run_id, sensor_id,
+            project_id, run_id, sensor_id,
         )
         return result != "UPDATE 0"

@@ -306,8 +306,8 @@ runSensors:
     tags: [runs, sensors]
     summary: List sensors attached to a run
     description: >
-      Currently attached sensors (detached_at is null), oldest attachment first. The run is not looked
-      up, so an unknown run gives 200 with an empty list.
+      Currently attached sensors (detached_at is null), oldest attachment first. A run that is not in
+      the project gives 404.
     operationId: listRunSensors
     parameters:
       - $ref: ../components/parameters.yaml#/RunId
@@ -325,6 +325,8 @@ runSensors:
         $ref: ../components/responses.yaml#/Unauthorized
       403:
         $ref: ../components/responses.yaml#/Forbidden
+      404:
+        $ref: ../components/responses.yaml#/NotFound
 
 runSensor:
   post:
@@ -385,7 +387,7 @@ runSensor:
       403:
         $ref: ../components/responses.yaml#/Forbidden
       404:
-        description: Sensor is not currently attached to this run
+        description: Sensor is not currently attached to this run, or the run is not in the project
         content:
           text/plain:
             schema:

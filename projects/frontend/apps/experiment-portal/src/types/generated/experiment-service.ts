@@ -428,7 +428,7 @@ export interface paths {
         };
         /**
          * List sensors attached to a run
-         * @description Currently attached sensors (detached_at is null), oldest attachment first. The run is not looked up, so an unknown run gives 200 with an empty list.
+         * @description Currently attached sensors (detached_at is null), oldest attachment first. A run that is not in the project gives 404.
          */
         get: operations["listRunSensors"];
         put?: never;
@@ -3670,6 +3670,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     attachRunSensor: {
@@ -3739,7 +3740,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description Sensor is not currently attached to this run */
+            /** @description Sensor is not currently attached to this run, or the run is not in the project */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -402,13 +402,17 @@ async def delete_run(request: web.Request):
 async def list_run_sensors(request: web.Request) -> web.Response:
     """List sensors attached to a run (viewer+)."""
     user = await require_current_user(request)
-    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
     ensure_permission(user, "experiments.view")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
 
     pool = await _get_pool()
     run_repo = RunRepository(pool)
-    sensors = await run_repo.list_sensors(run_id)
+    try:
+        await run_repo.get(project_id, run_id)
+    except NotFoundError as exc:
+        raise web.HTTPNotFound(text="Resource not found") from exc
+    sensors = await run_repo.list_sensors(project_id, run_id)
     return web.json_response({"sensors": [s.model_dump(mode="json") for s in sensors]})
 
 
@@ -439,14 +443,14 @@ async def attach_run_sensor(request: web.Request) -> web.Response:
 async def detach_run_sensor(request: web.Request) -> web.Response:
     """Detach a sensor from a run (editor+)."""
     user = await require_current_user(request)
-    resolve_project_id(user, request.rel_url.query.get("project_id"))
+    project_id = resolve_project_id(user, request.rel_url.query.get("project_id"))
     ensure_permission(user, "runs.update")
     run_id = parse_uuid(request.match_info["run_id"], "run_id")
     sensor_id = parse_uuid(request.match_info["sensor_id"], "sensor_id")
 
     pool = await _get_pool()
     run_repo = RunRepository(pool)
-    deleted = await run_repo.detach_sensor(run_id, sensor_id)
+    deleted = await run_repo.detach_sensor(project_id, run_id, sensor_id)
     if not deleted:
         raise web.HTTPNotFound(text="Sensor not attached to this run")
     return web.Response(status=204)
