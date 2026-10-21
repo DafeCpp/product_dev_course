@@ -153,12 +153,47 @@ TEST_F(VehicleStateEstimatorTest, MotorModelAnchorsForwardSpeed) {
   input_.motor_model_throttle = 0.5f;
 
   VehicleStateEstimate estimate;
-  for (int i = 0; i < 100; ++i) {
+  for (int i = 0; i < 1500; ++i) {  // 3 с — больше 3τ инерции мотор-модели
     estimate = estimator_.Update(sensors_, input_);
   }
 
   EXPECT_GT(estimate.vx_ms, 1.0f);
   EXPECT_LT(estimate.vx_ms, VehicleEkf::kMaxSpeedMs);
+}
+
+TEST_F(VehicleStateEstimatorTest, MotorModelAnchorFollowsMotorLag) {
+  // LOS-378: машина набирает скорость с τ ≈ 0.9 с, и якорь не должен сразу
+  // выдавать установившуюся скорость, иначе EKF vx обгоняет машину.
+  input_.filter.motor_model_enabled = true;
+  input_.filter.motor_deadzone = 0.0f;
+  input_.filter.motor_speed_gain = 8.0f;
+  input_.motor_model_throttle = 0.5f;  // цель 4 м/с
+
+  estimator_.Update(sensors_, input_);
+  EXPECT_FLOAT_EQ(estimator_.GetMotorModelTargetMs(), 4.0f);
+  EXPECT_LT(ekf_.GetLastSpeedMeas(), 0.05f);
+
+  for (int i = 1; i < 450; ++i) estimator_.Update(sensors_, input_);  // 0.9 с
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 4.0f * (1.0f - std::exp(-1.0f)), 0.05f);
+
+  for (int i = 0; i < 2500; ++i) estimator_.Update(sensors_, input_);
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 4.0f, 0.01f);
+}
+
+TEST_F(VehicleStateEstimatorTest, MotorModelLagRestartsFromEkfAfterReset) {
+  input_.filter.motor_model_enabled = true;
+  input_.filter.motor_deadzone = 0.0f;
+  input_.filter.motor_speed_gain = 8.0f;
+  input_.motor_model_throttle = 0.5f;
+  for (int i = 0; i < 3000; ++i) estimator_.Update(sensors_, input_);
+  ASSERT_GT(ekf_.GetLastSpeedMeas(), 3.9f);
+
+  ekf_.Reset();
+  estimator_.OnEkfReset();
+  input_.motor_model_throttle = 0.0f;
+  estimator_.Update(sensors_, input_);
+  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 0.0f, 0.01f)
+      << "после сброса EKF якорь не должен тянуть vx к прежней скорости";
 }
 
 TEST_F(VehicleStateEstimatorTest, TiltAnchorSettlesAfterMotorModelReturns) {

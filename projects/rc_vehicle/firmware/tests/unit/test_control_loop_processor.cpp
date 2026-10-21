@@ -260,7 +260,8 @@ TEST_F(ProcessorTest, MotorModelUsesCommandBeforeKidsSpeedLimiter) {
   ASSERT_LT(platform_.GetLastThrottle(), 0.3f);
 
   Step();
-  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 2.4f, 1e-4f)
+  EXPECT_NEAR(processor_->GetStateEstimator().GetMotorModelTargetMs(), 2.4f,
+              1e-4f)
       << "мотор-модель не должна получать throttle после speed limiter";
 }
 
@@ -300,7 +301,8 @@ TEST_F(ProcessorTest, KidsMotorModelTracksCounterfactualPwmSlew) {
   ASSERT_TRUE(kids_processor_.IsSpeedLimitActive());
   Step();
 
-  EXPECT_NEAR(ekf_.GetLastSpeedMeas(), 0.006f * 8.0f, 1e-4f)
+  EXPECT_NEAR(processor_->GetStateEstimator().GetMotorModelTargetMs(),
+              0.006f * 8.0f, 1e-4f)
       << "Kids-якорь должен учитывать внешний PWM slew";
 }
 

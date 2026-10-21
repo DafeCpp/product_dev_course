@@ -78,6 +78,12 @@ class ControlLoopProcessor {
   /** Выполнить одну итерацию. */
   void Step(uint32_t now, uint32_t dt_ms);
 
+  /** Оценщик состояния (для тестов мотор-модели). */
+  [[nodiscard]] const VehicleStateEstimator& GetStateEstimator()
+      const noexcept {
+    return state_estimator_;
+  }
+
  private:
   void UpdateComponents(uint32_t now, uint32_t dt_ms);
   void UpdateSensorsAndEkf(ControlTickInput& input, ControlTickState& state);
