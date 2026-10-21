@@ -41,6 +41,29 @@ async def test_metrics_middleware_records_success_and_http_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_metrics_middleware_records_service_error_status() -> None:
+    from backend_common.core.exceptions import ConflictError
+    from backend_common.metrics import REQUEST_COUNT
+
+    middleware = metrics_middleware("common-tests-service-error")
+    request = make_mocked_request("POST", "/conflict")
+
+    async def raises_conflict(_request):
+        raise ConflictError("busy")
+
+    with pytest.raises(ConflictError):
+        await middleware(request, raises_conflict)
+
+    def count(status: str) -> float:
+        return REQUEST_COUNT.labels(
+            service="common-tests-service-error", method="POST", endpoint="/conflict", status=status
+        )._value.get()
+
+    assert count("409") == 1
+    assert count("500") == 0
+
+
+@pytest.mark.asyncio
 async def test_base_repository_delegates_to_acquired_connection() -> None:
     connection = AsyncMock()
     connection.fetchrow.return_value = {"id": 1}

@@ -14,6 +14,8 @@ from prometheus_client import (
     generate_latest,
 )
 
+from backend_common.core.exceptions import ServiceError
+
 if TYPE_CHECKING:
     pass
 
@@ -69,6 +71,10 @@ def metrics_middleware(service_name: str) -> Any:
             status_code = response.status
             return response
         except web.HTTPException as exc:
+            status_code = exc.status_code
+            raise
+        except ServiceError as exc:
+            # Rendered by error_handling_middleware (outer) with this status.
             status_code = exc.status_code
             raise
         finally:
