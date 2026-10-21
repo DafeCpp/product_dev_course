@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Review and Merge"
+  short_description: "Fix CI and findings, then merge after selected review"
+  default_prompt: "Use $pr-review-merge to fix CI and review findings, then merge this PR after current-head approval in the review mode I selected."
