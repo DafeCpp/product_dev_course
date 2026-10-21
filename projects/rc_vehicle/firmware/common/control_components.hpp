@@ -515,6 +515,8 @@ struct TelemetrySnapshot {
   // Мотор-модель + guard расходимости (LOS-233)
   float ekf_speed_meas{0.0f};  ///< Ожидаемая скорость мотор-модели [м/с]
   bool ekf_diverged{false};    ///< Сработал ли guard на расходимость
+  /// yaw rate разошёлся с рулём, vy не гасится (LOS-378)
+  bool ekf_grip_lost{false};
 
   // Uptime (ms since boot, for reboot diagnostics)
   uint32_t uptime_ms{0};

@@ -216,22 +216,30 @@ def oversteer_params():
 def test_oversteer_guard_cuts_throttle_and_slip():
     """Oversteer guard: резкий газ в повороте → guard срабатывает, газ и занос снижаются."""
 
-    def corner(reduction: float):
+    def corner(reduction: float) -> tuple[list[dict], float]:
+        """Строки прошивки и пик реального угла заноса модели [°]."""
         guard = OversteerReplayConfig(5.0, 10.0, reduction)
         with ClosedLoopSim(BIN, params=oversteer_params(), dynamic=True,
                            stabilize=True, sensor_noise=False,
                            oversteer=guard) as sim:
             sim.run(OVERSTEER_SETTLE_TICKS, rc_throttle=0.0, rc_steering=0.0)
             sim.run(1000, rc_throttle=0.5, rc_steering=0.0)
-            return sim.run(1500, rc_throttle=1.0, rc_steering=1.0)
+            rows, peak_beta = [], 0.0
+            for _ in range(1500):
+                rows.append(sim.step(2, 1.0, 1.0))
+                st = sim.model.state
+                peak_beta = max(peak_beta, abs(math.degrees(
+                    math.atan2(st.vy, max(st.v, 0.1)))))
+            return rows, peak_beta
 
     # Эталон: детектор включён, но газ не режет — занос тот же, что без guard.
-    detect_only = corner(0.0)
-    guarded = corner(0.7)
+    # Сравнивается реальный угол модели: в развороте угол EKF и так доходит
+    # до 76–80° с guard и без, и разницу в нём не видно (LOS-378).
+    detect_only, detect_only_beta = corner(0.0)
+    guarded, guarded_beta = corner(0.7)
     assert any(r["oversteer_active"] == 1.0 for r in detect_only)
     assert any(r["oversteer_active"] == 1.0 for r in guarded)
-    assert (max(abs(r["ekf_slip_deg"]) for r in guarded)
-            < max(abs(r["ekf_slip_deg"]) for r in detect_only))
+    assert guarded_beta < detect_only_beta
     # Сравниваем газ по одному и тому же тику.
     assert any(g["oversteer_active"] == 1.0 and g["throttle"] < f["throttle"] - 0.1
                for f, g in zip(detect_only, guarded))

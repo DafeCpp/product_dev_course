@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "control_components.hpp"
+#include "grip_loss_detector.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 #include "stabilization_config.hpp"
@@ -53,6 +54,9 @@ struct VehicleStateEstimatorInput {
   // treats values inside motor_deadzone as non-motion-capable residuals.
   float applied_throttle{0.0f};
   float motor_model_throttle{0.0f};
+  // Руль, поданный на серво, с трим, в [-1, 1]: эталон yaw rate для признака
+  // потери сцепления (LOS-378).
+  float applied_steering{0.0f};
   bool ekf_available{false};
   bool speed_calibration_active{false};
   // Мотор-модель ведёт counterfactual-газ (Kids speed limiter срезает PWM):
@@ -85,6 +89,9 @@ struct VehicleStateEstimate {
    *  см. WheelspinDetector); пока
    *  детектор пробуксовки не работает — скорость колёс по мотор-модели. */
   float ground_speed_ms{0.0f};
+  /** yaw rate разошёлся с рулём — шины не держат, и EKF не гасит vy
+   *  (LOS-378, GripLossDetector). */
+  bool lateral_grip_lost{false};
   ZuptStatus zupt_status{ZuptStatus::NotEvaluated};
   bool ekf_diverged{false};
 };
@@ -167,6 +174,7 @@ class VehicleStateEstimator {
   // пробуксовки (LOS-385).
   float wheel_speed_ms_{0.0f};
   WheelspinDetector wheelspin_;
+  GripLossDetector grip_;
 #ifdef RC_PROFILE_LOOP
   VehicleStateEstimatorProfile profile_;
 #endif

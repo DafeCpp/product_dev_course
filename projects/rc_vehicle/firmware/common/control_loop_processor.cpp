@@ -218,6 +218,7 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(ControlTickInput& input,
       .dt_ms = input.dt_ms,
       .applied_throttle = persistent_.applied_motor_throttle,
       .motor_model_throttle = persistent_.motor_model_throttle,
+      .applied_steering = persistent_.applied.steering,
       .ekf_available = ctx_.stab_mgr != nullptr,
       .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
       // Пока Kids speed limiter срезает газ, мотор-модель ведёт
