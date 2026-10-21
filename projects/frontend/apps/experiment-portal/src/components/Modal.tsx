@@ -16,20 +16,28 @@ const FOCUSABLE =
 
 // Give focus back to the element that opened the dialog. A trigger that is disabled while the
 // submitted action runs cannot hold focus, so it gets focus back once it is enabled again,
-// unless the user has moved focus somewhere else meanwhile.
+// unless the user has moved focus somewhere else meanwhile. The wait is capped so a trigger
+// that stays disabled does not keep an observer alive.
+const RESTORE_FOCUS_WAIT_MS = 30_000
+
 function restoreFocus(target: HTMLElement | null) {
     if (!target?.isConnected) return
     const isDisabled = () => (target as HTMLButtonElement).disabled === true
-    if (!isDisabled()) target.focus()
-    const focusLost = () => !document.activeElement || document.activeElement === document.body
+    if (!isDisabled()) {
+        target.focus()
+        return
+    }
     const observer = new MutationObserver(() => {
-        if (!target.isConnected) {
-            observer.disconnect()
-        } else if (!isDisabled()) {
-            observer.disconnect()
-            if (focusLost()) target.focus()
-        }
+        if (target.isConnected && isDisabled()) return
+        stop()
+        const focusLost = !document.activeElement || document.activeElement === document.body
+        if (target.isConnected && focusLost) target.focus()
     })
+    const timer = setTimeout(() => stop(), RESTORE_FOCUS_WAIT_MS)
+    function stop() {
+        observer.disconnect()
+        clearTimeout(timer)
+    }
     observer.observe(target, { attributes: true, attributeFilter: ['disabled'] })
 }
 
