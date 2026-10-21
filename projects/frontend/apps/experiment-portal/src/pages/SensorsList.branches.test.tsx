@@ -111,12 +111,12 @@ describe('SensorsList branches', () => {
         const user = userEvent.setup()
         render(<SensorsList />, { wrapper })
         // The card's click target is the sensor-name button stretched over it.
-        await user.click(await screen.findByRole('button', { name: 'Alpha' }))
+        await user.click(await screen.findByRole('button', { name: /^Alpha,/ }))
         expect(screen.getByTestId('detail-modal')).toHaveTextContent('s1')
         await user.click(screen.getByRole('button', { name: 'close-detail' }))
         expect(screen.queryByTestId('detail-modal')).not.toBeInTheDocument()
 
-        const beta = screen.getByRole('button', { name: 'Beta' })
+        const beta = screen.getByRole('button', { name: /^Beta,/ })
         beta.focus()
         await user.keyboard('a')
         expect(screen.queryByTestId('detail-modal')).not.toBeInTheDocument()
@@ -124,10 +124,23 @@ describe('SensorsList branches', () => {
         expect(screen.getByTestId('detail-modal')).toHaveTextContent('s2')
         await user.click(screen.getByRole('button', { name: 'close-detail' }))
 
-        const gamma = screen.getByRole('button', { name: 'Gamma' })
+        const gamma = screen.getByRole('button', { name: /^Gamma,/ })
         gamma.focus()
         await user.keyboard(' ')
         expect(screen.getByTestId('detail-modal')).toHaveTextContent('s3')
+    })
+
+    it('names the project in each open button, so same-named sensors differ', async () => {
+        vi.mocked(sensorsApi.list).mockResolvedValue({
+            sensors: [
+                createMockSensor({ id: 'a1', name: 'Probe', project_id: 'p1' }),
+                createMockSensor({ id: 'a2', name: 'Probe', project_id: 'p-unknown' }),
+            ],
+            total: 2, page: 1, page_size: 20,
+        } as never)
+        render(<SensorsList />, { wrapper })
+        expect(await screen.findByRole('button', { name: 'Probe, проект Proj A' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Probe, проект p-unknown' })).toBeInTheDocument()
     })
 
     it('selecting project loads status summary; FAB navigates', async () => {

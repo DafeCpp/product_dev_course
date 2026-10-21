@@ -173,6 +173,11 @@ describe('AuditLog — branches', () => {
     const user = userEvent.setup()
     renderPage()
     await screen.findByText('project.update')
+    expect(
+      screen.getByRole('button', {
+        name: `${formatDateTimeSeconds(FULL.timestamp)}, project.update, actor-full`,
+      }),
+    ).toBeInTheDocument()
     const rows = screen.getAllByRole('row').slice(1)
     const openButton = (row: HTMLElement) =>
       within(row).getByRole('button', { name: /\d{2}\.\d{2}\.\d{4}/ })

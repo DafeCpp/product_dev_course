@@ -176,7 +176,12 @@ function AuditLog() {
                   >
                     <td className="audit-log-table__time">
                       {/* Keyboard entry point to the row; its click bubbles to the row's handler. */}
-                      <button type="button" className="table-row-open">
+                      {/* Several entries can share a second, so the label adds action and actor. */}
+                      <button
+                        type="button"
+                        className="table-row-open"
+                        aria-label={`${formatDateTimeSeconds(entry.timestamp)}, ${entry.action}, ${entry.actor_id}`}
+                      >
                         {formatDateTimeSeconds(entry.timestamp)}
                       </button>
                     </td>

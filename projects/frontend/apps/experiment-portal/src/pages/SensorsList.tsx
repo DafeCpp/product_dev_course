@@ -38,6 +38,9 @@ function SensorsList() {
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
   })
+  const projectNames: Record<string, string> = Object.fromEntries(
+    (projectsData?.projects ?? []).map((p) => [p.id, p.name])
+  )
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['sensors', projectId, status, page],
@@ -104,9 +107,7 @@ function SensorsList() {
           {projectId && (
             <SensorProjectRequestsPanel
               projectId={projectId}
-              projectNames={Object.fromEntries(
-                (projectsData?.projects ?? []).map((p) => [p.id, p.name])
-              )}
+              projectNames={projectNames}
             />
           )}
 
@@ -175,6 +176,8 @@ function SensorsList() {
                         type="button"
                         className="sensor-card__open"
                         onClick={() => setSelectedSensorId(sensor.id)}
+                        // Names are unique only within a project, so the label names the project too.
+                        aria-label={`${sensor.name}, проект ${projectNames[sensor.project_id] ?? sensor.project_id}`}
                       >
                         {sensor.name}
                       </button>
