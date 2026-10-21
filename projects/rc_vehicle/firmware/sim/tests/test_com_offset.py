@@ -48,7 +48,7 @@ def _calibrate(offset_m: tuple[float, float], *, seed: int = 0,
             started = started or bool(row["com_calib_active"])
             if started and not row["com_calib_active"]:
                 return row["com_offset_rx"], row["com_offset_ry"]
-    pytest.fail("калибровка CoM не завершилась")
+    raise AssertionError("калибровка CoM не завершилась")
 
 
 def test_centered_imu_gives_zero_offset():
