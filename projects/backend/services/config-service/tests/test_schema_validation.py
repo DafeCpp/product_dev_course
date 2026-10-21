@@ -87,6 +87,10 @@ async def test_valid_first_schema_is_activated(draft):
      'dependencies': {'b': ['x'], 'a': {'type': 'object'}}},
     {'$ref': '#/default', 'default': {'type': 'string'}},
     {'$ref': '#/default', 'default': True},
+    {'$schema': 'https://json-schema.org/draft/2020-12/schema',
+     '$ref': 'legacy#/properties/x', '$defs': {'legacy': {
+         '$schema': 'http://json-schema.org/draft-04/schema#', 'id': 'legacy',
+         'properties': {'x': {'type': 'number', 'minimum': 0, 'exclusiveMinimum': True}}}}},
     {'$schema': 'http://json-schema.org/draft-04/schema#',
      '$ref': '#/default/a%20b', 'default': {'a b': {'type': 'object'}}},
     {'$schema': 'http://json-schema.org/draft-03/schema#', 'definitions': False},
