@@ -213,12 +213,19 @@ void ControlLoopProcessor::UpdateSensorsAndEkf(ControlTickInput& input,
   const uint64_t estimator_start_us = ctx_.platform.GetTimeUs();
 #endif
 
+  // Без slew rate (DirectLaw) applied.steering хранится вместе с trim
+  // нейтрали, со slew rate — без него. Детектору сцепления нужен угол колёс,
+  // а trim лишь возвращает их в прямое положение, поэтому вычитаем его.
+  const float applied_wheel_steering =
+      DriveModeRegistry::Get(input.config.mode).GetTraits().use_slew_rate
+          ? persistent_.applied.steering
+          : persistent_.applied.steering - input.config.steering_trim;
   const VehicleStateEstimatorInput estimator_input{
       .filter = input.config.filter,
       .dt_ms = input.dt_ms,
       .applied_throttle = persistent_.applied_motor_throttle,
       .motor_model_throttle = persistent_.motor_model_throttle,
-      .applied_steering = persistent_.applied.steering,
+      .applied_steering = applied_wheel_steering,
       .ekf_available = ctx_.stab_mgr != nullptr,
       .speed_calibration_active = ctx_.auto_drive.IsSpeedCalibActive(),
       // Пока Kids speed limiter срезает газ, мотор-модель ведёт
