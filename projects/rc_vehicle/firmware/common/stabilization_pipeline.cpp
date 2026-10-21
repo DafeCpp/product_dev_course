@@ -343,6 +343,9 @@ StabilizationOutput StabilizationPipeline::Process(
         input.command.throttle < 0.0f || output.command.throttle < 0.0f;
     yaw_ctrl_.Process(cfg, output.command.steering, input, reversing,
                       policy.yaw_ref_cutoff_hz);
+    if (policy.apply_input_limits) {
+      kids_processor_.ClampToGripSteerCap(output.command.steering);
+    }
   }
   if (policy.pitch_comp_active && !pitch_before_limits) {
     pitch_ctrl_.Process(cfg, output.command.throttle, input);

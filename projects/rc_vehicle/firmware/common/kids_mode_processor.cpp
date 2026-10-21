@@ -339,6 +339,11 @@ void KidsModeProcessor::ApplyGripSteerLimit(
   steering = std::clamp(steering, -grip_steer_cap_, grip_steer_cap_);
 }
 
+void KidsModeProcessor::ClampToGripSteerCap(float& steering) noexcept {
+  if (std::abs(steering) > grip_steer_cap_) grip_steer_limit_active_ = true;
+  steering = std::clamp(steering, -grip_steer_cap_, grip_steer_cap_);
+}
+
 void KidsModeProcessor::Reset() noexcept {
   anti_spin_active_ = false;
   wheelspin_active_ = false;
