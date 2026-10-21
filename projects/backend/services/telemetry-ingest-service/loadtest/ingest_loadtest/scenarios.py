@@ -65,18 +65,18 @@ class Scenario:
     def paced(self) -> bool:
         return self.rate > 0 or self.burst_size > 0
 
-    def _burst_periods(self) -> int:
-        """Bursts whose start falls inside the run, including a final partial period."""
-        # The epsilon keeps an exact multiple (60 / 20) from rounding up to an extra burst.
-        return max(1, math.ceil(self.duration_s / self.burst_every_s - 1e-9))
+    def _slots(self, interval_s: float) -> int:
+        """Sends at ``k * interval_s`` that start inside the run, a final partial interval included."""
+        # The epsilon keeps an exact multiple (60 / 20) from rounding up to an extra slot.
+        return max(1, math.ceil(self.duration_s / interval_s - 1e-9))
 
     def batches_per_sensor(self) -> int | None:
         """Planned batches per sensor, or ``None`` for back-to-back mode."""
         if self.burst_size:
-            periods = self._burst_periods()
+            periods = self._slots(self.burst_every_s)
             return periods * self.burst_size
         if self.rate:
-            return max(1, int(self.duration_s * self.rate))
+            return self._slots(1.0 / self.rate)
         return None
 
     def target_readings_per_s(self) -> float | None:
@@ -88,7 +88,7 @@ class Scenario:
     def send_offsets(self) -> list[float]:
         """Planned send times (seconds from start) for one sensor."""
         if self.burst_size:
-            periods = self._burst_periods()
+            periods = self._slots(self.burst_every_s)
             return [k * self.burst_every_s for k in range(periods) for _ in range(self.burst_size)]
         planned = self.batches_per_sensor()
         assert planned is not None, "send_offsets() needs a paced scenario"

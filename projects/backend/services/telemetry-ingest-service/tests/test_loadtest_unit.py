@@ -31,6 +31,13 @@ def test_burst_offsets_group_sends_per_period() -> None:
     assert sc.batches_per_sensor() == 9
 
 
+def test_paced_offsets_include_final_partial_interval() -> None:
+    sc = Scenario(name="t", rate=2.0, duration_s=1.1)
+    assert sc.send_offsets() == [0.0, 0.5, 1.0]
+    # Float noise in duration * rate must not add a send at the very end.
+    assert Scenario(name="t", rate=10.0, duration_s=0.3).batches_per_sensor() == 3
+
+
 def test_burst_offsets_include_final_partial_period() -> None:
     sc = Scenario(name="t", burst_size=2, burst_every_s=20.0, duration_s=25.0)
     assert sc.send_offsets() == [0.0, 0.0, 20.0, 20.0]
