@@ -4,7 +4,7 @@ Both ``IngestRateLimiter`` and ``WsRateLimiter`` hold a reference to a single
 ``RateLimitConfig`` instance and read its fields on every ``check()`` call.
 This lets an operator change limits at runtime (via the admin endpoint) and
 have the new values take effect on the next request — without restarting the
-service and without discarding the per-sensor window state.
+service and without discarding the per-sensor token buckets.
 
 For every limit, a value of ``0`` means *unlimited* (that counter is not
 enforced).  Each counter is independent, so e.g. ``rest_max_requests=0`` with a
@@ -22,7 +22,7 @@ from telemetry_ingest_service.settings import Settings, settings as _settings
 
 @dataclass
 class RateLimitConfig:
-    """Mutable limits for both ingest transports (fixed-window) + spool timeouts."""
+    """Mutable limits for both ingest transports (token bucket: N per window) + spool timeouts."""
 
     rest_max_requests: int
     rest_max_readings: int

@@ -1,6 +1,7 @@
-"""Per-sensor fixed-window rate limiter for the REST ingest endpoint.
+"""Per-sensor token-bucket rate limiter for the REST ingest endpoint.
 
-Two independent counters share the same window:
+Two independent buckets, both refilled over ``rest_window_seconds``
+(see :mod:`token_bucket`):
 
 * **requests** — number of HTTP POST requests received from a sensor.
   Protects against clients that blast many small requests.
@@ -8,12 +9,12 @@ Two independent counters share the same window:
 * **readings** — total telemetry readings across all requests.
   Protects the DB from a client that sends a few very large batches.
 
-When either counter is exceeded ``check()`` returns ``(False, retry_after)``
+When either bucket is short ``check()`` returns ``(False, retry_after)``
 so the caller can respond with HTTP 429 and a ``Retry-After`` header.
 
 Limits are read from a shared :class:`RateLimitConfig` on every ``check()``,
 so runtime updates take effect immediately.  A limit of ``0`` means *unlimited*
-for that counter.
+for that bucket.
 
 Thread safety: asyncio is single-threaded; no locking needed.
 """
@@ -22,23 +23,23 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from telemetry_ingest_service.middleware.rate_limit_config import RateLimitConfig
+from telemetry_ingest_service.middleware.token_bucket import TokenBucket
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class _Window:
-    reset_at: float
-    requests: int = 0
-    readings: int = 0
+class _SensorBuckets:
+    requests: TokenBucket = field(default_factory=TokenBucket)
+    readings: TokenBucket = field(default_factory=TokenBucket)
 
 
 class IngestRateLimiter:
-    """Fixed-window per-sensor rate limiter for REST ingest.
+    """Token-bucket per-sensor rate limiter for REST ingest.
 
     Args:
         config: shared, mutable rate-limit configuration.  Limits are read
@@ -47,9 +48,7 @@ class IngestRateLimiter:
 
     def __init__(self, config: RateLimitConfig) -> None:
         self._config = config
-        self._buckets: dict[UUID, _Window] = defaultdict(
-            lambda: _Window(reset_at=time.monotonic() + self._config.rest_window_seconds)
-        )
+        self._buckets: dict[UUID, _SensorBuckets] = defaultdict(_SensorBuckets)
 
     @property
     def max_requests(self) -> int:
@@ -57,12 +56,12 @@ class IngestRateLimiter:
         return self._config.rest_max_requests
 
     def check(self, sensor_id: UUID, readings_count: int) -> tuple[bool, int]:
-        """Check and increment rate limit counters for *sensor_id*.
+        """Check and take rate-limit tokens for *sensor_id*.
 
         Returns ``(True, 0)`` when the request is within limits.
-        Returns ``(False, retry_after)`` when a limit is exceeded — counters
-        are NOT modified on rejection (the request is dropped before any
-        state change).
+        Returns ``(False, retry_after)`` when a limit is exceeded — no tokens
+        are taken on rejection (the request is dropped before any state
+        change).
 
         Args:
             sensor_id: UUID of the sensor making the request.
@@ -73,41 +72,36 @@ class IngestRateLimiter:
         """
         max_requests = self._config.rest_max_requests
         max_readings = self._config.rest_max_readings
+        window = self._config.rest_window_seconds
 
         now = time.monotonic()
-        bucket = self._buckets[sensor_id]
+        buckets = self._buckets[sensor_id]
 
-        if now >= bucket.reset_at:
-            bucket.reset_at = now + self._config.rest_window_seconds
-            bucket.requests = 0
-            bucket.readings = 0
+        # Check both buckets so Retry-After covers the longer of the two waits.
+        requests_wait = buckets.requests.retry_after(1, now, max_requests, window)
+        readings_wait = buckets.readings.retry_after(readings_count, now, max_readings, window)
 
-        retry_after = max(0, int(bucket.reset_at - now))
-
-        # A limit of 0 means "unlimited" for that counter.
-        if max_requests and bucket.requests >= max_requests:
+        if requests_wait is not None and (readings_wait is None or requests_wait >= readings_wait):
             logger.warning(
                 "REST ingest rate limit exceeded (requests): sensor_id=%s "
-                "requests=%d limit=%d retry_after=%ds",
+                "limit=%d retry_after=%ds",
                 sensor_id,
-                bucket.requests,
                 max_requests,
-                retry_after,
+                requests_wait,
             )
-            return False, retry_after
+            return False, requests_wait
 
-        if max_readings and bucket.readings + readings_count > max_readings:
+        if readings_wait is not None:
             logger.warning(
                 "REST ingest rate limit exceeded (readings): sensor_id=%s "
-                "readings=%d incoming=%d limit=%d retry_after=%ds",
+                "incoming=%d limit=%d retry_after=%ds",
                 sensor_id,
-                bucket.readings,
                 readings_count,
                 max_readings,
-                retry_after,
+                readings_wait,
             )
-            return False, retry_after
+            return False, readings_wait
 
-        bucket.requests += 1
-        bucket.readings += readings_count
+        buckets.requests.take(1, max_requests)
+        buckets.readings.take(readings_count, max_readings)
         return True, 0
