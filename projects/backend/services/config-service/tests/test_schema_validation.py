@@ -11,6 +11,7 @@ from config_service.services.schema_service import SchemaService
 
 @pytest.mark.parametrize('schema', [
     {'type': 'not-a-type'},
+    {'$schema': 'http://json-schema.org/draft-04/schema#', '$ref': []},
     {'$ref': '#/default', 'default': {'$schema': []}},
     {'$ref': '#/default', 'default': {'$schema': 'https://example.com/unknown'}},
     {'$id': 'not a uri', 'type': 'object'},
@@ -84,6 +85,9 @@ async def test_valid_first_schema_is_activated(draft):
      'dependencies': {'b': ['x'], 'a': {'type': 'object'}}},
     {'$ref': '#/default', 'default': {'type': 'string'}},
     {'$ref': '#/default', 'default': True},
+    {'$schema': 'http://json-schema.org/draft-03/schema#', 'definitions': False},
+    {'$schema': 'http://json-schema.org/draft-03/schema#',
+     'definitions': {'extension': {'type': 'not-a-type'}}},
     {'$schema': 'https://json-schema.org/draft/2020-12/schema',
      '$ref': '#/$defs/legacy', '$defs': {'legacy': {
          '$schema': 'http://json-schema.org/draft-04/schema#',
@@ -113,3 +117,30 @@ async def test_mixed_dependencies_anchor_with_existing_config():
     config_repo.list_by_type.return_value = [SimpleNamespace(value={})]
     await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
     schema_repo.insert_new_version_and_activate.assert_awaited_once()
+
+
+@pytest.mark.parametrize('schema,value', [
+    ({'$schema': 'http://json-schema.org/draft-07/schema#', '$ref': '#anchor',
+      'dependencies': {'a': {'type': 'object'}, 'b': ['x']},
+      'definitions': {'x': {'$id': '#anchor', 'type': 'object'}}}, {}),
+    ({'$schema': 'https://json-schema.org/draft/2020-12/schema', 'type': 'object',
+      'properties': {'amount': {
+          '$schema': 'http://json-schema.org/draft-04/schema#',
+          'id': 'legacy', 'type': 'number', 'minimum': 0, 'exclusiveMinimum': True}}},
+     {'amount': 1}),
+])
+async def test_activated_schema_is_usable_by_validation_service(schema, value):
+    from config_service.services.validation_service import ValidationService
+
+    schema_repo = AsyncMock()
+    schema_repo.get_active.return_value = None
+    schema_repo.insert_new_version_and_activate.return_value = SimpleNamespace(version=1)
+    config_repo = AsyncMock()
+    config_repo.list_by_type.return_value = []
+    await SchemaService(schema_repo, config_repo).update(ConfigType.feature_flag, schema, 'admin')
+    schema_repo.get_active.return_value = SimpleNamespace(schema=schema)
+    service = ValidationService(schema_repo)
+    await service.validate_strict(ConfigType.feature_flag, value)
+    await service.validate_paranoid(ConfigType.feature_flag, value, 'test-config')
+    service.invalidate_cache(ConfigType.feature_flag)
+    await service.validate_strict(ConfigType.feature_flag, value)
