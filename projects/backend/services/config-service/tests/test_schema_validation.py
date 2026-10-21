@@ -197,14 +197,14 @@ def test_draft3_object_extends():
     assert not validator.is_valid(42)
 
 
-@pytest.mark.parametrize('reference', ['legacy#/properties/x', '#/$defs/legacy/properties/x', 'legacy#target'])
+@pytest.mark.parametrize('reference', ['legacy#/properties/x', '#/$defs/legacy/properties/x', 'legacy#target', 'child'])
 async def test_reference_inherits_dialect_during_config_validation(reference):
     from config_service.core.exceptions import ConfigValidationError
     from config_service.services.validation_service import ValidationService
     schema = {'$schema': 'https://json-schema.org/draft/2020-12/schema', '$ref': reference,
               '$defs': {'legacy': {'$schema': 'http://json-schema.org/draft-04/schema#',
                                   'id': 'legacy', 'properties': {'x': {
-                                      'id': '#target', 'type': 'object', 'dependencies': {'a': ['b']}}}}}}
+                                      'id': 'child' if reference == 'child' else '#target', 'type': 'object', 'dependencies': {'a': ['b']}}}}}}
     schema_repo = AsyncMock()
     schema_repo.get_active.return_value = None
     config_repo = AsyncMock()
@@ -229,3 +229,19 @@ def test_reference_dialect_annotation_does_not_change_const_data():
     assert validator.is_valid({'type': 'object'})
     assert not validator.is_valid({'type': 'object', '$schema': 'extra'})
     assert schema == original
+
+
+def test_dynamic_anchor_rebinding_is_preserved():
+    from config_service.services.schema_validation import build_schema_validator
+    schema = {
+        '$id': 'https://example.com/strict', '$dynamicAnchor': 'node', '$ref': 'tree',
+        'unevaluatedProperties': False,
+        '$defs': {'tree': {
+            '$id': 'tree', '$dynamicAnchor': 'node', 'type': 'object',
+            'properties': {'data': True, 'children': {
+                'type': 'array', 'items': {'$dynamicRef': '#node'}}},
+        }},
+    }
+    validator = build_schema_validator(schema)
+    assert validator.is_valid({'children': [{'data': 1}]})
+    assert not validator.is_valid({'children': [{'extra': 1}]})
