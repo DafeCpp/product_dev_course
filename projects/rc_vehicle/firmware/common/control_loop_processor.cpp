@@ -261,6 +261,7 @@ void ControlLoopProcessor::ProcessCalibration(uint32_t now_ms,
     state_estimator_.OnReferenceFrameChanged();
   }
   if (effects.ekf_reset) {
+    state_estimator_.OnEkfReset();
     state_estimator_.RefreshEkfFields(state.estimate);
   }
 }
@@ -350,6 +351,7 @@ bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
     ctx_.oversteer_guard.Reset();
     ctx_.kids_processor.Reset();
     ctx_.ekf.Reset();
+    state_estimator_.OnEkfReset();
     state_estimator_.RefreshEkfFields(state.estimate);
     if (ctx_.stab_mgr) ctx_.stab_mgr->ResetWeights();
     if (ctx_.telem_mgr) ctx_.telem_mgr->ResetLastLogTime();

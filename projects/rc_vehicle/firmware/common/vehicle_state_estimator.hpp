@@ -107,6 +107,14 @@ class VehicleStateEstimator {
   /** Reset state tied to the calibrated vehicle reference frame. */
   void OnReferenceFrameChanged() noexcept;
 
+  /** Restart the motor-model lag from the EKF state after its reset. */
+  void OnEkfReset() noexcept;
+
+  /** Motor-model steady-state speed for the last tick, before the lag. */
+  [[nodiscard]] float GetMotorModelTargetMs() const noexcept {
+    return motor_model_target_ms_;
+  }
+
   /** Refresh only EKF-backed fields after an external EKF reset. */
   void RefreshEkfFields(VehicleStateEstimate& estimate) const noexcept;
 
@@ -137,6 +145,11 @@ class VehicleStateEstimator {
   // появления в постоянных времени accel-коррекции (LOS-369).
   bool prev_tick_anchored_{false};
   float anchor_settle_left_tau_{0.0f};
+  // Установившаяся скорость мотор-модели, она же после инерционного звена
+  // (LOS-378), и признак, что мотор-модель работала на прошлом тике.
+  float motor_model_target_ms_{0.0f};
+  float motor_model_speed_ms_{0.0f};
+  bool motor_model_was_active_{false};
 #ifdef RC_PROFILE_LOOP
   VehicleStateEstimatorProfile profile_;
 #endif

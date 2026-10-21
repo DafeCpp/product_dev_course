@@ -766,10 +766,15 @@ def test_oversteer_on_sil_corner(tmp_path):
     """SIL: тот же поворот, что в test_oversteer_guard_cuts_throttle_and_slip."""
     from simlib.closed_loop import OversteerReplayConfig
 
+    from test_testing_program_scenarios import (OVERSTEER_SETTLE_TICKS,
+                                                oversteer_params)
+
     def corner(reduction):
-        with ClosedLoopSim(BIN, dynamic=True, stabilize=True, sensor_noise=False,
+        with ClosedLoopSim(BIN, params=oversteer_params(), dynamic=True,
+                           stabilize=True, sensor_noise=False,
                            oversteer=OversteerReplayConfig(5.0, 10.0, reduction)) as sim:
-            sim.run(2000, rc_throttle=0.5, rc_steering=0.0)
+            sim.run(OVERSTEER_SETTLE_TICKS, rc_throttle=0.0, rc_steering=0.0)
+            sim.run(1000, rc_throttle=0.5, rc_steering=0.0)
             rows = sim.run(1500, rc_throttle=1.0, rc_steering=1.0)
         return _write_csv(tmp_path / f"os{reduction}.csv", _sil_to_log(
             rows, oversteer_active=lambda i, r: r["oversteer_active"],

@@ -12,7 +12,7 @@ import math
 
 import pytest
 
-from simlib import ClosedLoopSim, OversteerReplayConfig, find_sim_host
+from simlib import ClosedLoopSim, OversteerReplayConfig, find_sim_host, get_profile
 from simlib.frame import SensorFrame
 from simlib.sim_host_runner import run_batch
 
@@ -196,14 +196,33 @@ def test_yaw_rate_step_settles_within_200_ms(mode):
     assert settling_ms < 200
 
 
+# Шины с пределом μ и тяга на заднюю ось: газ в пол в повороте срывает заднюю
+# ось в занос. На линейных шинах без предела занос не физичен (боковое
+# ускорение до 4.5 g), и guard срабатывал лишь на ложном угле от мотор-модели,
+# которая выдавала скорость полного газа сразу, без разгона (LOS-378).
+OVERSTEER_TIRE_MU = 0.3
+OVERSTEER_FRONT_SHARE = 0.2
+# Авто-калибровка IMU (1000 семплов) должна пройти в покое.
+OVERSTEER_SETTLE_TICKS = 1500
+
+
+def oversteer_params():
+    p = get_profile("fitted_2026_08_02")
+    p.tire_mu = OVERSTEER_TIRE_MU
+    p.drive_front_share = OVERSTEER_FRONT_SHARE
+    return p
+
+
 def test_oversteer_guard_cuts_throttle_and_slip():
     """Oversteer guard: резкий газ в повороте → guard срабатывает, газ и занос снижаются."""
 
     def corner(reduction: float):
         guard = OversteerReplayConfig(5.0, 10.0, reduction)
-        with ClosedLoopSim(BIN, dynamic=True, stabilize=True,
-                           sensor_noise=False, oversteer=guard) as sim:
-            sim.run(2000, rc_throttle=0.5, rc_steering=0.0)
+        with ClosedLoopSim(BIN, params=oversteer_params(), dynamic=True,
+                           stabilize=True, sensor_noise=False,
+                           oversteer=guard) as sim:
+            sim.run(OVERSTEER_SETTLE_TICKS, rc_throttle=0.0, rc_steering=0.0)
+            sim.run(1000, rc_throttle=0.5, rc_steering=0.0)
             return sim.run(1500, rc_throttle=1.0, rc_steering=1.0)
 
     # Эталон: детектор включён, но газ не режет — занос тот же, что без guard.
@@ -218,8 +237,18 @@ def test_oversteer_guard_cuts_throttle_and_slip():
                for f, g in zip(detect_only, guarded))
 
 
+# Мотор вдвое мощнее подогнанного: на нём Kids-газ 0.3 разгоняет быстрее
+# порога accel_threshold_g = 0.15 g. На штатном моторе реальное ускорение
+# лишь касается порога; раньше тест держался на forward_accel, завышенном на
+# ~35 % из-за vx мотор-модели, обгонявшего машину (LOS-378).
+KIDS_LAUNCH_MAX_ACCEL = 16.0
+
+
 def _kids_launch(**kw) -> list[dict]:
-    with ClosedLoopSim(BIN, drive_mode="kids", sensor_noise=False, **kw) as sim:
+    p = get_profile("fitted_2026_08_02")
+    p.max_accel = KIDS_LAUNCH_MAX_ACCEL
+    with ClosedLoopSim(BIN, params=p, drive_mode="kids", sensor_noise=False,
+                       **kw) as sim:
         return sim.run(2000, rc_throttle=1.0, rc_steering=0.0)
 
 

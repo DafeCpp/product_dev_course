@@ -52,4 +52,6 @@ def test_speed_meas_reflects_throttle():
     assert rows[-1]["ekf_speed_meas"] > 1.0
     with ClosedLoopSim(BIN) as idle:
         rows_idle = idle.run(300, dt_ms=2, rc_throttle=0.0, rc_steering=0.0)
-    assert abs(rows_idle[-1]["ekf_speed_meas"]) < 1e-6
+    # Якорь стартует с оценки EKF и идёт к нулю через инерцию мотор-модели
+    # (LOS-378), поэтому в покое остаётся лишь микродрейф vx.
+    assert abs(rows_idle[-1]["ekf_speed_meas"]) < 1e-3

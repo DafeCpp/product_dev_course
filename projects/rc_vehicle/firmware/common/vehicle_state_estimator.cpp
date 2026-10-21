@@ -16,6 +16,12 @@ constexpr float kDegToRad = 3.14159265358979f / 180.0f;
 constexpr float kNhcMaxYawRateRps = 1.0f;
 // Выдержка якоря TiltEstimator в постоянных времени accel-коррекции (LOS-369).
 constexpr float kTiltAnchorSettleTimeConstants = 3.0f;
+// Постоянная времени скорости на газ: dv/dt = (gain·thr − v)/τ, τ = 1/drag
+// по подгонке на логах (профиль fitted_2026_08_02, drag 1.13 1/с). Без неё
+// якорь выдавал установившуюся скорость сразу при газе, и EKF vx обгонял
+// машину на 10–20 % на разгоне, а в повороте ошибка vx·r шла в занос
+// (LOS-378).
+constexpr float kMotorSpeedTauS = 0.9f;
 }  // namespace
 
 VehicleStateEstimate VehicleStateEstimator::Update(
@@ -46,6 +52,7 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 #endif
 
   const bool ekf_active = input.ekf_available && input.filter.ekf_enabled;
+  bool motor_model_ran = false;
   const bool imu_tick_valid = sensors.imu_enabled && input.dt_ms > 0;
   const float dt_sec =
       imu_tick_valid ? static_cast<float>(input.dt_ms) * 0.001f : 0.0f;
@@ -152,10 +159,17 @@ VehicleStateEstimate VehicleStateEstimator::Update(
                          (throttle_abs - input.filter.motor_deadzone) /
                          (1.0f - input.filter.motor_deadzone);
       }
+      motor_model_target_ms_ = expected_speed;
+      // Инерционное звено стартует с текущей оценки: после паузы якоря
+      // (калибровка скорости, сброс EKF) машина могла уже ехать.
+      if (!motor_model_was_active_) motor_model_speed_ms_ = ekf_.GetVx();
+      motor_model_speed_ms_ += (expected_speed - motor_model_speed_ms_) *
+                               dt_sec / (kMotorSpeedTauS + dt_sec);
+      motor_model_ran = true;
 #ifdef RC_PROFILE_LOOP
       profile_call(profile_.speed, [&] {
 #endif
-        ekf_.UpdateSpeed(expected_speed, input.filter.speed_meas_noise);
+        ekf_.UpdateSpeed(motor_model_speed_ms_, input.filter.speed_meas_noise);
 #ifdef RC_PROFILE_LOOP
       });
 #endif
@@ -176,6 +190,8 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     a_lin_prev_g_ = (vx_now - prev_vx_) / dt_sec / kG;
     prev_vx_ = vx_now;
   }
+
+  motor_model_was_active_ = motor_model_ran;
 
   float forward_accel_g = 0.0f;
   if (sensors.imu_enabled) {
@@ -210,6 +226,10 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
   tilt_was_enabled_ = false;
   prev_tick_anchored_ = false;
   anchor_settle_left_tau_ = 0.0f;
+}
+
+void VehicleStateEstimator::OnEkfReset() noexcept {
+  motor_model_was_active_ = false;
 }
 
 void VehicleStateEstimator::RefreshEkfFields(

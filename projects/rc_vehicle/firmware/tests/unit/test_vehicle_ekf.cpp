@@ -700,3 +700,20 @@ TEST(VehicleEkfTest, UpdateFromImu_LevelStationary_NoDrift) {
   }
   EXPECT_NEAR(ekf.GetSpeedMs(), 0.0f, 0.01f);
 }
+
+// LOS-378: анкер мотор-модели правит только vx. В повороте Predict связывает
+// vx и vy (член r·vy), и полный Kalman-update по ковариации гасил бы vy —
+// угол заноса EKF не рос в медленном заносе.
+TEST(VehicleEkfTest, UpdateSpeed_DoesNotCorrectVy) {
+  VehicleEkf ekf;
+  ekf.SetState(2.0f, -0.3f, 1.2f);
+  for (int i = 0; i < 200; ++i) {
+    ekf.Predict(0.0f, 2.4f, 0.002f);  // ay ≈ r·vx: vy почти не меняется
+  }
+  const float vy_before = ekf.GetVy();
+  const float vx_before = ekf.GetVx();
+  ekf.UpdateSpeed(vx_before + 0.5f, 0.05f);
+  EXPECT_FLOAT_EQ(ekf.GetVy(), vy_before);
+  EXPECT_GT(ekf.GetVx(), vx_before + 0.05f);
+  EXPECT_GT(ekf.GetVyVariance(), 0.0f);
+}

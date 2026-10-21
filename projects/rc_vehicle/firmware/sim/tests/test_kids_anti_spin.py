@@ -5,13 +5,14 @@
 проверяется, срабатывает ли anti-spin детского режима и уменьшает ли он
 пробуксовку и занос относительно эталона без него (--no-kids-anti-spin).
 
-Сейчас не срабатывает ни в одном сценарии: anti-spin в прошивке
-(KidsModeProcessor) смотрит только на угол заноса EKF, а
-- при пробуксовке по прямой угла заноса нет вовсе;
-- при реальном заносе угол заноса EKF в разы меньше настоящего (~2° при
-  ~25°) и не доходит до порога 10°. В EKF vy — интеграл ay − r·vx с
-  затуханием vy_decay_hz, а vx берётся из мотор-модели; отключение NHC
-  картину не меняет (yaw rate в заносе выше порога NHC).
+Что сейчас не так:
+- при пробуксовке по прямой угла заноса нет вовсе, и anti-spin молчит
+  (LOS-385);
+- угол заноса EKF в медленном заносе занижен: боковая скорость vy
+  затухает с vy_decay_hz = 5 Гц, а при 1 Гц тряска дороги в акселерометре
+  (≈0.5 g на 2 м/с) даёт ложный занос выше порога на асфальте (LOS-378);
+- даже сработав, резкий срез газа anti-spin тормозит заднюю ось
+  противо-ЭДС, и машину разворачивает (LOS-389).
 Такие критерии помечены strict xfail: исправление сразу покажет XPASS.
 Отдельные тесты проверяют, что модель действительно буксует и заносит, то
 есть xfail падает по названной причине, а не из-за слабого сценария.
@@ -29,7 +30,10 @@ pytestmark = pytest.mark.skipif(
     BIN is None, reason="sim_host не собран (cmake build tests/), см. FW-S2.1")
 
 DT_MS = 2
-SETTLE_TICKS = 500  # калибровка IMU и сход фильтров в покое
+# Авто-калибровка IMU при старте — 1000 семплов (2 с, CalibrationManager::
+# StartAutoCalibration) плюс сход фильтров. Меньше — и калибровка захватывала
+# разгон: gravity_vec наклонялся на ~2°, и в поворот yaw rate утекал в gx.
+SETTLE_TICKS = 1500
 # Kids по умолчанию (common/stabilization_config.hpp, KidsModeConfig).
 ANTI_SPIN_THRESHOLD_DEG = 10.0
 
@@ -51,6 +55,7 @@ def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
                        kids_anti_spin=anti_spin, sensor_noise=False) as sim:
         sim.run(SETTLE_TICKS, DT_MS, rc_throttle=0.0, rc_steering=0.0)
         slip_ratio, beta, ekf_slip, active = [], [], [], 0
+        beta_at_trigger = None
         for i in range(straight_ticks + turn_ticks):
             row = sim.step(DT_MS, 1.0, 0.0 if i < straight_ticks else 1.0)
             st = sim.model.state
@@ -58,12 +63,15 @@ def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
             beta.append(abs(math.degrees(math.atan2(st.vy, max(st.v, 0.1)))))
             ekf_slip.append(abs(row["ekf_slip_deg"]))
             active += int(row["kids_anti_spin_active"])
+            if active and beta_at_trigger is None:
+                beta_at_trigger = beta[-1]
     return {
         "peak_slip_ratio": max(slip_ratio),
         "spin_ticks": sum(s > 0.05 for s in slip_ratio),
         "peak_beta_deg": max(beta),
         "peak_ekf_slip_deg": max(ekf_slip),
         "anti_spin_ticks": active,
+        "beta_at_trigger_deg": beta_at_trigger,
     }
 
 
@@ -101,8 +109,27 @@ def test_slippery_turn_slides_past_anti_spin_threshold():
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "LOS-370: при заносе ~25° угол заноса EKF ~2°, ниже порога "
-    "anti-spin 10°"))
+    "LOS-378: vy в EKF затухает с vy_decay_hz = 5 Гц; при меньшем "
+    "затухании шум акселерометра даёт ложный занос на асфальте"))
+def test_anti_spin_triggers_early_on_slippery_turn():
+    """LOS-378: угол заноса EKF доходит до порога раньше, чем β до 20°."""
+    kids = _slippery_turn(anti_spin=True)
+    assert kids["anti_spin_ticks"] > 0
+    assert kids["beta_at_trigger_deg"] < 2.0 * ANTI_SPIN_THRESHOLD_DEG
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "LOS-378: vy в EKF затухает с vy_decay_hz = 5 Гц; при меньшем "
+    "затухании шум акселерометра даёт ложный занос на асфальте"))
+def test_ekf_slip_tracks_slide_without_anti_spin():
+    """LOS-378: в заносе ~27° угол EKF не застревает на единицах градусов."""
+    ref = _slippery_turn(anti_spin=False)
+    assert ref["peak_ekf_slip_deg"] > 0.5 * ref["peak_beta_deg"]
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "LOS-389: срез газа anti-spin (0.30 → 0.09) тормозит заднюю ось "
+    "противо-ЭДС, она теряет боковое сцепление, и машину разворачивает"))
 def test_anti_spin_reduces_slide_on_slippery_turn():
     ref = _slippery_turn(anti_spin=False)
     kids = _slippery_turn(anti_spin=True)
