@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
-import { format } from 'date-fns'
 import {
     Button,
     TextField,
@@ -21,6 +20,7 @@ import { notifyError, notifySuccess } from '../utils/notify'
 import PermissionGate from '../components/PermissionGate'
 import UserRolesModal from '../components/UserRolesModal'
 import './AdminUsers.scss'
+import { formatDateTime } from '../utils/format'
 
 type Tab = 'users' | 'invites' | 'system-roles'
 
@@ -319,7 +319,7 @@ function AdminUsers() {
                                                 )}
                                             </td>
                                             <td className="date-cell">
-                                                {format(new Date(u.created_at), 'dd.MM.yyyy HH:mm')}
+                                                {formatDateTime(u.created_at)}
                                             </td>
                                             <td className="actions-cell">
                                                 <button
@@ -655,11 +655,11 @@ function AdminUsers() {
                                                 </span>
                                             </td>
                                             <td className="date-cell">
-                                                {format(new Date(inv.expires_at), 'dd.MM.yyyy HH:mm')}
+                                                {formatDateTime(inv.expires_at)}
                                             </td>
                                             <td className="date-cell">
                                                 {inv.used_at
-                                                    ? format(new Date(inv.used_at), 'dd.MM.yyyy HH:mm')
+                                                    ? formatDateTime(inv.used_at)
                                                     : '—'}
                                             </td>
                                             <td>

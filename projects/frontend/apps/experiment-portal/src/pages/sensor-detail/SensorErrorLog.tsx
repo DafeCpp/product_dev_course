@@ -1,6 +1,6 @@
-import { format } from 'date-fns'
 import type { SensorErrorEntry, SensorErrorLogResponse } from '../../types'
 import { Loading } from '../../components/common'
+import { formatShortDateTime } from '../../utils/format'
 
 interface SensorErrorLogProps {
   errorLogData: SensorErrorLogResponse | undefined
@@ -49,7 +49,7 @@ export default function SensorErrorLog({
                 {errorLogData.entries.map((entry: SensorErrorEntry) => (
                   <tr key={entry.id}>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      {format(new Date(entry.occurred_at), 'dd MMM HH:mm:ss')}
+                      {formatShortDateTime(entry.occurred_at, { seconds: true })}
                     </td>
                     <td>
                       <span className={`badge ${

@@ -8,6 +8,7 @@ import ProjectModal from '../components/ProjectModal'
 import ProjectMembersModal from '../components/ProjectMembersModal'
 import './ProjectsList.scss'
 import { getApiErrorMessage } from '../utils/apiError'
+import { formatDate } from '../utils/format'
 
 const ROLE_OPTIONS = [
   { value: '', label: 'Все роли' },
@@ -136,7 +137,7 @@ function ProjectsList() {
                         {owner ? 'Владелец' : 'Участник'}
                       </span>
                       <span className="project-card__date">
-                        c {new Date(project.created_at).toLocaleDateString('ru-RU')}
+                        c {formatDate(project.created_at)}
                       </span>
                     </div>
 
@@ -185,7 +186,7 @@ function ProjectsList() {
                       </div>
                       <div className="project-card__meta-item">
                         <span>Дата создания</span>
-                        <strong>{new Date(project.created_at).toLocaleDateString('ru-RU')}</strong>
+                        <strong>{formatDate(project.created_at)}</strong>
                       </div>
                     </div>
                   </article>

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { formatDateTimeSeconds } from '../utils/format'
 import { MemoryRouter } from 'react-router-dom'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { format } from 'date-fns'
 import RunDetail from './RunDetail'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
 import { useCountdown } from '../hooks/useCountdown'
@@ -182,7 +182,7 @@ describe('RunDetail branches', () => {
     expect(screen.getByRole('button', { name: 'Старт отсчёта' })).toBeDisabled()
     expect(screen.getByTestId('ov-start')).toHaveTextContent('—')
     expect(screen.getByTestId('ov-finish')).toHaveTextContent(
-      format(new Date('2024-01-02T10:00:00Z'), 'dd MMM yyyy HH:mm:ss')
+      formatDateTimeSeconds('2024-01-02T10:00:00Z')
     )
     expect(screen.getByTestId('ov-duration')).toHaveTextContent('—')
     expect(screen.getByText('Artifacts:none')).toBeInTheDocument()

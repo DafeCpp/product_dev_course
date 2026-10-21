@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import { sensorsApi } from '../api/client'
 import { useApiMutation } from '../hooks/useApiMutation'
 import type { SensorProjectRequest } from '../types'
 import './SensorProjectRequestsPanel.scss'
+import { formatDateTime } from '../utils/format'
 
 interface SensorProjectRequestsPanelProps {
   projectId: string
@@ -60,7 +60,7 @@ function SensorProjectRequestsPanel({ projectId, projectNames = {} }: SensorProj
                 <span>
                   <strong>{request.sensor_name || request.sensor_id}</strong> в проект{' '}
                   <strong>{projectLabel(request.project_id)}</strong>
-                  <span className="text-muted"> · {format(new Date(request.created_at), 'dd MMM yyyy HH:mm')}</span>
+                  <span className="text-muted"> · {formatDateTime(request.created_at)}</span>
                 </span>
                 <span className="sensor-requests__actions">
                   <button
@@ -93,7 +93,7 @@ function SensorProjectRequestsPanel({ projectId, projectNames = {} }: SensorProj
               <li key={request.id} className="sensor-requests__item">
                 <span>
                   Датчик <code>{request.sensor_id}</code>
-                  <span className="text-muted"> · {format(new Date(request.created_at), 'dd MMM yyyy HH:mm')}</span>
+                  <span className="text-muted"> · {formatDateTime(request.created_at)}</span>
                 </span>
                 <span className="sensor-requests__actions">
                   <button

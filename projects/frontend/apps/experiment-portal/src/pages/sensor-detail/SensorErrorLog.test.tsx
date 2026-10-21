@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
+import { formatShortDateTime } from '../../utils/format'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { format } from 'date-fns'
 import SensorErrorLog from './SensorErrorLog'
 import type { SensorErrorEntry, SensorErrorLogResponse } from '../../types'
 
@@ -76,7 +76,7 @@ describe('SensorErrorLog', () => {
         expect(screen.getByText('validation_error')).toHaveClass('badge-info')
         expect(screen.getByText('other_code')).toHaveClass('badge-secondary')
         expect(screen.getAllByText('—')).toHaveLength(2)
-        expect(screen.getAllByText(format(new Date('2024-02-01T08:09:10Z'), 'dd MMM HH:mm:ss'))).toHaveLength(4)
+        expect(screen.getAllByText(formatShortDateTime('2024-02-01T08:09:10Z', { seconds: true }))).toHaveLength(4)
         expect(screen.queryByText('← Назад')).not.toBeInTheDocument()
     })
 

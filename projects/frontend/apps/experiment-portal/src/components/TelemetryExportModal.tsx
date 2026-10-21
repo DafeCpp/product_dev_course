@@ -4,6 +4,7 @@ import { telemetryExportApi } from '../api/client'
 import type { CaptureSession, Sensor } from '../types'
 import { notifyError, notifySuccess } from '../utils/notify'
 import { getApiErrorMessage } from '../utils/apiError'
+import { formatDateTimeSeconds } from '../utils/format'
 
 export interface TelemetryExportModalProps {
     isOpen: boolean
@@ -220,7 +221,7 @@ function TelemetryExportModal({
                             {sessions.map((s) => (
                                 <option key={s.id} value={s.id}>
                                     #{s.ordinal_number} — {s.status}
-                                    {s.started_at ? ` (${new Date(s.started_at).toLocaleString('ru')})` : ''}
+                                    {s.started_at ? ` (${formatDateTimeSeconds(s.started_at)})` : ''}
                                 </option>
                             ))}
                         </select>

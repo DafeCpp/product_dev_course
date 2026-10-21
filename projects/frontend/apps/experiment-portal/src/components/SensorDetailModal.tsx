@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { sensorsApi, projectsApi } from '../api/client'
-import { format } from 'date-fns'
 import type { SensorTokenResponse } from '../types'
 import TestTelemetryModal from './TestTelemetryModal'
 import TelemetryStreamModal from './TelemetryStreamModal'
@@ -18,6 +17,7 @@ import {
 } from './common'
 import './SensorDetailModal.scss'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
+import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 
 interface SensorDetailModalProps {
     isOpen: boolean
@@ -121,7 +121,7 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
         if (diffMins < 1) return 'Только что'
         if (diffMins < 60) return `${diffMins} мин назад`
         if (diffMins < 1440) return `${Math.floor(diffMins / 60)} ч назад`
-        return format(date, 'dd MMM yyyy HH:mm:ss')
+        return formatDateTimeSeconds(date)
     }
 
     const isPending = deleteMutation.isPending || rotateTokenMutation.isPending || addProjectMutation.isPending || removeProjectMutation.isPending
@@ -327,11 +327,11 @@ function SensorDetailModal({ isOpen, onClose, sensorId }: SensorDetailModalProps
                                 )}
                                 <InfoRow
                                     label="Создан"
-                                    value={format(new Date(sensor.created_at), 'dd MMM yyyy HH:mm')}
+                                    value={formatDateTime(sensor.created_at)}
                                 />
                                 <InfoRow
                                     label="Обновлен"
-                                    value={format(new Date(sensor.updated_at), 'dd MMM yyyy HH:mm')}
+                                    value={formatDateTime(sensor.updated_at)}
                                 />
                             </div>
 

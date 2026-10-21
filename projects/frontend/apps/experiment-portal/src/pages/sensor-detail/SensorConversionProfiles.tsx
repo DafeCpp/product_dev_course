@@ -1,6 +1,6 @@
-import { format } from 'date-fns'
 import type { ConversionProfile, ConversionProfileStatus, ConversionProfilesListResponse } from '../../types'
 import { Loading } from '../../components/common'
+import { formatDateTime } from '../../utils/format'
 
 interface ConversionProfileMutation {
   mutate: (profileId: string) => void
@@ -86,7 +86,7 @@ export default function SensorConversionProfiles({
                         </span>
                       </td>
                       <td>
-                        {format(new Date(profile.created_at), 'dd MMM yyyy HH:mm')}
+                        {formatDateTime(profile.created_at)}
                       </td>
                       <td>
                         {(profile.status === 'draft' || profile.status === 'scheduled') && (

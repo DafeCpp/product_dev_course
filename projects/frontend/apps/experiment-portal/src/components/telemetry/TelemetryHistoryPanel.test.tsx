@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { formatDateTimeSeconds } from "../../utils/format";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -142,8 +143,8 @@ describe("TelemetryHistoryPanel", () => {
       } as CaptureSession,
     });
     expect(screen.getByText("Capture #3")).toBeInTheDocument();
-    const start = new Date(startedAt).toLocaleString("ru-RU");
-    const stop = new Date(stoppedAt).toLocaleString("ru-RU");
+    const start = formatDateTimeSeconds(startedAt);
+    const stop = formatDateTimeSeconds(stoppedAt);
     expect(screen.getByText(`${start} → ${stop}`)).toBeInTheDocument();
     expect(screen.getByTestId("controls")).toHaveTextContent(
       "sensors:1 limit:true",
@@ -166,7 +167,7 @@ describe("TelemetryHistoryPanel", () => {
       } as CaptureSession,
     });
     expect(
-      screen.getByText(new Date(startedAt).toLocaleString("ru-RU")),
+      screen.getByText(formatDateTimeSeconds(startedAt)),
     ).toBeInTheDocument();
   });
 

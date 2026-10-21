@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { sensorsApi, projectsApi } from '../api/client'
-import { format, formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Sensor, ConnectionStatus } from '../types'
 import {
@@ -16,6 +16,7 @@ import {
 import SensorStatusSummaryBar from '../components/SensorStatusSummaryBar'
 import './SensorMonitor.scss'
 import { getApiErrorMessage } from '../utils/apiError'
+import { formatShortDateTime } from '../utils/format'
 
 const CONNECTION_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Все' },
@@ -158,7 +159,7 @@ function SensorMonitor() {
                       <div className="info-row">
                         <strong>Время</strong>
                         <span className="sensor-monitor__ts">
-                          {format(new Date(sensor.last_heartbeat), 'dd MMM HH:mm:ss')}
+                          {formatShortDateTime(sensor.last_heartbeat, { seconds: true })}
                         </span>
                       </div>
                     )}

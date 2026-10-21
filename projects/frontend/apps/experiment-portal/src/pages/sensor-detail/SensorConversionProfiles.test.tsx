@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { formatDateTime } from '../../utils/format'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { format } from 'date-fns'
 import SensorConversionProfiles from './SensorConversionProfiles'
 import type { ConversionProfile, ConversionProfilesListResponse } from '../../types'
 
@@ -95,7 +95,7 @@ describe('SensorConversionProfiles', () => {
         expect(screen.getByText('Устаревший')).toHaveClass('badge-muted')
         expect(screen.getByText('Активный профиль')).toBeInTheDocument()
         expect(container.querySelectorAll('tr.row-active')).toHaveLength(1)
-        expect(screen.getAllByText(format(new Date('2024-04-01T12:30:00Z'), 'dd MMM yyyy HH:mm'))).toHaveLength(4)
+        expect(screen.getAllByText(formatDateTime('2024-04-01T12:30:00Z'))).toHaveLength(4)
 
         const publishButtons = screen.getAllByRole('button', { name: 'Опубликовать' })
         expect(publishButtons).toHaveLength(2)

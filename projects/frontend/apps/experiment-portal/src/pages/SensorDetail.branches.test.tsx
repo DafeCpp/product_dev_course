@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { formatDateTimeSeconds } from '../utils/format'
 import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import type { ReactNode } from 'react'
 import SensorDetail from './SensorDetail'
 import { sensorsApi, projectsApi, conversionProfilesApi, backfillApi } from '../api/client'
@@ -149,7 +149,7 @@ describe('SensorDetail branches', () => {
         const hb = '2020-05-06T07:08:09Z'
         vi.mocked(sensorsApi.get).mockResolvedValueOnce({ ...baseSensor, last_heartbeat: hb })
         render(<SensorDetail />, { wrapper })
-        expect(await screen.findByText(format(new Date(hb), 'dd MMM yyyy HH:mm:ss'))).toBeInTheDocument()
+        expect(await screen.findByText(formatDateTimeSeconds(hb))).toBeInTheDocument()
     })
 
     it('polls backfill while tasks are active', async () => {

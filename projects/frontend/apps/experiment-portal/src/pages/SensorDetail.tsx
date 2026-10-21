@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { sensorsApi, projectsApi, conversionProfilesApi, backfillApi } from '../api/client'
-import { format } from 'date-fns'
 import type { SensorTokenResponse } from '../types'
 import TestTelemetryModal from '../components/TestTelemetryModal'
 import TelemetryStreamModal from '../components/TelemetryStreamModal'
@@ -22,6 +21,7 @@ import SensorBackfillSection from './sensor-detail/SensorBackfillSection'
 import './SensorDetail.scss'
 import { notifyError, notifySuccessSticky } from '../utils/notify'
 import { getApiErrorMessage, isNotFoundError } from '../utils/apiError'
+import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 
 function SensorDetail() {
     const { id } = useParams<{ id: string }>()
@@ -154,7 +154,7 @@ function SensorDetail() {
         if (diffMins < 1) return 'Только что'
         if (diffMins < 60) return `${diffMins} мин назад`
         if (diffMins < 1440) return `${Math.floor(diffMins / 60)} ч назад`
-        return format(date, 'dd MMM yyyy HH:mm:ss')
+        return formatDateTimeSeconds(date)
     }
 
     if (isLoading) {
@@ -291,11 +291,11 @@ function SensorDetail() {
                     )}
                     <InfoRow
                         label="Создан"
-                        value={format(new Date(sensor.created_at), 'dd MMM yyyy HH:mm')}
+                        value={formatDateTime(sensor.created_at)}
                     />
                     <InfoRow
                         label="Обновлен"
-                        value={format(new Date(sensor.updated_at), 'dd MMM yyyy HH:mm')}
+                        value={formatDateTime(sensor.updated_at)}
                     />
                 </div>
 

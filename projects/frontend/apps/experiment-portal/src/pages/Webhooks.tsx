@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { projectsApi, webhooksApi } from '../api/client'
-import { format } from 'date-fns'
 import type { Project, WebhookSubscription, WebhookDelivery } from '../types'
 import { Loading, Error as ErrorComponent, EmptyState } from '../components/common'
 import { notifyError } from '../utils/notify'
@@ -9,6 +8,7 @@ import { createWebhookSchema, flatFieldErrors } from '../schemas/forms'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { getActiveProjectId, setActiveProjectId } from '../utils/activeProject'
 import './Webhooks.scss'
+import { formatShortDateTime } from '../utils/format'
 
 const PAGE_SIZE = 20
 
@@ -416,7 +416,7 @@ function Webhooks() {
                         )}
                       </td>
                       <td>
-                        {format(new Date(d.created_at), 'dd MMM HH:mm:ss')}
+                        {formatShortDateTime(d.created_at, { seconds: true })}
                       </td>
                       <td className="delivery-actions">
                         {d.status === 'failed' && (

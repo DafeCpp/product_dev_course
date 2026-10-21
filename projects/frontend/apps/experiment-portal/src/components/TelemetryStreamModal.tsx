@@ -7,6 +7,7 @@ import type { TelemetryStreamRecord } from '../types'
 import { buildHttpDebugInfoFromFetch, maybeEmitHttpErrorToast, truncateString } from '../utils/httpDebug'
 import { getStreamErrorMessage, streamBodyError } from '../utils/streamError'
 import './TelemetryStreamModal.scss'
+import { formatDateTimeSeconds } from '../utils/format'
 
 type TelemetryStreamModalProps = {
     sensorId: string
@@ -444,7 +445,7 @@ export default function TelemetryStreamModal({
                                 .map((r) => (
                                     <div key={r.id} className="record-row">
                                         <span className="mono">#{r.id}</span>
-                                        <span className="mono">{new Date(r.timestamp).toLocaleString()}</span>
+                                        <span className="mono">{formatDateTimeSeconds(r.timestamp)}</span>
                                         <span className="mono">
                                             raw={r.raw_value}
                                             {typeof r.physical_value === 'number' ? ` phys=${r.physical_value}` : ''}

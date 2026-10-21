@@ -34,6 +34,7 @@ import type { SelectChangeEvent } from '@mui/material'
 import { artifactsApi } from '../api/client'
 import type { Artifact, ArtifactType } from '../types'
 import { DeleteIcon, CheckCircleOutlineIcon, AddIcon, UploadIcon, DownloadIcon } from './common'
+import { formatDateTimeSeconds } from '../utils/format'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -575,7 +576,7 @@ export default function ArtifactsPanel({ runId, projectId, isOwner = false }: Pr
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
-                        {new Date(artifact.created_at).toLocaleString()}
+                        {formatDateTimeSeconds(artifact.created_at)}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">

@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { sensorsApi, projectsApi } from '../api/client'
-import { format } from 'date-fns'
 import type { Sensor } from '../types'
 import {
   StatusBadge,
@@ -24,6 +23,7 @@ import SensorStatusSummaryBar from '../components/SensorStatusSummaryBar'
 import SensorProjectRequestsPanel from '../components/SensorProjectRequestsPanel'
 import { setActiveProjectId } from '../utils/activeProject'
 import './SensorsList.scss'
+import { formatDateTime } from '../utils/format'
 
 function SensorsList() {
   const navigate = useNavigate()
@@ -74,7 +74,7 @@ function SensorsList() {
     if (diffMins < 60) return `${diffMins} мин назад`
     if (diffMins < 1440) return `${Math.floor(diffMins / 60)} ч назад`
 
-    return format(date, 'dd MMM yyyy HH:mm')
+    return formatDateTime(date)
   }
 
   const isBusy = (projectsLoading && !projectsData) || isLoading
@@ -217,7 +217,7 @@ function SensorsList() {
                     <div className="sensor-meta">
                       <div className="sensor-meta__item">
                         <span>Создан</span>
-                        <strong>{format(new Date(sensor.created_at), 'dd MMM yyyy HH:mm')}</strong>
+                        <strong>{formatDateTime(sensor.created_at)}</strong>
                       </div>
                       <span className="sensor-meta__cta">Подробнее</span>
                     </div>
