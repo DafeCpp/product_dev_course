@@ -17,7 +17,6 @@ from experiment_service.api.utils import (
 from backend_common.core.exceptions import ConflictError
 from experiment_service.core.exceptions import (
     IdempotencyConflictError,
-    InvalidStatusTransitionError,
     NotFoundError,
 )
 from experiment_service.domain.dto import (
@@ -79,12 +78,9 @@ async def register_sensor(request: web.Request):
             return IdempotencyService.build_response(cached)
     service = await get_sensor_service(request)
     async with idempotency_service.guard_reservation(reservation):
-        try:
-            sensor, token = await service.register_sensor(
-                dto, created_by=user.user_id, initial_profile=profile_dto
-            )
-        except InvalidStatusTransitionError as exc:
-            raise web.HTTPBadRequest(text="Bad request") from exc
+        sensor, token = await service.register_sensor(
+            dto, created_by=user.user_id, initial_profile=profile_dto
+        )
     payload = {"sensor": _sensor_response(sensor), "token": token}
     if reservation is not None:
         await idempotency_service.complete_response(reservation, 201, payload)
@@ -203,8 +199,6 @@ async def delete_sensor(request: web.Request):
         await service.delete_sensor(project_id, sensor_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     return web.Response(status=204)
 
 

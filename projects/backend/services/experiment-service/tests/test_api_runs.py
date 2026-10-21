@@ -151,13 +151,16 @@ async def test_run_cannot_finish_with_active_capture_sessions(service_client):
     assert resp.status == 201
     session_id = (await resp.json())["id"]
 
-    # Try to finish run while capture session is active -> 400
+    # Try to finish run while capture session is active -> 409
     resp = await service_client.patch(
         f"/api/v1/runs/{run_id}",
         json={"status": "succeeded"},
         headers=headers,
     )
-    assert resp.status == 400
+    assert resp.status == 409
+    assert (await resp.json())["error"] == (
+        "Cannot finish run while it has an active capture session"
+    )
 
     # Stop capture session -> succeeded
     resp = await service_client.post(

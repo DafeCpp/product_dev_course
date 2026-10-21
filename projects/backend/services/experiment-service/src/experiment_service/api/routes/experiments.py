@@ -18,7 +18,6 @@ from experiment_service.api.utils import (
 )
 from experiment_service.core.exceptions import (
     IdempotencyConflictError,
-    InvalidStatusTransitionError,
     NotFoundError,
 )
 from experiment_service.domain.dto import ExperimentCreateDTO, ExperimentUpdateDTO
@@ -138,10 +137,7 @@ async def create_experiment(request: web.Request):
         if cached is not None:
             return IdempotencyService.build_response(cached)
     async with idempotency_service.guard_reservation(reservation):
-        try:
-            experiment = await service.create_experiment(dto)
-        except InvalidStatusTransitionError as exc:
-            raise web.HTTPBadRequest(text="Bad request") from exc
+        experiment = await service.create_experiment(dto)
     response_payload = _experiment_response(experiment)
     if reservation is not None:
         await idempotency_service.complete_response(reservation, 201, response_payload)
@@ -178,8 +174,6 @@ async def update_experiment(request: web.Request):
         experiment = await service.update_experiment(project_id, experiment_id, dto)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     return web.json_response(_experiment_response(experiment))
 
 
@@ -210,8 +204,6 @@ async def delete_experiment(request: web.Request):
     experiment_id = parse_uuid(request.match_info["experiment_id"], "experiment_id")
     try:
         await service.delete_experiment(project_id, experiment_id)
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
     return web.Response(status=204)

@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from experiment_service.api.utils import paginated_response, pagination_params, parse_uuid, read_json
 from experiment_service.core.exceptions import (
     IdempotencyConflictError,
-    InvalidStatusTransitionError,
     NotFoundError,
 )
 from experiment_service.domain.dto import CaptureSessionCreateDTO, CaptureSessionUpdateDTO
@@ -105,10 +104,7 @@ async def create_capture_session(request: web.Request):
         if cached is not None:
             return IdempotencyService.build_response(cached)
     async with idempotency_service.guard_reservation(reservation):
-        try:
-            session = await service.create_session(dto)
-        except InvalidStatusTransitionError as exc:
-            raise web.HTTPBadRequest(text="Bad request") from exc
+        session = await service.create_session(dto)
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
         capture_session_id=session.id,
@@ -251,8 +247,6 @@ async def start_backfill(request: web.Request):
         session = await service.start_backfill(project_id, session_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
 
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
@@ -296,8 +290,6 @@ async def complete_backfill(request: web.Request):
         session, attached = await service.complete_backfill(project_id, session_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
 
     audit = await get_capture_session_event_service(request)
     await audit.record_event(
@@ -340,6 +332,4 @@ async def delete_capture_session(request: web.Request):
         await service.delete_session(project_id, session_id)
     except NotFoundError as exc:
         raise web.HTTPNotFound(text="Resource not found") from exc
-    except InvalidStatusTransitionError as exc:
-        raise web.HTTPBadRequest(text="Bad request") from exc
     return web.Response(status=204)

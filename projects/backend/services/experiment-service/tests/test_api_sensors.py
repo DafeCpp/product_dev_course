@@ -232,7 +232,8 @@ async def test_sensor_cannot_be_deleted_with_active_capture_sessions(service_cli
 
     # Delete should be rejected while capture session is active
     resp = await service_client.delete(f"/api/v1/sensors/{sensor_id}", headers=headers)
-    assert resp.status == 400
+    assert resp.status == 409
+    assert "active capture sessions" in (await resp.json())["error"]
 
     # Stop capture session (no longer active)
     resp = await service_client.post(
