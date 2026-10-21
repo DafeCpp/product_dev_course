@@ -41,6 +41,19 @@ constexpr float kMaxThrottleReductionFraction = 0.5f;
 // тике из-за шума оценки скорости EKF.
 constexpr float kSpeedLimitHysteresisMs = 0.1f;
 
+constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+
+// Газ, при котором мотор-модель держит текущую продольную скорость: ниже него
+// противо-ЭДС тормозит ведущие колёса (LOS-389). 0 — модель неприменима.
+float CoastThrottle(const StabilizationConfig& cfg,
+                    const StabilizationInput& input) noexcept {
+  const float dz = cfg.filter.motor_deadzone;
+  if (dz >= 1.0f || cfg.filter.motor_speed_gain <= 0.0f) return 0.0f;
+  const float vx = input.speed_ms * std::cos(input.slip_angle_deg * kDegToRad);
+  if (vx <= 0.0f) return 0.0f;
+  return dz + vx * (1.0f - dz) / cfg.filter.motor_speed_gain;
+}
+
 }  // namespace
 
 void KidsModeProcessor::Init(const VehicleEkf& ekf, const ImuHandler* imu) {
@@ -110,8 +123,15 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
 
     if (slip_deg > km.anti_spin_threshold_deg) {
       anti_spin_active_ = true;
-      // Снизить газ на anti_spin_reduction процентов
-      throttle *= (1.0f - km.anti_spin_reduction);
+      // Снизить газ на anti_spin_reduction процентов, но вперёд не ниже
+      // газа наката: резкий срез ниже него тормозит ведущие колёса
+      // противо-ЭДС, задняя ось теряет боковое сцепление, и занос
+      // переходит в разворот (LOS-389).
+      const float reduced = throttle * (1.0f - km.anti_spin_reduction);
+      throttle =
+          throttle > 0.0f
+              ? std::min(throttle, std::max(reduced, CoastThrottle(cfg, input)))
+              : reduced;
     }
   }
 

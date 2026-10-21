@@ -11,8 +11,11 @@
 - угол заноса EKF в медленном заносе занижен: боковая скорость vy
   затухает с vy_decay_hz = 5 Гц, а при 1 Гц тряска дороги в акселерометре
   (≈0.5 g на 2 м/с) даёт ложный занос выше порога на асфальте (LOS-378);
-- даже сработав, резкий срез газа anti-spin тормозит заднюю ось
-  противо-ЭДС, и машину разворачивает (LOS-389).
+- поэтому в медленном заносе anti-spin не срабатывает вовсе, и проверить,
+  уменьшает ли он занос, можно только после LOS-378.
+Срез газа anti-spin не опускается ниже газа наката (LOS-389): раньше резкий
+срез 0.30 → 0.09 тормозил заднюю ось противо-ЭДС, и занос переходил в
+разворот. Это проверяется на быстром заносе, где anti-spin срабатывает.
 Такие критерии помечены strict xfail: исправление сразу покажет XPASS.
 Отдельные тесты проверяют, что модель действительно буксует и заносит, то
 есть xfail падает по названной причине, а не из-за слабого сценария.
@@ -127,9 +130,28 @@ def test_ekf_slip_tracks_slide_without_anti_spin():
     assert ref["peak_ekf_slip_deg"] > 0.5 * ref["peak_beta_deg"]
 
 
+def _fast_spin(anti_spin: bool) -> dict:
+    """Лёд и тяга назад: занос быстрый, EKF его видит, и anti-spin срабатывает.
+
+    Руль зажат до упора, поэтому разворота не избежать и с anti-spin; критерий
+    — anti-spin его не усиливает.
+    """
+    return _run(mu=ICE_MU, anti_spin=anti_spin,
+                front_share=REAR_BIASED_FRONT_SHARE,
+                straight_ticks=1000, turn_ticks=1500)
+
+
+def test_anti_spin_does_not_worsen_fast_spin():
+    """LOS-389: срез газа не ниже наката не усиливает разворот."""
+    ref = _fast_spin(anti_spin=False)
+    kids = _fast_spin(anti_spin=True)
+    assert kids["anti_spin_ticks"] > 0
+    assert kids["peak_beta_deg"] < ref["peak_beta_deg"]
+
+
 @pytest.mark.xfail(strict=True, reason=(
-    "LOS-389: срез газа anti-spin (0.30 → 0.09) тормозит заднюю ось "
-    "противо-ЭДС, она теряет боковое сцепление, и машину разворачивает"))
+    "LOS-378: в медленном заносе угол EKF не доходит до порога, и anti-spin "
+    "не срабатывает"))
 def test_anti_spin_reduces_slide_on_slippery_turn():
     ref = _slippery_turn(anti_spin=False)
     kids = _slippery_turn(anti_spin=True)
