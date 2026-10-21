@@ -126,6 +126,8 @@ class ComOffsetCalibration {
   float cruise_duration_sec_{5.0f};
   float gravity_vec_[3]{0.f, 0.f, 1.f};
   float applied_offset_[2]{0.f, 0.f};  ///< См. Start(applied_offset)
+  /// Газ круиза первого прохода; второй проход едет на нём же (LOS-384).
+  float cruise_throttle_{0.0f};
 
   // Аккумуляторы Pass 1 (CW: steering = +magnitude)
   double sum_ax_1_{0.0}, sum_ay_1_{0.0}, sum_gz_1_{0.0};

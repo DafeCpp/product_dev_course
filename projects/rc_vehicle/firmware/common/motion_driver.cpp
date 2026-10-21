@@ -57,7 +57,7 @@ float MotionDriver::Update(float current_accel_g, float accel_magnitude,
 
     case MotionPhase::Brake:
       phase_elapsed_sec_ += dt_sec;
-      return UpdateBrake(accel_magnitude, gyro_z_dps);
+      return UpdateBrake(accel_magnitude, gyro_z_dps, dt_sec);
 
     case MotionPhase::Idle:
     case MotionPhase::Stopped:
@@ -151,14 +151,17 @@ float MotionDriver::UpdateAccelerate(float current_accel_g, float dt_sec) {
   return throttle;
 }
 
-float MotionDriver::UpdateBrake(float accel_magnitude, float gyro_z_dps) {
+float MotionDriver::UpdateBrake(float accel_magnitude, float gyro_z_dps,
+                                float dt_sec) {
   bool accel_ok =
       std::abs(accel_magnitude - 1.0f) < config_.zupt.accel_thresh;
 
   bool gyro_ok = (config_.zupt.gyro_thresh <= 0.0f) ||
                  (std::abs(gyro_z_dps) < config_.zupt.gyro_thresh);
 
-  bool stopped = accel_ok && gyro_ok;
+  zupt_still_sec_ = (accel_ok && gyro_ok) ? zupt_still_sec_ + dt_sec : 0.0f;
+  bool stopped =
+      accel_ok && gyro_ok && zupt_still_sec_ >= config_.zupt.confirm_sec;
   bool timeout = phase_elapsed_sec_ >= config_.brake_timeout_sec;
 
   if (stopped || timeout) {
@@ -175,6 +178,7 @@ void MotionDriver::TransitionTo(MotionPhase next) {
 
   if (next == MotionPhase::Brake) {
     pid_.Reset();
+    zupt_still_sec_ = 0.0f;
   }
 }
 

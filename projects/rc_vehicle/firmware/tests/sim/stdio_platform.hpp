@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <iostream>
 #include <optional>
@@ -102,6 +103,15 @@ class StdioPlatform : public VehicleControlPlatform {
   void SetSlipTargetDeg(float deg) { slip_target_deg_ = deg; }
   /** Возрастной пресет Kids Mode (ApplyPreset), LOS-367. */
   void SetKidsPreset(KidsPreset preset) { kids_preset_ = preset; }
+  /** Madgwick β (filter.madgwick_beta) с выключенным adaptive β, как в
+   *  пункте 7.7 протокола: иначе на манёвре β обнуляется (LOS-384). */
+  void SetMadgwickBeta(float beta) { madgwick_beta_ = beta; }
+  /** Частота среза LPF gyro Z [Гц] (filter.lpf_cutoff_hz), LOS-384. */
+  void SetLpfCutoffHz(float hz) { lpf_cutoff_hz_ = hz; }
+  /** Сохранённый в NVS offset IMU от центра масс [м] (LOS-384). */
+  void SetComOffset(float rx, float ry) {
+    com_offset_ = std::array<float, 2>{rx, ry};
+  }
 
   // ── Выход: читается циклом после HostStep ────────────────────────────────
   [[nodiscard]] float GetLastThrottle() const { return last_throttle_; }
@@ -167,10 +177,17 @@ class StdioPlatform : public VehicleControlPlatform {
   std::expected<void, PlatformError> SaveCalib(const ImuCalibData&) override {
     return std::expected<void, PlatformError>{};
   }
-  std::expected<void, PlatformError> SaveComOffset(const float[2]) override {
+  std::expected<void, PlatformError> SaveComOffset(
+      const float offset[2]) override {
+    com_offset_ = std::array<float, 2>{offset[0], offset[1]};
     return std::expected<void, PlatformError>{};
   }
-  bool LoadComOffset(float[2]) override { return false; }
+  bool LoadComOffset(float offset[2]) override {
+    if (!com_offset_) return false;
+    offset[0] = (*com_offset_)[0];
+    offset[1] = (*com_offset_)[1];
+    return true;
+  }
 
   // ── Stabilization config ─────────────────────────────────────────────────
   // Normal без флагов → nullopt (дефолты прошивки). Иначе — конфиг режима
@@ -264,12 +281,14 @@ class StdioPlatform : public VehicleControlPlatform {
  private:
   // Конфиг режима. Normal без флагов → nullopt (дефолты прошивки). Иначе
   // ApplyModeDefaults() + переопределения: oversteer, Kids-пресет, лимит
-  // скорости, pitch_comp, slip target, accel limiter. --stabilize,
+  // скорости, pitch_comp, slip target, accel limiter, β и cutoff фильтров.
+  // --stabilize,
   // --pitch-comp и --slip-target-deg включают enabled (иначе stab_weight=0).
   std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
     if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_ &&
         !oversteer_config_ && !pitch_comp_enabled_ && !slip_target_deg_ &&
-        kids_preset_ == KidsPreset::Custom) {
+        kids_preset_ == KidsPreset::Custom && !madgwick_beta_ &&
+        !lpf_cutoff_hz_) {
       return std::nullopt;
     }
     StabilizationConfig cfg{};
@@ -288,6 +307,11 @@ class StdioPlatform : public VehicleControlPlatform {
     if (pitch_comp_enabled_) cfg.pitch_comp.enabled = true;
     if (slip_target_deg_) cfg.slip_angle.target_deg = *slip_target_deg_;
     if (!kids_accel_limit_) cfg.kids_mode.accel_limit_enabled = false;
+    if (madgwick_beta_) {
+      cfg.filter.madgwick_beta = *madgwick_beta_;
+      cfg.filter.adaptive_beta_enabled = false;
+    }
+    if (lpf_cutoff_hz_) cfg.filter.lpf_cutoff_hz = *lpf_cutoff_hz_;
     if (!kids_anti_spin_) {
       cfg.kids_mode.anti_spin_enabled = false;
       // В Kids oversteer-гард настроен из anti_spin_* и режет газ тем же
@@ -345,6 +369,9 @@ class StdioPlatform : public VehicleControlPlatform {
   bool pitch_comp_enabled_{false};
   std::optional<float> slip_target_deg_;
   KidsPreset kids_preset_{KidsPreset::Custom};
+  std::optional<float> madgwick_beta_;
+  std::optional<float> lpf_cutoff_hz_;
+  std::optional<std::array<float, 2>> com_offset_;
 
   float last_throttle_{0.0f};
   float last_steering_{0.0f};
@@ -396,11 +423,15 @@ struct InputFrame {
  *
  * @param test_active Активна ли авто-процедура теста (для SIL-сценариев
  *                    start_test; см. --start-test у sim_host).
+ * @param com_calib_active Идёт калибровка offset IMU от центра масс
+ *                    (--start-com-calib у sim_host, LOS-384). Сам offset
+ *                    берётся из snap.calib_data.
  */
 [[nodiscard]] std::string FormatOutputLine(const TelemetrySnapshot& snap,
                                            float throttle, float steering,
                                            bool neutral,
-                                           bool test_active = false);
+                                           bool test_active = false,
+                                           bool com_calib_active = false);
 
 }  // namespace sim
 }  // namespace rc_vehicle

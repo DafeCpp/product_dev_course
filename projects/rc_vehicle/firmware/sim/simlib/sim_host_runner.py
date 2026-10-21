@@ -146,6 +146,8 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
               test_duration: float | None = None,
               test_steering: float | None = None,
               kids_anti_spin: bool = True,
+              madgwick_beta: float | None = None,
+              lpf_cutoff_hz: float | None = None,
               log_lines: list[str] | None = None) -> list[dict]:
     """Прогнать кадры через sim_host в batch-режиме → список выходных строк.
 
@@ -175,6 +177,10 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
         args.append("--stabilize")
     if not kids_anti_spin:
         args.append("--no-kids-anti-spin")
+    if madgwick_beta is not None:
+        args += ["--madgwick-beta", repr(float(madgwick_beta))]
+    if lpf_cutoff_hz is not None:
+        args += ["--lpf-cutoff-hz", repr(float(lpf_cutoff_hz))]
     if oversteer is not None:
         args += [
             "--oversteer",

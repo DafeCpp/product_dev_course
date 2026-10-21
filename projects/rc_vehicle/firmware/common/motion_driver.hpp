@@ -41,6 +41,10 @@ class MotionDriver {
   struct ZuptConfig {
     float accel_thresh{0.05f};  ///< |accel_mag − 1g| < thresh
     float gyro_thresh{3.0f};    ///< |gyro_z| < thresh; 0 → без проверки гиро
+    /// Сколько секунд подряд оба условия должны держаться. Один семпл не
+    /// годится: на ходу вибрация (σ ~0.1–0.3 g) то и дело проходит через
+    /// 1 g, и торможение заканчивалось на скорости (LOS-384).
+    float confirm_sec{0.2f};
   };
 
   /** Конфигурация фазы breakaway (только для AccelMode::Pid). */
@@ -135,9 +139,12 @@ class MotionDriver {
   float base_throttle_{0.0f};
   int breakaway_confirm_count_{0};
 
+  // Сколько секунд подряд держится ZUPT в фазе Brake (zupt.confirm_sec).
+  float zupt_still_sec_{0.0f};
+
   float UpdateSettle(float current_accel_g);
   float UpdateAccelerate(float current_accel_g, float dt_sec);
-  float UpdateBrake(float accel_magnitude, float gyro_z_dps);
+  float UpdateBrake(float accel_magnitude, float gyro_z_dps, float dt_sec);
 
   void TransitionTo(MotionPhase next);
 };

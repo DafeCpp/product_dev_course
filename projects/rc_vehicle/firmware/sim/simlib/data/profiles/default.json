@@ -25,6 +25,8 @@
     "servo_slew_dps": 600.0,
     "imu_pitch_deg": 0.0,
     "imu_roll_deg": 0.0,
+    "imu_offset_x_m": 0.0,
+    "imu_offset_y_m": 0.0,
     "gravity_ms2": 9.80665,
     "mag_field_mga": 500.0,
     "gyro_bias_dps": 0.0,

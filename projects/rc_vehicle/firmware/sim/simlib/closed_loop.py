@@ -42,7 +42,11 @@ class ClosedLoopSim:
                  pitch_comp: bool = False,
                  slip_target_deg: float | None = None,
                  kids_preset: str | None = None,
-                 slope_deg: float = 0.0):
+                 slope_deg: float = 0.0,
+                 madgwick_beta: float | None = None,
+                 lpf_cutoff_hz: float | None = None,
+                 com_offset: tuple[float, float] | None = None,
+                 start_com_calib_at_ms: int | None = None):
         self.p = (params if params is not None
                   else get_profile(DEFAULT_CLOSED_LOOP_PROFILE))
         self.model = VehicleModel(self.p, dynamic=dynamic, slope_deg=slope_deg)
@@ -69,6 +73,12 @@ class ClosedLoopSim:
             args += ["--slip-target-deg", repr(float(slip_target_deg))]
         if kids_preset:
             args += ["--kids-preset", kids_preset]
+        if madgwick_beta is not None:
+            args += ["--madgwick-beta", repr(float(madgwick_beta))]
+        if lpf_cutoff_hz is not None:
+            args += ["--lpf-cutoff-hz", repr(float(lpf_cutoff_hz))]
+        if com_offset is not None:
+            args += ["--com-offset", *(repr(float(v)) for v in com_offset)]
         if oversteer is not None:
             args += ["--oversteer",
                      "--oversteer-slip-thresh", repr(float(oversteer.slip_thresh_deg)),
@@ -77,6 +87,9 @@ class ClosedLoopSim:
                      repr(float(oversteer.throttle_reduction))]
         if start_test:
             args += ["--start-test", start_test]
+        if start_com_calib_at_ms is not None:
+            args += ["--start-com-calib", str(int(start_com_calib_at_ms))]
+        if start_test or start_com_calib_at_ms is not None:
             if target_accel is not None:
                 args += ["--target-accel", repr(float(target_accel))]
             if test_duration is not None:
@@ -85,7 +98,8 @@ class ClosedLoopSim:
                 args += ["--test-steering", repr(float(test_steering))]
         # Авто-манёвр ведёт машину сам, RC-команд нет → без keepalive сработал
         # бы failsafe и PWM не выдавался бы.
-        self.wifi_keepalive = wifi_keepalive or start_test is not None
+        self.wifi_keepalive = (wifi_keepalive or start_test is not None
+                               or start_com_calib_at_ms is not None)
         self.proc = subprocess.Popen(
             args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             text=True, bufsize=1)

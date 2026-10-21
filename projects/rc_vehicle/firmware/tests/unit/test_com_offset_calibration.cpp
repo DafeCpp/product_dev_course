@@ -44,9 +44,13 @@ class ComOffsetCalibrationTest : public ::testing::Test {
     }
   }
 
-  // Run brake phase (simulate stopped immediately)
+  // Run brake phase: машина стоит, пока ZUPT не подтвердит остановку
+  // (zupt.confirm_sec, LOS-384).
   void RunBrakePhase(float& throttle, float& steering) {
-    Step(0.0f, 1.0f, 0.0f, 0.0f, 0.0f, throttle, steering);
+    const auto phase = calib.GetPhase();
+    for (int i = 0; i < 1000 && calib.GetPhase() == phase; ++i) {
+      Step(0.0f, 1.0f, 0.0f, 0.0f, 0.0f, throttle, steering);
+    }
   }
 
   // Run a full two-pass calibration with given CW/CCW sensor data
@@ -364,6 +368,36 @@ TEST_F(ComOffsetCalibrationTest, CruiseSkipsFirst500ms) {
   // If settle data was counted, rx/ry would be huge
   EXPECT_NEAR(result.rx, 0.0f, 0.05f);
   EXPECT_NEAR(result.ry, 0.0f, 0.05f);
+}
+
+// LOS-384: второй проход едет на газе круиза первого. PID разгона по шумному
+// ускорению фиксирует разный газ, круги выходят на разной скорости, и
+// a_CoM = v·ω в сумме CW + CCW не сокращается.
+TEST_F(ComOffsetCalibrationTest, Pass2CruiseReusesPass1Throttle) {
+  calib.Start(0.1f, 0.5f, 5.0f, gravity_vec_);
+  float thr = 0, str = 0;
+
+  RunAccelPhase(thr, str);
+  ASSERT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass1_Cruise);
+  Step(0.0f, 1.0f, 0.0f, 0.0f, 50.0f, thr, str);
+  const float pass1_cruise = thr;
+  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str, 5.0f);
+  RunBrakePhase(thr, str);
+  ASSERT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass2_Accelerate);
+
+  // Второй разгон после замера покоя видит ускорение выше уставки: его PID
+  // держит газ ниже, чем в первом проходе.
+  float pass2_accel = 0.0f;
+  for (int i = 0;
+       calib.GetPhase() == ComOffsetCalibration::Phase::Pass2_Accelerate; ++i) {
+    pass2_accel = thr;
+    Step(i < kSettleTicks ? 0.0f : 0.15f, 1.0f, 0.0f, 0.0f, -50.0f, thr, str);
+  }
+  ASSERT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass2_Cruise);
+  ASSERT_LT(pass2_accel, pass1_cruise - 0.01f);
+
+  Step(0.0f, 1.0f, 0.0f, 0.0f, -50.0f, thr, str);
+  EXPECT_FLOAT_EQ(thr, pass1_cruise);
 }
 
 // ─────────────── Validation failures ───────────────

@@ -3,7 +3,7 @@
 Те же критерии PASS, что проверяются на машине, но в SIL: это регрессия и
 эталон для сравнения с будущими заездами. Склон/pitch compensation, уставка
 угла заноса в Drift и пресеты Kids поддержаны через ClosedLoopSim/sim_host
-(LOS-367). Kids anti-spin на модели сцепления — test_kids_anti_spin.py
+(LOS-367), удержание уставки заноса в Drift — LOS-384. Kids anti-spin на модели сцепления — test_kids_anti_spin.py
 (LOS-370). Критерии, которые в SIL не выполняются, помечены strict xfail:
 исправление сразу покажет XPASS.
 """
@@ -391,6 +391,48 @@ def test_drift_slip_target_shifts_throttle_correction():
     negative = drift(-20.0)
     assert (_mean_tail([r["cmd_throttle"] for r in positive], n=50)
            > _mean_tail([r["cmd_throttle"] for r in negative], n=50))
+
+
+DRIFT_TARGET_DEG = 15.0
+
+
+def _drift_hold(steering: float) -> tuple[float, float]:
+    """LOS-384: Drift на скользком (μ = 0.3), газ 0.4 и руль в поворот 5 с.
+
+    Возвращает средний |β| модели и средний |slip| EKF за последние 2 с.
+    """
+    p = get_profile("fitted_2026_08_02")
+    p.tire_mu = 0.3
+    with ClosedLoopSim(BIN, params=p, dynamic=True, drive_mode="drift",
+                       stabilize=True, sensor_noise=False,
+                       slip_target_deg=DRIFT_TARGET_DEG) as sim:
+        sim.run(4500, rc_throttle=0.0, rc_steering=0.0)
+        sim.run(1000, rc_throttle=0.4, rc_steering=0.0)
+        beta, ekf = [], []
+        for _ in range(2500):
+            row = sim.step(DT_MS, 0.4, steering)
+            st = sim.model.state
+            beta.append(abs(math.degrees(math.atan2(st.vy, max(st.v, 0.1)))))
+            ekf.append(abs(row["ekf_slip_deg"]))
+    return _mean_tail(beta, n=1000), _mean_tail(ekf, n=1000)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "LOS-380 (баг из LOS-384): slip-PID не держит уставку. EKF в силовом заносе видит "
+    "единицы градусов при β ~45°, и PID добавляет газ; в левом повороте "
+    "β отрицательный, а target_deg знаковый, и ошибка уставки растёт."))
+@pytest.mark.parametrize("steering", [-0.6, 0.6], ids=["right", "left"])
+def test_drift_holds_slip_target(steering):
+    """7.4: в повороте Drift держит |β| около target_deg (±5°)."""
+    beta, _ = _drift_hold(steering)
+    assert beta == pytest.approx(DRIFT_TARGET_DEG, abs=5.0)
+
+
+def test_drift_scenario_slides():
+    """Модель: сценарий удержания заноса и правда заносит, то есть xfail
+    выше падает из-за прошивки, а не слабого сценария."""
+    beta, ekf = _drift_hold(-0.6)
+    assert beta > DRIFT_TARGET_DEG
 
 
 KIDS_PRESET_LIMITS = {"toddler": 0.15, "child": 0.30, "preteen": 0.50}

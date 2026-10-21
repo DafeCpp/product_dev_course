@@ -51,6 +51,7 @@ bool ComOffsetCalibration::Start(float target_accel_g, float steering_magnitude,
   count_1_ = 0;
   sum_ax_2_ = sum_ay_2_ = sum_gz_2_ = 0.0;
   count_2_ = 0;
+  cruise_throttle_ = 0.0f;
   result_ = Result{};
 
   driver_.Start(MakeDriverConfig(target_accel_g_));
@@ -73,6 +74,7 @@ void ComOffsetCalibration::Reset() {
   count_1_ = 0;
   sum_ax_2_ = sum_ay_2_ = sum_gz_2_ = 0.0;
   count_2_ = 0;
+  cruise_throttle_ = 0.0f;
   result_ = Result{};
 }
 
@@ -98,13 +100,14 @@ void ComOffsetCalibration::Update(float current_accel_g, float accel_magnitude,
     case Phase::Pass1_Accelerate: {
       steering = steering_magnitude_;
       if (dp == MotionPhase::Cruise) {
+        cruise_throttle_ = driver_.GetCruiseThrottle();
         TransitionTo(Phase::Pass1_Cruise);
       }
       break;
     }
 
     case Phase::Pass1_Cruise: {
-      throttle = driver_.GetCruiseThrottle();
+      throttle = cruise_throttle_;
       steering = steering_magnitude_;
 
       float elapsed = driver_.GetPhaseElapsed();
@@ -143,7 +146,10 @@ void ComOffsetCalibration::Update(float current_accel_g, float accel_magnitude,
     }
 
     case Phase::Pass2_Cruise: {
-      throttle = driver_.GetCruiseThrottle();
+      // Газ круиза первого прохода, а не свой: PID разгона по шумному
+      // ускорению фиксирует разный газ, круги выходят на разной скорости, и
+      // a_CoM = v·ω в сумме CW + CCW не сокращается (LOS-384).
+      throttle = cruise_throttle_;
       steering = -steering_magnitude_;
 
       float elapsed = driver_.GetPhaseElapsed();

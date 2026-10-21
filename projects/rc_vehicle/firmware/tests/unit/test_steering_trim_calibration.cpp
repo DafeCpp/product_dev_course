@@ -35,10 +35,15 @@ class SteeringTrimCalibrationTest : public ::testing::Test {
     }
   }
 
-  // Run through brake phase (stopped immediately)
+  // Run through brake phase: машина стоит, пока ZUPT не подтвердит
+  // остановку (zupt.confirm_sec, LOS-384).
   void RunBrakePhase(float& throttle, float& steering) {
     // Simulate stopped: accel_mag ≈ 1g, gyro_z ≈ 0
-    Step(0.0f, throttle, steering, 0.0f, 1.0f);
+    for (int i = 0;
+         i < 1000 && calib.GetPhase() == SteeringTrimCalibration::Phase::Brake;
+         ++i) {
+      Step(0.0f, throttle, steering, 0.0f, 1.0f);
+    }
   }
 
   // Run complete calibration with given yaw rate
