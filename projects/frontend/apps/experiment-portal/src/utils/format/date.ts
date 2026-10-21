@@ -32,6 +32,28 @@ export function formatDateTime(input: DateInput): string {
 }
 
 /**
+ * Format date and time with seconds as dd.MM.yyyy HH:mm:ss
+ */
+export function formatDateTimeSeconds(input: DateInput): string {
+  const date = ensureDate(input)
+  if (!isValid(date)) {
+    return '—'
+  }
+  return format(date, 'dd.MM.yyyy HH:mm:ss', { locale: ru })
+}
+
+/**
+ * Format day, month and time without the year as dd.MM HH:mm (or dd.MM HH:mm:ss with seconds)
+ */
+export function formatShortDateTime(input: DateInput, { seconds = false } = {}): string {
+  const date = ensureDate(input)
+  if (!isValid(date)) {
+    return '—'
+  }
+  return format(date, seconds ? 'dd.MM HH:mm:ss' : 'dd.MM HH:mm', { locale: ru })
+}
+
+/**
  * Format milliseconds as human-readable duration (e.g. "1ч 23м 45с")
  */
 export function formatDuration(ms: number): string {

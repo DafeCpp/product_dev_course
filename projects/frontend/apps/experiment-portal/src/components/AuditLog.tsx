@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { runEventsApi, captureSessionEventsApi } from '../api/client'
-import { format } from 'date-fns'
 import type { RunEvent, CaptureSessionEvent } from '../types'
 import './AuditLog.scss'
+import { formatDateTimeSeconds } from '../utils/format'
 
 const PAGE_SIZE = 20
 
@@ -141,7 +141,7 @@ export default function AuditLog({
                           <span className="event-badge">{evt.event_type}</span>
                         </span>
                         <span className="audit-log__time">
-                          {format(new Date(evt.created_at), 'dd MMM yyyy HH:mm:ss')}
+                          {formatDateTimeSeconds(evt.created_at)}
                         </span>
                       </div>
                       <div className="audit-log__actor">

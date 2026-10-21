@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDateTimeSeconds } from '../utils/format'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import AuditLog from './AuditLog'
 import { runEventsApi, captureSessionEventsApi } from '../api/client'
 
@@ -82,7 +82,7 @@ describe('AuditLog', () => {
     expect(screen.getByText('Сессия остановлена')).toBeInTheDocument()
     // unknown types fall back to the raw name (label and badge)
     expect(screen.getAllByText('run.custom').length).toBeGreaterThan(0)
-    expect(screen.getAllByText(format(new Date('2026-01-02T10:00:00Z'), 'dd MMM yyyy HH:mm:ss')).length).toBe(9)
+    expect(screen.getAllByText(formatDateTimeSeconds('2026-01-02T10:00:00Z')).length).toBe(9)
     expect(container.querySelectorAll('.audit-log__payload')).toHaveLength(1)
     const dots = Array.from(container.querySelectorAll('.audit-log__dot')).map((d) => d.className.replace('audit-log__dot', '').trim())
     expect(dots).toEqual([

@@ -1,9 +1,9 @@
-import { format } from 'date-fns'
 import { useApiMutation } from '../../hooks/useApiMutation'
 import { scriptsApi } from '../../api/scripts'
 import type { ScriptExecution } from '../../types/scripts'
 import Modal from '../../components/Modal'
 import { executionStatusClass, executionStatusLabel } from './utils'
+import { formatDateTimeSeconds } from '../../utils/format'
 
 export interface ScriptExecDetailModalProps {
   execution: ScriptExecution
@@ -53,7 +53,7 @@ export default function ScriptExecDetailModal({
           <span className="scripts-detail__label">Начало</span>
           <span className="scripts-detail__value">
             {execution.started_at
-              ? format(new Date(execution.started_at), 'dd MMM yyyy HH:mm:ss')
+              ? formatDateTimeSeconds(execution.started_at)
               : '—'}
           </span>
         </div>
@@ -61,7 +61,7 @@ export default function ScriptExecDetailModal({
           <span className="scripts-detail__label">Конец</span>
           <span className="scripts-detail__value">
             {execution.finished_at
-              ? format(new Date(execution.finished_at), 'dd MMM yyyy HH:mm:ss')
+              ? formatDateTimeSeconds(execution.finished_at)
               : '—'}
           </span>
         </div>

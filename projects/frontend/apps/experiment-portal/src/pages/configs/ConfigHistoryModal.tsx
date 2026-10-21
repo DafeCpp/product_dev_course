@@ -4,6 +4,7 @@ import type { ConfigResponse } from '../../types/configs'
 import Modal from '../../components/Modal'
 import { Loading, Error as ErrorComponent, EmptyState } from '../../components/common'
 import { getApiErrorMessage } from '../../utils/apiError'
+import { formatDateTimeSeconds } from '../../utils/format'
 
 export interface ConfigHistoryModalProps {
   config: ConfigResponse
@@ -33,7 +34,7 @@ export default function ConfigHistoryModal({ config, onClose }: ConfigHistoryMod
               <div className="configs-history__head">
                 <span className="configs-history__version">v{h.version}</span>
                 <span className="configs-history__meta">
-                  {h.changed_by} · {new Date(h.changed_at).toLocaleString()}
+                  {h.changed_by} · {formatDateTimeSeconds(h.changed_at)}
                   {h.is_active ? ' · active' : ''}
                 </span>
               </div>

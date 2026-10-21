@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import SensorDetailModal from './SensorDetailModal'
 import { sensorsApi, projectsApi } from '../api/client'
 import { notifyError, notifySuccess, notifySuccessSticky } from '../utils/notify'
@@ -91,8 +91,8 @@ describe('SensorDetailModal', () => {
     expect(screen.getByText('****abcd')).toBeInTheDocument()
     expect(screen.getByText('prof-1')).toBeInTheDocument()
     expect(screen.getByText('Никогда')).toBeInTheDocument()
-    expect(screen.getByText(format(new Date('2026-01-02T10:00:00Z'), 'dd MMM yyyy HH:mm'))).toBeInTheDocument()
-    expect(screen.getByText(format(new Date('2026-01-03T11:30:00Z'), 'dd MMM yyyy HH:mm'))).toBeInTheDocument()
+    expect(screen.getByText(formatDateTime('2026-01-02T10:00:00Z'))).toBeInTheDocument()
+    expect(screen.getByText(formatDateTime('2026-01-03T11:30:00Z'))).toBeInTheDocument()
     const table = await screen.findByRole('table')
     expect(within(table).getByText('Main')).toBeInTheDocument()
     expect(within(table).getByText('Second')).toBeInTheDocument()
@@ -130,7 +130,7 @@ describe('SensorDetailModal', () => {
     const old = new Date(Date.now() - 3 * 86400 * 1000)
     vi.mocked(sensorsApi.get).mockResolvedValue(sensor({ last_heartbeat: old.toISOString() }) as never)
     renderModal()
-    expect(await screen.findByText(format(old, 'dd MMM yyyy HH:mm:ss'))).toBeInTheDocument()
+    expect(await screen.findByText(formatDateTimeSeconds(old))).toBeInTheDocument()
   })
 
   it('shows a loading indicator, then an error with the message', async () => {

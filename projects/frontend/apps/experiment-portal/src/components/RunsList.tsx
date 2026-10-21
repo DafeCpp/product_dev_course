@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { runsApi } from '../api/client'
-import { format } from 'date-fns'
 import { StatusBadge, Loading, Error, EmptyState, runStatusMap } from './common'
 import { downloadBlob } from '../utils/download'
 import { notifyError, notifySuccess } from '../utils/notify'
@@ -10,6 +9,7 @@ import Tags from './common/Tags'
 import BulkRunTagsModal from './BulkRunTagsModal'
 import './RunsList.scss'
 import { getApiErrorMessage } from '../utils/apiError'
+import { formatShortDateTime } from '../utils/format'
 
 interface RunsListProps {
   experimentId: string
@@ -169,12 +169,12 @@ function RunsList({ experimentId }: RunsListProps) {
                 </td>
                 <td>
                   {run.started_at
-                    ? format(new Date(run.started_at), 'dd MMM HH:mm')
+                    ? formatShortDateTime(run.started_at)
                     : '-'}
                 </td>
                 <td>
                   {run.finished_at
-                    ? format(new Date(run.finished_at), 'dd MMM HH:mm')
+                    ? formatShortDateTime(run.finished_at)
                     : '-'}
                 </td>
                 <td>{formatDuration(run.duration_seconds)}</td>

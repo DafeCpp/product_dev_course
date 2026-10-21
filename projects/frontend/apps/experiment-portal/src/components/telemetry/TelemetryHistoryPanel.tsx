@@ -6,6 +6,7 @@ import type { CaptureSession, Sensor } from "../../types";
 import HistorySensorControls from "./HistorySensorControls";
 import TelemetryHistoryChart from "./TelemetryHistoryChart";
 import TelemetryHistorySettings from "./TelemetryHistorySettings";
+import { formatDateTimeSeconds } from "../../utils/format";
 
 interface TelemetryHistoryPanelProps {
   history: ReturnType<typeof useTelemetryHistory>;
@@ -37,9 +38,9 @@ export default function TelemetryHistoryPanel({
           </h3>
           {selectedSession?.started_at && (
             <div className="history-panel-header__sub">
-              {new Date(selectedSession.started_at).toLocaleString("ru-RU")}
+              {formatDateTimeSeconds(selectedSession.started_at)}
               {selectedSession.stopped_at &&
-                ` → ${new Date(selectedSession.stopped_at).toLocaleString("ru-RU")}`}
+                ` → ${formatDateTimeSeconds(selectedSession.stopped_at)}`}
             </div>
           )}
         </div>

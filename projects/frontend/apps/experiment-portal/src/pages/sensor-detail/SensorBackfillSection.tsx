@@ -1,6 +1,6 @@
-import { format } from 'date-fns'
 import type { BackfillTask, BackfillTaskStatus, BackfillTasksListResponse } from '../../types'
 import { Loading } from '../../components/common'
+import { formatShortDateTime } from '../../utils/format'
 
 interface BackfillMutation {
   mutate: () => void
@@ -108,7 +108,7 @@ export default function SensorBackfillSection({
                       )}
                     </td>
                     <td>
-                      {format(new Date(task.created_at), 'dd MMM HH:mm')}
+                      {formatShortDateTime(task.created_at)}
                     </td>
                     <td>
                       {task.error_message && (

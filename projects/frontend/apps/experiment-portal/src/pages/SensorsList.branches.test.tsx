@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDateTime } from '../utils/format'
 import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import type { ReactNode } from 'react'
 import SensorsList from './SensorsList'
 import { sensorsApi, projectsApi } from '../api/client'
@@ -88,7 +88,7 @@ describe('SensorsList branches', () => {
         expect(screen.getAllByText('Только что')).toHaveLength(2)
         expect(screen.getAllByText('7 мин назад')).toHaveLength(2)
         expect(screen.getAllByText('2 ч назад')).toHaveLength(2)
-        expect(screen.getAllByText(format(new Date(oldHb), 'dd MMM yyyy HH:mm'))).toHaveLength(2)
+        expect(screen.getAllByText(formatDateTime(oldHb))).toHaveLength(2)
         expect(screen.getAllByText('Никогда')).toHaveLength(2)
         expect(screen.getByText('****zz99')).toBeInTheDocument()
         expect(container.querySelectorAll('.sensor-card__pulse.is-live')).toHaveLength(4)

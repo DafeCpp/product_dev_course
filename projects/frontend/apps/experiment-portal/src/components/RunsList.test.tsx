@@ -265,10 +265,10 @@ describe('RunsList', () => {
 
         await waitFor(() => {
             // Проверяем, что дата started_at отображается (ищем по полному тексту или используем getAllByText)
-            const dateTexts = screen.getAllByText(/01 Jan/i)
+            const dateTexts = screen.getAllByText(/01\.01 /)
             expect(dateTexts.length).toBeGreaterThan(0)
             // Проверяем, что есть дата с временем начала (10:00)
-            const startedAtText = screen.getByText(/01 Jan 10:00/i)
+            const startedAtText = screen.getByText(/01\.01 10:00/)
             expect(startedAtText).toBeInTheDocument()
         })
     })
@@ -308,10 +308,10 @@ describe('RunsList', () => {
 
         await waitFor(() => {
             // Проверяем, что дата finished_at отображается (ищем по полному тексту или используем getAllByText)
-            const dateTexts = screen.getAllByText(/01 Jan/i)
+            const dateTexts = screen.getAllByText(/01\.01 /)
             expect(dateTexts.length).toBeGreaterThan(0)
             // Проверяем, что есть дата с временем завершения (11:00)
-            const finishedAtText = screen.getByText(/01 Jan 11:00/i)
+            const finishedAtText = screen.getByText(/01\.01 11:00/)
             expect(finishedAtText).toBeInTheDocument()
         })
     })

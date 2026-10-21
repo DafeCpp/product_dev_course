@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { formatShortDateTime } from '../../utils/format'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { format } from 'date-fns'
 import SensorBackfillSection from './SensorBackfillSection'
 import type { BackfillTask, BackfillTasksListResponse } from '../../types'
 
@@ -106,7 +106,7 @@ describe('SensorBackfillSection', () => {
         expect(screen.getByText('—')).toBeInTheDocument()
         expect(screen.getByText('x'.repeat(50) + '...')).toHaveAttribute('title', longError)
         expect(screen.getByText('short error')).toBeInTheDocument()
-        expect(screen.getAllByText(format(new Date('2024-03-05T10:20:00Z'), 'dd MMM HH:mm'))).toHaveLength(4)
+        expect(screen.getAllByText(formatShortDateTime('2024-03-05T10:20:00Z'))).toHaveLength(4)
         const bars = Array.from(container.querySelectorAll<HTMLElement>('div[style*="transition"]'))
         expect(bars.map((b) => b.style.width)).toEqual(['25%', '0%', '50%'])
         expect(bars[1].style.background).toBe('var(--lp-error)')

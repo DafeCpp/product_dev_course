@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDateTimeSeconds } from '../utils/format'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import AuditLog from './AuditLog'
 import { auditApi } from '../api/audit'
 import { pickMaterialSelectOption } from '../testUtils/materialSelect'
@@ -117,7 +117,7 @@ describe('AuditLog — branches', () => {
     expect(within(rows[1]).getByText('10.0.0.1')).toBeInTheDocument()
     expect(within(rows[2]).getAllByText('—')).toHaveLength(3)
     expect(
-      within(rows[0]).getByText(format(new Date(FULL.timestamp), 'dd MMM yyyy HH:mm:ss')),
+      within(rows[0]).getByText(formatDateTimeSeconds(FULL.timestamp)),
     ).toBeInTheDocument()
   })
 

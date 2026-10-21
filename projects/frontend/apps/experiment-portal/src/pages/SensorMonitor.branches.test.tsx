@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatShortDateTime } from '../utils/format'
 import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import type { ReactNode } from 'react'
 import SensorMonitor from './SensorMonitor'
 import { sensorsApi, projectsApi } from '../api/client'
@@ -49,7 +49,7 @@ describe('SensorMonitor branches', () => {
         expect(await screen.findByText('Online One')).toBeInTheDocument()
         expect(screen.getByText('Только что')).toBeInTheDocument()
         expect(screen.getAllByText('Никогда')).toHaveLength(2)
-        expect(screen.getByText(format(new Date(oldHb), 'dd MMM HH:mm:ss'))).toBeInTheDocument()
+        expect(screen.getByText(formatShortDateTime(oldHb, { seconds: true }))).toBeInTheDocument()
         const cards = Array.from(container.querySelectorAll<HTMLElement>('.sensor-monitor__card'))
         expect(cards.map((c) => c.style.borderTopColor)).toEqual([
             'rgb(22, 163, 74)',

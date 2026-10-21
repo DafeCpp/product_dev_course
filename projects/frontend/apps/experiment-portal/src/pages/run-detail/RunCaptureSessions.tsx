@@ -1,7 +1,7 @@
-import { format } from 'date-fns'
 import type { CaptureSession, Experiment } from '../../types'
 import { StatusBadge, Loading, EmptyState, InfoRow, captureSessionStatusMap } from '../../components/common'
 import AuditLog from '../../components/AuditLog'
+import { formatDateTimeSeconds } from '../../utils/format'
 
 interface SessionMutation<TVar = void> {
   mutate: (variables: TVar) => void
@@ -92,7 +92,7 @@ export default function RunCaptureSessions({
               </div>
               {activeSession.started_at && (
                 <div className="session-info">
-                  <InfoRow label="Начало" value={format(new Date(activeSession.started_at), 'dd MMM yyyy HH:mm:ss')} />
+                  <InfoRow label="Начало" value={formatDateTimeSeconds(activeSession.started_at)} />
                   <InfoRow
                     label="Длительность"
                     value={formatSessionDuration(activeSession.started_at, activeSession.stopped_at)}
@@ -150,10 +150,10 @@ export default function RunCaptureSessions({
                 </div>
                 <div className="session-info">
                   {session.started_at && (
-                    <InfoRow label="Начало" value={format(new Date(session.started_at), 'dd MMM yyyy HH:mm:ss')} />
+                    <InfoRow label="Начало" value={formatDateTimeSeconds(session.started_at)} />
                   )}
                   {session.stopped_at && (
-                    <InfoRow label="Остановка" value={format(new Date(session.stopped_at), 'dd MMM yyyy HH:mm:ss')} />
+                    <InfoRow label="Остановка" value={formatDateTimeSeconds(session.stopped_at)} />
                   )}
                   {session.started_at && (
                     <InfoRow

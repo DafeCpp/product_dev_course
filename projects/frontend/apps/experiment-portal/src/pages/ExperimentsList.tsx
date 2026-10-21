@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { experimentsApi, projectsApi } from '../api/client'
-import { format } from 'date-fns'
 import {
   StatusBadge,
   Loading,
@@ -24,6 +23,7 @@ import { downloadBlob } from '../utils/download'
 import { notifyError, notifySuccess } from '../utils/notify'
 import { getApiErrorMessage } from '../utils/apiError'
 import './ExperimentsList.scss'
+import { formatDateTime } from '../utils/format'
 
 function ExperimentsList() {
   const [projectId, setProjectId] = useState<string>('')
@@ -190,7 +190,7 @@ function ExperimentsList() {
                     <div className="experiment-card__footer">
                       <div className="experiment-card__meta">
                         <span>Создан</span>
-                        <strong>{format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')}</strong>
+                        <strong>{formatDateTime(experiment.created_at)}</strong>
                       </div>
                       <span className="experiment-card__cta">Открыть</span>
                     </div>

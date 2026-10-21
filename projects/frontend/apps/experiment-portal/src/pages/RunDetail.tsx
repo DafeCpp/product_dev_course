@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { getApiErrorMessage, isNotFoundError, UserFacingError } from '../utils/apiError'
 import { runsApi, experimentsApi, captureSessionsApi, sensorsApi } from '../api/client'
-import { format } from 'date-fns'
 import type { CaptureSession } from '../types'
 import {
   StatusBadge,
@@ -25,6 +24,7 @@ import RunCaptureSessions from './run-detail/RunCaptureSessions'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { useCountdown } from '../hooks/useCountdown'
+import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 
 // Run actions show the error in the banner under the header and as a toast:
 // the page is long and the capture-session buttons sit far below the banner.
@@ -211,12 +211,12 @@ function RunDetail() {
   // иначе ручной сценарий ломается без отдельной кнопки "Start run".
   const canManageSessions = run.status === 'draft' || run.status === 'running'
   const formattedStartedAt = run.started_at
-    ? format(new Date(run.started_at), 'dd MMM yyyy HH:mm:ss')
+    ? formatDateTimeSeconds(run.started_at)
     : '—'
   const formattedFinishedAt = run.finished_at
-    ? format(new Date(run.finished_at), 'dd MMM yyyy HH:mm:ss')
+    ? formatDateTimeSeconds(run.finished_at)
     : '—'
-  const formattedCreatedAt = format(new Date(run.created_at), 'dd MMM yyyy HH:mm')
+  const formattedCreatedAt = formatDateTime(run.created_at)
   const formattedDuration = run.duration_seconds ? formatDuration(run.duration_seconds) : '—'
   const completedSessionsCount = sessions.filter(
     (session: CaptureSession) => session.status !== 'running' && session.status !== 'backfilling'

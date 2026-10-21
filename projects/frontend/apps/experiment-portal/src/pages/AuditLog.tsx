@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import { auditApi } from '../api/audit'
 import type { AuditEntry } from '../types/permissions'
 import { usePermissions } from '../hooks/usePermissions'
@@ -9,6 +8,7 @@ import { Loading, Error as ErrorComponent, EmptyState, Pagination, MaterialSelec
 import Modal from '../components/Modal'
 import { getApiErrorMessage } from '../utils/apiError'
 import './AuditLog.scss'
+import { formatDateTimeSeconds } from '../utils/format'
 
 const LIMIT = 50
 
@@ -180,7 +180,7 @@ function AuditLog() {
                     }}
                   >
                     <td className="audit-log-table__time">
-                      {format(new Date(entry.timestamp), 'dd MMM yyyy HH:mm:ss')}
+                      {formatDateTimeSeconds(entry.timestamp)}
                     </td>
                     <td>{entry.actor_id}</td>
                     <td>
@@ -223,7 +223,7 @@ function AuditLog() {
             <div className="audit-log-detail__row">
               <span className="audit-log-detail__label">Время</span>
               <span className="audit-log-detail__value">
-                {format(new Date(selectedEntry.timestamp), 'dd MMM yyyy HH:mm:ss')}
+                {formatDateTimeSeconds(selectedEntry.timestamp)}
               </span>
             </div>
             <div className="audit-log-detail__row">

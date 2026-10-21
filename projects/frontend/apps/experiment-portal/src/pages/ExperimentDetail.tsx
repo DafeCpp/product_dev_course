@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { experimentsApi } from '../api/client'
-import { format } from 'date-fns'
 import RunsList from '../components/RunsList'
 import CreateRunModal from '../components/CreateRunModal'
 import ExperimentEditModal from '../components/ExperimentEditModal'
@@ -18,6 +17,7 @@ import './ExperimentDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { getApiErrorMessage, isNotFoundError } from '../utils/apiError'
+import { formatDateTime } from '../utils/format'
 
 function ExperimentDetail() {
   const { id } = useParams<{ id: string }>()
@@ -52,8 +52,8 @@ function ExperimentDetail() {
     return <Error message={isNotFoundError(error) ? 'Эксперимент не найден' : getApiErrorMessage(error, 'Не удалось загрузить эксперимент')} />
   }
 
-  const formattedCreatedAt = format(new Date(experiment.created_at), 'dd MMM yyyy HH:mm')
-  const formattedUpdatedAt = format(new Date(experiment.updated_at), 'dd MMM yyyy HH:mm')
+  const formattedCreatedAt = formatDateTime(experiment.created_at)
+  const formattedUpdatedAt = formatDateTime(experiment.updated_at)
 
   return (
     <div className="experiment-detail detail-page">

@@ -1,6 +1,6 @@
-import { format } from 'date-fns'
 import type { ScriptExecution } from '../../types/scripts'
 import { executionStatusClass, executionStatusLabel, calcDuration } from './utils'
+import { formatShortDateTime } from '../../utils/format'
 
 export interface ExecutionsTableProps {
   executions: ScriptExecution[]
@@ -52,7 +52,7 @@ export default function ExecutionsTable({
               </td>
               <td className="scripts-table__time">
                 {ex.started_at
-                  ? format(new Date(ex.started_at), 'dd MMM HH:mm:ss')
+                  ? formatShortDateTime(ex.started_at, { seconds: true })
                   : '—'}
               </td>
               <td>{calcDuration(ex.started_at, ex.finished_at)}</td>

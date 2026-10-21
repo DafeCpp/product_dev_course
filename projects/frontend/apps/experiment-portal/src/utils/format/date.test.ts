@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { formatDate, formatDateTime, formatDuration, formatRelative } from './date'
+import {
+  formatDate,
+  formatDateTime,
+  formatDateTimeSeconds,
+  formatDuration,
+  formatRelative,
+  formatShortDateTime,
+} from './date'
 
 describe('formatDate', () => {
   it('formats Date object as dd.MM.yyyy', () => {
@@ -81,5 +88,29 @@ describe('formatRelative', () => {
 
   it('returns "—" for invalid dates', () => {
     expect(formatRelative(new Date('invalid'))).toBe('—')
+  })
+})
+
+describe('formatDateTimeSeconds', () => {
+  it('formats as dd.MM.yyyy HH:mm:ss', () => {
+    expect(formatDateTimeSeconds('2026-04-27T15:30:45Z')).toMatch(/^27\.04\.2026 \d{2}:30:45$/)
+  })
+
+  it('returns "—" for invalid dates', () => {
+    expect(formatDateTimeSeconds('invalid')).toBe('—')
+  })
+})
+
+describe('formatShortDateTime', () => {
+  it('formats as dd.MM HH:mm without the year', () => {
+    expect(formatShortDateTime('2026-04-27T15:30:45Z')).toMatch(/^27\.04 \d{2}:30$/)
+  })
+
+  it('adds seconds on request', () => {
+    expect(formatShortDateTime('2026-04-27T15:30:45Z', { seconds: true })).toMatch(/^27\.04 \d{2}:30:45$/)
+  })
+
+  it('returns "—" for invalid dates', () => {
+    expect(formatShortDateTime(new Date('invalid'))).toBe('—')
   })
 })

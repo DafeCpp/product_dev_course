@@ -1,11 +1,11 @@
 import { getMemberBuiltinRole } from '../utils/projectRole'
 import { useQuery, useQueries } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import { projectsApi } from '../api/client'
 import { authApi } from '../api/auth'
 import Modal from './Modal'
 import { Loading, Error, EmptyState, InfoRow } from './common'
 import './CreateRunModal.scss'
+import { formatDate, formatDateTime } from '../utils/format'
 
 interface UserProfileModalProps {
     isOpen: boolean
@@ -89,7 +89,7 @@ function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                             {user.created_at && (
                                 <InfoRow
                                     label="Дата регистрации"
-                                    value={format(new Date(user.created_at), 'dd MMM yyyy HH:mm')}
+                                    value={formatDateTime(user.created_at)}
                                 />
                             )}
                         </div>
@@ -163,10 +163,7 @@ function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                                                                 </span>
                                                             </td>
                                                             <td>
-                                                                {format(
-                                                                    new Date(project.created_at),
-                                                                    'dd MMM yyyy'
-                                                                )}
+                                                                {formatDate(project.created_at)}
                                                             </td>
                                                         </tr>
                                                     )
