@@ -21,6 +21,7 @@ import ArtifactsPanel from '../components/ArtifactsPanel'
 import RunSensorsPanel from './run-detail/RunSensorsPanel'
 import RunOverviewGrid from './run-detail/RunOverviewGrid'
 import RunCaptureSessions from './run-detail/RunCaptureSessions'
+import PromptDialog from '../components/PromptDialog'
 import './RunDetail.scss'
 import { setActiveProjectId } from '../utils/activeProject'
 import { useCountdown } from '../hooks/useCountdown'
@@ -103,6 +104,8 @@ function RunDetail() {
     errorFallback: 'Не удалось запустить run',
     ...actionErrorOptions,
   })
+
+  const [promptFor, setPromptFor] = useState<'fail' | 'session' | null>(null)
 
   const failMutation = useApiMutation<unknown, string | undefined>({
     mutationFn: (reason) => runsApi.fail(id!, reason),
@@ -262,12 +265,7 @@ function RunDetail() {
                 </button>
                 <button
                   className="btn btn-danger"
-                  onClick={() => {
-                    const reason = prompt('Причина ошибки:')
-                    if (reason !== null) {
-                      failMutation.mutate(reason)
-                    }
-                  }}
+                  onClick={() => setPromptFor('fail')}
                   disabled={failMutation.isPending}
                 >
                   Пометить как ошибка
@@ -279,8 +277,7 @@ function RunDetail() {
                 className={`btn ${activeSessionId ? 'btn-danger' : 'btn-primary'}`}
                 onClick={() => {
                   if (!activeSessionId) {
-                    const notes = prompt('Заметки (опционально):')
-                    createSessionMutation.mutate(notes || undefined)
+                    setPromptFor('session')
                     return
                   }
                   if (confirm('Остановить отсчёт?')) {
@@ -403,6 +400,31 @@ function RunDetail() {
         />
       )}
 
+      <PromptDialog
+        isOpen={promptFor === 'fail'}
+        title="Пометить как ошибка"
+        label="Причина ошибки"
+        submitLabel="Пометить"
+        multiline
+        onSubmit={(reason) => {
+          setPromptFor(null)
+          failMutation.mutate(reason)
+        }}
+        onCancel={() => setPromptFor(null)}
+      />
+      <PromptDialog
+        isOpen={promptFor === 'session'}
+        title="Новая сессия отсчёта"
+        label="Заметки (опционально)"
+        submitLabel="Запустить"
+        multiline
+        onSubmit={(notes) => {
+          setPromptFor(null)
+          createSessionMutation.mutate(notes || undefined)
+        }}
+        onCancel={() => setPromptFor(null)}
+      />
+
       <RunCaptureSessions
         runId={id!}
         sessions={sessions}
@@ -411,6 +433,7 @@ function RunDetail() {
         canManageSessions={canManageSessions}
         experiment={experiment}
         createSessionMutation={createSessionMutation}
+        onCreateSession={() => setPromptFor('session')}
         stopSessionMutation={stopSessionMutation}
         deleteSessionMutation={deleteSessionMutation}
         setExportTarget={setExportTarget}

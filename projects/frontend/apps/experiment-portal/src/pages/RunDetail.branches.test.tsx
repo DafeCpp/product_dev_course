@@ -146,7 +146,6 @@ describe('RunDetail branches', () => {
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     })
-    vi.stubGlobal('prompt', vi.fn(() => 'notes'))
     vi.stubGlobal('confirm', vi.fn(() => true))
     vi.mocked(experimentsApi.get).mockResolvedValue(experiment)
     vi.mocked(captureSessionsApi.list).mockResolvedValue(sessionsResponse([]))
@@ -207,8 +206,7 @@ describe('RunDetail branches', () => {
     })
   })
 
-  it('creates a session with the next ordinal and no notes when prompt is cancelled', async () => {
-    vi.stubGlobal('prompt', vi.fn(() => null))
+  it('creates a session with the next ordinal and no notes when the notes field is left empty', async () => {
     vi.mocked(captureSessionsApi.list).mockResolvedValue(
       sessionsResponse([
         createMockCaptureSession({ id: 'c1', ordinal_number: 2, status: 'succeeded' }),
@@ -226,6 +224,7 @@ describe('RunDetail branches', () => {
     const btn = screen.getByRole('button', { name: 'Старт отсчёта' })
     await waitFor(() => expect(btn).toBeEnabled())
     await user.click(btn)
+    await user.click(screen.getByRole('button', { name: 'Запустить' }))
     expect(await screen.findByRole('button', { name: 'Создание...' })).toBeDisabled()
     expect(captureSessionsApi.create).toHaveBeenCalledWith(
       'run-1',

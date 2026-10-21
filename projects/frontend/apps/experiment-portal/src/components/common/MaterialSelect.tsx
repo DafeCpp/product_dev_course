@@ -195,6 +195,8 @@ function MaterialSelect({
         if (isDisabled) return
         onChange(nextValue)
         setIsOpen(false)
+        // The option that had focus is about to unmount; keep focus on the select itself.
+        triggerRef.current?.focus()
     }
 
     const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {

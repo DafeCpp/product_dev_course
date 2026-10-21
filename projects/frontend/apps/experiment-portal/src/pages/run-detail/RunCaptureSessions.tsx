@@ -16,6 +16,8 @@ interface RunCaptureSessionsProps {
   canManageSessions: boolean
   experiment: Experiment | undefined
   createSessionMutation: SessionMutation<string | undefined>
+  /** Opens the notes dialog; the session is created once it is confirmed. */
+  onCreateSession: () => void
   stopSessionMutation: SessionMutation<string>
   deleteSessionMutation: SessionMutation<string>
   setExportTarget: (
@@ -32,6 +34,7 @@ export default function RunCaptureSessions({
   canManageSessions,
   experiment,
   createSessionMutation,
+  onCreateSession,
   stopSessionMutation,
   deleteSessionMutation,
   setExportTarget,
@@ -59,10 +62,7 @@ export default function RunCaptureSessions({
           {canManageSessions && !activeSession && experiment && (
             <button
               className="btn btn-primary"
-              onClick={() => {
-                const notes = prompt('Заметки (опционально):')
-                createSessionMutation.mutate(notes || undefined)
-              }}
+              onClick={onCreateSession}
               disabled={createSessionMutation.isPending}
             >
               Создать сессию

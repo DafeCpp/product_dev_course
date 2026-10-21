@@ -96,8 +96,7 @@ const mockCaptureSession = createMockCaptureSession({
 describe('RunDetail', () => {
     beforeEach(() => {
         vi.clearAllMocks()
-        // Мокаем window.prompt и window.confirm
-        window.prompt = vi.fn(() => 'Test reason')
+        // Мокаем window.confirm
         window.confirm = vi.fn(() => true)
 
         // Мокаем experimentsApi и captureSessionsApi по умолчанию
@@ -312,19 +311,18 @@ describe('RunDetail', () => {
 
         const failButton = screen.getByText('Пометить как ошибка')
         await user.click(failButton)
+        await user.type(screen.getByLabelText('Причина ошибки'), 'Test reason')
+        await user.click(screen.getByRole('button', { name: 'Пометить' }))
 
         await waitFor(() => {
-            expect(window.prompt).toHaveBeenCalledWith('Причина ошибки:')
             expect(mockFail).toHaveBeenCalledWith('run-123', 'Test reason')
         })
     })
 
-    it('does not fail run if prompt is cancelled', async () => {
+    it('does not fail run if the dialog is cancelled', async () => {
         const user = userEvent.setup()
         const mockGet = vi.mocked(runsApi.get)
         const mockFail = vi.mocked(runsApi.fail)
-
-        window.prompt = vi.fn(() => null)
 
         mockGet.mockResolvedValueOnce(mockRun)
 
@@ -336,11 +334,10 @@ describe('RunDetail', () => {
 
         const failButton = screen.getByText('Пометить как ошибка')
         await user.click(failButton)
+        await user.keyboard('{Escape}')
 
-        await waitFor(() => {
-            expect(window.prompt).toHaveBeenCalled()
-            expect(mockFail).not.toHaveBeenCalled()
-        })
+        expect(screen.queryByLabelText('Причина ошибки')).not.toBeInTheDocument()
+        expect(mockFail).not.toHaveBeenCalled()
     })
 
     it('does not show action buttons for succeeded status', async () => {
@@ -461,8 +458,6 @@ describe('RunDetail', () => {
             const mockGet = vi.mocked(runsApi.get)
             const mockCreate = vi.mocked(captureSessionsApi.create)
 
-            window.prompt = vi.fn(() => 'Session notes')
-
             mockGet.mockResolvedValueOnce(mockRun)
             mockCreate.mockResolvedValueOnce(mockCaptureSession)
 
@@ -474,10 +469,15 @@ describe('RunDetail', () => {
 
             const startButton = screen.getByText('Старт отсчёта')
             await user.click(startButton)
+            await user.type(screen.getByLabelText('Заметки (опционально)'), 'Session notes')
+            await user.click(screen.getByRole('button', { name: 'Запустить' }))
 
             await waitFor(() => {
-                expect(window.prompt).toHaveBeenCalledWith('Заметки (опционально):')
-                expect(mockCreate).toHaveBeenCalled()
+                expect(mockCreate).toHaveBeenCalledWith(
+                    'run-123',
+                    expect.objectContaining({ notes: 'Session notes' }),
+                    expect.anything(),
+                )
             })
         })
 
