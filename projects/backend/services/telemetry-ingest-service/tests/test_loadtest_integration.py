@@ -66,6 +66,28 @@ async def test_ws_scenario_ingests_every_reading(service_client, pgsql) -> None:
     assert await _stored_readings(db_uri, [c.sensor_id for c in creds]) == 40
 
 
+async def test_deduplicated_readings_are_not_counted(service_client, pgsql, monkeypatch) -> None:
+    """A rerun with the same timestamps is deduplicated, so accepted readings drop to 0."""
+    from datetime import datetime, timezone
+
+    from ingest_loadtest import runner
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    factory = runner.ReadingFactory
+    monkeypatch.setattr(runner, "ReadingFactory", lambda: factory(start=start))
+    db_uri = _db_uri(pgsql)
+    creds = await provision_sensors(db_uri, 1)
+    sc = Scenario(name="it-dedup", sensors=1, rate=20.0, batch_size=5, duration_s=0.1)
+
+    first = await run_scenario(sc, creds, _base_url(service_client))
+    second = await run_scenario(sc, creds, _base_url(service_client))
+
+    assert first.accepted_readings == 10
+    assert second.accepted_batches == 2
+    assert second.accepted_readings == 0
+    assert await _stored_readings(db_uri, [c.sensor_id for c in creds]) == 10
+
+
 async def test_unpaced_scenario_runs_until_duration(service_client, pgsql) -> None:
     creds = await provision_sensors(_db_uri(pgsql), 1)
     sc = Scenario(name="it-ceiling", rate=0.0, batch_size=2, duration_s=0.3, sla=_SLA)

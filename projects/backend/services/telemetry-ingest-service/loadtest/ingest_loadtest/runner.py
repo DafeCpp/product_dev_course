@@ -53,6 +53,15 @@ Batch = list[dict[str, Any]]
 SendFn = Callable[[list[Batch]], Awaitable[None]]
 
 
+def _accepted_count(reply: Any, sent: int) -> int:
+    """Readings the service reports as stored; dedup can make it lower than ``sent``."""
+    if isinstance(reply, dict):
+        value = reply.get("accepted")
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return sent
+
+
 class _StopWorker(Exception):
     """The connection is unusable; the worker stops sending."""
 
@@ -116,10 +125,14 @@ async def _rest_worker(
         started = time.perf_counter()
         try:
             async with session.post(url, json=body, headers=headers) as resp:
-                await resp.read()
+                raw = await resp.read()
                 latency_ms = (time.perf_counter() - started) * 1000
                 if resp.status == 202:
-                    recorder.accepted(latency_ms, len(readings))
+                    try:
+                        reply = json.loads(raw)
+                    except ValueError:
+                        reply = None
+                    recorder.accepted(latency_ms, _accepted_count(reply, len(readings)))
                 elif resp.status == 429:
                     recorder.limited()
                 else:
@@ -174,7 +187,7 @@ async def _ws_worker(
                 reply = await ws.receive_json(timeout=timeout_s)
                 latency_ms = (time.perf_counter() - started) * 1000
                 if reply.get("status") == "accepted":
-                    recorder.accepted(latency_ms, size)
+                    recorder.accepted(latency_ms, _accepted_count(reply, size))
                 elif reply.get("code") == "rate_limited":
                     recorder.limited()
                 else:

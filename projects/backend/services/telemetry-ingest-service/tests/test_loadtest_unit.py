@@ -10,7 +10,13 @@ import pytest
 
 from ingest_loadtest import cli
 from ingest_loadtest.provision import load_credentials, save_credentials
-from ingest_loadtest.runner import ReadingFactory, SensorCredential, _drive, _group_offsets
+from ingest_loadtest.runner import (
+    ReadingFactory,
+    SensorCredential,
+    _accepted_count,
+    _drive,
+    _group_offsets,
+)
 from ingest_loadtest.scenarios import PRESETS, Scenario, SlaThresholds
 from ingest_loadtest.stats import Recorder, build_report, evaluate_sla, format_report, percentile
 from telemetry_ingest_service.settings import Settings
@@ -317,3 +323,11 @@ def test_recorder_counts_errors_by_kind() -> None:
     rec.error("timeout")
     rec.error("http_500")
     assert rec.errors == Counter({"timeout": 2, "http_500": 1})
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [({"accepted": 3}, 3), ({"accepted": 0}, 0), ({}, 10), (None, 10), ({"accepted": True}, 10)],
+)
+def test_accepted_count_prefers_service_value(reply, expected: int) -> None:
+    assert _accepted_count(reply, 10) == expected
