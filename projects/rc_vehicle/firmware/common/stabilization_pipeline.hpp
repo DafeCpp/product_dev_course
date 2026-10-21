@@ -23,6 +23,10 @@ struct StabilizationInput {
   float filtered_gyro_z_dps{0.0f};
   float pitch_deg{0.0f};
   float forward_accel_g{0.0f};
+  /** Пробуксовка колёс и скорость корпуса без неё (LOS-385). */
+  float wheel_slip_ratio{0.0f};
+  float ground_speed_ms{0.0f};
+  bool wheels_driven{false};
   float stabilization_weight{0.0f};
   float mode_transition_weight{0.0f};
   bool imu_enabled{false};

@@ -57,7 +57,12 @@ float CoastThrottle(const StabilizationConfig& cfg,
   if (input.ekf_diverged || input.vx_variance > kSpeedTrustVarMax) {
     return 0.0f;
   }
-  const float vx = input.speed_ms * std::cos(input.slip_angle_deg * kDegToRad);
+  float vx = input.speed_ms * std::cos(input.slip_angle_deg * kDegToRad);
+  // Скорость EKF заякорена на мотор-модель и при пробуксовке идёт за
+  // колёсами; накат по ней держал бы колёса буксующими (LOS-385).
+  if (input.wheel_slip_ratio > KidsModeProcessor::kWheelspinOffRatio) {
+    vx = std::min(vx, input.ground_speed_ms);
+  }
   if (vx <= 0.0f) return 0.0f;
   return dz + vx * (1.0f - dz) / cfg.filter.motor_speed_gain;
 }
@@ -107,6 +112,8 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
     anti_spin_active_ = false;
     accel_limit_active_ = false;
     speed_limit_active_ = false;
+    wheelspin_active_ = false;
+    wheel_slip_ratio_ = 0.0f;
     speed_trim_ = 1.0f;
     return;
   }
@@ -135,10 +142,22 @@ void KidsModeProcessor::Process(const StabilizationConfig& cfg, float& throttle,
   // Команда до среза anti-spin: пол наката считается от неё (см. ниже).
   const float before_skid_cut = throttle;
 
+  // Пробуксовка колёс — второй признак рядом с углом заноса: по прямой
+  // угла заноса нет вовсе (LOS-385). Начаться она может только пока мотор
+  // разгоняет колёса; на ровном ходу доля — уже дрейф интеграла ускорения.
+  wheel_slip_ratio_ = input.wheel_slip_ratio;
+  const bool wheelspin_onset =
+      input.wheels_driven && input.wheel_slip_ratio > kWheelspinOnRatio;
+  const bool wheelspin_holds =
+      wheelspin_active_ && input.wheel_slip_ratio > kWheelspinOffRatio;
+  wheelspin_active_ = km.anti_spin_enabled && input.imu_enabled &&
+                      !input.ekf_diverged && throttle > 0.0f &&
+                      (wheelspin_onset || wheelspin_holds);
+
   if (km.anti_spin_enabled && input.imu_enabled) {
     const float slip_deg = std::abs(input.slip_angle_deg);
 
-    if (slip_deg > km.anti_spin_threshold_deg) {
+    if (slip_deg > km.anti_spin_threshold_deg || wheelspin_active_) {
       anti_spin_active_ = true;
       // Снизить газ на anti_spin_reduction процентов
       throttle *= (1.0f - km.anti_spin_reduction);
@@ -290,6 +309,8 @@ void KidsModeProcessor::ApplySpeedLimit(
 
 void KidsModeProcessor::Reset() noexcept {
   anti_spin_active_ = false;
+  wheelspin_active_ = false;
+  wheel_slip_ratio_ = 0.0f;
   accel_limit_active_ = false;
   speed_limit_active_ = false;
   speed_trim_ = 1.0f;

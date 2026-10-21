@@ -5,9 +5,11 @@
 проверяется, срабатывает ли anti-spin детского режима и уменьшает ли он
 пробуксовку и занос относительно эталона без него (--no-kids-anti-spin).
 
+При пробуксовке по прямой угла заноса нет вовсе, поэтому anti-spin
+включается ещё и по пробуксовке колёс: мотор-модель против интеграла
+продольного ускорения IMU (LOS-385). На асфальте этот признак молчать обязан.
+
 Что сейчас не так:
-- при пробуксовке по прямой угла заноса нет вовсе, и anti-spin молчит
-  (LOS-385);
 - угол заноса EKF в медленном заносе занижен: боковая скорость vy
   затухает с vy_decay_hz = 5 Гц, а при 1 Гц тряска дороги в акселерометре
   (≈0.5 g на 2 м/с) даёт ложный занос выше порога на асфальте (LOS-378);
@@ -49,15 +51,18 @@ REAR_BIASED_FRONT_SHARE = 0.2
 
 
 def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
-         straight_ticks: int, turn_ticks: int = 0) -> dict:
+         straight_ticks: int, turn_ticks: int = 0,
+         sensor_noise: bool = False) -> dict:
     """Газ в пол; после straight_ticks — полный руль на turn_ticks."""
     p = get_profile("fitted_2026_08_02")
     p.tire_mu = mu
     p.drive_front_share = front_share
     with ClosedLoopSim(BIN, params=p, dynamic=True, drive_mode="kids",
-                       kids_anti_spin=anti_spin, sensor_noise=False) as sim:
+                       kids_anti_spin=anti_spin,
+                       sensor_noise=sensor_noise) as sim:
         sim.run(SETTLE_TICKS, DT_MS, rc_throttle=0.0, rc_steering=0.0)
         slip_ratio, beta, ekf_slip, active = [], [], [], 0
+        wheelspin = 0
         beta_at_trigger = None
         for i in range(straight_ticks + turn_ticks):
             row = sim.step(DT_MS, 1.0, 0.0 if i < straight_ticks else 1.0)
@@ -66,6 +71,7 @@ def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
             beta.append(abs(math.degrees(math.atan2(st.vy, max(st.v, 0.1)))))
             ekf_slip.append(abs(row["ekf_slip_deg"]))
             active += int(row["kids_anti_spin_active"])
+            wheelspin += int(row["kids_wheelspin_active"])
             if active and beta_at_trigger is None:
                 beta_at_trigger = beta[-1]
     return {
@@ -74,6 +80,7 @@ def _run(*, mu: float, anti_spin: bool, front_share: float = 0.5,
         "peak_beta_deg": max(beta),
         "peak_ekf_slip_deg": max(ekf_slip),
         "anti_spin_ticks": active,
+        "wheelspin_ticks": wheelspin,
         "beta_at_trigger_deg": beta_at_trigger,
     }
 
@@ -95,14 +102,20 @@ def test_ice_launch_spins_wheels():
     assert ref["spin_ticks"] > 100  # > 0.2 с
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "LOS-370: anti-spin смотрит только на угол заноса EKF, а при "
-    "пробуксовке по прямой его нет — защита не срабатывает"))
 def test_anti_spin_cuts_wheelspin_on_ice_launch():
+    """LOS-385: пробуксовку на старте ловит признак колёс, не угол заноса."""
     ref = _ice_launch(anti_spin=False)
     kids = _ice_launch(anti_spin=True)
-    assert kids["anti_spin_ticks"] > 0
+    assert kids["wheelspin_ticks"] > 0
     assert kids["peak_slip_ratio"] < 0.8 * ref["peak_slip_ratio"]
+
+
+@pytest.mark.parametrize("turn_ticks", [0, 2500])
+def test_no_wheelspin_on_asphalt(turn_ticks):
+    """LOS-385: на асфальте признак пробуксовки молчит — по прямой и в повороте."""
+    kids = _run(mu=0.0, anti_spin=True, straight_ticks=1000,
+                turn_ticks=turn_ticks, sensor_noise=True)
+    assert kids["wheelspin_ticks"] == 0
 
 
 def test_slippery_turn_slides_past_anti_spin_threshold():

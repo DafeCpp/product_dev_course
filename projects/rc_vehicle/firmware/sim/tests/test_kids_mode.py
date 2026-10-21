@@ -18,8 +18,12 @@ pytestmark = pytest.mark.skipif(
 def _full_throttle(**kw) -> dict:
     """Прогнать полный газ; вернуть сводку (последняя строка + пик/модель)."""
     # Эти проверки изолируют speed limiter и его motor-model anchor. Дорожный
-    # accel limiter проверяется отдельно ниже.
+    # accel limiter проверяется отдельно ниже. Anti-spin выключен: здесь нет
+    # паузы на калибровку IMU в покое, она захватывает разгон, и смещение
+    # продольного ускорения детектор пробуксовки (LOS-385) читает как
+    # отставание корпуса от колёс.
     kw.setdefault("sensor_noise", False)
+    kw.setdefault("kids_anti_spin", False)
     with ClosedLoopSim(BIN, **kw) as sim:
         rows = sim.run(2500, dt_ms=2, rc_throttle=1.0, rc_steering=0.0)
     return {

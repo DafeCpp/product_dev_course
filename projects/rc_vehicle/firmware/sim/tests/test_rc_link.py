@@ -28,7 +28,11 @@ def _frames(ms: int, thr_us: int, str_us: int) -> list[SensorFrame]:
 
 def _run(frames, drive_mode="kids"):
     log: list[str] = []
-    rows = run_batch(frames, BIN, drive_mode=drive_mode, log_lines=log)
+    # Кадры без движения — машина на подставке: колёса по мотор-модели
+    # крутятся, корпус стоит, и anti-spin по пробуксовке (LOS-385) срезал бы
+    # газ. Здесь проверяется только RC-тракт.
+    rows = run_batch(frames, BIN, drive_mode=drive_mode, log_lines=log,
+                     kids_anti_spin=False)
     assert len(rows) == len(frames)
     return rows, log
 

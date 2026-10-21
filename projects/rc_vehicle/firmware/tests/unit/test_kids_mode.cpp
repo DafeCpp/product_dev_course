@@ -671,6 +671,63 @@ TEST_F(KidsModeLimiterSlewTest, AntiSpinNeverRaisesThrottleAboveCommand) {
   EXPECT_FLOAT_EQ(throttle, 0.2f);
 }
 
+// LOS-385: пробуксовка колёс по прямой — второй признак anti-spin.
+class KidsWheelspinTest : public KidsModeLimiterSlewTest {
+ protected:
+  void SetUp() override {
+    KidsModeLimiterSlewTest::SetUp();
+    cfg_.kids_mode.accel_limit_enabled = false;
+  }
+
+  float Tick(float slip_ratio, bool driven, float ground_speed = 0.5f) {
+    const StabilizationInput input{
+        .dt_ms = 2,
+        .speed_ms = 1.0f,
+        .wheel_slip_ratio = slip_ratio,
+        .ground_speed_ms = ground_speed,
+        .wheels_driven = driven,
+        .imu_enabled = true,
+    };
+    float throttle = 0.5f;
+    float steering = 0.0f;
+    processor_.Process(cfg_, throttle, steering, input);
+    return throttle;
+  }
+};
+
+TEST_F(KidsWheelspinTest, WheelspinWhileDrivenCutsThrottle) {
+  const float throttle = Tick(0.2f, true);
+  EXPECT_TRUE(processor_.IsWheelspinActive());
+  EXPECT_TRUE(processor_.IsAntiSpinActive());
+  EXPECT_LT(throttle, 0.5f);
+}
+
+TEST_F(KidsWheelspinTest, SlipOnSteadyDriveDoesNotStartCut) {
+  // Не разгон — доля от дрейфа интеграла ускорения, не пробуксовка.
+  EXPECT_FLOAT_EQ(Tick(0.2f, false), 0.5f);
+  EXPECT_FALSE(processor_.IsWheelspinActive());
+}
+
+TEST_F(KidsWheelspinTest, HysteresisHoldsUntilWheelsCatchUp) {
+  (void)Tick(0.2f, true);
+  // Газ срезан — колёса больше не разгоняются, но ещё обгоняют корпус.
+  (void)Tick(0.08f, false);
+  EXPECT_TRUE(processor_.IsWheelspinActive());
+  EXPECT_FLOAT_EQ(Tick(0.03f, false), 0.5f);
+  EXPECT_FALSE(processor_.IsWheelspinActive());
+}
+
+TEST_F(KidsWheelspinTest, CoastFloorUsesSlowerOfEkfAndBody) {
+  // Скорость EKF (1 м/с) идёт за буксующими колёсами; накат считается по
+  // меньшей из неё и скорости корпуса.
+  cfg_.kids_mode.anti_spin_reduction = 0.9f;
+  const float dz = cfg_.filter.motor_deadzone;
+  EXPECT_NEAR(Tick(0.2f, true, 0.0f), 0.5f * 0.1f, 1e-5f);  // корпус стоит
+  processor_.Reset();
+  EXPECT_NEAR(Tick(0.2f, true, 2.0f),
+              dz + 1.0f * (1.0f - dz) / cfg_.filter.motor_speed_gain, 1e-5f);
+}
+
 TEST_F(KidsModeLimiterSlewTest, AccelLimitAppliesBeforePwmSlew) {
   cfg_.kids_mode.anti_spin_enabled = false;
   ReachThrottleLimit();

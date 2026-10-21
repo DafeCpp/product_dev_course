@@ -22,6 +22,27 @@ constexpr float kTiltAnchorSettleTimeConstants = 3.0f;
 // машину на 10–20 % на разгоне, а в повороте ошибка vx·r шла в занос
 // (LOS-378).
 constexpr float kMotorSpeedTauS = 0.9f;
+// Детектор пробуксовки работает только на прямой (LOS-385): поворот Kids
+// на полном руле — около 1.2 рад/с, шум на прямой — сотые.
+constexpr float kWheelspinMaxYawRateRps = 0.3f;
+
+// Установившаяся скорость мотор-модели на газ throttle [м/с].
+float MotorModelSpeedMs(float throttle, const FilterConfig& filter) noexcept {
+  const float throttle_abs = std::abs(throttle);
+  if (throttle_abs <= filter.motor_deadzone || filter.motor_deadzone >= 1.0f) {
+    return 0.0f;
+  }
+  const float sign = throttle < 0.0f ? -1.0f : 1.0f;
+  return sign * filter.motor_speed_gain *
+         (throttle_abs - filter.motor_deadzone) /
+         (1.0f - filter.motor_deadzone);
+}
+
+// Шаг инерционного звена мотор-модели к target_ms.
+float MotorLagStep(float speed_ms, float target_ms, float dt_sec) noexcept {
+  return speed_ms +
+         (target_ms - speed_ms) * dt_sec / (kMotorSpeedTauS + dt_sec);
+}
 }  // namespace
 
 VehicleStateEstimate VehicleStateEstimator::Update(
@@ -149,22 +170,14 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 #endif
 
     if (motor_model_active) {
-      const float throttle = input.motor_model_throttle;
-      const float throttle_abs = std::abs(throttle);
-      float expected_speed = 0.0f;
-      if (throttle_abs > input.filter.motor_deadzone &&
-          input.filter.motor_deadzone < 1.0f) {
-        const float sign = throttle < 0.0f ? -1.0f : 1.0f;
-        expected_speed = sign * input.filter.motor_speed_gain *
-                         (throttle_abs - input.filter.motor_deadzone) /
-                         (1.0f - input.filter.motor_deadzone);
-      }
+      const float expected_speed =
+          MotorModelSpeedMs(input.motor_model_throttle, input.filter);
       motor_model_target_ms_ = expected_speed;
       // Инерционное звено стартует с текущей оценки: после паузы якоря
       // (калибровка скорости, сброс EKF) машина могла уже ехать.
       if (!motor_model_was_active_) motor_model_speed_ms_ = ekf_.GetVx();
-      motor_model_speed_ms_ += (expected_speed - motor_model_speed_ms_) *
-                               dt_sec / (kMotorSpeedTauS + dt_sec);
+      motor_model_speed_ms_ =
+          MotorLagStep(motor_model_speed_ms_, expected_speed, dt_sec);
       motor_model_ran = true;
 #ifdef RC_PROFILE_LOOP
       profile_call(profile_.speed, [&] {
@@ -213,6 +226,30 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     last_mag_sample_sequence_ = sensors.mag_sample_sequence;
   }
 
+  // Скорость колёс для детектора пробуксовки — мотор-модель на фактическом
+  // PWM, а не на газе якоря: Kids speed limiter срезает PWM, и якорь ведёт
+  // counterfactual-газ выше реального (LOS-246). Она зависит только от
+  // истории газа и сбросом EKF не обнуляется: после сброса на ходу колёса
+  // начинали бы с нуля, и корпус «отставал» бы от них (LOS-385).
+  const float wheel_target_ms =
+      MotorModelSpeedMs(input.applied_throttle, input.filter);
+  if (imu_tick_valid) {
+    wheel_speed_ms_ = MotorLagStep(wheel_speed_ms_, wheel_target_ms, dt_sec);
+  }
+
+  // Пробуксовка: мотор-модель за скорость колёс против интеграла ускорения
+  // корпуса (LOS-385). Без мотор-модели скорость колёс неизвестна. В
+  // повороте продольное ускорение кузова — это v̇x − vy·r, и без верного vy
+  // интеграл уходил бы вниз (в SIL до 0.09 в повороте на асфальте); занос
+  // там ловит угол заноса EKF, поэтому детектор ждёт выхода на прямую.
+  if (motor_model_ran &&
+      std::abs(ekf_.GetYawRate()) < kWheelspinMaxYawRateRps) {
+    wheelspin_.Update(wheel_speed_ms_, wheel_target_ms, forward_accel_g,
+                      dt_sec);
+  } else {
+    wheelspin_.Reset(wheel_speed_ms_);
+  }
+
   return BuildEstimate(sensors.imu_enabled, tilt_active_this_tick,
                        tilt_anchored_this_tick, pitch_rad, roll_rad,
                        forward_accel_g);
@@ -230,6 +267,7 @@ void VehicleStateEstimator::OnReferenceFrameChanged() noexcept {
 
 void VehicleStateEstimator::OnEkfReset() noexcept {
   motor_model_was_active_ = false;
+  wheelspin_.Reset(wheel_speed_ms_);
 }
 
 void VehicleStateEstimator::RefreshEkfFields(
@@ -254,6 +292,9 @@ VehicleStateEstimate VehicleStateEstimator::BuildEstimate(
   estimate.pitch_rad = pitch_rad;
   estimate.roll_rad = roll_rad;
   estimate.forward_accel_g = forward_accel_g;
+  estimate.wheel_slip_ratio = wheelspin_.GetSlipRatio();
+  estimate.wheels_driven = wheelspin_.IsDriving();
+  estimate.ground_speed_ms = wheelspin_.GetGroundSpeedMs();
   RefreshEkfFields(estimate);
   return estimate;
 }

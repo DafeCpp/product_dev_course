@@ -74,7 +74,8 @@ std::string OutputHeader() {
          "kids_mode_active,kids_throttle_limit,"
          "kids_anti_spin_active,kids_accel_limit_active,"
          "kids_speed_limit_active,kids_limiters_enabled,"
-         "forward_accel,test_active";
+         "forward_accel,test_active,kids_wheelspin_active,"
+         "kids_wheel_slip_ratio";
 }
 
 std::string FormatOutputLine(const TelemetrySnapshot& s, float throttle,
@@ -97,7 +98,8 @@ std::string FormatOutputLine(const TelemetrySnapshot& s, float throttle,
      << (s.kids_accel_limit_active ? 1 : 0) << ','
      << (s.kids_speed_limit_active ? 1 : 0) << ','
      << (s.kids_limiters_enabled ? 1 : 0) << ',' << s.forward_accel << ','
-     << (test_active ? 1 : 0);
+     << (test_active ? 1 : 0) << ',' << (s.kids_wheelspin_active ? 1 : 0) << ','
+     << s.kids_wheel_slip_ratio;
   return os.str();
 }
 

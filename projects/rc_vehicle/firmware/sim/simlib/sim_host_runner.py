@@ -145,6 +145,7 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
               target_accel: float | None = None,
               test_duration: float | None = None,
               test_steering: float | None = None,
+              kids_anti_spin: bool = True,
               log_lines: list[str] | None = None) -> list[dict]:
     """Прогнать кадры через sim_host в batch-режиме → список выходных строк.
 
@@ -172,6 +173,8 @@ def run_batch(frames, sim_host_bin: str, identity_calib: bool = True,
         args += ["--drive-mode", drive_mode]
     if stabilize:
         args.append("--stabilize")
+    if not kids_anti_spin:
+        args.append("--no-kids-anti-spin")
     if oversteer is not None:
         args += [
             "--oversteer",
