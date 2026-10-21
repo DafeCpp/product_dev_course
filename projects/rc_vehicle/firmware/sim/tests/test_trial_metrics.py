@@ -1025,16 +1025,26 @@ def test_com_calibration_failed_event(tmp_path):
         [r for r in res if "калибровка" in r.name]) == 1
 
 
-def _tilt_step_at_rest(beta: float):
-    """Покой на ровном, затем акселерометр сразу показывает уклон 10° без
+def _tilt_step_at_rest(beta: float, slope_deg: float = 10.0, ticks: int = 3000):
+    """Покой на ровном, затем акселерометр сразу показывает уклон без
     вращения — как ошибка наклона, которую Madgwick должен догнать."""
-    s, c = math.sin(math.radians(10.0)), math.cos(math.radians(10.0))
+    s, c = math.sin(math.radians(slope_deg)), math.cos(math.radians(slope_deg))
     frames = [SensorFrame(dt_ms=DT_MS, az=1.0, rc_present=True)
               for _ in range(4500)]
     frames += [SensorFrame(dt_ms=DT_MS, ax=s, az=c, rc_present=True)
-               for _ in range(3000)]
+               for _ in range(ticks)]
     rows = run_batch(frames, BIN, identity_calib=True, madgwick_beta=beta)
     return _sil_to_frames(rows[4000:])
+
+
+@needs_sim
+def test_tilt_errors_flag_rest_too_short_for_low_beta(tmp_path):
+    """Madgwick нормирует градиент: в покое угол идёт к истине со скоростью
+    ~2β рад/с, сколько бы ни осталось. Покой кончился раньше — хвост ещё
+    ползёт, и опору по нему не берут."""
+    r = tm.tilt_errors(_write_csv(tmp_path / "short.csv",
+                                  _tilt_step_at_rest(0.05, 30.0, 1500)))
+    assert r["rests"] == 1 and math.isinf(r["settle_ms"])
 
 
 def _turn(beta: float):
