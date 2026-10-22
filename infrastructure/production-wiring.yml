@@ -10,35 +10,54 @@
 # ("Чеклист подключения нового сервиса к production") and add it here.
 
 services:
-  # image:    image name in the deploy.yml build matrix and in prod compose.
-  # migrate:  one-shot migrate service the runtime waits for (service_completed_successfully).
-  # database: Terraform yandex_mdb_postgresql_database the service writes to.
+  # image:      image name in the deploy.yml build matrix and in prod compose.
+  # context, dockerfile: build source of the image. Must be identical in the
+  #             deploy.yml matrix and in the dev compose build of the service and
+  #             of its migrate job, so a service cannot publish another one's image.
+  # migrate:    one-shot migrate service the runtime waits for (service_completed_successfully).
+  # database:   Terraform yandex_mdb_postgresql_database the service writes to.
   auth-service:
     image: auth-service
+    context: ./projects/backend
+    dockerfile: services/auth-service/Dockerfile
     migrate: auth-migrate
     database: auth_db
   experiment-service:
     image: experiment-service
+    context: ./projects/backend
+    dockerfile: services/experiment-service/Dockerfile
     migrate: experiment-migrate
     database: experiment_db
   telemetry-ingest-service:
     image: telemetry-ingest-service
+    context: ./projects/backend
+    dockerfile: services/telemetry-ingest-service/Dockerfile
     migrate: telemetry-ingest-migrate
     database: experiment_db
   config-service:
     image: config-service
+    context: ./projects/backend
+    dockerfile: services/config-service/Dockerfile
     migrate: config-migrate
     database: config_db
   script-service:
     image: script-service
+    context: ./projects/backend
+    dockerfile: services/script-service/Dockerfile
     migrate: script-migrate
     database: script_db
   auth-proxy:
     image: auth-proxy
+    context: .
+    dockerfile: projects/frontend/apps/auth-proxy/Dockerfile
   experiment-portal:
     image: experiment-portal
+    context: .
+    dockerfile: projects/frontend/apps/experiment-portal/Dockerfile
   sensor-simulator:
     image: sensor-simulator
+    context: .
+    dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
   redis: {}
   loki: {}
   alloy: {}

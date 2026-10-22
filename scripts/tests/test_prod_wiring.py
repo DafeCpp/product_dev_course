@@ -143,6 +143,49 @@ class ProdWiringTest(unittest.TestCase):
         )
         self.assert_error("config-service: in docker-compose.yml the default DATABASE_URL does not point at config_db")
 
+    def set_service_field(self, path: Path, service: str, *keys: str, value: object) -> None:
+        compose = yaml.safe_load(path.read_text(encoding="utf-8"))
+        node = compose["services"][service]
+        for key in keys[:-1]:
+            node = node[key]
+        node[keys[-1]] = value
+        path.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+
+    def test_matrix_entry_building_another_dockerfile_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "            dockerfile: services/script-service/Dockerfile",
+            "            dockerfile: services/config-service/Dockerfile",
+        )
+        self.assert_error(
+            "script-service: deploy.yml matrix builds services/config-service/Dockerfile"
+        )
+
+    def test_dev_migrate_building_another_service_fails(self) -> None:
+        self.set_service_field(
+            self.paths.dev_compose,
+            "script-migrate",
+            "build",
+            "dockerfile",
+            value="services/config-service/Dockerfile",
+        )
+        self.assert_error("script-migrate: docker-compose.yml builds services/config-service/Dockerfile")
+
+    def test_dev_runtime_building_another_service_fails(self) -> None:
+        self.set_service_field(
+            self.paths.dev_compose, "auth-service", "build", "context", value="./projects/other"
+        )
+        self.assert_error("auth-service: docker-compose.yml builds services/auth-service/Dockerfile from ./projects/other")
+
+    def test_prod_migrate_with_another_image_fails(self) -> None:
+        self.set_service_field(
+            self.paths.prod_compose,
+            "script-migrate",
+            "image",
+            value="${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/config-service:${IMAGE_TAG:-latest}",
+        )
+        self.assert_error("script-migrate: docker-compose.prod.yml image")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

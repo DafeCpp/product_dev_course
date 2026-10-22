@@ -13,6 +13,7 @@ on:
       - infrastructure/yandex-cloud/database.tf
       - projects/backend/services/*/migrations/**
       - scripts/check_prod_wiring.py
+      - scripts/requirements-tools.txt
       - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh
       - scripts/tests/test_production_deploy_contract.py
@@ -34,6 +35,7 @@ on:
       - infrastructure/yandex-cloud/database.tf
       - projects/backend/services/*/migrations/**
       - scripts/check_prod_wiring.py
+      - scripts/requirements-tools.txt
       - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh
       - scripts/tests/test_production_deploy_contract.py
@@ -76,8 +78,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure PyYAML for the wiring checker
-        run: python3 -c "import yaml" 2>/dev/null || sudo apt-get install -y python3-yaml
 
       - name: Check production wiring drift
         run: make check-prod-wiring

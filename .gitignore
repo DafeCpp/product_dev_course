@@ -125,3 +125,4 @@ telemetry_log_*.csv
 
 # telemetry-ingest load test credentials (ingest_loadtest provision)
 loadtest-sensors.json
+.venv-tools/

@@ -52,13 +52,21 @@ TEST_POSTGRESQL_DSN ?=
 
 test: type-check test-backend test-telemetry-cli test-frontend
 
-test-deploy-contract:
+# Репозиторные скрипты (scripts/) используют PyYAML; ставим его в отдельный venv,
+# чтобы не требовать глобальных пакетов.
+TOOLS_VENV := .venv-tools
+$(TOOLS_VENV)/.ready: scripts/requirements-tools.txt
+	@python3 -m venv $(TOOLS_VENV)
+	@$(TOOLS_VENV)/bin/pip install -q -r scripts/requirements-tools.txt
+	@touch $@
+
+test-deploy-contract: $(TOOLS_VENV)/.ready
 	@echo "🧪 Running production deploy contract tests..."
-	@python3 -m unittest discover -s scripts/tests -p "test_*.py" -v
+	@$(TOOLS_VENV)/bin/python -m unittest discover -s scripts/tests -p "test_*.py" -v
 
 # Dev/prod compose drift and production wiring vs infrastructure/production-wiring.yml (LOS-112)
-check-prod-wiring:
-	@python3 scripts/check_prod_wiring.py
+check-prod-wiring: $(TOOLS_VENV)/.ready
+	@$(TOOLS_VENV)/bin/python scripts/check_prod_wiring.py
 
 backend-install:
 	@if [ -z "$(BACKEND_PROJECTS)" ]; then \

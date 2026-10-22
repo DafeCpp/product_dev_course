@@ -100,8 +100,15 @@ def _depends_on(service: dict[str, Any]) -> dict[str, str | None]:
     return {name: (spec or {}).get("condition") for name, spec in deps.items()}
 
 
-def _matrix_images(workflow: str) -> set[str]:
-    return set(re.findall(r"(?m)^\s*-\s*service:\s*([A-Za-z0-9_.-]+)\s*$", workflow))
+def _matrix_entries(workflow: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The release build matrix as {image: {context, dockerfile}}."""
+    entries: dict[str, dict[str, Any]] = {}
+    for job in (workflow.get("jobs") or {}).values():
+        include = ((job or {}).get("strategy") or {}).get("matrix", {}).get("include") or []
+        for item in include:
+            if isinstance(item, dict) and "service" in item:
+                entries[str(item["service"])] = item
+    return entries
 
 
 def _terraform_databases(terraform: str) -> set[str]:
@@ -114,6 +121,51 @@ def _terraform_databases(terraform: str) -> set[str]:
         if match:
             names.add(match.group(1))
     return names
+
+
+def _build_source(build: Any) -> tuple[str | None, str | None]:
+    if isinstance(build, str):
+        return build, None
+    if isinstance(build, dict):
+        return build.get("context"), build.get("dockerfile")
+    return None, None
+
+
+def _check_build_source(
+    name: str,
+    spec: dict[str, Any],
+    matrix_entry: dict[str, Any] | None,
+    dev: dict[str, dict[str, Any]],
+    prod: dict[str, dict[str, Any]],
+) -> list[str]:
+    """The release matrix, dev builds and prod migrate image must all be this service's own."""
+    expected = (spec.get("context"), spec.get("dockerfile"))
+    errors: list[str] = []
+    if None in expected:
+        return [f"{name}: manifest needs context and dockerfile for image {spec['image']}"]
+    if matrix_entry is not None:
+        actual = (matrix_entry.get("context"), matrix_entry.get("dockerfile"))
+        if actual != expected:
+            errors.append(
+                f"{name}: deploy.yml matrix builds {actual[1]} from {actual[0]}, "
+                f"expected {expected[1]} from {expected[0]}"
+            )
+    for target in filter(None, (name, spec.get("migrate"))):
+        if target in dev:
+            actual = _build_source(dev[target].get("build"))
+            if actual != expected:
+                errors.append(
+                    f"{target}: docker-compose.yml builds {actual[1]} from {actual[0]}, "
+                    f"expected {expected[1]} from {expected[0]}"
+                )
+    migrate = spec.get("migrate")
+    if migrate and migrate in prod and name in prod:
+        if prod[migrate].get("image") != prod[name].get("image"):
+            errors.append(
+                f"{migrate}: docker-compose.prod.yml image {prod[migrate].get('image')!r} "
+                f"differs from {name} image {prod[name].get('image')!r}"
+            )
+    return errors
 
 
 def _check_env(
@@ -153,7 +205,8 @@ def check(paths: Paths) -> list[str]:
 
     dev = _services(_load_yaml(paths.dev_compose))
     prod = _services(_load_yaml(paths.prod_compose))
-    matrix = _matrix_images(paths.deploy_workflow.read_text(encoding="utf-8"))
+    matrix_entries = _matrix_entries(_load_yaml(paths.deploy_workflow))
+    matrix = set(matrix_entries)
     databases = _terraform_databases(paths.terraform_database.read_text(encoding="utf-8"))
 
     errors: list[str] = []
@@ -190,6 +243,7 @@ def check(paths: Paths) -> list[str]:
             prod_image = str(prod.get(name, {}).get("image", ""))
             if name in prod and f"/{image}:" not in prod_image:
                 errors.append(f"{name}: prod image {prod_image!r} is not the released {image} image")
+            errors.extend(_check_build_source(name, spec, matrix_entries.get(image), dev, prod))
 
         migrate = spec.get("migrate")
         if migrate:
