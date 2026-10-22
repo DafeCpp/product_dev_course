@@ -74,6 +74,7 @@ STEP_MIN_TARGET = 0.1
 # Покой короче этого не годится для тренда bias (программа: 5-10 мин).
 MIN_REST_S = 60.0
 DRIVE_MODE_KIDS = 3  # DRIVE_MODE_NAMES в analyze_telemetry.py
+DRIVE_MODE_DIRECT_LAW = 4
 # Протокол 4.2: машина тронулась, если горизонтальное ускорение выросло на 0.03 g.
 ESC_START_ACCEL_G = 0.03
 ESC_STEP_MIN_MS = 1500.0  # ступень газа короче — не ступень (протокол: по 2 с)
@@ -1399,10 +1400,12 @@ def grip_windows(rows: list[Row]) -> list[tuple[float, float, float]]:
     Окно GRIP_WINDOW_MS годится, если руль в нём не гуляет больше
     GRIP_MAX_STEER_SPREAD, yaw rate — больше 5 % (и GRIP_MAX_RATE_SPREAD),
     а vx, |руль| и |yaw rate| не ниже порогов: на малых руле и скорости
-    отношение r к рулю тонет в шуме. Руль колёс — `steering` минус
-    `steering_trim` из снапшотов конфигурации: GripLossDetector получает руль
-    без trim, иначе trim выглядел бы как поворот. Окна идут встык, без
-    перекрытия.
+    отношение r к рулю тонет в шуме. Руль колёс — `steering` без trim, как
+    его получает GripLossDetector: со slew rate (все режимы, кроме DirectLaw)
+    trim добавляется только в PWM и в лог не попадает, а в DirectLaw
+    `steering` хранится вместе с ним, и там вычитается `steering_trim` из
+    снапшотов конфигурации (ControlLoopProcessor, applied_wheel_steering).
+    Окна идут встык, без перекрытия.
     """
     for c in ("steering", "yaw_rate_dps"):
         if not has_col(rows, c):
@@ -1413,7 +1416,10 @@ def grip_windows(rows: list[Row]) -> list[tuple[float, float, float]]:
     trims = config_values(rows, "steering_trim", section=None)
     trim = trims[-1] if trims else 0.0
     ts = _ts(rows)
-    steer = [s - trim for s in col_raw(rows, "steering")]
+    modes = (col_raw(rows, "drive_mode") if has_col(rows, "drive_mode")
+             else [math.nan] * len(rows))
+    steer = [s - trim if m == DRIVE_MODE_DIRECT_LAW else s
+             for s, m in zip(col_raw(rows, "steering"), modes, strict=True)]
     rate = [math.radians(r) for r in col_raw(rows, "yaw_rate_dps")]
     vx = col_raw(rows, vcol)
     out = []

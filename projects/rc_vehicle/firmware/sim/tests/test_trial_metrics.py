@@ -1369,7 +1369,7 @@ def test_imu_stats_period_matches_firmware():
 # ── Признак потери сцепления (протокол 7.5f, LOS-378) ─────────────────────
 
 def _circles_log(max_steer_deg: float, k: float, speeds, steers=(0.3, 0.6, -0.6),
-                 trim: float = 0.0, seg_ms: int = 1000):
+                 trim: float = 0.0, seg_ms: int = 1000, drive_mode: int = 0):
     """Синтетические установившиеся круги: r по модели детектора."""
     rows, t = [], 0
     for s in steers:
@@ -1378,7 +1378,8 @@ def _circles_log(max_steer_deg: float, k: float, speeds, steers=(0.3, 0.6, -0.6)
             for _ in range(seg_ms // 10):
                 t += 10
                 rows.append({"ts_ms": t, "steering": s + trim, "vx": v,
-                             "yaw_rate_dps": math.degrees(r)})
+                             "yaw_rate_dps": math.degrees(r),
+                             "drive_mode": drive_mode})
     return rows
 
 
@@ -1405,11 +1406,20 @@ def test_grip_fit_needs_speed_spread_for_k(tmp_path):
     assert "K не подогнан" in tm.check_grip_fit(log)[1].value
 
 
-def test_grip_fit_subtracts_steering_trim(tmp_path):
-    rows = _circles_log(23.0, 0.02, (1.0, 1.8, 2.6), trim=0.05)
+def test_grip_fit_subtracts_steering_trim_only_in_direct_law(tmp_path):
+    """В DirectLaw `steering` в логе с trim, в остальных режимах — без него
+    (trim добавляется только в PWM)."""
+    rows = _circles_log(23.0, 0.02, (1.0, 1.8, 2.6), trim=0.05,
+                        drive_mode=tm.DRIVE_MODE_DIRECT_LAW)
     rows[0]["event_config"] = json.dumps([{"steering_trim": 0.05}])
-    fit = tm.grip_fit(tm.grip_windows(_write_csv(tmp_path / "g.csv", rows)))
+    fit = tm.grip_fit(tm.grip_windows(_write_csv(tmp_path / "d.csv", rows)))
     assert math.degrees(fit["max_steer_rad"]) == pytest.approx(23.0, abs=0.05)
+
+    rows = _circles_log(23.0, 0.02, (1.0, 1.8, 2.6))
+    rows[0]["event_config"] = json.dumps([{"steering_trim": 0.05}])
+    fit = tm.grip_fit(tm.grip_windows(_write_csv(tmp_path / "n.csv", rows)))
+    assert math.degrees(fit["max_steer_rad"]) == pytest.approx(23.0, abs=0.05)
+    assert fit["k"] == pytest.approx(0.02, abs=5e-4)
 
 
 def test_grip_fit_skips_transients_and_straights(tmp_path):
