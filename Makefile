@@ -751,6 +751,13 @@ telemetry-ingest-migrate:
 		$(DOCKER_COMPOSE) exec telemetry-ingest-service python -m bin.migrate --database-url "$${EXPERIMENT_DATABASE_URL:-postgresql://experiment_user:experiment_password@postgres:5432/experiment_db}"
 	@echo "✅ Миграции telemetry-ingest-service применены"
 
+# Нагрузочное тестирование telemetry-ingest (см. projects/backend/services/telemetry-ingest-service/loadtest/README.md)
+# Пример: make telemetry-loadtest ARGS="run baseline"
+.PHONY: telemetry-loadtest
+telemetry-loadtest:
+	@cd projects/backend/services/telemetry-ingest-service && \
+		PYTHONPATH=loadtest poetry run python -m ingest_loadtest $(ARGS)
+
 # Создание базы данных script-service
 script-create-db:
 	@echo "Создание базы данных script_db..."

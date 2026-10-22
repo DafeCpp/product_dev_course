@@ -122,3 +122,6 @@ projects/rc_vehicle/stm32_espc3_schemas/*-backups/
 
 # Telemetry logs (local test data)
 telemetry_log_*.csv
+
+# telemetry-ingest load test credentials (ingest_loadtest provision)
+loadtest-sensors.json
