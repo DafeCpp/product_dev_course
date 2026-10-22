@@ -110,15 +110,8 @@ void ComOffsetCalibration::Update(float current_accel_g, float accel_magnitude,
       throttle = cruise_throttle_;
       steering = steering_magnitude_;
 
-      float elapsed = driver_.GetPhaseElapsed();
-      if (elapsed > kSettleSkipSec) {
-        sum_ax_1_ += static_cast<double>(cal_ax);
-        sum_ay_1_ += static_cast<double>(cal_ay);
-        sum_gz_1_ += static_cast<double>(filtered_gz_dps);
-        count_1_++;
-      }
-
-      if (elapsed >= cruise_duration_sec_) {
+      if (CruiseStep(cal_ax, cal_ay, filtered_gz_dps, sum_ax_1_, sum_ay_1_,
+                     sum_gz_1_, count_1_)) {
         driver_.EndCruise();
         TransitionTo(Phase::Pass1_Brake);
       }
@@ -152,15 +145,8 @@ void ComOffsetCalibration::Update(float current_accel_g, float accel_magnitude,
       throttle = cruise_throttle_;
       steering = -steering_magnitude_;
 
-      float elapsed = driver_.GetPhaseElapsed();
-      if (elapsed > kSettleSkipSec) {
-        sum_ax_2_ += static_cast<double>(cal_ax);
-        sum_ay_2_ += static_cast<double>(cal_ay);
-        sum_gz_2_ += static_cast<double>(filtered_gz_dps);
-        count_2_++;
-      }
-
-      if (elapsed >= cruise_duration_sec_) {
+      if (CruiseStep(cal_ax, cal_ay, filtered_gz_dps, sum_ax_2_, sum_ay_2_,
+                     sum_gz_2_, count_2_)) {
         driver_.EndCruise();
         TransitionTo(Phase::Pass2_Brake);
       }
@@ -182,6 +168,54 @@ void ComOffsetCalibration::Update(float current_accel_g, float accel_magnitude,
 
 void ComOffsetCalibration::TransitionTo(Phase next) {
   phase_ = next;
+  if (next == Phase::Pass1_Cruise || next == Phase::Pass2_Cruise) {
+    ResetSettle();
+  }
+}
+
+void ComOffsetCalibration::ResetSettle() {
+  settle_block_sum_ = 0.0;
+  settle_block_count_ = 0;
+  settle_prev_block_mean_ = 0.0f;
+  settle_prev_block_end_sec_ = 0.0f;
+  settle_have_prev_block_ = false;
+  settled_ = false;
+  settled_at_sec_ = 0.0f;
+}
+
+bool ComOffsetCalibration::CruiseStep(float cal_ax, float cal_ay, float gz_dps,
+                                      double& sum_ax, double& sum_ay,
+                                      double& sum_gz, int& count) {
+  const float elapsed = driver_.GetPhaseElapsed();
+
+  if (!settled_) {
+    settle_block_sum_ += static_cast<double>(gz_dps);
+    settle_block_count_++;
+    if (elapsed - settle_prev_block_end_sec_ >= kSettleBlockSec) {
+      const float mean =
+          static_cast<float>(settle_block_sum_ / settle_block_count_);
+      const float tolerance =
+          std::max(kSettleTolerance * std::abs(mean), kSettleToleranceMinDps);
+      if (settle_have_prev_block_ &&
+          std::abs(mean - settle_prev_block_mean_) <= tolerance) {
+        settled_ = true;
+      }
+      settle_prev_block_mean_ = mean;
+      settle_prev_block_end_sec_ = elapsed;
+      settle_have_prev_block_ = true;
+      settle_block_sum_ = 0.0;
+      settle_block_count_ = 0;
+    }
+    if (elapsed >= kMaxSettleSec) settled_ = true;
+    if (settled_) settled_at_sec_ = elapsed;
+    return false;
+  }
+
+  sum_ax += static_cast<double>(cal_ax);
+  sum_ay += static_cast<double>(cal_ay);
+  sum_gz += static_cast<double>(gz_dps);
+  count++;
+  return elapsed - settled_at_sec_ >= cruise_duration_sec_;
 }
 
 void ComOffsetCalibration::ComputeResult() {

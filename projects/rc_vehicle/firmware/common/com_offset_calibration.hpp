@@ -65,7 +65,10 @@ class ComOffsetCalibration {
    * @brief Запустить калибровку
    * @param target_accel_g Целевое ускорение при разгоне [0.02..0.3 g]
    * @param steering_magnitude Абсолютное значение руля [0.1..1.0]
-   * @param cruise_duration_sec Длительность круизной фазы [3..30 с]
+   * @param cruise_duration_sec Длительность сбора на круизе [3..30 с], отсчёт
+   *        с момента, когда установилась ω (см. kSettleBlockSec). По умолчанию
+   * 15 с: в SIL с шумом дороги на 5 с разброс rx/ry ±0.03…0.06 м, на 15 с
+   *        ±0.015…0.02 м (LOS-380)
    * @param gravity_vec Вектор гравитации в СК датчика (из ImuCalibData)
    * @param applied_offset Offset (rx, ry), которым уже скорректированы
    *        cal_ax/cal_ay в Update() (ImuCalibration::CorrectForComOffset).
@@ -74,7 +77,7 @@ class ComOffsetCalibration {
    * @return true при успешном запуске
    */
   bool Start(float target_accel_g = 0.1f, float steering_magnitude = 0.5f,
-             float cruise_duration_sec = 5.0f,
+             float cruise_duration_sec = 15.0f,
              const float* gravity_vec = nullptr,
              const float* applied_offset = nullptr);
 
@@ -123,7 +126,7 @@ class ComOffsetCalibration {
 
   float target_accel_g_{0.1f};
   float steering_magnitude_{0.5f};
-  float cruise_duration_sec_{5.0f};
+  float cruise_duration_sec_{15.0f};
   float gravity_vec_[3]{0.f, 0.f, 1.f};
   float applied_offset_[2]{0.f, 0.f};  ///< См. Start(applied_offset)
   /// Газ круиза первого прохода; второй проход едет на нём же (LOS-384).
@@ -137,14 +140,38 @@ class ComOffsetCalibration {
   double sum_ax_2_{0.0}, sum_ay_2_{0.0}, sum_gz_2_{0.0};
   int count_2_{0};
 
+  // Установление скорости на круизе: средние gz по соседним блокам.
+  double settle_block_sum_{0.0};
+  int settle_block_count_{0};
+  float settle_prev_block_mean_{0.0f};
+  float settle_prev_block_end_sec_{0.0f};
+  bool settle_have_prev_block_{false};
+  bool settled_{false};
+  float settled_at_sec_{0.0f};  ///< Время круиза, с которого идёт сбор
+
   Result result_{};
 
-  static constexpr float kSettleSkipSec = 0.5f;  ///< Пропустить начало круиза
+  // В начале круиза машина ещё разгоняется к скорости установившегося газа.
+  // Продольное ускорение в CW и CCW одного знака и в сумме не сокращается:
+  // через фиксированные 0.5 с сбор на 5 с давал rx ≈ −0.07 м (LOS-380). Сбор
+  // начинается, когда средние gz соседних блоков kSettleBlockSec расходятся не
+  // больше чем на kSettleTolerance (не меньше kSettleToleranceMinDps): ω
+  // пропорциональна скорости при постоянном руле.
+  static constexpr float kSettleBlockSec = 0.5f;
+  static constexpr float kSettleTolerance = 0.01f;
+  static constexpr float kSettleToleranceMinDps = 0.5f;
+  /// Если ω так и не установилась, сбор начинается после этого времени.
+  static constexpr float kMaxSettleSec = 5.0f;
   static constexpr int kMinSamples = 500;
   static constexpr float kMinOmegaDps = 10.0f;  ///< Мин. ω для расчёта
   static constexpr float kGravity = 9.80665f;
 
   void TransitionTo(Phase next);
+  /// Шаг круиза: ждёт установления ω, затем копит средние.
+  /// @return true, когда сбор длительностью cruise_duration_sec_ закончен.
+  bool CruiseStep(float cal_ax, float cal_ay, float gz_dps, double& sum_ax,
+                  double& sum_ay, double& sum_gz, int& count);
+  void ResetSettle();
   void ComputeResult();
 };
 

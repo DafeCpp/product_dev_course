@@ -34,12 +34,12 @@ class ComOffsetCalibrationTest : public ::testing::Test {
     }
   }
 
-  // Run cruise phase with given sensor data
-  void RunCruisePhase(float cal_ax, float cal_ay, float gz_dps,
-                      float& throttle, float& steering,
-                      float duration_sec = 5.0f) {
-    int steps = static_cast<int>(duration_sec / kDt) + 1;
-    for (int i = 0; i < steps; ++i) {
+  // Круиз до перехода в торможение: ω постоянна, установление занимает два
+  // блока kSettleBlockSec, затем сбор cruise_duration.
+  void RunCruisePhase(float cal_ax, float cal_ay, float gz_dps, float& throttle,
+                      float& steering) {
+    const auto phase = calib.GetPhase();
+    for (int i = 0; i < 40000 && calib.GetPhase() == phase; ++i) {
       Step(0.0f, 1.0f, cal_ax, cal_ay, gz_dps, throttle, steering);
     }
   }
@@ -63,14 +63,12 @@ class ComOffsetCalibrationTest : public ::testing::Test {
 
     // Pass 1 (CW)
     RunAccelPhase(thr, str);
-    RunCruisePhase(cal_ax_cw, cal_ay_cw, gz_cw_dps, thr, str,
-                   cruise_duration);
+    RunCruisePhase(cal_ax_cw, cal_ay_cw, gz_cw_dps, thr, str);
     RunBrakePhase(thr, str);
 
     // Pass 2 (CCW)
     RunAccelPhase(thr, str);
-    RunCruisePhase(cal_ax_ccw, cal_ay_ccw, gz_ccw_dps, thr, str,
-                   cruise_duration);
+    RunCruisePhase(cal_ax_ccw, cal_ay_ccw, gz_ccw_dps, thr, str);
     RunBrakePhase(thr, str);
 
     return calib.GetResult();
@@ -145,7 +143,7 @@ TEST_F(ComOffsetCalibrationTest, FullPhaseSequence) {
   EXPECT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass1_Cruise);
 
   // Pass1_Cruise
-  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str, 5.0f);
+  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str);
   EXPECT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass1_Brake);
 
   // Pass1_Brake (stopped)
@@ -158,7 +156,7 @@ TEST_F(ComOffsetCalibrationTest, FullPhaseSequence) {
   EXPECT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass2_Cruise);
 
   // Pass2_Cruise
-  RunCruisePhase(0.0f, 0.0f, -50.0f, thr, str, 5.0f);
+  RunCruisePhase(0.0f, 0.0f, -50.0f, thr, str);
   EXPECT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass2_Brake);
 
   // Pass2_Brake (stopped)
@@ -182,7 +180,7 @@ TEST_F(ComOffsetCalibrationTest, Pass2SteeringNegative) {
 
   // Skip through Pass1
   RunAccelPhase(thr, str);
-  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str, 5.0f);
+  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str);
   RunBrakePhase(thr, str);
 
   // Now in Pass2_Accelerate: steering should be negative
@@ -334,40 +332,87 @@ TEST_F(ComOffsetCalibrationTest, GravitySubtracted) {
   EXPECT_NEAR(result.rx, 0.0f, 0.01f);
 }
 
-// ─────────────── Settle skip ───────────────
+// ─────────────── Установление скорости на круизе ───────────────
 
-TEST_F(ComOffsetCalibrationTest, CruiseSkipsFirst500ms) {
+TEST_F(ComOffsetCalibrationTest, CruiseIgnoresSamplesBeforeSettle) {
   calib.Start(0.1f, 0.5f, 5.0f, gravity_vec_);
   float thr = 0, str = 0;
 
-  // Pass1: Accelerate
   RunAccelPhase(thr, str);
-
-  // Pass1 Cruise: first 0.5s with huge ax (should be ignored)
-  // 0.5s / 0.002s = 250 steps; at elapsed=0.5s condition is > 0.5 (not met)
-  int settle_steps = static_cast<int>(0.5f / kDt);
-  for (int i = 0; i < settle_steps; ++i) {
+  // Установление — минимум два блока по 0.5 с: первые 0.9 с не в среднем.
+  for (int i = 0; i < 450; ++i) {
     Step(0.0f, 1.0f, 999.0f, 999.0f, 50.0f, thr, str);
   }
-  // Rest of cruise with 0 ax/ay
-  int remaining = static_cast<int>(5.0f / kDt) + 1 - settle_steps;
-  for (int i = 0; i < remaining; ++i) {
-    Step(0.0f, 1.0f, 0.0f, 0.0f, 50.0f, thr, str);
-  }
-
-  // Brake
+  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str);
   RunBrakePhase(thr, str);
 
-  // Pass2
   RunAccelPhase(thr, str);
-  RunCruisePhase(0.0f, 0.0f, -50.0f, thr, str, 5.0f);
+  RunCruisePhase(0.0f, 0.0f, -50.0f, thr, str);
   RunBrakePhase(thr, str);
 
   auto result = calib.GetResult();
   EXPECT_TRUE(result.valid);
-  // If settle data was counted, rx/ry would be huge
   EXPECT_NEAR(result.rx, 0.0f, 0.05f);
   EXPECT_NEAR(result.ry, 0.0f, 0.05f);
+}
+
+// LOS-380: в начале круиза машина ещё разгоняется (скорость подходит к
+// установившейся по экспоненте, как в SIL: 1.1 → 1.6 м/с, τ ≈ 0.8 с).
+// Продольное ускорение в CW и CCW одного знака; со сбором через фиксированные
+// 0.5 с оно давало rx ≈ −0.07 м при IMU в центре масс.
+TEST_F(ComOffsetCalibrationTest, CruiseWaitsForSpeedToSettle) {
+  constexpr float kVEnd = 1.6f, kDv = 0.5f, kTau = 0.8f;
+  constexpr float kOmegaEndDps = 55.0f;
+  const float radius = kVEnd / (kOmegaEndDps * kDegToRad);
+
+  calib.Start(0.1f, 0.5f, 5.0f, gravity_vec_);
+  float thr = 0, str = 0;
+  for (int pass = 0; pass < 2; ++pass) {
+    const float sign = pass == 0 ? 1.0f : -1.0f;
+    RunAccelPhase(thr, str);
+    const auto cruise = calib.GetPhase();
+    for (int i = 0; i < 40000 && calib.GetPhase() == cruise; ++i) {
+      const float t = static_cast<float>(i + 1) * kDt;
+      const float decay = std::exp(-t / kTau);
+      const float v = kVEnd - kDv * decay;
+      const float omega = v / radius;
+      const float ax = kDv / kTau * decay / kGravity;
+      const float ay = sign * v * omega / kGravity;
+      Step(0.0f, 1.0f, ax, ay, sign * omega / kDegToRad, thr, str);
+    }
+    RunBrakePhase(thr, str);
+  }
+
+  const auto result = calib.GetResult();
+  ASSERT_TRUE(result.valid);
+  EXPECT_NEAR(result.rx, 0.0f, 0.015f);
+  EXPECT_NEAR(result.ry, 0.0f, 0.005f);
+  EXPECT_NEAR(result.omega_cw_dps, kOmegaEndDps, 1.0f);
+}
+
+// ω так и не установилась: сбор всё равно начинается через kMaxSettleSec
+// (5 с), калибровка не зависает на круизе.
+TEST_F(ComOffsetCalibrationTest, CruiseStartsCollectingAfterSettleTimeout) {
+  calib.Start(0.1f, 0.5f, 5.0f, gravity_vec_);
+  float thr = 0, str = 0;
+  for (int pass = 0; pass < 2; ++pass) {
+    const float sign = pass == 0 ? 1.0f : -1.0f;
+    RunAccelPhase(thr, str);
+    const auto cruise = calib.GetPhase();
+    int steps = 0;
+    for (; steps < 40000 && calib.GetPhase() == cruise; ++steps) {
+      // +10 °/с за секунду: соседние блоки расходятся на 5 °/с, больше допуска.
+      const float gz = 30.0f + 10.0f * static_cast<float>(steps) * kDt;
+      Step(0.0f, 1.0f, 0.0f, 0.0f, sign * gz, thr, str);
+    }
+    EXPECT_NEAR(static_cast<float>(steps) * kDt, 10.0f, 0.01f);
+    RunBrakePhase(thr, str);
+  }
+
+  const auto result = calib.GetResult();
+  EXPECT_TRUE(result.valid);
+  EXPECT_NEAR(result.samples_cw, 2500, 2);
+  EXPECT_NEAR(result.samples_ccw, 2500, 2);
 }
 
 // LOS-384: второй проход едет на газе круиза первого. PID разгона по шумному
@@ -381,7 +426,7 @@ TEST_F(ComOffsetCalibrationTest, Pass2CruiseReusesPass1Throttle) {
   ASSERT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass1_Cruise);
   Step(0.0f, 1.0f, 0.0f, 0.0f, 50.0f, thr, str);
   const float pass1_cruise = thr;
-  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str, 5.0f);
+  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str);
   RunBrakePhase(thr, str);
   ASSERT_EQ(calib.GetPhase(), ComOffsetCalibration::Phase::Pass2_Accelerate);
 
@@ -495,7 +540,7 @@ TEST_F(ComOffsetCalibrationTest, BrakeTimeoutTransitions) {
 
   // Pass1: Accel + Cruise
   RunAccelPhase(thr, str);
-  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str, 5.0f);
+  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str);
 
   // Pass1_Brake: vehicle never stops (accel_mag=0.5, not near 1.0)
   int brake_timeout_steps = static_cast<int>(3.0f / kDt) + 1;
@@ -526,7 +571,7 @@ TEST_F(ComOffsetCalibrationTest, ThrottleZeroDuringBrake) {
   float thr = 0, str = 0;
 
   RunAccelPhase(thr, str);
-  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str, 5.0f);
+  RunCruisePhase(0.0f, 0.0f, 50.0f, thr, str);
 
   // Now in Pass1_Brake
   Step(0.0f, 0.5f, 0.0f, 0.0f, 20.0f, thr, str);
