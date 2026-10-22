@@ -369,6 +369,17 @@ def check(paths: Paths) -> list[str]:
                                 f"{migrate}: in {label} does not wait for {after} "
                                 "(depends_on condition service_completed_successfully)"
                             )
+            if not (paths.backend_services / name / "migrations").is_dir():
+                errors.append(f"{name}: declares migrate job {migrate} but has no migrations/ directory")
+            declared = {spec["migrate_after"]} if spec.get("migrate_after") else set()
+            for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
+                if migrate in compose:
+                    waits = set(_depends_on(compose[migrate])) & set(migrates)
+                    for extra in sorted(waits - declared):
+                        errors.append(
+                            f"{migrate}: in {label} waits for migrate job {extra}, "
+                            "which the manifest does not declare in migrate_after"
+                        )
             if not spec.get("database"):
                 errors.append(f"{name}: has a migrate job, so the manifest must declare its database")
         elif (paths.backend_services / name / "migrations").is_dir():

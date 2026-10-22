@@ -317,6 +317,19 @@ class ProdWiringTest(unittest.TestCase):
         self.paths.manifest.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
         self.assert_error("experiment_db: migrate jobs")
 
+    def test_undeclared_migration_dependency_fails(self) -> None:
+        self.set_service_field(
+            self.paths.prod_compose,
+            "experiment-migrate",
+            "depends_on",
+            value={"telemetry-ingest-migrate": {"condition": "service_completed_successfully"}},
+        )
+        self.assert_error("experiment-migrate: in docker-compose.prod.yml waits for migrate job telemetry-ingest-migrate")
+
+    def test_declared_migrate_without_directory_fails(self) -> None:
+        shutil.rmtree(self.paths.backend_services / "auth-service" / "migrations")
+        self.assert_error("auth-service: declares migrate job auth-migrate but has no migrations/ directory")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,
