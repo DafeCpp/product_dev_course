@@ -135,12 +135,22 @@ def test_burst_preset_exceeds_default_rest_bucket() -> None:
 
 
 def test_reading_factory_timestamps_are_unique_and_increasing() -> None:
-    factory = ReadingFactory(start=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    factory = ReadingFactory(clock=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc))
     stamps = [r["timestamp"] for _ in range(3) for r in factory.batch(4)]
     assert len(set(stamps)) == 12
     assert stamps == sorted(stamps)
     assert stamps[0] == "2026-01-01T00:00:00.000000Z"
     assert stamps[1] == "2026-01-01T00:00:00.000001Z"
+
+
+def test_reading_factory_follows_the_clock() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    factory = ReadingFactory(clock=lambda: now[0])
+    first = factory.batch(2)
+    now[0] = datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
+    second = factory.batch(2)
+    assert first[-1]["timestamp"] == "2026-01-01T00:00:00.000001Z"
+    assert second[0]["timestamp"] == "2026-01-01T00:05:00.000000Z"
 
 
 # --- stats and SLA ------------------------------------------------------------------

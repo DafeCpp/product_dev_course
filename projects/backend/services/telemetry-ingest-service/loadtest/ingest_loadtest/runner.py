@@ -22,29 +22,39 @@ class SensorCredential:
     token: str
 
 
-class ReadingFactory:
-    """Builds batches with strictly increasing timestamps per sensor.
+_TICK = timedelta(microseconds=1)
 
-    Unique timestamps keep the dedup index from silently dropping readings,
-    so ``accepted`` counts match what the service stored.
+
+class ReadingFactory:
+    """Builds batches stamped with the send time, strictly increasing per sensor.
+
+    Each batch starts at the current wall clock (or 1 µs after the previous
+    reading, whichever is later), so timestamps follow the run and the
+    sensor's heartbeat stays fresh. Unique timestamps keep the dedup index
+    from dropping readings, so ``accepted`` counts match what was stored.
     """
 
-    def __init__(self, start: datetime | None = None) -> None:
-        self._start = start or datetime.now(timezone.utc)
+    def __init__(self, clock: Callable[[], datetime] | None = None) -> None:
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._last: datetime | None = None
         self._seq = count()
 
     def batch(self, size: int) -> list[dict[str, Any]]:
+        start = self._clock()
+        if self._last is not None and start <= self._last:
+            start = self._last + _TICK
         readings = []
-        for _ in range(size):
-            n = next(self._seq)
-            ts = self._start + timedelta(microseconds=n)
+        for i in range(size):
+            ts = start + i * _TICK
             readings.append(
                 {
                     "timestamp": ts.isoformat(timespec="microseconds").replace("+00:00", "Z"),
-                    "raw_value": float(n % 1000),
+                    "raw_value": float(next(self._seq) % 1000),
                     "meta": {"signal": "loadtest"},
                 }
             )
+        if size:
+            self._last = start + (size - 1) * _TICK
         return readings
 
 

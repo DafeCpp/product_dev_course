@@ -74,7 +74,7 @@ async def test_deduplicated_readings_are_not_counted(service_client, pgsql, monk
 
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     factory = runner.ReadingFactory
-    monkeypatch.setattr(runner, "ReadingFactory", lambda: factory(start=start))
+    monkeypatch.setattr(runner, "ReadingFactory", lambda: factory(clock=lambda: start))
     db_uri = _db_uri(pgsql)
     creds = await provision_sensors(db_uri, 1)
     sc = Scenario(name="it-dedup", sensors=1, rate=20.0, batch_size=5, duration_s=0.1)
