@@ -15,6 +15,8 @@ services:
   #             deploy.yml matrix and in the dev compose build of the service and
   #             of its migrate job, so a service cannot publish another one's image.
   # migrate:    one-shot migrate service the runtime waits for (service_completed_successfully).
+  # migrate_after: migrate job that must finish first, because both jobs share one
+  #             database and its schema_migrations table (service_completed_successfully).
   # database:   Terraform yandex_mdb_postgresql_database the service writes to.
   auth-service:
     image: auth-service
@@ -33,6 +35,7 @@ services:
     context: ./projects/backend
     dockerfile: services/telemetry-ingest-service/Dockerfile
     migrate: telemetry-ingest-migrate
+    migrate_after: experiment-migrate
     database: experiment_db
   config-service:
     image: config-service

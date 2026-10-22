@@ -206,6 +206,34 @@ class ProdWiringTest(unittest.TestCase):
         )
         self.assert_error("deploy.yml build matrix lists sensor-simulator more than once")
 
+    def test_migrate_job_running_the_app_fails(self) -> None:
+        self.set_service_field(
+            self.paths.prod_compose,
+            "auth-migrate",
+            "command",
+            value=["python", "-m", "auth_service.main"],
+        )
+        self.assert_error("auth-migrate: in docker-compose.prod.yml command must be")
+
+    def test_migrate_job_restarting_fails(self) -> None:
+        self.set_service_field(self.paths.dev_compose, "auth-migrate", "restart", value="unless-stopped")
+        self.assert_error("auth-migrate: in docker-compose.yml restart must be 'no'")
+
+    def test_shared_database_migration_order_is_required(self) -> None:
+        self.set_service_field(
+            self.paths.prod_compose,
+            "telemetry-ingest-migrate",
+            "depends_on",
+            value={},
+        )
+        self.assert_error(
+            "telemetry-ingest-migrate: in docker-compose.prod.yml does not wait for experiment-migrate"
+        )
+
+    def test_migrate_service_without_database_fails(self) -> None:
+        self.edit(self.paths.manifest, "    database: auth_db\n", "")
+        self.assert_error("auth-service: has a migrate job, so the manifest must declare its database")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

@@ -120,6 +120,21 @@ def _released_image(image: str) -> str:
     return f"${{CR_REGISTRY:?CR_REGISTRY must be set in production .env}}/{image}:${{IMAGE_TAG:-latest}}"
 
 
+MIGRATE_COMMAND = ["python", "-m", "bin.migrate"]
+
+
+def _check_migrate_job(name: str, label: str, job: dict[str, Any]) -> list[str]:
+    """A migrate job must be the one-shot migration, or the runtime would wait for it forever."""
+    errors = []
+    if job.get("command") != MIGRATE_COMMAND:
+        errors.append(
+            f"{name}: in {label} command must be {MIGRATE_COMMAND}, got {job.get('command')!r}"
+        )
+    if str(job.get("restart", "no")) != "no":
+        errors.append(f"{name}: in {label} restart must be 'no' for a one-shot job")
+    return errors
+
+
 def _terraform_databases(terraform: str) -> set[str]:
     blocks = re.findall(
         r'resource "yandex_mdb_postgresql_database" "[^"]+" \{(.*?)\n\}', terraform, re.DOTALL
@@ -270,6 +285,21 @@ def check(paths: Paths) -> list[str]:
                             f"{name}: in {label} does not wait for {migrate} "
                             "(depends_on condition service_completed_successfully)"
                         )
+            for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
+                if migrate in compose:
+                    errors.extend(_check_migrate_job(migrate, label, compose[migrate]))
+            after = spec.get("migrate_after")
+            if after:
+                for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
+                    if migrate in compose:
+                        condition = _depends_on(compose[migrate]).get(after)
+                        if condition != "service_completed_successfully":
+                            errors.append(
+                                f"{migrate}: in {label} does not wait for {after} "
+                                "(depends_on condition service_completed_successfully)"
+                            )
+            if not spec.get("database"):
+                errors.append(f"{name}: has a migrate job, so the manifest must declare its database")
         elif (paths.backend_services / name / "migrations").is_dir():
             errors.append(f"{name}: has migrations/ but no migrate service in the manifest")
 
