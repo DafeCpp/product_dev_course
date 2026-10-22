@@ -1285,6 +1285,23 @@ TEST_F(ProcessorTest, RestCalibration_SurvivesAbortedAutoForward) {
   EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
 }
 
+TEST_F(ProcessorTest, RestCalibration_RejectsManualForwardCalibration) {
+  // Ручной этап 2 (calibrate_imu mode=forward) при сохранённой калибровке
+  // заменил бы идущий этап 1 и снял бы нейтраль газа.
+  ImuCalibData data{};
+  data.gravity_vec[2] = 1.0f;
+  data.gravity_valid = true;
+  data.valid = true;
+  imu_calib_.SetData(data);
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+
+  EXPECT_FALSE(calib_mgr_->StartForwardCalibration());
+  EXPECT_FALSE(calib_mgr_->StartAutoForwardCalibration(0.1f));
+  EXPECT_EQ(imu_calib_.GetCalibStage(), 1);
+}
+
 TEST_F(ProcessorTest, ForwardCalibration_DoesNotHoldThrottle) {
   // Этап 2 — разгон по прямой, газ нужен.
   SetDirectLaw();

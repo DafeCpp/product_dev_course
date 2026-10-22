@@ -21,10 +21,18 @@ void CalibrationManager::StartCalibration(bool full) {
 }
 
 bool CalibrationManager::StartForwardCalibration() {
+  // Этап 2 заменил бы идущий сбор этапа 1: свежие семплы покоя пропали бы,
+  // а нейтраль газа снялась бы посреди калибровки (LOS-380).
+  if (imu_calib_.GetCalibStage() == 1) return false;
   return imu_calib_.StartForwardCalibration(2000);
 }
 
 bool CalibrationManager::StartAutoForwardCalibration(float target_accel_g) {
+  if (imu_calib_.GetCalibStage() == 1) {
+    platform_.Log(LogLevel::Warning,
+                  "Auto-forward calib rejected: rest calibration in progress");
+    return false;
+  }
   if (!imu_calib_.StartForwardCalibration(2000)) {
     platform_.Log(LogLevel::Warning,
                   "Auto-forward calib failed to start (need stage 1 full)");
