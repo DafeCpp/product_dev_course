@@ -186,6 +186,26 @@ class ProdWiringTest(unittest.TestCase):
         )
         self.assert_error("script-migrate: docker-compose.prod.yml image")
 
+    def test_extra_registry_path_in_prod_image_fails(self) -> None:
+        # The same wrong path on a runtime and its migrate job used to pass.
+        for service in ("auth-service", "auth-migrate"):
+            self.set_service_field(
+                self.paths.prod_compose,
+                service,
+                "image",
+                value="${CR_REGISTRY:?CR_REGISTRY must be set in production .env}/extra/auth-service:${IMAGE_TAG:-latest}",
+            )
+        self.assert_error("auth-service: prod image")
+
+    def test_duplicate_matrix_entry_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "          - service: sensor-simulator\n",
+            "          - service: sensor-simulator\n            context: .\n"
+            "            dockerfile: wrong/Dockerfile\n          - service: sensor-simulator\n",
+        )
+        self.assert_error("deploy.yml build matrix lists sensor-simulator more than once")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

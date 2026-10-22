@@ -100,15 +100,24 @@ def _depends_on(service: dict[str, Any]) -> dict[str, str | None]:
     return {name: (spec or {}).get("condition") for name, spec in deps.items()}
 
 
-def _matrix_entries(workflow: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """The release build matrix as {image: {context, dockerfile}}."""
+def _matrix_entries(workflow: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """The release build matrix as ({image: {context, dockerfile}}, duplicated images)."""
     entries: dict[str, dict[str, Any]] = {}
+    duplicates: list[str] = []
     for job in (workflow.get("jobs") or {}).values():
         include = ((job or {}).get("strategy") or {}).get("matrix", {}).get("include") or []
         for item in include:
             if isinstance(item, dict) and "service" in item:
-                entries[str(item["service"])] = item
-    return entries
+                image = str(item["service"])
+                if image in entries and image not in duplicates:
+                    duplicates.append(image)
+                entries[image] = item
+    return entries, duplicates
+
+
+def _released_image(image: str) -> str:
+    """The exact reference docker-compose.prod.yml must use for an image deploy.yml publishes."""
+    return f"${{CR_REGISTRY:?CR_REGISTRY must be set in production .env}}/{image}:${{IMAGE_TAG:-latest}}"
 
 
 def _terraform_databases(terraform: str) -> set[str]:
@@ -205,11 +214,14 @@ def check(paths: Paths) -> list[str]:
 
     dev = _services(_load_yaml(paths.dev_compose))
     prod = _services(_load_yaml(paths.prod_compose))
-    matrix_entries = _matrix_entries(_load_yaml(paths.deploy_workflow))
+    matrix_entries, matrix_duplicates = _matrix_entries(_load_yaml(paths.deploy_workflow))
     matrix = set(matrix_entries)
     databases = _terraform_databases(paths.terraform_database.read_text(encoding="utf-8"))
 
-    errors: list[str] = []
+    errors: list[str] = [
+        f"deploy.yml build matrix lists {image} more than once; both jobs would push the same tags"
+        for image in sorted(matrix_duplicates)
+    ]
     migrates = {spec["migrate"]: name for name, spec in wanted.items() if spec.get("migrate")}
     known = set(wanted) | set(migrates)
 
@@ -241,8 +253,11 @@ def check(paths: Paths) -> list[str]:
             if image not in matrix:
                 errors.append(f"{name}: image {image} is not in the deploy.yml build matrix")
             prod_image = str(prod.get(name, {}).get("image", ""))
-            if name in prod and f"/{image}:" not in prod_image:
-                errors.append(f"{name}: prod image {prod_image!r} is not the released {image} image")
+            if name in prod and prod_image != _released_image(image):
+                errors.append(
+                    f"{name}: prod image {prod_image!r} is not the released image "
+                    f"{_released_image(image)!r}"
+                )
             errors.extend(_check_build_source(name, spec, matrix_entries.get(image), dev, prod))
 
         migrate = spec.get("migrate")
