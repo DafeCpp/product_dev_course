@@ -1319,6 +1319,15 @@ def test_imu_errors_short_clean_log_is_no_data(tmp_path):
     assert res.passed is False and not res.no_data
 
 
+def test_imu_errors_first_period_capped_by_log_start(tmp_path):
+    # Лог очищен за 1 с до первого события: шесть событий на 1, 11 … 51 с —
+    # это 51 с записи, а не 60 (ревью #419).
+    log = _write_csv(tmp_path / "i.csv", _imu_stats_log(
+        {float(s): ("", "", "") for s in range(1, 52, 10)}, seconds=52))
+    res = tm.check_imu_errors(log)[0]
+    assert res.no_data and "за 51 с" in res.value
+
+
 def test_imu_errors_gap_not_counted_as_coverage(tmp_path):
     # Событий нет 30 с подряд: покрытие 10 + 10 + 10 + 10 = 40 с, не 70.
     log = _write_csv(tmp_path / "i.csv", _imu_stats_log(

@@ -116,7 +116,7 @@ UI шлёт команды каждые 20 мс, инструмента для �
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
-| 5.1 | 1, 2, 4, 8 МГц по очереди | WHO_AM_I читается; `DIAG: loop=500 Hz`; **ошибок чтения IMU 0 за минуту** (`imu-errors`, в serial `IMU err: read=0 nan=0 who=0 run=0`); std(gz) и \|a\| в покое не хуже, чем на 500 кГц; `spi_avg` падает (500 кГц ≈ 415 мкс) | serial `PROF(imu us)` и `IMU err`, ≥ 70 с PSRAM на каждой частоте | `trial_metrics.py --only imu-errors`; `analyze_telemetry.py` (сравнить с 500 кГц) | — (GTest `test_mpu6050_spi.cpp`, `test_imu_handler.cpp`) | [ ] макс. ___ МГц |
+| 5.1 | 1, 2, 4, 8 МГц по очереди | WHO_AM_I читается; `DIAG: loop=500 Hz`; **ошибок чтения IMU 0 за минуту** (`imu-errors`, в serial `IMU err: read=0 nan=0 who=0 run=0`); std(gz) и \|a\| в покое не хуже, чем на 500 кГц; `spi_avg` падает (500 кГц ≈ 415 мкс) | serial `PROF(imu us)` и `IMU err`, ≥ 70 с PSRAM на каждой частоте | `trial_metrics.py log.csv --only imu-errors`; `analyze_telemetry.py` (сравнить с 500 кГц) | — (GTest `test_mpu6050_spi.cpp`, `test_imu_handler.cpp`) | [ ] макс. ___ МГц |
 
 Ошибки чтения IMU (LOS-383) считает `ImuHandler`: неудачное чтение (ошибка SPI
 или «пустая шина» — все байты ответа 0x00/0xFF), семпл с NaN/Inf, несовпадение
