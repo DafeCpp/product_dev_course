@@ -168,22 +168,51 @@ TEST_F(SlipAngleControllerTest, ZeroTargetSlip_CorrectsBothDirections) {
   cfg_.slip_angle.target_deg = 0.0f;  // Target: no drift at all
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
 
-  // Positive slip (vy > 0)
-  ekf_.SetState(2.0f, 0.5f, 0.0f);
-  float throttle_pos = 0.5f;
-  ctrl_.Process(cfg_, throttle_pos, 1.0f, 1.0f, 2);
+  // Правый поворот (r < 0): slip > 0 — занос, зад выносит наружу.
+  ekf_.SetState(2.0f, 0.5f, -1.0f);
+  float throttle_drift = 0.5f;
+  ctrl_.Process(cfg_, throttle_drift, 1.0f, 1.0f, 2);
 
-  // Negative slip (vy < 0)
+  // Тот же поворот, slip < 0 — машину сносит внутрь, заноса нет.
   ctrl_.Reset();
-  ekf_.SetState(2.0f, -0.5f, 0.0f);
-  float throttle_neg = 0.5f;
-  ctrl_.Process(cfg_, throttle_neg, 1.0f, 1.0f, 2);
+  ekf_.SetState(2.0f, -0.5f, -1.0f);
+  float throttle_inside = 0.5f;
+  ctrl_.Process(cfg_, throttle_inside, 1.0f, 1.0f, 2);
 
-  // Corrections should be opposite in sign
-  float corr_pos = throttle_pos - 0.5f;
-  float corr_neg = throttle_neg - 0.5f;
-  EXPECT_LT(corr_pos * corr_neg, 0.0f)
-      << "Positive and negative slip should produce opposite corrections";
+  EXPECT_LT(throttle_drift, 0.5f);
+  EXPECT_GT(throttle_inside, 0.5f);
+}
+
+// LOS-380: занос в левом повороте даёт slip < 0. Со знаковым slip ошибка
+// уставки росла с заносом, и PID добавлял газ до разворота.
+TEST_F(SlipAngleControllerTest, LeftTurnDriftAboveTarget_DecreasesThrottle) {
+  ekf_.SetState(2.0f, -1.5f, 1.0f);  // slip ≈ −36.9°, r > 0 — левый поворот
+  float throttle = 0.5f;
+  ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
+  EXPECT_LT(throttle, 0.5f);
+}
+
+TEST_F(SlipAngleControllerTest, LeftAndRightDriftGiveSameCorrection) {
+  ekf_.SetState(2.0f, -0.3f, 1.0f);  // левый поворот, занос ≈ 8.5°
+  float left = 0.5f;
+  ctrl_.Process(cfg_, left, 1.0f, 1.0f, 2);
+
+  ctrl_.Reset();
+  ekf_.SetState(2.0f, 0.3f, -1.0f);  // правый поворот, занос ≈ 8.5°
+  float right = 0.5f;
+  ctrl_.Process(cfg_, right, 1.0f, 1.0f, 2);
+
+  EXPECT_GT(left, 0.5f);  // ниже уставки 15° — добавить газ
+  EXPECT_FLOAT_EQ(left, right);
+}
+
+// Без поворота направление заноса не определено: любой угол — занос, и PID
+// не разгоняет машину, которую сносит боком на прямой.
+TEST_F(SlipAngleControllerTest, NoTurn_AnySlipCountsAsDrift) {
+  EXPECT_FLOAT_EQ(SlipAngleController::DriftSlipDeg(-20.0f, 0.1f), 20.0f);
+  EXPECT_FLOAT_EQ(SlipAngleController::DriftSlipDeg(20.0f, -0.1f), 20.0f);
+  EXPECT_FLOAT_EQ(SlipAngleController::DriftSlipDeg(-20.0f, 1.0f), 20.0f);
+  EXPECT_FLOAT_EQ(SlipAngleController::DriftSlipDeg(-20.0f, -1.0f), -20.0f);
 }
 
 TEST_F(SlipAngleControllerTest, NoCorrection_WhenAtTarget) {
