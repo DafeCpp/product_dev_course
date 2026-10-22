@@ -15,6 +15,7 @@ from ingest_loadtest.runner import (
     SensorCredential,
     _accepted_count,
     _drive,
+    _record_ws_reply,
 )
 from ingest_loadtest.scenarios import PRESETS, Scenario, SlaThresholds
 from ingest_loadtest.stats import Recorder, build_report, evaluate_sla, format_report, percentile
@@ -366,3 +367,14 @@ def test_recorder_counts_errors_by_kind() -> None:
 )
 def test_accepted_count_uses_service_value(reply, expected: int | None) -> None:
     assert _accepted_count(reply) == expected
+
+
+def test_ws_reply_classification() -> None:
+    rec = Recorder()
+    for reply in (None, "ok", [1], {"status": "accepted"}):
+        _record_ws_reply(rec, reply, 1.0)
+    _record_ws_reply(rec, {"status": "accepted", "accepted": 4}, 2.0)
+    _record_ws_reply(rec, {"status": "error", "code": "rate_limited"}, 1.0)
+    _record_ws_reply(rec, {"status": "error", "code": "bad_payload"}, 1.0)
+    assert rec.errors == Counter({"ws_ack_malformed": 4, "ws_bad_payload": 1})
+    assert (rec.accepted_batches, rec.accepted_readings, rec.rate_limited) == (1, 4, 1)

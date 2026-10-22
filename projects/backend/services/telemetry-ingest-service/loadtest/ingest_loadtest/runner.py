@@ -76,6 +76,22 @@ def _accepted_count(reply: Any) -> int | None:
     return None
 
 
+def _record_ws_reply(recorder: Recorder, reply: Any, latency_ms: float) -> None:
+    """Classify one WS reply; anything that is not a JSON object is a malformed ack."""
+    if not isinstance(reply, dict):
+        recorder.error("ws_ack_malformed")
+    elif reply.get("status") == "accepted":
+        stored = _accepted_count(reply)
+        if stored is None:
+            recorder.error("ws_ack_malformed")
+        else:
+            recorder.accepted(latency_ms, stored)
+    elif reply.get("code") == "rate_limited":
+        recorder.limited()
+    else:
+        recorder.error(f"ws_{reply.get('code', 'unknown')}")
+
+
 class _StopWorker(Exception):
     """The connection is unusable; the worker stops sending."""
 
@@ -189,25 +205,15 @@ async def _ws_worker(
     async def send(batches: list[Batch]) -> None:
         # The server answers every text frame exactly once, in order, so a
         # burst is pipelined: write all frames, then read the replies in order.
-        sent: list[tuple[float, int]] = []
+        sent: list[float] = []
         try:
             for readings in batches:
                 frame = json.dumps({"readings": readings, "seq": next(seq)})
-                sent.append((time.perf_counter(), len(readings)))
+                sent.append(time.perf_counter())
                 await ws.send_str(frame)
-            for started, size in sent:
+            for started in sent:
                 reply = await ws.receive_json(timeout=timeout_s)
-                latency_ms = (time.perf_counter() - started) * 1000
-                if reply.get("status") == "accepted":
-                    stored = _accepted_count(reply)
-                    if stored is None:
-                        recorder.error("ws_ack_malformed")
-                    else:
-                        recorder.accepted(latency_ms, stored)
-                elif reply.get("code") == "rate_limited":
-                    recorder.limited()
-                else:
-                    recorder.error(f"ws_{reply.get('code', 'unknown')}")
+                _record_ws_reply(recorder, reply, (time.perf_counter() - started) * 1000)
         except asyncio.TimeoutError:
             # A late ack would be matched to the next frame, so stop here.
             recorder.error("timeout")
