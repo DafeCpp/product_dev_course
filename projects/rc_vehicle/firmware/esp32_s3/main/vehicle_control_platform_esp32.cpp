@@ -312,6 +312,12 @@ int VehicleControlPlatformEsp32::GetImuLastWhoAmI() const noexcept {
   return ImuGetLastWhoAmI();
 }
 
+std::optional<bool> VehicleControlPlatformEsp32::CheckImuWhoAmI() {
+  const int rc = ImuCheckWhoAmI();
+  if (rc == -2) return std::nullopt;
+  return rc == 0;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Магнитометр
 // ─────────────────────────────────────────────────────────────────────────

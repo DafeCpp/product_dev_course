@@ -1269,3 +1269,97 @@ def test_cli_baseline(tmp_path, capsys):
     assert "LPF gz (--baseline): вибрация" in capsys.readouterr().out
     assert tm.main([str(good), "--only", "lpf", "--baseline",
                     str(tmp_path / "missing.csv")]) == 1
+
+
+# ── Ошибки чтения IMU (протокол 5.1, LOS-383) ────────────────────────────
+
+def _imu_stats_log(events, seconds=70):
+    """Лог 100 Гц; events: {секунда: (param, v1, v2)} событий ImuReadStats."""
+    rows = []
+    for i in range(seconds * 100):
+        t_ms = (i + 1) * 10
+        ev = events.get(t_ms / 1000.0) if t_ms % 1000 == 0 else None
+        rows.append({"ts_ms": t_ms, "throttle": 0.0,
+                     "event_type": "ImuReadStats" if ev else "",
+                     "event_param": ev[0] if ev else "",
+                     "event_value1": ev[1] if ev else "",
+                     "event_value2": ev[2] if ev else ""})
+    return rows
+
+
+def test_imu_errors_clean_minute_passes(tmp_path):
+    # Экспортёр пишет нули пустыми ячейками.
+    log = _write_csv(tmp_path / "i.csv", _imu_stats_log(
+        {float(s): ("", "", "") for s in range(10, 71, 10)}))
+    res = tm.check_imu_errors(log)
+    assert len(res) == 1 and res[0].passed is True
+    assert "ошибок 0 за 70 с (7 событий)" in res[0].value
+
+
+def test_imu_errors_counts_missed_and_whoami(tmp_path):
+    events = {float(s): ("", "", "") for s in range(10, 71, 10)}
+    events[30.0] = ("who=2", 5, 3)
+    events[50.0] = ("", 1, 1)
+    log = _write_csv(tmp_path / "i.csv", _imu_stats_log(events))
+    res = tm.check_imu_errors(log)[0]
+    assert res.passed is False
+    assert "ошибок 8" in res.value
+    assert "пропущено семплов 6, WHO_AM_I 2, макс. серия 3" in res.value
+
+
+def test_imu_errors_short_clean_log_is_no_data(tmp_path):
+    log = _write_csv(tmp_path / "i.csv", _imu_stats_log(
+        {10.0: ("", "", ""), 20.0: ("", "", "")}, seconds=25))
+    res = tm.check_imu_errors(log)[0]
+    assert res.no_data and "меньше 60 с" in res.value
+    # Ошибка даже в короткой записи — провал, а не пропуск.
+    log = _write_csv(tmp_path / "j.csv", _imu_stats_log(
+        {10.0: ("", 4, 4), 20.0: ("", "", "")}, seconds=25))
+    res = tm.check_imu_errors(log)[0]
+    assert res.passed is False and not res.no_data
+
+
+def test_imu_errors_first_period_capped_by_log_start(tmp_path):
+    # Лог очищен за 1 с до первого события: шесть событий на 1, 11 … 51 с —
+    # это 51 с записи, а не 60 (ревью #419).
+    log = _write_csv(tmp_path / "i.csv", _imu_stats_log(
+        {float(s): ("", "", "") for s in range(1, 52, 10)}, seconds=52))
+    res = tm.check_imu_errors(log)[0]
+    assert res.no_data and "за 51 с" in res.value
+
+
+def test_imu_errors_gap_not_counted_as_coverage(tmp_path):
+    # Событий нет 30 с подряд: покрытие 10 + 10 + 10 + 10 = 40 с, не 70.
+    log = _write_csv(tmp_path / "i.csv", _imu_stats_log(
+        {10.0: ("", "", ""), 20.0: ("", "", ""), 60.0: ("", "", ""),
+         70.0: ("", "", "")}))
+    res = tm.check_imu_errors(log)[0]
+    assert res.no_data
+    assert "за 40 с" in res.value and "пропусков между событиями 1" in res.value
+
+
+def test_imu_errors_without_events(tmp_path):
+    log = _write_csv(tmp_path / "i.csv", _imu_stats_log({}))
+    res = tm.check_imu_errors(log)[0]
+    assert res.no_data and "ImuReadStats НЕТ" in res.value
+    rows = [{"ts_ms": (i + 1) * 10, "throttle": 0.0} for i in range(100)]
+    assert tm.check_imu_errors(_write_csv(tmp_path / "u.csv", rows))[0].no_data
+
+
+def test_imu_errors_coalesced_with_other_event(tmp_path):
+    rows = _imu_stats_log({float(s): ("", "", "") for s in range(10, 71, 10)})
+    row = rows[3999]  # t = 40 с
+    row.update({"event_type": "TestStart|ImuReadStats", "event_param": "Straight|who=1",
+                "event_value1": "5.0000|2.0000", "event_value2": "|2.0000"})
+    res = tm.check_imu_errors(_write_csv(tmp_path / "i.csv", rows))[0]
+    assert res.passed is False
+    assert "пропущено семплов 2, WHO_AM_I 1, макс. серия 2" in res.value
+
+
+def test_imu_stats_period_matches_firmware():
+    cfg = os.path.join(os.path.dirname(__file__), "..", "..", "common", "config.hpp")
+    with open(cfg, encoding="utf-8") as fh:
+        text = fh.read()
+    key = "kReadStatsEventIntervalMs = "
+    value = text[text.index(key) + len(key):].split(";")[0]
+    assert float(value) == tm.IMU_STATS_PERIOD_MS

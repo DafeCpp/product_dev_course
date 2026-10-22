@@ -40,6 +40,7 @@ struct DiagnosticsSnapshot {
   float ekf_vx{0.0f};
   float ekf_vy{0.0f};
   float ekf_slip_deg{0.0f};
+  ImuReadStats imu_read_stats{};  ///< С момента старта (LOS-383)
 };
 
 static_assert(

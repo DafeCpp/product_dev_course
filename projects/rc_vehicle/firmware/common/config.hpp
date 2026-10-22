@@ -47,6 +47,10 @@ struct ImuConfig {
       0.5f;  ///< Порог движения гироскопа (рад/с)
   static constexpr float kAccelThreshold =
       0.1f;  ///< Порог движения акселерометра (g)
+  /// Период перепроверки WHO_AM_I во время работы (LOS-383), мс
+  static constexpr uint32_t kWhoAmICheckIntervalMs = 1000;
+  /// Период события ImuReadStats в журнале телеметрии (LOS-383), мс
+  static constexpr uint32_t kReadStatsEventIntervalMs = 10000;
 };
 
 /**

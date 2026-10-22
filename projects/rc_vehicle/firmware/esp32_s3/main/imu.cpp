@@ -61,6 +61,8 @@ int ImuGetLastWhoAmI(void) {
   return g_imu ? g_imu->GetLastWhoAmI() : -1;
 }
 
+int ImuCheckWhoAmI(void) { return g_imu ? g_imu->CheckWhoAmI() : -2; }
+
 const char *ImuGetSensorName(void) {
   if (!g_imu)
     return "none";

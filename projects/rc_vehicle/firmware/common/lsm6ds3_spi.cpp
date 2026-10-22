@@ -111,6 +111,8 @@ int Lsm6ds3Spi::Read(ImuData &data) {
   uint8_t rx[13] = {};
   if (spi_->Transfer(std::span<const uint8_t>(tx, 13), std::span<uint8_t>(rx, 13)) != 0)
     return -1;
+  // LOS-383: «пустая шина» — транзакция прошла, но датчик не ответил.
+  if (IsStuckBusFrame(std::span<const uint8_t>(rx + 1, 12))) return -1;
 
   // LSM6DS3: little-endian (LSB first)
   auto to16 = [&](int i) -> int16_t {
@@ -133,4 +135,11 @@ int Lsm6ds3Spi::Read(ImuData &data) {
   data.az = static_cast<float>(raw_az) / LSM6DS3_ACCEL_SCALE;
 
   return 0;
+}
+
+int Lsm6ds3Spi::CheckWhoAmI() {
+  if (!initialized_) return -1;
+  uint8_t who_am_i = 0;
+  if (ReadReg(LSM6DS3_REG_WHO_AM_I, who_am_i) != 0) return -1;
+  return static_cast<int>(who_am_i) == last_who_am_i_ ? 0 : -1;
 }

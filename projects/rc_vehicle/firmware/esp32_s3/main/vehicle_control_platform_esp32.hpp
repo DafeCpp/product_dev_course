@@ -56,6 +56,7 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
   // IMU
   [[nodiscard]] std::optional<ImuData> ReadImu() override;
   [[nodiscard]] int GetImuLastWhoAmI() const noexcept override;
+  [[nodiscard]] std::optional<bool> CheckImuWhoAmI() override;
 
   // Магнитометр
   bool InitMag() override;

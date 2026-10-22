@@ -218,8 +218,19 @@ class FakePlatform : public VehicleControlPlatform {
 
   std::optional<ImuData> ReadImu() override { return imu_data_; }
   int GetImuLastWhoAmI() const noexcept override { return 0x68; }
+  std::optional<bool> CheckImuWhoAmI() override {
+    ++whoami_check_count_;
+    return whoami_check_result_;
+  }
 
   void SetImuData(const ImuData& data) { imu_data_ = data; }
+  /** Следующие ReadImu() вернут ошибку (LOS-383). */
+  void ClearImuData() { imu_data_.reset(); }
+  /** Ответ CheckImuWhoAmI(): nullopt — «не поддерживается». */
+  void SetImuWhoAmICheckResult(std::optional<bool> r) {
+    whoami_check_result_ = r;
+  }
+  int GetImuWhoAmICheckCount() const { return whoami_check_count_; }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Магнетометр
@@ -452,6 +463,8 @@ class FakePlatform : public VehicleControlPlatform {
 
   // IMU
   std::optional<ImuData> imu_data_;
+  std::optional<bool> whoami_check_result_{true};
+  int whoami_check_count_{0};
   std::optional<ImuCalibData> calib_data_;
   float com_offset_[2]{0.f, 0.f};
   bool com_offset_set_{false};

@@ -146,6 +146,31 @@ class WifiCommandHandler : public ControlComponent {
  * и обновляет фильтр ориентации. Gyro Z фильтруется LPF Butterworth 2-го
  * порядка для последующего использования в ПИД контроля рыскания.
  */
+class TelemetryEventLog;
+
+/**
+ * @brief Счётчики ошибок чтения IMU с момента старта (LOS-383).
+ *
+ * Пропущенный семпл — тик чтения, на котором ImuHandler не получил годных
+ * данных: ReadImu() вернул ошибку (SPI, «пустая шина») или семпл содержит
+ * NaN/Inf. Насыщение отдельной оси ошибкой не считается: при ±2 g удар о
+ * кочку законно упирает акселерометр в предел.
+ */
+struct ImuReadStats {
+  uint32_t failed_reads{0};       ///< ReadImu() вернул nullopt
+  uint32_t invalid_samples{0};    ///< Семпл с NaN/Inf, отброшен
+  uint32_t whoami_mismatches{0};  ///< Периодическая проверка WHO_AM_I не прошла
+  uint32_t consecutive_misses{0};      ///< Текущая серия пропусков подряд
+  uint32_t max_consecutive_misses{0};  ///< Самая длинная серия с момента старта
+
+  [[nodiscard]] uint32_t MissedSamples() const noexcept {
+    return failed_reads + invalid_samples;
+  }
+  [[nodiscard]] uint32_t TotalErrors() const noexcept {
+    return MissedSamples() + whoami_mismatches;
+  }
+};
+
 class ImuHandler : public ControlComponent {
  public:
   /**
@@ -179,6 +204,17 @@ class ImuHandler : public ControlComponent {
    * @return Данные акселерометра и гироскопа
    */
   [[nodiscard]] const ImuData& GetData() const noexcept { return data_; }
+
+  /** Счётчики ошибок чтения IMU с момента старта (LOS-383). */
+  [[nodiscard]] const ImuReadStats& GetReadStats() const noexcept {
+    return read_stats_;
+  }
+
+  /**
+   * @brief Журнал событий для периодического ImuReadStats (не владеет).
+   * nullptr — событие не пишется, счётчики всё равно ведутся.
+   */
+  void SetEventLog(TelemetryEventLog* log) noexcept { event_log_ = log; }
 
   /**
    * @brief Отфильтрованная угловая скорость по оси Z (dps), LPF Butterworth
@@ -335,6 +371,12 @@ class ImuHandler : public ControlComponent {
   [[nodiscard]] float ComputePcaHeadingDeg(const MagData& mag_cal) const;
   /// Шаг Madgwick: 9DOF при принятом mag, иначе 6DOF
   void FeedMadgwick(float raw_ax, float raw_ay, float raw_az, float dt_sec);
+  /// Учесть пропуск семпла в счётчиках серий (LOS-383)
+  void CountMissedSample() noexcept;
+  /// Перепроверка WHO_AM_I раз в kWhoAmICheckIntervalMs (LOS-383)
+  void MaybeCheckWhoAmI(uint32_t now_ms);
+  /// Событие ImuReadStats раз в kReadStatsEventIntervalMs (LOS-383)
+  void MaybePushReadStatsEvent(uint32_t now_ms);
 
   VehicleControlPlatform& platform_;
   ImuCalibration& calib_;
@@ -350,6 +392,17 @@ class ImuHandler : public ControlComponent {
   float yaw_rate_axis_[3]{0.f, 0.f, 1.f};
   bool yaw_rate_axis_initialized_{false};
   bool veh_frame_set_{false};  ///< Vehicle frame уже передан в фильтр
+
+  // Ошибки чтения IMU (LOS-383)
+  ImuReadStats read_stats_{};
+  TelemetryEventLog* event_log_{nullptr};
+  bool whoami_check_started_{false};
+  uint32_t last_whoami_check_ms_{0};
+  bool stats_period_started_{false};
+  uint32_t stats_period_start_ms_{0};
+  uint32_t stats_period_missed_base_{0};  ///< MissedSamples() на начало периода
+  uint32_t stats_period_whoami_base_{0};
+  uint32_t stats_period_max_run_{0};  ///< Самая длинная серия за период
 
   // Магнетометр (опционален)
   MagData mag_data_{};

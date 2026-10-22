@@ -23,6 +23,9 @@ class Lsm6ds3Spi : public IImuSensor {
   /** Для отладки: последнее прочитанное WHO_AM_I (0x6A/0x6C = OK, -1 = не читали). */
   int GetLastWhoAmI() const override { return last_who_am_i_; }
 
+  /** Перечитать WHO_AM_I и сравнить с найденным в Init() (LOS-383). */
+  int CheckWhoAmI() override;
+
  private:
   SpiDevice *spi_;
   bool initialized_{false};

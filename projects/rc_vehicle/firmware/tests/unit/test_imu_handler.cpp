@@ -10,10 +10,13 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "control_components.hpp"
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 #include "mock_platform.hpp"
+#include "telemetry_event_log.hpp"
 
 namespace rc_vehicle {
 namespace {
@@ -607,6 +610,210 @@ TEST(ImuHandlerTest, DisablingMadgwickResetsYawTrustForNextCalibration) {
          "калибровка обнуляет курс, а не сохраняет неактуальный";
   EXPECT_NEAR(pitch_after, 0.0f, 0.1f);
   EXPECT_NEAR(roll_after, 0.0f, 0.1f);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LOS-383: счётчики ошибок чтения IMU
+// ─────────────────────────────────────────────────────────────────────────
+
+class ImuReadStatsTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    imu_.SetEnabled(true);
+    imu_.SetEventLog(&log_);
+  }
+
+  // n тиков чтения по 2 мс.
+  void Tick(int n) {
+    for (int i = 0; i < n; ++i) {
+      now_ms_ += 2;
+      imu_.Update(now_ms_, 2);
+    }
+  }
+
+  std::vector<TelemetryEvent> StatsEvents() const {
+    std::vector<TelemetryEvent> out;
+    for (size_t i = 0; i < log_.Count(); ++i) {
+      TelemetryEvent ev{};
+      if (log_.GetEvent(i, ev) && ev.type == TelemetryEventType::ImuReadStats) {
+        out.push_back(ev);
+      }
+    }
+    return out;
+  }
+
+  FakePlatform platform_;
+  ImuCalibration calib_;
+  MadgwickFilter filter_;
+  TelemetryEventLog log_;
+  ImuHandler imu_{platform_, calib_, filter_, /*read_interval_ms=*/2};
+  uint32_t now_ms_{0};
+};
+
+TEST_F(ImuReadStatsTest, CleanReads_AllCountersZero) {
+  platform_.SetImuData(LevelImu());
+  Tick(1000);
+
+  const ImuReadStats& st = imu_.GetReadStats();
+  EXPECT_EQ(st.failed_reads, 0u);
+  EXPECT_EQ(st.invalid_samples, 0u);
+  EXPECT_EQ(st.whoami_mismatches, 0u);
+  EXPECT_EQ(st.consecutive_misses, 0u);
+  EXPECT_EQ(st.max_consecutive_misses, 0u);
+  EXPECT_EQ(st.TotalErrors(), 0u);
+}
+
+TEST_F(ImuReadStatsTest, FailedReads_CountedWithLongestRun) {
+  platform_.SetImuData(LevelImu());
+  Tick(10);
+  platform_.ClearImuData();
+  Tick(5);
+  EXPECT_EQ(imu_.GetReadStats().consecutive_misses, 5u);
+
+  platform_.SetImuData(LevelImu());
+  Tick(1);
+  platform_.ClearImuData();
+  Tick(3);
+
+  const ImuReadStats& st = imu_.GetReadStats();
+  EXPECT_EQ(st.failed_reads, 8u);
+  EXPECT_EQ(st.consecutive_misses, 3u);
+  EXPECT_EQ(st.max_consecutive_misses, 5u)
+      << "Успешное чтение обрывает серию, максимум сохраняется";
+}
+
+TEST_F(ImuReadStatsTest, NonFiniteSample_CountedAndNotFedToFilters) {
+  platform_.SetImuData(LevelImu());
+  Tick(50);
+  const float gz_before = imu_.GetFilteredGyroZ();
+
+  ImuData bad = LevelImu();
+  bad.gz = std::numeric_limits<float>::quiet_NaN();
+  platform_.SetImuData(bad);
+  Tick(2);
+  bad = LevelImu();
+  bad.ax = std::numeric_limits<float>::infinity();
+  platform_.SetImuData(bad);
+  Tick(1);
+
+  const ImuReadStats& st = imu_.GetReadStats();
+  EXPECT_EQ(st.invalid_samples, 3u);
+  EXPECT_EQ(st.failed_reads, 0u);
+  EXPECT_EQ(st.max_consecutive_misses, 3u);
+  EXPECT_FLOAT_EQ(imu_.GetFilteredGyroZ(), gz_before);
+  EXPECT_TRUE(std::isfinite(imu_.GetData().gz));
+  EXPECT_TRUE(std::isfinite(imu_.GetData().ax));
+}
+
+TEST_F(ImuReadStatsTest, WhoAmI_RecheckedOncePerInterval) {
+  platform_.SetImuData(LevelImu());
+  platform_.SetImuWhoAmICheckResult(false);
+  // 2.5 с: первая перепроверка через 1 с после старта, вторая через 2 с.
+  Tick(1250);
+
+  EXPECT_EQ(platform_.GetImuWhoAmICheckCount(), 2);
+  EXPECT_EQ(imu_.GetReadStats().whoami_mismatches, 2u);
+  EXPECT_EQ(imu_.GetReadStats().MissedSamples(), 0u)
+      << "Несовпадение WHO_AM_I — отдельный счётчик, семплы не пропущены";
+}
+
+TEST_F(ImuReadStatsTest, WhoAmI_UnsupportedPlatformNotCounted) {
+  platform_.SetImuData(LevelImu());
+  platform_.SetImuWhoAmICheckResult(std::nullopt);
+  Tick(1250);
+  EXPECT_EQ(imu_.GetReadStats().whoami_mismatches, 0u);
+}
+
+TEST_F(ImuReadStatsTest, Event_PeriodicWithZerosForCoverage) {
+  platform_.SetImuData(LevelImu());
+  Tick(10500);  // 21 с → события на 10 с и 20 с
+
+  const auto events = StatsEvents();
+  ASSERT_EQ(events.size(), 2u);
+  EXPECT_EQ(events[0].ts_ms, 10002u);
+  EXPECT_EQ(events[1].ts_ms, 20002u);
+  for (const auto& ev : events) {
+    EXPECT_EQ(ev.param, 0u);
+    EXPECT_FLOAT_EQ(ev.value1, 0.f);
+    EXPECT_FLOAT_EQ(ev.value2, 0.f);
+  }
+}
+
+TEST_F(ImuReadStatsTest, Event_CarriesPeriodDeltas) {
+  platform_.SetImuData(LevelImu());
+  platform_.SetImuWhoAmICheckResult(false);
+  Tick(100);
+  platform_.ClearImuData();
+  Tick(4);
+  platform_.SetImuData(LevelImu());
+  Tick(100);
+  platform_.ClearImuData();
+  Tick(2);
+  platform_.SetImuData(LevelImu());
+  platform_.SetImuWhoAmICheckResult(true);
+  Tick(10000);  // до 20+ с: второй период чистый
+
+  const auto events = StatsEvents();
+  ASSERT_GE(events.size(), 2u);
+  // Первый период [2, 10002): 6 пропусков, серия 4. WHO_AM_I «ломался»
+  // только первые 412 мс — до первой перепроверки на 1002 мс.
+  EXPECT_FLOAT_EQ(events[0].value1, 6.f);
+  EXPECT_FLOAT_EQ(events[0].value2, 4.f);
+  EXPECT_EQ(events[0].param, 0u);
+  EXPECT_FLOAT_EQ(events[1].value1, 0.f);
+  EXPECT_FLOAT_EQ(events[1].value2, 0.f);
+  EXPECT_EQ(imu_.GetReadStats().failed_reads, 6u);
+}
+
+TEST_F(ImuReadStatsTest, Event_WhoAmIMismatchesInParam) {
+  platform_.SetImuData(LevelImu());
+  platform_.SetImuWhoAmICheckResult(false);
+  Tick(5001);  // 10.002 с
+
+  const auto events = StatsEvents();
+  ASSERT_EQ(events.size(), 1u);
+  // Перепроверки на 1002 … 9002 мс → 9 несовпадений.
+  EXPECT_EQ(events[0].param, 9u);
+  EXPECT_FLOAT_EQ(events[0].value1, 0.f);
+}
+
+TEST_F(ImuReadStatsTest, Event_StillEmittedWhenImuDead) {
+  platform_.ClearImuData();
+  Tick(5001);
+
+  const auto events = StatsEvents();
+  ASSERT_EQ(events.size(), 1u);
+  EXPECT_FLOAT_EQ(events[0].value1, 5000.f);
+  EXPECT_FLOAT_EQ(events[0].value2, 5000.f);
+}
+
+TEST_F(ImuReadStatsTest, Event_RunAcrossBoundaryReportedWithFullLength) {
+  platform_.SetImuData(LevelImu());
+  Tick(4998);  // 9.996 с
+  platform_.ClearImuData();
+  Tick(4);  // пропуски на 9998, 10000 (до события) и 10002, 10004 (после)
+
+  const auto events = StatsEvents();
+  ASSERT_EQ(events.size(), 1u);
+  EXPECT_FLOAT_EQ(events[0].value1, 2.f);
+  EXPECT_FLOAT_EQ(events[0].value2, 2.f);
+  EXPECT_EQ(imu_.GetReadStats().consecutive_misses, 4u);
+
+  platform_.SetImuData(LevelImu());
+  Tick(5000);
+  const auto later = StatsEvents();
+  ASSERT_EQ(later.size(), 2u);
+  EXPECT_FLOAT_EQ(later[1].value1, 2.f);
+  EXPECT_FLOAT_EQ(later[1].value2, 4.f)
+      << "Серия через границу периода — полной длиной в следующем событии";
+}
+
+TEST_F(ImuReadStatsTest, NoEventLog_CountersStillWork) {
+  imu_.SetEventLog(nullptr);
+  platform_.ClearImuData();
+  Tick(6000);
+  EXPECT_EQ(log_.Count(), 0u);
+  EXPECT_EQ(imu_.GetReadStats().failed_reads, 6000u);
 }
 
 }  // namespace

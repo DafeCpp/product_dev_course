@@ -29,6 +29,7 @@ void MaybePublishDiagnostics(const DiagnosticsContext& ctx,
     snap.ekf_vx = ctx.ekf.GetVx();
     snap.ekf_vy = ctx.ekf.GetVy();
     snap.ekf_slip_deg = ctx.ekf.GetSlipAngleDeg();
+    snap.imu_read_stats = ctx.imu_handler->GetReadStats();
   }
 
   ctx.platform.PublishDiagnostics(snap);
@@ -66,6 +67,16 @@ void EmitDiagnostics(VehicleControlPlatform& platform,
       fmt << "EKF: vx=" << std::fixed << std::setprecision(2) << snap.ekf_vx
           << " vy=" << snap.ekf_vy << " m/s  slip=" << std::setprecision(1)
           << snap.ekf_slip_deg << " deg";
+      platform.Log(LogLevel::Info, fmt.str());
+    }
+
+    {
+      // LOS-383: счётчики с момента старта; критерий 5.1 — все нули.
+      const ImuReadStats& st = snap.imu_read_stats;
+      LogFormat fmt;
+      fmt << "IMU err: read=" << st.failed_reads
+          << " nan=" << st.invalid_samples << " who=" << st.whoami_mismatches
+          << " run=" << st.max_consecutive_misses;
       platform.Log(LogLevel::Info, fmt.str());
     }
   }
