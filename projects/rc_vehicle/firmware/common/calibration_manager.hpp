@@ -188,6 +188,9 @@ class CalibrationManager {
   }
 
  private:
+  /** Начать сбор этапа 2, если не идёт этап 1 (LOS-380). */
+  bool TryStartForwardCollection();
+
   VehicleControlPlatform& platform_;
   ImuCalibration& imu_calib_;
   MadgwickFilter& madgwick_;
@@ -202,6 +205,8 @@ class CalibrationManager {
   // подряд идущих вызовах). См. SetForwardDirection()/
   // ProcessForwardDirectionRequest() (код-ревью PR #290, 7-й раунд).
   std::mutex forward_dir_mutex_;
+  /** Смена этапа сбора IMU: этап 1 (control loop) против этапа 2 (WS). */
+  std::mutex stage_mutex_;
   bool forward_dir_pending_{false};
   float forward_dir_fx_{0.f};
   float forward_dir_fy_{0.f};

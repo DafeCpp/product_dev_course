@@ -20,22 +20,26 @@ void CalibrationManager::StartCalibration(bool full) {
   calib_request_.store(full ? 2 : 1);
 }
 
-bool CalibrationManager::StartForwardCalibration() {
+bool CalibrationManager::TryStartForwardCollection() {
   // Этап 2 заменил бы идущий сбор этапа 1: свежие семплы покоя пропали бы,
-  // а нейтраль газа снялась бы посреди калибровки (LOS-380).
+  // а нейтраль газа снялась бы посреди калибровки (LOS-380). Проверка и
+  // старт идут с WS-потока, а этап 1 запускает control loop в
+  // ProcessRequest(): под одним мьютексом этап 1 не может начаться между
+  // ними.
+  std::lock_guard<std::mutex> lock(stage_mutex_);
   if (imu_calib_.GetCalibStage() == 1) return false;
   return imu_calib_.StartForwardCalibration(2000);
 }
 
+bool CalibrationManager::StartForwardCalibration() {
+  return TryStartForwardCollection();
+}
+
 bool CalibrationManager::StartAutoForwardCalibration(float target_accel_g) {
-  if (imu_calib_.GetCalibStage() == 1) {
+  if (!TryStartForwardCollection()) {
     platform_.Log(LogLevel::Warning,
-                  "Auto-forward calib rejected: rest calibration in progress");
-    return false;
-  }
-  if (!imu_calib_.StartForwardCalibration(2000)) {
-    platform_.Log(LogLevel::Warning,
-                  "Auto-forward calib failed to start (need stage 1 full)");
+                  "Auto-forward calib failed to start (need stage 1 full, "
+                  "no rest calibration in progress)");
     return false;
   }
 
@@ -222,7 +226,10 @@ void CalibrationManager::ProcessRequest(uint32_t now_ms) {
   if (req != 0) {
     CalibMode mode = (req == 2) ? CalibMode::Full : CalibMode::GyroOnly;
     int samples = (req == 2) ? 2000 : 1000;
-    imu_calib_.StartCalibration(mode, samples);
+    {
+      std::lock_guard<std::mutex> lock(stage_mutex_);
+      imu_calib_.StartCalibration(mode, samples);
+    }
     platform_.Log(LogLevel::Info, "Calibration stage 1 started");
     if (event_log_) {
       // param: 0 = gyro_only, 1 = full
