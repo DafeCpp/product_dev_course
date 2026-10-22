@@ -157,10 +157,10 @@ class TelemetryEventLog;
  * кочку законно упирает акселерометр в предел.
  */
 struct ImuReadStats {
-  uint32_t failed_reads{0};     ///< ReadImu() вернул nullopt
-  uint32_t invalid_samples{0};  ///< Семпл с NaN/Inf, отброшен
+  uint32_t failed_reads{0};       ///< ReadImu() вернул nullopt
+  uint32_t invalid_samples{0};    ///< Семпл с NaN/Inf, отброшен
   uint32_t whoami_mismatches{0};  ///< Периодическая проверка WHO_AM_I не прошла
-  uint32_t consecutive_misses{0};  ///< Текущая серия пропусков подряд
+  uint32_t consecutive_misses{0};      ///< Текущая серия пропусков подряд
   uint32_t max_consecutive_misses{0};  ///< Самая длинная серия с момента старта
 
   [[nodiscard]] uint32_t MissedSamples() const noexcept {
