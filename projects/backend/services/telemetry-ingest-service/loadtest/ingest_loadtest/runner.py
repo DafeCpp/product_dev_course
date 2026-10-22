@@ -76,17 +76,6 @@ class _StopWorker(Exception):
     """The connection is unusable; the worker stops sending."""
 
 
-def _group_offsets(offsets: list[float]) -> list[tuple[float, int]]:
-    """Collapse equal consecutive offsets into ``(offset, count)`` groups."""
-    groups: list[tuple[float, int]] = []
-    for offset in offsets:
-        if groups and groups[-1][0] == offset:
-            groups[-1] = (offset, groups[-1][1] + 1)
-        else:
-            groups.append((offset, 1))
-    return groups
-
-
 async def _drive(scenario: Scenario, recorder: Recorder, send: SendFn, t0: float) -> None:
     """Call ``send`` on the scenario's schedule, or back-to-back when unpaced.
 
@@ -98,7 +87,7 @@ async def _drive(scenario: Scenario, recorder: Recorder, send: SendFn, t0: float
         # A send is "late" when it starts more than one interval behind plan,
         # i.e. the client (or a slow server) cannot keep the requested rate.
         slack = (1.0 / scenario.rate) if scenario.rate else scenario.burst_every_s
-        for offset, size in _group_offsets(scenario.send_offsets()):
+        for offset, size in scenario.send_groups():
             delay = t0 + offset - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)

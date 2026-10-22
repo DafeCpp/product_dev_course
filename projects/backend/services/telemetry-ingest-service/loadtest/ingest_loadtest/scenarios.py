@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
@@ -85,14 +86,23 @@ class Scenario:
             return None
         return planned * self.sensors * self.batch_size / self.duration_s
 
-    def send_offsets(self) -> list[float]:
-        """Planned send times (seconds from start) for one sensor."""
-        if self.burst_size:
-            periods = self._slots(self.burst_every_s)
-            return [k * self.burst_every_s for k in range(periods) for _ in range(self.burst_size)]
+    def send_groups(self) -> Iterator[tuple[float, int]]:
+        """Yield ``(offset_s, batches)`` per planned send, lazily, for one sensor.
+
+        A burst is one group; outside bursts every group holds one batch.
+        """
         planned = self.batches_per_sensor()
-        assert planned is not None, "send_offsets() needs a paced scenario"
-        return [i / self.rate for i in range(planned)]
+        assert planned is not None, "send_groups() needs a paced scenario"
+        if self.burst_size:
+            for k in range(planned // self.burst_size):
+                yield k * self.burst_every_s, self.burst_size
+        else:
+            for i in range(planned):
+                yield i / self.rate, 1
+
+    def send_offsets(self) -> list[float]:
+        """Planned send times (seconds from start) for one sensor, one per batch."""
+        return [offset for offset, size in self.send_groups() for _ in range(size)]
 
     def with_overrides(self, **overrides: object) -> Scenario:
         clean = {k: v for k, v in overrides.items() if v is not None}

@@ -15,7 +15,6 @@ from ingest_loadtest.runner import (
     SensorCredential,
     _accepted_count,
     _drive,
-    _group_offsets,
 )
 from ingest_loadtest.scenarios import PRESETS, Scenario, SlaThresholds
 from ingest_loadtest.stats import Recorder, build_report, evaluate_sla, format_report, percentile
@@ -290,9 +289,14 @@ def test_cli_run_exit_code_and_json(tmp_path, monkeypatch, capsys, passed: bool)
     assert ("SLA: PASS" if passed else "SLA: FAIL") in capsys.readouterr().out
 
 
-def test_group_offsets_collapses_bursts() -> None:
-    assert _group_offsets([0.0, 0.0, 0.0, 1.0, 2.0, 2.0]) == [(0.0, 3), (1.0, 1), (2.0, 2)]
-    assert _group_offsets([]) == []
+def test_send_groups_are_lazy_and_grouped() -> None:
+    burst = Scenario(name="t", burst_size=3, burst_every_s=1.0, duration_s=2.0)
+    assert list(burst.send_groups()) == [(0.0, 3), (1.0, 3)]
+    # A huge schedule is generated on demand, not built up front.
+    huge = Scenario(name="t", rate=100_000.0, duration_s=300.0)
+    groups = huge.send_groups()
+    assert next(groups) == (0.0, 1)
+    assert next(groups) == (1e-05, 1)
 
 
 async def test_drive_sends_a_burst_as_one_group() -> None:
