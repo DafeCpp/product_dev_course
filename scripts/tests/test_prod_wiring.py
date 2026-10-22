@@ -330,6 +330,26 @@ class ProdWiringTest(unittest.TestCase):
         shutil.rmtree(self.paths.backend_services / "auth-service" / "migrations")
         self.assert_error("auth-service: declares migrate job auth-migrate but has no migrations/ directory")
 
+    def test_meta_step_id_changed_fails(self) -> None:
+        self.edit(self.paths.deploy_workflow, "        id: meta\n", "        id: metadata\n")
+        self.assert_error("docker/metadata-action step must have id 'meta'")
+
+    def test_migrate_waiting_for_its_runtime_fails(self) -> None:
+        self.set_service_field(
+            self.paths.prod_compose,
+            "auth-migrate",
+            "depends_on",
+            value={"auth-service": {"condition": "service_completed_successfully"}},
+        )
+        self.assert_error("auth-migrate: in docker-compose.prod.yml waits for migrate job auth-service")
+
+    def test_registry_service_without_manifest_image_fails(self) -> None:
+        manifest = yaml.safe_load(self.paths.manifest.read_text(encoding="utf-8"))
+        for key in ("image", "context", "dockerfile"):
+            del manifest["services"]["sensor-simulator"][key]
+        self.paths.manifest.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+        self.assert_error("sensor-simulator: docker-compose.prod.yml uses a release-registry image")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

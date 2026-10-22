@@ -175,6 +175,10 @@ def _check_build_steps(workflow: dict[str, Any]) -> list[str]:
         if len(found) != 1:
             errors.append(f"deploy.yml {BUILD_JOB} must have exactly one {action} step, found {len(found)}")
             continue
+        if action == "docker/metadata-action" and found[0].get("id") != "meta":
+            errors.append(
+                f"deploy.yml {BUILD_JOB} {action} step must have id 'meta', got {found[0].get('id')!r}"
+            )
         with_ = found[0].get("with") or {}
         for key, value in expected.items():
             raw = with_.get(key, "")
@@ -331,6 +335,11 @@ def check(paths: Paths) -> list[str]:
 
     for name, spec in sorted(wanted.items()):
         image = spec.get("image")
+        if not image and "CR_REGISTRY" in str(prod.get(name, {}).get("image", "")):
+            errors.append(
+                f"{name}: docker-compose.prod.yml uses a release-registry image, "
+                "so the manifest must declare image, context and dockerfile"
+            )
         if image:
             if image not in matrix:
                 errors.append(f"{name}: image {image} is not in the deploy.yml build matrix")
@@ -374,7 +383,7 @@ def check(paths: Paths) -> list[str]:
             declared = {spec["migrate_after"]} if spec.get("migrate_after") else set()
             for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
                 if migrate in compose:
-                    waits = set(_depends_on(compose[migrate])) & set(migrates)
+                    waits = set(_depends_on(compose[migrate])) & known
                     for extra in sorted(waits - declared):
                         errors.append(
                             f"{migrate}: in {label} waits for migrate job {extra}, "
