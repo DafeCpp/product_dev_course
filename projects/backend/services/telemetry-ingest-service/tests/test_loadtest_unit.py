@@ -395,3 +395,14 @@ async def test_start_gate_opens_when_every_worker_arrives() -> None:
     assert not first.done()  # the clock waits for the slow handshake
     t0 = await gate.arrive()
     assert await first == t0 == gate.t0
+
+
+@pytest.mark.parametrize("timeout", ["0", "-1", "nan", "inf"])
+def test_cli_rejects_bad_timeout(tmp_path, capsys, timeout: str) -> None:
+    path = tmp_path / "s.json"
+    save_credentials(path, [SensorCredential("a", "t")])
+    code = cli.main(
+        ["run", "ceiling", "--sensors-file", str(path), "--sensors", "1", "--timeout", timeout]
+    )
+    assert code == 2
+    assert "timeout" in capsys.readouterr().err

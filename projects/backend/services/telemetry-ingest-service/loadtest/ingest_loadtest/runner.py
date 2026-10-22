@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -262,6 +263,9 @@ async def run_scenario(
     *,
     request_timeout_s: float = 10.0,
 ) -> Report:
+    # aiohttp treats a zero timeout as "no timeout", so a stalled server would hang the run.
+    if not (math.isfinite(request_timeout_s) and request_timeout_s > 0):
+        raise ValueError("request timeout must be a finite number of seconds > 0")
     if len(credentials) < scenario.sensors:
         raise ValueError(
             f"scenario {scenario.name!r} needs {scenario.sensors} sensors, "
