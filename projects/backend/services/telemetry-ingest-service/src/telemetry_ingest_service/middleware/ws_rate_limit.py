@@ -17,6 +17,10 @@ Limits are read from a shared :class:`RateLimitConfig` on every ``check()``,
 so runtime updates take effect immediately.  A limit of ``0`` means *unlimited*
 for that bucket.
 
+With a :class:`RedisBuckets` store attached, :meth:`acquire` keeps the
+buckets in Redis so every replica shares one limit; :meth:`check` is the
+in-memory path it falls back to while Redis is unavailable.
+
 Thread safety: asyncio is single-threaded; no locking needed.
 """
 from __future__ import annotations
@@ -27,6 +31,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from telemetry_ingest_service.middleware.rate_limit_config import RateLimitConfig
+from telemetry_ingest_service.middleware.redis_buckets import RedisBuckets
 from telemetry_ingest_service.middleware.token_bucket import TokenBucket
 
 
@@ -56,6 +61,7 @@ class WsRateLimiter:
     def __init__(self, config: RateLimitConfig) -> None:
         self._config = config
         self._buckets: dict[UUID, _SensorBuckets] = defaultdict(_SensorBuckets)
+        self.shared: RedisBuckets | None = None
 
     def check(self, sensor_id: UUID, reading_count: int) -> RateLimitExceeded | None:
         """Take tokens for *sensor_id*.
@@ -74,13 +80,36 @@ class WsRateLimiter:
         # Check both buckets so retry_after covers the longer of the two waits.
         messages_wait = buckets.messages.retry_after(1, now, max_messages, window)
         readings_wait = buckets.readings.retry_after(reading_count, now, max_readings, window)
+        hit = self._verdict(messages_wait, readings_wait)
+        if hit is None:
+            buckets.messages.take(1, max_messages)
+            buckets.readings.take(reading_count, max_readings)
+        return hit
 
+    async def acquire(self, sensor_id: UUID, reading_count: int) -> RateLimitExceeded | None:
+        """Like :meth:`check`, but against the shared Redis buckets when attached."""
+        if self.shared is not None:
+            waits = await self.shared.reserve(
+                f"ws:{sensor_id}",
+                (1, self._config.ws_max_messages),
+                (reading_count, self._config.ws_max_readings),
+                self._config.ws_window_seconds,
+            )
+            if waits is not None:
+                return self._verdict(*waits)
+        return self.check(sensor_id, reading_count)
+
+    def _verdict(
+        self, messages_wait: int | None, readings_wait: int | None
+    ) -> RateLimitExceeded | None:
         if messages_wait is not None and (readings_wait is None or messages_wait >= readings_wait):
-            return RateLimitExceeded(reason="messages", limit=max_messages, retry_after=messages_wait)
+            return RateLimitExceeded(
+                reason="messages", limit=self._config.ws_max_messages, retry_after=messages_wait
+            )
 
         if readings_wait is not None:
-            return RateLimitExceeded(reason="readings", limit=max_readings, retry_after=readings_wait)
+            return RateLimitExceeded(
+                reason="readings", limit=self._config.ws_max_readings, retry_after=readings_wait
+            )
 
-        buckets.messages.take(1, max_messages)
-        buckets.readings.take(reading_count, max_readings)
         return None

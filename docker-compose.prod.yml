@@ -209,6 +209,8 @@ services:
       - CONFIG_CLIENT_ENABLED=${CONFIG_CLIENT_ENABLED:?CONFIG_CLIENT_ENABLED must be set in production .env}
       - CONFIG_CLIENT_URL=${CONFIG_CLIENT_URL:?CONFIG_CLIENT_URL must be set in production .env}
       - CONFIG_CLIENT_POLL_INTERVAL_SECONDS=${CONFIG_CLIENT_POLL_INTERVAL_SECONDS:?CONFIG_CLIENT_POLL_INTERVAL_SECONDS must be set in production .env}
+      # Shared per-sensor rate-limit buckets; ingest falls back to in-memory if Redis is down.
+      - RATE_LIMIT_REDIS_URL=redis://redis:6379/0
       - PGSSLROOTCERT=/certs/yandex-ca.pem
     volumes:
       - ./certs/yandex-ca.pem:/certs/yandex-ca.pem:ro
@@ -218,6 +220,8 @@ services:
     depends_on:
       telemetry-ingest-migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_started
       auth-service:
         condition: service_healthy
       config-service:

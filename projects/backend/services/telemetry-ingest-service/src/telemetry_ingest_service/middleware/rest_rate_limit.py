@@ -16,6 +16,10 @@ Limits are read from a shared :class:`RateLimitConfig` on every ``check()``,
 so runtime updates take effect immediately.  A limit of ``0`` means *unlimited*
 for that bucket.
 
+With a :class:`RedisBuckets` store attached, :meth:`acquire` keeps the
+buckets in Redis so every replica shares one limit; :meth:`check` is the
+in-memory path it falls back to while Redis is unavailable.
+
 Thread safety: asyncio is single-threaded; no locking needed.
 """
 from __future__ import annotations
@@ -27,6 +31,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from telemetry_ingest_service.middleware.rate_limit_config import RateLimitConfig
+from telemetry_ingest_service.middleware.redis_buckets import RedisBuckets
 from telemetry_ingest_service.middleware.token_bucket import TokenBucket
 
 logger = logging.getLogger(__name__)
@@ -49,6 +54,7 @@ class IngestRateLimiter:
     def __init__(self, config: RateLimitConfig) -> None:
         self._config = config
         self._buckets: dict[UUID, _SensorBuckets] = defaultdict(_SensorBuckets)
+        self.shared: RedisBuckets | None = None
 
     @property
     def max_requests(self) -> int:
@@ -80,13 +86,38 @@ class IngestRateLimiter:
         # Check both buckets so Retry-After covers the longer of the two waits.
         requests_wait = buckets.requests.retry_after(1, now, max_requests, window)
         readings_wait = buckets.readings.retry_after(readings_count, now, max_readings, window)
+        result = self._verdict(sensor_id, readings_count, requests_wait, readings_wait)
+        if result[0]:
+            buckets.requests.take(1, max_requests)
+            buckets.readings.take(readings_count, max_readings)
+        return result
 
+    async def acquire(self, sensor_id: UUID, readings_count: int) -> tuple[bool, int]:
+        """Like :meth:`check`, but against the shared Redis buckets when attached."""
+        if self.shared is not None:
+            waits = await self.shared.reserve(
+                f"rest:{sensor_id}",
+                (1, self._config.rest_max_requests),
+                (readings_count, self._config.rest_max_readings),
+                self._config.rest_window_seconds,
+            )
+            if waits is not None:
+                return self._verdict(sensor_id, readings_count, *waits)
+        return self.check(sensor_id, readings_count)
+
+    def _verdict(
+        self,
+        sensor_id: UUID,
+        readings_count: int,
+        requests_wait: int | None,
+        readings_wait: int | None,
+    ) -> tuple[bool, int]:
         if requests_wait is not None and (readings_wait is None or requests_wait >= readings_wait):
             logger.warning(
                 "REST ingest rate limit exceeded (requests): sensor_id=%s "
                 "limit=%d retry_after=%ds",
                 sensor_id,
-                max_requests,
+                self._config.rest_max_requests,
                 requests_wait,
             )
             return False, requests_wait
@@ -97,11 +128,9 @@ class IngestRateLimiter:
                 "incoming=%d limit=%d retry_after=%ds",
                 sensor_id,
                 readings_count,
-                max_readings,
+                self._config.rest_max_readings,
                 readings_wait,
             )
             return False, readings_wait
 
-        buckets.requests.take(1, max_requests)
-        buckets.readings.take(readings_count, max_readings)
         return True, 0

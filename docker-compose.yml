@@ -309,12 +309,16 @@ services:
       - CONFIG_CLIENT_ENABLED=${CONFIG_CLIENT_ENABLED:-true}
       - CONFIG_CLIENT_URL=${CONFIG_CLIENT_URL:-http://config-service:8005}
       - CONFIG_CLIENT_POLL_INTERVAL_SECONDS=${CONFIG_CLIENT_POLL_INTERVAL_SECONDS:-5.0}
+      # Shared per-sensor rate-limit buckets; ingest falls back to in-memory if Redis is down.
+      - RATE_LIMIT_REDIS_URL=${TELEMETRY_INGEST_RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
     command: ["python", "-m", "telemetry_ingest_service.main"]
     ports:
       - "${TELEMETRY_INGEST_PORT:-8003}:8003"
     depends_on:
       telemetry-ingest-migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_started
     networks:
       - experiment-tracking-network
     restart: unless-stopped

@@ -59,6 +59,13 @@ class Settings(BaseServiceSettings):
     rest_rate_limit_readings_per_window: int = 60_000 # max readings per window
     rest_rate_limit_window_seconds: float = 60.0    # window duration in seconds
 
+    # Shared rate-limit buckets in Redis: one limit across replicas that survives
+    # restarts.  Unset keeps per-process in-memory buckets.  While Redis fails,
+    # each replica falls back to in-memory buckets and retries after the cooldown.
+    rate_limit_redis_url: str | None = None
+    rate_limit_redis_timeout_seconds: float = 0.2
+    rate_limit_redis_retry_seconds: float = 5.0
+
     # Config-service poller — dynamic rate-limit updates without restart
     config_client_enabled: bool = True
     config_client_url: str = "http://config-service:8005"
