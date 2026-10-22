@@ -132,7 +132,7 @@ class ProdWiringTest(unittest.TestCase):
             "DATABASE_URL",
             "${AUTH_DATABASE_URL:?AUTH_DATABASE_URL must be set in production .env}",
         )
-        self.assert_error("script-migrate: in docker-compose.prod.yml DATABASE_URL must come from SCRIPT_DATABASE_URL")
+        self.assert_error("script-migrate: in docker-compose.prod.yml DATABASE_URL must be ${SCRIPT_DATABASE_URL:?...}")
 
     def test_dev_default_dsn_for_another_database_fails(self) -> None:
         self.set_env(
@@ -255,7 +255,24 @@ class ProdWiringTest(unittest.TestCase):
             "DATABASE_URL",
             "${SCRIPT_DATABASE_URL:+postgresql://u:p@h/auth_db}",
         )
-        self.assert_error("script-service: in docker-compose.prod.yml DATABASE_URL must come from SCRIPT_DATABASE_URL")
+        self.assert_error("script-service: in docker-compose.prod.yml DATABASE_URL must be ${SCRIPT_DATABASE_URL:?...}")
+
+    def test_migrate_after_cycle_fails(self) -> None:
+        self.edit(
+            self.paths.manifest,
+            "    migrate: experiment-migrate\n",
+            "    migrate: experiment-migrate\n    migrate_after: telemetry-ingest-migrate\n",
+        )
+        self.assert_error("migrate_after forms a cycle")
+
+    def test_prod_database_url_with_fallback_fails(self) -> None:
+        self.set_env(
+            self.paths.prod_compose,
+            "script-service",
+            "DATABASE_URL",
+            "${SCRIPT_DATABASE_URL:-postgresql://u:p@postgres:5432/script_db}",
+        )
+        self.assert_error("script-service: in docker-compose.prod.yml DATABASE_URL must be ${SCRIPT_DATABASE_URL:?...}")
 
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(

@@ -79,14 +79,19 @@ def _database_env_var(database: str) -> str:
 def _check_database_url(
     name: str, label: str, service: dict[str, Any], database: str
 ) -> list[str]:
+    is_prod = label == "docker-compose.prod.yml"
     value = _env_value(service, "DATABASE_URL")
     var = _database_env_var(database)
     if value is None:
         return [f"{name}: in {label} has no DATABASE_URL for {database}"]
     errors = []
-    # Only ${VAR:?error} and ${VAR:-default}; ${VAR:+alt} would swap in another DSN.
-    if not re.fullmatch(rf"\$\{{{var}:[?-][^}}]*\}}", value):
-        errors.append(f"{name}: in {label} DATABASE_URL must come from {var} ({database}), got {value!r}")
+    # Production must require the variable (${VAR:?error}): a fallback DSN would let a
+    # missing variable pass pre-flight. Dev uses ${VAR:-default}. ${VAR:+alt} is never valid.
+    operator = "?" if is_prod else "-"
+    if not re.fullmatch(rf"\$\{{{var}:\{operator}[^}}]*\}}", value):
+        errors.append(
+            f"{name}: in {label} DATABASE_URL must be ${{{var}:{operator}...}} ({database}), got {value!r}"
+        )
     # The dev default DSN must point at the same database as the variable.
     default = re.match(r"\$\{[A-Z0-9_]+:-(?P<dsn>[^}]*)\}$", value)
     if default and not re.search(rf"/{re.escape(database)}(\?|$)", default.group("dsn")):
@@ -321,6 +326,20 @@ def check(paths: Paths) -> list[str]:
                 for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
                     if target in compose:
                         errors.extend(_check_database_url(target, label, compose[target], database))
+
+    order = {
+        spec["migrate"]: spec["migrate_after"]
+        for spec in wanted.values()
+        if spec.get("migrate") and spec.get("migrate_after") in migrates
+    }
+    for job in sorted(order):
+        seen = [job]
+        while seen[-1] in order:
+            nxt = order[seen[-1]]
+            if nxt in seen:
+                errors.append(f"{job}: migrate_after forms a cycle: {' -> '.join(seen + [nxt])}")
+                break
+            seen.append(nxt)
 
     released = {spec["image"] for spec in wanted.values() if spec.get("image")}
     for image in sorted(matrix - released):
