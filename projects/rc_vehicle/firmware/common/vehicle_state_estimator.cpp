@@ -219,7 +219,11 @@ VehicleStateEstimate VehicleStateEstimator::Update(
     }
 
     const float vx_now = ekf_.GetVx();
-    a_lin_prev_g_ = (vx_now - prev_vx_) / dt_sec / kG;
+    // Акселерометр по X видит v̇x − r·vy, а не v̇x: в заносе член r·vy того
+    // же порядка, что разгон, и без него якорь принимал его за наклон, а
+    // ложный тангаж уходил в ax EKF (LOS-380).
+    a_lin_prev_g_ =
+        ((vx_now - prev_vx_) / dt_sec - ekf_.GetYawRate() * ekf_.GetVy()) / kG;
     prev_vx_ = vx_now;
   }
 
