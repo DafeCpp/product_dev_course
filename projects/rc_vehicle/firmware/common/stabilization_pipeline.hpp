@@ -17,6 +17,8 @@ struct StabilizationInput {
   ControlSetpoint command{};
   uint32_t dt_ms{0};
   float speed_ms{0.0f};
+  /** Продольная скорость EKF со знаком [м/с], < 0 — назад (LOS-386). */
+  float vx_ms{0.0f};
   float slip_angle_deg{0.0f};
   float yaw_rate_rps{0.0f};
   float vx_variance{0.0f};
@@ -183,10 +185,13 @@ class PitchCompensator {
  * по склону — влево, т.е. руль > 0. Компенсация не действует:
  *  - на малой скорости (нарастает от kMinSpeedMs до kFullSpeedMs): на месте
  *    руль сам по себе не должен шевелиться;
- *  - на заднем ходу: роли осей меняются, знак поправки не определён;
+ *  - на заднем ходу (команда газа или vx EKF < 0; speed_ms — модуль, назад
+ *    не отличает): роли осей меняются, знак поправки не определён;
  *  - в повороте: крен корпуса от центробежной силы TiltEstimator не отличает
  *    от склона, и добавка руля внутрь поворота его бы закручивала. Поэтому
  *    вес падает до нуля между kFullLatG и kZeroLatG по |v·r|.
+ * Как и ПИД-регуляторы, масштабируется на stab_w и mode_transition_weight:
+ * при смене профиля с другим gain руль не прыгает.
  */
 class RollCompensator {
  public:

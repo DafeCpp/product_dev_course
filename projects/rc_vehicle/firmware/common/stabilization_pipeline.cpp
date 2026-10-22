@@ -201,16 +201,16 @@ void RollCompensator::Process(const StabilizationConfig& cfg, float& steering,
   if (!cfg.roll_comp.enabled) return;
   if (input.stabilization_weight <= 0.0f) return;
   if (!input.imu_enabled) return;
-  if (input.command.throttle < 0.0f || input.speed_ms < 0.0f) return;
+  if (input.command.throttle < 0.0f || input.vx_ms < 0.0f) return;
 
-  const float speed_w =
-      std::clamp((input.speed_ms - kMinSpeedMs) / (kFullSpeedMs - kMinSpeedMs),
-                 0.0f, 1.0f);
+  const float speed_w = std::clamp(
+      (input.vx_ms - kMinSpeedMs) / (kFullSpeedMs - kMinSpeedMs), 0.0f, 1.0f);
   constexpr float kG = 9.80665f;
-  const float lat_g = std::fabs(input.speed_ms * input.yaw_rate_rps) / kG;
+  const float lat_g = std::fabs(input.vx_ms * input.yaw_rate_rps) / kG;
   const float turn_w =
       std::clamp((kZeroLatG - lat_g) / (kZeroLatG - kFullLatG), 0.0f, 1.0f);
-  const float weight = speed_w * turn_w * input.stabilization_weight;
+  const float weight = speed_w * turn_w * input.stabilization_weight *
+                       input.mode_transition_weight;
   if (weight <= 0.0f) return;
 
   const float correction =

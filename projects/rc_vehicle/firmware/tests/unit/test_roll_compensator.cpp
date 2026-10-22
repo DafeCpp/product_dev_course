@@ -26,7 +26,9 @@ class RollCompensatorTest : public ::testing::Test {
     input_.command = {.throttle = 0.3f, .steering = 0.0f};
     input_.dt_ms = 2;
     input_.speed_ms = 2.0f;
+    input_.vx_ms = 2.0f;
     input_.stabilization_weight = 1.0f;
+    input_.mode_transition_weight = 1.0f;
     input_.imu_enabled = true;
     input_.roll_deg = 5.0f;
   }
@@ -92,21 +94,32 @@ TEST_F(RollCompensatorTest, ScaledByStabilizationWeight) {
   EXPECT_FLOAT_EQ(Run(), 0.0f);
 }
 
-TEST_F(RollCompensatorTest, RampsInWithSpeed) {
-  input_.speed_ms = RollCompensator::kMinSpeedMs;
+TEST_F(RollCompensatorTest, FadesInAfterModeChange) {
+  // Смена профиля обнуляет mode_transition_weight: руль не прыгает на
+  // добавку нового профиля.
+  input_.mode_transition_weight = 0.0f;
   EXPECT_FLOAT_EQ(Run(), 0.0f);
-  input_.speed_ms =
+  input_.mode_transition_weight = 0.5f;
+  EXPECT_NEAR(Run(), 0.01f, 1e-6f);
+}
+
+TEST_F(RollCompensatorTest, RampsInWithSpeed) {
+  input_.vx_ms = RollCompensator::kMinSpeedMs;
+  EXPECT_FLOAT_EQ(Run(), 0.0f);
+  input_.vx_ms =
       0.5f * (RollCompensator::kMinSpeedMs + RollCompensator::kFullSpeedMs);
   EXPECT_NEAR(Run(), 0.01f, 1e-6f);
-  input_.speed_ms = RollCompensator::kFullSpeedMs;
+  input_.vx_ms = RollCompensator::kFullSpeedMs;
   EXPECT_NEAR(Run(), 0.02f, 1e-6f);
 }
 
 TEST_F(RollCompensatorTest, IdleInReverse) {
   input_.command.throttle = -0.3f;
   EXPECT_FLOAT_EQ(Run(), 0.0f);
-  input_.command.throttle = 0.0f;
-  input_.speed_ms = -1.0f;
+  // Накат назад при нейтральном или уже переднем газе: speed_ms EKF —
+  // модуль скорости, назад видно только по vx.
+  input_.command.throttle = 0.3f;
+  input_.vx_ms = -1.0f;
   EXPECT_FLOAT_EQ(Run(), 0.0f);
 }
 
@@ -115,7 +128,7 @@ TEST_F(RollCompensatorTest, FadesOutInTurns) {
   // боковому ускорению |v·r| между kFullLatG и kZeroLatG.
   constexpr float kG = 9.80665f;
   auto set_lat_g = [&](float lat_g) {
-    input_.yaw_rate_rps = lat_g * kG / input_.speed_ms;
+    input_.yaw_rate_rps = lat_g * kG / input_.vx_ms;
   };
   set_lat_g(RollCompensator::kFullLatG);
   EXPECT_NEAR(Run(), 0.02f, 1e-5f);

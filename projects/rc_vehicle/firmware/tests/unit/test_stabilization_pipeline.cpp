@@ -498,6 +498,7 @@ TEST_F(StabilizationPipelineTest, RollCompensationRunsAfterYawController) {
   cfg_.roll_comp.enabled = true;
   input_.command = {.throttle = 0.3f, .steering = 0.0f};
   input_.speed_ms = 2.0f;
+  input_.vx_ms = 2.0f;
   input_.yaw_rate_rps = 0.0f;
   input_.roll_deg = 5.0f;
   ModeTraits policy{
@@ -535,6 +536,7 @@ TEST_F(StabilizationPipelineTest, KidsRollCompensationRespectsGripSteerCap) {
   };
   input_.command = {.throttle = 0.2f, .steering = 0.0f};
   input_.speed_ms = 1.0f;
+  input_.vx_ms = 1.0f;
   input_.yaw_rate_rps = 0.03f;
   input_.roll_deg = 10.0f;
   input_.lateral_grip_lost = true;
