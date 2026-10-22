@@ -111,6 +111,7 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   SelectControlSource(input.sensors, state.command.throttle,
                       state.command.steering);
   UpdateAutoDrive(input, state);
+  HoldThrottleDuringRestCalibration(state);
   // Preserve the command before stabilization. If RC/Wi-Fi disappears during
   // the failsafe grace period, the next tick must reapply stabilization to
   // this base command, not to the previous stabilized output (LOS-283).
@@ -288,6 +289,19 @@ void ControlLoopProcessor::UpdateAutoDrive(const ControlTickInput& input,
   }
   HandleAutoDriveCompletion(ad_out, ctx_.stab_mgr, ctx_.imu_calib,
                             ctx_.platform);
+}
+
+void ControlLoopProcessor::HoldThrottleDuringRestCalibration(
+    ControlTickState& state) {
+  // Этап 1 (Full/GyroOnly) усредняет accel/gyro как покой. Плавный разгон
+  // проходит проверку дисперсии, и среднее продольное ускорение попадает в
+  // gravity_vec: после авто-калибровки при старте машина, тронувшаяся в
+  // первые 2 с, ездила с наклоном СК ~2° (LOS-380). Газ держим в нейтрали до
+  // конца сбора; руль машину не двигает и остаётся у водителя. Этап 2
+  // (Forward) — управляемый разгон, его не трогаем.
+  if (ctx_.imu_calib.GetCalibStage() == 1) {
+    state.command.throttle = 0.0f;
+  }
 }
 
 void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,

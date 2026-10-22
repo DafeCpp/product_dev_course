@@ -49,6 +49,9 @@ class SimPlatform : public FakePlatform {
 // Control Loop Integration Tests
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Тиков на авто-калибровку покоя при старте (StartAutoCalibration).
+constexpr uint32_t kBootCalibTicks = 1000;
+
 class ControlLoopTest : public ::testing::Test {
  protected:
   // Запустить control loop на N итераций, возвращая платформу для проверок.
@@ -131,7 +134,8 @@ TEST_F(ControlLoopTest, FailsafeActivated_WhenNoSignal) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, WifiCommand_ProducesPwmOutput) {
-  auto platform = std::make_unique<SimPlatform>(50);
+  // Первые 1000 тиков идёт калибровка покоя при старте, газ в нейтрали.
+  auto platform = std::make_unique<SimPlatform>(kBootCalibTicks + 50);
   platform_ = platform.get();
 
   ImuData imu{};
@@ -146,12 +150,32 @@ TEST_F(ControlLoopTest, WifiCommand_ProducesPwmOutput) {
   EXPECT_NE(platform_->GetLastThrottle(), 0.0f);
 }
 
+// LOS-380: каждый старт начинается с авто-калибровки покоя (Full, 1000
+// семплов). Команда газа в это время не должна тронуть машину: плавный разгон
+// проходит проверку дисперсии и наклоняет gravity_vec.
+TEST_F(ControlLoopTest, BootCalibrationHoldsThrottle) {
+  auto platform = std::make_unique<SimPlatform>(50);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+  platform_->SetWifiCommand(RcCommand{0.5f, 0.3f});
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();
+
+  ASSERT_EQ(vc_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_->GetLastThrottle(), 0.0f);
+  EXPECT_NE(platform_->GetLastSteering(), 0.0f) << "руль у водителя";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RC приоритет над Wi-Fi
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, RcOverridesWifi) {
-  auto platform = std::make_unique<SimPlatform>(100);
+  auto platform = std::make_unique<SimPlatform>(kBootCalibTicks + 100);
   platform_ = platform.get();
 
   ImuData imu{};

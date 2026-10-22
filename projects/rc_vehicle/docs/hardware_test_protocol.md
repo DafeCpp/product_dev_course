@@ -72,6 +72,7 @@ cd ../sim && python -m pytest tests/<файл>::<тест>
 | 1.7 | Знак pitch: нос вверх ~30° (IC D1#6, **LOS-369 п. 1**) | **pitch ≈ −30°** (нос вверх — отрицательный) | web UI / CSV `pitch_deg` | вручную | `test_testing_program_scenarios.py::test_slope_is_seen_as_pitch` | [ ] |
 | 1.8 | Roll и yaw (IC D1#7–8) | наклон 30° → roll ≈ 30°; поворот 90° → Δyaw ≈ 90° | web UI | вручную | — | [ ] |
 | 1.9 | Газ и руль в воздухе (IC D1#13–14) | колёса крутятся в нужную сторону, руль влево/вправо | — | визуально | — | [ ] |
+| 1.9a | Газ не проходит, пока идёт калибровка при старте (LOS-380): включить питание и сразу дать газ | колёса стоят, пока web UI показывает calib `collecting` (до 2 с после старта), и крутятся после `done`; руль отвечает сразу | WS `calib.status` | визуально | GTest `ControlLoopTest.BootCalibrationHoldsThrottle`, `ProcessorTest.RestCalibration_*` | [ ] |
 | 1.10 | Kids preset в покое (IC D1#12): кнопка «Toddler» в блоке Kids web UI | Toddler: `throttle_limit` 0.15 в телеметрии | WS | — | — | [ ] |
 | 1.11 | CSV из PSRAM (IC D1#16) | открывается, предупреждений о колонках нет | 1 мин PSRAM | `analyze_telemetry.py` | — | [ ] |
 

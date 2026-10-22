@@ -1158,6 +1158,65 @@ TEST_F(ProcessorTest, CalibMgr_Null_NoCrash) {
   EXPECT_NO_THROW(proc.Step(2, 2));
 }
 
+TEST_F(ProcessorTest, RestCalibration_HoldsThrottleNeutralUntilDone) {
+  // LOS-380: авто-калибровка при старте (Full, 1000 семплов) принимала
+  // плавный разгон за покой и записывала продольное ускорение в gravity_vec.
+  // Пока идёт этап 1, газ в нейтрали; руль проходит.
+  SetDirectLaw();
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+
+  calib_mgr_->StartAutoCalibration();
+  platform_.SetWifiCommand({0.5f, 0.3f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+  EXPECT_NEAR(platform_.GetLastSteering(), 0.3f, 1e-4f);
+
+  // Последний семпл завершает сбор внутри тика, и этот тик газ уже отдаёт.
+  for (int i = 0; i < 2000; ++i) {
+    Step();
+    if (imu_calib_.GetCalibStage() != 1) break;
+    ASSERT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f) << "tick " << i;
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Done);
+  ASSERT_TRUE(imu_calib_.GetData().gravity_valid);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 1e-4f)
+      << "после калибровки газ снова у водителя";
+}
+
+TEST_F(ProcessorTest, RestCalibration_GyroOnlyAlsoHoldsThrottle) {
+  SetDirectLaw();
+  calib_mgr_->StartCalibration(/*full=*/false);
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+
+  imu_calib_.CancelCalibration();
+  Step();
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 1e-4f);
+}
+
+TEST_F(ProcessorTest, ForwardCalibration_DoesNotHoldThrottle) {
+  // Этап 2 — разгон по прямой, газ нужен.
+  SetDirectLaw();
+  ImuCalibData data{};
+  data.gravity_vec[2] = 1.0f;
+  data.gravity_valid = true;
+  data.valid = true;
+  imu_calib_.SetData(data);
+  ASSERT_TRUE(imu_calib_.StartForwardCalibration(2000));
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 2);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 1e-4f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Kids Mode: accel-лимитер и тангаж (LOS-245)
 //

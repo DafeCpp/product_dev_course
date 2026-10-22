@@ -22,6 +22,11 @@ from .vehicle_model import StepOutput, VehicleModel
 # baseline для unit-тестов и синтетических экспериментов.
 DEFAULT_CLOSED_LOOP_PROFILE = "fitted_2026_08_02"
 
+# Калибровка IMU в покое при каждом старте (CalibrationManager::
+# StartAutoCalibration, Full, 1000 семплов). Пока она идёт, прошивка держит газ
+# в нейтрали (LOS-380); на тике, где сбор закончился, газ уже проходит.
+BOOT_CALIB_TICKS = 1000
+
 
 class ClosedLoopSim:
     def __init__(self, sim_host_bin: str, params: SimParams | None = None,
@@ -147,6 +152,11 @@ class ClosedLoopSim:
         """Сменить поперечный уклон на ходу (LOS-386), >0 — правый борт ниже.
         Как и склон, включают после калибровки IMU."""
         self.model.bank_rad = math.radians(bank_deg)
+
+    def wait_boot_calibration(self) -> list[dict]:
+        """Простоять в нейтрали калибровку IMU при старте, как водитель,
+        который включил машину и ждёт: до её конца газ не проходит."""
+        return self.run(BOOT_CALIB_TICKS, rc_throttle=0.0, rc_steering=0.0)
 
     def run(self, n: int, dt_ms: int = 2, rc_throttle=None, rc_steering=None,
             with_mag: bool = True) -> list[dict]:
