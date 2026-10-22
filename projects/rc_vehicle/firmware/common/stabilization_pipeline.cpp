@@ -240,6 +240,7 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   const StabilizationInput input{
       .dt_ms = dt_ms,
       .slip_angle_deg = ekf_->GetSlipAngleDeg(),
+      .yaw_rate_rps = ekf_->GetYawRate(),
       .stabilization_weight = stab_w,
       .mode_transition_weight = mode_w,
       .imu_enabled = imu_->IsEnabled(),
@@ -255,12 +256,22 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   if (input.dt_ms == 0) return;
 
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
-  const float slip_error = cfg.slip_angle.target_deg - input.slip_angle_deg;
+  const float slip_error =
+      cfg.slip_angle.target_deg -
+      DriftSlipDeg(input.slip_angle_deg, input.yaw_rate_rps);
   const float pid_out = pid_.Step(slip_error, dt_sec);
 
   throttle = std::clamp(throttle + pid_out * input.stabilization_weight *
                                        input.mode_transition_weight,
                         -1.0f, 1.0f);
+}
+
+float SlipAngleController::DriftSlipDeg(float slip_deg,
+                                        float yaw_rate_rps) noexcept {
+  // Пока поворота нет, направление заноса не определено: любой угол считаем
+  // заносом, чтобы PID не разгонял машину при боковом сносе на прямой.
+  if (std::abs(yaw_rate_rps) < kMinTurnYawRateRps) return std::abs(slip_deg);
+  return yaw_rate_rps > 0.0f ? -slip_deg : slip_deg;
 }
 
 void SlipAngleController::SetGains(const StabilizationConfig& cfg) noexcept {

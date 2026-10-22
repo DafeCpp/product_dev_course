@@ -265,6 +265,20 @@ class SlipAngleController {
    */
   void SetGains(const StabilizationConfig& cfg) noexcept;
 
+  /**
+   * @brief Угол заноса относительно поворота [°]: > 0 — зад выносит наружу.
+   *
+   * slip EKF знаковый: в левом повороте (yaw rate > 0) занос даёт slip < 0,
+   * в правом — slip > 0. target_deg задаёт величину заноса в любую сторону;
+   * со знаковым slip в левом повороте ошибка уставки росла с заносом, и PID
+   * добавлял газ до разворота (LOS-380).
+   */
+  [[nodiscard]] static float DriftSlipDeg(float slip_deg,
+                                          float yaw_rate_rps) noexcept;
+
+  /// Ниже этого |yaw rate| поворота нет (как в OversteerGuard, ~17 °/с).
+  static constexpr float kMinTurnYawRateRps = 0.3f;
+
   /** @brief Сбросить интегратор и историю PID. */
   void Reset() noexcept { pid_.Reset(); }
 

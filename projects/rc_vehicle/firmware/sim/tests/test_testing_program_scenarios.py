@@ -477,14 +477,25 @@ def _drift_hold(steering: float) -> tuple[float, float]:
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "LOS-380 (баг из LOS-384): slip-PID не держит уставку. EKF в силовом заносе видит "
-    "единицы градусов при β ~45°, и PID добавляет газ; в левом повороте "
-    "β отрицательный, а target_deg знаковый, и ошибка уставки растёт."))
+    "LOS-380 (баг из LOS-384): EKF в силовом заносе занижает slip (≈11° при "
+    "β ≈ 29°): vy — интеграл ay с затуханием vy_decay_grip_lost_hz, и PID "
+    "считает заноса мало. Знак уставки исправлен, см. "
+    "test_drift_left_and_right_turns_match."))
 @pytest.mark.parametrize("steering", [-0.6, 0.6], ids=["right", "left"])
 def test_drift_holds_slip_target(steering):
     """7.4: в повороте Drift держит |β| около target_deg (±5°)."""
     beta, _ = _drift_hold(steering)
     assert beta == pytest.approx(DRIFT_TARGET_DEG, abs=5.0)
+
+
+def test_drift_left_and_right_turns_match():
+    """LOS-380: занос считается относительно поворота. Раньше slip-PID брал
+    знаковый slip: в левом повороте занос (slip < 0) увеличивал ошибку
+    уставки, PID добавлял газ, и машину разворачивало (|β| ≈ 50° против 29°
+    в правом)."""
+    right, _ = _drift_hold(-0.6)
+    left, _ = _drift_hold(0.6)
+    assert left == pytest.approx(right, abs=1.0)
 
 
 def test_drift_scenario_slides():
