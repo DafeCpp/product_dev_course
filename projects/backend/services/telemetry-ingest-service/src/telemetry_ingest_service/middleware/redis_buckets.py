@@ -82,6 +82,8 @@ return {wait_a, wait_b}
 
 Waits = tuple[int | None, int | None]
 
+_MIN_TTL_SECONDS = 3600
+
 
 class RedisBuckets:
     """Atomic two-bucket reservations in Redis, with a cooldown after failures.
@@ -124,9 +126,10 @@ class RedisBuckets:
         now = self._clock()
         if self._down_until is not None and now < self._down_until:
             return None
-        # A bucket fully drains within one window; the margin covers a
-        # window raised at runtime before the key is touched again.
-        ttl = max(1, math.ceil(window_seconds)) * 2 + 1
+        # A bucket fully drains within one window, but a window raised at
+        # runtime drains the stored usage more slowly; the one-hour floor keeps
+        # an idle sensor's key until any window up to half an hour has drained.
+        ttl = max(_MIN_TTL_SECONDS, max(1, math.ceil(window_seconds)) * 2 + 1)
         try:
             reply: Any = await self._script(
                 keys=[f"{self._prefix}:{key}"],

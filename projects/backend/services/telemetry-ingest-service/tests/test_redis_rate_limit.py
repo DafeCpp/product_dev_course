@@ -152,11 +152,17 @@ async def test_lowered_limit_clamps_shared_usage(client: Redis) -> None:
 
 
 async def test_keys_expire(client: Redis) -> None:
-    limiter = _rest(_config(rest=(5, 1000, 10.0)), client)
+    config = _config(rest=(5, 1000, 1.0))
+    limiter = _rest(config, client)
     sensor = uuid4()
+    key = f"telemetry-ingest:rate-limit:rest:{sensor}"
     await limiter.acquire(sensor, 1)
-    ttl = await client.ttl(f"telemetry-ingest:rate-limit:rest:{sensor}")
-    assert 0 < ttl <= 21
+    # Short windows keep the key an hour, so a window raised later still applies.
+    assert 3590 < await client.ttl(key) <= 3600
+
+    config.rest_window_seconds = 7200.0
+    await limiter.acquire(sensor, 1)
+    assert 14390 < await client.ttl(key) <= 14401
 
 
 async def test_ws_replicas_share_one_limit(client: Redis) -> None:
