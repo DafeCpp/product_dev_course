@@ -1202,6 +1202,37 @@ TEST_F(ProcessorTest, RestCalibration_GyroOnlyAlsoHoldsThrottle) {
   EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 1e-4f);
 }
 
+TEST_F(ProcessorTest, RestCalibration_CutsSlewedThrottleImmediately) {
+  // Ручной запуск калибровки на ходу: газ не спадает со slew 0.5/с все 2 с
+  // сбора, а сразу встаёт в нейтраль (Normal использует slew rate).
+  platform_.SetWifiCommand({0.8f, 0.0f});
+  RunSteps(2000);
+  ASSERT_GT(platform_.GetLastThrottle(), 0.7f);
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  RunSteps(config::PwmConfig::kUpdateIntervalMs / 2 + 1);
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+}
+
+TEST_F(ProcessorTest, RestCalibration_IgnoresThrottleTrim) {
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.throttle_trim = 0.1f;
+  stab_mgr_->SetConfig(cfg);
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f)
+      << "trim не должен крутить мотор во время сбора";
+
+  imu_calib_.CancelCalibration();
+  Step();
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f + 0.1f, 1e-4f);
+}
+
 TEST_F(ProcessorTest, ForwardCalibration_DoesNotHoldThrottle) {
   // Этап 2 — разгон по прямой, газ нужен.
   SetDirectLaw();

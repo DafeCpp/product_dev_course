@@ -89,7 +89,7 @@ class ControlLoopProcessor {
   void UpdateSensorsAndEkf(ControlTickInput& input, ControlTickState& state);
   void ProcessCalibration(uint32_t now_ms, ControlTickState& state);
   void UpdateAutoDrive(const ControlTickInput& input, ControlTickState& state);
-  void HoldThrottleDuringRestCalibration(ControlTickState& state);
+  [[nodiscard]] bool RestCalibrationActive() const;
   void UpdateStabilization(const ControlTickInput& input,
                            ControlTickState& state);
   /** @return true — failsafe активен, PWM удерживается в нейтрали. */

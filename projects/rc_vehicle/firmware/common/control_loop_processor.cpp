@@ -111,7 +111,9 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   SelectControlSource(input.sensors, state.command.throttle,
                       state.command.steering);
   UpdateAutoDrive(input, state);
-  HoldThrottleDuringRestCalibration(state);
+  // Стабилизаторы стартуют от нейтрали; итоговый газ ещё раз обнуляет
+  // UpdatePwm(), потому что slip-PID в Drift может добавить свой.
+  if (RestCalibrationActive()) state.command.throttle = 0.0f;
   // Preserve the command before stabilization. If RC/Wi-Fi disappears during
   // the failsafe grace period, the next tick must reapply stabilization to
   // this base command, not to the previous stabilized output (LOS-283).
@@ -291,17 +293,14 @@ void ControlLoopProcessor::UpdateAutoDrive(const ControlTickInput& input,
                             ctx_.platform);
 }
 
-void ControlLoopProcessor::HoldThrottleDuringRestCalibration(
-    ControlTickState& state) {
+bool ControlLoopProcessor::RestCalibrationActive() const {
   // Этап 1 (Full/GyroOnly) усредняет accel/gyro как покой. Плавный разгон
   // проходит проверку дисперсии, и среднее продольное ускорение попадает в
   // gravity_vec: после авто-калибровки при старте машина, тронувшаяся в
-  // первые 2 с, ездила с наклоном СК ~2° (LOS-380). Газ держим в нейтрали до
-  // конца сбора; руль машину не двигает и остаётся у водителя. Этап 2
+  // первые 2 с, ездила с наклоном СК ~2° (LOS-380). Пока идёт сбор, газ в
+  // нейтрали; руль машину не двигает и остаётся у водителя. Этап 2
   // (Forward) — управляемый разгон, его не трогаем.
-  if (ctx_.imu_calib.GetCalibStage() == 1) {
-    state.command.throttle = 0.0f;
-  }
+  return ctx_.imu_calib.GetCalibStage() == 1;
 }
 
 void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
@@ -402,7 +401,18 @@ bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
 void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
                                      ControlTickState& state) {
   const float steer_trim = input.config.steering_trim;
-  const float thr_trim = input.config.throttle_trim;
+  float thr_trim = input.config.throttle_trim;
+
+  if (RestCalibrationActive()) {
+    // Нейтраль сразу, без slew и trim, как при failsafe: иначе газ, поданный
+    // до ручного запуска калибровки, спадал бы со slew 0.5/с все 2 с сбора, а
+    // ненулевой throttle_trim крутил бы мотор весь сбор.
+    state.command.throttle = 0.0f;
+    state.motor_model_target_throttle = 0.0f;
+    persistent_.applied.throttle = 0.0f;
+    persistent_.motor_model_throttle = 0.0f;
+    thr_trim = 0.0f;
+  }
 
   const DriveMode drive_mode = input.config.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
