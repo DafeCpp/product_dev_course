@@ -56,6 +56,10 @@ jobs:
       CONFIG_CLIENT_POLL_INTERVAL_SECONDS: "5.0"
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure PyYAML for the wiring checker
+        run: python3 -c "import yaml" 2>/dev/null || sudo apt-get install -y python3-yaml
+      - name: Check production wiring drift
+        run: make check-prod-wiring
       - name: Run deploy contract tests
         run: make test-deploy-contract
       - name: Render production compose

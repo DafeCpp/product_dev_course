@@ -1,4 +1,4 @@
-.PHONY: bench-firmware-test test test-backend test-deploy-contract test-frontend test-telemetry-cli type-check backend-install frontend-install
+.PHONY: bench-firmware-test check-prod-wiring test test-backend test-deploy-contract test-frontend test-telemetry-cli type-check backend-install frontend-install
 .PHONY: test-coverage test-coverage-backend test-coverage-frontend test-coverage-firmware
 .PHONY: backend-install
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-errors
@@ -55,6 +55,10 @@ test: type-check test-backend test-telemetry-cli test-frontend
 test-deploy-contract:
 	@echo "🧪 Running production deploy contract tests..."
 	@python3 -m unittest discover -s scripts/tests -p "test_*.py" -v
+
+# Dev/prod compose drift and production wiring vs infrastructure/production-wiring.yml (LOS-112)
+check-prod-wiring:
+	@python3 scripts/check_prod_wiring.py
 
 backend-install:
 	@if [ -z "$(BACKEND_PROJECTS)" ]; then \
