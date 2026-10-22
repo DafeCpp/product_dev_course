@@ -301,6 +301,22 @@ class ProdWiringTest(unittest.TestCase):
         self.edit(self.paths.manifest, "    migrate_after: experiment-migrate\n", "")
         self.assert_error("experiment_db: migrate jobs")
 
+    def test_release_tag_rule_removed_fails(self) -> None:
+        self.edit(self.paths.deploy_workflow, "            type=raw,value=${{ env.RELEASE_TAG }}\n", "")
+        self.assert_error("docker/metadata-action input tags must be")
+
+    def test_build_without_push_fails(self) -> None:
+        self.edit(self.paths.deploy_workflow, "          target: production\n          push: true\n", "          target: production\n")
+        self.assert_error("docker/build-push-action input push must be")
+
+    def test_forked_migration_order_fails(self) -> None:
+        manifest = yaml.safe_load(self.paths.manifest.read_text(encoding="utf-8"))
+        services = manifest["services"]
+        services["config-service"].update(database="experiment_db", migrate_after="experiment-migrate")
+        services["script-service"].update(database="experiment_db", migrate_after="experiment-migrate")
+        self.paths.manifest.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+        self.assert_error("experiment_db: migrate jobs")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

@@ -153,12 +153,16 @@ def _build_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
 
 # What the build job must pass to its actions so they use the matrix entry's own fields.
 _BUILD_WIRING = {
-    "docker/metadata-action": {"images": "${{ env.CR_REGISTRY }}/${{ matrix.service }}"},
+    "docker/metadata-action": {
+        "images": "${{ env.CR_REGISTRY }}/${{ matrix.service }}",
+        "tags": "type=raw,value=${{ env.RELEASE_TAG }}\ntype=raw,value=latest",
+    },
     "docker/build-push-action": {
         "context": "${{ matrix.context }}",
         "file": "${{ matrix.context }}/${{ matrix.dockerfile }}",
         "target": "production",
         "tags": "${{ steps.meta.outputs.tags }}",
+        "push": "true",
     },
 }
 
@@ -173,7 +177,10 @@ def _check_build_steps(workflow: dict[str, Any]) -> list[str]:
             continue
         with_ = found[0].get("with") or {}
         for key, value in expected.items():
-            if str(with_.get(key, "")).strip() != value:
+            raw = with_.get(key, "")
+            text = str(raw).lower() if isinstance(raw, bool) else str(raw).strip()
+            actual = "\n".join(line.strip() for line in text.splitlines())
+            if actual != value:
                 errors.append(
                     f"deploy.yml {BUILD_JOB} {action} input {key} must be {value!r}, "
                     f"got {with_.get(key)!r}"
@@ -388,10 +395,12 @@ def check(paths: Paths) -> list[str]:
     for database, jobs in sorted(by_database.items()):
         # One chain: all but the first job wait for another job on the same database.
         unordered = [j for j in jobs if order.get(j) not in jobs]
-        if len(jobs) > 1 and len(unordered) != 1:
+        predecessors = [order[j] for j in jobs if order.get(j) in jobs]
+        forked = len(predecessors) != len(set(predecessors))
+        if len(jobs) > 1 and (len(unordered) != 1 or forked):
             errors.append(
                 f"{database}: migrate jobs {sorted(jobs)} share it but are not run one after another; "
-                "set migrate_after so only one of them has no predecessor"
+                "set migrate_after so they form one chain (one first job, each job awaited by at most one)"
             )
     for job in sorted(order):
         seen = [job]
