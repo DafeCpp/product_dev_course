@@ -169,6 +169,19 @@ async def test_unreachable_service_is_an_error(pgsql) -> None:
     assert next(iter(report.errors)).startswith("Client")
 
 
+async def test_provision_stores_last_four_as_token_preview(pgsql) -> None:
+    db_uri = _db_uri(pgsql)
+    [cred] = await provision_sensors(db_uri, 1)
+    conn = await asyncpg.connect(db_uri)
+    try:
+        preview = await conn.fetchval(
+            "SELECT token_preview FROM sensors WHERE id = $1::uuid", cred.sensor_id
+        )
+    finally:
+        await conn.close()
+    assert preview == cred.token[-4:]
+
+
 async def test_cleanup_removes_only_loadtest_sensors(service_client, pgsql) -> None:
     db_uri = _db_uri(pgsql)
     creds = await provision_sensors(db_uri, 3)

@@ -40,7 +40,7 @@ async def provision_sensors(
         sensor_id = uuid4()
         token = secrets.token_urlsafe(32)
         rows.append(
-            (sensor_id, project, f"{NAME_PREFIX}{tag}-{i}", _hash_token(token), token[:4])
+            (sensor_id, project, f"{NAME_PREFIX}{tag}-{i}", _hash_token(token), token[-4:])
         )
         creds.append(SensorCredential(sensor_id=str(sensor_id), token=token))
 

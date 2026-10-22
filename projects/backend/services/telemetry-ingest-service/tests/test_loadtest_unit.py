@@ -1,6 +1,7 @@
 """Unit tests for the load generator in loadtest/ingest_loadtest (no DB, no network)."""
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections import Counter
@@ -14,6 +15,7 @@ from ingest_loadtest.runner import (
     ReadingFactory,
     SensorCredential,
     _accepted_count,
+    _StartGate,
     _drive,
     _record_ws_reply,
 )
@@ -359,6 +361,8 @@ def test_recorder_counts_errors_by_kind() -> None:
     [
         ({"accepted": 3}, 3),
         ({"accepted": 0}, 0),
+        ({"accepted": 10}, 10),
+        ({"accepted": 11}, None),
         ({}, None),
         (None, None),
         ({"accepted": True}, None),
@@ -366,15 +370,24 @@ def test_recorder_counts_errors_by_kind() -> None:
     ],
 )
 def test_accepted_count_uses_service_value(reply, expected: int | None) -> None:
-    assert _accepted_count(reply) == expected
+    assert _accepted_count(reply, 10) == expected
 
 
 def test_ws_reply_classification() -> None:
     rec = Recorder()
-    for reply in (None, "ok", [1], {"status": "accepted"}):
-        _record_ws_reply(rec, reply, 1.0)
-    _record_ws_reply(rec, {"status": "accepted", "accepted": 4}, 2.0)
-    _record_ws_reply(rec, {"status": "error", "code": "rate_limited"}, 1.0)
-    _record_ws_reply(rec, {"status": "error", "code": "bad_payload"}, 1.0)
-    assert rec.errors == Counter({"ws_ack_malformed": 4, "ws_bad_payload": 1})
+    for reply in (None, "ok", [1], {"status": "accepted"}, {"status": "accepted", "accepted": 9}):
+        _record_ws_reply(rec, reply, 1.0, 4)
+    _record_ws_reply(rec, {"status": "accepted", "accepted": 4}, 2.0, 4)
+    _record_ws_reply(rec, {"status": "error", "code": "rate_limited"}, 1.0, 4)
+    _record_ws_reply(rec, {"status": "error", "code": "bad_payload"}, 1.0, 4)
+    assert rec.errors == Counter({"ws_ack_malformed": 5, "ws_bad_payload": 1})
     assert (rec.accepted_batches, rec.accepted_readings, rec.rate_limited) == (1, 4, 1)
+
+
+async def test_start_gate_opens_when_every_worker_arrives() -> None:
+    gate = _StartGate(2)
+    first = asyncio.create_task(gate.arrive())
+    await asyncio.sleep(0.05)
+    assert not first.done()  # the clock waits for the slow handshake
+    t0 = await gate.arrive()
+    assert await first == t0 == gate.t0
