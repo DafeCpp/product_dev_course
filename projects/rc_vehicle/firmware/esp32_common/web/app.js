@@ -1878,7 +1878,7 @@ if (btnCalibCom) btnCalibCom.addEventListener('click', () => {
     let target_accel = 0.1;
     if (calibFwdAccelSlider) target_accel = parseInt(calibFwdAccelSlider.value) / 1000;
     const steering = comSteeringSlider ? parseFloat(comSteeringSlider.value) : 0.5;
-    const duration = comDurationSlider ? parseFloat(comDurationSlider.value) : 5.0;
+    const duration = comDurationSlider ? parseFloat(comDurationSlider.value) : 15.0;
     wsSend({ type: 'calibrate_com_offset', target_accel, steering, duration });
     if (comCalibStatusEl) { comCalibStatusEl.style.display = 'block'; comCalibStatusEl.textContent = 'Запуск...'; }
     setTimeout(() => wsSend({ type: 'get_com_offset_status' }), 2000);
