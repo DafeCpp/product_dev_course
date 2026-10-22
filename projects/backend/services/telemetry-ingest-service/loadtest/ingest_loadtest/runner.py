@@ -95,6 +95,11 @@ async def _drive(scenario: Scenario, recorder: Recorder, send: SendFn, t0: float
             elif -delay > slack:
                 recorder.late()
             await send([factory.batch(scenario.batch_size) for _ in range(size)])
+        # The last send is planned one interval before the end; wait out the rest so
+        # elapsed time (and so throughput) covers the same duration as the target.
+        remaining = t0 + scenario.duration_s - time.monotonic()
+        if remaining > 0:
+            await asyncio.sleep(remaining)
     else:
         deadline = t0 + scenario.duration_s
         while time.monotonic() < deadline:

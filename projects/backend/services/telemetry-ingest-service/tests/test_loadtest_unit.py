@@ -292,8 +292,22 @@ async def test_drive_sends_a_burst_as_one_group() -> None:
     async def send(batches) -> None:
         groups.append(len(batches))
 
-    await _drive(sc, Recorder(), send, time.monotonic())
+    t0 = time.monotonic()
+    await _drive(sc, Recorder(), send, t0)
     assert groups == [3, 3]
+    assert time.monotonic() - t0 >= sc.duration_s
+
+
+async def test_paced_drive_waits_out_the_duration() -> None:
+    """Throughput is measured over the whole run, not up to the last planned send."""
+    sc = Scenario(name="t", rate=10.0, duration_s=0.3)
+
+    async def send(batches) -> None:
+        pass
+
+    t0 = time.monotonic()
+    await _drive(sc, Recorder(), send, t0)
+    assert time.monotonic() - t0 >= sc.duration_s
 
 
 def test_aborted_workers_fail_the_run() -> None:
