@@ -51,6 +51,9 @@ class Scenario:
             raise ValueError(f"transport must be 'rest' or 'ws', got {self.transport!r}")
         if self.sensors < 1:
             raise ValueError("sensors must be >= 1")
+        for name in ("rate", "duration_s", "burst_every_s"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be a finite number")
         if self.rate < 0:
             raise ValueError("rate must be >= 0")
         if not 1 <= self.batch_size <= 10_000:

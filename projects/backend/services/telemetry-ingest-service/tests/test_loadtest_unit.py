@@ -75,6 +75,10 @@ def test_target_readings_per_s() -> None:
         {"batch_size": 10_001},
         {"duration_s": 0.0},
         {"burst_size": 5, "burst_every_s": 0.0},
+        {"rate": float("nan")},
+        {"rate": float("inf")},
+        {"duration_s": float("inf")},
+        {"burst_size": 5, "burst_every_s": float("nan")},
     ],
 )
 def test_scenario_rejects_invalid_values(kwargs: dict) -> None:
