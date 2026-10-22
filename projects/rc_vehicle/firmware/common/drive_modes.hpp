@@ -18,6 +18,7 @@ class NormalModeStrategy final : public IDriveModeStrategy {
   [[nodiscard]] ModeTraits GetTraits() const noexcept override {
     return {.yaw_rate_active = true,
             .pitch_comp_active = true,
+            .roll_comp_active = true,
             .slip_angle_active = false,
             .oversteer_guard_active = true,
             .oversteer_reduces_throttle = true,
@@ -43,6 +44,7 @@ class SportModeStrategy final : public IDriveModeStrategy {
   [[nodiscard]] ModeTraits GetTraits() const noexcept override {
     return {.yaw_rate_active = true,
             .pitch_comp_active = true,
+            .roll_comp_active = true,
             .slip_angle_active = false,
             .oversteer_guard_active = true,
             .oversteer_reduces_throttle = true,
@@ -68,6 +70,7 @@ class DriftModeStrategy final : public IDriveModeStrategy {
   [[nodiscard]] ModeTraits GetTraits() const noexcept override {
     return {.yaw_rate_active = false,
             .pitch_comp_active = true,
+            .roll_comp_active = true,
             .slip_angle_active = true,
             .oversteer_guard_active = true,
             .oversteer_reduces_throttle = false,
@@ -90,6 +93,7 @@ class KidsModeStrategy final : public IDriveModeStrategy {
   [[nodiscard]] ModeTraits GetTraits() const noexcept override {
     return {.yaw_rate_active = true,
             .pitch_comp_active = true,
+            .roll_comp_active = true,
             .slip_angle_active = false,
             .oversteer_guard_active = true,
             .oversteer_reduces_throttle = true,
@@ -114,6 +118,7 @@ class DirectLawStrategy final : public IDriveModeStrategy {
   [[nodiscard]] ModeTraits GetTraits() const noexcept override {
     return {.yaw_rate_active = false,
             .pitch_comp_active = false,
+            .roll_comp_active = false,
             .slip_angle_active = false,
             .oversteer_guard_active = false,
             .oversteer_reduces_throttle = false,

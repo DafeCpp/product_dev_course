@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <type_traits>
 
 #include "drive_mode_registry.hpp"
 
@@ -107,6 +110,15 @@ void PitchCompensationConfig::Clamp() noexcept {
 }
 
 // ============================================================================
+// RollCompensationConfig
+// ============================================================================
+
+void RollCompensationConfig::Clamp() noexcept {
+  gain = std::clamp(gain, 0.0f, 0.05f);
+  max_correction = std::clamp(max_correction, 0.0f, 0.3f);
+}
+
+// ============================================================================
 // KidsModeConfig
 // ============================================================================
 
@@ -200,12 +212,13 @@ void KidsModeConfig::ApplyPreset(KidsPreset preset) noexcept {
 bool StabilizationConfig::IsValid() const noexcept {
   return magic == kStabilizationConfigMagic && filter.IsValid() &&
          yaw_rate.IsValid() && slip_angle.IsValid() && adaptive.IsValid() &&
-         oversteer.IsValid() && pitch_comp.IsValid() && kids_mode.IsValid() &&
-         static_cast<uint8_t>(mode) <= 4 && slew_throttle >= 0.1f &&
-         slew_throttle <= 10.0f && slew_steering >= 0.5f &&
-         slew_steering <= 10.0f && steering_trim >= -0.1f &&
-         steering_trim <= 0.1f && throttle_trim >= -0.1f &&
-         throttle_trim <= 0.1f && static_cast<uint8_t>(braking_mode) <= 1 &&
+         oversteer.IsValid() && pitch_comp.IsValid() && roll_comp.IsValid() &&
+         kids_mode.IsValid() && static_cast<uint8_t>(mode) <= 4 &&
+         slew_throttle >= 0.1f && slew_throttle <= 10.0f &&
+         slew_steering >= 0.5f && slew_steering <= 10.0f &&
+         steering_trim >= -0.1f && steering_trim <= 0.1f &&
+         throttle_trim >= -0.1f && throttle_trim <= 0.1f &&
+         static_cast<uint8_t>(braking_mode) <= 1 &&
          brake_slew_multiplier >= 1.0f && brake_slew_multiplier <= 10.0f;
 }
 
@@ -265,6 +278,9 @@ void StabilizationConfig::Reset() noexcept {
   pitch_comp.enabled = false;
   pitch_comp.gain = 0.01f;
   pitch_comp.max_correction = 0.25f;
+
+  // Roll compensation defaults (LOS-386)
+  roll_comp = RollCompensationConfig{};
 
   // Kids mode defaults
   kids_mode = KidsModeConfig{};
@@ -330,6 +346,7 @@ void StabilizationConfig::Clamp() noexcept {
   adaptive.Clamp();
   oversteer.Clamp();
   pitch_comp.Clamp();
+  roll_comp.Clamp();
   kids_mode.Clamp();
   slew_throttle = std::clamp(slew_throttle, 0.1f, 10.0f);
   slew_steering = std::clamp(slew_steering, 0.5f, 10.0f);
@@ -337,6 +354,32 @@ void StabilizationConfig::Clamp() noexcept {
   throttle_trim = std::clamp(throttle_trim, -0.1f, 0.1f);
   if (static_cast<uint8_t>(braking_mode) > 1) braking_mode = BrakingMode::Coast;
   brake_slew_multiplier = std::clamp(brake_slew_multiplier, 1.0f, 10.0f);
+}
+
+// Раскладка, на которую опирается миграция NVS v14 → v15 (LOS-386).
+static_assert(std::is_standard_layout_v<StabilizationConfig>,
+              "offsetof below requires a standard-layout StabilizationConfig");
+static_assert(offsetof(StabilizationConfig, version) ==
+                  offsetof(StabilizationConfig, roll_comp) +
+                      sizeof(RollCompensationConfig),
+              "roll_comp must sit right before version");
+
+bool StabilizationConfigFromPreRollComp(const void* data, size_t size,
+                                        StabilizationConfig& out) noexcept {
+  if (data == nullptr || size != kStabilizationConfigPreRollCompSize) {
+    return false;
+  }
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  constexpr size_t kPrefix = offsetof(StabilizationConfig, roll_comp);
+  constexpr size_t kTail =
+      sizeof(StabilizationConfig) - offsetof(StabilizationConfig, version);
+  static_assert(kPrefix + kTail == kStabilizationConfigPreRollCompSize);
+  StabilizationConfig cfg;
+  std::memcpy(static_cast<void*>(&cfg), bytes, kPrefix);
+  cfg.roll_comp = RollCompensationConfig{};
+  std::memcpy(static_cast<void*>(&cfg.version), bytes + kPrefix, kTail);
+  out = cfg;
+  return true;
 }
 
 }  // namespace rc_vehicle

@@ -126,6 +126,7 @@ add_executable(unit_tests
     unit/test_self_test.cpp
     unit/test_yaw_rate_controller.cpp
     unit/test_pitch_compensator.cpp
+    unit/test_roll_compensator.cpp
     unit/test_slip_angle_controller.cpp
     unit/test_stabilization_pipeline.cpp
     unit/test_slew_rate.cpp

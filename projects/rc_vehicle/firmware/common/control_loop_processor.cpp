@@ -310,15 +310,25 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
       state.estimate.tilt_valid && state.estimate.tilt_accel_anchored) {
     pitch_deg = state.estimate.pitch_rad * kRadToDeg;
   }
+  // Крен для roll compensation (LOS-386) — тоже только от TiltEstimator:
+  // Madgwick заваливается на манёвре. Продольный якорь для крена не нужен,
+  // боковое ускорение v·r TiltEstimator снимает сам.
+  float roll_deg = 0.0f;
+  if (policy.roll_comp_active && input.sensors.imu_enabled &&
+      state.estimate.tilt_valid) {
+    roll_deg = state.estimate.roll_rad * kRadToDeg;
+  }
   const StabilizationInput stabilization_input{
       .command = state.command,
       .dt_ms = input.dt_ms,
       .speed_ms = state.estimate.speed_ms,
+      .vx_ms = state.estimate.vx_ms,
       .slip_angle_deg = state.estimate.slip_angle_rad * kRadToDeg,
       .yaw_rate_rps = state.estimate.yaw_rate_rps,
       .vx_variance = ctx_.ekf.GetVxVariance(),
       .filtered_gyro_z_dps = input.sensors.filtered_gz,
       .pitch_deg = pitch_deg,
+      .roll_deg = roll_deg,
       .forward_accel_g = state.estimate.forward_accel_g,
       .wheel_slip_ratio = state.estimate.wheel_slip_ratio,
       .ground_speed_ms = state.estimate.ground_speed_ms,
