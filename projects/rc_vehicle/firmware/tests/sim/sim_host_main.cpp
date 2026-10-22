@@ -25,8 +25,8 @@
 //       oversteer-срез газа (эталон для SIL-сценария LOS-370).
 //   --start-test <straight|circle|step> [--target-accel g]
 //       [--test-duration s] [--test-steering v] — запустить авто-манёвр
-//       (аналог start_test по WebSocket) до первого кадра; машина едет сама,
-//       RC-команды в сценарии не нужны.
+//       (аналог start_test по WebSocket) сразу после калибровки IMU в покое
+//       (2 с); машина едет сама, RC-команды в сценарии не нужны.
 //   --pitch-comp — включить pitch_comp.enabled (LOS-367, компенсация тангажа
 //       на уклоне); заодно включает cfg.enabled, как --stabilize.
 //   --roll-comp <gain> — включить roll_comp с коэффициентом gain (LOS-386,
@@ -259,15 +259,20 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Авто-тест стартует до первого кадра: пульт в SIL неактивен, поэтому
-  // процедура получает тики сразу (аналог start_test по WebSocket).
-  if (start_test && !unified.StartTest(test_params)) {
-    std::cerr << "sim_host: StartTest() rejected\n";
-    return 1;
-  }
-  // Калибровка CoM стартует по логическому времени, перед тиком: к этому
-  // моменту калибровка IMU в покое уже должна завершиться.
+  // Авто-тест стартует перед первым тиком после калибровки IMU в покое: пока
+  // она идёт, прошивка отклоняет авто-манёвры (LOS-380). Пульт в SIL
+  // неактивен, поэтому дальше процедура получает тики сразу (аналог
+  // start_test по WebSocket). Калибровка CoM стартует по логическому
+  // времени, перед тиком: к этому моменту калибровка покоя уже должна
+  // завершиться.
   auto step = [&](const InputFrame& f) {
+    if (start_test && unified.GetCalibStage() != 1) {
+      start_test = false;
+      if (!unified.StartTest(test_params)) {
+        std::cerr << "sim_host: StartTest() rejected\n";
+        std::exit(1);
+      }
+    }
     if (start_com_calib_at_ms && p->GetTimeMs() >= *start_com_calib_at_ms) {
       start_com_calib_at_ms.reset();
       if (!unified.StartComOffsetCalibration(test_params.target_accel_g,

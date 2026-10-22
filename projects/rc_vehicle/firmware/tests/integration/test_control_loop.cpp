@@ -291,7 +291,7 @@ TEST_F(ControlLoopTest, ClearLog_EmptiesBuffer) {
 // чистить обе секции. Иначе события прошлых прогонов переживают очистку и
 // всплывают в свежем CSV (LOS-226).
 TEST_F(ControlLoopTest, ClearLog_AlsoClearsEvents) {
-  RunLoop(20);
+  RunLoop(kBootCalibTicks + 20);  // после калибровки при старте
 
   ASSERT_TRUE(vc_.StartTest(TestParams{}));
   ASSERT_GT(vc_.GetEventCount(), 0u);
@@ -317,7 +317,7 @@ TEST_F(ControlLoopTest, ClearLog_SeedsCurrentConfigSnapshot) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, TestRunner_StartStop) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   TestParams params;
   params.type = TestType::Straight;
@@ -359,7 +359,7 @@ TEST_F(ControlLoopTest, AutoForwardCalib_RejectedWhileRcActive) {
 // Положительный контроль к тесту выше: без пульта тот же вызов проходит.
 // Без него первый тест зелёный и на сломанном коде.
 TEST_F(ControlLoopTest, AutoForwardCalib_AcceptedWithoutRc) {
-  auto platform = std::make_unique<SimPlatform>(20);
+  auto platform = std::make_unique<SimPlatform>(kBootCalibTicks + 20);
   platform_ = platform.get();
 
   ImuData imu{};
@@ -379,7 +379,7 @@ TEST_F(ControlLoopTest, AutoForwardCalib_AcceptedWithoutRc) {
 }
 
 TEST_F(ControlLoopTest, TestRunner_MutualExclusion_WithTrimCalib) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   // Start trim calibration first
   EXPECT_TRUE(vc_.StartSteeringTrimCalibration(0.1f));
@@ -400,7 +400,7 @@ TEST_F(ControlLoopTest, TestRunner_MutualExclusion_WithTrimCalib) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, ComOffsetCalib_StartStop) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   EXPECT_TRUE(vc_.StartComOffsetCalibration(0.1f, 0.5f, 5.0f));
   EXPECT_TRUE(vc_.IsComOffsetCalibActive());
@@ -410,7 +410,7 @@ TEST_F(ControlLoopTest, ComOffsetCalib_StartStop) {
 }
 
 TEST_F(ControlLoopTest, ComOffsetCalib_MutualExclusion_WithTestRunner) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   // Start test first
   TestParams params;
@@ -431,7 +431,7 @@ TEST_F(ControlLoopTest, ComOffsetCalib_MutualExclusion_WithTestRunner) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, SteeringTrimCalib_StartStop) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   EXPECT_TRUE(vc_.StartSteeringTrimCalibration(0.1f));
   EXPECT_TRUE(vc_.IsSteeringTrimCalibActive());

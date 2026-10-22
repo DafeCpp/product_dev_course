@@ -118,6 +118,7 @@ class ControlLoopProcessor {
     float motor_model_throttle{0.0f};
     uint32_t last_pwm_update{0};
     bool failsafe_was_active{false};
+    bool rest_calib_hold_was_active{false};
   };
 
   VehicleStateEstimator state_estimator_;

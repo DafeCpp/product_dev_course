@@ -139,6 +139,11 @@ class AutoDriveCoordinator {
   [[nodiscard]] bool IsRcActive() const { return last_rc_active_; }
 
  private:
+  /** Идёт калибровка IMU в покое (этап 1): газ в нейтрали (LOS-380). */
+  [[nodiscard]] bool RestCalibrationActive() const;
+  /** Старт отклоняется: занято, пульт или калибровка покоя. */
+  [[nodiscard]] bool StartBlocked() const;
+
   CalibrationManager* calib_mgr_{nullptr};
   SteeringTrimCalibration trim_calib_;
   ComOffsetCalibration com_calib_;

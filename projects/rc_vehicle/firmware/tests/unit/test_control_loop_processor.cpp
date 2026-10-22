@@ -1209,10 +1209,41 @@ TEST_F(ProcessorTest, RestCalibration_CutsSlewedThrottleImmediately) {
   RunSteps(2000);
   ASSERT_GT(platform_.GetLastThrottle(), 0.7f);
 
+  // Сразу после записи PWM: гейт интервала не должен задержать нейтраль.
+  const int writes = platform_.GetPwmSetCount();
+  while (platform_.GetPwmSetCount() == writes) Step();
+
   calib_mgr_->StartCalibration(/*full=*/true);
-  RunSteps(config::PwmConfig::kUpdateIntervalMs / 2 + 1);
+  Step();
   ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
   EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+}
+
+TEST_F(ProcessorTest, RestCalibration_AbortsRunningAutoProcedure) {
+  // Speed calib шла бы по таймерам на стоящей машине и усреднила бы нулевую
+  // скорость в motor_speed_gain.
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  Step();
+  ASSERT_TRUE(auto_drive_.StartSpeedCalib());
+  Step();
+  ASSERT_TRUE(auto_drive_.IsSpeedCalibActive());
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  EXPECT_FALSE(auto_drive_.IsAnyActive());
+}
+
+TEST_F(ProcessorTest, RestCalibration_RejectsAutoProcedureStart) {
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FALSE(auto_drive_.StartSpeedCalib());
+  EXPECT_FALSE(auto_drive_.StartAutoForwardCalib(0.1f));
+
+  imu_calib_.CancelCalibration();
+  Step();
+  EXPECT_TRUE(auto_drive_.StartSpeedCalib());
 }
 
 TEST_F(ProcessorTest, RestCalibration_IgnoresThrottleTrim) {

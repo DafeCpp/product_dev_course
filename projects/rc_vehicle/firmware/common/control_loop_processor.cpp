@@ -403,16 +403,23 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
   const float steer_trim = input.config.steering_trim;
   float thr_trim = input.config.throttle_trim;
 
-  if (RestCalibrationActive()) {
+  const bool rest_calib = RestCalibrationActive();
+  if (rest_calib) {
     // Нейтраль сразу, без slew и trim, как при failsafe: иначе газ, поданный
     // до ручного запуска калибровки, спадал бы со slew 0.5/с все 2 с сбора, а
-    // ненулевой throttle_trim крутил бы мотор весь сбор.
+    // ненулевой throttle_trim крутил бы мотор весь сбор. На первом тике
+    // открываем гейт интервала PWM, чтобы ESC не держал старый газ до 20 мс.
+    if (!persistent_.rest_calib_hold_was_active) {
+      persistent_.last_pwm_update =
+          input.now_ms - config::PwmConfig::kUpdateIntervalMs;
+    }
     state.command.throttle = 0.0f;
     state.motor_model_target_throttle = 0.0f;
     persistent_.applied.throttle = 0.0f;
     persistent_.motor_model_throttle = 0.0f;
     thr_trim = 0.0f;
   }
+  persistent_.rest_calib_hold_was_active = rest_calib;
 
   const DriveMode drive_mode = input.config.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();
