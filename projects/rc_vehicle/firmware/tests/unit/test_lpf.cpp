@@ -226,14 +226,18 @@ TEST(LpfTest, StepResponse) {
 
   // Step input from 0 to 1
   float output = 0.0f;
-  for (int i = 0; i < 50; ++i) {
+  float peak = 0.0f;
+  for (int i = 0; i < 10; ++i) output = lpf.Step(1.0f);
+  EXPECT_GT(output, 0.3f) << "Should respond within 20 ms";
+  EXPECT_LT(output, 1.0f) << "Should not have settled after 20 ms";
+  for (int i = 0; i < 500; ++i) {
     output = lpf.Step(1.0f);
+    peak = std::max(peak, output);
   }
-
-  // Should be approaching 1.0 but not quite there yet
-  EXPECT_GT(output, 0.5f)
-      << "Should have significant response after 50 samples";
-  EXPECT_LT(output, 1.0f) << "Should not have fully settled yet";
+  // Баттерворт 2-го порядка перерегулирует на ~4.3 % (LOS-380: с Q = sqrt(2)
+  // было ~30 %).
+  EXPECT_LT(peak, 1.05f) << "Butterworth overshoot is ~4.3 %";
+  EXPECT_NEAR(output, 1.0f, 1e-3f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -769,4 +773,54 @@ TEST(LpfTest, VibrationRejection) {
   // High frequency vibration should be heavily attenuated
   EXPECT_LT(max_output, 0.1f)
       << "Should reject high-frequency vibration (200 Hz)";
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// АЧХ Баттерворта (LOS-380: Q был sqrt(2) вместо 1/sqrt(2))
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+/** Амплитуда установившегося отклика на синус частоты f. */
+float SteadyGain(float cutoff_hz, float fs_hz, float f_hz) {
+  LpfButterworth2 lpf;
+  lpf.SetParams(cutoff_hz, fs_hz);
+  const int settle = static_cast<int>(fs_hz);  // 1 с на переходный процесс
+  const int measure = static_cast<int>(fs_hz);
+  float peak = 0.0f;
+  for (int i = 0; i < settle + measure; ++i) {
+    const float t = static_cast<float>(i) / fs_hz;
+    const float y =
+        lpf.Step(std::sin(2.0f * static_cast<float>(M_PI) * f_hz * t));
+    if (i >= settle) peak = std::max(peak, std::fabs(y));
+  }
+  return peak;
+}
+
+/** |H| цифрового Баттерворта 2-го порядка (билинейное преобразование). */
+float ButterworthGain(float cutoff_hz, float fs_hz, float f_hz) {
+  const float w = std::tan(static_cast<float>(M_PI) * f_hz / fs_hz) /
+                  std::tan(static_cast<float>(M_PI) * cutoff_hz / fs_hz);
+  return 1.0f / std::sqrt(1.0f + w * w * w * w);
+}
+
+}  // namespace
+
+TEST(LpfTest, MinusThreeDbAtCutoff) {
+  EXPECT_NEAR(SteadyGain(30.0f, 500.0f, 30.0f), 1.0f / std::sqrt(2.0f), 0.01f);
+}
+
+TEST(LpfTest, NoPeakingBelowCutoff) {
+  for (float f : {5.0f, 10.0f, 15.0f, 20.0f, 25.0f}) {
+    EXPECT_LE(SteadyGain(30.0f, 500.0f, f), 1.0f + 1e-3f) << f << " Гц";
+  }
+}
+
+TEST(LpfTest, MatchesButterworthMagnitude) {
+  for (float f : {10.0f, 30.0f, 40.0f, 60.0f, 100.0f}) {
+    EXPECT_NEAR(SteadyGain(30.0f, 500.0f, f), ButterworthGain(30.0f, 500.0f, f),
+                0.01f)
+        << f << " Гц";
+  }
+  // Вибрация 40 Гц при срезе 30 Гц: 0.48, а не 0.8 как с Q = sqrt(2).
+  EXPECT_LT(SteadyGain(30.0f, 500.0f, 40.0f), 0.5f);
 }
