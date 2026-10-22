@@ -11,6 +11,7 @@ on:
       - env.production.example
       - infrastructure/production-wiring.yml
       - infrastructure/yandex-cloud/database.tf
+      - projects/backend/services/*/migrations/**
       - scripts/check_prod_wiring.py
       - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh
@@ -31,6 +32,7 @@ on:
       - env.production.example
       - infrastructure/production-wiring.yml
       - infrastructure/yandex-cloud/database.tf
+      - projects/backend/services/*/migrations/**
       - scripts/check_prod_wiring.py
       - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh

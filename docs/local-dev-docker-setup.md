@@ -70,13 +70,13 @@ docker-compose up
 | `config-migrate` | `config_db` | `config-service` |
 | `experiment-migrate` | `experiment_db` | `experiment-service` |
 | `telemetry-ingest-migrate` | `experiment_db` | `telemetry-ingest-service` |
+| `script-migrate` | `script_db` | `script-service` |
 
 `telemetry-ingest-migrate` пишет в ту же `experiment_db` и общую таблицу `schema_migrations`,
 поэтому запускается строго после `experiment-migrate`.
 
-Исключение: у `script-service` в локальном compose нет init-контейнера, и он применяет
-миграции сам при старте. Чтобы он подхватил новый SQL-файл, пересоберите и перезапустите
-его: `docker-compose up -d --build script-service`. В продакшене для него есть `script-migrate`
+`script-service` вдобавок применяет миграции сам при старте, поэтому повторный прогон
+после `script-migrate` печатает `No pending migrations.` Так же устроен продакшен
 (см. [deployment-yandex-cloud.md](deployment-yandex-cloud.md#миграции-бд-и-инициализация)).
 
 Миграции идемпотентны: повторный прогон на актуальной схеме печатает `No pending migrations.`
@@ -94,6 +94,7 @@ docker-compose logs experiment-migrate
 # поэтому без --build новый файл не будет виден и прогон скажет "No pending migrations."
 docker-compose run --rm --build experiment-migrate
 docker-compose run --rm --build telemetry-ingest-migrate
+docker-compose run --rm --build script-migrate
 ```
 
 Если init-контейнер упал, зависящий от него сервис не стартует: смотрите логи init-контейнера,

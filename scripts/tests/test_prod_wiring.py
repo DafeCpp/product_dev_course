@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from check_prod_wiring import Paths, check  # noqa: E402
@@ -115,6 +117,31 @@ class ProdWiringTest(unittest.TestCase):
     def test_terraform_database_removed_fails(self) -> None:
         self.edit(self.paths.terraform_database, 'name       = "script_db"', 'name       = "scripts_db"')
         self.assert_error("script-service: database script_db is not created in Terraform")
+
+    def set_env(self, path: Path, service: str, key: str, value: str) -> None:
+        compose = yaml.safe_load(path.read_text(encoding="utf-8"))
+        env = compose["services"][service]["environment"]
+        index = next(i for i, item in enumerate(env) if item.startswith(f"{key}="))
+        env[index] = f"{key}={value}"
+        path.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+
+    def test_service_pointed_at_another_database_fails(self) -> None:
+        self.set_env(
+            self.paths.prod_compose,
+            "script-migrate",
+            "DATABASE_URL",
+            "${AUTH_DATABASE_URL:?AUTH_DATABASE_URL must be set in production .env}",
+        )
+        self.assert_error("script-migrate: in docker-compose.prod.yml DATABASE_URL must come from SCRIPT_DATABASE_URL")
+
+    def test_dev_default_dsn_for_another_database_fails(self) -> None:
+        self.set_env(
+            self.paths.dev_compose,
+            "config-service",
+            "DATABASE_URL",
+            "${CONFIG_DATABASE_URL:-postgresql://config_user:config_password@postgres:5432/auth_db}",
+        )
+        self.assert_error("config-service: in docker-compose.yml the default DATABASE_URL does not point at config_db")
 
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(

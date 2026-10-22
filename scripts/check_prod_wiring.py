@@ -59,6 +59,40 @@ def _env_keys(service: dict[str, Any]) -> set[str]:
     return {str(item).split("=", 1)[0] for item in env}
 
 
+def _env_value(service: dict[str, Any], key: str) -> str | None:
+    env = service.get("environment") or []
+    if isinstance(env, dict):
+        value = env.get(key)
+        return None if value is None else str(value)
+    for item in env:
+        name, sep, value = str(item).partition("=")
+        if name == key and sep:
+            return value
+    return None
+
+
+def _database_env_var(database: str) -> str:
+    """auth_db -> AUTH_DATABASE_URL, the .env key that holds the database's DSN."""
+    return f"{database.removesuffix('_db').upper()}_DATABASE_URL"
+
+
+def _check_database_url(
+    name: str, label: str, service: dict[str, Any], database: str
+) -> list[str]:
+    value = _env_value(service, "DATABASE_URL")
+    var = _database_env_var(database)
+    if value is None:
+        return [f"{name}: in {label} has no DATABASE_URL for {database}"]
+    errors = []
+    if not value.startswith(f"${{{var}:"):
+        errors.append(f"{name}: in {label} DATABASE_URL must come from {var} ({database}), got {value!r}")
+    # The dev default DSN must point at the same database as the variable.
+    default = re.match(r"\$\{[A-Z0-9_]+:-(?P<dsn>[^}]*)\}$", value)
+    if default and not re.search(rf"/{re.escape(database)}(\?|$)", default.group("dsn")):
+        errors.append(f"{name}: in {label} the default DATABASE_URL does not point at {database}")
+    return errors
+
+
 def _depends_on(service: dict[str, Any]) -> dict[str, str | None]:
     deps = service.get("depends_on") or {}
     if isinstance(deps, list):
@@ -171,8 +205,13 @@ def check(paths: Paths) -> list[str]:
             errors.append(f"{name}: has migrations/ but no migrate service in the manifest")
 
         database = spec.get("database")
-        if database and database not in databases:
-            errors.append(f"{name}: database {database} is not created in Terraform database.tf")
+        if database:
+            if database not in databases:
+                errors.append(f"{name}: database {database} is not created in Terraform database.tf")
+            for target in filter(None, (name, migrate)):
+                for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
+                    if target in compose:
+                        errors.extend(_check_database_url(target, label, compose[target], database))
 
     released = {spec["image"] for spec in wanted.values() if spec.get("image")}
     for image in sorted(matrix - released):
