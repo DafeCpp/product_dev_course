@@ -274,6 +274,33 @@ class ProdWiringTest(unittest.TestCase):
         )
         self.assert_error("script-service: in docker-compose.prod.yml DATABASE_URL must be ${SCRIPT_DATABASE_URL:?...}")
 
+    def test_build_step_with_another_dockerfile_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "          file: ${{ matrix.context }}/${{ matrix.dockerfile }}",
+            "          file: services/config-service/Dockerfile",
+        )
+        self.assert_error("docker/build-push-action input file must be")
+
+    def test_meta_step_with_fixed_repository_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "          images: ${{ env.CR_REGISTRY }}/${{ matrix.service }}",
+            "          images: ${{ env.CR_REGISTRY }}/fixed",
+        )
+        self.assert_error("docker/metadata-action input images must be")
+
+    def test_stale_wildcard_exception_fails(self) -> None:
+        compose = yaml.safe_load(self.paths.prod_compose.read_text(encoding="utf-8"))
+        for spec in compose["services"].values():
+            spec["environment"] = [e for e in spec.get("environment") or [] if not str(e).startswith("PGSSLROOTCERT")]
+        self.paths.prod_compose.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+        self.assert_error("env_differences.*.prod_only.PGSSLROOTCERT is allowlisted but no service differs")
+
+    def test_shared_database_without_ordering_fails(self) -> None:
+        self.edit(self.paths.manifest, "    migrate_after: experiment-migrate\n", "")
+        self.assert_error("experiment_db: migrate jobs")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

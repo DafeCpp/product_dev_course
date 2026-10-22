@@ -146,6 +146,41 @@ def _check_migrate_job(name: str, label: str, job: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _build_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    job = (workflow.get("jobs") or {}).get(BUILD_JOB) or {}
+    return [s for s in job.get("steps") or [] if isinstance(s, dict)]
+
+
+# What the build job must pass to its actions so they use the matrix entry's own fields.
+_BUILD_WIRING = {
+    "docker/metadata-action": {"images": "${{ env.CR_REGISTRY }}/${{ matrix.service }}"},
+    "docker/build-push-action": {
+        "context": "${{ matrix.context }}",
+        "file": "${{ matrix.context }}/${{ matrix.dockerfile }}",
+        "target": "production",
+        "tags": "${{ steps.meta.outputs.tags }}",
+    },
+}
+
+
+def _check_build_steps(workflow: dict[str, Any]) -> list[str]:
+    errors = []
+    steps = _build_steps(workflow)
+    for action, expected in _BUILD_WIRING.items():
+        found = [s for s in steps if str(s.get("uses", "")).split("@")[0] == action]
+        if len(found) != 1:
+            errors.append(f"deploy.yml {BUILD_JOB} must have exactly one {action} step, found {len(found)}")
+            continue
+        with_ = found[0].get("with") or {}
+        for key, value in expected.items():
+            if str(with_.get(key, "")).strip() != value:
+                errors.append(
+                    f"deploy.yml {BUILD_JOB} {action} input {key} must be {value!r}, "
+                    f"got {with_.get(key)!r}"
+                )
+    return errors
+
+
 def _terraform_databases(terraform: str) -> set[str]:
     blocks = re.findall(
         r'resource "yandex_mdb_postgresql_database" "[^"]+" \{(.*?)\n\}', terraform, re.DOTALL
@@ -240,11 +275,13 @@ def check(paths: Paths) -> list[str]:
 
     dev = _services(_load_yaml(paths.dev_compose))
     prod = _services(_load_yaml(paths.prod_compose))
-    matrix_entries, matrix_duplicates = _matrix_entries(_load_yaml(paths.deploy_workflow))
+    workflow = _load_yaml(paths.deploy_workflow)
+    matrix_entries, matrix_duplicates = _matrix_entries(workflow)
     matrix = set(matrix_entries)
     databases = _terraform_databases(paths.terraform_database.read_text(encoding="utf-8"))
 
-    errors: list[str] = [
+    errors: list[str] = _check_build_steps(workflow)
+    errors += [
         f"deploy.yml build matrix lists {image} more than once; both jobs would push the same tags"
         for image in sorted(matrix_duplicates)
     ]
@@ -270,6 +307,18 @@ def check(paths: Paths) -> list[str]:
     for name in sorted(known):
         if name in dev and name in prod:
             errors.extend(_check_env(name, _env_keys(dev[name]), _env_keys(prod[name]), differences))
+    shared = differences.get("*") or {}
+    for side in ("dev_only", "prod_only"):
+        for key in sorted(set(shared.get(side) or {})):
+            if not any(
+                key in (_env_keys(dev[n]) ^ _env_keys(prod[n]))
+                and ((key in _env_keys(dev[n])) == (side == "dev_only"))
+                for n in known
+                if n in dev and n in prod
+            ):
+                errors.append(
+                    f"env_differences.*.{side}.{key} is allowlisted but no service differs; remove it"
+                )
     for name in sorted(set(differences) - known - {"*"}):
         errors.append(f"env_differences.{name}: not a service in the manifest")
 
@@ -332,6 +381,18 @@ def check(paths: Paths) -> list[str]:
         for spec in wanted.values()
         if spec.get("migrate") and spec.get("migrate_after") in migrates
     }
+    by_database: dict[str, list[str]] = {}
+    for spec in wanted.values():
+        if spec.get("migrate") and spec.get("database"):
+            by_database.setdefault(spec["database"], []).append(spec["migrate"])
+    for database, jobs in sorted(by_database.items()):
+        # One chain: all but the first job wait for another job on the same database.
+        unordered = [j for j in jobs if order.get(j) not in jobs]
+        if len(jobs) > 1 and len(unordered) != 1:
+            errors.append(
+                f"{database}: migrate jobs {sorted(jobs)} share it but are not run one after another; "
+                "set migrate_after so only one of them has no predecessor"
+            )
     for job in sorted(order):
         seen = [job]
         while seen[-1] in order:
