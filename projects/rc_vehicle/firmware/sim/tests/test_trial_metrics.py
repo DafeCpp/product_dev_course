@@ -6,6 +6,7 @@
 """
 
 import csv
+import dataclasses
 import json
 import math
 import os
@@ -1363,3 +1364,112 @@ def test_imu_stats_period_matches_firmware():
     key = "kReadStatsEventIntervalMs = "
     value = text[text.index(key) + len(key):].split(";")[0]
     assert float(value) == tm.IMU_STATS_PERIOD_MS
+
+
+# ── Признак потери сцепления (протокол 7.5f, LOS-378) ─────────────────────
+
+def _circles_log(max_steer_deg: float, k: float, speeds, steers=(0.3, 0.6, -0.6),
+                 trim: float = 0.0, seg_ms: int = 1000):
+    """Синтетические установившиеся круги: r по модели детектора."""
+    rows, t = [], 0
+    for s in steers:
+        for v in speeds:
+            r = tm.grip_reference(v, s, math.radians(max_steer_deg), k)
+            for _ in range(seg_ms // 10):
+                t += 10
+                rows.append({"ts_ms": t, "steering": s + trim, "vx": v,
+                             "yaw_rate_dps": math.degrees(r)})
+    return rows
+
+
+def test_grip_fit_recovers_known_geometry(tmp_path):
+    log = _write_csv(tmp_path / "g.csv", _circles_log(23.0, 0.02, (1.0, 1.8, 2.6)))
+    fit = tm.grip_fit(tm.grip_windows(log))
+    assert math.degrees(fit["max_steer_rad"]) == pytest.approx(23.0, abs=0.05)
+    assert fit["k"] == pytest.approx(0.02, abs=5e-4)
+    fw, fitted = tm.check_grip_fit(log)
+    assert fw.passed is False and "НЕ ВЫПОЛНЕНО" in fw.value
+    assert fitted.passed is None and "K 0.0200" in fitted.value
+
+
+def test_grip_fit_passes_firmware_constants_on_matching_car(tmp_path):
+    deg = math.degrees(tm.GRIP_FW_MAX_STEER_RAD)
+    log = _write_csv(tmp_path / "g.csv", _circles_log(deg, tm.GRIP_FW_K, (1.0, 2.0)))
+    assert tm.check_grip_fit(log)[0].passed is True
+
+
+def test_grip_fit_needs_speed_spread_for_k(tmp_path):
+    log = _write_csv(tmp_path / "g.csv", _circles_log(23.0, 0.02, (2.0,), seg_ms=3000))
+    fit = tm.grip_fit(tm.grip_windows(log))
+    assert not fit["k_fitted"] and fit["k"] == 0.0
+    assert "K не подогнан" in tm.check_grip_fit(log)[1].value
+
+
+def test_grip_fit_subtracts_steering_trim(tmp_path):
+    rows = _circles_log(23.0, 0.02, (1.0, 1.8, 2.6), trim=0.05)
+    rows[0]["event_config"] = json.dumps([{"steering_trim": 0.05}])
+    fit = tm.grip_fit(tm.grip_windows(_write_csv(tmp_path / "g.csv", rows)))
+    assert math.degrees(fit["max_steer_rad"]) == pytest.approx(23.0, abs=0.05)
+
+
+def test_grip_fit_skips_transients_and_straights(tmp_path):
+    rows = [{"ts_ms": (i + 1) * 10, "steering": 0.6 * (i % 2), "vx": 2.0,
+             "yaw_rate_dps": 0.0} for i in range(3000)]
+    res = tm.check_grip_fit(_write_csv(tmp_path / "g.csv", rows))
+    assert len(res) == 1 and res[0].no_data
+
+
+def test_grip_constants_match_firmware():
+    hdr = os.path.join(os.path.dirname(__file__), "..", "..", "common",
+                       "grip_loss_detector.hpp")
+    with open(hdr, encoding="utf-8") as fh:
+        text = fh.read()
+
+    def const(name):
+        key = f"{name} = "
+        return float(text[text.index(key) + len(key):].split(";")[0].rstrip("f"))
+
+    assert const("kWheelbaseM") == tm.GRIP_WHEELBASE_M
+    assert const("kMaxSteerRad") == pytest.approx(tm.GRIP_FW_MAX_STEER_RAD)
+    assert const("kUndersteerGradient") == tm.GRIP_FW_K
+    assert const("kMaxYawDevRatio") == tm.GRIP_MAX_DEV_RATIO
+    assert const("kMinYawDevRps") == tm.GRIP_MIN_DEV_RPS
+
+
+def _sil_circles(com_a: float, com_b: float) -> list[dict]:
+    """Протокол 7.5f в SIL: круги с рулём 0.3/0.6/−0.6, газ медленно растёт."""
+    p = dataclasses.replace(get_profile("fitted_2026_08_02"),
+                            com_a=com_a, com_b=com_b)
+    rows = []
+    for steer in (0.3, 0.6, -0.6):
+        with ClosedLoopSim(BIN, params=p, dynamic=True) as sim:
+            sim.run(1000, rc_throttle=0.0, rc_steering=0.0)
+            rows += sim.run(4000, rc_throttle=lambda i: 0.15 + 0.35 * i / 4000,
+                            rc_steering=steer)
+    return [{"ts_ms": (i + 1) * DT_MS, "steering": r["steering"],
+             "vx": r["ekf_vx"], "yaw_rate_dps": math.degrees(r["ekf_yaw_rate"]),
+             "ekf_grip_lost": r["ekf_grip_lost"]} for i, r in enumerate(rows)]
+
+
+@needs_sim
+def test_grip_fit_on_sil_understeer_car(tmp_path):
+    """Машина с недостаточной поворачиваемостью (K = m/L·(b/Caf − a/Car) =
+    0.01 с²/м): с константами прошивки (K = 0) детектор на асфальте ложно
+    видит потерю сцепления, метрика это ловит и находит K."""
+    rows = _sil_circles(0.12, 0.18)
+    assert any(r["ekf_grip_lost"] for r in rows)  # риск, ради которого метрика
+    log = _write_csv(tmp_path / "u.csv", rows)
+    assert tm.check_grip_fit(log)[0].passed is False
+    fit = tm.grip_fit(tm.grip_windows(log))
+    assert fit["k"] == pytest.approx(0.01, abs=0.002)
+    assert tm.grip_false_share(tm.grip_windows(log), fit["max_steer_rad"],
+                               fit["k"]) == 0.0
+
+
+@needs_sim
+def test_grip_fit_on_sil_neutral_car(tmp_path):
+    rows = _sil_circles(0.15, 0.15)
+    assert not any(r["ekf_grip_lost"] for r in rows)
+    log = _write_csv(tmp_path / "n.csv", rows)
+    assert tm.check_grip_fit(log)[0].passed is True
+    assert abs(tm.grip_fit(tm.grip_windows(log))["k"]) < 0.002
