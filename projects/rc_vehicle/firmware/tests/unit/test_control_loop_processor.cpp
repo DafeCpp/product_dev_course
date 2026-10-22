@@ -1264,6 +1264,27 @@ TEST_F(ProcessorTest, RestCalibration_IgnoresThrottleTrim) {
   EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f + 0.1f, 1e-4f);
 }
 
+TEST_F(ProcessorTest, RestCalibration_SurvivesAbortedAutoForward) {
+  // Калибровка в покое, запрошенная во время auto-forward, заменяет сбор
+  // этапа 2. Остановка auto-forward не должна отменить уже её.
+  ImuCalibData data{};
+  data.gravity_vec[2] = 1.0f;
+  data.gravity_valid = true;
+  data.valid = true;
+  imu_calib_.SetData(data);
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  Step();
+  ASSERT_TRUE(auto_drive_.StartAutoForwardCalib(0.1f));
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 2);
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  EXPECT_FALSE(calib_mgr_->IsAutoForwardActive());
+  EXPECT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+}
+
 TEST_F(ProcessorTest, ForwardCalibration_DoesNotHoldThrottle) {
   // Этап 2 — разгон по прямой, газ нужен.
   SetDirectLaw();

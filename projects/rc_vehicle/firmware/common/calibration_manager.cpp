@@ -103,9 +103,12 @@ void CalibrationManager::StopAutoForward() {
     // логе никакого следа. Условие — сбор реально шёл: ProcessCompletion()
     // зовёт нас и при штатном завершении (Done/Failed), и тогда событие об
     // обрыве было бы ложным.
-    const bool was_collecting =
-        imu_calib_.GetStatus() == CalibStatus::Collecting;
-    imu_calib_.CancelCalibration();
+    //
+    // Отменяем только сбор этапа 2: запрошенная во время auto-forward
+    // калибровка в покое (этап 1) уже заменила его, и её убивать нельзя —
+    // на ней держится нейтраль газа (LOS-380).
+    const bool was_collecting = imu_calib_.GetCalibStage() == 2;
+    if (was_collecting) imu_calib_.CancelCalibration();
     if (was_collecting && event_log_) {
       // param: 2 = stage 2 (auto_forward), как у ImuCalibStart
       event_log_->Push(
