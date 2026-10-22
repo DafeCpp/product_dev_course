@@ -177,7 +177,7 @@ async def _handle_message(
     readings_count = len(ws_msg.readings)
 
     # --- rate limiting (per sensor, token bucket) ---
-    limit_hit = _ws_limiter.check(sensor_id, readings_count)
+    limit_hit = await _ws_limiter.acquire(sensor_id, readings_count)
     if limit_hit is not None:
         INGEST_RATE_LIMITED.labels(transport="ws").inc()
         error_log.record_async(

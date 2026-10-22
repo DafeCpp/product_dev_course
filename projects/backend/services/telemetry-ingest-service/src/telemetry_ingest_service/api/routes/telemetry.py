@@ -92,7 +92,7 @@ async def ingest_telemetry(request: web.Request) -> web.Response:
 
     sensor_id, readings_count = str(dto.sensor_id), len(dto.readings)
     error_log = await get_error_log_service(request)
-    allowed, retry_after = _rest_limiter.check(dto.sensor_id, readings_count)
+    allowed, retry_after = await _rest_limiter.acquire(dto.sensor_id, readings_count)
     if not allowed:
         INGEST_RATE_LIMITED.labels(transport="rest").inc()
         error_log.record_async(

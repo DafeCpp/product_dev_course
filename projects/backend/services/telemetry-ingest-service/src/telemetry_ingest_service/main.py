@@ -19,8 +19,11 @@ from backend_common.logging_config import configure_logging
 from backend_common.otel import setup_otel, shutdown_otel
 
 from telemetry_ingest_service.api.routes.health import health_routes
+from telemetry_ingest_service.api.routes import telemetry as telemetry_api
+from telemetry_ingest_service.api.routes import ws_ingest as ws_api
 from telemetry_ingest_service.api.routes.telemetry import routes as telemetry_routes
 from telemetry_ingest_service.api.routes.ws_ingest import ws_routes
+from telemetry_ingest_service.middleware.redis_buckets import build_redis_buckets
 from telemetry_ingest_service.settings import settings
 from telemetry_ingest_service.workers.config_poller import build_config_client
 from telemetry_ingest_service.workers.spool_flush import run_spool_flush_worker
@@ -51,6 +54,27 @@ async def _stop_spool_worker(app: web.Application) -> None:
             pass
 
 
+async def _start_shared_rate_limits(app: web.Application) -> None:
+    if not settings.rate_limit_redis_url:
+        return
+    shared = build_redis_buckets(
+        settings.rate_limit_redis_url,
+        timeout_seconds=settings.rate_limit_redis_timeout_seconds,
+        retry_seconds=settings.rate_limit_redis_retry_seconds,
+    )
+    app["_rate_limit_redis"] = shared
+    telemetry_api._rest_limiter.shared = shared
+    ws_api._ws_limiter.shared = shared
+
+
+async def _stop_shared_rate_limits(app: web.Application) -> None:
+    shared = app.get("_rate_limit_redis")
+    if shared is not None:
+        telemetry_api._rest_limiter.shared = None
+        ws_api._ws_limiter.shared = None
+        await shared.close()
+
+
 def create_app() -> web.Application:
     app, cors = create_base_app(settings)
     app.middlewares.append(error_handling_middleware)  # type: ignore[arg-type]
@@ -70,6 +94,7 @@ def create_app() -> web.Application:
 
     app.on_startup.append(init_pool)
     app.on_startup.append(_start_spool_worker)
+    app.on_startup.append(_start_shared_rate_limits)
     if settings.config_client_enabled:
         _cfg_client = build_config_client(
             settings.config_client_url,
@@ -77,6 +102,7 @@ def create_app() -> web.Application:
         )
         app.on_startup.append(_cfg_client.start)
         app.on_cleanup.append(_cfg_client.stop)
+    app.on_cleanup.append(_stop_shared_rate_limits)
     app.on_cleanup.append(_stop_spool_worker)
     app.on_cleanup.append(shutdown_otel)
     app.on_cleanup.append(close_pool)

@@ -121,7 +121,7 @@
 ### 6.2 Датчики и телеметрия
 - ✅ Регистрация датчика: имя, тип, единица измерения, проект, секретный токен.
 - ✅ API ingest `/api/v1/telemetry` — POST (REST, батчи); SSE стриминг (`GET /api/v1/telemetry/stream`); WebSocket ingest (`GET /api/v1/telemetry/ws`) с rate limiting и seq acks.
-- ⚠️ SLA ingest API: per-sensor REST rate limiter реализован (requests + readings per window, 429 с Retry-After); журнал ошибок датчика — ❌.
+- ⚠️ SLA ingest API: per-sensor REST rate limiter реализован (token bucket по requests и readings, 429 с Retry-After; счётчики общие для реплик через Redis с in-memory fallback); журнал ошибок датчика — ❌.
 - ✅ Мониторинг состояния: `connection_status` вычисляется (online/delayed/offline), `status-summary`, `heartbeat-history`; frontend дашборд `/sensor-monitor`.
 - ✅ Веб-интерфейс: список датчиков, создание, фильтрация по проекту/типу.
 - ✅ Sensor Simulator (React SPA) для тестовой отправки с различными сценариями (burst, dropout, sine, late data).
