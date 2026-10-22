@@ -1450,6 +1450,9 @@ function applyStabConfig(cfg) {
     setChk('pitch-comp-enabled', cfg.pitch_comp?.enabled);
     set('pitch-gain', cfg.pitch_comp?.gain ?? '');
     set('pitch-max-corr', cfg.pitch_comp?.max_correction ?? '');
+    setChk('roll-comp-enabled', cfg.roll_comp?.enabled);
+    set('roll-gain', cfg.roll_comp?.gain ?? '');
+    set('roll-max-corr', cfg.roll_comp?.max_correction ?? '');
     setChk('oversteer-enabled', cfg.oversteer?.warn_enabled);
     set('ow-slip-thresh', cfg.oversteer?.slip_thresh_deg ?? '');
     set('ow-rate-thresh', cfg.oversteer?.rate_thresh_deg_s ?? '');
@@ -1599,6 +1602,7 @@ function saveStabConfig() {
         }},
         adaptive: { enabled: getChk('adapt-pid-enabled'), speed_ref_ms: getF('adapt-speed-ref') },
         pitch_comp: { enabled: getChk('pitch-comp-enabled'), gain: getF('pitch-gain'), max_correction: getF('pitch-max-corr') },
+        roll_comp: { enabled: getChk('roll-comp-enabled'), gain: getF('roll-gain'), max_correction: getF('roll-max-corr') },
         oversteer: {
             warn_enabled: getChk('oversteer-enabled'),
             slip_thresh_deg: getF('ow-slip-thresh'),
@@ -1874,7 +1878,7 @@ if (btnCalibCom) btnCalibCom.addEventListener('click', () => {
     let target_accel = 0.1;
     if (calibFwdAccelSlider) target_accel = parseInt(calibFwdAccelSlider.value) / 1000;
     const steering = comSteeringSlider ? parseFloat(comSteeringSlider.value) : 0.5;
-    const duration = comDurationSlider ? parseFloat(comDurationSlider.value) : 5.0;
+    const duration = comDurationSlider ? parseFloat(comDurationSlider.value) : 15.0;
     wsSend({ type: 'calibrate_com_offset', target_accel, steering, duration });
     if (comCalibStatusEl) { comCalibStatusEl.style.display = 'block'; comCalibStatusEl.textContent = 'Запуск...'; }
     setTimeout(() => wsSend({ type: 'get_com_offset_status' }), 2000);

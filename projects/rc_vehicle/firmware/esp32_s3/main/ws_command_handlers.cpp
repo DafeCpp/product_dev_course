@@ -341,7 +341,7 @@ void HandleCalibrateComOffset(IVehicleControl& vc, cJSON* json,
                               httpd_req_t* req) {
   float target_accel = JsonGetFloat(json, "target_accel", 0.1f);
   float steering = JsonGetFloat(json, "steering", 0.5f);
-  float duration = JsonGetFloat(json, "duration", 5.0f);
+  float duration = JsonGetFloat(json, "duration", 15.0f);
 
   bool ok = vc.StartComOffsetCalibration(target_accel, steering, duration);
 

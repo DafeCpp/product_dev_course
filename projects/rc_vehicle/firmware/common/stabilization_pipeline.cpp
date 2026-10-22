@@ -192,6 +192,36 @@ void PitchCompensator::Process(const StabilizationConfig& cfg, float& throttle,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RollCompensator
+// ─────────────────────────────────────────────────────────────────────────────
+
+void RollCompensator::Process(const StabilizationConfig& cfg, float& steering,
+                              const StabilizationInput& input) noexcept {
+  last_correction_ = 0.0f;
+  if (!cfg.roll_comp.enabled) return;
+  if (input.stabilization_weight <= 0.0f) return;
+  if (!input.imu_enabled) return;
+  if (input.command.throttle < 0.0f || input.vx_ms < 0.0f) return;
+
+  const float speed_w = std::clamp(
+      (input.vx_ms - kMinSpeedMs) / (kFullSpeedMs - kMinSpeedMs), 0.0f, 1.0f);
+  constexpr float kG = 9.80665f;
+  const float lat_g = std::fabs(input.vx_ms * input.yaw_rate_rps) / kG;
+  const float turn_w =
+      std::clamp((kZeroLatG - lat_g) / (kZeroLatG - kFullLatG), 0.0f, 1.0f);
+  const float weight = speed_w * turn_w * input.stabilization_weight *
+                       input.mode_transition_weight;
+  if (weight <= 0.0f) return;
+
+  const float correction =
+      std::clamp(cfg.roll_comp.gain * input.roll_deg,
+                 -cfg.roll_comp.max_correction, cfg.roll_comp.max_correction);
+  const float before = steering;
+  steering = std::clamp(steering + correction * weight, -1.0f, 1.0f);
+  last_correction_ = steering - before;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SlipAngleController
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -210,6 +240,7 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   const StabilizationInput input{
       .dt_ms = dt_ms,
       .slip_angle_deg = ekf_->GetSlipAngleDeg(),
+      .yaw_rate_rps = ekf_->GetYawRate(),
       .stabilization_weight = stab_w,
       .mode_transition_weight = mode_w,
       .imu_enabled = imu_->IsEnabled(),
@@ -225,12 +256,22 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   if (input.dt_ms == 0) return;
 
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
-  const float slip_error = cfg.slip_angle.target_deg - input.slip_angle_deg;
+  const float slip_error =
+      cfg.slip_angle.target_deg -
+      DriftSlipDeg(input.slip_angle_deg, input.yaw_rate_rps);
   const float pid_out = pid_.Step(slip_error, dt_sec);
 
   throttle = std::clamp(throttle + pid_out * input.stabilization_weight *
                                        input.mode_transition_weight,
                         -1.0f, 1.0f);
+}
+
+float SlipAngleController::DriftSlipDeg(float slip_deg,
+                                        float yaw_rate_rps) noexcept {
+  // Пока поворота нет, направление заноса не определено: любой угол считаем
+  // заносом, чтобы PID не разгонял машину при боковом сносе на прямой.
+  if (std::abs(yaw_rate_rps) < kMinTurnYawRateRps) return std::abs(slip_deg);
+  return yaw_rate_rps > 0.0f ? -slip_deg : slip_deg;
 }
 
 void SlipAngleController::SetGains(const StabilizationConfig& cfg) noexcept {
@@ -343,6 +384,15 @@ StabilizationOutput StabilizationPipeline::Process(
         input.command.throttle < 0.0f || output.command.throttle < 0.0f;
     yaw_ctrl_.Process(cfg, output.command.steering, input, reversing,
                       policy.yaw_ref_cutoff_hz);
+    if (policy.apply_input_limits) {
+      kids_processor_.ClampToGripSteerCap(output.command.steering);
+    }
+  }
+  if (policy.roll_comp_active) {
+    // После yaw-ПИД: его уставка считается из руля пульта, и добавка вверх по
+    // склону не должна читаться как команда водителя (LOS-386). В Kids
+    // потолок руля по сцеплению распространяется и на неё.
+    roll_ctrl_.Process(cfg, output.command.steering, input);
     if (policy.apply_input_limits) {
       kids_processor_.ClampToGripSteerCap(output.command.steering);
     }

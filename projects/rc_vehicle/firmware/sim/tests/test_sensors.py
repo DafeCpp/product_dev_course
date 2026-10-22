@@ -161,6 +161,31 @@ def test_steady_climb_reads_like_nose_up_tilt():
     assert f.ax == pytest.approx(math.sin(slope))
 
 
+def test_bank_at_rest_reads_as_roll():
+    """Поперечный уклон (LOS-386): реакция шин g·sin(крен) из VehicleModel
+    плюс нормальная реакция g·cos(крен) дают покой с креном: roll =
+    atan2(ay, az) совпадает с уклоном (> 0 — правый борт ниже)."""
+    p = SimParams()
+    bank = math.radians(8.0)
+    out = StepOutput(long_accel=0.0, lat_accel=p.gravity_ms2 * math.sin(bank),
+                     yaw_rate=0.0, speed=0.0, delta_rad=0.0)
+    f = make_frame(out, psi_rad=0.0, p=p, with_mag=False, bank_rad=bank)
+    assert np.linalg.norm((f.ax, f.ay, f.az)) == pytest.approx(1.0)
+    assert math.atan2(f.ay, f.az) == pytest.approx(bank)
+
+
+def test_bank_tilts_magnetic_field_with_roll():
+    """psi = 90°: на ровном поле смотрит вправо (−Y корпуса). При правом
+    борте ниже горизонталь вправо лежит выше оси −Y, т.е. получает +Z —
+    перпендикулярно вектору «вверх» (0, sin, cos) из test_bank_at_rest."""
+    p = SimParams()
+    bank = math.radians(15.0)
+    out = StepOutput(0.0, 0.0, 0.0, 0.0, 0.0)
+    f = make_frame(out, psi_rad=math.radians(90.0), p=p, bank_rad=bank)
+    assert f.my == pytest.approx(-p.mag_field_mga * math.cos(bank))
+    assert f.mz == pytest.approx(p.mag_field_mga * math.sin(bank))
+
+
 def test_slope_does_not_rotate_yaw_rate():
     """Поворот на склоне идёт вокруг нормали к нему, т.е. оси Z корпуса:
     yaw rate не протекает в roll/pitch-rate."""

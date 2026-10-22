@@ -162,6 +162,14 @@
                 </div>
 
                 <div class="field-row">
+                    <label class="chk" title="Руль вверх по поперечному склону, доля хода руля на градус крена"><input type="checkbox" id="roll-comp-enabled"> Roll compensation</label>
+                    <div class="inline-param">
+                        <label>Gain <input type="text" id="roll-gain" size="6"></label>
+                        <label>MaxCorr <input type="text" id="roll-max-corr" size="6"></label>
+                    </div>
+                </div>
+
+                <div class="field-row">
                     <label class="chk"><input type="checkbox" id="madgwick-enabled" checked> Madgwick AHRS (ориентация)</label>
                 </div>
 
@@ -309,9 +317,9 @@
                 <div class="slider-group compact">
                     <div class="slider-label">
                         <span>Длительность круга (с)</span>
-                        <span id="com-duration-value" class="slider-val">5.0</span>
+                        <span id="com-duration-value" class="slider-val">15.0</span>
                     </div>
-                    <input type="range" id="com-duration" class="rc-slider" min="3" max="15" step="0.5" value="5">
+                    <input type="range" id="com-duration" class="rc-slider" min="3" max="15" step="0.5" value="15">
                 </div>
                 <div class="btn-row">
                     <button id="btn-calib-com" class="btn btn-accent btn-calib">Калибровка CoM</button>

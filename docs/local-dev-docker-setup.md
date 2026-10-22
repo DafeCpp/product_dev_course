@@ -103,6 +103,38 @@ docker-compose run --rm --build script-migrate
 
 ### Make-таргеты
 
+`make help` выводит команды с описаниями, взятыми из `##`-комментариев рядом
+с целями Makefile. Для просмотра справки Docker, Poetry и Node.js не требуются.
+Обычный `make` сохраняет прежнее поведение — запускает `make test`.
+
+Длинные команды Makefile реализованы в `scripts/backend.sh`, `scripts/frontend.sh`,
+`scripts/dev.sh` и `scripts/firmware-coverage.sh`. Общие функции поиска Python
+и подготовки тестового PostgreSQL находятся в `scripts/dev-common.sh`.
+Запускайте команды через Makefile: он передаёт настройки и выполняет зависимости.
+
+```bash
+make backend-install PYTHON=/path/to/python3.14
+make test-backend TEST_POSTGRESQL_DSN='postgresql://user:pass@localhost:5433/postgres'
+make test-coverage-backend  # тот же поиск порта/учётных данных и ожидание PostgreSQL
+make test-deploy-contract  # проверки shell-команд и production-контракта
+```
+
+Python выбирается один раз до перехода в директории компонентов. При заданном
+`TEST_POSTGRESQL_DSN` тесты используют его без запуска Docker; иначе контейнер
+TimescaleDB должен успешно запуститься и пройти проверку готовности. Ошибки
+установки зависимостей, запуска БД и тестов возвращают ненулевой код.
+
+Очистка dev-окружения ограничена основным Compose-проектом и отдельно запущенным
+проектом `infrastructure/logging`; фильтры по общим именам контейнеров и глобальный
+`docker image prune` не используются:
+
+- `make dev-fix` пересоздаёт контейнеры и запускает стек, **сохраняя данные**.
+  В отличие от прежней реализации, PostgreSQL volume автоматически не удаляется.
+- `make dev-clean` выполняет `down -v --remove-orphans` для обоих проектов;
+  удаляются их контейнеры и volumes, включая PostgreSQL, MinIO и логи.
+- `make dev-clean-all` дополнительно удаляет локально собранные образы этих проектов
+  (`--rmi local`).
+
 Make-таргеты выполняют `python -m bin.migrate` внутри уже запущенного рантайм-контейнера
 (`docker-compose exec`), поэтому нужны, когда стек уже поднят. Они видят те миграции,
 что были в образе на момент сборки: после добавления SQL-файла сначала пересоберите

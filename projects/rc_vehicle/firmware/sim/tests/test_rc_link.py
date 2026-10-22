@@ -61,21 +61,26 @@ def test_stick_at_end_stop_keeps_rc_in_kids_mode():
     assert "RC signal acquired" in rc[0]
 
 
+# Газ проходит только после калибровки IMU при старте (2 с), поэтому
+# приёмник пропадает на 4-й секунде.
+DROPOUT_AT_MS = 4000
+
+
 def test_receiver_dropout_reported_with_cause_and_duration():
     """Приёмник пропал на 600 мс посреди заезда: failsafe, предупреждение в
     serial с причиной «нет импульсов» и сообщение о восстановлении."""
-    frames = (_frames(2000, 1600, 1500) + _frames(600, 0, 0)
+    frames = (_frames(DROPOUT_AT_MS, 1600, 1500) + _frames(600, 0, 0)
               + _frames(2000, 1600, 1500))
     rows, log = _run(frames)
 
     # Grace-период: декодер уже потерял сигнал, но Failsafe ещё держит
     # последнюю команду (LOS-283).
-    held = rows[(2000 + 150) // DT_MS]
+    held = rows[(DROPOUT_AT_MS + 150) // DT_MS]
     assert held["failsafe"] == 0.0
-    assert held["throttle"] == pytest.approx(rows[2000 // DT_MS - 1]["throttle"])
+    assert held["throttle"] == pytest.approx(rows[DROPOUT_AT_MS // DT_MS - 1]["throttle"])
     # Во время пропадания — failsafe: таймаут декодера 90 мс, опрос RC 20 мс
     # и grace-период Failsafe 120 мс, итого ≤250 мс (LOS-368).
-    dropout = rows[(2000 + 270) // DT_MS:(2000 + 600) // DT_MS]
+    dropout = rows[(DROPOUT_AT_MS + 270) // DT_MS:(DROPOUT_AT_MS + 600) // DT_MS]
     assert all(r["failsafe"] == 1.0 for r in dropout)
     assert all(r["throttle"] == 0.0 for r in dropout)
     assert rows[-1]["failsafe"] == 0.0

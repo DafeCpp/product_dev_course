@@ -146,7 +146,8 @@ def synth_accel(long_accel: float, lat_accel: float,
                 p: SimParams,
                 road_accel_g: tuple[float, float, float] | None = None,
                 road_attitude_rad: tuple[float, float] | None = None,
-                slope_rad: float = 0.0
+                slope_rad: float = 0.0,
+                bank_rad: float = 0.0
                 ) -> tuple[float, float, float]:
     """Акселерометр (g): гравитация (по ориентации IMU) + ускорение движения.
 
@@ -156,10 +157,15 @@ def synth_accel(long_accel: float, lat_accel: float,
     вдоль склона уже учтена в физике скорости (VehicleModel), поэтому в
     измерение не входит: на подъёме с постоянной скоростью ax = sin(уклон)
     появляется через long_accel, которым мотор держит скорость.
+
+    bank_rad — поперечный уклон (LOS-386), >0 — правый борт ниже. Боковая
+    реакция шин на тяжесть склона уже входит в lat_accel (VehicleModel), здесь
+    остаётся только нормальная реакция g·cos(уклон)·cos(крен).
     """
     g = p.gravity_ms2
     # В СК корпуса: покой на ровном → (0,0,1) g; движение добавляет long/lat.
-    body = np.array([long_accel / g, lat_accel / g, math.cos(slope_rad)])
+    body = np.array([long_accel / g, lat_accel / g,
+                     math.cos(slope_rad) * math.cos(bank_rad)])
     if road_accel_g is not None:
         body += np.asarray(road_accel_g)
     body = _road_rot(road_attitude_rad).T @ body
@@ -187,7 +193,8 @@ def synth_gyro(yaw_rate_rad: float,
 
 def synth_mag(psi_rad: float, p: SimParams,
               road_attitude_rad: tuple[float, float] | None = None,
-              slope_rad: float = 0.0
+              slope_rad: float = 0.0,
+              bank_rad: float = 0.0
               ) -> tuple[float, float, float]:
     """Магнитометр (мГс): горизонтальное поле Земли (North) в СК корпуса."""
     f = p.mag_field_mga
@@ -196,8 +203,9 @@ def synth_mag(psi_rad: float, p: SimParams,
     rz_t = np.array([[cz, sz, 0.0], [-sz, cz, 0.0], [0.0, 0.0, 1.0]])
     world = np.array([f, 0.0, 0.0])
     # Нос вверх на уклон: в конвенции _road_rot это pitch = -slope (там
-    # pitch>0 даёт ax=-sin, как при наклоне носом вниз).
-    level_body = _road_rot((0.0, -slope_rad)).T @ rz_t @ world
+    # pitch>0 даёт ax=-sin, как при наклоне носом вниз). Крен там же >0 —
+    # правый борт ниже, как bank_rad (LOS-386).
+    level_body = _road_rot((bank_rad, -slope_rad)).T @ rz_t @ world
     body = _road_rot(road_attitude_rad).T @ level_body
     meas = _mount_rot(p).T @ body
     return float(meas[0]), float(meas[1]), float(meas[2])
@@ -224,7 +232,8 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
                with_mag: bool = True,
                wifi_keepalive: bool = False,
                road_noise: RoadNoiseModel | None = None,
-               slope_rad: float = 0.0
+               slope_rad: float = 0.0,
+               bank_rad: float = 0.0
                ) -> SensorFrame:
     """Собрать SensorFrame из выхода модели (для подачи в sim_host, FW-S2.5).
 
@@ -236,6 +245,8 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
     с VehicleModel.slope_rad, иначе физика и сенсоры разойдутся.
     Уклон задан в СК корпуса и не зависит от курса: машина всегда едет прямо
     вверх/вниз по склону, поворот не переводит уклон в крен.
+    bank_rad — поперечный уклон (LOS-386), так же должен совпадать с
+    VehicleModel.bank_rad.
     """
     excitation = road_noise.sample(out.speed, dt_ms) if road_noise else None
     road_attitude = excitation.attitude_rad if excitation else None
@@ -243,7 +254,7 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
     ax, ay, az = synth_accel(
         out.long_accel + lever_x, out.lat_accel + lever_y, p,
         excitation.accel_g if excitation else None,
-        road_attitude, slope_rad)
+        road_attitude, slope_rad, bank_rad)
     # Yaw rate — вокруг нормали к склону, т.е. уже ось Z корпуса: уклон
     # гироскоп не поворачивает.
     gx, gy, gz = synth_gyro(
@@ -252,7 +263,8 @@ def make_frame(out: StepOutput, psi_rad: float, p: SimParams, dt_ms: int = 2,
     f = SensorFrame(dt_ms=dt_ms, ax=ax, ay=ay, az=az, gx=gx, gy=gy, gz=gz)
     if with_mag:
         f.mag_present = True
-        f.mx, f.my, f.mz = synth_mag(psi_rad, p, road_attitude, slope_rad)
+        f.mx, f.my, f.mz = synth_mag(psi_rad, p, road_attitude, slope_rad,
+                                     bank_rad)
     if rc_throttle is not None or rc_steering is not None:
         f.rc_present = True
         f.rc_throttle = rc_throttle or 0.0

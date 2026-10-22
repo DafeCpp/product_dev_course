@@ -50,17 +50,24 @@ class StepOutput:
 
 class VehicleModel:
     def __init__(self, params: SimParams | None = None, dynamic: bool = False,
-                 slope_deg: float = 0.0):
+                 slope_deg: float = 0.0, bank_deg: float = 0.0):
         """slope_deg: продольный уклон (LOS-367), >0 — подъём в гору.
 
         Здесь — только физика скорости (тяжесть вдоль склона); реакцию опоры
         для IMU синтезирует sensors.make_frame(slope_rad=...). Уклон можно
         менять на ходу через slope_rad.
+
+        bank_deg: поперечный уклон (LOS-386), >0 — правый борт ниже (как
+        roll > 0 в прошивке). Тяжесть g·sin(крен) тянет корпус вправо (−Y),
+        шины держат её боковой силой, и lat_accel (сумма сил шин / масса)
+        включает эту реакцию, как её меряет акселерометр. Уклон, как и
+        продольный, задан в СК корпуса и от курса не зависит.
         """
         self.p = params or SimParams()
         self.dynamic = dynamic
         self.state = VehicleState()
         self.slope_rad = math.radians(slope_deg)
+        self.bank_rad = math.radians(bank_deg)
         self._wheels_spinning = False
         self._spin_dir = 1.0
 
@@ -136,7 +143,8 @@ class VehicleModel:
     def _axle_loads(self) -> tuple[float, float]:
         """Статические нормальные нагрузки осей [Н] (без переноса веса)."""
         p = self.p
-        weight = p.mass * p.gravity_ms2 * math.cos(self.slope_rad)
+        weight = (p.mass * p.gravity_ms2 * math.cos(self.slope_rad)
+                  * math.cos(self.bank_rad))
         L = p.com_a + p.com_b
         return weight * p.com_b / L, weight * p.com_a / L
 
@@ -188,6 +196,10 @@ class VehicleModel:
             return max(-limit, min(limit, s.accel - p.drag_coeff * s.v))
         return friction
 
+    def _bank_accel(self) -> float:
+        """Боковая составляющая тяжести [м/с², по Y корпуса] (LOS-386)."""
+        return -self.p.gravity_ms2 * math.sin(self.bank_rad)
+
     def _slip_ratio(self) -> float:
         s = self.state
         ref = max(abs(s.wheel_v), abs(s.v))
@@ -225,7 +237,8 @@ class VehicleModel:
             if abs(lat_accel) > cap:
                 s.r *= cap / abs(lat_accel)
                 lat_accel = s.v * s.r
-        return lat_accel
+        # Кинематика не сносит корпус вбок: шины держат и тяжесть склона.
+        return lat_accel - self._bank_accel()
 
     def _step_dynamic(self, dt: float, delta: float,
                       drive_accel: float = 0.0) -> float:
@@ -254,6 +267,7 @@ class VehicleModel:
         a, b = p.com_a, p.com_b
         cap_f, cap_r = caps
         vy0, r0 = s.vy, s.r
+        g_lat = self._bank_accel()
         best = None
         for mode_f, mode_r in itertools.product((0, 1, -1), repeat=2):
             # Ось в режиме 0: F = C·α; в режиме ±1: F = ±F_max (k = 0).
@@ -265,7 +279,7 @@ class VehicleModel:
             m12 = dt * ((a * kf - b * kr) / (p.mass * v) + v)
             m21 = dt * (a * kf - b * kr) / (p.Iz * v)
             m22 = 1.0 + dt * (a * a * kf + b * b * kr) / (p.Iz * v)
-            q1 = vy0 + dt * (kf * delta + ff + fr) / p.mass
+            q1 = vy0 + dt * ((kf * delta + ff + fr) / p.mass + g_lat)
             q2 = r0 + dt * (a * (kf * delta + ff) - b * fr) / p.Iz
             det = m11 * m22 - m12 * m21
             vy = (q1 * m22 - m12 * q2) / det
@@ -295,7 +309,7 @@ class VehicleModel:
         a21 = (-p.com_a * Caf + p.com_b * Car) / (p.Iz * v)
         a22 = -(p.com_a**2 * Caf + p.com_b**2 * Car) / (p.Iz * v)
 
-        q1 = s.vy + dt * Caf / p.mass * delta
+        q1 = s.vy + dt * (Caf / p.mass * delta + self._bank_accel())
         q2 = s.r + dt * p.com_a * Caf / p.Iz * delta
         m11 = 1.0 - dt * a11
         m12 = -dt * a12

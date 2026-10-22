@@ -3,11 +3,13 @@
 Те же критерии PASS, что проверяются на машине, но в SIL: это регрессия и
 эталон для сравнения с будущими заездами. Склон/pitch compensation, уставка
 угла заноса в Drift и пресеты Kids поддержаны через ClosedLoopSim/sim_host
-(LOS-367), удержание уставки заноса в Drift — LOS-384. Kids anti-spin на модели сцепления — test_kids_anti_spin.py
+(LOS-367), удержание уставки заноса в Drift — LOS-384, поперечный склон и
+roll compensation — LOS-386. Kids anti-spin на модели сцепления — test_kids_anti_spin.py
 (LOS-370). Критерии, которые в SIL не выполняются, помечены strict xfail:
 исправление сразу покажет XPASS.
 """
 
+import dataclasses
 import math
 
 import pytest
@@ -52,7 +54,8 @@ def _pulses(ms: int, thr_us: int, str_us: int) -> list[SensorFrame]:
 # и grace-период Failsafe (FAILSAFE_TIMEOUT_MS = 120 мс), плюс опрос RC раз в
 # 20 мс; в grace-периоде прошивка держит последнюю команду (LOS-283).
 # Суммарно нейтраль не позже 250 мс с запасом ~20 мс (LOS-368).
-RC_LOSS_AT_MS = 2000
+# После калибровки IMU при старте (2 с, газ в нейтрали) ещё 2 с едем.
+RC_LOSS_AT_MS = 4000
 
 
 def _rc_dropout_rows(loss_at_ms: int = RC_LOSS_AT_MS):
@@ -102,7 +105,7 @@ def _wifi_frames(ms: int, on: bool) -> list[SensorFrame]:
 
 def test_wifi_loss_neutral_within_250_ms():
     """Failsafe по TESTING_PROGRAM.md: команды Wi-Fi пропали (RC нет) → нейтраль за ≤250 мс."""
-    loss_at = 2000
+    loss_at = RC_LOSS_AT_MS
     rows = run_batch(_wifi_frames(loss_at, True) + _wifi_frames(600, False), BIN)
     assert rows[loss_at // DT_MS - 1]["throttle"] > 0.1
     neutral_ms = _first_ms(
@@ -376,6 +379,62 @@ def test_pitch_comp_cuts_throttle_downhill():
     assert v_comp < v_plain
 
 
+BANK_DEG = 5.0
+ROLL_COMP_GAIN = 0.004  # штатный RollCompensationConfig::gain
+
+
+def _bank_cruise(roll_comp: bool, bank_deg: float = BANK_DEG):
+    """LOS-386: прямой ход по поперечному склону в Drift (без yaw-ПИД).
+
+    Машина с недостаточной поворачиваемостью (ЦМ ближе к передней оси, у
+    штатного профиля поворачиваемость нейтральная и склон её только сносит
+    вбок). Калибровка на ровном, разгон, затем склон. Оба прогона со
+    стабилизацией: отличаются только roll compensation. Возвращает строки на
+    склоне и изменение курса модели [°] за это время.
+    """
+    params = dataclasses.replace(get_profile("fitted_2026_08_02"),
+                                 com_a=0.12, com_b=0.18)
+    with ClosedLoopSim(BIN, params=params, dynamic=True, sensor_noise=False,
+                       stabilize=True, drive_mode="drift",
+                       roll_comp_gain=ROLL_COMP_GAIN if roll_comp else None
+                       ) as sim:
+        sim.run(1000, rc_throttle=0.0, rc_steering=0.0)
+        sim.run(1000, rc_throttle=0.4, rc_steering=0.0)
+        psi0 = sim.model.state.psi
+        sim.set_bank(bank_deg)
+        rows = sim.run(2000, rc_throttle=0.4, rc_steering=0.0)
+        return rows, math.degrees(sim.model.state.psi - psi0)
+
+
+def test_bank_is_seen_as_roll_and_turns_car_downhill():
+    """LOS-386: поперечный склон виден прошивке как крен ≈ уклону (> 0 —
+    правый борт ниже), а машина без компенсации уходит вниз по склону."""
+    rows, heading = _bank_cruise(roll_comp=False)
+    assert abs(_tail_mean(rows, "roll_deg") - BANK_DEG) < 1.5
+    assert heading < -5.0
+
+
+@pytest.mark.parametrize("bank_deg", [BANK_DEG, -BANK_DEG])
+def test_roll_comp_steers_uphill_and_holds_heading(bank_deg):
+    """TESTING_PROGRAM.md: на поперечном склоне roll compensation рулит вверх
+    по склону (руль > 0 при правом борте ниже) и уменьшает уход курса."""
+    with_comp, heading_comp = _bank_cruise(roll_comp=True, bank_deg=bank_deg)
+    _, heading_plain = _bank_cruise(roll_comp=False, bank_deg=bank_deg)
+    steering = _tail_mean(with_comp, "steering")
+    assert steering * bank_deg > 0.0
+    assert abs(steering) > 0.01
+    assert abs(heading_comp) < 0.7 * abs(heading_plain)
+
+
+def test_roll_comp_idle_on_flat():
+    """LOS-386: на ровном компенсация руль не трогает."""
+    with_comp, heading_comp = _bank_cruise(roll_comp=True, bank_deg=0.0)
+    without, heading_plain = _bank_cruise(roll_comp=False, bank_deg=0.0)
+    assert abs(_tail_mean(with_comp, "steering")
+               - _tail_mean(without, "steering")) < 1e-3
+    assert abs(heading_comp - heading_plain) < 0.1
+
+
 def test_drift_slip_target_shifts_throttle_correction():
     """LOS-367: уставка угла заноса (Drift) двигает коррекцию газа в сторону,
     задаваемую знаком target_deg (SlipAngleController работает по throttle)."""
@@ -418,14 +477,25 @@ def _drift_hold(steering: float) -> tuple[float, float]:
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "LOS-380 (баг из LOS-384): slip-PID не держит уставку. EKF в силовом заносе видит "
-    "единицы градусов при β ~45°, и PID добавляет газ; в левом повороте "
-    "β отрицательный, а target_deg знаковый, и ошибка уставки растёт."))
+    "LOS-380 (баг из LOS-384): EKF в силовом заносе занижает slip (≈11° при "
+    "β ≈ 29°): vy — интеграл ay с затуханием vy_decay_grip_lost_hz, и PID "
+    "считает заноса мало. Знак уставки исправлен, см. "
+    "test_drift_left_and_right_turns_match."))
 @pytest.mark.parametrize("steering", [-0.6, 0.6], ids=["right", "left"])
 def test_drift_holds_slip_target(steering):
     """7.4: в повороте Drift держит |β| около target_deg (±5°)."""
     beta, _ = _drift_hold(steering)
     assert beta == pytest.approx(DRIFT_TARGET_DEG, abs=5.0)
+
+
+def test_drift_left_and_right_turns_match():
+    """LOS-380: занос считается относительно поворота. Раньше slip-PID брал
+    знаковый slip: в левом повороте занос (slip < 0) увеличивал ошибку
+    уставки, PID добавлял газ, и машину разворачивало (|β| ≈ 50° против 29°
+    в правом)."""
+    right, _ = _drift_hold(-0.6)
+    left, _ = _drift_hold(0.6)
+    assert left == pytest.approx(right, abs=1.0)
 
 
 def test_drift_scenario_slides():
@@ -441,6 +511,7 @@ KIDS_PRESET_LIMITS = {"toddler": 0.15, "child": 0.30, "preteen": 0.50}
 def _kids_preset_launch(preset: str) -> list[dict]:
     with ClosedLoopSim(BIN, drive_mode="kids", kids_preset=preset,
                        sensor_noise=False, kids_accel_limit=False) as sim:
+        sim.wait_boot_calibration()
         return sim.run(1500, rc_throttle=1.0, rc_steering=0.0)
 
 

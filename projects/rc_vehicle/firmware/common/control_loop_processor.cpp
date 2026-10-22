@@ -111,6 +111,9 @@ void ControlLoopProcessor::Step(uint32_t now, uint32_t dt_ms) {
   SelectControlSource(input.sensors, state.command.throttle,
                       state.command.steering);
   UpdateAutoDrive(input, state);
+  // Стабилизаторы стартуют от нейтрали; итоговый газ ещё раз обнуляет
+  // UpdatePwm(), потому что slip-PID в Drift может добавить свой.
+  if (RestCalibrationActive()) state.command.throttle = 0.0f;
   // Preserve the command before stabilization. If RC/Wi-Fi disappears during
   // the failsafe grace period, the next tick must reapply stabilization to
   // this base command, not to the previous stabilized output (LOS-283).
@@ -290,6 +293,16 @@ void ControlLoopProcessor::UpdateAutoDrive(const ControlTickInput& input,
                             ctx_.platform);
 }
 
+bool ControlLoopProcessor::RestCalibrationActive() const {
+  // Этап 1 (Full/GyroOnly) усредняет accel/gyro как покой. Плавный разгон
+  // проходит проверку дисперсии, и среднее продольное ускорение попадает в
+  // gravity_vec: после авто-калибровки при старте машина, тронувшаяся в
+  // первые 2 с, ездила с наклоном СК ~2° (LOS-380). Пока идёт сбор, газ в
+  // нейтрали; руль машину не двигает и остаётся у водителя. Этап 2
+  // (Forward) — управляемый разгон, его не трогаем.
+  return ctx_.imu_calib.GetCalibStage() == 1;
+}
+
 void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
                                                ControlTickState& state) {
   if (!ctx_.stab_mgr) return;
@@ -310,15 +323,25 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
       state.estimate.tilt_valid && state.estimate.tilt_accel_anchored) {
     pitch_deg = state.estimate.pitch_rad * kRadToDeg;
   }
+  // Крен для roll compensation (LOS-386) — тоже только от TiltEstimator:
+  // Madgwick заваливается на манёвре. Продольный якорь для крена не нужен,
+  // боковое ускорение v·r TiltEstimator снимает сам.
+  float roll_deg = 0.0f;
+  if (policy.roll_comp_active && input.sensors.imu_enabled &&
+      state.estimate.tilt_valid) {
+    roll_deg = state.estimate.roll_rad * kRadToDeg;
+  }
   const StabilizationInput stabilization_input{
       .command = state.command,
       .dt_ms = input.dt_ms,
       .speed_ms = state.estimate.speed_ms,
+      .vx_ms = state.estimate.vx_ms,
       .slip_angle_deg = state.estimate.slip_angle_rad * kRadToDeg,
       .yaw_rate_rps = state.estimate.yaw_rate_rps,
       .vx_variance = ctx_.ekf.GetVxVariance(),
       .filtered_gyro_z_dps = input.sensors.filtered_gz,
       .pitch_deg = pitch_deg,
+      .roll_deg = roll_deg,
       .forward_accel_g = state.estimate.forward_accel_g,
       .wheel_slip_ratio = state.estimate.wheel_slip_ratio,
       .ground_speed_ms = state.estimate.ground_speed_ms,
@@ -378,7 +401,25 @@ bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
 void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
                                      ControlTickState& state) {
   const float steer_trim = input.config.steering_trim;
-  const float thr_trim = input.config.throttle_trim;
+  float thr_trim = input.config.throttle_trim;
+
+  const bool rest_calib = RestCalibrationActive();
+  if (rest_calib) {
+    // Нейтраль сразу, без slew и trim, как при failsafe: иначе газ, поданный
+    // до ручного запуска калибровки, спадал бы со slew 0.5/с все 2 с сбора, а
+    // ненулевой throttle_trim крутил бы мотор весь сбор. На первом тике
+    // открываем гейт интервала PWM, чтобы ESC не держал старый газ до 20 мс.
+    if (!persistent_.rest_calib_hold_was_active) {
+      persistent_.last_pwm_update =
+          input.now_ms - config::PwmConfig::kUpdateIntervalMs;
+    }
+    state.command.throttle = 0.0f;
+    state.motor_model_target_throttle = 0.0f;
+    persistent_.applied.throttle = 0.0f;
+    persistent_.motor_model_throttle = 0.0f;
+    thr_trim = 0.0f;
+  }
+  persistent_.rest_calib_hold_was_active = rest_calib;
 
   const DriveMode drive_mode = input.config.mode;
   const auto traits = DriveModeRegistry::Get(drive_mode).GetTraits();

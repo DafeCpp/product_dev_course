@@ -94,7 +94,7 @@ class IVehicleControl {
   // Калибровка CoM offset
   virtual bool StartComOffsetCalibration(float target_accel_g = 0.1f,
                                          float steering_magnitude = 0.5f,
-                                         float cruise_duration_sec = 5.0f) = 0;
+                                         float cruise_duration_sec = 15.0f) = 0;
   virtual void StopComOffsetCalibration() = 0;
   [[nodiscard]] virtual bool IsComOffsetCalibActive() const = 0;
   [[nodiscard]] virtual ComOffsetCalibration::Result GetComOffsetCalibResult()

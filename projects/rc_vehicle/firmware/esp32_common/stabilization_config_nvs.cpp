@@ -1,5 +1,6 @@
 #include "stabilization_config_nvs.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -38,13 +39,16 @@ static constexpr uint8_t kDriveModeCount = 5;
 // v12: добавлен KidsModeConfig::limiters_enabled (LOS-286)
 // v13: новые yaw-коэффициенты Normal вместо нетронутых прежних (LOS-366)
 // v14: то же для Sport (LOS-371)
-static constexpr uint8_t kCurrentStabConfigVersion = 14;
+// v15: добавлен StabilizationConfig::roll_comp перед version (LOS-386);
+//      блобы прежнего размера расширяются MigratePreRollCompLayout()
+static constexpr uint8_t kCurrentStabConfigVersion = 15;
 static constexpr uint8_t kV8StabConfigVersion = 8;
 static constexpr uint8_t kV9StabConfigVersion = 9;
 static constexpr uint8_t kV10StabConfigVersion = 10;
 static constexpr uint8_t kV11StabConfigVersion = 11;
 static constexpr uint8_t kV12StabConfigVersion = 12;
 static constexpr uint8_t kV13StabConfigVersion = 13;
+static constexpr uint8_t kV14StabConfigVersion = 14;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
 struct StabConfigBlob {
@@ -52,6 +56,12 @@ struct StabConfigBlob {
   uint8_t reserved[3];
   StabilizationConfig config;
 };
+static_assert(offsetof(StabConfigBlob, config) == 4,
+              "StabConfigBlob header must stay 4 bytes");
+/** Размер блоба до LOS-386 (без roll_comp). */
+static constexpr size_t kPreRollCompBlobSize =
+    offsetof(StabConfigBlob, config) +
+    rc_vehicle::kStabilizationConfigPreRollCompSize;
 
 namespace {
 
@@ -99,6 +109,51 @@ esp_err_t ReadBlobKey(nvs_handle_t handle, const char* key,
 }  // namespace
 
 namespace stab_config_nvs {
+
+/**
+ * @brief Расширить блобы прежнего размера под roll_comp (LOS-386).
+ *
+ * Все остальные миграции работают только с блобами текущего размера, поэтому
+ * этот шаг идёт первым: он переносит пользовательские настройки любой версии
+ * старой раскладки (v8–v14) в новую, сохраняя номер версии, чтобы дальше
+ * отработала обычная цепочка. roll_comp получает значения по умолчанию.
+ */
+esp_err_t MigratePreRollCompLayout(nvs_handle_t handle) {
+  bool changed = false;
+  auto widen = [&](const char* key) -> esp_err_t {
+    uint8_t raw[sizeof(StabConfigBlob)] = {};
+    size_t size = sizeof(raw);
+    esp_err_t err = nvs_get_blob(handle, key, raw, &size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+    if (size != kPreRollCompBlobSize) return ESP_OK;
+
+    StabConfigBlob blob{};
+    blob.version = raw[0];
+    if (!rc_vehicle::StabilizationConfigFromPreRollComp(
+            raw + offsetof(StabConfigBlob, config),
+            size - offsetof(StabConfigBlob, config), blob.config)) {
+      return ESP_OK;
+    }
+    err = nvs_set_blob(handle, key, &blob, sizeof(blob));
+    if (err != ESP_OK) return err;
+    ESP_LOGI(TAG, "Widened %s (v%u) for roll_comp", key,
+             static_cast<unsigned>(blob.version));
+    changed = true;
+    return ESP_OK;
+  };
+
+  for (uint8_t m = 0; m < kDriveModeCount; ++m) {
+    char key[8];
+    ModeKey(static_cast<DriveMode>(m), key);
+    const esp_err_t err = widen(key);
+    if (err != ESP_OK) return err;
+  }
+  const esp_err_t err = widen(NVS_LEGACY_KEY);
+  if (err != ESP_OK) return err;
+
+  return changed ? nvs_commit(handle) : ESP_OK;
+}
 
 /** Мигрировать все per-mode профили v8 в v9, сбросив только Kids. */
 esp_err_t MigrateV8Profiles(nvs_handle_t handle) {
@@ -413,7 +468,7 @@ esp_err_t MigrateV13Profiles(nvs_handle_t handle) {
     if (blob.config.UpgradeLegacySportYawGains()) {
       ESP_LOGI(TAG, "Updated Sport yaw gains while migrating v13 -> v14");
     }
-    blob.version = kCurrentStabConfigVersion;
+    blob.version = kV14StabConfigVersion;
     err = nvs_set_blob(handle, key, &blob, sizeof(blob));
     if (err != ESP_OK) return err;
     changed = true;
@@ -432,12 +487,48 @@ esp_err_t MigrateV13Profiles(nvs_handle_t handle) {
       ESP_LOGI(TAG,
                "Updated legacy Sport yaw gains while migrating v13 -> v14");
     }
-    legacy_blob.version = kCurrentStabConfigVersion;
+    legacy_blob.version = kV14StabConfigVersion;
     legacy_err =
         nvs_set_blob(handle, NVS_LEGACY_KEY, &legacy_blob, sizeof(legacy_blob));
     if (legacy_err != ESP_OK) return legacy_err;
     changed = true;
   }
+
+  return changed ? nvs_commit(handle) : ESP_OK;
+}
+
+/**
+ * @brief Мигрировать v14 профили: roll_comp (LOS-386).
+ *
+ * Расширение раскладки уже сделал MigratePreRollCompLayout(), roll_comp там
+ * получил значения по умолчанию; здесь только номер версии.
+ */
+esp_err_t MigrateV14Profiles(nvs_handle_t handle) {
+  bool changed = false;
+  auto bump = [&](const char* key) -> esp_err_t {
+    StabConfigBlob blob{};
+    size_t size = sizeof(blob);
+    esp_err_t err = nvs_get_blob(handle, key, &blob, &size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+    if (size != sizeof(blob) || blob.version != kV14StabConfigVersion) {
+      return ESP_OK;
+    }
+    blob.version = kCurrentStabConfigVersion;
+    err = nvs_set_blob(handle, key, &blob, sizeof(blob));
+    if (err != ESP_OK) return err;
+    changed = true;
+    return ESP_OK;
+  };
+
+  for (uint8_t m = 0; m < kDriveModeCount; ++m) {
+    char key[8];
+    ModeKey(static_cast<DriveMode>(m), key);
+    const esp_err_t err = bump(key);
+    if (err != ESP_OK) return err;
+  }
+  const esp_err_t err = bump(NVS_LEGACY_KEY);
+  if (err != ESP_OK) return err;
 
   return changed ? nvs_commit(handle) : ESP_OK;
 }
@@ -454,6 +545,12 @@ esp_err_t Load(DriveMode mode, StabilizationConfig& config) {
 
   char key[8];
 
+  err = MigratePreRollCompLayout(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
   err = MigrateV8Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
@@ -485,6 +582,12 @@ esp_err_t Load(DriveMode mode, StabilizationConfig& config) {
     return err;
   }
   err = MigrateV13Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV14Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);
@@ -516,6 +619,12 @@ esp_err_t Load(StabilizationConfig& config) {
 
   // Активный режим → его слот.
 
+  err = MigratePreRollCompLayout(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
   err = MigrateV8Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
@@ -547,6 +656,12 @@ esp_err_t Load(StabilizationConfig& config) {
     return err;
   }
   err = MigrateV13Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV14Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);

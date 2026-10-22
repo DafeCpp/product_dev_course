@@ -26,6 +26,7 @@
   com-offset  итог калибровки CoM и остаточное смещение по кругам CW и CCW (7.6)
   madgwick-beta  схождение pitch/roll в покое (запаздывание), крен в повороте (7.7)
   lpf         подавление yaw rate выше 10 Гц и шаг yaw rate против эталона (7.8)
+  grip-fit    угол руля и градиент K признака потери сцепления по кругам (7.5f)
 
 --baseline other.csv добавляет лог для сравнения: до калибровки CoM, с другим β,
 с cutoff 30 Гц.
@@ -73,6 +74,7 @@ STEP_MIN_TARGET = 0.1
 # Покой короче этого не годится для тренда bias (программа: 5-10 мин).
 MIN_REST_S = 60.0
 DRIVE_MODE_KIDS = 3  # DRIVE_MODE_NAMES в analyze_telemetry.py
+DRIVE_MODE_DIRECT_LAW = 4
 # Протокол 4.2: машина тронулась, если горизонтальное ускорение выросло на 0.03 g.
 ESC_START_ACCEL_G = 0.03
 ESC_STEP_MIN_MS = 1500.0  # ступень газа короче — не ступень (протокол: по 2 с)
@@ -113,6 +115,25 @@ LPF_SETTLING_TOL_MS = 20.0   # два отсчёта лога 100 Гц
 # в config::ImuConfig::kReadStatsEventIntervalMs и в том числе с нулями.
 IMU_STATS_PERIOD_MS = 10000.0
 IMU_ERRORS_MIN_COVER_S = 60.0
+# Признак потери сцепления (протокол 7.5f, LOS-378): константы
+# common/grip_loss_detector.hpp. Подгонка ищет kMaxSteerRad и
+# kUndersteerGradient, при которых круги на асфальте не дают ложный grip_lost.
+GRIP_WHEELBASE_M = 0.30
+GRIP_FW_MAX_STEER_RAD = 0.356047
+GRIP_FW_K = 0.0
+GRIP_MAX_DEV_RATIO = 0.15
+GRIP_MIN_DEV_RPS = 0.15
+GRIP_WINDOW_MS = 300.0
+GRIP_MIN_SPEED_MS = 0.8
+GRIP_MIN_STEER = 0.15
+GRIP_MIN_RATE_RPS = 0.3
+GRIP_MAX_STEER_SPREAD = 0.02
+GRIP_MAX_RATE_SPREAD = 0.03  # рад/с
+GRIP_MIN_WINDOWS = 10
+GRIP_MIN_SPEED_SPAN = 0.8  # м/с: разброс vx, без которого K не отделить
+GRIP_FIT_MIN_DEG = 10.0
+GRIP_FIT_MAX_DEG = 35.0
+GRIP_MAX_FALSE_SHARE = 0.05
 
 
 @dataclass(frozen=True)
@@ -940,13 +961,14 @@ def check_imu_errors(rows: list[Row]) -> list[MetricResult]:
 # Снапшоты конфигурации и события калибровок (выгрузка web UI)
 # ---------------------------------------------------------------------------
 
-def config_values(rows: list[Row], key: str) -> list[float]:
-    """Значения поля `filter.<key>` из снапшотов `event_config`, по порядку.
+def config_values(rows: list[Row], key: str,
+                  section: str | None = "filter") -> list[float]:
+    """Значения поля `<section>.<key>` из снапшотов `event_config`, по порядку.
 
     Web UI пишет снапшоты конфигурации стабилизации JSON-массивом в колонку
     `event_config` (parseConfigSnapshot в app.js): первый — на старте лога,
     дальше — при каждом изменении. Подряд идущие одинаковые значения
-    склеиваются.
+    склеиваются. section=None — поле верхнего уровня (`steering_trim`).
     """
     out: list[float] = []
     for r in rows:
@@ -958,7 +980,9 @@ def config_values(rows: list[Row], key: str) -> list[float]:
         except ValueError:
             continue
         for cfg in configs if isinstance(configs, list) else []:
-            v = cfg.get("filter", {}).get(key) if isinstance(cfg, dict) else None
+            if not isinstance(cfg, dict):
+                continue
+            v = (cfg if section is None else cfg.get(section, {})).get(key)
             if v is None:
                 continue
             v = float(v)
@@ -1367,12 +1391,151 @@ def check_lpf(rows: list[Row], baseline: list[Row] | None = None,
 
 
 # ---------------------------------------------------------------------------
+# Признак потери сцепления: подгонка δ_max и K по кругам (протокол 7.5f)
+# ---------------------------------------------------------------------------
+
+def grip_windows(rows: list[Row]) -> list[tuple[float, float, float]]:
+    """Установившиеся участки поворота: (vx, руль колёс, yaw rate рад/с).
+
+    Окно GRIP_WINDOW_MS годится, если руль в нём не гуляет больше
+    GRIP_MAX_STEER_SPREAD, yaw rate — больше 5 % (и GRIP_MAX_RATE_SPREAD),
+    а vx, |руль| и |yaw rate| не ниже порогов: на малых руле и скорости
+    отношение r к рулю тонет в шуме. Руль колёс — `steering` без trim, как
+    его получает GripLossDetector: со slew rate (все режимы, кроме DirectLaw)
+    trim добавляется только в PWM и в лог не попадает, а в DirectLaw
+    `steering` хранится вместе с ним, и там вычитается `steering_trim` из
+    снапшотов конфигурации (ControlLoopProcessor, applied_wheel_steering).
+    Окна идут встык, без перекрытия.
+    """
+    for c in ("steering", "yaw_rate_dps"):
+        if not has_col(rows, c):
+            raise ValueError(f"нет колонки {c}")
+    vcol = "vx" if has_col(rows, "vx") else "speed_ms"
+    if not has_col(rows, vcol):
+        raise ValueError("нет колонки vx/speed_ms")
+    trims = config_values(rows, "steering_trim", section=None)
+    trim = trims[-1] if trims else 0.0
+    ts = _ts(rows)
+    modes = (col_raw(rows, "drive_mode") if has_col(rows, "drive_mode")
+             else [math.nan] * len(rows))
+    steer = [s - trim if m == DRIVE_MODE_DIRECT_LAW else s
+             for s, m in zip(col_raw(rows, "steering"), modes, strict=True)]
+    rate = [math.radians(r) for r in col_raw(rows, "yaw_rate_dps")]
+    vx = col_raw(rows, vcol)
+    out = []
+    i = 0
+    while i < len(rows):
+        j = i
+        while j < len(rows) and ts[j] - ts[i] < GRIP_WINDOW_MS:
+            j += 1
+        if j >= len(rows):
+            break
+        w = range(i, j)
+        s_w = [steer[k] for k in w]
+        r_w = [rate[k] for k in w]
+        v_w = [vx[k] for k in w]
+        i = j
+        if any(math.isnan(x) for x in s_w + r_w + v_w):
+            continue
+        s_m, r_m, v_m = (sum(x) / len(x) for x in (s_w, r_w, v_w))
+        if (v_m < GRIP_MIN_SPEED_MS or abs(s_m) < GRIP_MIN_STEER
+                or abs(r_m) < GRIP_MIN_RATE_RPS or s_m * r_m <= 0.0):
+            continue
+        if (max(s_w) - min(s_w) > GRIP_MAX_STEER_SPREAD
+                or max(r_w) - min(r_w) > max(0.05 * abs(r_m), GRIP_MAX_RATE_SPREAD)):
+            continue
+        out.append((v_m, s_m, r_m))
+    return out
+
+
+def grip_reference(v: float, steer: float, max_steer_rad: float, k: float) -> float:
+    """Установившийся yaw rate по рулю (GripLossDetector::Update)."""
+    return v * math.tan(steer * max_steer_rad) / (GRIP_WHEELBASE_M + k * v * v)
+
+
+def grip_false_share(windows, max_steer_rad: float, k: float) -> float:
+    """Доля окон, где |r − r_ref| выше допуска детектора: на асфальте —
+    ложная потеря сцепления."""
+    bad = 0
+    for v, s, r in windows:
+        ref = grip_reference(v, s, max_steer_rad, k)
+        tol = max(GRIP_MAX_DEV_RATIO * abs(ref), GRIP_MIN_DEV_RPS)
+        bad += abs(r - ref) > tol
+    return bad / len(windows)
+
+
+def grip_fit(windows) -> dict:
+    """Подгонка δ_max и K: r = vx·tan(руль·δ_max) / (L + K·vx²).
+
+    При заданном δ_max модель линейна по K: vx·tan(руль·δ_max)/r − L = K·vx²,
+    K — МНК без свободного члена. δ_max перебирается по сетке 0.05°, берётся
+    наименьшая сумма квадратов относительной ошибки r. K отделим от δ_max
+    только по разным скоростям: при разбросе vx меньше GRIP_MIN_SPEED_SPAN
+    K не подгоняется (= 0), и δ_max вбирает недостаточную поворачиваемость
+    на этой скорости.
+    """
+    speeds = [v for v, _, _ in windows]
+    fit_k = max(speeds) - min(speeds) >= GRIP_MIN_SPEED_SPAN
+    best = None
+    deg = GRIP_FIT_MIN_DEG
+    while deg <= GRIP_FIT_MAX_DEG + 1e-9:
+        d = math.radians(deg)
+        k = 0.0
+        if fit_k:
+            num = sum((v * math.tan(s * d) / r - GRIP_WHEELBASE_M) * v * v
+                      for v, s, r in windows)
+            k = num / sum(v ** 4 for v, _, _ in windows)
+        err = sum(((r - grip_reference(v, s, d, k)) / r) ** 2 for v, s, r in windows)
+        if best is None or err < best[0]:
+            best = (err, d, k)
+        deg += 0.05
+    err, d, k = best
+    return {"max_steer_rad": d, "k": k, "k_fitted": fit_k,
+            "rms_rel": math.sqrt(err / len(windows)),
+            "speed_range": (min(speeds), max(speeds))}
+
+
+def check_grip_fit(rows: list[Row]) -> list[MetricResult]:
+    name = "Потеря сцепления"
+    try:
+        windows = grip_windows(rows)
+    except ValueError as exc:
+        return [MetricResult(name, False, str(exc), no_data=True)]
+    if len(windows) < GRIP_MIN_WINDOWS:
+        return [MetricResult(
+            name, False,
+            f"установившихся участков поворота {len(windows)}, нужно ≥ "
+            f"{GRIP_MIN_WINDOWS}: круги с рулём ≥ {GRIP_MIN_STEER} на скорости "
+            f"≥ {GRIP_MIN_SPEED_MS} м/с", no_data=True)]
+    fw = grip_false_share(windows, GRIP_FW_MAX_STEER_RAD, GRIP_FW_K)
+    ok = fw <= GRIP_MAX_FALSE_SHARE
+    out = [MetricResult(
+        f"{name}: константы прошивки", ok,
+        f"δ_max {math.degrees(GRIP_FW_MAX_STEER_RAD):.1f}°, K {GRIP_FW_K:g}: "
+        f"ложный grip_lost в {fw:.0%} окон (≤ {GRIP_MAX_FALSE_SHARE:.0%}"
+        f"{'' if ok else ', НЕ ВЫПОЛНЕНО: подогнать по строке ниже'})")]
+    fit = grip_fit(windows)
+    fitted = grip_false_share(windows, fit["max_steer_rad"], fit["k"])
+    lo, hi = fit["speed_range"]
+    k_note = (f"K {fit['k']:.4f} с²/м" if fit["k_fitted"] else
+              f"K не подогнан (vx {lo:.1f}–{hi:.1f} м/с, нужен разброс ≥ "
+              f"{GRIP_MIN_SPEED_SPAN} м/с)")
+    out.append(MetricResult(
+        f"{name}: подгонка", None,
+        f"kMaxSteerRad {fit['max_steer_rad']:.4f} "
+        f"({math.degrees(fit['max_steer_rad']):.1f}°), {k_note}; "
+        f"ошибка r {fit['rms_rel']:.1%} RMS, ложный grip_lost {fitted:.0%}; "
+        f"{len(windows)} окон, vx {lo:.1f}–{hi:.1f} м/с"))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 METRICS = ("yaw-step", "gyro-bias", "failsafe", "kids", "ekf-dist",
            "esc-start", "pitch-comp", "oversteer", "rc-events", "com-offset",
-           "madgwick-beta", "lpf", "imu-errors")
+           "madgwick-beta", "lpf", "imu-errors", "grip-fit")
 
 
 def run_metrics(rows: list[Row], only: list[str] | None = None,
@@ -1399,6 +1562,8 @@ def run_metrics(rows: list[Row], only: list[str] | None = None,
         out += check_rc_events(rows)
     if "imu-errors" in wanted:
         out += check_imu_errors(rows)
+    if "grip-fit" in wanted:
+        out += check_grip_fit(rows)
     baseline = kw.get("baseline")
     if "com-offset" in wanted:
         out += check_com_offset(rows, baseline)

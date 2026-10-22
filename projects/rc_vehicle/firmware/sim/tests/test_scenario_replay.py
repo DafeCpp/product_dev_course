@@ -1,12 +1,14 @@
 """LOS-31: поведенческие регрессии на реальных golden-эпизодах."""
 
 import csv
+import dataclasses
 import math
 import statistics
 from pathlib import Path
 
 import pytest
 
+from simlib.closed_loop import BOOT_CALIB_TICKS
 from simlib import (
     MagReplayCalibration,
     OversteerReplayConfig,
@@ -47,9 +49,14 @@ def _replay(name: str, **kwargs):
         sum(frame.dt_ms for frame in source_frames) / 2
     )
     assert all(frame.dt_ms == 2 for frame in replay_frames[:-1])
+    # Авто-манёвр отклоняется, пока идёт калибровка IMU в покое при старте
+    # (LOS-380), а sim_host запускает его сразу после неё. Лог начинается со
+    # стоящей машины: его первый кадр и стоит эти 2 с.
+    settle = BOOT_CALIB_TICKS if kwargs.get("start_test") else 0
+    rest = dataclasses.replace(replay_frames[0], dt_ms=2)
     replay_output = run_batch(
-        replay_frames, BIN, inverted_z_calib=True, **kwargs
-    )
+        [rest] * settle + replay_frames, BIN, inverted_z_calib=True, **kwargs
+    )[settle:]
     assert len(replay_output) == len(replay_frames)
     violations = find_invariant_violations(replay_output)
     assert not violations, violations[:5]

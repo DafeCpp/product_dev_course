@@ -16,7 +16,13 @@ on:
       - scripts/requirements-tools.txt
       - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh
-      - scripts/tests/test_production_deploy_contract.py
+      - scripts/tests/**
+      - scripts/dev-common.sh
+      - scripts/backend.sh
+      - scripts/frontend.sh
+      - scripts/dev.sh
+      - scripts/show-help.sh
+      - scripts/firmware-coverage.sh
       - infrastructure/yandex-cloud/outputs.tf
       - infrastructure/yandex-cloud/object-storage.tf
       - infrastructure/yandex-cloud/variables.tf
@@ -38,7 +44,13 @@ on:
       - scripts/requirements-tools.txt
       - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh
-      - scripts/tests/test_production_deploy_contract.py
+      - scripts/tests/**
+      - scripts/dev-common.sh
+      - scripts/backend.sh
+      - scripts/frontend.sh
+      - scripts/dev.sh
+      - scripts/show-help.sh
+      - scripts/firmware-coverage.sh
       - infrastructure/yandex-cloud/outputs.tf
       - infrastructure/yandex-cloud/object-storage.tf
       - infrastructure/yandex-cloud/variables.tf

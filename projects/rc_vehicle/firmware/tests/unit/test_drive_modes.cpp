@@ -43,6 +43,7 @@ TEST(DriveModeRegistryTest, GetNameReturnsNonNull) {
 
 TEST(DriveModeTraitsTest, NormalMode_YawActiveSlipInactive) {
   auto traits = DriveModeRegistry::Get(DriveMode::Normal).GetTraits();
+  EXPECT_TRUE(traits.roll_comp_active);  // LOS-386
   EXPECT_TRUE(traits.yaw_rate_active);
   EXPECT_TRUE(traits.pitch_comp_active);
   EXPECT_FALSE(traits.slip_angle_active);
@@ -64,6 +65,7 @@ TEST(DriveModeTraitsTest, OnlyNormalAndSportFilterYawSetpoint) {
 
 TEST(DriveModeTraitsTest, SportMode_SameAsNormal) {
   auto traits = DriveModeRegistry::Get(DriveMode::Sport).GetTraits();
+  EXPECT_TRUE(traits.roll_comp_active);  // LOS-386
   EXPECT_TRUE(traits.yaw_rate_active);
   EXPECT_FALSE(traits.slip_angle_active);
   EXPECT_TRUE(traits.oversteer_reduces_throttle);
@@ -73,6 +75,7 @@ TEST(DriveModeTraitsTest, SportMode_SameAsNormal) {
 
 TEST(DriveModeTraitsTest, DriftMode_SlipActiveYawInactive_NoThrottleReduction) {
   auto traits = DriveModeRegistry::Get(DriveMode::Drift).GetTraits();
+  EXPECT_TRUE(traits.roll_comp_active);  // LOS-386
   EXPECT_FALSE(traits.yaw_rate_active);
   EXPECT_TRUE(traits.pitch_comp_active);
   EXPECT_TRUE(traits.slip_angle_active);
@@ -83,6 +86,7 @@ TEST(DriveModeTraitsTest, DriftMode_SlipActiveYawInactive_NoThrottleReduction) {
 
 TEST(DriveModeTraitsTest, KidsMode_HasInputLimitsAndAntiSpin) {
   auto traits = DriveModeRegistry::Get(DriveMode::Kids).GetTraits();
+  EXPECT_TRUE(traits.roll_comp_active);  // LOS-386
   EXPECT_TRUE(traits.yaw_rate_active);
   EXPECT_TRUE(traits.pitch_comp_active);
   EXPECT_FALSE(traits.slip_angle_active);
@@ -95,6 +99,7 @@ TEST(DriveModeTraitsTest, KidsMode_HasInputLimitsAndAntiSpin) {
 
 TEST(DriveModeTraitsTest, DirectLaw_EverythingDisabled) {
   auto traits = DriveModeRegistry::Get(DriveMode::DirectLaw).GetTraits();
+  EXPECT_FALSE(traits.roll_comp_active);  // LOS-386
   EXPECT_FALSE(traits.yaw_rate_active);
   EXPECT_FALSE(traits.pitch_comp_active);
   EXPECT_FALSE(traits.slip_angle_active);

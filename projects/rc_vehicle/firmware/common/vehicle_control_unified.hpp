@@ -185,12 +185,13 @@ class VehicleControlUnified : public IVehicleControl {
    * @brief Запустить круговую калибровку IMU→CoM
    * @param target_accel_g Целевое ускорение при разгоне
    * @param steering_magnitude Абсолютное значение руля
-   * @param cruise_duration_sec Длительность круизной фазы
+   * @param cruise_duration_sec Длительность сбора на круизе после установления
+   *        скорости (см. ComOffsetCalibration::Start)
    * @return true при успешном запуске
    */
   bool StartComOffsetCalibration(float target_accel_g = 0.1f,
                                  float steering_magnitude = 0.5f,
-                                 float cruise_duration_sec = 5.0f) override;
+                                 float cruise_duration_sec = 15.0f) override;
 
   /** Прервать калибровку CoM offset. */
   void StopComOffsetCalibration() override { auto_drive_.StopComCalib(); }

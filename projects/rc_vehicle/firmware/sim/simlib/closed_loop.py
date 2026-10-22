@@ -22,6 +22,11 @@ from .vehicle_model import StepOutput, VehicleModel
 # baseline для unit-тестов и синтетических экспериментов.
 DEFAULT_CLOSED_LOOP_PROFILE = "fitted_2026_08_02"
 
+# Калибровка IMU в покое при каждом старте (CalibrationManager::
+# StartAutoCalibration, Full, 1000 семплов). Пока она идёт, прошивка держит газ
+# в нейтрали (LOS-380); на тике, где сбор закончился, газ уже проходит.
+BOOT_CALIB_TICKS = 1000
+
 
 class ClosedLoopSim:
     def __init__(self, sim_host_bin: str, params: SimParams | None = None,
@@ -43,13 +48,16 @@ class ClosedLoopSim:
                  slip_target_deg: float | None = None,
                  kids_preset: str | None = None,
                  slope_deg: float = 0.0,
+                 bank_deg: float = 0.0,
+                 roll_comp_gain: float | None = None,
                  madgwick_beta: float | None = None,
                  lpf_cutoff_hz: float | None = None,
                  com_offset: tuple[float, float] | None = None,
                  start_com_calib_at_ms: int | None = None):
         self.p = (params if params is not None
                   else get_profile(DEFAULT_CLOSED_LOOP_PROFILE))
-        self.model = VehicleModel(self.p, dynamic=dynamic, slope_deg=slope_deg)
+        self.model = VehicleModel(self.p, dynamic=dynamic, slope_deg=slope_deg,
+                                  bank_deg=bank_deg)
         # StepOutput предыдущего тика → сенсоры текущего кадра (на старте — покой).
         self.last_out = StepOutput(0.0, 0.0, 0.0, 0.0, 0.0)
         self.road_noise = RoadNoiseModel(self.p, noise_seed) if sensor_noise else None
@@ -69,6 +77,8 @@ class ClosedLoopSim:
             args.append("--no-kids-anti-spin")
         if pitch_comp:
             args.append("--pitch-comp")
+        if roll_comp_gain is not None:
+            args += ["--roll-comp", repr(float(roll_comp_gain))]
         if slip_target_deg is not None:
             args += ["--slip-target-deg", repr(float(slip_target_deg))]
         if kids_preset:
@@ -119,7 +129,8 @@ class ClosedLoopSim:
                            rc_steering=rc_steering, with_mag=with_mag,
                            wifi_keepalive=self.wifi_keepalive,
                            road_noise=self.road_noise,
-                           slope_rad=self.model.slope_rad)
+                           slope_rad=self.model.slope_rad,
+                           bank_rad=self.model.bank_rad)
         self.proc.stdin.write(frame.to_csv() + "\n")
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
@@ -136,6 +147,16 @@ class ClosedLoopSim:
         принимает текущую гравитацию за горизонт, поэтому склон для сценариев
         задают уже после неё."""
         self.model.slope_rad = math.radians(slope_deg)
+
+    def set_bank(self, bank_deg: float) -> None:
+        """Сменить поперечный уклон на ходу (LOS-386), >0 — правый борт ниже.
+        Как и склон, включают после калибровки IMU."""
+        self.model.bank_rad = math.radians(bank_deg)
+
+    def wait_boot_calibration(self) -> list[dict]:
+        """Простоять в нейтрали калибровку IMU при старте, как водитель,
+        который включил машину и ждёт: до её конца газ не проходит."""
+        return self.run(BOOT_CALIB_TICKS, rc_throttle=0.0, rc_steering=0.0)
 
     def run(self, n: int, dt_ms: int = 2, rc_throttle=None, rc_steering=None,
             with_mag: bool = True) -> list[dict]:

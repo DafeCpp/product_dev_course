@@ -15,6 +15,7 @@ pytestmark = pytest.mark.skipif(
 def test_drive_then_release_decelerates_to_stop():
     """Газ 2 с → отпустил → машина разгоняется, затем накатом тормозит до ~0."""
     with ClosedLoopSim(BIN) as sim:
+        sim.wait_boot_calibration()
         accel = sim.run(1000, dt_ms=2, rc_throttle=0.5, rc_steering=0.0)  # 2 с
         peak_v = sim.model.state.v
         # Отпустить газ (команда есть, но 0 → не failsafe): накат на сопротивлении.
@@ -37,6 +38,7 @@ def test_coast_without_command_stays_stopped():
 def test_brake_reverses_with_negative_throttle():
     """Разгон вперёд → отрицательный газ → тормозит и едет назад."""
     with ClosedLoopSim(BIN) as sim:
+        sim.wait_boot_calibration()
         sim.run(800, dt_ms=2, rc_throttle=0.5, rc_steering=0.0)
         assert sim.model.state.v > 1.0
         sim.run(1500, dt_ms=2, rc_throttle=-0.5, rc_steering=0.0)

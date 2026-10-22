@@ -13,6 +13,7 @@ pytestmark = pytest.mark.skipif(
 def test_throttle_ramp_increases_speed():
     with ClosedLoopSim(BIN) as sim:
         assert sim.p == get_profile(DEFAULT_CLOSED_LOOP_PROFILE)
+        sim.wait_boot_calibration()
         rows = sim.run(600, rc_throttle=0.5, rc_steering=0.0)
     assert sim.model.state.v > 0.5
     assert rows[-1]["failsafe"] == 0.0
@@ -20,9 +21,11 @@ def test_throttle_ramp_increases_speed():
 
 def test_step_steer_turns_symmetric():
     with ClosedLoopSim(BIN) as left:
+        left.wait_boot_calibration()
         left.run(600, rc_throttle=0.4, rc_steering=0.5)
         psi_left = left.model.state.psi
     with ClosedLoopSim(BIN) as right:
+        right.wait_boot_calibration()
         right.run(600, rc_throttle=0.4, rc_steering=-0.5)
         psi_right = right.model.state.psi
     assert psi_left > 0.05  # руль вправо по конвенции δ>0 → ψ растёт
@@ -49,8 +52,10 @@ def test_no_phantom_steering_after_boot():
 def test_reverse_flips_turn_direction():
     """FW-R22-зона: тот же руль на заднем ходу → противоположный поворот."""
     with ClosedLoopSim(BIN) as fwd:
+        fwd.wait_boot_calibration()
         fwd.run(600, rc_throttle=0.4, rc_steering=0.5)
     with ClosedLoopSim(BIN) as rev:
+        rev.wait_boot_calibration()
         rev.run(600, rc_throttle=-0.4, rc_steering=0.5)
     assert fwd.model.state.psi > 0.0
     assert rev.model.state.psi < 0.0

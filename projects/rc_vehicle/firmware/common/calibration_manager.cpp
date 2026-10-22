@@ -20,14 +20,26 @@ void CalibrationManager::StartCalibration(bool full) {
   calib_request_.store(full ? 2 : 1);
 }
 
-bool CalibrationManager::StartForwardCalibration() {
+bool CalibrationManager::TryStartForwardCollection() {
+  // Этап 2 заменил бы идущий сбор этапа 1: свежие семплы покоя пропали бы,
+  // а нейтраль газа снялась бы посреди калибровки (LOS-380). Проверка и
+  // старт идут с WS-потока, а этап 1 запускает control loop в
+  // ProcessRequest(): под одним мьютексом этап 1 не может начаться между
+  // ними.
+  std::lock_guard<std::mutex> lock(stage_mutex_);
+  if (imu_calib_.GetCalibStage() == 1) return false;
   return imu_calib_.StartForwardCalibration(2000);
 }
 
+bool CalibrationManager::StartForwardCalibration() {
+  return TryStartForwardCollection();
+}
+
 bool CalibrationManager::StartAutoForwardCalibration(float target_accel_g) {
-  if (!imu_calib_.StartForwardCalibration(2000)) {
+  if (!TryStartForwardCollection()) {
     platform_.Log(LogLevel::Warning,
-                  "Auto-forward calib failed to start (need stage 1 full)");
+                  "Auto-forward calib failed to start (need stage 1 full, "
+                  "no rest calibration in progress)");
     return false;
   }
 
@@ -103,9 +115,12 @@ void CalibrationManager::StopAutoForward() {
     // логе никакого следа. Условие — сбор реально шёл: ProcessCompletion()
     // зовёт нас и при штатном завершении (Done/Failed), и тогда событие об
     // обрыве было бы ложным.
-    const bool was_collecting =
-        imu_calib_.GetStatus() == CalibStatus::Collecting;
-    imu_calib_.CancelCalibration();
+    //
+    // Отменяем только сбор этапа 2: запрошенная во время auto-forward
+    // калибровка в покое (этап 1) уже заменила его, и её убивать нельзя —
+    // на ней держится нейтраль газа (LOS-380).
+    const bool was_collecting = imu_calib_.GetCalibStage() == 2;
+    if (was_collecting) imu_calib_.CancelCalibration();
     if (was_collecting && event_log_) {
       // param: 2 = stage 2 (auto_forward), как у ImuCalibStart
       event_log_->Push(
@@ -211,7 +226,10 @@ void CalibrationManager::ProcessRequest(uint32_t now_ms) {
   if (req != 0) {
     CalibMode mode = (req == 2) ? CalibMode::Full : CalibMode::GyroOnly;
     int samples = (req == 2) ? 2000 : 1000;
-    imu_calib_.StartCalibration(mode, samples);
+    {
+      std::lock_guard<std::mutex> lock(stage_mutex_);
+      imu_calib_.StartCalibration(mode, samples);
+    }
     platform_.Log(LogLevel::Info, "Calibration stage 1 started");
     if (event_log_) {
       // param: 0 = gyro_only, 1 = full

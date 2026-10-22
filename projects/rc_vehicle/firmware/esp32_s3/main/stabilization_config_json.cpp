@@ -112,6 +112,15 @@ cJSON* StabilizationConfigToJson(const StabilizationConfig& cfg) {
                             cfg.pitch_comp.max_correction);
   }
 
+  // LOS-386: руль против сноса на поперечном склоне
+  cJSON* roll_comp = cJSON_AddObjectToObject(obj, "roll_comp");
+  if (roll_comp) {
+    cJSON_AddBoolToObject(roll_comp, "enabled", cfg.roll_comp.enabled);
+    cJSON_AddNumberToObject(roll_comp, "gain", cfg.roll_comp.gain);
+    cJSON_AddNumberToObject(roll_comp, "max_correction",
+                            cfg.roll_comp.max_correction);
+  }
+
   // Kids mode config
   cJSON* kids_mode = cJSON_AddObjectToObject(obj, "kids_mode");
   if (kids_mode) {
@@ -270,6 +279,13 @@ void StabilizationConfigFromJson(StabilizationConfig& cfg, const cJSON* json) {
     get_bool(pitch_comp, "enabled", cfg.pitch_comp.enabled);
     get_float(pitch_comp, "gain", cfg.pitch_comp.gain);
     get_float(pitch_comp, "max_correction", cfg.pitch_comp.max_correction);
+  }
+
+  cJSON* roll_comp = cJSON_GetObjectItem(json, "roll_comp");
+  if (roll_comp) {
+    get_bool(roll_comp, "enabled", cfg.roll_comp.enabled);
+    get_float(roll_comp, "gain", cfg.roll_comp.gain);
+    get_float(roll_comp, "max_correction", cfg.roll_comp.max_correction);
   }
 
   // Kids mode config
