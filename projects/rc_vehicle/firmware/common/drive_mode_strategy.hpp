@@ -16,6 +16,8 @@ namespace rc_vehicle {
 struct ModeTraits {
   bool yaw_rate_active{true};
   bool pitch_comp_active{true};
+  /// Руль против сноса на поперечном склоне (LOS-386).
+  bool roll_comp_active{false};
   bool slip_angle_active{false};
   bool oversteer_guard_active{true};
   bool oversteer_reduces_throttle{true};

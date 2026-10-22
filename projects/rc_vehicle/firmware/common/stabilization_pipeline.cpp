@@ -192,6 +192,36 @@ void PitchCompensator::Process(const StabilizationConfig& cfg, float& throttle,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RollCompensator
+// ─────────────────────────────────────────────────────────────────────────────
+
+void RollCompensator::Process(const StabilizationConfig& cfg, float& steering,
+                              const StabilizationInput& input) noexcept {
+  last_correction_ = 0.0f;
+  if (!cfg.roll_comp.enabled) return;
+  if (input.stabilization_weight <= 0.0f) return;
+  if (!input.imu_enabled) return;
+  if (input.command.throttle < 0.0f || input.speed_ms < 0.0f) return;
+
+  const float speed_w =
+      std::clamp((input.speed_ms - kMinSpeedMs) / (kFullSpeedMs - kMinSpeedMs),
+                 0.0f, 1.0f);
+  constexpr float kG = 9.80665f;
+  const float lat_g = std::fabs(input.speed_ms * input.yaw_rate_rps) / kG;
+  const float turn_w =
+      std::clamp((kZeroLatG - lat_g) / (kZeroLatG - kFullLatG), 0.0f, 1.0f);
+  const float weight = speed_w * turn_w * input.stabilization_weight;
+  if (weight <= 0.0f) return;
+
+  const float correction =
+      std::clamp(cfg.roll_comp.gain * input.roll_deg,
+                 -cfg.roll_comp.max_correction, cfg.roll_comp.max_correction);
+  const float before = steering;
+  steering = std::clamp(steering + correction * weight, -1.0f, 1.0f);
+  last_correction_ = steering - before;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SlipAngleController
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -343,6 +373,15 @@ StabilizationOutput StabilizationPipeline::Process(
         input.command.throttle < 0.0f || output.command.throttle < 0.0f;
     yaw_ctrl_.Process(cfg, output.command.steering, input, reversing,
                       policy.yaw_ref_cutoff_hz);
+    if (policy.apply_input_limits) {
+      kids_processor_.ClampToGripSteerCap(output.command.steering);
+    }
+  }
+  if (policy.roll_comp_active) {
+    // После yaw-ПИД: его уставка считается из руля пульта, и добавка вверх по
+    // склону не должна читаться как команда водителя (LOS-386). В Kids
+    // потолок руля по сцеплению распространяется и на неё.
+    roll_ctrl_.Process(cfg, output.command.steering, input);
     if (policy.apply_input_limits) {
       kids_processor_.ClampToGripSteerCap(output.command.steering);
     }

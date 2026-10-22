@@ -492,5 +492,61 @@ TEST_F(KidsStatusLifetimeTest, LeavingKidsClearsLimiterStatuses) {
   EXPECT_FALSE(kids_.IsSpeedLimitActive());
 }
 
+TEST_F(StabilizationPipelineTest, RollCompensationRunsAfterYawController) {
+  // LOS-386: добавка вверх по склону идёт после yaw-ПИД, иначе уставка yaw
+  // rate из руля прочитала бы её как команду водителя и ПИД её отработал бы.
+  cfg_.roll_comp.enabled = true;
+  input_.command = {.throttle = 0.3f, .steering = 0.0f};
+  input_.speed_ms = 2.0f;
+  input_.yaw_rate_rps = 0.0f;
+  input_.roll_deg = 5.0f;
+  ModeTraits policy{
+      .yaw_rate_active = true,
+      .pitch_comp_active = false,
+      .roll_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+  };
+
+  auto output = pipeline_.Process(cfg_, policy, input_);
+  EXPECT_NEAR(output.command.steering, 0.02f, 1e-5f);
+  EXPECT_NEAR(pipeline_.GetRollCompensator().GetLastCorrection(), 0.02f, 1e-5f);
+
+  policy.roll_comp_active = false;
+  output = pipeline_.Process(cfg_, policy, input_);
+  EXPECT_NEAR(output.command.steering, 0.0f, 1e-5f);
+}
+
+TEST_F(StabilizationPipelineTest, KidsRollCompensationRespectsGripSteerCap) {
+  // LOS-386: в Kids потолок руля по сцеплению распространяется и на добавку.
+  cfg_.mode = DriveMode::Kids;
+  cfg_.kids_mode.steering_limit = 1.0f;
+  cfg_.kids_mode.accel_limit_enabled = false;
+  cfg_.roll_comp.enabled = true;
+  cfg_.roll_comp.gain = 0.05f;
+  cfg_.roll_comp.max_correction = 0.3f;
+  const ModeTraits policy{
+      .yaw_rate_active = false,
+      .pitch_comp_active = false,
+      .roll_comp_active = true,
+      .slip_angle_active = false,
+      .oversteer_guard_active = false,
+      .apply_input_limits = true,
+  };
+  input_.command = {.throttle = 0.2f, .steering = 0.0f};
+  input_.speed_ms = 1.0f;
+  input_.yaw_rate_rps = 0.03f;
+  input_.roll_deg = 10.0f;
+  input_.lateral_grip_lost = true;
+  const float cap = KidsModeProcessor::kGripSteerYawRatio *
+                    GripLossDetector::SteeringForYawRate(0.03f, 1.0f);
+  ASSERT_LT(cap, 0.3f);
+  for (int i = 0; i < 100; ++i) {
+    const auto output = pipeline_.Process(cfg_, policy, input_);
+    ASSERT_LE(output.command.steering, cap + 1e-6f) << "tick " << i;
+  }
+  EXPECT_TRUE(kids_.IsGripSteerLimitActive());
+}
+
 }  // namespace
 }  // namespace rc_vehicle

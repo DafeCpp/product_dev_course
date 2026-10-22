@@ -3,11 +3,13 @@
 Те же критерии PASS, что проверяются на машине, но в SIL: это регрессия и
 эталон для сравнения с будущими заездами. Склон/pitch compensation, уставка
 угла заноса в Drift и пресеты Kids поддержаны через ClosedLoopSim/sim_host
-(LOS-367), удержание уставки заноса в Drift — LOS-384. Kids anti-spin на модели сцепления — test_kids_anti_spin.py
+(LOS-367), удержание уставки заноса в Drift — LOS-384, поперечный склон и
+roll compensation — LOS-386. Kids anti-spin на модели сцепления — test_kids_anti_spin.py
 (LOS-370). Критерии, которые в SIL не выполняются, помечены strict xfail:
 исправление сразу покажет XPASS.
 """
 
+import dataclasses
 import math
 
 import pytest
@@ -374,6 +376,62 @@ def test_pitch_comp_cuts_throttle_downhill():
     assert (_tail_mean(with_comp, "cmd_throttle")
             < _tail_mean(without, "cmd_throttle") - 0.03)
     assert v_comp < v_plain
+
+
+BANK_DEG = 5.0
+ROLL_COMP_GAIN = 0.004  # штатный RollCompensationConfig::gain
+
+
+def _bank_cruise(roll_comp: bool, bank_deg: float = BANK_DEG):
+    """LOS-386: прямой ход по поперечному склону в Drift (без yaw-ПИД).
+
+    Машина с недостаточной поворачиваемостью (ЦМ ближе к передней оси, у
+    штатного профиля поворачиваемость нейтральная и склон её только сносит
+    вбок). Калибровка на ровном, разгон, затем склон. Оба прогона со
+    стабилизацией: отличаются только roll compensation. Возвращает строки на
+    склоне и изменение курса модели [°] за это время.
+    """
+    params = dataclasses.replace(get_profile("fitted_2026_08_02"),
+                                 com_a=0.12, com_b=0.18)
+    with ClosedLoopSim(BIN, params=params, dynamic=True, sensor_noise=False,
+                       stabilize=True, drive_mode="drift",
+                       roll_comp_gain=ROLL_COMP_GAIN if roll_comp else None
+                       ) as sim:
+        sim.run(1000, rc_throttle=0.0, rc_steering=0.0)
+        sim.run(1000, rc_throttle=0.4, rc_steering=0.0)
+        psi0 = sim.model.state.psi
+        sim.set_bank(bank_deg)
+        rows = sim.run(2000, rc_throttle=0.4, rc_steering=0.0)
+        return rows, math.degrees(sim.model.state.psi - psi0)
+
+
+def test_bank_is_seen_as_roll_and_turns_car_downhill():
+    """LOS-386: поперечный склон виден прошивке как крен ≈ уклону (> 0 —
+    правый борт ниже), а машина без компенсации уходит вниз по склону."""
+    rows, heading = _bank_cruise(roll_comp=False)
+    assert abs(_tail_mean(rows, "roll_deg") - BANK_DEG) < 1.5
+    assert heading < -5.0
+
+
+@pytest.mark.parametrize("bank_deg", [BANK_DEG, -BANK_DEG])
+def test_roll_comp_steers_uphill_and_holds_heading(bank_deg):
+    """TESTING_PROGRAM.md: на поперечном склоне roll compensation рулит вверх
+    по склону (руль > 0 при правом борте ниже) и уменьшает уход курса."""
+    with_comp, heading_comp = _bank_cruise(roll_comp=True, bank_deg=bank_deg)
+    _, heading_plain = _bank_cruise(roll_comp=False, bank_deg=bank_deg)
+    steering = _tail_mean(with_comp, "steering")
+    assert steering * bank_deg > 0.0
+    assert abs(steering) > 0.01
+    assert abs(heading_comp) < 0.7 * abs(heading_plain)
+
+
+def test_roll_comp_idle_on_flat():
+    """LOS-386: на ровном компенсация руль не трогает."""
+    with_comp, heading_comp = _bank_cruise(roll_comp=True, bank_deg=0.0)
+    without, heading_plain = _bank_cruise(roll_comp=False, bank_deg=0.0)
+    assert abs(_tail_mean(with_comp, "steering")
+               - _tail_mean(without, "steering")) < 1e-3
+    assert abs(heading_comp - heading_plain) < 0.1
 
 
 def test_drift_slip_target_shifts_throttle_correction():

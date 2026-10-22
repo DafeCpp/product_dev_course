@@ -98,6 +98,8 @@ class StdioPlatform : public VehicleControlPlatform {
   }
   /** Включить компенсацию тангажа (pitch_comp.enabled), LOS-367. */
   void SetPitchComp(bool on) { pitch_comp_enabled_ = on; }
+  /** Включить компенсацию крена с коэффициентом gain (roll_comp), LOS-386. */
+  void SetRollCompGain(float gain) { roll_comp_gain_ = gain; }
   /** Целевой угол скольжения Drift-режима [deg] (slip_angle.target_deg),
    *  LOS-367. */
   void SetSlipTargetDeg(float deg) { slip_target_deg_ = deg; }
@@ -286,9 +288,9 @@ class StdioPlatform : public VehicleControlPlatform {
   // --pitch-comp и --slip-target-deg включают enabled (иначе stab_weight=0).
   std::optional<StabilizationConfig> MakeConfig(DriveMode mode) const {
     if (mode == DriveMode::Normal && speed_limit_ms_ <= 0.0f && !stabilize_ &&
-        !oversteer_config_ && !pitch_comp_enabled_ && !slip_target_deg_ &&
-        kids_preset_ == KidsPreset::Custom && !madgwick_beta_ &&
-        !lpf_cutoff_hz_) {
+        !oversteer_config_ && !pitch_comp_enabled_ && !roll_comp_gain_ &&
+        !slip_target_deg_ && kids_preset_ == KidsPreset::Custom &&
+        !madgwick_beta_ && !lpf_cutoff_hz_) {
       return std::nullopt;
     }
     StabilizationConfig cfg{};
@@ -301,10 +303,15 @@ class StdioPlatform : public VehicleControlPlatform {
       cfg.kids_mode.speed_limit_enabled = true;
       cfg.kids_mode.max_speed_ms = speed_limit_ms_;
     }
-    if (stabilize_ || pitch_comp_enabled_ || slip_target_deg_) {
+    if (stabilize_ || pitch_comp_enabled_ || roll_comp_gain_ ||
+        slip_target_deg_) {
       cfg.enabled = true;  // иначе stab_weight=0 → контроллеры не работают
     }
     if (pitch_comp_enabled_) cfg.pitch_comp.enabled = true;
+    if (roll_comp_gain_) {
+      cfg.roll_comp.enabled = true;
+      cfg.roll_comp.gain = *roll_comp_gain_;
+    }
     if (slip_target_deg_) cfg.slip_angle.target_deg = *slip_target_deg_;
     if (!kids_accel_limit_) cfg.kids_mode.accel_limit_enabled = false;
     if (madgwick_beta_) {
@@ -367,6 +374,7 @@ class StdioPlatform : public VehicleControlPlatform {
   bool kids_anti_spin_{true};
   std::optional<OversteerConfig> oversteer_config_;
   bool pitch_comp_enabled_{false};
+  std::optional<float> roll_comp_gain_;
   std::optional<float> slip_target_deg_;
   KidsPreset kids_preset_{KidsPreset::Custom};
   std::optional<float> madgwick_beta_;

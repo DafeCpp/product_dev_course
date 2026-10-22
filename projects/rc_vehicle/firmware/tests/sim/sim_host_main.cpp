@@ -29,6 +29,8 @@
 //       RC-команды в сценарии не нужны.
 //   --pitch-comp — включить pitch_comp.enabled (LOS-367, компенсация тангажа
 //       на уклоне); заодно включает cfg.enabled, как --stabilize.
+//   --roll-comp <gain> — включить roll_comp с коэффициентом gain (LOS-386,
+//       руль вверх по поперечному склону); заодно включает cfg.enabled.
 //   --slip-target-deg <deg> — slip_angle.target_deg (LOS-367); действует
 //       только с --drive-mode drift (в остальных режимах slip-PID выключен).
 //   --kids-preset <toddler|child|preteen> — возрастной пресет Kids Mode
@@ -132,6 +134,7 @@ int main(int argc, char** argv) {
   bool start_test = false;
   bool log_to_stderr = false;
   bool pitch_comp = false;
+  std::optional<float> roll_comp_gain;
   std::optional<float> slip_target_deg;
   rc_vehicle::KidsPreset kids_preset = rc_vehicle::KidsPreset::Custom;
   std::optional<float> madgwick_beta;
@@ -200,6 +203,8 @@ int main(int argc, char** argv) {
       com_steering = test_params.steering;
     } else if (a == "--pitch-comp")
       pitch_comp = true;
+    else if (a == "--roll-comp" && i + 1 < argc)
+      roll_comp_gain = std::strtof(argv[++i], nullptr);
     else if (a == "--slip-target-deg" && i + 1 < argc)
       slip_target_deg = std::strtof(argv[++i], nullptr);
     else if (a == "--kids-preset" && i + 1 < argc)
@@ -231,6 +236,7 @@ int main(int argc, char** argv) {
   p->SetKidsAccelLimit(kids_accel_limit);
   p->SetKidsAntiSpin(kids_anti_spin);
   p->SetPitchComp(pitch_comp);
+  if (roll_comp_gain) p->SetRollCompGain(*roll_comp_gain);
   if (slip_target_deg) p->SetSlipTargetDeg(*slip_target_deg);
   p->SetKidsPreset(kids_preset);
   if (madgwick_beta) p->SetMadgwickBeta(*madgwick_beta);

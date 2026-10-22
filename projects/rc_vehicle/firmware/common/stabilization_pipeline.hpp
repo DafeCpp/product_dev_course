@@ -22,6 +22,8 @@ struct StabilizationInput {
   float vx_variance{0.0f};
   float filtered_gyro_z_dps{0.0f};
   float pitch_deg{0.0f};
+  /** Крен от TiltEstimator [°], > 0 — правый борт ниже (LOS-386). */
+  float roll_deg{0.0f};
   float forward_accel_g{0.0f};
   /** Пробуксовка колёс и скорость корпуса без неё (LOS-385). */
   float wheel_slip_ratio{0.0f};
@@ -162,6 +164,53 @@ class PitchCompensator {
  private:
   const MadgwickFilter* madgwick_{nullptr};
   const ImuHandler* imu_{nullptr};
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// RollCompensator
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Компенсация крена: руль вверх по поперечному склону (LOS-386).
+ *
+ * Боковая составляющая тяжести на склоне нагружает шины как поворот, и
+ * машина с недостаточной поворачиваемостью уходит вниз по склону. Добавка
+ * руля correction = clamp(gain·крен, ±max_correction) упреждает её; в
+ * режимах с yaw-rate ПИД она снимает с интегратора догоняющую работу, без
+ * него (Drift) — единственное, что держит курс.
+ *
+ * Крен > 0 — правый борт ниже (TiltEstimator: roll = atan2(ay, az)), вверх
+ * по склону — влево, т.е. руль > 0. Компенсация не действует:
+ *  - на малой скорости (нарастает от kMinSpeedMs до kFullSpeedMs): на месте
+ *    руль сам по себе не должен шевелиться;
+ *  - на заднем ходу: роли осей меняются, знак поправки не определён;
+ *  - в повороте: крен корпуса от центробежной силы TiltEstimator не отличает
+ *    от склона, и добавка руля внутрь поворота его бы закручивала. Поэтому
+ *    вес падает до нуля между kFullLatG и kZeroLatG по |v·r|.
+ */
+class RollCompensator {
+ public:
+  static constexpr float kMinSpeedMs = 0.3f;
+  static constexpr float kFullSpeedMs = 1.0f;
+  static constexpr float kFullLatG = 0.05f;
+  static constexpr float kZeroLatG = 0.10f;
+
+  /**
+   * @brief Применить roll-компенсацию к рулю.
+   * @param cfg      Живой снимок конфига текущей итерации
+   * @param steering Команда руля [in/out]
+   * @param input    Снимок состояния тика
+   */
+  void Process(const StabilizationConfig& cfg, float& steering,
+               const StabilizationInput& input) noexcept;
+
+  /** Добавка руля на последнем Process() (0 — не действовала). */
+  [[nodiscard]] float GetLastCorrection() const noexcept {
+    return last_correction_;
+  }
+
+ private:
+  float last_correction_{0.0f};
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -313,12 +362,18 @@ class StabilizationPipeline {
       const StabilizationConfig& cfg, const ModeTraits& policy,
       const StabilizationInput& input) noexcept;
 
+  /** Компенсатор крена (без зависимостей, поэтому принадлежит конвейеру). */
+  [[nodiscard]] const RollCompensator& GetRollCompensator() const noexcept {
+    return roll_ctrl_;
+  }
+
  private:
   YawRateController& yaw_ctrl_;
   PitchCompensator& pitch_ctrl_;
   SlipAngleController& slip_ctrl_;
   OversteerGuard& oversteer_guard_;
   KidsModeProcessor& kids_processor_;
+  RollCompensator roll_ctrl_;
 };
 
 }  // namespace rc_vehicle

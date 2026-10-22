@@ -121,6 +121,48 @@ def test_negative_slope_speeds_descent():
     assert out_downhill.speed > out_flat.speed
 
 
+BANK_DEG = 5.0
+
+
+def test_bank_at_rest_tires_hold_gravity():
+    """Поперечный уклон (LOS-386), правый борт ниже: стоящую машину шины
+    держат от сползания, и боковая specific force — реакция g·sin(крен)
+    влево (+Y), как у наклонённого вправо акселерометра."""
+    p = SimParams()
+    m = VehicleModel(p, bank_deg=BANK_DEG)
+    out = _run(m, throttle=0.0, steering=0.0, n=10)
+    assert out.lat_accel == pytest.approx(
+        p.gravity_ms2 * math.sin(math.radians(BANK_DEG)))
+    assert out.yaw_rate == 0.0
+
+
+def _bank_cruise(params, bank_deg, n=250):
+    m = VehicleModel(params, dynamic=True, bank_deg=bank_deg)
+    m.state.v = 3.0
+    out = _run(m, throttle=0.0, steering=0.0, n=n)
+    return m, out
+
+
+def test_bank_crabs_neutral_steer_car_without_yaw():
+    """Нейтральная поворачиваемость (a = b, Caf = Car): тяжесть склона
+    уводит обе оси одинаково — машина сползает вниз (vy < 0, вправо), не
+    поворачивая."""
+    m, _ = _bank_cruise(SimParams(), BANK_DEG)
+    assert m.state.vy < -0.01
+    assert abs(m.state.r) < 1e-3
+
+
+@pytest.mark.parametrize("bank_deg", [BANK_DEG, -BANK_DEG])
+def test_bank_turns_understeer_car_downhill(bank_deg):
+    """Недостаточная поворачиваемость (ЦМ ближе к передней оси): перед
+    уводится сильнее, и машина поворачивает вниз по склону — при правом
+    борте ниже вправо (r < 0). Это и компенсирует руль roll compensation."""
+    understeer = SimParams(com_a=0.12, com_b=0.18)
+    m, _ = _bank_cruise(understeer, bank_deg)
+    assert m.state.r * bank_deg < 0.0
+    assert abs(m.state.r) > 0.01
+
+
 def _DYN_MIN():
     from simlib.vehicle_model import _DYNAMIC_MIN_SPEED
 

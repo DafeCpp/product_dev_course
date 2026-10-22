@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -412,6 +413,47 @@ struct PitchCompensationConfig {
 };
 
 /**
+ * @brief Конфигурация roll compensation: руль против сноса на поперечном
+ *        склоне (LOS-386).
+ *
+ * На поперечном склоне боковая составляющая тяжести g·sin(крен) нагружает
+ * шины так же, как центростремительное ускорение в повороте. Машина с
+ * недостаточной поворачиваемостью при этом сама уходит вниз по склону, и
+ * удержать курс можно только рулём вверх: δ = K_us·g·sin(крен). Компенсация
+ * подаёт эту добавку упреждающе, по крену от TiltEstimator.
+ */
+struct RollCompensationConfig {
+  /** Включена ли компенсация крена. По умолчанию выключена: коэффициент
+   *  зависит от поворачиваемости конкретной машины и подбирается на склоне. */
+  bool enabled{false};
+
+  /**
+   * Коэффициент крен → руль (доля хода руля на градус крена), руль вверх по
+   * склону. Диапазон: 0.0–0.05, по умолчанию 0.004.
+   */
+  float gain{0.004f};
+
+  /**
+   * Максимальная поправка руля от компенсации крена [0..1].
+   * Диапазон: 0.0–0.3, по умолчанию 0.10.
+   */
+  float max_correction{0.10f};
+
+  /**
+   * @brief Проверить валидность конфигурации roll compensation
+   */
+  [[nodiscard]] bool IsValid() const noexcept {
+    return gain >= 0.0f && gain <= 0.05f && max_correction >= 0.0f &&
+           max_correction <= 0.3f;
+  }
+
+  /**
+   * @brief Применить ограничения к параметрам
+   */
+  void Clamp() noexcept;
+};
+
+/**
  * @brief Конфигурация детского режима (Kids Mode)
  */
 struct KidsModeConfig {
@@ -631,6 +673,14 @@ struct StabilizationConfig {
    */
   float brake_slew_multiplier{4.0f};
 
+  /**
+   * Конфигурация roll compensation (LOS-386). Стоит сразу перед version:
+   * всё, что до неё, побайтно совпадает с раскладкой NVS v14, и миграция
+   * переносит старые профили без потерь (см.
+   * StabilizationConfigFromPreRollComp).
+   */
+  RollCompensationConfig roll_comp;
+
   /** Версия структуры для NVS-миграции */
   uint8_t version{3};
 
@@ -738,5 +788,26 @@ inline const char* DriveModeToString(DriveMode mode) {
       return "Unknown";
   }
 }
+
+/**
+ * @brief Размер StabilizationConfig до LOS-386 (без roll_comp) — раскладка
+ *        NVS v14.
+ */
+inline constexpr size_t kStabilizationConfigPreRollCompSize =
+    sizeof(StabilizationConfig) - sizeof(RollCompensationConfig);
+
+/**
+ * @brief Разобрать StabilizationConfig в раскладке до LOS-386.
+ *
+ * roll_comp вставлен прямо перед version, поэтому поля до него совпадают
+ * побайтно, а version и magic лежат в старой раскладке на месте roll_comp.
+ * roll_comp получает значения по умолчанию.
+ * @param data Байты старой структуры
+ * @param size Их размер; должен быть kStabilizationConfigPreRollCompSize
+ * @param out  Результат (не меняется при неверном размере)
+ * @return false — размер не совпал
+ */
+bool StabilizationConfigFromPreRollComp(const void* data, size_t size,
+                                        StabilizationConfig& out) noexcept;
 
 }  // namespace rc_vehicle
