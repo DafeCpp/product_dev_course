@@ -108,7 +108,11 @@ class VehicleModel:
         # но акселерометром не видна (свободное падение по склону).
         grade_accel = p.gravity_ms2 * math.sin(self.slope_rad)
         long_accel = self._traction_limited_accel(dt, grade_accel)
-        s.v += (long_accel - grade_accel) * dt
+        # v — продольная скорость в СК корпуса, поэтому у твёрдого тела
+        # v̇x = Fx/m + r·vy (у боковой оси симметрично v̇y = Fy/m − r·vx).
+        # Без связи занос не тратил скорость, и β в силовом заносе рос без
+        # предела, а акселерометр не видел −r·vy (LOS-380).
+        s.v += (long_accel - grade_accel + s.r * s.vy) * dt
         if not self._wheels_spinning:
             s.wheel_v = s.v
 

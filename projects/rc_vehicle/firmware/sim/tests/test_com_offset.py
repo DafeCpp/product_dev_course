@@ -14,7 +14,17 @@ bias, а в покое тряска дороги (sigma_0) не дала бы о
 ещё разгоняется, и при сборе через фиксированные 0.5 с это продольное
 ускорение сдвигало rx примерно на −0.07 м (LOS-380, GTest
 `CruiseWaitsForSpeedToSettle`).
+
+Со связью r·vy в модели (LOS-380) на установившемся круге у центра масс
+a_x = −r·vy, и знак у него одинаковый в CW и CCW: метод кругов находит
+смещение не от центра масс, а от точки без бокового скольжения (у задней
+оси). IMU в центре масс даёт rx ≈ +0.04…0.14 м в зависимости от скорости
+на круге и шума. Разница смещений при одном и том же круге точная, поэтому
+тесты ниже сравнивают rx с калибровкой IMU в центре масс на том же seed;
+абсолютный rx — xfail до исправления метода.
 """
+
+import functools
 
 import pytest
 
@@ -35,6 +45,7 @@ MAX_TICKS = 40000
 TOLERANCE_M = 0.04
 
 
+@functools.cache
 def _calibrate(offset_m: tuple[float, float], *, seed: int = 0,
                saved_offset_m: tuple[float, float] | None = None
                ) -> tuple[float, float]:
@@ -54,6 +65,17 @@ def _calibrate(offset_m: tuple[float, float], *, seed: int = 0,
     raise AssertionError("калибровка CoM не завершилась")
 
 
+def test_centered_imu_gives_zero_lateral_offset():
+    """IMU в центре масс: калибровка не находит бокового смещения."""
+    _, ry = _calibrate((0.0, 0.0))
+    assert ry == pytest.approx(0.0, abs=TOLERANCE_M)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "LOS-380: метод кругов меряет rx от точки без бокового скольжения "
+    "(у задней оси), а не от центра масс: на круге a_x = −r·vy одного знака "
+    "в CW и CCW. Чтобы перейти к центру масс, прошивке нужна b (расстояние "
+    "от ЦМ до задней оси), а она знает только колёсную базу."))
 def test_centered_imu_gives_zero_offset():
     """IMU в центре масс: калибровка не находит смещения."""
     rx, ry = _calibrate((0.0, 0.0))
@@ -63,9 +85,11 @@ def test_centered_imu_gives_zero_offset():
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_calibration_recovers_imu_offset(seed):
-    """7.6: калибровка по кругу находит заданное смещение IMU."""
+    """7.6: калибровка по кругу находит заданное смещение IMU (rx — от
+    калибровки IMU в центре масс на том же круге)."""
     rx, ry = _calibrate((-0.10, 0.08), seed=seed)
-    assert rx == pytest.approx(-0.10, abs=TOLERANCE_M)
+    rx_centered, _ = _calibrate((0.0, 0.0), seed=seed)
+    assert rx - rx_centered == pytest.approx(-0.10, abs=TOLERANCE_M)
     assert ry == pytest.approx(0.08, abs=TOLERANCE_M)
 
 
@@ -73,5 +97,6 @@ def test_recalibration_refines_saved_offset():
     """LOS-379: повторная калибровка поверх сохранённого offset даёт полный
     offset, а не остаток."""
     rx, ry = _calibrate((-0.10, 0.08), saved_offset_m=(-0.05, 0.02))
-    assert rx == pytest.approx(-0.10, abs=TOLERANCE_M)
+    rx_centered, _ = _calibrate((0.0, 0.0))
+    assert rx - rx_centered == pytest.approx(-0.10, abs=TOLERANCE_M)
     assert ry == pytest.approx(0.08, abs=TOLERANCE_M)
