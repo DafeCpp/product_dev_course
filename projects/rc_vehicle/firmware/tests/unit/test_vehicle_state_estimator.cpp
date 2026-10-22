@@ -374,6 +374,33 @@ TEST_F(VehicleStateEstimatorTest, TiltAnchorSettleTracksGainChanges) {
   EXPECT_TRUE(anchored);
 }
 
+TEST_F(VehicleStateEstimatorTest, SteadyDriftDoesNotTiltPitch) {
+  // LOS-380: в установившемся заносе на ровном v̇x = 0, а акселерометр по X
+  // видит −r·vy. Якорь, считавший линейное ускорение как Δvx/dt, принимал
+  // его за наклон (≈7° при r = 1.2 рад/с, vy = 1 м/с).
+  constexpr float kG = 9.80665f;
+  constexpr float kVx = 3.0f;
+  constexpr float kVy = 1.0f;
+  constexpr float kR = 1.2f;
+  input_.filter.motor_model_enabled = true;
+  input_.filter.tilt_corr_gain_hz = 5.0f;
+  sensors_.imu_data.ax = -kR * kVy / kG;
+  sensors_.imu_data.ay = kR * kVx / kG;
+  sensors_.imu_data.gz = kR * 180.0f / static_cast<float>(M_PI);
+  sensors_.filtered_gz = sensors_.imu_data.gz;
+
+  VehicleStateEstimate estimate;
+  for (int i = 0; i < 1000; ++i) {  // 2 с = 10τ коррекции
+    ekf_.SetState(kVx, kVy, kR);
+    estimate = estimator_.Update(sensors_, input_);
+  }
+
+  ASSERT_TRUE(estimate.tilt_accel_anchored);
+  // Без r·vy в якоре pitch уходил на 6.6°.
+  EXPECT_NEAR(estimate.pitch_rad, 0.0f,
+              1.0f * static_cast<float>(M_PI) / 180.0f);
+}
+
 TEST_F(VehicleStateEstimatorTest, CounterfactualMotorModelIsNotTiltAnchor) {
   // LOS-369: пока Kids speed limiter срезает PWM, ускорение мотор-модели
   // counterfactual — pitch по нему для компенсации не годится.
