@@ -176,7 +176,8 @@ class VehicleModel:
         предела колёса срываются: корпус тянет сила трения скольжения, а
         остаток тяги раскручивает колёса, пока противо-ЭДС не уравняет её с
         трением. Сцепление возвращается, когда корпус догнал колёса к концу
-        шага (скорость корпуса после интегрирования, с учётом склона).
+        шага (скорость корпуса после интегрирования, с учётом склона и связи
+        r·vy, как в step()).
         """
         p = self.p
         s = self.state
@@ -194,7 +195,7 @@ class VehicleModel:
         friction = self._spin_dir * limit
         s.wheel_v += ((s.accel - p.drag_coeff * s.wheel_v - friction)
                       * _WHEEL_SPIN_GAIN * dt)
-        v_next = s.v + (friction - grade_accel) * dt
+        v_next = s.v + (friction - grade_accel + s.r * s.vy) * dt
         if (s.wheel_v - v_next) * self._spin_dir <= 0.0:
             self._wheels_spinning = False  # корпус догнал колёса — сцепление
             return max(-limit, min(limit, s.accel - p.drag_coeff * s.v))
