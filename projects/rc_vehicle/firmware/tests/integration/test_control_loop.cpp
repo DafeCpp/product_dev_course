@@ -49,6 +49,9 @@ class SimPlatform : public FakePlatform {
 // Control Loop Integration Tests
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Тиков на авто-калибровку покоя при старте (StartAutoCalibration).
+constexpr uint32_t kBootCalibTicks = 1000;
+
 class ControlLoopTest : public ::testing::Test {
  protected:
   // Запустить control loop на N итераций, возвращая платформу для проверок.
@@ -131,7 +134,8 @@ TEST_F(ControlLoopTest, FailsafeActivated_WhenNoSignal) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, WifiCommand_ProducesPwmOutput) {
-  auto platform = std::make_unique<SimPlatform>(50);
+  // Первые 1000 тиков идёт калибровка покоя при старте, газ в нейтрали.
+  auto platform = std::make_unique<SimPlatform>(kBootCalibTicks + 50);
   platform_ = platform.get();
 
   ImuData imu{};
@@ -146,12 +150,32 @@ TEST_F(ControlLoopTest, WifiCommand_ProducesPwmOutput) {
   EXPECT_NE(platform_->GetLastThrottle(), 0.0f);
 }
 
+// LOS-380: каждый старт начинается с авто-калибровки покоя (Full, 1000
+// семплов). Команда газа в это время не должна тронуть машину: плавный разгон
+// проходит проверку дисперсии и наклоняет gravity_vec.
+TEST_F(ControlLoopTest, BootCalibrationHoldsThrottle) {
+  auto platform = std::make_unique<SimPlatform>(50);
+  platform_ = platform.get();
+
+  ImuData imu{};
+  imu.az = 1.0f;
+  platform_->SetImuData(imu);
+  platform_->SetWifiCommand(RcCommand{0.5f, 0.3f});
+
+  vc_.SetPlatform(std::move(platform));
+  (void)vc_.Init();
+
+  ASSERT_EQ(vc_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_->GetLastThrottle(), 0.0f);
+  EXPECT_NE(platform_->GetLastSteering(), 0.0f) << "руль у водителя";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RC приоритет над Wi-Fi
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, RcOverridesWifi) {
-  auto platform = std::make_unique<SimPlatform>(100);
+  auto platform = std::make_unique<SimPlatform>(kBootCalibTicks + 100);
   platform_ = platform.get();
 
   ImuData imu{};
@@ -267,7 +291,7 @@ TEST_F(ControlLoopTest, ClearLog_EmptiesBuffer) {
 // чистить обе секции. Иначе события прошлых прогонов переживают очистку и
 // всплывают в свежем CSV (LOS-226).
 TEST_F(ControlLoopTest, ClearLog_AlsoClearsEvents) {
-  RunLoop(20);
+  RunLoop(kBootCalibTicks + 20);  // после калибровки при старте
 
   ASSERT_TRUE(vc_.StartTest(TestParams{}));
   ASSERT_GT(vc_.GetEventCount(), 0u);
@@ -293,7 +317,7 @@ TEST_F(ControlLoopTest, ClearLog_SeedsCurrentConfigSnapshot) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, TestRunner_StartStop) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   TestParams params;
   params.type = TestType::Straight;
@@ -335,7 +359,7 @@ TEST_F(ControlLoopTest, AutoForwardCalib_RejectedWhileRcActive) {
 // Положительный контроль к тесту выше: без пульта тот же вызов проходит.
 // Без него первый тест зелёный и на сломанном коде.
 TEST_F(ControlLoopTest, AutoForwardCalib_AcceptedWithoutRc) {
-  auto platform = std::make_unique<SimPlatform>(20);
+  auto platform = std::make_unique<SimPlatform>(kBootCalibTicks + 20);
   platform_ = platform.get();
 
   ImuData imu{};
@@ -355,7 +379,7 @@ TEST_F(ControlLoopTest, AutoForwardCalib_AcceptedWithoutRc) {
 }
 
 TEST_F(ControlLoopTest, TestRunner_MutualExclusion_WithTrimCalib) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   // Start trim calibration first
   EXPECT_TRUE(vc_.StartSteeringTrimCalibration(0.1f));
@@ -376,7 +400,7 @@ TEST_F(ControlLoopTest, TestRunner_MutualExclusion_WithTrimCalib) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, ComOffsetCalib_StartStop) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   EXPECT_TRUE(vc_.StartComOffsetCalibration(0.1f, 0.5f, 5.0f));
   EXPECT_TRUE(vc_.IsComOffsetCalibActive());
@@ -386,7 +410,7 @@ TEST_F(ControlLoopTest, ComOffsetCalib_StartStop) {
 }
 
 TEST_F(ControlLoopTest, ComOffsetCalib_MutualExclusion_WithTestRunner) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   // Start test first
   TestParams params;
@@ -407,7 +431,7 @@ TEST_F(ControlLoopTest, ComOffsetCalib_MutualExclusion_WithTestRunner) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(ControlLoopTest, SteeringTrimCalib_StartStop) {
-  RunLoop(5);
+  RunLoop(kBootCalibTicks + 5);  // после калибровки при старте
 
   EXPECT_TRUE(vc_.StartSteeringTrimCalibration(0.1f));
   EXPECT_TRUE(vc_.IsSteeringTrimCalibActive());

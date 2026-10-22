@@ -26,6 +26,13 @@ AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
     StopAll();
     return out;
   }
+  // Калибровка покоя держит газ в нейтрали (LOS-380): процедура шла бы дальше
+  // по таймерам на стоящей машине и записала бы мусор (speed calib, например,
+  // усреднила бы нулевую скорость в motor_speed_gain).
+  if (RestCalibrationActive() && IsAnyActive()) {
+    StopAll();
+    return out;
+  }
 
   // Auto-forward calibration (управляется CalibrationManager)
   if (calib_mgr_ && calib_mgr_->IsAutoForwardActive() && !input.rc_active) {
@@ -112,8 +119,16 @@ AutoDriveOutput AutoDriveCoordinator::Update(const AutoDriveInput& input) {
   return out;
 }
 
+bool AutoDriveCoordinator::RestCalibrationActive() const {
+  return calib_mgr_ && calib_mgr_->GetStage() == 1;
+}
+
+bool AutoDriveCoordinator::StartBlocked() const {
+  return IsAnyActive() || last_rc_active_ || RestCalibrationActive();
+}
+
 bool AutoDriveCoordinator::StartAutoForwardCalib(float target_accel_g) {
-  if (IsAnyActive() || last_rc_active_) return false;
+  if (StartBlocked()) return false;
   if (!calib_mgr_) return false;
   // Событие старта пишет сам CalibrationManager
   return calib_mgr_->StartAutoForwardCalibration(target_accel_g);
@@ -122,7 +137,7 @@ bool AutoDriveCoordinator::StartAutoForwardCalib(float target_accel_g) {
 bool AutoDriveCoordinator::StartTrimCalib(float target_accel_g,
                                            float current_trim,
                                            float steer_to_yaw_rate_dps) {
-  if (IsAnyActive() || last_rc_active_) return false;
+  if (StartBlocked()) return false;
   if (!trim_calib_.Start(target_accel_g, current_trim, steer_to_yaw_rate_dps)) {
     return false;
   }
@@ -142,7 +157,7 @@ bool AutoDriveCoordinator::StartComCalib(float target_accel_g,
                                          float cruise_duration_sec,
                                          const float* gravity_vec,
                                          const float* applied_offset) {
-  if (IsAnyActive() || last_rc_active_) return false;
+  if (StartBlocked()) return false;
   if (!com_calib_.Start(target_accel_g, steering_magnitude, cruise_duration_sec,
                         gravity_vec, applied_offset)) {
     return false;
@@ -159,7 +174,7 @@ bool AutoDriveCoordinator::StartComCalib(float target_accel_g,
 }
 
 bool AutoDriveCoordinator::StartTest(const TestParams& params) {
-  if (IsAnyActive() || last_rc_active_) return false;
+  if (StartBlocked()) return false;
   if (!test_runner_.Start(params)) return false;
   if (event_log_) {
     event_log_->Push({last_ts_ms_,
@@ -174,7 +189,7 @@ bool AutoDriveCoordinator::StartTest(const TestParams& params) {
 
 bool AutoDriveCoordinator::StartSpeedCalib(float target_throttle,
                                             float cruise_duration_sec) {
-  if (IsAnyActive() || last_rc_active_) return false;
+  if (StartBlocked()) return false;
   if (!speed_calib_.Start(target_throttle, cruise_duration_sec)) return false;
   if (event_log_) {
     event_log_->Push({last_ts_ms_,

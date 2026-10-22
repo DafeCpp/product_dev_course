@@ -1158,6 +1158,165 @@ TEST_F(ProcessorTest, CalibMgr_Null_NoCrash) {
   EXPECT_NO_THROW(proc.Step(2, 2));
 }
 
+TEST_F(ProcessorTest, RestCalibration_HoldsThrottleNeutralUntilDone) {
+  // LOS-380: авто-калибровка при старте (Full, 1000 семплов) принимала
+  // плавный разгон за покой и записывала продольное ускорение в gravity_vec.
+  // Пока идёт этап 1, газ в нейтрали; руль проходит.
+  SetDirectLaw();
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  ctx_->imu_handler = &imu_handler;
+  ImuData level{};
+  level.az = 1.0f;
+  platform_.SetImuData(level);
+
+  calib_mgr_->StartAutoCalibration();
+  platform_.SetWifiCommand({0.5f, 0.3f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+  EXPECT_NEAR(platform_.GetLastSteering(), 0.3f, 1e-4f);
+
+  // Последний семпл завершает сбор внутри тика, и этот тик газ уже отдаёт.
+  for (int i = 0; i < 2000; ++i) {
+    Step();
+    if (imu_calib_.GetCalibStage() != 1) break;
+    ASSERT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f) << "tick " << i;
+  }
+  ASSERT_EQ(imu_calib_.GetStatus(), CalibStatus::Done);
+  ASSERT_TRUE(imu_calib_.GetData().gravity_valid);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 1e-4f)
+      << "после калибровки газ снова у водителя";
+}
+
+TEST_F(ProcessorTest, RestCalibration_GyroOnlyAlsoHoldsThrottle) {
+  SetDirectLaw();
+  calib_mgr_->StartCalibration(/*full=*/false);
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+
+  imu_calib_.CancelCalibration();
+  Step();
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 1e-4f);
+}
+
+TEST_F(ProcessorTest, RestCalibration_CutsSlewedThrottleImmediately) {
+  // Ручной запуск калибровки на ходу: газ не спадает со slew 0.5/с все 2 с
+  // сбора, а сразу встаёт в нейтраль (Normal использует slew rate).
+  platform_.SetWifiCommand({0.8f, 0.0f});
+  RunSteps(2000);
+  ASSERT_GT(platform_.GetLastThrottle(), 0.7f);
+
+  // Сразу после записи PWM: гейт интервала не должен задержать нейтраль.
+  const int writes = platform_.GetPwmSetCount();
+  while (platform_.GetPwmSetCount() == writes) Step();
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+}
+
+TEST_F(ProcessorTest, RestCalibration_AbortsRunningAutoProcedure) {
+  // Speed calib шла бы по таймерам на стоящей машине и усреднила бы нулевую
+  // скорость в motor_speed_gain.
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  Step();
+  ASSERT_TRUE(auto_drive_.StartSpeedCalib());
+  Step();
+  ASSERT_TRUE(auto_drive_.IsSpeedCalibActive());
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  EXPECT_FALSE(auto_drive_.IsAnyActive());
+}
+
+TEST_F(ProcessorTest, RestCalibration_RejectsAutoProcedureStart) {
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FALSE(auto_drive_.StartSpeedCalib());
+  EXPECT_FALSE(auto_drive_.StartAutoForwardCalib(0.1f));
+
+  imu_calib_.CancelCalibration();
+  Step();
+  EXPECT_TRUE(auto_drive_.StartSpeedCalib());
+}
+
+TEST_F(ProcessorTest, RestCalibration_IgnoresThrottleTrim) {
+  SetDirectLaw();
+  auto cfg = stab_mgr_->GetConfig();
+  cfg.throttle_trim = 0.1f;
+  stab_mgr_->SetConfig(cfg);
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f)
+      << "trim не должен крутить мотор во время сбора";
+
+  imu_calib_.CancelCalibration();
+  Step();
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f + 0.1f, 1e-4f);
+}
+
+TEST_F(ProcessorTest, RestCalibration_SurvivesAbortedAutoForward) {
+  // Калибровка в покое, запрошенная во время auto-forward, заменяет сбор
+  // этапа 2. Остановка auto-forward не должна отменить уже её.
+  ImuCalibData data{};
+  data.gravity_vec[2] = 1.0f;
+  data.gravity_valid = true;
+  data.valid = true;
+  imu_calib_.SetData(data);
+  platform_.SetWifiCommand({0.0f, 0.0f});
+  Step();
+  ASSERT_TRUE(auto_drive_.StartAutoForwardCalib(0.1f));
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 2);
+
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  EXPECT_FALSE(calib_mgr_->IsAutoForwardActive());
+  EXPECT_EQ(imu_calib_.GetCalibStage(), 1);
+  EXPECT_FLOAT_EQ(platform_.GetLastThrottle(), 0.0f);
+}
+
+TEST_F(ProcessorTest, RestCalibration_RejectsManualForwardCalibration) {
+  // Ручной этап 2 (calibrate_imu mode=forward) при сохранённой калибровке
+  // заменил бы идущий этап 1 и снял бы нейтраль газа.
+  ImuCalibData data{};
+  data.gravity_vec[2] = 1.0f;
+  data.gravity_valid = true;
+  data.valid = true;
+  imu_calib_.SetData(data);
+  calib_mgr_->StartCalibration(/*full=*/true);
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 1);
+
+  EXPECT_FALSE(calib_mgr_->StartForwardCalibration());
+  EXPECT_FALSE(calib_mgr_->StartAutoForwardCalibration(0.1f));
+  EXPECT_EQ(imu_calib_.GetCalibStage(), 1);
+}
+
+TEST_F(ProcessorTest, ForwardCalibration_DoesNotHoldThrottle) {
+  // Этап 2 — разгон по прямой, газ нужен.
+  SetDirectLaw();
+  ImuCalibData data{};
+  data.gravity_vec[2] = 1.0f;
+  data.gravity_valid = true;
+  data.valid = true;
+  imu_calib_.SetData(data);
+  ASSERT_TRUE(imu_calib_.StartForwardCalibration(2000));
+  platform_.SetWifiCommand({0.5f, 0.0f});
+  Step();
+  ASSERT_EQ(imu_calib_.GetCalibStage(), 2);
+  EXPECT_NEAR(platform_.GetLastThrottle(), 0.5f, 1e-4f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Kids Mode: accel-лимитер и тангаж (LOS-245)
 //

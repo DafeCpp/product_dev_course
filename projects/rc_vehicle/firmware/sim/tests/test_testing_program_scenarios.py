@@ -54,7 +54,8 @@ def _pulses(ms: int, thr_us: int, str_us: int) -> list[SensorFrame]:
 # и grace-период Failsafe (FAILSAFE_TIMEOUT_MS = 120 мс), плюс опрос RC раз в
 # 20 мс; в grace-периоде прошивка держит последнюю команду (LOS-283).
 # Суммарно нейтраль не позже 250 мс с запасом ~20 мс (LOS-368).
-RC_LOSS_AT_MS = 2000
+# После калибровки IMU при старте (2 с, газ в нейтрали) ещё 2 с едем.
+RC_LOSS_AT_MS = 4000
 
 
 def _rc_dropout_rows(loss_at_ms: int = RC_LOSS_AT_MS):
@@ -104,7 +105,7 @@ def _wifi_frames(ms: int, on: bool) -> list[SensorFrame]:
 
 def test_wifi_loss_neutral_within_250_ms():
     """Failsafe по TESTING_PROGRAM.md: команды Wi-Fi пропали (RC нет) → нейтраль за ≤250 мс."""
-    loss_at = 2000
+    loss_at = RC_LOSS_AT_MS
     rows = run_batch(_wifi_frames(loss_at, True) + _wifi_frames(600, False), BIN)
     assert rows[loss_at // DT_MS - 1]["throttle"] > 0.1
     neutral_ms = _first_ms(
@@ -499,6 +500,7 @@ KIDS_PRESET_LIMITS = {"toddler": 0.15, "child": 0.30, "preteen": 0.50}
 def _kids_preset_launch(preset: str) -> list[dict]:
     with ClosedLoopSim(BIN, drive_mode="kids", kids_preset=preset,
                        sensor_noise=False, kids_accel_limit=False) as sim:
+        sim.wait_boot_calibration()
         return sim.run(1500, rc_throttle=1.0, rc_steering=0.0)
 
 
