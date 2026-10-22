@@ -5,7 +5,11 @@
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kSqrt2 = 1.41421356237309504880f;  // sqrt(2) — Q для максимально плоского АЧХ Баттерворта 2-го порядка
+// Q максимально плоской АЧХ Баттерворта 2-го порядка: 1/sqrt(2). Раньше здесь
+// стоял sqrt(2), и фильтр гасил вдвое слабее: −3 дБ уходили выше частоты
+// среза, вибрация 40 Гц при срезе 30 Гц проходила с коэффициентом 0.8 вместо
+// 0.48 (LOS-380).
+constexpr float kButterworthQ = 0.70710678118654752440f;
 
 }  // namespace
 
@@ -35,7 +39,7 @@ void LpfButterworth2::UpdateCoefficients() {
   const float fc = cutoff_hz_;
   const float fs = sample_rate_hz_;
   const float K = std::tan(kPi * fc / fs);
-  const float Q = kSqrt2;
+  const float Q = kButterworthQ;
   const float K2 = K * K;
   const float norm = 1.f + K / Q + K2;
 
