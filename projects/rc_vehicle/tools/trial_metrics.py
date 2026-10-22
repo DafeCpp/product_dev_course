@@ -22,6 +22,7 @@
   pitch-comp  добавка pitch compensation к газу в гору, под гору и на ровном (7.2)
   oversteer   эпизоды oversteer guard: срезан ли газ, пик заноса (7.3)
   rc-events   события RcLost/RcRestored: причины, длительности, парность (2.5)
+  imu-errors  ошибки чтения IMU по событиям ImuReadStats: 0 за минуту (5.1)
   com-offset  итог калибровки CoM и остаточное смещение по кругам CW и CCW (7.6)
   madgwick-beta  схождение pitch/roll в покое (запаздывание), крен в повороте (7.7)
   lpf         подавление yaw rate выше 10 Гц и шаг yaw rate против эталона (7.8)
@@ -33,6 +34,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import os
@@ -107,6 +109,10 @@ LPF_FIT_SMOOTH_MS = 250.0
 LPF_FIT_MIN_CORR = 0.95
 LPF_OVERSHOOT_TOL = 0.05     # доля уставки
 LPF_SETTLING_TOL_MS = 20.0   # два отсчёта лога 100 Гц
+# Ошибки чтения IMU (протокол 5.1, LOS-383): событие ImuReadStats пишется раз
+# в config::ImuConfig::kReadStatsEventIntervalMs и в том числе с нулями.
+IMU_STATS_PERIOD_MS = 10000.0
+IMU_ERRORS_MIN_COVER_S = 60.0
 
 
 @dataclass(frozen=True)
@@ -865,6 +871,67 @@ def check_rc_events(rows: list[Row]) -> list[MetricResult]:
     return out
 
 
+def _whoami_count(param: str) -> float:
+    # app.js пишет param ImuReadStats как «who=N», ноль — пустой ячейкой.
+    cell = param.strip()
+    if not cell:
+        return 0.0
+    return _num(cell.removeprefix("who="))
+
+
+def check_imu_errors(rows: list[Row]) -> list[MetricResult]:
+    """Протокол 5.1: ошибок чтения IMU 0 за минуту (события ImuReadStats).
+
+    Каждое событие несёт счётчики за период с предыдущего, поэтому первое
+    событие лога может захватить и время до начала записи — это в запас:
+    ошибки до записи тоже считаются.
+    """
+    name = "Ошибки чтения IMU"
+    try:
+        events = [e for e in log_events(rows) if e["type"] == "ImuReadStats"]
+    except ValueError as exc:
+        return [MetricResult(name, False, str(exc), no_data=True)]
+    if not events:
+        return [MetricResult(name, False,
+                             "СОБЫТИЙ ImuReadStats НЕТ (прошивка до LOS-383?)",
+                             no_data=True)]
+    missed = sum(e["v1"] for e in events)
+    whoami = sum(_whoami_count(e["param"]) for e in events)
+    run = max(e["v2"] for e in events)
+    # Покрытие: период первого события плюс интервалы между событиями. Событие
+    # приходит раз в период; если интервал длиннее, часть времени без
+    # счётчиков (вытеснены из журнала или цикл стоял) — её не засчитываем.
+    cover_ms = IMU_STATS_PERIOD_MS
+    gaps = 0
+    for prev, cur in itertools.pairwise(events):
+        dt = cur["t_ms"] - prev["t_ms"]
+        if dt > 1.5 * IMU_STATS_PERIOD_MS:
+            gaps += 1
+        cover_ms += min(dt, IMU_STATS_PERIOD_MS)
+    cover_s = cover_ms / 1000.0
+    if any(math.isnan(x) for x in (missed, whoami, run)):
+        return [MetricResult(name, False,
+                             "нечисловые значения в событиях ImuReadStats")]
+    errors = missed + whoami
+    detail = (f"ошибок {errors:.0f} за {cover_s:.0f} с ({len(events)} событий): "
+              f"пропущено семплов {missed:.0f}, WHO_AM_I {whoami:.0f}, "
+              f"макс. серия {run:.0f}")
+    if gaps:
+        detail += f"; пропусков между событиями {gaps}"
+    if cover_s < IMU_ERRORS_MIN_COVER_S:
+        # Ошибка в короткой записи — уже провал; чистая короткая запись
+        # минуты не доказывает.
+        if errors > 0:
+            return [MetricResult(name, False, detail)]
+        return [MetricResult(name, False,
+                             f"{detail}; покрыто меньше "
+                             f"{IMU_ERRORS_MIN_COVER_S:.0f} с", no_data=True)]
+    per_min = errors / (cover_s / 60.0)
+    return [MetricResult(
+        name, errors == 0,
+        f"{detail}; {per_min:.1f}/мин (норма 0)")]
+
+
 # ---------------------------------------------------------------------------
 # Снапшоты конфигурации и события калибровок (выгрузка web UI)
 # ---------------------------------------------------------------------------
@@ -1301,7 +1368,7 @@ def check_lpf(rows: list[Row], baseline: list[Row] | None = None,
 
 METRICS = ("yaw-step", "gyro-bias", "failsafe", "kids", "ekf-dist",
            "esc-start", "pitch-comp", "oversteer", "rc-events", "com-offset",
-           "madgwick-beta", "lpf")
+           "madgwick-beta", "lpf", "imu-errors")
 
 
 def run_metrics(rows: list[Row], only: list[str] | None = None,
@@ -1326,6 +1393,8 @@ def run_metrics(rows: list[Row], only: list[str] | None = None,
         out += check_oversteer(rows)
     if "rc-events" in wanted:
         out += check_rc_events(rows)
+    if "imu-errors" in wanted:
+        out += check_imu_errors(rows)
     baseline = kw.get("baseline")
     if "com-offset" in wanted:
         out += check_com_offset(rows, baseline)

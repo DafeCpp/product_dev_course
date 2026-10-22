@@ -91,6 +91,10 @@ describe('eventParamDesc and event names', () => {
         expect(eventParamDesc(21, 0x15)).toBe('thr=no_pulses str=no_pulses since_boot');
         expect(eventParamDesc(22, 1)).toBe('first_acquire');
         expect(eventParamDesc(22, 0)).toBe('');
+        // LOS-383: ImuReadStats param = WHO_AM_I mismatches
+        expect(EVENT_TYPE_NAMES[23]).toBe('ImuReadStats');
+        expect(eventParamDesc(23, 3)).toBe('who=3');
+        expect(eventParamDesc(23, 0)).toBe('');
     });
 
     it('formats RC channel diagnostics from WS telemetry', () => {

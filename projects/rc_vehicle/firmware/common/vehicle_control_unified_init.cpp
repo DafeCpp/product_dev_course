@@ -137,6 +137,7 @@ bool VehicleControlUnified::InitializeComponents() {
     imu_handler_.reset(new ImuHandler(*platform_, imu_calib_, madgwick_,
                                       config::ImuConfig::kReadIntervalMs));
     imu_handler_->SetEnabled(true);
+    imu_handler_->SetEventLog(telem_mgr_->GetEventLog());
     imu_handler_->SetLpfCutoff(stab_mgr_->GetConfig().filter.lpf_cutoff_hz);
     stab_mgr_.reset(new StabilizationManager(*platform_, madgwick_, yaw_ctrl_,
                                              slip_ctrl_, imu_handler_.get()));

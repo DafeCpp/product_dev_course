@@ -150,6 +150,16 @@ class VehicleControlPlatform {
    */
   [[nodiscard]] virtual int GetImuLastWhoAmI() const noexcept = 0;
 
+  /**
+   * @brief Перечитать WHO_AM_I и сравнить с найденным при инициализации
+   * (LOS-383, периодическая проверка в ImuHandler).
+   * @return true — совпадает; false — ошибка SPI или другое значение;
+   * std::nullopt — платформа проверку не поддерживает (хост, симулятор).
+   */
+  [[nodiscard]] virtual std::optional<bool> CheckImuWhoAmI() {
+    return std::nullopt;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Магнитометр (необязательный датчик)
   // ─────────────────────────────────────────────────────────────────────────

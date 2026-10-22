@@ -1,5 +1,6 @@
 #include "control_components.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include "imu_calibration.hpp"
 #include "madgwick_filter.hpp"
 #include "mag_calibration.hpp"
+#include "telemetry_event_log.hpp"
 
 namespace rc_vehicle {
 
@@ -83,6 +85,10 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   const uint32_t prev_read_ms = last_read_ms_;
   last_read_ms_ = now_ms;
 
+  // LOS-383: событие за прошедший период — до чтения, чтобы оно уходило
+  // по расписанию и тогда, когда IMU перестал отвечать совсем.
+  MaybePushReadStatsEvent(now_ms);
+
   // Прочитать данные IMU
 #ifdef RC_PROFILE_LOOP
   // LOS-219/250: время ТОЛЬКО SPI-транзакции(й), отдельно от остального
@@ -99,8 +105,22 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
   }
 #endif
   if (!imu_data) {
+    ++read_stats_.failed_reads;
+    CountMissedSample();
+    MaybeCheckWhoAmI(now_ms);
     return;
   }
+  if (!std::isfinite(imu_data->ax) || !std::isfinite(imu_data->ay) ||
+      !std::isfinite(imu_data->az) || !std::isfinite(imu_data->gx) ||
+      !std::isfinite(imu_data->gy) || !std::isfinite(imu_data->gz)) {
+    // NaN в калибровку/LPF/Madgwick не пускаем: он залип бы в их состоянии.
+    ++read_stats_.invalid_samples;
+    CountMissedSample();
+    MaybeCheckWhoAmI(now_ms);
+    return;
+  }
+  read_stats_.consecutive_misses = 0;
+  MaybeCheckWhoAmI(now_ms);
 
 #ifdef RC_PROFILE_LOOP
   const uint64_t _rest_t0 = platform_.GetTimeUs();
@@ -159,6 +179,68 @@ void ImuHandler::Update(uint32_t now_ms, [[maybe_unused]] uint32_t dt_ms) {
     if (_rest_d > prof_rest_max_us_) prof_rest_max_us_ = _rest_d;
   }
 #endif
+}
+
+void ImuHandler::CountMissedSample() noexcept {
+  ++read_stats_.consecutive_misses;
+  if (read_stats_.consecutive_misses > read_stats_.max_consecutive_misses) {
+    read_stats_.max_consecutive_misses = read_stats_.consecutive_misses;
+  }
+  if (read_stats_.consecutive_misses > stats_period_max_run_) {
+    stats_period_max_run_ = read_stats_.consecutive_misses;
+  }
+}
+
+void ImuHandler::MaybeCheckWhoAmI(uint32_t now_ms) {
+  if (!whoami_check_started_) {
+    // Сразу после Init() WHO_AM_I уже проверен — первая перепроверка через
+    // полный интервал.
+    whoami_check_started_ = true;
+    last_whoami_check_ms_ = now_ms;
+    return;
+  }
+  if (now_ms - last_whoami_check_ms_ <
+      config::ImuConfig::kWhoAmICheckIntervalMs) {
+    return;
+  }
+  last_whoami_check_ms_ = now_ms;
+  const auto ok = platform_.CheckImuWhoAmI();
+  if (ok.has_value() && !*ok) {
+    ++read_stats_.whoami_mismatches;
+  }
+}
+
+void ImuHandler::MaybePushReadStatsEvent(uint32_t now_ms) {
+  if (!stats_period_started_) {
+    stats_period_started_ = true;
+    stats_period_start_ms_ = now_ms;
+    return;
+  }
+  if (now_ms - stats_period_start_ms_ <
+      config::ImuConfig::kReadStatsEventIntervalMs) {
+    return;
+  }
+
+  const uint32_t missed =
+      read_stats_.MissedSamples() - stats_period_missed_base_;
+  const uint32_t whoami =
+      read_stats_.whoami_mismatches - stats_period_whoami_base_;
+  if (event_log_) {
+    TelemetryEvent ev{};
+    ev.ts_ms = now_ms;
+    ev.type = TelemetryEventType::ImuReadStats;
+    ev.param = static_cast<uint8_t>(std::min<uint32_t>(whoami, 255u));
+    ev.value1 = static_cast<float>(missed);
+    ev.value2 = static_cast<float>(stats_period_max_run_);
+    event_log_->Push(ev);
+  }
+
+  stats_period_start_ms_ = now_ms;
+  stats_period_missed_base_ = read_stats_.MissedSamples();
+  stats_period_whoami_base_ = read_stats_.whoami_mismatches;
+  // Серия, идущая через границу периода, попадёт в следующее событие
+  // полной длиной вместе со следующим пропуском (CountMissedSample).
+  stats_period_max_run_ = 0;
 }
 
 void ImuHandler::UpdateYawRateAxis() {

@@ -19,5 +19,12 @@ void ImuConvertToTelem(const ImuData& data, int16_t& ax, int16_t& ay, int16_t& a
 /** Для отладки: последнее WHO_AM_I при инициализации (-1 = не читали). */
 int ImuGetLastWhoAmI(void);
 
+/**
+ * Перечитать WHO_AM_I активного датчика (LOS-383).
+ * 0 — совпадает с найденным при инициализации, -1 — ошибка SPI или
+ * несовпадение, -2 — датчик не инициализирован (проверять нечего).
+ */
+int ImuCheckWhoAmI(void);
+
 /** Имя активного датчика: "LSM6DS3", "LSM6DSL", "MPU6050", "MPU6500" или "none". */
 const char* ImuGetSensorName(void);

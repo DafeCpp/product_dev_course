@@ -63,6 +63,7 @@ TEST(Mpu6050SpiTest, ReadUsesSingleBurstTransaction) {
   FakeSpiDevice spi;
   Mpu6050Spi imu(&spi);
   InitOk(spi, imu);
+  spi.PushResponse({0x00, 0x40, 0x00});  // ax = 1 g, остальное 0
 
   ImuData d;
   ASSERT_EQ(imu.Read(d), 0);
@@ -104,4 +105,74 @@ TEST(Mpu6050SpiTest, ReadPropagatesTransferError) {
   spi.SetTransferResult(-1);
   ImuData d;
   EXPECT_EQ(imu.Read(d), -1);
+}
+
+// LOS-383: транзакция прошла, но шина «пустая» — это ошибка чтения.
+TEST(Mpu6050SpiTest, ReadRejectsAllZeroFrame) {
+  FakeSpiDevice spi;
+  Mpu6050Spi imu(&spi);
+  InitOk(spi, imu);
+
+  spi.PushResponse(std::vector<uint8_t>(15, 0x00));
+  ImuData d;
+  EXPECT_EQ(imu.Read(d), -1);
+}
+
+TEST(Mpu6050SpiTest, ReadRejectsAllOnesFrame) {
+  FakeSpiDevice spi;
+  Mpu6050Spi imu(&spi);
+  InitOk(spi, imu);
+
+  // rx[0] (эхо адреса) не входит в проверку.
+  std::vector<uint8_t> resp(15, 0xFF);
+  resp[0] = 0x00;
+  spi.PushResponse(resp);
+  ImuData d;
+  EXPECT_EQ(imu.Read(d), -1);
+}
+
+TEST(Mpu6050SpiTest, CheckWhoAmI_MatchesInitValue) {
+  FakeSpiDevice spi;
+  Mpu6050Spi imu(&spi);
+  InitOk(spi, imu);
+
+  spi.PushResponse({0, 0x68});
+  EXPECT_EQ(imu.CheckWhoAmI(), 0);
+  EXPECT_EQ(spi.last_tx()[0], 0x75 | 0x80);
+}
+
+TEST(Mpu6050SpiTest, CheckWhoAmI_FailsOnMismatchAndSpiError) {
+  FakeSpiDevice spi;
+  Mpu6050Spi imu(&spi);
+  InitOk(spi, imu);
+
+  spi.PushResponse({0, 0x70});  // другой датчик (MPU6500) — не тот, что в Init
+  EXPECT_EQ(imu.CheckWhoAmI(), -1);
+  spi.PushResponse({0, 0xFF});
+  EXPECT_EQ(imu.CheckWhoAmI(), -1);
+  spi.SetTransferResult(-1);
+  EXPECT_EQ(imu.CheckWhoAmI(), -1);
+  EXPECT_EQ(imu.GetLastWhoAmI(), 0x68)
+      << "Значение из Init() не перезаписываем";
+}
+
+TEST(Mpu6050SpiTest, CheckWhoAmI_BeforeInitFails) {
+  FakeSpiDevice spi;
+  Mpu6050Spi imu(&spi);
+  EXPECT_EQ(imu.CheckWhoAmI(), -1);
+  EXPECT_EQ(spi.transfer_count(), 0);
+}
+
+TEST(ImuStuckBusFrameTest, DetectsOnlyUniformZeroOrOnes) {
+  const uint8_t zeros[4] = {0, 0, 0, 0};
+  const uint8_t ones[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+  const uint8_t mixed[4] = {0x00, 0xFF, 0x00, 0xFF};
+  const uint8_t live[4] = {0x00, 0x00, 0x40, 0x00};
+  const uint8_t uniform_other[4] = {0x12, 0x12, 0x12, 0x12};
+  EXPECT_TRUE(IsStuckBusFrame(zeros));
+  EXPECT_TRUE(IsStuckBusFrame(ones));
+  EXPECT_FALSE(IsStuckBusFrame(mixed));
+  EXPECT_FALSE(IsStuckBusFrame(live));
+  EXPECT_FALSE(IsStuckBusFrame(uniform_other));
+  EXPECT_FALSE(IsStuckBusFrame({}));
 }

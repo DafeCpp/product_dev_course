@@ -90,6 +90,8 @@ int Mpu6050Spi::Read(ImuData &data) {
   uint8_t rx[15] = {};
   if (spi_->Transfer(std::span<const uint8_t>(tx), std::span<uint8_t>(rx)) != 0)
     return -1;
+  // LOS-383: «пустая шина» — транзакция прошла, но датчик не ответил.
+  if (IsStuckBusFrame(std::span<const uint8_t>(rx + 1, 14))) return -1;
 
   auto to16 = [&](int i) -> int16_t {
     return static_cast<int16_t>((rx[i] << 8) | rx[i + 1]);
@@ -122,4 +124,11 @@ void Mpu6050Spi::ConvertToTelem(const ImuData &data, int16_t &ax, int16_t &ay,
   gx = static_cast<int16_t>(data.gx * 1000.f);
   gy = static_cast<int16_t>(data.gy * 1000.f);
   gz = static_cast<int16_t>(data.gz * 1000.f);
+}
+
+int Mpu6050Spi::CheckWhoAmI() {
+  if (!initialized_) return -1;
+  uint8_t who_am_i = 0;
+  if (ReadReg(MPU6050_REG_WHO_AM_I, who_am_i) != 0) return -1;
+  return static_cast<int>(who_am_i) == last_who_am_i_ ? 0 : -1;
 }

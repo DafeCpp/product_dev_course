@@ -17,6 +17,7 @@ export const EVENT_TYPE_NAMES = Object.freeze({
     17: 'MagCalibStart',     18: 'MagCalibDone',       19: 'MagCalibFailed',
     20: 'MagCalibCancelled',
     21: 'RcLost',            22: 'RcRestored',
+    23: 'ImuReadStats',
 });
 
 // RcLossCause (rc_link_monitor.hpp), упакованы в param события RcLost (LOS-216)
@@ -115,6 +116,10 @@ export function eventParamDesc(typeId, param) {
     }
     if (typeId === 22) {
         return param ? 'first_acquire' : '';
+    }
+    if (typeId === 23) {
+        // LOS-383: param — несовпадения WHO_AM_I за период события
+        return param ? 'who=' + param : '';
     }
     return param ? String(param) : '';
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 /** Данные IMU: акселерометр (g), гироскоп (dps). */
 struct ImuData {
@@ -37,7 +38,30 @@ class IImuSensor {
 
   /** Последнее значение WHO_AM_I (-1 = не читали). */
   virtual int GetLastWhoAmI() const = 0;
+
+  /**
+   * Перечитать WHO_AM_I и сравнить со значением, найденным в Init() (LOS-383).
+   * 0 — совпадает, -1 — ошибка SPI, несовпадение или датчик не
+   * инициализирован.
+   */
+  virtual int CheckWhoAmI() = 0;
 };
+
+/**
+ * Признак «пустой шины» в burst-ответе IMU (LOS-383): все байты данных равны
+ * 0x00 (MISO прижат к земле / датчик без питания) или 0xFF (MISO висит в
+ * воздухе). Живой датчик так ответить не может — гравитация всегда даёт
+ * ненулевой акселерометр, а 0xFFFF по всем осям означает −1 LSB везде.
+ */
+inline bool IsStuckBusFrame(std::span<const uint8_t> data) {
+  if (data.empty()) return false;
+  const uint8_t first = data.front();
+  if (first != 0x00 && first != 0xFF) return false;
+  for (const uint8_t b : data) {
+    if (b != first) return false;
+  }
+  return true;
+}
 
 /** Конвертация ImuData в формат телеметрии (mg, mdps → int16). */
 inline void ImuDataConvertToTelem(const ImuData& data, int16_t& ax, int16_t& ay,

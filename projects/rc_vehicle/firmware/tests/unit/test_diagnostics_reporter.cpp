@@ -89,6 +89,9 @@ TEST_F(MaybePublishDiagnosticsTest, ImuEnabled_MirrorsLiveGetters) {
   }
   ekf_.SetState(1.23f, -0.45f, 0.1f);
   imu_handler_.SetEnabled(true);
+  // Платформа без IMU-данных: два тика чтения → два неудачных чтения.
+  imu_handler_.Update(2, 2);
+  imu_handler_.Update(4, 2);
 
   float exp_pitch = 0.0f, exp_roll = 0.0f, exp_yaw = 0.0f;
   madgwick_.GetEulerDeg(exp_pitch, exp_roll, exp_yaw);
@@ -105,6 +108,8 @@ TEST_F(MaybePublishDiagnosticsTest, ImuEnabled_MirrorsLiveGetters) {
   EXPECT_FLOAT_EQ(snap.ekf_vx, ekf_.GetVx());
   EXPECT_FLOAT_EQ(snap.ekf_vy, ekf_.GetVy());
   EXPECT_FLOAT_EQ(snap.ekf_slip_deg, ekf_.GetSlipAngleDeg());
+  EXPECT_EQ(snap.imu_read_stats.failed_reads, 2u);
+  EXPECT_EQ(snap.imu_read_stats.max_consecutive_misses, 2u);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -146,8 +151,26 @@ TEST(EmitDiagnosticsTest, LogsImuAndEkfLines_WhenImuEnabled) {
 
   EXPECT_EQ(platform.GetLogCoreLoadCount(), 1);
   const auto& msgs = platform.GetLoggedMessages();
-  ASSERT_EQ(msgs.size(), 3u);
+  ASSERT_EQ(msgs.size(), 4u);
   EXPECT_EQ(msgs[0], "DIAG: loop=480 Hz  stab=ON (w=0.50)");
   EXPECT_EQ(msgs[1], "IMU: P=5.5 R=-2.5 Y=180.0 deg  gz=0.1 dps");
   EXPECT_EQ(msgs[2], "EKF: vx=1.23 vy=-0.45 m/s  slip=3.1 deg");
+  EXPECT_EQ(msgs[3], "IMU err: read=0 nan=0 who=0 run=0");
+}
+
+// LOS-383: счётчики ошибок чтения IMU — целые, без влияния std::fixed.
+TEST(EmitDiagnosticsTest, LogsImuReadErrorCounters) {
+  FakePlatform platform;
+  DiagnosticsSnapshot snap{};
+  snap.imu_enabled = true;
+  snap.imu_read_stats.failed_reads = 12;
+  snap.imu_read_stats.invalid_samples = 3;
+  snap.imu_read_stats.whoami_mismatches = 1;
+  snap.imu_read_stats.max_consecutive_misses = 7;
+
+  EmitDiagnostics(platform, snap);
+
+  const auto& msgs = platform.GetLoggedMessages();
+  ASSERT_EQ(msgs.size(), 4u);
+  EXPECT_EQ(msgs[3], "IMU err: read=12 nan=3 who=1 run=7");
 }
