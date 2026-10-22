@@ -108,7 +108,11 @@ class VehicleModel:
         # но акселерометром не видна (свободное падение по склону).
         grade_accel = p.gravity_ms2 * math.sin(self.slope_rad)
         long_accel = self._traction_limited_accel(dt, grade_accel)
-        s.v += (long_accel - grade_accel) * dt
+        # v — продольная скорость в СК корпуса, поэтому у твёрдого тела
+        # v̇x = Fx/m + r·vy (у боковой оси симметрично v̇y = Fy/m − r·vx).
+        # Без связи занос не тратил скорость, и β в силовом заносе рос без
+        # предела, а акселерометр не видел −r·vy (LOS-380).
+        s.v += (long_accel - grade_accel + s.r * s.vy) * dt
         if not self._wheels_spinning:
             s.wheel_v = s.v
 
@@ -172,7 +176,8 @@ class VehicleModel:
         предела колёса срываются: корпус тянет сила трения скольжения, а
         остаток тяги раскручивает колёса, пока противо-ЭДС не уравняет её с
         трением. Сцепление возвращается, когда корпус догнал колёса к концу
-        шага (скорость корпуса после интегрирования, с учётом склона).
+        шага (скорость корпуса после интегрирования, с учётом склона и связи
+        r·vy, как в step()).
         """
         p = self.p
         s = self.state
@@ -190,7 +195,7 @@ class VehicleModel:
         friction = self._spin_dir * limit
         s.wheel_v += ((s.accel - p.drag_coeff * s.wheel_v - friction)
                       * _WHEEL_SPIN_GAIN * dt)
-        v_next = s.v + (friction - grade_accel) * dt
+        v_next = s.v + (friction - grade_accel + s.r * s.vy) * dt
         if (s.wheel_v - v_next) * self._spin_dir <= 0.0:
             self._wheels_spinning = False  # корпус догнал колёса — сцепление
             return max(-limit, min(limit, s.accel - p.drag_coeff * s.v))

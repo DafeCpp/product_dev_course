@@ -10,6 +10,7 @@ roll compensation — LOS-386. Kids anti-spin на модели сцеплени
 """
 
 import dataclasses
+import functools
 import math
 
 import pytest
@@ -216,36 +217,47 @@ def oversteer_params():
     return p
 
 
-def test_oversteer_guard_cuts_throttle_and_slip():
-    """Oversteer guard: резкий газ в повороте → guard срабатывает, газ и занос снижаются."""
+@functools.cache
+def _oversteer_corner(reduction: float) -> tuple[list[dict], float]:
+    """Газ в пол в повороте. Строки прошивки и пик реального угла заноса [°]."""
+    guard = OversteerReplayConfig(5.0, 10.0, reduction)
+    with ClosedLoopSim(BIN, params=oversteer_params(), dynamic=True,
+                       stabilize=True, sensor_noise=False,
+                       oversteer=guard) as sim:
+        sim.run(OVERSTEER_SETTLE_TICKS, rc_throttle=0.0, rc_steering=0.0)
+        sim.run(1000, rc_throttle=0.5, rc_steering=0.0)
+        rows, peak_beta = [], 0.0
+        for _ in range(1500):
+            rows.append(sim.step(2, 1.0, 1.0))
+            st = sim.model.state
+            peak_beta = max(peak_beta, abs(math.degrees(
+                math.atan2(st.vy, max(st.v, 0.1)))))
+        return rows, peak_beta
 
-    def corner(reduction: float) -> tuple[list[dict], float]:
-        """Строки прошивки и пик реального угла заноса модели [°]."""
-        guard = OversteerReplayConfig(5.0, 10.0, reduction)
-        with ClosedLoopSim(BIN, params=oversteer_params(), dynamic=True,
-                           stabilize=True, sensor_noise=False,
-                           oversteer=guard) as sim:
-            sim.run(OVERSTEER_SETTLE_TICKS, rc_throttle=0.0, rc_steering=0.0)
-            sim.run(1000, rc_throttle=0.5, rc_steering=0.0)
-            rows, peak_beta = [], 0.0
-            for _ in range(1500):
-                rows.append(sim.step(2, 1.0, 1.0))
-                st = sim.model.state
-                peak_beta = max(peak_beta, abs(math.degrees(
-                    math.atan2(st.vy, max(st.v, 0.1)))))
-            return rows, peak_beta
 
-    # Эталон: детектор включён, но газ не режет — занос тот же, что без guard.
-    # Сравнивается реальный угол модели: в развороте угол EKF и так доходит
-    # до 76–80° с guard и без, и разницу в нём не видно (LOS-378).
-    detect_only, detect_only_beta = corner(0.0)
-    guarded, guarded_beta = corner(0.7)
+def test_oversteer_guard_cuts_throttle():
+    """Oversteer guard: резкий газ в повороте → guard срабатывает и режет газ."""
+    # Эталон: детектор включён, но газ не режет.
+    detect_only, _ = _oversteer_corner(0.0)
+    guarded, _ = _oversteer_corner(0.7)
     assert any(r["oversteer_active"] == 1.0 for r in detect_only)
     assert any(r["oversteer_active"] == 1.0 for r in guarded)
-    assert guarded_beta < detect_only_beta
     # Сравниваем газ по одному и тому же тику.
     assert any(g["oversteer_active"] == 1.0 and g["throttle"] < f["throttle"] - 0.1
                for f, g in zip(detect_only, guarded))
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "LOS-380: guard не успевает. Детектор срабатывает, когда β модели уже "
+    "≈ 12°, газ после него снижается через slew 0.5/с, а на μ = 0.3 задняя "
+    "ось после срыва разворачивает машину за ~0.3 с: пик β ≈ 84° с guard и "
+    "без. Раньше разница была артефактом модели без связи r·vy."))
+def test_oversteer_guard_reduces_slip():
+    """Сравнивается реальный угол модели: в развороте угол EKF доходит до
+    76–80° с guard и без, и разницу в нём не видно (LOS-378)."""
+    _, detect_only_beta = _oversteer_corner(0.0)
+    _, guarded_beta = _oversteer_corner(0.7)
+    assert guarded_beta < detect_only_beta - 5.0
 
 
 # Мотор вдвое мощнее подогнанного: на нём Kids-газ 0.3 разгоняет быстрее
@@ -453,10 +465,15 @@ def test_drift_slip_target_shifts_throttle_correction():
 
 
 DRIFT_TARGET_DEG = 15.0
+# Газ, на котором модель и правда держит силовой занос. Со связью r·vy занос
+# тратит скорость, и на газе 0.4 он гаснет до β ≈ 2–3°: машина просто едет по
+# кругу. На 0.6 занос устойчив (β ≈ 29°, LOS-380).
+DRIFT_THROTTLE = 0.6
 
 
 def _drift_hold(steering: float) -> tuple[float, float]:
-    """LOS-384: Drift на скользком (μ = 0.3), газ 0.4 и руль в поворот 5 с.
+    """LOS-384: Drift на скользком (μ = 0.3), газ DRIFT_THROTTLE и руль
+    в поворот 5 с.
 
     Возвращает средний |β| модели и средний |slip| EKF за последние 2 с.
     """
@@ -469,7 +486,7 @@ def _drift_hold(steering: float) -> tuple[float, float]:
         sim.run(1000, rc_throttle=0.4, rc_steering=0.0)
         beta, ekf = [], []
         for _ in range(2500):
-            row = sim.step(DT_MS, 0.4, steering)
+            row = sim.step(DT_MS, DRIFT_THROTTLE, steering)
             st = sim.model.state
             beta.append(abs(math.degrees(math.atan2(st.vy, max(st.v, 0.1)))))
             ekf.append(abs(row["ekf_slip_deg"]))
@@ -477,10 +494,9 @@ def _drift_hold(steering: float) -> tuple[float, float]:
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "LOS-380 (баг из LOS-384): EKF в силовом заносе занижает slip (≈11° при "
-    "β ≈ 29°): vy — интеграл ay с затуханием vy_decay_grip_lost_hz, и PID "
-    "считает заноса мало. Знак уставки исправлен, см. "
-    "test_drift_left_and_right_turns_match."))
+    "LOS-380: slip-PID в Drift — чистый P (kp 0.008, ki 0). EKF видит занос "
+    "верно (≈30° при β ≈ 29°), но на ошибке 15° коррекция газа лишь −0.12, "
+    "и занос остаётся вдвое больше уставки: статическая ошибка P-регулятора."))
 @pytest.mark.parametrize("steering", [-0.6, 0.6], ids=["right", "left"])
 def test_drift_holds_slip_target(steering):
     """7.4: в повороте Drift держит |β| около target_deg (±5°)."""
@@ -500,9 +516,11 @@ def test_drift_left_and_right_turns_match():
 
 def test_drift_scenario_slides():
     """Модель: сценарий удержания заноса и правда заносит, то есть xfail
-    выше падает из-за прошивки, а не слабого сценария."""
+    выше падает из-за прошивки, а не слабого сценария. EKF в устойчивом
+    заносе оценивает угол близко к модели (LOS-380)."""
     beta, ekf = _drift_hold(-0.6)
     assert beta > DRIFT_TARGET_DEG
+    assert ekf == pytest.approx(beta, abs=5.0)
 
 
 KIDS_PRESET_LIMITS = {"toddler": 0.15, "child": 0.30, "preteen": 0.50}

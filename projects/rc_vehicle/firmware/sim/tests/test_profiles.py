@@ -330,12 +330,16 @@ def test_drift_oversteers_with_dynamic():
     Скорость держится ниже критической (6.0 м/с у drift): выше неё линейная
     модель шин расходится — предел модели, отдельно зафиксирован в описании
     профиля и в PROVENANCE.md.
+
+    Пороги ниже, чем до связи r·vy в модели (LOS-380): в повороте oversteer-
+    машина теряет скорость, а прирост yaw над кинематикой растёт с v²
+    (у drift ≈ 1.21 против 1.42 без связи).
     """
     drift = _yaw_gain("drift")
     fitted = _yaw_gain("fitted_2026_07_18")
     assert math.isclose(fitted, 1.0, abs_tol=0.05)
-    assert drift > 1.25
-    assert drift > fitted + 0.25
+    assert drift > 1.15
+    assert drift > fitted + 0.15
 
 
 def test_drift_requires_dynamic():

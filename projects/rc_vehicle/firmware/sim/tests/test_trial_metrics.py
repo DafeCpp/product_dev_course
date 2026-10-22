@@ -765,7 +765,7 @@ def test_pitch_comp_on_sil_climb(tmp_path):
 
 @needs_sim
 def test_oversteer_on_sil_corner(tmp_path):
-    """SIL: тот же поворот, что в test_oversteer_guard_cuts_throttle_and_slip."""
+    """SIL: тот же поворот, что в test_oversteer_guard_cuts_throttle."""
     from simlib.closed_loop import OversteerReplayConfig
 
     from test_testing_program_scenarios import (OVERSTEER_SETTLE_TICKS,
