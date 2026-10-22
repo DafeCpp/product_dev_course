@@ -63,13 +63,17 @@ Batch = list[dict[str, Any]]
 SendFn = Callable[[list[Batch]], Awaitable[None]]
 
 
-def _accepted_count(reply: Any, sent: int) -> int:
-    """Readings the service reports as stored; dedup can make it lower than ``sent``."""
+def _accepted_count(reply: Any) -> int | None:
+    """Readings the service reports as stored (dedup can drop some), or ``None`` if missing.
+
+    The ingest contract always returns ``accepted``; a success without it is
+    counted as an error rather than credited with the whole batch.
+    """
     if isinstance(reply, dict):
         value = reply.get("accepted")
-        if isinstance(value, int) and not isinstance(value, bool):
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
             return value
-    return sent
+    return None
 
 
 class _StopWorker(Exception):
@@ -136,7 +140,11 @@ async def _rest_worker(
                         reply = json.loads(raw)
                     except ValueError:
                         reply = None
-                    recorder.accepted(latency_ms, _accepted_count(reply, len(readings)))
+                    stored = _accepted_count(reply)
+                    if stored is None:
+                        recorder.error("http_202_malformed")
+                    else:
+                        recorder.accepted(latency_ms, stored)
                 elif resp.status == 429:
                     recorder.limited()
                 else:
@@ -191,7 +199,11 @@ async def _ws_worker(
                 reply = await ws.receive_json(timeout=timeout_s)
                 latency_ms = (time.perf_counter() - started) * 1000
                 if reply.get("status") == "accepted":
-                    recorder.accepted(latency_ms, _accepted_count(reply, size))
+                    stored = _accepted_count(reply)
+                    if stored is None:
+                        recorder.error("ws_ack_malformed")
+                    else:
+                        recorder.accepted(latency_ms, stored)
                 elif reply.get("code") == "rate_limited":
                     recorder.limited()
                 else:

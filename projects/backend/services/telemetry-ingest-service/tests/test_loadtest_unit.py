@@ -355,7 +355,14 @@ def test_recorder_counts_errors_by_kind() -> None:
 
 @pytest.mark.parametrize(
     ("reply", "expected"),
-    [({"accepted": 3}, 3), ({"accepted": 0}, 0), ({}, 10), (None, 10), ({"accepted": True}, 10)],
+    [
+        ({"accepted": 3}, 3),
+        ({"accepted": 0}, 0),
+        ({}, None),
+        (None, None),
+        ({"accepted": True}, None),
+        ({"accepted": -1}, None),
+    ],
 )
-def test_accepted_count_prefers_service_value(reply, expected: int) -> None:
-    assert _accepted_count(reply, 10) == expected
+def test_accepted_count_uses_service_value(reply, expected: int | None) -> None:
+    assert _accepted_count(reply) == expected
