@@ -84,7 +84,8 @@ def _check_database_url(
     if value is None:
         return [f"{name}: in {label} has no DATABASE_URL for {database}"]
     errors = []
-    if not value.startswith(f"${{{var}:"):
+    # Only ${VAR:?error} and ${VAR:-default}; ${VAR:+alt} would swap in another DSN.
+    if not re.fullmatch(rf"\$\{{{var}:[?-][^}}]*\}}", value):
         errors.append(f"{name}: in {label} DATABASE_URL must come from {var} ({database}), got {value!r}")
     # The dev default DSN must point at the same database as the variable.
     default = re.match(r"\$\{[A-Z0-9_]+:-(?P<dsn>[^}]*)\}$", value)
@@ -100,11 +101,16 @@ def _depends_on(service: dict[str, Any]) -> dict[str, str | None]:
     return {name: (spec or {}).get("condition") for name, spec in deps.items()}
 
 
+BUILD_JOB = "build-and-push"
+
+
 def _matrix_entries(workflow: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], list[str]]:
     """The release build matrix as ({image: {context, dockerfile}}, duplicated images)."""
     entries: dict[str, dict[str, Any]] = {}
     duplicates: list[str] = []
-    for job in (workflow.get("jobs") or {}).values():
+    for job_id, job in (workflow.get("jobs") or {}).items():
+        if job_id != BUILD_JOB:
+            continue
         include = ((job or {}).get("strategy") or {}).get("matrix", {}).get("include") or []
         for item in include:
             if isinstance(item, dict) and "service" in item:
@@ -289,7 +295,11 @@ def check(paths: Paths) -> list[str]:
                 if migrate in compose:
                     errors.extend(_check_migrate_job(migrate, label, compose[migrate]))
             after = spec.get("migrate_after")
-            if after:
+            if after and after not in migrates:
+                errors.append(f"{name}: migrate_after {after} is not a migrate job in the manifest")
+            elif after == migrate:
+                errors.append(f"{name}: migrate_after must not be its own migrate job {migrate}")
+            elif after:
                 for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
                     if migrate in compose:
                         condition = _depends_on(compose[migrate]).get(after)

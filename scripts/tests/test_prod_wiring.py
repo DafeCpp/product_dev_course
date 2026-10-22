@@ -234,6 +234,29 @@ class ProdWiringTest(unittest.TestCase):
         self.edit(self.paths.manifest, "    database: auth_db\n", "")
         self.assert_error("auth-service: has a migrate job, so the manifest must declare its database")
 
+    def test_migrate_after_must_be_a_migrate_job(self) -> None:
+        self.edit(self.paths.manifest, "migrate_after: experiment-migrate", "migrate_after: experiment-service")
+        self.assert_error("migrate_after experiment-service is not a migrate job")
+
+    def test_matrix_entry_outside_build_job_does_not_count(self) -> None:
+        text = self.paths.deploy_workflow.read_text(encoding="utf-8")
+        self.paths.deploy_workflow.write_text(
+            text.replace("  build-and-push:", "  decoy:\n    strategy:\n      matrix:\n        include:\n"
+                         "          - service: script-service\n    steps: []\n\n  build-and-push:")
+            .replace("          - service: script-service\n            context", "          - service: dropped\n            context", 1),
+            encoding="utf-8",
+        )
+        self.assert_error("script-service: image script-service is not in the deploy.yml build matrix")
+
+    def test_database_url_with_alternate_value_fails(self) -> None:
+        self.set_env(
+            self.paths.prod_compose,
+            "script-service",
+            "DATABASE_URL",
+            "${SCRIPT_DATABASE_URL:+postgresql://u:p@h/auth_db}",
+        )
+        self.assert_error("script-service: in docker-compose.prod.yml DATABASE_URL must come from SCRIPT_DATABASE_URL")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,
