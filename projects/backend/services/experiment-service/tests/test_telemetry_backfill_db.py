@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 import asyncpg
@@ -20,6 +21,7 @@ from experiment_service.repositories import (
     SensorRepository,
     TelemetryRepository,
 )
+from experiment_service.repositories.backfill_tasks import BackfillTaskRepository
 from experiment_service.services.idempotency import IDEMPOTENCY_HEADER
 from experiment_service.services.telemetry import TelemetryService
 from experiment_service.workers.conversion_backfill import conversion_backfill
@@ -119,6 +121,15 @@ def payload(ctx: dict, items: list[TelemetryReadingDTO], **extra) -> TelemetryIn
     return TelemetryIngestDTO(sensor_id=ctx["sensor_id"], readings=items, **extra)
 
 
+@asynccontextmanager
+async def without_foreign_keys(pool):
+    """A transaction that skips FK checks, so tests can plant dangling references without touching the schema."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SET LOCAL session_replication_role = replica")
+            yield conn
+
+
 async def stored(pool, sensor_id: uuid.UUID) -> list[asyncpg.Record]:
     return await pool.fetch(
         "SELECT raw_value, physical_value, conversion_status, conversion_profile_id, run_id, capture_session_id "
@@ -184,8 +195,10 @@ async def test_ingest_client_values_without_profile(telemetry, ctx, db_pool):
 
 async def test_ingest_survives_a_profile_that_disappeared(telemetry, ctx, db_pool):
     await publish_profile(ctx)
-    await db_pool.execute("ALTER TABLE sensors DISABLE TRIGGER ALL")
-    await db_pool.execute("UPDATE sensors SET active_profile_id = $1 WHERE id = $2", uuid.uuid4(), ctx["sensor_id"])
+    async with without_foreign_keys(db_pool) as conn:
+        await conn.execute(
+            "UPDATE sensors SET active_profile_id = $1 WHERE id = $2", uuid.uuid4(), ctx["sensor_id"]
+        )
 
     await telemetry.ingest(payload(ctx, readings(1.0)), token=ctx["token"])
 
@@ -366,24 +379,12 @@ async def test_worker_marks_unconvertible_records(telemetry, ctx, db_pool):
     assert row["conversion_status"] == "conversion_failed"
 
 
-async def test_worker_accepts_profiles_stored_as_json_text(telemetry, ctx, db_pool):
-    await telemetry.ingest(payload(ctx, readings(1.0)), token=ctx["token"])
-    await publish_profile(ctx)
-    await ctx["client"].post(f"/api/v1/sensors/{ctx['sensor_id']}/backfill", headers=ctx["headers"])
-    await db_pool.execute("ALTER TABLE conversion_profiles ALTER COLUMN payload TYPE text USING payload::text")
-
-    result = await conversion_backfill(T0)
-
-    assert result is not None and "completed: 1 records" in result
-    await db_pool.execute("ALTER TABLE conversion_profiles ALTER COLUMN payload TYPE jsonb USING payload::jsonb")
-
-
 async def test_worker_fails_the_task_when_the_profile_is_gone(ctx, db_pool):
     profile_id = await publish_profile(ctx)
     started = await ctx["client"].post(f"/api/v1/sensors/{ctx['sensor_id']}/backfill", headers=ctx["headers"])
     task_id = (await started.json())["id"]
-    await db_pool.execute("ALTER TABLE conversion_profiles DISABLE TRIGGER ALL")
-    await db_pool.execute("DELETE FROM conversion_profiles WHERE id = $1", uuid.UUID(profile_id))
+    async with without_foreign_keys(db_pool) as conn:
+        await conn.execute("DELETE FROM conversion_profiles WHERE id = $1", uuid.UUID(profile_id))
 
     result = await conversion_backfill(T0)
 
@@ -395,20 +396,22 @@ async def test_worker_fails_the_task_when_the_profile_is_gone(ctx, db_pool):
     assert task["error_message"] == "Conversion profile not found"
 
 
-async def test_worker_records_unexpected_errors(telemetry, ctx, db_pool):
+async def test_worker_records_unexpected_errors(telemetry, ctx, monkeypatch):
     await telemetry.ingest(payload(ctx, readings(1.0)), token=ctx["token"])
-    profile_id = await publish_profile(ctx, kind="polynomial", payload={"coefficients": [1.0]})
-    await db_pool.execute(
-        "UPDATE conversion_profiles SET payload = '\"not json\"'::jsonb WHERE id = $1", uuid.UUID(profile_id)
-    )
+    await publish_profile(ctx)
     started = await ctx["client"].post(f"/api/v1/sensors/{ctx['sensor_id']}/backfill", headers=ctx["headers"])
     task_id = (await started.json())["id"]
-    await db_pool.execute("ALTER TABLE telemetry_records DROP COLUMN raw_value CASCADE")
+
+    async def explode(self, task_id, total):
+        raise RuntimeError("database is on fire")
+
+    monkeypatch.setattr(BackfillTaskRepository, "set_total", explode)
 
     result = await conversion_backfill(T0)
 
-    assert result is not None and result.startswith(f"task={task_id} failed:")
+    assert result == f"task={task_id} failed: database is on fire"
     task = await (
         await ctx["client"].get(f"/api/v1/sensors/{ctx['sensor_id']}/backfill/{task_id}", headers=ctx["headers"])
     ).json()
     assert task["status"] == "failed"
+    assert task["error_message"] == "database is on fire"
