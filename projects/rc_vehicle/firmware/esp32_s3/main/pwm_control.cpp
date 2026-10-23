@@ -17,6 +17,7 @@ static constexpr ledc_channel_t kSteeringChannel = LEDC_CHANNEL_1;
 
 static ledc_timer_bit_t s_duty_resolution = LEDC_TIMER_14_BIT;
 static bool s_inited = false;
+static rc_vehicle::MotorConfig s_motor{};
 
 static uint32_t PeriodUs() {
   return static_cast<uint32_t>(1000000UL / PWM_FREQUENCY_HZ);
@@ -45,8 +46,16 @@ static int SetChannelPulseUs(ledc_channel_t channel, uint16_t pulse_us) {
   return (e == ESP_OK) ? 0 : -1;
 }
 
-int PwmControlInit(void) {
-  // Настройка таймера LEDC под 50 Hz servo PWM.
+int PwmControlInit(const rc_vehicle::MotorConfig& motor) {
+  if (motor.IsValid()) {
+    s_motor = motor;
+  } else {
+    ESP_LOGW(TAG, "Invalid motor config, falling back to brushed_pwm defaults");
+    s_motor =
+        rc_vehicle::MotorConfig::Defaults(rc_vehicle::MotorProfile::BrushedPwm);
+  }
+
+  // Настройка таймера LEDC под 50 Hz servo PWM (общий для ESC и сервы).
   ledc_timer_config_t timer_cfg = {};
   timer_cfg.speed_mode = kPwmSpeedMode;
   timer_cfg.timer_num = kPwmTimer;
@@ -96,12 +105,19 @@ int PwmControlInit(void) {
 
   ESP_LOGI(TAG, "PWM initialized: %d Hz, period=%lu us, duty_bits=%d",
            PWM_FREQUENCY_HZ, (unsigned long)PeriodUs(), (int)s_duty_resolution);
+  ESP_LOGI(TAG, "Motor profile %s: %u/%u/%u us, deadband=%.3f, reversed=%d",
+           rc_vehicle::MotorProfileToString(s_motor.profile),
+           (unsigned)s_motor.min_us, (unsigned)s_motor.neutral_us,
+           (unsigned)s_motor.max_us, s_motor.deadband, (int)s_motor.reversed);
   return 0;
 }
 
+const rc_vehicle::MotorConfig& PwmControlGetMotorConfig(void) {
+  return s_motor;
+}
+
 int PwmControlSetThrottle(float throttle) {
-  const uint16_t pulse_us = rc_vehicle::PulseWidthUsFromNormalized(
-      throttle, PWM_MIN_US, PWM_NEUTRAL_US, PWM_MAX_US);
+  const uint16_t pulse_us = rc_vehicle::ThrottlePulseUs(s_motor, throttle);
   return SetChannelPulseUs(kThrottleChannel, pulse_us);
 }
 
@@ -112,6 +128,6 @@ int PwmControlSetSteering(float steering) {
 }
 
 void PwmControlSetNeutral(void) {
-  (void)SetChannelPulseUs(kThrottleChannel, PWM_NEUTRAL_US);
+  (void)SetChannelPulseUs(kThrottleChannel, s_motor.neutral_us);
   (void)SetChannelPulseUs(kSteeringChannel, PWM_NEUTRAL_US);
 }

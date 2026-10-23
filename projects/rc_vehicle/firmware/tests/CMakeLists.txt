@@ -80,6 +80,7 @@ set(COMMON_SOURCES
     ${COMMON_DIR}/tilt_estimator.cpp
     ${COMMON_DIR}/wheelspin_detector.cpp
     ${COMMON_DIR}/grip_loss_detector.cpp
+    ${COMMON_DIR}/motor_config.cpp
 )
 
 # Include directories
@@ -130,6 +131,7 @@ add_executable(unit_tests
     unit/test_slip_angle_controller.cpp
     unit/test_stabilization_pipeline.cpp
     unit/test_slew_rate.cpp
+    unit/test_motor_config.cpp
     unit/test_control_source.cpp
     unit/test_rc_pulse_decoder.cpp
     unit/test_rc_link_monitor.cpp

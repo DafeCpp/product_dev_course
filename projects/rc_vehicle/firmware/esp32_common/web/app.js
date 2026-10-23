@@ -356,6 +356,21 @@ export function parseBinaryLog(buffer) {
     return {csv: header + '\n' + lines.join('\n'), warnings};
 }
 
+// Профиль мотора/ESC для панели «Мотор / ESC» (LOS-19).
+const MOTOR_PROFILE_NAMES = {
+    brushed_pwm: 'коллекторный, PWM',
+    vesc_pwm: 'VESC, PPM',
+};
+
+export function formatMotorConfig(cfg) {
+    if (!cfg) return '—';
+    const name = MOTOR_PROFILE_NAMES[cfg.profile] || cfg.profile;
+    const parts = [`${name}, ${cfg.min_us}/${cfg.neutral_us}/${cfg.max_us} мкс`];
+    if (cfg.deadband > 0) parts.push(`зона ${Number(cfg.deadband).toFixed(2)}`);
+    if (cfg.reversed) parts.push('реверс');
+    return parts.join(', ');
+}
+
 // Browser UI is intentionally isolated from the pure exports above. Importing
 // this module in Node must not create timers, touch the DOM, or open WebSockets.
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
@@ -521,6 +536,7 @@ function connectWebSocket() {
             // Форма стабилизации отправляет все поля — сначала заполнить её
             // сохранённым конфигом, иначе «Сохранить» затрёт его значениями HTML.
             wsSend({ type: 'get_stab_config' });
+            wsSend({ type: 'get_motor_config' });
         };
 
         ws.onmessage = (event) => {
@@ -583,6 +599,12 @@ function connectWebSocket() {
                     wsSend({ type: 'get_log_info' });
                 } else if (data.type === 'self_test_result') {
                     showSelfTestResult(data);
+                } else if (data.type === 'motor_config') {
+                    applyMotorConfig(data);
+                } else if (data.type === 'set_motor_config_ack') {
+                    applyMotorConfig(data);
+                    showMotorSaveStatus(data.ok ? 'Сохранено, применится после перезагрузки'
+                        : 'Ошибка: ' + (data.error || 'unknown'), data.ok ? 'toast-ok' : 'toast-err');
                 } else if (data.type === 'toggle_kids_mode_ack') {
                     kidsMode = data.active;
                     updateKidsModeUI();
@@ -1638,6 +1660,56 @@ function showStabSaveStatus(msg, cssClass) {
     msgEl.textContent = msg;
     setTimeout(() => { el.style.display = 'none'; }, 3000);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Мотор / ESC (LOS-19)
+// ═══════════════════════════════════════════════════════════════════
+
+function applyMotorConfig(data) {
+    const active = $('motor-active');
+    if (active) active.textContent = formatMotorConfig(data.active);
+    const pending = $('motor-pending');
+    if (pending) pending.style.display = data.pending_reboot ? '' : 'none';
+    const saved = data.saved;
+    if (!saved) return;
+    const setVal = (id, v) => { const el = $(id); if (el) el.value = v; };
+    setVal('motor-profile', saved.profile);
+    setVal('motor-min-us', saved.min_us);
+    setVal('motor-neutral-us', saved.neutral_us);
+    setVal('motor-max-us', saved.max_us);
+    setVal('motor-deadband', Number(saved.deadband).toFixed(2));
+    const rev = $('motor-reversed');
+    if (rev) rev.checked = !!saved.reversed;
+}
+
+function showMotorSaveStatus(msg, cssClass) {
+    const el = $('motor-save-status');
+    const msgEl = $('motor-save-msg');
+    if (!el || !msgEl) return;
+    el.style.display = 'block';
+    el.className = 'toast ' + cssClass;
+    msgEl.textContent = msg;
+    setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+const btnMotorSave = $('btn-motor-save');
+if (btnMotorSave) btnMotorSave.addEventListener('click', () => {
+    const num = (id) => parseFloat($(id)?.value);
+    wsSend({
+        type: 'set_motor_config',
+        profile: $('motor-profile')?.value,
+        min_us: num('motor-min-us'),
+        neutral_us: num('motor-neutral-us'),
+        max_us: num('motor-max-us'),
+        deadband: num('motor-deadband'),
+        reversed: !!$('motor-reversed')?.checked,
+    });
+});
+
+const btnMotorReset = $('btn-motor-reset');
+if (btnMotorReset) btnMotorReset.addEventListener('click', () => {
+    wsSend({ type: 'set_motor_config', reset: true });
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // Telemetry log

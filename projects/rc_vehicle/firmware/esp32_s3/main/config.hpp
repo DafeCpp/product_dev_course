@@ -20,7 +20,8 @@
 #define PWM_THROTTLE_PIN GPIO_NUM_14  // ESC (Signal)
 #define PWM_STEERING_PIN GPIO_NUM_21  // Servo (Signal)
 
-// PWM значения (микросекунды)
+// PWM значения сервы руля (микросекунды). Диапазон газа задаёт профиль мотора
+// в NVS (MotorConfig, LOS-19), по умолчанию он совпадает с этими значениями.
 #define PWM_NEUTRAL_US 1500  // Нейтраль (1.5 мс)
 #define PWM_MIN_US 1000      // Минимум (1.0 мс)
 #define PWM_MAX_US 2000      // Максимум (2.0 мс)

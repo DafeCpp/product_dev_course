@@ -482,6 +482,55 @@
             </div>
         </section>
 
+        <!-- Мотор / ESC (LOS-19) -->
+        <section class="panel" id="panel-motor">
+            <button class="panel-header" aria-expanded="false">
+                <span class="panel-icon">&#9654;</span>
+                <span>Мотор / ESC</span>
+                <span id="motor-pending" class="badge badge-unknown" style="margin-left:auto;display:none">нужна перезагрузка</span>
+            </button>
+            <div class="panel-body" hidden>
+                <div class="kv-row">
+                    <span class="kv-k">Сейчас работает:</span>
+                    <span id="motor-active" class="kv-v">—</span>
+                </div>
+                <div class="field">
+                    <label for="motor-profile">Профиль</label>
+                    <select id="motor-profile">
+                        <option value="brushed_pwm">Коллекторный, штатный ESC (PWM 50 Гц)</option>
+                        <option value="vesc_pwm">Бесколлекторный, VESC (PPM 50 Гц)</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="motor-min-us">Минимум, мкс (полный назад)</label>
+                    <input type="number" id="motor-min-us" min="500" max="2500" step="1" value="1000">
+                </div>
+                <div class="field">
+                    <label for="motor-neutral-us">Нейтраль, мкс</label>
+                    <input type="number" id="motor-neutral-us" min="500" max="2500" step="1" value="1500">
+                </div>
+                <div class="field">
+                    <label for="motor-max-us">Максимум, мкс (полный газ)</label>
+                    <input type="number" id="motor-max-us" min="500" max="2500" step="1" value="2000">
+                </div>
+                <div class="field">
+                    <label for="motor-deadband">Мёртвая зона газа (0–0.5)</label>
+                    <input type="number" id="motor-deadband" min="0" max="0.5" step="0.01" value="0">
+                </div>
+                <div class="field-row">
+                    <label class="chk"><input type="checkbox" id="motor-reversed"> Инвертировать направление</label>
+                </div>
+                <p class="hint">Сохраняется в память контроллера и применяется после перезагрузки, когда мотор гарантированно стоит.</p>
+                <div class="btn-row">
+                    <button id="btn-motor-save" class="btn btn-accent">Сохранить</button>
+                    <button id="btn-motor-reset" class="btn btn-muted">Сбросить</button>
+                </div>
+                <div id="motor-save-status" class="toast" style="display:none">
+                    <span id="motor-save-msg">—</span>
+                </div>
+            </div>
+        </section>
+
         <!-- Wi-Fi STA -->
         <section class="panel" id="panel-wifi">
             <button class="panel-header" aria-expanded="false">

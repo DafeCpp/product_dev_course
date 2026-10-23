@@ -40,6 +40,7 @@ idf_component_register(
         "../../common/grip_loss_detector.cpp"
         "vehicle_control_platform_esp32.cpp"
         "pwm_control.cpp"
+        "../../common/motor_config.cpp"
         "rc_input.cpp"
         "spi_esp32.cpp"
         "imu.cpp"
@@ -59,6 +60,7 @@ idf_component_register(
         "../../esp32_common/imu_calibration_nvs.cpp"
         "../../esp32_common/mag_calibration_nvs.cpp"
         "../../esp32_common/stabilization_config_nvs.cpp"
+        "../../esp32_common/motor_config_nvs.cpp"
         "../../esp32_common/crash_logger.cpp"
         "../../esp32_common/udp_telem_sender.cpp"
     INCLUDE_DIRS
