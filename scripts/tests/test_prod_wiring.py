@@ -414,6 +414,20 @@ class ProdWiringTest(unittest.TestCase):
         self.set_service_field(self.paths.prod_compose, "grafana", "deploy", value={"replicas": 0})
         self.assert_error("grafana: in docker-compose.prod.yml is scaled to 0")
 
+    def test_duplicate_database_url_fails(self) -> None:
+        compose = yaml.safe_load(self.paths.prod_compose.read_text(encoding="utf-8"))
+        compose["services"]["script-service"]["environment"].append(
+            "DATABASE_URL=${AUTH_DATABASE_URL:?AUTH_DATABASE_URL must be set in production .env}"
+        )
+        self.paths.prod_compose.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+        self.assert_error("script-service: in docker-compose.prod.yml declares DATABASE_URL more than once")
+
+    def test_build_job_without_base_dependency_fails(self) -> None:
+        workflow = yaml.safe_load(self.paths.deploy_workflow.read_text(encoding="utf-8"))
+        workflow["jobs"]["build-and-push"]["needs"] = []
+        self.paths.deploy_workflow.write_text(yaml.safe_dump(workflow, sort_keys=False), encoding="utf-8")
+        self.assert_error("deploy.yml build-and-push must directly need build-backend-base")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

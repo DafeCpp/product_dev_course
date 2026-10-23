@@ -85,6 +85,10 @@ def _check_database_url(
     if value is None:
         return [f"{name}: in {label} has no DATABASE_URL for {database}"]
     errors = []
+    env = service.get("environment") or []
+    if isinstance(env, list) and sum(str(i).partition("=")[0] == "DATABASE_URL" for i in env) > 1:
+        # Compose keeps the last duplicate, but the checker would read the first.
+        errors.append(f"{name}: in {label} declares DATABASE_URL more than once")
     # Production must require the variable (${VAR:?error}): a fallback DSN would let a
     # missing variable pass pre-flight. Dev uses ${VAR:-default}. ${VAR:+alt} is never valid.
     operator = "?" if is_prod else "-"
@@ -189,6 +193,12 @@ def _check_build_steps(workflow: dict[str, Any]) -> list[str]:
     errors = []
     steps = _build_steps(workflow)
     job = (workflow.get("jobs") or {}).get(BUILD_JOB) or {}
+    needs = job.get("needs") or []
+    if "build-backend-base" not in ([needs] if isinstance(needs, str) else needs):
+        errors.append(
+            f"deploy.yml {BUILD_JOB} must directly need build-backend-base, "
+            "or its digest output is unavailable to the build"
+        )
     for guard in ("if", "continue-on-error"):
         if guard in job:
             errors.append(f"deploy.yml {BUILD_JOB} job must not set {guard}")
