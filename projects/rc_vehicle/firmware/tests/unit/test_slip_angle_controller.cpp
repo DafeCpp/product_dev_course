@@ -101,7 +101,7 @@ TEST_F(SlipAngleControllerTest, NoIntegralWindup_WhenCutHitsZero) {
   cfg_.slip_angle.pid.max_correction = 0.8f;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
   ekf_.SetState(2.0f, 1.5f, 0.0f);  // slip ≈ 36.9°, ошибка ≈ −21.9°
-  for (int i = 0; i < 500; ++i) {  // 1 с
+  for (int i = 0; i < 500; ++i) {   // 1 с
     float throttle = 0.1f;
     ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
   }
