@@ -190,8 +190,10 @@ async def test_invite_repository_claim_lifecycle(pool_with_seed, make_user):
     await repo.unclaim(other.token)
     assert (await repo.get_by_token(other.token)).used_at is None
 
-    assert await repo.delete(other.token) is True
-    assert await repo.delete(other.token) is False
+    deleted = await repo.delete(other.token)
+    deleted_again = await repo.delete(other.token)
+    assert deleted is True
+    assert deleted_again is False
 
 
 # --- refresh / logout token validation -----------------------------------------------------
