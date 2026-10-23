@@ -14,8 +14,17 @@ from experiment_service.api.routes import telemetry_export
 from tests.test_api_telemetry_export import _insert_telemetry, _setup_context, _ts
 
 
+async def refresh_aggregate(pgsql) -> None:
+    """Rebuild telemetry_1m (a plain materialized view in the test schema)."""
+    conn = await asyncpg.connect(dsn=pgsql["experiment_service"].conninfo.get_uri())
+    try:
+        await conn.execute("REFRESH MATERIALIZED VIEW telemetry_1m")
+    finally:
+        await conn.close()
+
+
 @pytest.fixture
-async def ctx(service_client, pgsql) -> dict:
+async def ctx(service_client, pgsql):
     ctx = await _setup_context(service_client)
     await _insert_telemetry(
         pgsql,
@@ -31,7 +40,9 @@ async def ctx(service_client, pgsql) -> dict:
             {"timestamp": _ts(120), "raw_value": 5.0, "physical_value": 50.0, "conversion_status": "converted"},
         ],
     )
-    return ctx
+    yield ctx
+    # Tables are truncated between tests, the view is not: drop its stale rows.
+    await refresh_aggregate(pgsql)
 
 
 def session_url(ctx, **query) -> str:
@@ -166,19 +177,28 @@ async def test_export_flushes_full_batches(service_client, ctx, monkeypatch):
 
 
 @pytest.mark.parametrize("make_url", [session_url, run_url])
-async def test_aggregated_export_csv_and_json(service_client, ctx, make_url):
+async def test_aggregated_export_csv_and_json(service_client, pgsql, ctx, make_url):
+    await refresh_aggregate(pgsql)
     headers = ctx["headers"]
+    first_bucket = _ts(0).replace(second=0).isoformat()
 
     response = await service_client.get(make_url(ctx, aggregation="1m"), headers=headers)
     assert response.status == 200
     rows = list(csv.reader(io.StringIO(await response.text())))
     assert rows[0][:5] == ["bucket", "sensor_id", "signal", "capture_session_id", "sample_count"]
+    by_key = {(row[0], row[2]): row for row in rows[1:]}
+    assert len(rows) == 4
+    temp = by_key[(first_bucket, "temp")]
+    assert (temp[4], temp[5], temp[6], temp[7]) == ("2", "1.5", "1.0", "2.0")
+    assert by_key[(first_bucket, "pressure")][4] == "2"
 
     response = await service_client.get(
         make_url(ctx, aggregation="1m", format="json", signal="temp", sensor_id=ctx["sensor_id"]), headers=headers
     )
     items = json.loads(await response.text())
-    assert all(item["signal"] == "temp" for item in items)
+    assert [(item["signal"], item["sample_count"]) for item in items] == [("temp", 2), ("temp", 1)]
+    assert items[0]["avg_physical"] == 15.0
+    assert (items[0]["min_physical"], items[0]["max_physical"]) == (10.0, 20.0)
 
 
 # --- formatters -------------------------------------------------------------------------------------------
