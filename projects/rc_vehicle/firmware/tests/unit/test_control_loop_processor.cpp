@@ -712,6 +712,55 @@ TEST_F(ProcessorTest, EscTelemetryReachesTelemJson) {
   EXPECT_NE(json.find("\"erpm\":12000"), std::string::npos);
 }
 
+TEST_F(ProcessorTest, EscTelemetryReachesLogFrame) {
+  ImuHandler imu_handler(platform_, imu_calib_, madgwick_, 2);
+  imu_handler.SetEnabled(true);
+  platform_.SetImuData(ImuData{.az = 1.0f});
+  ctx_->imu_handler = &imu_handler;
+  platform_.SetWifiCommand({0.0f, 0.0f});
+
+  auto last_frame = [this] {
+    size_t count = 0, cap = 0;
+    telem_mgr_->GetLogInfo(count, cap);
+    TelemetryLogFrame frame{};
+    EXPECT_GT(count, 0u);
+    if (count > 0) {
+      EXPECT_TRUE(telem_mgr_->GetLogFrame(count - 1, frame));
+    }
+    return frame;
+  };
+
+  RunSteps(50);
+  const TelemetryLogFrame no_esc = last_frame();
+  EXPECT_EQ(no_esc.esc_valid, 0u);
+  EXPECT_EQ(no_esc.esc_erpm, 0.0f);
+
+  EscTelemetry esc{};
+  esc.erpm = -12000.0f;
+  esc.input_voltage_v = 11.1f;
+  esc.motor_current_a = 3.5f;
+  esc.input_current_a = -0.8f;
+  esc.duty = 0.25f;
+  esc.temp_fet_c = 41.5f;
+  esc.fault_code = 2;
+  platform_.SetEscTelemetry(esc);
+  RunSteps(50);
+  const TelemetryLogFrame with_esc = last_frame();
+  EXPECT_EQ(with_esc.esc_valid, 1u);
+  EXPECT_FLOAT_EQ(with_esc.esc_erpm, -12000.0f);
+  EXPECT_FLOAT_EQ(with_esc.esc_v_in, 11.1f);
+  EXPECT_FLOAT_EQ(with_esc.esc_i_motor, 3.5f);
+  EXPECT_FLOAT_EQ(with_esc.esc_i_in, -0.8f);
+  EXPECT_FLOAT_EQ(with_esc.esc_duty, 0.25f);
+  EXPECT_FLOAT_EQ(with_esc.esc_t_fet, 41.5f);
+  EXPECT_EQ(with_esc.esc_fault, 2u);
+
+  // Телеметрия пропала (обрыв UART) — кадры снова без ESC, без «залипания».
+  platform_.SetEscTelemetry(std::nullopt);
+  RunSteps(50);
+  EXPECT_EQ(last_frame().esc_valid, 0u);
+}
+
 TEST_F(ProcessorTest, RcLink_LossAndRestorePublishedAndLogged) {
   RcInputHandler rc_handler(platform_, 20);
   TelemetryHandler telem_handler(platform_, 0);

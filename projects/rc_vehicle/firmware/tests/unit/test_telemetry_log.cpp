@@ -295,7 +295,7 @@ TEST_F(BuildLogFrameKidsTest, MagQualityFlagsArePackedWithoutChangingFrame) {
   sensors_.mag_gate_active = true;
 
   EXPECT_EQ(Frame().mag_flags, kMagRejected | kMagGateActive);
-  EXPECT_EQ(sizeof(TelemetryLogFrame), 132u);
+  EXPECT_EQ(sizeof(TelemetryLogFrame), 160u);
 }
 
 TEST_F(BuildLogFrameKidsTest, AntiSpinSetsOwnBit) {
@@ -392,7 +392,7 @@ class BuildLogFrameLinkTest : public BuildLogFrameKidsTest {
 
 TEST_F(BuildLogFrameLinkTest, LinkFlagsOccupyFormerPaddingByte) {
   EXPECT_EQ(offsetof(TelemetryLogFrame, link_flags), 131u);
-  EXPECT_EQ(sizeof(TelemetryLogFrame), 132u);
+  EXPECT_EQ(sizeof(TelemetryLogFrame), 160u);
 }
 
 TEST_F(BuildLogFrameLinkTest, NoLink_AllBitsClear) {

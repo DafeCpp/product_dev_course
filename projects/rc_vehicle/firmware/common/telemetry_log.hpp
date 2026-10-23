@@ -46,10 +46,10 @@ enum LinkFlag : uint8_t {
 /**
  * @brief Кадр телеметрии для кольцевого буфера логов
  *
- * Размер: 132 байта (30 × float + uint32_t + 8 × uint8_t).
+ * Размер: 160 байт (36 × float + uint32_t + 12 × uint8_t).
  * Хранится в PSRAM при наличии (ESP_PLATFORM), иначе в обычной heap.
  *
- * Буфер 52000 кадров × 132 байта ≈ 6.5 МБ; remaining PSRAM is reserved for
+ * Буфер 42000 кадров × 160 байт ≈ 6.4 МБ; remaining PSRAM is reserved for
  * compact stabilization-configuration deltas.
  */
 struct TelemetryLogFrame {
@@ -89,10 +89,20 @@ struct TelemetryLogFrame {
   uint8_t kids_flags{0};     // Маска активных лимитеров Kids (см. KidsFlag)
   uint8_t mag_flags{0};      // Состояние quality gate (см. MagFlag)
   uint8_t link_flags{0};     // Состояние RC/WiFi/failsafe (см. LinkFlag)
-};  // sizeof == 132 bytes (30 × float + uint32_t + 8 × uint8_t)
+  // --- ESC (LOS-19): телеметрия VESC; без неё нули и esc_valid = 0 ---
+  float esc_erpm{0};     // Электрические обороты [об/мин]
+  float esc_v_in{0};     // Напряжение батареи на входе ESC [В]
+  float esc_i_motor{0};  // Ток мотора [А]
+  float esc_i_in{0};     // Ток батареи [А] (< 0 — рекуперация)
+  float esc_duty{0};     // Скважность ESC [-1..1]
+  float esc_t_fet{0};    // Температура силовых ключей [°C]
+  uint8_t esc_valid{0};  // 1 = поля esc_* заполнены свежей телеметрией
+  uint8_t esc_fault{0};  // Код ошибки ESC (mc_fault_code VESC)
+  uint8_t esc_reserved[2]{};
+};  // sizeof == 160 bytes (36 × float + uint32_t + 12 × uint8_t)
 
 // Compile-time проверка размера структуры
-static_assert(sizeof(TelemetryLogFrame) == 132,
+static_assert(sizeof(TelemetryLogFrame) == 160,
               "TelemetryLogFrame size mismatch");
 
 // Веб-парсер лога (esp32_common/web/app.js, FIELD_OFFSETS) читает кадр по
@@ -103,6 +113,10 @@ static_assert(offsetof(TelemetryLogFrame, mag_flags) == 130,
               "mag_flags offset must match web/app.js FIELD_OFFSETS");
 static_assert(offsetof(TelemetryLogFrame, link_flags) == 131,
               "link_flags offset must match web/app.js FIELD_OFFSETS");
+static_assert(offsetof(TelemetryLogFrame, esc_erpm) == 132,
+              "esc_erpm offset must match web/app.js FIELD_OFFSETS");
+static_assert(offsetof(TelemetryLogFrame, esc_valid) == 156,
+              "esc_valid offset must match web/app.js FIELD_OFFSETS");
 
 /**
  * @brief Потокобезопасный кольцевой буфер кадров телеметрии

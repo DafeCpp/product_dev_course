@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "config.hpp"
 #include "diagnostics_reporter.hpp"
@@ -538,6 +539,8 @@ void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
                               ctx_.kids_processor,
                               ctx_.auto_drive};
   const DriveMode drive_mode = input.config.mode;
+  // LOS-19: один снимок ESC на тик — и в WS-телеметрию, и в лог.
+  const std::optional<EscTelemetry> esc = ctx_.platform.GetEscTelemetry();
 
   if (ctx_.telem_handler) {
     auto snap = BuildTelemetrySnapshot(
@@ -549,7 +552,7 @@ void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
     // обращения к платформе из чужого потока.
     snap.failsafe = ctx_.platform.FailsafeIsActive();
     snap.rc_loss_count = rc_link_monitor_.LossCount();
-    if (const auto esc = ctx_.platform.GetEscTelemetry()) {
+    if (esc) {
       snap.esc_available = true;
       snap.esc = *esc;
     }
@@ -565,6 +568,7 @@ void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
           state.command.steering, drive_mode, input.config.enabled,
           input.config.KidsLimitersActive(), state.failsafe_active,
           ctx_.rc_init_failed);
+      if (esc) SetLogFrameEsc(frame, *esc);
       ctx_.telem_mgr->Push(frame);
       ctx_.telem_mgr->SetLastLogTime(input.now_ms);
 #ifdef ESP_PLATFORM

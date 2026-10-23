@@ -65,4 +65,7 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
                                 bool failsafe_active = false,
                                 bool rc_init_failed = false);
 
+/** Заполнить поля esc_* кадра лога из телеметрии ESC (LOS-19). */
+void SetLogFrameEsc(TelemetryLogFrame& frame, const EscTelemetry& esc);
+
 }  // namespace rc_vehicle
