@@ -265,6 +265,7 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   const float slip_error =
       cfg.slip_angle.target_deg -
       DriftSlipDeg(input.slip_angle_deg, input.yaw_rate_rps);
+  const float integral_before = pid_.GetIntegral();
   const float pid_out = pid_.Step(slip_error, dt_sec);
   // Стик задаёт предел газа: ниже уставки газ равен стику, выше регулятор
   // снимает газ. Поправка к стику в обе стороны держала занос лишь около
@@ -277,9 +278,14 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   // Пола наката, как у anti-spin Kids (LOS-389), здесь нет: с ним регулятор
   // не может снять газ ниже наката и не удерживает уставку (на газе 1.0 пик
   // заноса в SIL 61° против 39° без пола).
-  throttle = std::max(throttle + cut * input.stabilization_weight *
-                                     input.mode_transition_weight,
-                      0.0f);
+  const float reduced = throttle + cut * input.stabilization_weight *
+                                       input.mode_transition_weight;
+  // Anti-windup: газ уже снят до нуля, и дальше копить снятие незачем. Иначе
+  // после заноса интеграл ещё долго резал бы стик.
+  if (reduced <= 0.0f && slip_error < 0.0f) {
+    pid_.SetIntegral(integral_before);
+  }
+  throttle = std::max(reduced, 0.0f);
 }
 
 float SlipAngleController::DriftSlipDeg(float slip_deg,

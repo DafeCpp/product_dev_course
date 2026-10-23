@@ -754,6 +754,17 @@ struct StabilizationConfig {
   bool UpgradeLegacySportYawGains() noexcept;
 
   /**
+   * @brief Заменить нетронутый прежний slip-PID Drift на текущий (LOS-380).
+   *
+   * До LOS-380 Drift использовал чистый P (0.008/0.00/0.002, max_integral 5,
+   * max_correction 0.25) и slew газа 0.8/с; новый регулятор только снимает
+   * газ, и с ними держит занос вдвое выше уставки. Меняются только точные
+   * прежние значения, пользовательский тюнинг остаётся как есть.
+   * @return true, если параметры заменены
+   */
+  bool UpgradeLegacyDriftSlipGains() noexcept;
+
+  /**
    * @brief Применить ограничения к параметрам
    */
   void Clamp() noexcept;

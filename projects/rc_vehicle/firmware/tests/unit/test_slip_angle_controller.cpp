@@ -92,6 +92,24 @@ TEST_F(SlipAngleControllerTest, NeverCutsBelowZero) {
   EXPECT_FLOAT_EQ(throttle, 0.0f) << "Регулятор снимает газ, но не тормозит";
 }
 
+// Пока газ уже снят до нуля, интеграл не копит снятие дальше: иначе после
+// заноса он ещё долго резал бы стик (anti-windup).
+TEST_F(SlipAngleControllerTest, NoIntegralWindup_WhenCutHitsZero) {
+  cfg_.slip_angle.pid.kp = 0.0f;
+  cfg_.slip_angle.pid.ki = 0.02f;
+  cfg_.slip_angle.pid.max_integral = 40.0f;
+  cfg_.slip_angle.pid.max_correction = 0.8f;
+  ctrl_.Init(cfg_, ekf_, &imu_handler_);
+  ekf_.SetState(2.0f, 1.5f, 0.0f);  // slip ≈ 36.9°, ошибка ≈ −21.9°
+  for (int i = 0; i < 500; ++i) {  // 1 с
+    float throttle = 0.1f;
+    ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
+  }
+  // Снять 0.1 газа хватает интеграла ≈ −5; без anti-windup он дошёл бы
+  // до ≈ −22.
+  EXPECT_GT(ctrl_.GetPid().GetIntegral(), -6.0f);
+}
+
 TEST_F(SlipAngleControllerTest, BrakeAndReverseUntouched) {
   ekf_.SetState(2.0f, 1.5f, 0.0f);
   float throttle = -0.5f;

@@ -41,7 +41,8 @@ static constexpr uint8_t kDriveModeCount = 5;
 // v14: то же для Sport (LOS-371)
 // v15: добавлен StabilizationConfig::roll_comp перед version (LOS-386);
 //      блобы прежнего размера расширяются MigratePreRollCompLayout()
-static constexpr uint8_t kCurrentStabConfigVersion = 15;
+// v16: новый slip-PID и slew газа Drift вместо нетронутых прежних (LOS-380)
+static constexpr uint8_t kCurrentStabConfigVersion = 16;
 static constexpr uint8_t kV8StabConfigVersion = 8;
 static constexpr uint8_t kV9StabConfigVersion = 9;
 static constexpr uint8_t kV10StabConfigVersion = 10;
@@ -49,6 +50,7 @@ static constexpr uint8_t kV11StabConfigVersion = 11;
 static constexpr uint8_t kV12StabConfigVersion = 12;
 static constexpr uint8_t kV13StabConfigVersion = 13;
 static constexpr uint8_t kV14StabConfigVersion = 14;
+static constexpr uint8_t kV15StabConfigVersion = 15;
 
 /** Обёртка с версионным заголовком для NVS-хранения. */
 struct StabConfigBlob {
@@ -514,7 +516,7 @@ esp_err_t MigrateV14Profiles(nvs_handle_t handle) {
     if (size != sizeof(blob) || blob.version != kV14StabConfigVersion) {
       return ESP_OK;
     }
-    blob.version = kCurrentStabConfigVersion;
+    blob.version = kV15StabConfigVersion;
     err = nvs_set_blob(handle, key, &blob, sizeof(blob));
     if (err != ESP_OK) return err;
     changed = true;
@@ -528,6 +530,47 @@ esp_err_t MigrateV14Profiles(nvs_handle_t handle) {
     if (err != ESP_OK) return err;
   }
   const esp_err_t err = bump(NVS_LEGACY_KEY);
+  if (err != ESP_OK) return err;
+
+  return changed ? nvs_commit(handle) : ESP_OK;
+}
+
+/**
+ * @brief Мигрировать v15 профили: новый slip-PID Drift (LOS-380).
+ *
+ * Layout не менялся. Параметры заменяются, только если в профиле Drift
+ * остались прежние значения по умолчанию, см.
+ * StabilizationConfig::UpgradeLegacyDriftSlipGains().
+ */
+esp_err_t MigrateV15Profiles(nvs_handle_t handle) {
+  bool changed = false;
+  auto upgrade = [&](const char* key) -> esp_err_t {
+    StabConfigBlob blob{};
+    size_t size = sizeof(blob);
+    esp_err_t err = nvs_get_blob(handle, key, &blob, &size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+    if (size != sizeof(blob) || blob.version != kV15StabConfigVersion) {
+      return ESP_OK;
+    }
+    if (blob.config.UpgradeLegacyDriftSlipGains()) {
+      ESP_LOGI(TAG, "Updated Drift slip gains (%s) while migrating v15 -> v16",
+               key);
+    }
+    blob.version = kCurrentStabConfigVersion;
+    err = nvs_set_blob(handle, key, &blob, sizeof(blob));
+    if (err != ESP_OK) return err;
+    changed = true;
+    return ESP_OK;
+  };
+
+  for (uint8_t m = 0; m < kDriveModeCount; ++m) {
+    char key[8];
+    ModeKey(static_cast<DriveMode>(m), key);
+    const esp_err_t err = upgrade(key);
+    if (err != ESP_OK) return err;
+  }
+  const esp_err_t err = upgrade(NVS_LEGACY_KEY);
   if (err != ESP_OK) return err;
 
   return changed ? nvs_commit(handle) : ESP_OK;
@@ -588,6 +631,12 @@ esp_err_t Load(DriveMode mode, StabilizationConfig& config) {
     return err;
   }
   err = MigrateV14Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV15Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);
@@ -662,6 +711,12 @@ esp_err_t Load(StabilizationConfig& config) {
     return err;
   }
   err = MigrateV14Profiles(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+  }
+  err = MigrateV15Profiles(handle);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to migrate NVS config: %s", esp_err_to_name(err));
     nvs_close(handle);
