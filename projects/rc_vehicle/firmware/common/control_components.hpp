@@ -6,6 +6,7 @@
 #include <type_traits>
 
 #include "config.hpp"
+#include "esc_telemetry.hpp"
 #include "imu_calibration.hpp"
 #include "lpf_butterworth.hpp"
 #include "madgwick_filter.hpp"
@@ -571,6 +572,10 @@ struct TelemetrySnapshot {
   bool ekf_diverged{false};    ///< Сработал ли guard на расходимость
   /// yaw rate разошёлся с рулём, vy не гасится (LOS-378)
   bool ekf_grip_lost{false};
+
+  // Телеметрия ESC (LOS-19): только у ESC с обратной связью (VESC по UART)
+  bool esc_available{false};
+  EscTelemetry esc{};
 
   // Uptime (ms since boot, for reboot diagnostics)
   uint32_t uptime_ms{0};

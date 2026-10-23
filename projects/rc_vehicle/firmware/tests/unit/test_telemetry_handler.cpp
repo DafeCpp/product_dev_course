@@ -300,6 +300,45 @@ TEST(BuildTelemJsonTest, IncludesZuptStatus) {
   cJSON_Delete(root);
 }
 
+// LOS-19: блок "esc" только когда платформа отдала телеметрию ESC.
+TEST(BuildTelemJsonTest, EscBlockOnlyWhenAvailable) {
+  TelemetrySnapshot snap{};
+  {
+    std::string json = BuildTelemJson(snap);
+    cJSON* root = cJSON_Parse(json.c_str());
+    ASSERT_NE(root, nullptr);
+    EXPECT_EQ(cJSON_GetObjectItem(root, "esc"), nullptr);
+    cJSON_Delete(root);
+  }
+
+  snap.esc_available = true;
+  snap.esc.erpm = -23456.0f;
+  snap.esc.input_voltage_v = 11.8f;
+  snap.esc.motor_current_a = 12.34f;
+  snap.esc.input_current_a = -2.5f;
+  snap.esc.duty = -0.456f;
+  snap.esc.temp_fet_c = 41.2f;
+  snap.esc.tachometer = 987654;
+  snap.esc.fault_code = 3;
+  snap.esc.age_ms = 17;
+
+  std::string json = BuildTelemJson(snap);
+  cJSON* root = cJSON_Parse(json.c_str());
+  ASSERT_NE(root, nullptr);
+  cJSON* esc = cJSON_GetObjectItem(root, "esc");
+  ASSERT_NE(esc, nullptr);
+  EXPECT_DOUBLE_EQ(cJSON_GetObjectItem(esc, "erpm")->valuedouble, -23456.0);
+  EXPECT_NEAR(cJSON_GetObjectItem(esc, "v_in")->valuedouble, 11.8, 1e-6);
+  EXPECT_NEAR(cJSON_GetObjectItem(esc, "i_motor")->valuedouble, 12.34, 1e-6);
+  EXPECT_NEAR(cJSON_GetObjectItem(esc, "i_in")->valuedouble, -2.5, 1e-6);
+  EXPECT_NEAR(cJSON_GetObjectItem(esc, "duty")->valuedouble, -0.456, 1e-6);
+  EXPECT_NEAR(cJSON_GetObjectItem(esc, "t_fet")->valuedouble, 41.2, 1e-6);
+  EXPECT_EQ(cJSON_GetObjectItem(esc, "tacho")->valueint, 987654);
+  EXPECT_EQ(cJSON_GetObjectItem(esc, "fault")->valueint, 3);
+  EXPECT_EQ(cJSON_GetObjectItem(esc, "age_ms")->valueint, 17);
+  cJSON_Delete(root);
+}
+
 // LOS-252: BuildTelemJson больше не использует cJSON (см. JsonWriter в
 // firmware_common). Кадр на полностью заполненном снимке должен остаться
 // валидным JSON с теми же ключами и значениями (в пределах точности

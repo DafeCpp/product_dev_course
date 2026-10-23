@@ -106,6 +106,8 @@ class VehicleControlPlatformEsp32 : public VehicleControlPlatform {
 
   // RC Input: диагностика (LOS-216)
   [[nodiscard]] std::optional<RcInputStats> GetRcStats() override;
+  // ESC: телеметрия VESC по UART (LOS-19)
+  [[nodiscard]] std::optional<EscTelemetry> GetEscTelemetry() override;
   void PublishRcLinkEvent(const RcLinkEvent& evt) override;
 
   // Wi-Fi команды

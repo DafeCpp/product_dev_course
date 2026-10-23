@@ -26,6 +26,16 @@
 #define PWM_MIN_US 1000      // Минимум (1.0 мс)
 #define PWM_MAX_US 2000      // Максимум (2.0 мс)
 
+// Телеметрия VESC по UART (LOS-19, только профиль мотора vesc_pwm).
+// VESC TX → VESC_UART_RX_PIN, VESC RX ← VESC_UART_TX_PIN, общая земля;
+// логика UART у VESC 3.3 В. UART0 занят консолью.
+#define VESC_UART_PORT UART_NUM_1
+#define VESC_UART_TX_PIN GPIO_NUM_6
+#define VESC_UART_RX_PIN GPIO_NUM_7
+#define VESC_UART_BAUD 115200     // По умолчанию в VESC Tool (App → UART)
+#define VESC_POLL_INTERVAL_MS 20  // 50 Гц
+#define VESC_TELEM_STALE_MS 200   // Старше — телеметрии «нет»
+
 // RC-in конфигурация (чтение PWM с приёмника)
 #define RC_IN_THROTTLE_PIN GPIO_NUM_16  // CH1
 #define RC_IN_STEERING_PIN GPIO_NUM_17  // CH2

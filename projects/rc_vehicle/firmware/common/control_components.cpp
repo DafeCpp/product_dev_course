@@ -638,6 +638,22 @@ std::string BuildTelemJson(const TelemetrySnapshot& snap) {
   w.Fixed("steering", snap.steering, 3);
   w.EndObject();
 
+  // ESC (LOS-19): обороты, напряжение и токи от VESC по UART
+  if (snap.esc_available) {
+    w.BeginObject("esc");
+    w.Fixed("erpm", snap.esc.erpm, 0);
+    w.Fixed("v_in", snap.esc.input_voltage_v, 2);
+    w.Fixed("i_motor", snap.esc.motor_current_a, 2);
+    w.Fixed("i_in", snap.esc.input_current_a, 2);
+    w.Fixed("duty", snap.esc.duty, 3);
+    w.Fixed("t_fet", snap.esc.temp_fet_c, 1);
+    w.Fixed("t_motor", snap.esc.temp_motor_c, 1);
+    w.Int("tacho", snap.esc.tachometer);
+    w.Int("fault", snap.esc.fault_code);
+    w.Int("age_ms", snap.esc.age_ms);
+    w.EndObject();
+  }
+
   w.EndObject();  // root
   return result;
 }

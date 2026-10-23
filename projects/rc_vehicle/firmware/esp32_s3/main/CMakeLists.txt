@@ -41,6 +41,8 @@ idf_component_register(
         "vehicle_control_platform_esp32.cpp"
         "pwm_control.cpp"
         "../../common/motor_config.cpp"
+        "../../common/vesc_protocol.cpp"
+        "vesc_uart.cpp"
         "rc_input.cpp"
         "spi_esp32.cpp"
         "imu.cpp"
@@ -76,6 +78,7 @@ idf_component_register(
         # ESP-IDF v6 splits drivers into esp_driver_* components.
         esp_driver_gpio
         esp_driver_ledc
+        esp_driver_uart
         esp_driver_spi
         esp_driver_i2c
         lwip
