@@ -336,14 +336,21 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
 void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
                              const StabilizationInput& input,
                              bool reduce_throttle) noexcept {
-  if (!cfg.oversteer.warn_enabled) return;
-  if (!input.imu_enabled) return;
+  if (!cfg.oversteer.warn_enabled || !input.imu_enabled) {
+    ReleaseCut();
+    return;
+  }
   if (input.dt_ms == 0) return;
 
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
   const float slip = input.slip_angle_deg;
-  const float slip_rate = (slip - prev_slip_deg_) / dt_sec;
+  // После паузы гарда (выключен, режим без гарда, IMU off) прошлый угол
+  // устарел: первый тик только засевает его, иначе вся пауза читалась бы как
+  // один тик и давала ложный slip_rate.
+  const float slip_rate =
+      prev_slip_valid_ ? (slip - prev_slip_deg_) / dt_sec : 0.0f;
   prev_slip_deg_ = slip;
+  prev_slip_valid_ = true;
 
   // Занос невозможен без значимой угловой скорости рыскания. Yaw rate
   // измеряется напрямую гироскопом (не интегрируется), поэтому надёжен при
@@ -353,27 +360,95 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
   // На малых скоростях EKF slip angle ненадёжен: vx/vy зашумлены,
   // atan2(vy,vx) скачет. Без энкодеров speed < 0.5 м/с — зона шума.
   constexpr float kMinSpeedMs = 0.5f;
-  if (std::abs(input.yaw_rate_rps) < kMinYawRateRad ||
-      input.speed_ms < kMinSpeedMs) {
+  // prev_slip_deg_ выше обновляется и здесь: обнуление давало ложный
+  // всплеск slip_rate = slip/dt на первом тике после реактивации, и детекция
+  // вырождалась в один порог slip (FW-R2).
+  const bool turning = std::abs(input.yaw_rate_rps) >= kMinYawRateRad &&
+                       input.speed_ms >= kMinSpeedMs;
+
+  // Занос задней оси раньше виден по скорости роста угла: кузов вращается
+  // быстрее, чем поворачивает траектория (ay/vx). Снос передней оси
+  // (вращение медленнее траектории) — не занос.
+  constexpr float kG = 9.80665f;
+  const float trajectory_rate_rps =
+      input.lateral_accel_g * kG / std::max(input.vx_ms, kMinSpeedMs);
+  // Без скорости вдоль оси по EKF ay/vx — шум акселерометра (реальный лог
+  // 2026-08-02: vx≈0 при |ay| до 2g); завышенная vx без якоря занижает
+  // скорость траектории.
+  const bool rotation_valid = turning && input.lateral_accel_valid &&
+                              input.vx_ms >= kMinSpeedMs &&
+                              KidsModeProcessor::IsSpeedTrusted(input);
+  const float rotation_excess_rps =
+      rotation_valid ? std::copysign(1.0f, input.yaw_rate_rps) *
+                           (input.yaw_rate_rps - trajectory_rate_rps)
+                     : 0.0f;
+  // Один отсчёт засчитывает выдержкам и возврату газа не больше 10 мс:
+  // после затянувшегося тика одиночный отсчёт не должен заполнить выдержку.
+  constexpr float kMaxDwellPerSampleS = 0.01f;
+  const float sample_s = std::min(dt_sec, kMaxDwellPerSampleS);
+  rotation_excess_time_s_ =
+      rotation_excess_rps > kRotationExcessRps
+          ? std::min(rotation_excess_time_s_ + sample_s, kRotationExcessHoldS)
+          : 0.0f;
+
+  // Угол и скорость расходящегося EKF не запускают срез и защёлку.
+  const bool slip_oversteer =
+      turning && !input.ekf_diverged &&
+      std::abs(slip) > cfg.oversteer.slip_thresh_deg &&
+      std::abs(slip_rate) > cfg.oversteer.rate_thresh_deg_s;
+  const bool detected =
+      slip_oversteer || rotation_excess_time_s_ >= kRotationExcessHoldS;
+
+  // Занос держится, пока не погаснет: разовый срез отпускал газ, как только
+  // вращение замедлялось, газ возвращался, и задняя ось срывалась снова
+  // (LOS-380).
+  if (detected) {
+    oversteer_active_ = true;
+    calm_time_s_ = 0.0f;
+  } else if (!turning) {
+    // Без вращения или на малой скорости заносу не из чего продолжаться.
     oversteer_active_ = false;
-    // prev_slip_deg_ НЕ обнуляем: выше он уже обновлён текущим slip.
-    // Обнуление давало ложный всплеск slip_rate = slip/dt на первом тике
-    // после реактивации — детекция вырождалась в один порог slip (FW-R2).
-    return;
+    calm_time_s_ = 0.0f;
+  } else if (oversteer_active_) {
+    // Без данных о вращении успокоение не доказано: срез держится, пока
+    // машина не перестанет поворачивать.
+    const bool calm = rotation_valid &&
+                      rotation_excess_rps < 0.5f * kRotationExcessRps &&
+                      std::abs(slip) < cfg.oversteer.slip_thresh_deg;
+    calm_time_s_ = calm ? calm_time_s_ + sample_s : 0.0f;
+    if (calm_time_s_ >= kReleaseCalmS) oversteer_active_ = false;
   }
 
-  oversteer_active_ = (std::abs(slip) > cfg.oversteer.slip_thresh_deg &&
-                       std::abs(slip_rate) > cfg.oversteer.rate_thresh_deg_s);
-
-  if (oversteer_active_ && cfg.oversteer.throttle_reduction > 0.0f &&
-      reduce_throttle) {
+  const bool reduction_enabled =
+      cfg.oversteer.throttle_reduction > 0.0f && reduce_throttle;
+  // Срез выключен — старый потолок не должен ожить при его включении;
+  // детекция для телеметрии продолжается.
+  if (!reduction_enabled) throttle_ceiling_ = 1.0f;
+  const bool may_cut = reduction_enabled && throttle > 0.0f;
+  cutting_throttle_ = oversteer_active_ && may_cut;
+  if (cutting_throttle_) {
     throttle *= (1.0f - cfg.oversteer.throttle_reduction);
+    throttle_ceiling_ = throttle;
+  } else if (throttle_ceiling_ < 1.0f) {
+    // После заноса газ возвращается медленнее slew rate режима.
+    throttle_ceiling_ =
+        std::min(throttle_ceiling_ + kCeilingRecoveryPerS * sample_s, 1.0f);
+    if (may_cut) throttle = std::min(throttle, throttle_ceiling_);
   }
 }
 
 void OversteerGuard::Reset() noexcept {
-  oversteer_active_ = false;
+  ReleaseCut();
   prev_slip_deg_ = 0.0f;
+}
+
+void OversteerGuard::ReleaseCut() noexcept {
+  prev_slip_valid_ = false;
+  oversteer_active_ = false;
+  cutting_throttle_ = false;
+  rotation_excess_time_s_ = 0.0f;
+  calm_time_s_ = 0.0f;
+  throttle_ceiling_ = 1.0f;
 }
 
 StabilizationOutput StabilizationPipeline::Process(
@@ -447,12 +522,14 @@ StabilizationOutput StabilizationPipeline::Process(
     oversteer_guard_.Process(
         cfg, output.command.throttle, input,
         policy.oversteer_reduces_throttle && !kids_limiters_off);
-    // Повторный срез гарда не должен опускать газ ниже наката, который
-    // оставил anti-spin, иначе возвращается торможение противо-ЭДС (LOS-389).
-    if (policy.apply_input_limits) {
-      output.command.throttle = KidsModeProcessor::FloorSkidCut(
-          cfg, input, before_guard, output.command.throttle);
-    }
+    // Срез гарда не опускает газ ниже наката: ниже него противо-ЭДС
+    // тормозит ведущие колёса, и занос переходит в разворот (LOS-389). В Kids
+    // это и пол наката, который оставил anti-spin.
+    output.command.throttle = KidsModeProcessor::FloorSkidCut(
+        cfg, input, before_guard, output.command.throttle);
+    output.bypass_throttle_slew_down = oversteer_guard_.IsCuttingThrottle();
+  } else {
+    oversteer_guard_.ReleaseCut();
   }
 
   if (policy.apply_input_limits) {

@@ -55,9 +55,7 @@ float CoastThrottle(const StabilizationConfig& cfg,
   }
   const float dz = cfg.filter.motor_deadzone;
   if (dz >= 1.0f || cfg.filter.motor_speed_gain <= 0.0f) return 0.0f;
-  if (input.ekf_diverged || input.vx_variance > kSpeedTrustVarMax) {
-    return 0.0f;
-  }
+  if (!KidsModeProcessor::IsSpeedTrusted(input)) return 0.0f;
   float vx = input.speed_ms * std::cos(input.slip_angle_deg * kDegToRad);
   // Скорость EKF заякорена на мотор-модель и при пробуксовке идёт за
   // колёсами; накат по ней держал бы колёса буксующими (LOS-385).
@@ -69,6 +67,11 @@ float CoastThrottle(const StabilizationConfig& cfg,
 }
 
 }  // namespace
+
+bool KidsModeProcessor::IsSpeedTrusted(
+    const StabilizationInput& input) noexcept {
+  return !input.ekf_diverged && input.vx_variance <= kSpeedTrustVarMax;
+}
 
 float KidsModeProcessor::FloorSkidCut(const StabilizationConfig& cfg,
                                       const StabilizationInput& input,
@@ -230,7 +233,7 @@ void KidsModeProcessor::ApplySpeedLimit(
 
   const auto& km = cfg.kids_mode;
   if (!(km.speed_limit_enabled && input.imu_enabled && throttle > 0.0f &&
-        !input.ekf_diverged && input.vx_variance <= kSpeedTrustVarMax)) {
+        IsSpeedTrusted(input))) {
     speed_limit_active_ = false;
     speed_trim_ = 1.0f;
     return;

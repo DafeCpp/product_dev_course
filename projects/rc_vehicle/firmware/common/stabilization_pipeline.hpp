@@ -33,6 +33,11 @@ struct StabilizationInput {
   bool wheels_driven{false};
   /** Yaw rate разошёлся с рулём: шины на пределе (LOS-378). */
   bool lateral_grip_lost{false};
+  /** Боковое ускорение кузова без гравитации [g], >0 — влево. */
+  float lateral_accel_g{0.0f};
+  /** lateral_accel_g без гравитации от TiltEstimator: Madgwick в повороте
+   *  принимает боковое ускорение за крен и вычитает его. */
+  bool lateral_accel_valid{false};
   float stabilization_weight{0.0f};
   float mode_transition_weight{0.0f};
   bool imu_enabled{false};
@@ -44,6 +49,10 @@ struct StabilizationInput {
 struct StabilizationOutput {
   ControlSetpoint command{};
   float motor_model_target_throttle{0.0f};
+  /** Oversteer guard режет газ: снижение проходит мимо slew rate, иначе
+   *  задняя ось разворачивает машину раньше, чем газ успеет упасть
+   *  (LOS-380). */
+  bool bypass_throttle_slew_down{false};
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -338,6 +347,15 @@ class OversteerGuard {
 
   /** @brief Сбросить состояние (вызывается при failsafe). */
   void Reset() noexcept;
+  /** Снять срез и потолок газа и пометить прошлый угол устаревшим: гард
+   *  выключен или не вызывается, и старое вмешательство не должно ожить при
+   *  включении. */
+  void ReleaseCut() noexcept;
+
+  /** @brief Газ срезан на этом тике (флаг и разрешённое снижение). */
+  [[nodiscard]] bool IsCuttingThrottle() const noexcept {
+    return cutting_throttle_;
+  }
 
   /** @brief Текущий флаг срабатывания oversteer. */
   [[nodiscard]] bool IsActive() const noexcept { return oversteer_active_; }
@@ -355,7 +373,32 @@ class OversteerGuard {
   const ImuHandler* imu_{nullptr};
 
   float prev_slip_deg_{0.0f};  ///< Предыдущий угол заноса для оценки dslip/dt
+  bool prev_slip_valid_{false};   ///< prev_slip_deg_ свежий (не после паузы)
   bool oversteer_active_{false};  ///< Текущее состояние oversteer detection
+  bool cutting_throttle_{false};
+  /** Сколько кузов уже вращается быстрее траектории [с], в
+   *  [0, kRotationExcessHoldS]. */
+  float rotation_excess_time_s_{0.0f};
+  /** Сколько занос уже гаснет [с]; на kReleaseCalmS guard отпускает. */
+  float calm_time_s_{0.0f};
+  /** Потолок газа после заноса; 1 — не ограничивает. */
+  float throttle_ceiling_{1.0f};
+
+ public:
+  /**
+   * Насколько yaw rate может превышать скорость поворота траектории ay/vx
+   * [рад/с]. Их разность — скорость роста угла заноса −β̇: пока шины держат,
+   * она около нуля, а при срыве задней оси растёт раньше самого угла. Порог
+   * угла заноса EKF (5°) машина проходит на ~120 мс позже, и на μ 0.3 задняя
+   * ось к тому времени уже разворачивает её (LOS-380).
+   */
+  static constexpr float kRotationExcessRps = 0.35f;  // ≈ 20 °/с
+  /** Сколько превышение должно держаться [с]: выбросы гироскопа — не занос. */
+  static constexpr float kRotationExcessHoldS = 0.03f;
+  /** Сколько занос должен быть погашен [с], чтобы guard отпустил газ. */
+  static constexpr float kReleaseCalmS = 0.2f;
+  /** Скорость возврата газа после заноса [1/с]. */
+  static constexpr float kCeilingRecoveryPerS = 0.25f;
 };
 
 /**

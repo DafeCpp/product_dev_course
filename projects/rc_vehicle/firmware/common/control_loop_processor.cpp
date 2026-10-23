@@ -347,6 +347,8 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
       .ground_speed_ms = state.estimate.ground_speed_ms,
       .wheels_driven = state.estimate.wheels_driven,
       .lateral_grip_lost = state.estimate.lateral_grip_lost,
+      .lateral_accel_g = state.estimate.lateral_accel_g,
+      .lateral_accel_valid = state.estimate.lateral_accel_valid,
       .stabilization_weight = ctx_.stab_mgr->GetStabilizationWeight(),
       .mode_transition_weight = ctx_.stab_mgr->GetModeTransitionWeight(),
       .imu_enabled = input.sensors.imu_enabled,
@@ -357,6 +359,7 @@ void ControlLoopProcessor::UpdateStabilization(const ControlTickInput& input,
       input.config, policy, stabilization_input);
   state.command = output.command;
   state.motor_model_target_throttle = output.motor_model_target_throttle;
+  state.bypass_throttle_slew_down = output.bypass_throttle_slew_down;
 }
 
 bool ControlLoopProcessor::HandleFailsafe(const ControlTickInput& input,
@@ -440,6 +443,18 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
           std::min(effective_slew_steer, input.config.kids_mode.slew_steering);
     }
     const float base_slew_thr = effective_slew_thr;
+    // Срез газа oversteer guard вперёд — сразу, без slew rate (LOS-380).
+    // Counterfactual Kids-газ режется так же: иначе якорь EKF держался бы за
+    // старый высокий газ.
+    if (state.bypass_throttle_slew_down && state.command.throttle >= 0.0f &&
+        state.command.throttle < persistent_.applied.throttle) {
+      persistent_.applied.throttle = state.command.throttle;
+    }
+    if (state.bypass_throttle_slew_down && kids_speed_limiter &&
+        state.motor_model_target_throttle >= 0.0f &&
+        state.motor_model_target_throttle < persistent_.motor_model_throttle) {
+      persistent_.motor_model_throttle = state.motor_model_target_throttle;
+    }
     if (input.config.braking_mode == BrakingMode::Brake &&
         std::abs(state.command.throttle) <
             std::abs(persistent_.applied.throttle)) {

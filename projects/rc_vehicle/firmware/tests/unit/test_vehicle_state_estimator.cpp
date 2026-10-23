@@ -174,6 +174,26 @@ TEST_F(VehicleStateEstimatorTest, NoWheelspinWhileTiltAcquires) {
   EXPECT_FLOAT_EQ(estimate.wheel_slip_ratio, 0.0f);
 }
 
+// LOS-380: после Reset() крен TiltEstimator = 0, и крен уклона сидит в ay;
+// боковому ускорению верят, только когда оценка сошлась.
+TEST_F(VehicleStateEstimatorTest, LateralAccelTrustedAfterTiltAcquires) {
+  VehicleStateEstimate estimate = estimator_.Update(sensors_, input_);
+  EXPECT_TRUE(estimate.tilt_valid);
+  EXPECT_FALSE(estimate.lateral_accel_valid);
+  // 3τ при tilt_corr_gain_hz = 0.5 — 6 с.
+  for (int i = 0; i < 2900; ++i) estimate = estimator_.Update(sensors_, input_);
+  EXPECT_FALSE(estimate.lateral_accel_valid);
+  for (int i = 0; i < 200; ++i) estimate = estimator_.Update(sensors_, input_);
+  EXPECT_TRUE(estimate.lateral_accel_valid);
+
+  input_.filter.tilt_comp_enabled = false;
+  estimate = estimator_.Update(sensors_, input_);
+  EXPECT_FALSE(estimate.lateral_accel_valid);
+  input_.filter.tilt_comp_enabled = true;
+  estimate = estimator_.Update(sensors_, input_);
+  EXPECT_FALSE(estimate.lateral_accel_valid);
+}
+
 // LOS-378: руль влево до упора, а машина не поворачивает — шины не держат,
 // и EKF перестаёт гасить боковую скорость; yaw rate по рулю — держат.
 TEST_F(VehicleStateEstimatorTest, YawRateAgainstSteeringIsGripLoss) {

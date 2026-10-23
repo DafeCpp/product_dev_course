@@ -206,8 +206,9 @@ def test_yaw_rate_step_settles_within_200_ms(mode):
 # которая выдавала скорость полного газа сразу, без разгона (LOS-378).
 OVERSTEER_TIRE_MU = 0.3
 OVERSTEER_FRONT_SHARE = 0.2
-# Авто-калибровка IMU (1000 семплов) должна пройти в покое.
-OVERSTEER_SETTLE_TICKS = 1500
+# Авто-калибровка IMU (1000 семплов) должна пройти в покое, а TiltEstimator —
+# сойтись (3τ = 6 с): до этого guard не верит боковому ускорению (LOS-380).
+OVERSTEER_SETTLE_TICKS = 3500
 
 
 def oversteer_params():
@@ -215,6 +216,12 @@ def oversteer_params():
     p.tire_mu = OVERSTEER_TIRE_MU
     p.drive_front_share = OVERSTEER_FRONT_SHARE
     return p
+
+
+# Руль 0.4, а не в упор: на μ = 0.3 при ~3 м/с полный руль разворачивает
+# машину при любом газе, даже с ручкой на нуле (пик β ≈ 76°), и газом её
+# не спасти (LOS-380).
+OVERSTEER_STEERING = 0.4
 
 
 @functools.cache
@@ -228,7 +235,7 @@ def _oversteer_corner(reduction: float) -> tuple[list[dict], float]:
         sim.run(1000, rc_throttle=0.5, rc_steering=0.0)
         rows, peak_beta = [], 0.0
         for _ in range(1500):
-            rows.append(sim.step(2, 1.0, 1.0))
+            rows.append(sim.step(2, 1.0, OVERSTEER_STEERING))
             st = sim.model.state
             peak_beta = max(peak_beta, abs(math.degrees(
                 math.atan2(st.vy, max(st.v, 0.1)))))
@@ -247,17 +254,14 @@ def test_oversteer_guard_cuts_throttle():
                for f, g in zip(detect_only, guarded))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "LOS-380: guard не успевает. Детектор срабатывает, когда β модели уже "
-    "≈ 12°, газ после него снижается через slew 0.5/с, а на μ = 0.3 задняя "
-    "ось после срыва разворачивает машину за ~0.3 с: пик β ≈ 84° с guard и "
-    "без. Раньше разница была артефактом модели без связи r·vy."))
 def test_oversteer_guard_reduces_slip():
-    """Сравнивается реальный угол модели: в развороте угол EKF доходит до
-    76–80° с guard и без, и разницу в нём не видно (LOS-378)."""
+    """Guard ловит занос по вращению быстрее траектории и держит газ срезанным
+    до успокоения: без него машину разворачивает (β ≈ 85°), с ним пик ≈ 36°.
+    Сравнивается реальный угол модели: угол EKF в развороте врёт (LOS-378)."""
     _, detect_only_beta = _oversteer_corner(0.0)
     _, guarded_beta = _oversteer_corner(0.7)
-    assert guarded_beta < detect_only_beta - 5.0
+    assert detect_only_beta > 60.0
+    assert guarded_beta < 45.0
 
 
 # Мотор вдвое мощнее подогнанного: на нём Kids-газ 0.3 разгоняет быстрее
