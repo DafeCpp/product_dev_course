@@ -141,6 +141,8 @@ def _check_migrate_job(name: str, label: str, job: dict[str, Any]) -> list[str]:
         errors.append(
             f"{name}: in {label} command must be {MIGRATE_COMMAND}, got {job.get('command')!r}"
         )
+    if job.get("entrypoint"):
+        errors.append(f"{name}: in {label} must not override entrypoint, got {job['entrypoint']!r}")
     if str(job.get("restart", "no")) != "no":
         errors.append(f"{name}: in {label} restart must be 'no' for a one-shot job")
     return errors
@@ -422,6 +424,19 @@ def check(paths: Paths) -> list[str]:
                 f"{database}: migrate jobs {sorted(jobs)} share it but are not run one after another; "
                 "set migrate_after so they form one chain (one first job, each job awaited by at most one)"
             )
+    for database, jobs in sorted(by_database.items()):
+        stems: dict[str, tuple[str, bytes]] = {}
+        for spec_name, spec in sorted(wanted.items()):
+            if spec.get("database") != database or not spec.get("migrate"):
+                continue
+            for sql in sorted((paths.backend_services / spec_name / "migrations").glob("*.sql")):
+                content = sql.read_bytes()
+                if sql.stem in stems and stems[sql.stem][1] != content:
+                    errors.append(
+                        f"{database}: migration {sql.stem} differs between {stems[sql.stem][0]} "
+                        f"and {spec_name}; the shared schema_migrations table would reject the second"
+                    )
+                stems.setdefault(sql.stem, (spec_name, content))
     for job in sorted(order):
         seen = [job]
         while seen[-1] in order:

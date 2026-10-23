@@ -350,6 +350,26 @@ class ProdWiringTest(unittest.TestCase):
         self.paths.manifest.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
         self.assert_error("sensor-simulator: docker-compose.prod.yml uses a release-registry image")
 
+    def test_migrate_entrypoint_override_fails(self) -> None:
+        self.set_service_field(
+            self.paths.prod_compose, "auth-migrate", "entrypoint", value=["sh", "-c", "exec python -m x"]
+        )
+        self.assert_error("auth-migrate: in docker-compose.prod.yml must not override entrypoint")
+
+    def test_conflicting_shared_database_migrations_fail(self) -> None:
+        for service, body in (("experiment-service", "SELECT 1;"), ("telemetry-ingest-service", "SELECT 2;")):
+            directory = self.paths.backend_services / service / "migrations"
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "006_same_name.sql").write_text(body, encoding="utf-8")
+        self.assert_error("experiment_db: migration 006_same_name differs between")
+
+    def test_identical_shared_database_migration_is_fine(self) -> None:
+        for service in ("experiment-service", "telemetry-ingest-service"):
+            directory = self.paths.backend_services / service / "migrations"
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "006_same_name.sql").write_text("SELECT 1;", encoding="utf-8")
+        self.assertEqual(check(self.paths), [])
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,
