@@ -450,6 +450,19 @@ TEST_F(KidsOversteerCutTest, CutBypassesThrottleSlew) {
       pipeline_.Process(cfg_, kKidsPolicy, input_).bypass_throttle_slew_down);
 }
 
+// LOS-380: режим без гарда (DirectLaw) снимает его потолок газа, иначе
+// он ожил бы при возврате в режим с гардом.
+TEST_F(KidsOversteerCutTest, ModeWithoutGuardDropsCeiling) {
+  input_.speed_ms = 0.5f;
+  ASSERT_NEAR(RunTwoTicks(kKidsPolicy), 0.5f * (1.0f - 0.7f), 1e-5f);
+  ModeTraits no_guard = kKidsPolicy;
+  no_guard.oversteer_guard_active = false;
+  input_.yaw_rate_rps = 0.0f;
+  (void)pipeline_.Process(cfg_, no_guard, input_);
+  EXPECT_FLOAT_EQ(pipeline_.Process(cfg_, kKidsPolicy, input_).command.throttle,
+                  0.5f);
+}
+
 // LOS-380: пол наката держится во всех режимах, не только в Kids.
 TEST_F(KidsOversteerCutTest, DriftCutStopsAtCoastThrottle) {
   cfg_.mode = DriveMode::Drift;

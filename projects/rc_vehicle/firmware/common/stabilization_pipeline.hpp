@@ -35,6 +35,9 @@ struct StabilizationInput {
   bool lateral_grip_lost{false};
   /** Боковое ускорение кузова без гравитации [g], >0 — влево. */
   float lateral_accel_g{0.0f};
+  /** lateral_accel_g без гравитации от TiltEstimator: Madgwick в повороте
+   *  принимает боковое ускорение за крен и вычитает его. */
+  bool lateral_accel_valid{false};
   float stabilization_weight{0.0f};
   float mode_transition_weight{0.0f};
   bool imu_enabled{false};
@@ -344,6 +347,9 @@ class OversteerGuard {
 
   /** @brief Сбросить состояние (вызывается при failsafe). */
   void Reset() noexcept;
+  /** Снять срез и потолок газа, не трогая prev_slip_deg_: гард выключен или
+   *  не вызывается, и старое вмешательство не должно ожить при включении. */
+  void ReleaseCut() noexcept;
 
   /** @brief Газ срезан на этом тике (флаг и разрешённое снижение). */
   [[nodiscard]] bool IsCuttingThrottle() const noexcept {

@@ -336,8 +336,10 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
 void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
                              const StabilizationInput& input,
                              bool reduce_throttle) noexcept {
-  if (!cfg.oversteer.warn_enabled) return;
-  if (!input.imu_enabled) return;
+  if (!cfg.oversteer.warn_enabled || !input.imu_enabled) {
+    ReleaseCut();
+    return;
+  }
   if (input.dt_ms == 0) return;
 
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
@@ -367,7 +369,8 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
       input.lateral_accel_g * kG / std::max(input.vx_ms, kMinSpeedMs);
   // Без скорости вдоль оси по EKF ay/vx — шум акселерометра (реальный лог
   // 2026-08-02: vx≈0 при |ay| до 2g).
-  const bool rotation_valid = turning && input.vx_ms >= kMinSpeedMs;
+  const bool rotation_valid =
+      turning && input.lateral_accel_valid && input.vx_ms >= kMinSpeedMs;
   const float rotation_excess_rps =
       rotation_valid ? std::copysign(1.0f, input.yaw_rate_rps) *
                            (input.yaw_rate_rps - trajectory_rate_rps)
@@ -415,12 +418,16 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
 }
 
 void OversteerGuard::Reset() noexcept {
+  ReleaseCut();
+  prev_slip_deg_ = 0.0f;
+}
+
+void OversteerGuard::ReleaseCut() noexcept {
   oversteer_active_ = false;
   cutting_throttle_ = false;
   rotation_excess_time_s_ = 0.0f;
   calm_time_s_ = 0.0f;
   throttle_ceiling_ = 1.0f;
-  prev_slip_deg_ = 0.0f;
 }
 
 StabilizationOutput StabilizationPipeline::Process(
@@ -500,6 +507,8 @@ StabilizationOutput StabilizationPipeline::Process(
     output.command.throttle = KidsModeProcessor::FloorSkidCut(
         cfg, input, before_guard, output.command.throttle);
     output.bypass_throttle_slew_down = oversteer_guard_.IsCuttingThrottle();
+  } else {
+    oversteer_guard_.ReleaseCut();
   }
 
   if (policy.apply_input_limits) {

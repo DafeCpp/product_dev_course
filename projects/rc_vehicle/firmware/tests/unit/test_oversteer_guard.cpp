@@ -196,6 +196,7 @@ class RotationExcessTest : public ::testing::Test {
         .slip_angle_deg = 1.0f,
         .yaw_rate_rps = yaw_rps,
         .lateral_accel_g = trajectory_rps * vx / 9.80665f,
+        .lateral_accel_valid = true,
         .imu_enabled = true,
     };
   }
@@ -241,6 +242,34 @@ TEST_F(RotationExcessTest, IgnoredWithoutLongitudinalSpeed) {
   // Реальный лог 2026-08-02: vx по EKF ≈ 0, ay шумит — ay/vx не траектория.
   (void)Run(Corner(1.6f, 0.0f, 0.1f), 100);
   EXPECT_FALSE(guard_.IsActive());
+}
+
+TEST_F(RotationExcessTest, IgnoredWithoutTrustedTilt) {
+  // Без TiltEstimator гравитацию из ay снимал бы Madgwick, а он в повороте
+  // принимает боковое ускорение за крен.
+  StabilizationInput input = Corner(1.6f, 1.0f);
+  input.lateral_accel_valid = false;
+  (void)Run(input, 100);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
+TEST_F(RotationExcessTest, DisabledGuardDropsCeiling) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  ASSERT_TRUE(guard_.IsCuttingThrottle());
+  cfg_.oversteer.warn_enabled = false;
+  EXPECT_FLOAT_EQ(Run(Corner(1.6f, 1.0f), 1), 1.0f);
+  EXPECT_FALSE(guard_.IsActive());
+  // Включённый снова гард не возвращает старый потолок.
+  cfg_.oversteer.warn_enabled = true;
+  EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1), 1.0f);
+}
+
+TEST_F(RotationExcessTest, ImuOffDropsCeiling) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  StabilizationInput input = Corner(0.0f, 0.0f);
+  input.imu_enabled = false;
+  (void)Run(input, 1);
+  EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1), 1.0f);
 }
 
 TEST_F(RotationExcessTest, HoldsCutUntilCalm) {
