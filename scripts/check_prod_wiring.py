@@ -275,11 +275,11 @@ def _check_base_job(workflow: dict[str, Any], root: Path) -> list[str]:
     if _normalized(digest) != _BASE_DIGEST:
         errors.append(f"deploy.yml {BASE_JOB} output digest must be {_BASE_DIGEST!r}, got {digest!r}")
     steps = [s for s in job.get("steps") or [] if isinstance(s, dict)]
-    found = [s for s in steps if s.get("id") == "build"]
-    if len(found) != 1 or str(found[0].get("uses", "")).split("@")[0] != "docker/build-push-action":
+    found = [s for s in steps if str(s.get("uses", "")).split("@")[0] == "docker/build-push-action"]
+    if len(found) != 1 or found[0].get("id") != "build":
         errors.append(
-            f"deploy.yml {BASE_JOB} must have exactly one step with id 'build' "
-            "that uses docker/build-push-action"
+            f"deploy.yml {BASE_JOB} must have exactly one docker/build-push-action step, "
+            f"with id 'build'; found {len(found)}"
         )
         return errors
     step = found[0]

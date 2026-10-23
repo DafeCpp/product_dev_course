@@ -505,6 +505,24 @@ class ProdWiringTest(unittest.TestCase):
         )
         self.assert_error("build-backend-base job must not set if")
 
+    def test_base_job_rejects_second_build_action(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "backend-base:latest\n          cache-from: type=gha\n          cache-to: type=gha,mode=max\n",
+            "backend-base:latest\n          cache-from: type=gha\n          cache-to: type=gha,mode=max\n"
+            "      - name: Extra\n        id: extra\n        uses: docker/build-push-action@v6\n"
+            "        with:\n          context: .\n          push: true\n",
+        )
+        self.assert_error("build-backend-base must have exactly one docker/build-push-action step")
+
+    def test_base_job_build_step_needs_id_build(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "      - name: Build and push backend base\n        id: build\n",
+            "      - name: Build and push backend base\n        id: other\n",
+        )
+        self.assert_error("build-backend-base must have exactly one docker/build-push-action step")
+
     def test_base_dockerfile_must_exist(self) -> None:
         (self.root / "projects/backend/Dockerfile.base").unlink()
         self.assert_error("Dockerfile.base, which does not exist")
