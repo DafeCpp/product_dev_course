@@ -225,10 +225,25 @@ async def list_configs(request: web.Request) -> web.Response:
     project_id = q.get("project")
     config_type_str = q.get("config_type")
     is_active_str = q.get("is_active")
-    limit = min(int(q.get("limit", "50")), 500)
+    try:
+        limit = int(q.get("limit", "50"))
+    except ValueError:
+        raise web.HTTPBadRequest(reason="limit must be an integer")
+    if limit < 1:
+        raise web.HTTPBadRequest(reason="limit must be at least 1")
+    limit = min(limit, 500)
     cursor = q.get("cursor")
+    if cursor is not None:
+        try:
+            cursor = str(UUID(cursor))
+        except ValueError:
+            raise web.HTTPBadRequest(reason="cursor must be a next_cursor value from a previous page")
 
-    config_type = ConfigType(config_type_str) if config_type_str else None
+    try:
+        config_type = ConfigType(config_type_str) if config_type_str else None
+    except ValueError:
+        allowed = ", ".join(t.value for t in ConfigType)
+        raise web.HTTPBadRequest(reason=f"config_type must be one of: {allowed}")
     is_active = {"true": True, "false": False}.get(is_active_str or "") if is_active_str else None
 
     svc = await get_config_service(request)

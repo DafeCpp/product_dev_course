@@ -124,6 +124,7 @@ paths:
           schema:
             type: integer
             default: 50
+            minimum: 1
             maximum: 500
         - name: cursor
           in: query
@@ -146,6 +147,8 @@ paths:
                   next_cursor:
                     type: string
                     nullable: true
+        '400':
+          description: Invalid limit, cursor or config_type
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
