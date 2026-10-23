@@ -251,7 +251,7 @@ jobs:
 
       - name: Summarize coverage
         if: always() && hashFiles('projects/backend/services/auth-service/coverage.json') != ''
-        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component auth-service --report coverage.json --format python --min-lines 86.28 --min-branches 73.91 --enforce ${{ inputs.enforce-ratchet }}
+        run: python "$GITHUB_WORKSPACE/scripts/coverage/check_ratchet.py" --component auth-service --report coverage.json --format python --min-lines 98.0 --min-branches 97.0 --enforce ${{ inputs.enforce-ratchet }}
 
       - name: Upload merged coverage report
         if: always()
