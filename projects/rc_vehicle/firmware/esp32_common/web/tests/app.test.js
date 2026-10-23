@@ -7,6 +7,7 @@ import {
     LogParseError,
     assignEventsToFrames,
     eventParamDesc,
+    formatMotorConfig,
     formatRcChannel,
     parseBinaryLog,
 } from '../app.js';
@@ -306,5 +307,29 @@ describe('parseBinaryLog', () => {
 
     it('rejects non-ArrayBuffer input', () => {
         expect(() => parseBinaryLog(new Uint8Array(8))).toThrow(TypeError);
+    });
+});
+
+describe('formatMotorConfig', () => {
+    it('shows profile and pulse range', () => {
+        expect(formatMotorConfig({
+            profile: 'vesc_pwm', min_us: 1000, neutral_us: 1500, max_us: 2000,
+            deadband: 0, reversed: false,
+        })).toBe('VESC, PPM, 1000/1500/2000 мкс');
+    });
+
+    it('adds deadband and reverse when set', () => {
+        expect(formatMotorConfig({
+            profile: 'brushed_pwm', min_us: 1100, neutral_us: 1500, max_us: 1900,
+            deadband: 0.05, reversed: true,
+        })).toBe('коллекторный, PWM, 1100/1500/1900 мкс, зона 0.05, реверс');
+    });
+
+    it('falls back for missing config and unknown profile', () => {
+        expect(formatMotorConfig(undefined)).toBe('—');
+        expect(formatMotorConfig({
+            profile: 'dshot', min_us: 1000, neutral_us: 1500, max_us: 2000,
+            deadband: 0, reversed: false,
+        })).toBe('dshot, 1000/1500/2000 мкс');
     });
 });

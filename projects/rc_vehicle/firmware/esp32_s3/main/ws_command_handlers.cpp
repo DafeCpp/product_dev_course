@@ -2,10 +2,14 @@
 
 #include <cmath>
 #include <cstring>
+#include <optional>
 
 #include "com_offset_calibration.hpp"
 #include "esp_log.h"
 #include "i_vehicle_control.hpp"
+#include "motor_config.hpp"
+#include "motor_config_nvs.hpp"
+#include "pwm_control.hpp"
 #include "self_test.hpp"
 #include "stabilization_config.hpp"
 #include "stabilization_config_json.hpp"
@@ -722,6 +726,112 @@ void HandleResetHeadingRef(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   });
 
   ESP_LOGI(TAG, "reset_heading_ref");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Профиль мотора/ESC (LOS-19)
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+cJSON* MotorConfigToJson(const MotorConfig& cfg) {
+  cJSON* obj = cJSON_CreateObject();
+  if (!obj) return nullptr;
+  cJSON_AddStringToObject(obj, "profile", MotorProfileToString(cfg.profile));
+  cJSON_AddNumberToObject(obj, "min_us", cfg.min_us);
+  cJSON_AddNumberToObject(obj, "neutral_us", cfg.neutral_us);
+  cJSON_AddNumberToObject(obj, "max_us", cfg.max_us);
+  cJSON_AddNumberToObject(obj, "deadband", cfg.deadband);
+  cJSON_AddBoolToObject(obj, "reversed", cfg.reversed);
+  return obj;
+}
+
+/** Профиль из NVS; нет записи — то, что применится после перезагрузки. */
+MotorConfig LoadSavedMotorConfig() {
+  MotorConfig saved = MotorConfig::Defaults(MotorProfile::BrushedPwm);
+  (void)motor_config_nvs::Load(saved);
+  return saved;
+}
+
+/** Импульс из JSON: нет ключа — out не трогаем; не число/вне uint16 — false. */
+bool ReadPulseUs(const cJSON* json, const char* key, uint16_t& out) {
+  const cJSON* item = cJSON_GetObjectItem(json, key);
+  if (!item) return true;
+  if (!cJSON_IsNumber(item) || item->valuedouble < 0.0 ||
+      item->valuedouble > 65535.0) {
+    return false;
+  }
+  out = static_cast<uint16_t>(item->valuedouble);
+  return true;
+}
+
+void AddMotorConfigState(cJSON* reply, const MotorConfig& saved) {
+  const MotorConfig& active = PwmControlGetMotorConfig();
+  cJSON_AddItemToObject(reply, "active", MotorConfigToJson(active));
+  cJSON_AddItemToObject(reply, "saved", MotorConfigToJson(saved));
+  // Выход газа не перенастраивается на ходу: новый профиль — после
+  // перезагрузки, когда мотор гарантированно в нейтрали.
+  cJSON_AddBoolToObject(reply, "pending_reboot", !(active == saved));
+}
+
+}  // namespace
+
+void HandleGetMotorConfig(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
+  (void)vc;
+  (void)json;
+  const MotorConfig saved = LoadSavedMotorConfig();
+  WsReply(req, "motor_config",
+          [&](cJSON* reply) { AddMotorConfigState(reply, saved); });
+}
+
+void HandleSetMotorConfig(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
+  (void)vc;
+  const char* error = nullptr;
+  MotorConfig cfg = LoadSavedMotorConfig();
+
+  cJSON* reset_item = cJSON_GetObjectItem(json, "reset");
+  if (cJSON_IsTrue(reset_item)) {
+    if (motor_config_nvs::Erase() != ESP_OK) error = "nvs_error";
+  } else {
+    const cJSON* profile_item = cJSON_GetObjectItem(json, "profile");
+    if (profile_item) {
+      const auto profile =
+          cJSON_IsString(profile_item)
+              ? MotorProfileFromString(profile_item->valuestring)
+              : std::nullopt;
+      if (!profile) {
+        error = "invalid_profile";
+      } else if (*profile != cfg.profile) {
+        // Смена профиля начинается с его значений по умолчанию, иначе
+        // диапазон старого ESC молча переедет на новый.
+        cfg = MotorConfig::Defaults(*profile);
+      }
+    }
+
+    if (!error && (!ReadPulseUs(json, "min_us", cfg.min_us) ||
+                   !ReadPulseUs(json, "neutral_us", cfg.neutral_us) ||
+                   !ReadPulseUs(json, "max_us", cfg.max_us))) {
+      error = "invalid_config";
+    }
+    cfg.deadband = JsonGetFloat(json, "deadband", cfg.deadband);
+    cJSON* rev_item = cJSON_GetObjectItem(json, "reversed");
+    if (cJSON_IsBool(rev_item)) cfg.reversed = cJSON_IsTrue(rev_item);
+
+    if (!error && !cfg.IsValid()) error = "invalid_config";
+    if (!error && motor_config_nvs::Save(cfg) != ESP_OK) error = "nvs_error";
+  }
+
+  const MotorConfig saved = LoadSavedMotorConfig();
+  WsReply(req, "set_motor_config_ack", [&](cJSON* reply) {
+    cJSON_AddBoolToObject(reply, "ok", error == nullptr);
+    if (error) cJSON_AddStringToObject(reply, "error", error);
+    AddMotorConfigState(reply, saved);
+  });
+
+  ESP_LOGI(TAG, "set_motor_config -> %s (saved %s %u/%u/%u us db=%.3f rev=%d)",
+           error ? error : "OK", MotorProfileToString(saved.profile),
+           (unsigned)saved.min_us, (unsigned)saved.neutral_us,
+           (unsigned)saved.max_us, saved.deadband, (int)saved.reversed);
 }
 
 }  // namespace rc_vehicle

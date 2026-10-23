@@ -149,6 +149,10 @@ extern "C" void app_main(void) {
                               rc_vehicle::HandleGetMagCalibStatus);
   g_command_registry.Register("reset_heading_ref",
                               rc_vehicle::HandleResetHeadingRef);
+  g_command_registry.Register("get_motor_config",
+                              rc_vehicle::HandleGetMotorConfig);
+  g_command_registry.Register("set_motor_config",
+                              rc_vehicle::HandleSetMotorConfig);
   ESP_LOGI(TAG, "Registered %zu command handlers",
            g_command_registry.GetHandlerCount());
 

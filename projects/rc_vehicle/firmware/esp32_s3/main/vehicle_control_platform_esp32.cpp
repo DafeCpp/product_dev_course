@@ -18,6 +18,7 @@
 #include "imu_calibration_nvs.hpp"
 #include "mag.hpp"
 #include "mag_calibration_nvs.hpp"
+#include "motor_config_nvs.hpp"
 #include "pwm_control.hpp"
 #include "rc_input.hpp"
 #include "rc_link_monitor.hpp"  // rc_vehicle::RcLinkEvent, FormatRcLinkEvent
@@ -158,7 +159,11 @@ VehicleControlPlatformEsp32::~VehicleControlPlatformEsp32() {
 // ─────────────────────────────────────────────────────────────────────────
 
 std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitPwm() {
-  return (PwmControlInit() == 0)
+  // LOS-19: профиль мотора читается один раз при загрузке; нет записи —
+  // штатный brushed ESC, как до появления профилей.
+  MotorConfig motor = MotorConfig::Defaults(MotorProfile::BrushedPwm);
+  (void)motor_config_nvs::Load(motor);
+  return (PwmControlInit(motor) == 0)
              ? std::expected<void, PlatformError>{}
              : std::unexpected(PlatformError::PwmInitFailed);
 }
