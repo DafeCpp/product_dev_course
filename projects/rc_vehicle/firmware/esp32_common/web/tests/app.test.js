@@ -12,7 +12,7 @@ import {
     parseBinaryLog,
 } from '../app.js';
 
-const FRAME_SIZE = 132;
+const FRAME_SIZE = 160;
 const EVENT_SIZE = 16;
 const SNAPSHOT_SIZE = 268;
 

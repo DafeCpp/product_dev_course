@@ -82,9 +82,10 @@ struct TelemetryConfig {
 struct TelemetryLogConfig {
   static constexpr uint32_t kLogIntervalMs =
       10;  ///< Интервал записи в лог (100 Hz)
-  // 52k frames keep about 8.7 minutes at 100 Hz and reserve 1 MB PSRAM for
-  // compact stabilization-configuration deltas.
-  static constexpr size_t kCapacityFrames = 52000;
+  // 42k frames × 160 B keep about 7 minutes at 100 Hz and reserve 1 MB PSRAM
+  // for compact stabilization-configuration deltas (LOS-19: кадр вырос с 132
+  // до 160 байт из-за полей ESC, объём буфера не превышает прежние 6.9 МБ).
+  static constexpr size_t kCapacityFrames = 42000;
   static constexpr size_t kMaxExportFrames =
       200;  ///< Макс. кадров для экспорта
 };
@@ -189,7 +190,8 @@ struct UdpTelemConfig {
       4096;                                   ///< Стек задачи приёма команд
   static constexpr uint8_t kDefaultHz = 100;  ///< Частота отправки по умолчанию
   static constexpr size_t kMaxCommandLen = 64;  ///< Макс. длина UDP-команды
-  static constexpr uint8_t kPacketVersion = 1;  ///< Версия протокола пакета
+  /// Версия протокола пакета (2 — кадр 160 байт с полями ESC, LOS-19)
+  static constexpr uint8_t kPacketVersion = 2;
 };
 
 }  // namespace rc_vehicle::config

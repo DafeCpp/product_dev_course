@@ -71,6 +71,15 @@ const FIELD_OFFSETS = Object.freeze([
     { name: 'wifi_ok',                   off: 131, type: 'u8', bit: 1 },
     { name: 'failsafe_active',           off: 131, type: 'u8', bit: 2 },
     { name: 'rc_init_failed',            off: 131, type: 'u8', bit: 3 },
+    // LOS-19: телеметрия VESC; при esc_valid == 0 остальные esc_* нули
+    { name: 'esc_erpm',                  off: 132, type: 'f32' },
+    { name: 'esc_v_in',                  off: 136, type: 'f32' },
+    { name: 'esc_i_motor',               off: 140, type: 'f32' },
+    { name: 'esc_i_in',                  off: 144, type: 'f32' },
+    { name: 'esc_duty',                  off: 148, type: 'f32' },
+    { name: 'esc_t_fet',                 off: 152, type: 'f32' },
+    { name: 'esc_valid',                 off: 156, type: 'u8'  },
+    { name: 'esc_fault',                 off: 157, type: 'u8'  },
 ]);
 
 const MAX_FIELD_END = FIELD_OFFSETS.reduce((maxEnd, field) => {

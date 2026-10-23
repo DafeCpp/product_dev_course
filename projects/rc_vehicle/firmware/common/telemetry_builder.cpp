@@ -141,4 +141,15 @@ TelemetryLogFrame BuildLogFrame(const TelemetryContext& ctx, uint32_t now,
   return frame;
 }
 
+void SetLogFrameEsc(TelemetryLogFrame& frame, const EscTelemetry& esc) {
+  frame.esc_erpm = esc.erpm;
+  frame.esc_v_in = esc.input_voltage_v;
+  frame.esc_i_motor = esc.motor_current_a;
+  frame.esc_i_in = esc.input_current_a;
+  frame.esc_duty = esc.duty;
+  frame.esc_t_fet = esc.temp_fet_c;
+  frame.esc_valid = 1;
+  frame.esc_fault = esc.fault_code;
+}
+
 }  // namespace rc_vehicle

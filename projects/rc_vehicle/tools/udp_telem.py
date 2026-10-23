@@ -38,10 +38,10 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 MAGIC = b"\x52\x54"  # "RT"
-PACKET_VERSION = 1
+PACKET_VERSION = 2  # v2: кадр 160 байт с полями ESC (LOS-19)
 HEADER_SIZE = 7  # 2 magic + 1 version + 4 seq
-FRAME_SIZE = 132  # sizeof(TelemetryLogFrame), static_assert в telemetry_log.hpp
-PACKET_SIZE = HEADER_SIZE + FRAME_SIZE  # 139 bytes
+FRAME_SIZE = 160  # sizeof(TelemetryLogFrame), static_assert в telemetry_log.hpp
+PACKET_SIZE = HEADER_SIZE + FRAME_SIZE  # 167 bytes
 
 CONTROL_PORT = 5556
 DEFAULT_DATA_PORT = 5555
@@ -83,6 +83,15 @@ FIELDS: list[tuple[str, int, str, int | None]] = [
     ("wifi_ok", 131, "u8", 1),
     ("failsafe_active", 131, "u8", 2),
     ("rc_init_failed", 131, "u8", 3),
+    # LOS-19: телеметрия VESC; при esc_valid == 0 остальные esc_* нули
+    ("esc_erpm", 132, "f32", None),
+    ("esc_v_in", 136, "f32", None),
+    ("esc_i_motor", 140, "f32", None),
+    ("esc_i_in", 144, "f32", None),
+    ("esc_duty", 148, "f32", None),
+    ("esc_t_fet", 152, "f32", None),
+    ("esc_valid", 156, "u8", None),
+    ("esc_fault", 157, "u8", None),
 ]
 
 FIELD_NAMES = [name for name, _, _, _ in FIELDS]
