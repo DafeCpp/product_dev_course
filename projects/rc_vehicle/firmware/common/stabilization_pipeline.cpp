@@ -344,8 +344,13 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
 
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
   const float slip = input.slip_angle_deg;
-  const float slip_rate = (slip - prev_slip_deg_) / dt_sec;
+  // После паузы гарда (выключен, режим без гарда, IMU off) прошлый угол
+  // устарел: первый тик только засевает его, иначе вся пауза читалась бы как
+  // один тик и давала ложный slip_rate.
+  const float slip_rate =
+      prev_slip_valid_ ? (slip - prev_slip_deg_) / dt_sec : 0.0f;
   prev_slip_deg_ = slip;
+  prev_slip_valid_ = true;
 
   // Занос невозможен без значимой угловой скорости рыскания. Yaw rate
   // измеряется напрямую гироскопом (не интегрируется), поэтому надёжен при
@@ -436,6 +441,7 @@ void OversteerGuard::Reset() noexcept {
 }
 
 void OversteerGuard::ReleaseCut() noexcept {
+  prev_slip_valid_ = false;
   oversteer_active_ = false;
   cutting_throttle_ = false;
   rotation_excess_time_s_ = 0.0f;

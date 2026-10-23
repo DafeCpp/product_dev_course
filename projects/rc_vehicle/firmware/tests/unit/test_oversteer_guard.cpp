@@ -316,6 +316,21 @@ TEST_F(RotationExcessTest, DetectsWithoutReduction) {
   EXPECT_FALSE(guard_.IsCuttingThrottle());
 }
 
+TEST_F(RotationExcessTest, PauseDoesNotFakeSlipRate) {
+  // Гард выключен, пока угол вырос с 0 до 30°; при включении за один тик
+  // это не должно читаться как скачок.
+  StabilizationInput before = Corner(1.0f, 1.0f);
+  before.slip_angle_deg = 0.0f;
+  (void)Run(before, 5);
+  cfg_.oversteer.warn_enabled = false;
+  (void)Run(before, 1);
+  cfg_.oversteer.warn_enabled = true;
+  StabilizationInput after = Corner(1.0f, 1.0f);
+  after.slip_angle_deg = 30.0f;
+  (void)Run(after, 1);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
 TEST_F(RotationExcessTest, ImuOffDropsCeiling) {
   (void)Run(Corner(1.6f, 1.0f), 20);
   StabilizationInput input = Corner(0.0f, 0.0f);

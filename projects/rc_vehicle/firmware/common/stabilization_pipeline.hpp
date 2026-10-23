@@ -347,8 +347,9 @@ class OversteerGuard {
 
   /** @brief Сбросить состояние (вызывается при failsafe). */
   void Reset() noexcept;
-  /** Снять срез и потолок газа, не трогая prev_slip_deg_: гард выключен или
-   *  не вызывается, и старое вмешательство не должно ожить при включении. */
+  /** Снять срез и потолок газа и пометить прошлый угол устаревшим: гард
+   *  выключен или не вызывается, и старое вмешательство не должно ожить при
+   *  включении. */
   void ReleaseCut() noexcept;
 
   /** @brief Газ срезан на этом тике (флаг и разрешённое снижение). */
@@ -372,6 +373,7 @@ class OversteerGuard {
   const ImuHandler* imu_{nullptr};
 
   float prev_slip_deg_{0.0f};  ///< Предыдущий угол заноса для оценки dslip/dt
+  bool prev_slip_valid_{false};   ///< prev_slip_deg_ свежий (не после паузы)
   bool oversteer_active_{false};  ///< Текущее состояние oversteer detection
   bool cutting_throttle_{false};
   /** Сколько кузов уже вращается быстрее траектории [с], в
