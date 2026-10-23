@@ -397,6 +397,23 @@ class ProdWiringTest(unittest.TestCase):
         self.set_service_field(self.paths.prod_compose, "grafana", "profiles", value=["manual"])
         self.assert_error("grafana: in docker-compose.prod.yml has profiles")
 
+    def test_optional_migration_dependency_fails(self) -> None:
+        self.set_service_field(
+            self.paths.prod_compose,
+            "auth-service",
+            "depends_on",
+            value={"auth-migrate": {"condition": "service_completed_successfully", "required": False}},
+        )
+        self.assert_error("auth-service: in docker-compose.prod.yml does not wait for auth-migrate")
+
+    def test_zero_scaled_service_fails(self) -> None:
+        self.set_service_field(self.paths.prod_compose, "grafana", "scale", value=0)
+        self.assert_error("grafana: in docker-compose.prod.yml is scaled to 0")
+
+    def test_zero_replicas_service_fails(self) -> None:
+        self.set_service_field(self.paths.prod_compose, "grafana", "deploy", value={"replicas": 0})
+        self.assert_error("grafana: in docker-compose.prod.yml is scaled to 0")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

@@ -99,11 +99,26 @@ def _check_database_url(
     return errors
 
 
+def _replicas(service: dict[str, Any]) -> int | None:
+    deploy_replicas = (service.get("deploy") or {}).get("replicas")
+    scale = service.get("scale")
+    for value in (scale, deploy_replicas):
+        if isinstance(value, int) and value == 0:
+            return 0
+    return None
+
+
 def _depends_on(service: dict[str, Any]) -> dict[str, str | None]:
     deps = service.get("depends_on") or {}
     if isinstance(deps, list):
         return {name: None for name in deps}
-    return {name: (spec or {}).get("condition") for name, spec in deps.items()}
+    result: dict[str, str | None] = {}
+    for name, spec in deps.items():
+        spec = spec or {}
+        condition = spec.get("condition")
+        # required: false only warns when the dependency fails, so it does not block the service.
+        result[name] = f"optional {condition}" if spec.get("required") is False else condition
+    return result
 
 
 BUILD_JOB = "build-and-push"
@@ -327,6 +342,8 @@ def check(paths: Paths) -> list[str]:
         for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
             if name not in compose:
                 errors.append(f"{name}: missing from {label}")
+            elif _replicas(compose[name]) == 0:
+                errors.append(f"{name}: in {label} is scaled to 0, so no container runs")
             elif compose[name].get("profiles"):
                 errors.append(
                     f"{name}: in {label} has profiles, so a plain `docker compose up -d` skips it"
