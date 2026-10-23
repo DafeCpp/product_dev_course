@@ -95,6 +95,9 @@ struct VehicleStateEstimate {
   /** Боковое ускорение кузова без гравитации [g], >0 — влево; 0, пока EKF
    *  не работает (LOS-380). */
   float lateral_accel_g{0.0f};
+  /** Крен для lateral_accel_g — от сошедшегося TiltEstimator: после Reset()
+   *  roll = 0, и крен уклона ещё сидит в ay. */
+  bool lateral_accel_valid{false};
   ZuptStatus zupt_status{ZuptStatus::NotEvaluated};
   bool ekf_diverged{false};
 };
@@ -160,6 +163,7 @@ class VehicleStateEstimator {
   float prev_vx_{0.0f};
   float a_lin_prev_g_{0.0f};
   float lateral_accel_g_{0.0f};
+  bool lateral_accel_valid_{false};
   uint32_t last_mag_sample_sequence_{0};
   bool tilt_was_enabled_{false};
   // Якорь TiltEstimator на прошлом тике и остаток выдержки после его

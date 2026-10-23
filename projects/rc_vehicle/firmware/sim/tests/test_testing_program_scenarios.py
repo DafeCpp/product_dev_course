@@ -206,8 +206,9 @@ def test_yaw_rate_step_settles_within_200_ms(mode):
 # которая выдавала скорость полного газа сразу, без разгона (LOS-378).
 OVERSTEER_TIRE_MU = 0.3
 OVERSTEER_FRONT_SHARE = 0.2
-# Авто-калибровка IMU (1000 семплов) должна пройти в покое.
-OVERSTEER_SETTLE_TICKS = 1500
+# Авто-калибровка IMU (1000 семплов) должна пройти в покое, а TiltEstimator —
+# сойтись (3τ = 6 с): до этого guard не верит боковому ускорению (LOS-380).
+OVERSTEER_SETTLE_TICKS = 3500
 
 
 def oversteer_params():
