@@ -331,6 +331,17 @@ TEST_F(RotationExcessTest, PauseDoesNotFakeSlipRate) {
   EXPECT_FALSE(guard_.IsActive());
 }
 
+TEST_F(RotationExcessTest, DivergedEkfDoesNotTriggerSlipFallback) {
+  StabilizationInput calm = Corner(1.0f, 1.0f);
+  calm.slip_angle_deg = 0.0f;
+  (void)Run(calm, 5);
+  StabilizationInput jump = calm;
+  jump.slip_angle_deg = 60.0f;
+  jump.ekf_diverged = true;
+  (void)Run(jump, 3);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
 TEST_F(RotationExcessTest, ImuOffDropsCeiling) {
   (void)Run(Corner(1.6f, 1.0f), 20);
   StabilizationInput input = Corner(0.0f, 0.0f);

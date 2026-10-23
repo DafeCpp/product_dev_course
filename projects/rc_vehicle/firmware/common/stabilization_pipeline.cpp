@@ -391,8 +391,10 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
           ? std::min(rotation_excess_time_s_ + sample_s, kRotationExcessHoldS)
           : 0.0f;
 
+  // Угол и скорость расходящегося EKF не запускают срез и защёлку.
   const bool slip_oversteer =
-      turning && std::abs(slip) > cfg.oversteer.slip_thresh_deg &&
+      turning && !input.ekf_diverged &&
+      std::abs(slip) > cfg.oversteer.slip_thresh_deg &&
       std::abs(slip_rate) > cfg.oversteer.rate_thresh_deg_s;
   const bool detected =
       slip_oversteer || rotation_excess_time_s_ >= kRotationExcessHoldS;
