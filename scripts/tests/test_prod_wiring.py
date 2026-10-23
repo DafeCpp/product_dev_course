@@ -523,6 +523,22 @@ class ProdWiringTest(unittest.TestCase):
         )
         self.assert_error("build-backend-base must have exactly one docker/build-push-action step")
 
+    def test_base_job_must_wait_for_test_gates(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "    needs: [backend-tests, frontend-tests, production-contract-tests]\n    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+            "    needs: [backend-tests, frontend-tests]\n    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+        )
+        self.assert_error("build-backend-base must directly need production-contract-tests")
+
+    def test_base_job_without_needs_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "    needs: [backend-tests, frontend-tests, production-contract-tests]\n    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+            "    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+        )
+        self.assert_error("build-backend-base must directly need backend-tests")
+
     def test_base_dockerfile_must_exist(self) -> None:
         (self.root / "projects/backend/Dockerfile.base").unlink()
         self.assert_error("Dockerfile.base, which does not exist")

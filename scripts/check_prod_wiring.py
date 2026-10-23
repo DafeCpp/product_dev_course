@@ -243,6 +243,7 @@ def _strip_terraform_comments(terraform: str) -> str:
 
 
 BASE_JOB = "build-backend-base"
+BASE_GATES = ("backend-tests", "frontend-tests", "production-contract-tests")
 
 _BASE_WIRING = {
     "context": "./projects/backend",
@@ -268,6 +269,14 @@ def _check_base_job(workflow: dict[str, Any], root: Path) -> list[str]:
     if not isinstance(job, dict):
         return [f"deploy.yml must have a {BASE_JOB} job that publishes the backend base image"]
     errors = []
+    needs = job.get("needs") or []
+    needs = [needs] if isinstance(needs, str) else needs
+    for gate in BASE_GATES:
+        if gate not in needs:
+            errors.append(
+                f"deploy.yml {BASE_JOB} must directly need {gate}, "
+                "or images are published while the test gate is still running or failing"
+            )
     for guard in ("if", "continue-on-error"):
         if guard in job:
             errors.append(f"deploy.yml {BASE_JOB} job must not set {guard}")
