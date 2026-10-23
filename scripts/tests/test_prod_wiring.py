@@ -370,6 +370,33 @@ class ProdWiringTest(unittest.TestCase):
             (directory / "006_same_name.sql").write_text("SELECT 1;", encoding="utf-8")
         self.assertEqual(check(self.paths), [])
 
+    def test_build_step_with_if_false_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "        uses: docker/build-push-action@v6\n        with:\n          context: ${{ matrix.context }}",
+            "        if: ${{ false }}\n        uses: docker/build-push-action@v6\n        with:\n          context: ${{ matrix.context }}",
+        )
+        self.assert_error("docker/build-push-action step must not set if")
+
+    def test_build_step_continue_on_error_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "        uses: docker/build-push-action@v6\n        with:\n          context: ${{ matrix.context }}",
+            "        continue-on-error: true\n        uses: docker/build-push-action@v6\n        with:\n          context: ${{ matrix.context }}",
+        )
+        self.assert_error("docker/build-push-action step must not set continue-on-error")
+
+    def test_base_image_build_arg_removed_fails(self) -> None:
+        text = self.paths.deploy_workflow.read_text(encoding="utf-8")
+        marker = "          build-args: |\n            BACKEND_BASE_IMAGE=${{ env.CR_REGISTRY }}/backend-base@${{ needs.build-backend-base.outputs.digest }}\n"
+        self.assertEqual(text.count(marker), 1)
+        self.paths.deploy_workflow.write_text(text.replace(marker, ""), encoding="utf-8")
+        self.assert_error("docker/build-push-action input build-args must be")
+
+    def test_profiled_production_service_fails(self) -> None:
+        self.set_service_field(self.paths.prod_compose, "grafana", "profiles", value=["manual"])
+        self.assert_error("grafana: in docker-compose.prod.yml has profiles")
+
     def test_dev_only_service_in_prod_fails(self) -> None:
         self.edit(
             self.paths.prod_compose,

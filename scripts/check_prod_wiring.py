@@ -165,6 +165,7 @@ _BUILD_WIRING = {
         "target": "production",
         "tags": "${{ steps.meta.outputs.tags }}",
         "push": "true",
+        "build-args": "BACKEND_BASE_IMAGE=${{ env.CR_REGISTRY }}/backend-base@${{ needs.build-backend-base.outputs.digest }}",
     },
 }
 
@@ -172,11 +173,21 @@ _BUILD_WIRING = {
 def _check_build_steps(workflow: dict[str, Any]) -> list[str]:
     errors = []
     steps = _build_steps(workflow)
+    job = (workflow.get("jobs") or {}).get(BUILD_JOB) or {}
+    for guard in ("if", "continue-on-error"):
+        if guard in job:
+            errors.append(f"deploy.yml {BUILD_JOB} job must not set {guard}")
     for action, expected in _BUILD_WIRING.items():
         found = [s for s in steps if str(s.get("uses", "")).split("@")[0] == action]
         if len(found) != 1:
             errors.append(f"deploy.yml {BUILD_JOB} must have exactly one {action} step, found {len(found)}")
             continue
+        for guard in ("if", "continue-on-error"):
+            if guard in found[0]:
+                errors.append(
+                    f"deploy.yml {BUILD_JOB} {action} step must not set {guard}, "
+                    "or the release could skip or ignore it"
+                )
         if action == "docker/metadata-action" and found[0].get("id") != "meta":
             errors.append(
                 f"deploy.yml {BUILD_JOB} {action} step must have id 'meta', got {found[0].get('id')!r}"
@@ -316,6 +327,10 @@ def check(paths: Paths) -> list[str]:
         for label, compose in (("docker-compose.prod.yml", prod), ("docker-compose.yml", dev)):
             if name not in compose:
                 errors.append(f"{name}: missing from {label}")
+            elif compose[name].get("profiles"):
+                errors.append(
+                    f"{name}: in {label} has profiles, so a plain `docker compose up -d` skips it"
+                )
 
     for name in sorted(known):
         if name in dev and name in prod:
