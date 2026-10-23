@@ -110,6 +110,22 @@ TEST_F(SlipAngleControllerTest, NoIntegralWindup_WhenCutHitsZero) {
   EXPECT_GT(ctrl_.GetPid().GetIntegral(), -6.0f);
 }
 
+// Пока стабилизация плавно включается, интеграл копит снятие с весом
+// перехода, а не полностью: иначе к концу перехода он был бы у предела.
+TEST_F(SlipAngleControllerTest, IntegralScaledByTransitionWeight) {
+  cfg_.slip_angle.pid.kp = 0.0f;
+  cfg_.slip_angle.pid.ki = 0.02f;
+  cfg_.slip_angle.pid.max_integral = 40.0f;
+  cfg_.slip_angle.pid.max_correction = 0.8f;
+  ctrl_.Init(cfg_, ekf_, &imu_handler_);
+  ekf_.SetState(2.0f, 1.5f, 0.0f);  // ошибка ≈ −21.9°
+  for (int i = 0; i < 500; ++i) {   // 1 с с весом 0.1
+    float throttle = 1.0f;
+    ctrl_.Process(cfg_, throttle, 1.0f, 0.1f, 2);
+  }
+  EXPECT_NEAR(ctrl_.GetPid().GetIntegral(), -2.19f, 0.1f);
+}
+
 TEST_F(SlipAngleControllerTest, BrakeAndReverseUntouched) {
   ekf_.SetState(2.0f, 1.5f, 0.0f);
   float throttle = -0.5f;
