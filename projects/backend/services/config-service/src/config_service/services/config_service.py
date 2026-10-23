@@ -132,7 +132,7 @@ class ConfigService:
             is_sensitive=is_sensitive,
         )
         if result is None:
-            raise VersionConflictError(str(config_id), expected_version, -1)
+            raise await self._update_failure(config_id, expected_version)
         return result
 
     async def soft_delete(
@@ -156,10 +156,7 @@ class ConfigService:
             correlation_id=correlation_id,
         )
         if result is None:
-            config = await self._config_repo.get_by_id(config_id)
-            if config is None:
-                raise ConfigNotFoundError(str(config_id))
-            raise VersionConflictError(str(config_id), expected_version, config.version)
+            raise await self._update_failure(config_id, expected_version)
         return result
 
     async def rollback(
@@ -194,8 +191,15 @@ class ConfigService:
             is_sensitive=target.is_sensitive,
         )
         if result is None:
-            raise VersionConflictError(str(config_id), expected_version, -1)
+            raise await self._update_failure(config_id, expected_version)
         return result
+
+    async def _update_failure(self, config_id: UUID, expected_version: int) -> Exception:
+        """Why a versioned update changed no row: the config is gone, or the version moved."""
+        current = await self._config_repo.get_by_id(config_id)
+        if current is None:
+            return ConfigNotFoundError(str(config_id))
+        return VersionConflictError(str(config_id), expected_version, current.version)
 
     async def get_history(
         self,
