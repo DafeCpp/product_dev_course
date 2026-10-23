@@ -403,7 +403,10 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
     oversteer_active_ = false;
     calm_time_s_ = 0.0f;
   } else if (oversteer_active_) {
-    const bool calm = rotation_excess_rps < 0.5f * kRotationExcessRps &&
+    // Без данных о вращении успокоение не доказано: срез держится, пока
+    // машина не перестанет поворачивать.
+    const bool calm = rotation_valid &&
+                      rotation_excess_rps < 0.5f * kRotationExcessRps &&
                       std::abs(slip) < cfg.oversteer.slip_thresh_deg;
     calm_time_s_ = calm ? calm_time_s_ + sample_s : 0.0f;
     if (calm_time_s_ >= kReleaseCalmS) oversteer_active_ = false;

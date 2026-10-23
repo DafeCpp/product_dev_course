@@ -339,6 +339,14 @@ TEST_F(RotationExcessTest, HoldsCutUntilCalm) {
   EXPECT_FALSE(guard_.IsCuttingThrottle());
 }
 
+TEST_F(RotationExcessTest, LostRotationDataIsNotCalm) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  StabilizationInput lost = Corner(1.6f, 1.0f);
+  lost.lateral_accel_valid = false;
+  EXPECT_NEAR(Run(lost, 200), 0.3f, 1e-5f);
+  EXPECT_TRUE(guard_.IsActive());
+}
+
 TEST_F(RotationExcessTest, ReleasesAtOnceWhenRotationStops) {
   (void)Run(Corner(1.6f, 1.0f), 20);
   ASSERT_TRUE(guard_.IsActive());
