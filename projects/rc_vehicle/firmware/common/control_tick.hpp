@@ -32,6 +32,8 @@ struct ControlTickState {
   VehicleStateEstimate estimate{};
   ControlSetpoint command{};
   float motor_model_target_throttle{0.0f};
+  /** См. StabilizationOutput::bypass_throttle_slew_down. */
+  bool bypass_throttle_slew_down{false};
   bool failsafe_active{false};
 };
 

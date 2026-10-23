@@ -171,3 +171,114 @@ TEST_F(OversteerGuardTest, Reset_ClearsActiveFlag) {
   guard_.Reset();
   EXPECT_FALSE(guard_.IsActive()) << "Reset() должен сбрасывать oversteer_active_";
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LOS-380: занос по вращению быстрее траектории (r > ay·g/vx) ловится раньше
+// порога slip и держится до успокоения
+// ══════════════════════════════════════════════════════════════════════════════
+
+class RotationExcessTest : public ::testing::Test {
+ protected:
+  RotationExcessTest() {
+    cfg_.oversteer.warn_enabled = true;
+    cfg_.oversteer.slip_thresh_deg = 5.0f;
+    cfg_.oversteer.rate_thresh_deg_s = 10.0f;
+    cfg_.oversteer.throttle_reduction = 0.7f;
+  }
+
+  // Траектория поворачивает со скоростью trajectory_rps, кузов — yaw_rps.
+  static StabilizationInput Corner(float yaw_rps, float trajectory_rps,
+                                   float vx = 3.0f) {
+    return {
+        .dt_ms = 2,
+        .speed_ms = 3.0f,
+        .vx_ms = vx,
+        .slip_angle_deg = 1.0f,
+        .yaw_rate_rps = yaw_rps,
+        .lateral_accel_g = trajectory_rps * vx / 9.80665f,
+        .imu_enabled = true,
+    };
+  }
+
+  float Run(const StabilizationInput& input, int ticks, float stick = 1.0f) {
+    float throttle = stick;
+    for (int i = 0; i < ticks; ++i) {
+      throttle = stick;
+      guard_.Process(cfg_, throttle, input, true);
+    }
+    return throttle;
+  }
+
+  StabilizationConfig cfg_;
+  OversteerGuard guard_;
+};
+
+TEST_F(RotationExcessTest, TriggersBeforeSlipThreshold) {
+  // Устойчивый поворот: вращение совпадает с траекторией.
+  EXPECT_FLOAT_EQ(Run(Corner(1.0f, 1.0f), 50), 1.0f);
+  EXPECT_FALSE(guard_.IsActive());
+  // Кузов вращается на 0.6 рад/с быстрее траектории при slip 1°.
+  EXPECT_NEAR(Run(Corner(1.6f, 1.0f), 20), 0.3f, 1e-5f);
+  EXPECT_TRUE(guard_.IsActive());
+  EXPECT_TRUE(guard_.IsCuttingThrottle());
+}
+
+TEST_F(RotationExcessTest, IgnoresSingleTickSpike) {
+  (void)Run(Corner(1.6f, 1.0f), 5);
+  (void)Run(Corner(1.0f, 1.0f), 1);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
+TEST_F(RotationExcessTest, UndersteerIsNotOversteer) {
+  // Снос передней оси: кузов вращается медленнее траектории.
+  (void)Run(Corner(1.0f, 1.8f), 100);
+  EXPECT_FALSE(guard_.IsActive());
+  (void)Run(Corner(-1.0f, -1.8f), 100);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
+TEST_F(RotationExcessTest, IgnoredWithoutLongitudinalSpeed) {
+  // Реальный лог 2026-08-02: vx по EKF ≈ 0, ay шумит — ay/vx не траектория.
+  (void)Run(Corner(1.6f, 0.0f, 0.1f), 100);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
+TEST_F(RotationExcessTest, HoldsCutUntilCalm) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  ASSERT_TRUE(guard_.IsActive());
+  // Вращение успокоилось, но 0.1 с мало: газ остаётся срезанным.
+  EXPECT_NEAR(Run(Corner(1.0f, 1.0f), 50), 0.3f, 1e-5f);
+  EXPECT_TRUE(guard_.IsActive());
+  // Всплеск вращения перезапускает отсчёт спокойствия.
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  (void)Run(Corner(1.0f, 1.0f), 50);
+  EXPECT_TRUE(guard_.IsActive());
+  (void)Run(Corner(1.0f, 1.0f), 60);
+  EXPECT_FALSE(guard_.IsActive());
+  EXPECT_FALSE(guard_.IsCuttingThrottle());
+}
+
+TEST_F(RotationExcessTest, ReleasesAtOnceWhenRotationStops) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  ASSERT_TRUE(guard_.IsActive());
+  (void)Run(Corner(0.0f, 0.0f), 1);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
+TEST_F(RotationExcessTest, ThrottleRecoversGraduallyAfterRelease) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  (void)Run(Corner(0.0f, 0.0f), 1);
+  ASSERT_FALSE(guard_.IsActive());
+  // Потолок растёт от среза 0.3 на 0.25/с: через 0.4 с ≈ 0.4.
+  EXPECT_NEAR(Run(Corner(0.0f, 0.0f), 200), 0.4f, 0.01f);
+  // Ниже потолка ручка проходит как есть.
+  EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1, 0.2f), 0.2f);
+  // Через ещё 3 с потолок снят.
+  EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1500), 1.0f);
+}
+
+TEST_F(RotationExcessTest, ResetClearsCeiling) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  guard_.Reset();
+  EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1), 1.0f);
+}

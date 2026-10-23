@@ -186,6 +186,9 @@ VehicleStateEstimate VehicleStateEstimator::Update(
 #ifdef RC_PROFILE_LOOP
     });
 #endif
+    // Та же проекция гравитации, что снимает EKF в UpdateFromImu.
+    lateral_accel_g_ =
+        vehicle_imu.ay - std::cos(pitch_rad) * std::sin(roll_rad);
 
     if (motor_model_active) {
       const float expected_speed =
@@ -230,6 +233,7 @@ VehicleStateEstimate VehicleStateEstimator::Update(
   if (!ekf_active) {
     grip_.Reset();
     ekf_.SetLateralGripLost(false);
+    lateral_accel_g_ = 0.0f;
   }
   motor_model_was_active_ = motor_model_ran;
 
@@ -330,6 +334,7 @@ VehicleStateEstimate VehicleStateEstimator::BuildEstimate(
   estimate.wheel_slip_ratio = wheelspin_.GetSlipRatio();
   estimate.wheels_driven = wheelspin_.IsDriving();
   estimate.ground_speed_ms = wheelspin_.GetGroundSpeedMs();
+  estimate.lateral_accel_g = lateral_accel_g_;
   RefreshEkfFields(estimate);
   return estimate;
 }

@@ -424,6 +424,8 @@ TEST_F(KidsOversteerCutTest, DoesNotCutThrottleWhenLimitersDisabled) {
 TEST_F(KidsOversteerCutTest, NonKidsModeUnaffectedByLimitersFlag) {
   cfg_.mode = DriveMode::Drift;
   cfg_.kids_mode.limiters_enabled = false;
+  // Без мотор-модели пола наката нет (LOS-389), и срез виден целиком.
+  cfg_.filter.motor_model_enabled = false;
   const ModeTraits drift_policy{
       .yaw_rate_active = false,
       .pitch_comp_active = false,
@@ -434,6 +436,32 @@ TEST_F(KidsOversteerCutTest, NonKidsModeUnaffectedByLimitersFlag) {
   };
 
   EXPECT_NEAR(RunTwoTicks(drift_policy), 0.5f * (1.0f - 0.7f), 1e-5f);
+}
+
+// LOS-380: срез идёт мимо slew-ограничителя газа, иначе он доходит до мотора
+// за доли секунды, когда задняя ось уже сорвалась.
+TEST_F(KidsOversteerCutTest, CutBypassesThrottleSlew) {
+  input_.speed_ms = 0.5f;
+  input_.slip_angle_deg = 0.0f;
+  EXPECT_FALSE(
+      pipeline_.Process(cfg_, kKidsPolicy, input_).bypass_throttle_slew_down);
+  input_.slip_angle_deg = 30.0f;
+  EXPECT_TRUE(
+      pipeline_.Process(cfg_, kKidsPolicy, input_).bypass_throttle_slew_down);
+}
+
+// LOS-380: пол наката держится во всех режимах, не только в Kids.
+TEST_F(KidsOversteerCutTest, DriftCutStopsAtCoastThrottle) {
+  cfg_.mode = DriveMode::Drift;
+  const ModeTraits drift_policy{
+      .oversteer_guard_active = true,
+      .oversteer_reduces_throttle = true,
+  };
+  const float vx = 2.0f * std::cos(30.0f * 3.14159265f / 180.0f);
+  const float coast =
+      cfg_.filter.motor_deadzone +
+      vx * (1.0f - cfg_.filter.motor_deadzone) / cfg_.filter.motor_speed_gain;
+  EXPECT_NEAR(RunTwoTicks(drift_policy), coast, 1e-4f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
