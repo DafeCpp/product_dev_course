@@ -765,6 +765,15 @@ bool ReadPulseUs(const cJSON* json, const char* key, uint16_t& out) {
   return true;
 }
 
+/** deadband из JSON: нет ключа — out не трогаем; не число (null) — false. */
+bool ReadDeadband(const cJSON* json, float& out) {
+  const cJSON* item = cJSON_GetObjectItem(json, "deadband");
+  if (!item) return true;
+  if (!cJSON_IsNumber(item)) return false;
+  out = static_cast<float>(item->valuedouble);
+  return true;
+}
+
 void AddMotorConfigState(cJSON* reply, const MotorConfig& saved) {
   const MotorConfig& active = PwmControlGetMotorConfig();
   cJSON_AddItemToObject(reply, "active", MotorConfigToJson(active));
@@ -810,10 +819,10 @@ void HandleSetMotorConfig(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
 
     if (!error && (!ReadPulseUs(json, "min_us", cfg.min_us) ||
                    !ReadPulseUs(json, "neutral_us", cfg.neutral_us) ||
-                   !ReadPulseUs(json, "max_us", cfg.max_us))) {
+                   !ReadPulseUs(json, "max_us", cfg.max_us) ||
+                   !ReadDeadband(json, cfg.deadband))) {
       error = "invalid_config";
     }
-    cfg.deadband = JsonGetFloat(json, "deadband", cfg.deadband);
     cJSON* rev_item = cJSON_GetObjectItem(json, "reversed");
     if (cJSON_IsBool(rev_item)) cfg.reversed = cJSON_IsTrue(rev_item);
 
