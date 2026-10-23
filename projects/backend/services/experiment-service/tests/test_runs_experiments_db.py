@@ -105,8 +105,10 @@ async def test_experiment_search(service_client, project_id, headers):
 async def test_experiment_errors(service_client, project_id, headers, experiment):
     ghost = uuid.uuid4()
     for method, path in (("GET", f"/api/v1/experiments/{ghost}"), ("DELETE", f"/api/v1/experiments/{ghost}")):
-        assert (await service_client.request(method, path, headers=headers)).status == 404
-    assert (await service_client.post(f"/api/v1/experiments/{ghost}/archive", headers=headers)).status == 404
+        response = await service_client.request(method, path, headers=headers)
+        assert response.status == 404
+    response = await service_client.post(f"/api/v1/experiments/{ghost}/archive", headers=headers)
+    assert response.status == 404
     patch_ghost = await service_client.patch(f"/api/v1/experiments/{ghost}", json={"name": "x"}, headers=headers)
     assert patch_ghost.status == 404
 
@@ -127,13 +129,16 @@ async def test_experiment_lifecycle(service_client, headers, experiment):
 
     renamed = await service_client.patch(url, json={"name": "Renamed", "tags": ["z"]}, headers=headers)
     assert (await renamed.json())["name"] == "Renamed"
-    assert (await service_client.get(url, headers=headers)).status == 200
+    response = await service_client.get(url, headers=headers)
+    assert response.status == 200
 
     archived = await service_client.post(f"{url}/archive", headers=headers)
     assert (await archived.json())["status"] == "archived"
 
-    assert (await service_client.delete(url, headers=headers)).status == 204
-    assert (await service_client.get(url, headers=headers)).status == 404
+    response = await service_client.delete(url, headers=headers)
+    assert response.status == 204
+    response = await service_client.get(url, headers=headers)
+    assert response.status == 404
 
 
 # --- runs: list / create ---------------------------------------------------------------------------------
@@ -158,7 +163,8 @@ async def test_run_list_filters(service_client, experiment, headers):
     assert first["status"] == "draft"
 
     for bad in ("status=nope", "created_after=x"):
-        assert (await service_client.get(f"{base}?{bad}", headers=headers)).status == 400
+        response = await service_client.get(f"{base}?{bad}", headers=headers)
+        assert response.status == 400
     ghost = await service_client.get(f"/api/v1/experiments/{uuid.uuid4()}/runs", headers=headers)
     assert ghost.status == 404
 
@@ -245,22 +251,29 @@ async def test_run_update_errors(service_client, experiment, headers):
     run = await create_run(service_client, experiment["id"], headers)
     ghost = uuid.uuid4()
 
-    assert (await service_client.get(f"/api/v1/runs/{ghost}", headers=headers)).status == 404
-    assert (await service_client.patch(f"/api/v1/runs/{ghost}", json={"name": "x"}, headers=headers)).status == 404
-    assert (
-        await service_client.patch(f"/api/v1/runs/{ghost}", json={"status": "running"}, headers=headers)
-    ).status == 404
-    assert (await service_client.patch(f"/api/v1/runs/{run['id']}", json={"status": "bogus"}, headers=headers)).status == 400
+    response = await service_client.get(f"/api/v1/runs/{ghost}", headers=headers)
+    assert response.status == 404
+    response = await service_client.patch(f"/api/v1/runs/{ghost}", json={"name": "x"}, headers=headers)
+    assert response.status == 404
+    ghost_status = await service_client.patch(
+        f"/api/v1/runs/{ghost}", json={"status": "running"}, headers=headers
+    )
+    assert ghost_status.status == 404
+    response = await service_client.patch(f"/api/v1/runs/{run['id']}", json={"status": "bogus"}, headers=headers)
+    assert response.status == 400
     illegal = await service_client.patch(f"/api/v1/runs/{run['id']}", json={"status": "succeeded"}, headers=headers)
     assert illegal.status == 409
-    assert (await service_client.get(f"/api/v1/runs/{ghost}/events", headers=headers)).status == 404
+    response = await service_client.get(f"/api/v1/runs/{ghost}/events", headers=headers)
+    assert response.status == 404
 
 
 async def test_run_delete(service_client, experiment, headers):
     run = await create_run(service_client, experiment["id"], headers)
 
-    assert (await service_client.delete(f"/api/v1/runs/{run['id']}", headers=headers)).status == 204
-    assert (await service_client.delete(f"/api/v1/runs/{run['id']}", headers=headers)).status == 404
+    response = await service_client.delete(f"/api/v1/runs/{run['id']}", headers=headers)
+    assert response.status == 204
+    response = await service_client.delete(f"/api/v1/runs/{run['id']}", headers=headers)
+    assert response.status == 404
 
 
 # --- runs: batch status ----------------------------------------------------------------------------------------
@@ -323,12 +336,18 @@ async def test_bulk_tags_validation(service_client, experiment, headers):
     run = await create_run(service_client, experiment["id"], headers)
     ids = [run["id"]]
 
-    assert (await bulk_tags(service_client, headers, {"run_ids": []})).status == 400
-    assert (await bulk_tags(service_client, headers, {"run_ids": ids})).status == 400
-    assert (await bulk_tags(service_client, headers, {"run_ids": ids, "add_tags": []})).status == 400
-    assert (await bulk_tags(service_client, headers, {"run_ids": ids, "set_tags": [], "add_tags": ["x"]})).status == 400
-    assert (await bulk_tags(service_client, headers, {"run_ids": ids, "add_tags": "x"})).status == 400
-    assert (await bulk_tags(service_client, headers, {"run_ids": ids, "add_tags": [1]})).status == 400
+    response = await bulk_tags(service_client, headers, {"run_ids": []})
+    assert response.status == 400
+    response = await bulk_tags(service_client, headers, {"run_ids": ids})
+    assert response.status == 400
+    response = await bulk_tags(service_client, headers, {"run_ids": ids, "add_tags": []})
+    assert response.status == 400
+    response = await bulk_tags(service_client, headers, {"run_ids": ids, "set_tags": [], "add_tags": ["x"]})
+    assert response.status == 400
+    response = await bulk_tags(service_client, headers, {"run_ids": ids, "add_tags": "x"})
+    assert response.status == 400
+    response = await bulk_tags(service_client, headers, {"run_ids": ids, "add_tags": [1]})
+    assert response.status == 400
     ghost = await bulk_tags(service_client, headers, {"run_ids": [str(uuid.uuid4())], "add_tags": ["x"]})
     assert ghost.status == 404
     ghost_set = await bulk_tags(service_client, headers, {"run_ids": [str(uuid.uuid4())], "set_tags": ["x"]})
@@ -376,10 +395,14 @@ async def test_run_sensor_attachment(service_client, project_id, experiment, hea
     listed = await (await service_client.get(base, headers=headers)).json()
     assert [s["sensor_id"] for s in listed["sensors"]] == [sensor_id]
 
-    assert (await service_client.delete(f"{base}/{sensor_id}", headers=headers)).status == 204
-    assert (await service_client.delete(f"{base}/{sensor_id}", headers=headers)).status == 404
-    assert (await (await service_client.get(base, headers=headers)).json())["sensors"] == []
-    assert (await service_client.get(f"/api/v1/runs/{uuid.uuid4()}/sensors", headers=headers)).status == 404
+    response = await service_client.delete(f"{base}/{sensor_id}", headers=headers)
+    assert response.status == 204
+    response = await service_client.delete(f"{base}/{sensor_id}", headers=headers)
+    assert response.status == 404
+    remaining = await service_client.get(base, headers=headers)
+    assert (await remaining.json())["sensors"] == []
+    response = await service_client.get(f"/api/v1/runs/{uuid.uuid4()}/sensors", headers=headers)
+    assert response.status == 404
 
 
 async def test_attaching_a_sensor_without_a_body_defaults_to_passive(service_client, project_id, experiment, headers):
