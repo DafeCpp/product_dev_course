@@ -441,8 +441,27 @@ Terraform, production `.env` или GitHub Actions secrets. Используйт
 - **Документация:** runbook описывает получение инфраструктурных outputs, доставку env,
   ручной deploy, rollback и восстановление после ошибки.
 
-Полный автоматический drift-check между manifest, dev/prod compose, build matrix,
-миграциями и Terraform остаётся предметом LOS-112.
+- **Manifest:** сервис добавлен в `infrastructure/production-wiring.yml` (образ,
+  migrate-job, база Terraform), а намеренные различия dev и prod записаны там же
+  с причиной.
+
+### Автоматическая проверка drift
+
+`make check-prod-wiring` сверяет `infrastructure/production-wiring.yml` с
+`docker-compose.yml`, `docker-compose.prod.yml`, build matrix в `deploy.yml` и
+базами в `infrastructure/yandex-cloud/database.tf`. Проверка падает, если:
+
+- сервис из manifest отсутствует в одном из compose-файлов, или в compose появился
+  сервис, которого нет ни в manifest, ни в `dev_only_services`;
+- у сервиса env-переменная задана только в одном compose-файле и не внесена в
+  `env_differences` с причиной (устаревшая запись allowlist тоже ошибка);
+- образа нет в build matrix, или matrix собирает образ, который не использует ни один сервис;
+- runtime-сервис не ждёт свой migrate-job (`service_completed_successfully`), или у
+  сервиса есть `migrations/`, но migrate-job не указан;
+- база сервиса не создаётся в Terraform.
+
+Проверка запускается в workflow `Production Contract Tests` и в release pipeline
+перед сборкой образов. Её unit-тесты лежат в `scripts/tests/test_prod_wiring.py`.
 
 ## Object Storage: smoke-тест и ротация ключа
 

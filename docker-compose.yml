@@ -153,6 +153,22 @@ services:
       - experiment-tracking-network
     restart: "no"
 
+  # Script DB migrations — запускается один раз перед script-service
+  script-migrate:
+    build:
+      context: ./projects/backend
+      dockerfile: services/script-service/Dockerfile
+    container_name: script-migrate
+    environment:
+      - DATABASE_URL=${SCRIPT_DATABASE_URL:-postgresql://script_user:script_password@postgres:5432/script_db}
+    command: ["python", "-m", "bin.migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - experiment-tracking-network
+    restart: "no"
+
   # Auth DB migrations — запускается один раз перед auth-service
   auth-migrate:
     build:
@@ -349,8 +365,8 @@ services:
     ports:
       - "${SCRIPT_SERVICE_PORT:-8004}:8004"
     depends_on:
-      postgres:
-        condition: service_healthy
+      script-migrate:
+        condition: service_completed_successfully
     networks:
       - experiment-tracking-network
     restart: unless-stopped

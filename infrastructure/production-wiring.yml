@@ -1,0 +1,100 @@
+# Production wiring manifest (LOS-112).
+#
+# Lists every production runtime service and what it must be wired to.
+# `scripts/check_prod_wiring.py` (`make check-prod-wiring`) compares it with
+# docker-compose.yml, docker-compose.prod.yml, the release build matrix in
+# .github/workflows/deploy.yml and Terraform, and fails on any drift that is
+# not allowlisted below with a reason.
+#
+# Adding a service: follow the checklist in docs/deployment-yandex-cloud.md
+# ("Чеклист подключения нового сервиса к production") and add it here.
+
+services:
+  # image:      image name in the deploy.yml build matrix and in prod compose.
+  # context, dockerfile: build source of the image. Must be identical in the
+  #             deploy.yml matrix and in the dev compose build of the service and
+  #             of its migrate job, so a service cannot publish another one's image.
+  # migrate:    one-shot migrate service the runtime waits for (service_completed_successfully).
+  # migrate_after: migrate job that must finish first, because both jobs share one
+  #             database and its schema_migrations table (service_completed_successfully).
+  # database:   Terraform yandex_mdb_postgresql_database the service writes to.
+  auth-service:
+    image: auth-service
+    context: ./projects/backend
+    dockerfile: services/auth-service/Dockerfile
+    migrate: auth-migrate
+    database: auth_db
+  experiment-service:
+    image: experiment-service
+    context: ./projects/backend
+    dockerfile: services/experiment-service/Dockerfile
+    migrate: experiment-migrate
+    database: experiment_db
+  telemetry-ingest-service:
+    image: telemetry-ingest-service
+    context: ./projects/backend
+    dockerfile: services/telemetry-ingest-service/Dockerfile
+    migrate: telemetry-ingest-migrate
+    migrate_after: experiment-migrate
+    database: experiment_db
+  config-service:
+    image: config-service
+    context: ./projects/backend
+    dockerfile: services/config-service/Dockerfile
+    migrate: config-migrate
+    database: config_db
+  script-service:
+    image: script-service
+    context: ./projects/backend
+    dockerfile: services/script-service/Dockerfile
+    migrate: script-migrate
+    database: script_db
+  auth-proxy:
+    image: auth-proxy
+    context: .
+    dockerfile: projects/frontend/apps/auth-proxy/Dockerfile
+  experiment-portal:
+    image: experiment-portal
+    context: .
+    dockerfile: projects/frontend/apps/experiment-portal/Dockerfile
+  sensor-simulator:
+    image: sensor-simulator
+    context: .
+    dockerfile: projects/frontend/apps/sensor-simulator/Dockerfile
+  redis: {}
+  loki: {}
+  alloy: {}
+  grafana: {}
+
+# Services that exist only in docker-compose.yml.
+dev_only_services:
+  postgres: Production uses Yandex Managed PostgreSQL created by Terraform.
+  minio: Production uses Yandex Object Storage (infrastructure/yandex-cloud/object-storage.tf).
+  mailpit: Local SMTP catcher; production does not send email yet (SMTP_ENABLED defaults to false).
+  prometheus: Local metrics stack; production observability is Loki + Grafana only.
+  alertmanager: Local alerting for the Prometheus stack above.
+
+# Environment keys set for a service in only one of the two compose files.
+# "*" applies to every service.
+env_differences:
+  "*":
+    prod_only:
+      PGSSLROOTCERT: Managed PostgreSQL requires TLS with the Yandex CA; local postgres has no TLS.
+  auth-service:
+    dev_only:
+      ADMIN_BOOTSTRAP_SECRET: Production creates the first admin with the stdin procedure in docs/admin-initialization.md.
+      APP_URL: Only used in email links; production does not send email yet.
+      SMTP_ENABLED: Production does not send email yet; the default is false.
+      SMTP_FROM: Email is off in production.
+      SMTP_FROM_NAME: Email is off in production.
+      SMTP_HOST: Email is off in production.
+      SMTP_PASSWORD: Email is off in production.
+      SMTP_PORT: Email is off in production.
+      SMTP_USER: Email is off in production.
+  experiment-service:
+    dev_only:
+      RABBITMQ_URL: No RabbitMQ in production; script execution dispatch is disabled there.
+  grafana:
+    dev_only:
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Anonymous access is a local convenience; production requires login.
+      GF_INSTALL_PLUGINS: Local-only plugins.

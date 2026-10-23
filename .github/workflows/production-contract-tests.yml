@@ -6,8 +6,15 @@ on:
       - main
       - develop
     paths:
+      - docker-compose.yml
       - docker-compose.prod.yml
       - env.production.example
+      - infrastructure/production-wiring.yml
+      - infrastructure/yandex-cloud/database.tf
+      - projects/backend/services/*/migrations/**
+      - scripts/check_prod_wiring.py
+      - scripts/requirements-tools.txt
+      - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh
       - scripts/tests/**
       - scripts/dev-common.sh
@@ -27,8 +34,15 @@ on:
       - main
       - develop
     paths:
+      - docker-compose.yml
       - docker-compose.prod.yml
       - env.production.example
+      - infrastructure/production-wiring.yml
+      - infrastructure/yandex-cloud/database.tf
+      - projects/backend/services/*/migrations/**
+      - scripts/check_prod_wiring.py
+      - scripts/requirements-tools.txt
+      - scripts/tests/test_prod_wiring.py
       - scripts/validate-production-env.sh
       - scripts/tests/**
       - scripts/dev-common.sh
@@ -75,6 +89,10 @@ jobs:
       CONFIG_CLIENT_POLL_INTERVAL_SECONDS: "5.0"
     steps:
       - uses: actions/checkout@v4
+
+
+      - name: Check production wiring drift
+        run: make check-prod-wiring
 
       - name: Run contract tests
         run: make test-deploy-contract

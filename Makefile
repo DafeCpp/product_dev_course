@@ -1,4 +1,4 @@
-.PHONY: bench-firmware-test test test-backend test-deploy-contract test-frontend test-telemetry-cli type-check backend-install frontend-install
+.PHONY: bench-firmware-test check-prod-wiring test test-backend test-deploy-contract test-frontend test-telemetry-cli type-check backend-install frontend-install
 .PHONY: test-coverage test-coverage-backend test-coverage-frontend test-coverage-firmware
 .PHONY: help backend-install dev-clean-all dev-seed-demo dev-reset-admin backend-base backend-base-no-cache backend-base-check
 .PHONY: logs logs-follow logs-service logs-proxy logs-auth-service logs-portal logs-postgres logs-errors
@@ -55,14 +55,25 @@ export DOCKER_BUILDKIT COMPOSE_DOCKER_CLI_BUILD BACKEND_BASE_DOCKERFILE BACKEND_
 export BACKEND_SERVICES BACKEND_PROJECTS BACKEND_COMMON_DIR BACKEND_DEV_SERVICES DEV_ALL_SERVICES TEST_POSTGRESQL_DSN
 export DEV_ADMIN_USER DEV_ADMIN_EMAIL DEV_ADMIN_PASSWORD DEV_BOOTSTRAP_SECRET AUTH_SERVICE_URL MAKE
 
+# Репозиторные скрипты (scripts/) используют PyYAML; ставим его в отдельный venv,
+# чтобы не требовать глобальных пакетов.
+TOOLS_VENV := .venv-tools
+$(TOOLS_VENV)/.ready: scripts/requirements-tools.txt
+	@python3 -m venv $(TOOLS_VENV)
+	@$(TOOLS_VENV)/bin/pip install -q -r scripts/requirements-tools.txt
+	@touch $@
+
 help: ## Show available commands
 	@bash scripts/show-help.sh $(MAKEFILE_LIST)
 
 test: type-check test-backend test-telemetry-cli test-frontend ## Run type checks, backend, CLI and frontend tests
 
-test-deploy-contract: ## Run script and deployment contract tests
+test-deploy-contract: $(TOOLS_VENV)/.ready ## Run script and deployment contract tests
 	@echo "🧪 Running Make command and production contract tests..."
-	@python3 -m unittest discover -s scripts/tests -p "test_*.py" -v
+	@$(TOOLS_VENV)/bin/python -m unittest discover -s scripts/tests -p "test_*.py" -v
+
+check-prod-wiring: $(TOOLS_VENV)/.ready ## Check dev/prod compose drift against infrastructure/production-wiring.yml
+	@$(TOOLS_VENV)/bin/python scripts/check_prod_wiring.py
 
 backend-install: ## Install backend dependencies (Python 3.14+)
 	@bash scripts/backend.sh install
