@@ -28,6 +28,12 @@ class ProdWiringTest(unittest.TestCase):
             target = getattr(self.paths, field)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(getattr(real, field), target)
+        for dockerfile in (ROOT / "projects").rglob("Dockerfile*"):
+            if "node_modules" in dockerfile.parts:
+                continue
+            target = self.root / dockerfile.relative_to(ROOT)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
         for migrations in real.backend_services.glob("*/migrations"):
             (self.paths.backend_services / migrations.parent.name / "migrations").mkdir(parents=True)
 
@@ -435,6 +441,107 @@ class ProdWiringTest(unittest.TestCase):
             "\n  mailpit:\n    image: axllent/mailpit\n\n  loki:\n",
         )
         self.assert_error("mailpit: listed in dev_only_services but present in docker-compose.prod.yml")
+
+
+    def test_missing_dockerfile_fails(self) -> None:
+        (self.root / "projects/backend/services/script-service/Dockerfile").unlink()
+        self.assert_error("script-service: Dockerfile services/script-service/Dockerfile does not exist")
+
+    def test_missing_build_context_fails(self) -> None:
+        shutil.rmtree(self.root / "projects/frontend/apps/auth-proxy")
+        self.assert_error("auth-proxy: Dockerfile projects/frontend/apps/auth-proxy/Dockerfile does not exist")
+
+    def test_commented_out_terraform_database_does_not_count(self) -> None:
+        self.edit(
+            self.paths.terraform_database,
+            'name       = "script_db"',
+            '/* name = "script_db" */\n  name       = "other_db"',
+        )
+        self.assert_error("script-service: database script_db is not created in Terraform")
+
+    def test_commented_out_terraform_resource_does_not_count(self) -> None:
+        text = self.paths.terraform_database.read_text(encoding="utf-8")
+        commented = "\n".join(f"# {line}" for line in text.splitlines())
+        self.paths.terraform_database.write_text(commented, encoding="utf-8")
+        self.assert_error("database script_db is not created in Terraform")
+
+    def test_hash_inside_terraform_string_is_not_a_comment(self) -> None:
+        self.edit(self.paths.terraform_database, 'name       = "script_db"', 'name       = "script_db" # why')
+        self.assertEqual(check(self.paths), [])
+
+    def test_base_job_removed_fails(self) -> None:
+        self.edit(self.paths.deploy_workflow, "  build-backend-base:\n", "  build-backend-base-renamed:\n")
+        self.assert_error("deploy.yml must have a build-backend-base job")
+
+    def test_base_job_digest_output_must_come_from_build(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "      digest: ${{ steps.build.outputs.digest }}",
+            "      digest: sha256:0000",
+        )
+        self.assert_error("build-backend-base output digest must be")
+
+    def test_base_job_must_push(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "          target: base\n          push: true",
+            "          target: base\n          push: false",
+        )
+        self.assert_error("build-backend-base build input push must be")
+
+    def test_base_job_must_use_release_tag(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "backend-base:${{ env.RELEASE_TAG }}\n",
+            "backend-base:stable\n",
+        )
+        self.assert_error("build-backend-base build input tags must be")
+
+    def test_base_job_must_not_be_skippable(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "    name: Build Backend Base\n",
+            "    name: Build Backend Base\n    if: false\n",
+        )
+        self.assert_error("build-backend-base job must not set if")
+
+    def test_base_job_rejects_second_build_action(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "backend-base:latest\n          cache-from: type=gha\n          cache-to: type=gha,mode=max\n",
+            "backend-base:latest\n          cache-from: type=gha\n          cache-to: type=gha,mode=max\n"
+            "      - name: Extra\n        id: extra\n        uses: docker/build-push-action@v6\n"
+            "        with:\n          context: .\n          push: true\n",
+        )
+        self.assert_error("build-backend-base must have exactly one docker/build-push-action step")
+
+    def test_base_job_build_step_needs_id_build(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "      - name: Build and push backend base\n        id: build\n",
+            "      - name: Build and push backend base\n        id: other\n",
+        )
+        self.assert_error("build-backend-base must have exactly one docker/build-push-action step")
+
+    def test_base_job_must_wait_for_test_gates(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "    needs: [backend-tests, frontend-tests, production-contract-tests]\n    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+            "    needs: [backend-tests, frontend-tests]\n    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+        )
+        self.assert_error("build-backend-base must directly need production-contract-tests")
+
+    def test_base_job_without_needs_fails(self) -> None:
+        self.edit(
+            self.paths.deploy_workflow,
+            "    needs: [backend-tests, frontend-tests, production-contract-tests]\n    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+            "    runs-on: ubuntu-latest\n    environment: production\n    outputs:",
+        )
+        self.assert_error("build-backend-base must directly need backend-tests")
+
+    def test_base_dockerfile_must_exist(self) -> None:
+        (self.root / "projects/backend/Dockerfile.base").unlink()
+        self.assert_error("Dockerfile.base, which does not exist")
 
 
 if __name__ == "__main__":

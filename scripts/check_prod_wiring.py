@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @dataclass(frozen=True)
 class Paths:
+    root: Path
     manifest: Path
     dev_compose: Path
     prod_compose: Path
@@ -33,6 +34,7 @@ class Paths:
     @classmethod
     def under(cls, root: Path) -> Paths:
         return cls(
+            root=root,
             manifest=root / "infrastructure" / "production-wiring.yml",
             dev_compose=root / "docker-compose.yml",
             prod_compose=root / "docker-compose.prod.yml",
@@ -230,7 +232,83 @@ def _check_build_steps(workflow: dict[str, Any]) -> list[str]:
     return errors
 
 
+_TERRAFORM_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|/\*.*?\*/|//[^\n]*|#[^\n]*', re.DOTALL)
+
+
+def _strip_terraform_comments(terraform: str) -> str:
+    """Drop #, // and /* */ comments, keeping string literals (a "#" inside one is not a comment)."""
+    return _TERRAFORM_TOKEN.sub(
+        lambda m: m.group(0) if m.group(0).startswith('"') else "", terraform
+    )
+
+
+BASE_JOB = "build-backend-base"
+BASE_GATES = ("backend-tests", "frontend-tests", "production-contract-tests")
+
+_BASE_WIRING = {
+    "context": "./projects/backend",
+    "file": "./projects/backend/Dockerfile.base",
+    "target": "base",
+    "push": "true",
+    "tags": (
+        "${{ env.CR_REGISTRY }}/backend-base:${{ env.RELEASE_TAG }}\n"
+        "${{ env.CR_REGISTRY }}/backend-base:latest"
+    ),
+}
+_BASE_DIGEST = "${{ steps.build.outputs.digest }}"
+
+
+def _normalized(raw: Any) -> str:
+    text = str(raw).lower() if isinstance(raw, bool) else str(raw).strip()
+    return "\n".join(line.strip() for line in text.splitlines())
+
+
+def _check_base_job(workflow: dict[str, Any], root: Path) -> list[str]:
+    """build-and-push pins the base by this job's digest, so the job must really publish it."""
+    job = (workflow.get("jobs") or {}).get(BASE_JOB)
+    if not isinstance(job, dict):
+        return [f"deploy.yml must have a {BASE_JOB} job that publishes the backend base image"]
+    errors = []
+    needs = job.get("needs") or []
+    needs = [needs] if isinstance(needs, str) else needs
+    for gate in BASE_GATES:
+        if gate not in needs:
+            errors.append(
+                f"deploy.yml {BASE_JOB} must directly need {gate}, "
+                "or images are published while the test gate is still running or failing"
+            )
+    for guard in ("if", "continue-on-error"):
+        if guard in job:
+            errors.append(f"deploy.yml {BASE_JOB} job must not set {guard}")
+    digest = (job.get("outputs") or {}).get("digest")
+    if _normalized(digest) != _BASE_DIGEST:
+        errors.append(f"deploy.yml {BASE_JOB} output digest must be {_BASE_DIGEST!r}, got {digest!r}")
+    steps = [s for s in job.get("steps") or [] if isinstance(s, dict)]
+    found = [s for s in steps if str(s.get("uses", "")).split("@")[0] == "docker/build-push-action"]
+    if len(found) != 1 or found[0].get("id") != "build":
+        errors.append(
+            f"deploy.yml {BASE_JOB} must have exactly one docker/build-push-action step, "
+            f"with id 'build'; found {len(found)}"
+        )
+        return errors
+    step = found[0]
+    for guard in ("if", "continue-on-error"):
+        if guard in step:
+            errors.append(f"deploy.yml {BASE_JOB} build step must not set {guard}")
+    with_ = step.get("with") or {}
+    for key, value in _BASE_WIRING.items():
+        if _normalized(with_.get(key, "")) != value:
+            errors.append(
+                f"deploy.yml {BASE_JOB} build input {key} must be {value!r}, got {with_.get(key)!r}"
+            )
+    dockerfile = root / "projects" / "backend" / "Dockerfile.base"
+    if not dockerfile.is_file():
+        errors.append(f"deploy.yml {BASE_JOB} builds projects/backend/Dockerfile.base, which does not exist")
+    return errors
+
+
 def _terraform_databases(terraform: str) -> set[str]:
+    terraform = _strip_terraform_comments(terraform)
     blocks = re.findall(
         r'resource "yandex_mdb_postgresql_database" "[^"]+" \{(.*?)\n\}', terraform, re.DOTALL
     )
@@ -256,12 +334,18 @@ def _check_build_source(
     matrix_entry: dict[str, Any] | None,
     dev: dict[str, dict[str, Any]],
     prod: dict[str, dict[str, Any]],
+    root: Path,
 ) -> list[str]:
     """The release matrix, dev builds and prod migrate image must all be this service's own."""
     expected = (spec.get("context"), spec.get("dockerfile"))
     errors: list[str] = []
     if None in expected:
         return [f"{name}: manifest needs context and dockerfile for image {spec['image']}"]
+    context_dir = root / str(expected[0])
+    if not context_dir.is_dir():
+        errors.append(f"{name}: build context {expected[0]} does not exist")
+    elif not (context_dir / str(expected[1])).is_file():
+        errors.append(f"{name}: Dockerfile {expected[1]} does not exist in build context {expected[0]}")
     if matrix_entry is not None:
         actual = (matrix_entry.get("context"), matrix_entry.get("dockerfile"))
         if actual != expected:
@@ -330,6 +414,7 @@ def check(paths: Paths) -> list[str]:
     databases = _terraform_databases(paths.terraform_database.read_text(encoding="utf-8"))
 
     errors: list[str] = _check_build_steps(workflow)
+    errors += _check_base_job(workflow, paths.root)
     errors += [
         f"deploy.yml build matrix lists {image} more than once; both jobs would push the same tags"
         for image in sorted(matrix_duplicates)
@@ -393,7 +478,7 @@ def check(paths: Paths) -> list[str]:
                     f"{name}: prod image {prod_image!r} is not the released image "
                     f"{_released_image(image)!r}"
                 )
-            errors.extend(_check_build_source(name, spec, matrix_entries.get(image), dev, prod))
+            errors.extend(_check_build_source(name, spec, matrix_entries.get(image), dev, prod, paths.root))
 
         migrate = spec.get("migrate")
         if migrate:
