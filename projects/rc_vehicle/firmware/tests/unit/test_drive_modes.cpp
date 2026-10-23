@@ -206,8 +206,10 @@ TEST(DriftModeDefaultsTest, HasSlipAnglePid) {
   DriftModeStrategy{}.ApplyDefaults(cfg);
 
   EXPECT_GT(cfg.slip_angle.pid.kp, 0.0f);
+  EXPECT_GT(cfg.slip_angle.pid.ki, 0.0f);  // без I занос выше уставки (LOS-380)
   EXPECT_FLOAT_EQ(cfg.slip_angle.target_deg, 15.0f);
-  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.max_correction, 0.25f);
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.max_correction, 0.8f);
+  EXPECT_FLOAT_EQ(cfg.slew_throttle, 3.0f);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -385,4 +387,65 @@ TEST(SportYawGainsUpgradeTest, KeepsOtherModes) {
   cfg.mode = DriveMode::Normal;
   EXPECT_FALSE(cfg.UpgradeLegacySportYawGains());
   EXPECT_FLOAT_EQ(cfg.yaw_rate.pid.kp, 0.20f);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LOS-380: миграция нетронутого прежнего slip-PID Drift
+// ══════════════════════════════════════════════════════════════════════════════
+
+namespace {
+StabilizationConfig LegacyDrift() {
+  StabilizationConfig cfg;
+  cfg.Reset();
+  cfg.mode = DriveMode::Drift;
+  cfg.slip_angle.pid.kp = 0.008f;
+  cfg.slip_angle.pid.ki = 0.0f;
+  cfg.slip_angle.pid.kd = 0.002f;
+  cfg.slip_angle.pid.max_integral = 5.0f;
+  cfg.slip_angle.pid.max_correction = 0.25f;
+  cfg.slip_angle.target_deg = 20.0f;  // уставка — пользовательская, не трогаем
+  cfg.slew_throttle = 0.8f;
+  return cfg;
+}
+}  // namespace
+
+TEST(DriftSlipGainsUpgradeTest, ReplacesUntouchedLegacyDefaults) {
+  StabilizationConfig cfg = LegacyDrift();
+  StabilizationConfig fresh;
+  fresh.Reset();
+  DriftModeStrategy{}.ApplyDefaults(fresh);
+
+  EXPECT_TRUE(cfg.UpgradeLegacyDriftSlipGains());
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.kp, fresh.slip_angle.pid.kp);
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.ki, fresh.slip_angle.pid.ki);
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.kd, fresh.slip_angle.pid.kd);
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.max_integral,
+                  fresh.slip_angle.pid.max_integral);
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.max_correction,
+                  fresh.slip_angle.pid.max_correction);
+  EXPECT_FLOAT_EQ(cfg.slew_throttle, fresh.slew_throttle);
+  EXPECT_FLOAT_EQ(cfg.slip_angle.target_deg, 20.0f);
+  EXPECT_FALSE(cfg.UpgradeLegacyDriftSlipGains());  // повторно — no-op
+}
+
+TEST(DriftSlipGainsUpgradeTest, KeepsUserTuning) {
+  StabilizationConfig cfg = LegacyDrift();
+  cfg.slip_angle.pid.kp = 0.01f;
+  EXPECT_FALSE(cfg.UpgradeLegacyDriftSlipGains());
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.kp, 0.01f);
+  EXPECT_FLOAT_EQ(cfg.slew_throttle, 0.8f);
+}
+
+TEST(DriftSlipGainsUpgradeTest, KeepsUserSlew) {
+  StabilizationConfig cfg = LegacyDrift();
+  cfg.slew_throttle = 1.5f;
+  EXPECT_FALSE(cfg.UpgradeLegacyDriftSlipGains());
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.kp, 0.008f);
+}
+
+TEST(DriftSlipGainsUpgradeTest, KeepsOtherModes) {
+  StabilizationConfig cfg = LegacyDrift();
+  cfg.mode = DriveMode::Sport;
+  EXPECT_FALSE(cfg.UpgradeLegacyDriftSlipGains());
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.kp, 0.008f);
 }

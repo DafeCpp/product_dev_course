@@ -255,15 +255,45 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   if (!input.imu_enabled) return;
   if (input.dt_ms == 0) return;
 
+  // Тормоз и реверс не регулируем: регулятор только снимает газ вперёд.
+  if (throttle <= 0.0f) {
+    pid_.Reset();
+    return;
+  }
+
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
   const float slip_error =
       cfg.slip_angle.target_deg -
       DriftSlipDeg(input.slip_angle_deg, input.yaw_rate_rps);
+  const float weight =
+      input.stabilization_weight * input.mode_transition_weight;
+  const float integral_before = pid_.GetIntegral();
   const float pid_out = pid_.Step(slip_error, dt_sec);
+  // Пока стабилизация или режим плавно включаются, срез умножается на малый
+  // вес; интеграл копит снятие с тем же весом, иначе к концу перехода он
+  // успевал бы дойти до предела и резал бы газ до упора.
+  if (weight < 1.0f) {
+    pid_.SetIntegral(integral_before +
+                     (pid_.GetIntegral() - integral_before) * weight);
+  }
+  // Стик задаёт предел газа: ниже уставки газ равен стику, выше регулятор
+  // снимает газ. Поправка к стику в обе стороны держала занос лишь около
+  // одного положения стика: угол заноса круто зависит от газа, и стик
+  // работал как возмущение (LOS-380). Интеграл копит только снятие газа,
+  // иначе после заноса он держал бы газ на пределе.
+  if (pid_.GetIntegral() > 0.0f) pid_.SetIntegral(0.0f);
+  const float cut = std::min(pid_out, 0.0f);
 
-  throttle = std::clamp(throttle + pid_out * input.stabilization_weight *
-                                       input.mode_transition_weight,
-                        -1.0f, 1.0f);
+  // Пола наката, как у anti-spin Kids (LOS-389), здесь нет: с ним регулятор
+  // не может снять газ ниже наката и не удерживает уставку (на газе 1.0 пик
+  // заноса в SIL 61° против 39° без пола).
+  const float reduced = throttle + cut * weight;
+  // Anti-windup: газ уже снят до нуля, и дальше копить снятие незачем. Иначе
+  // после заноса интеграл ещё долго резал бы стик.
+  if (reduced <= 0.0f && slip_error < 0.0f) {
+    pid_.SetIntegral(integral_before);
+  }
+  throttle = std::max(reduced, 0.0f);
 }
 
 float SlipAngleController::DriftSlipDeg(float slip_deg,

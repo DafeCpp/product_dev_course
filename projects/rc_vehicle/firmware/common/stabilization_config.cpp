@@ -332,6 +332,21 @@ bool StabilizationConfig::UpgradeLegacySportYawGains() noexcept {
   return true;
 }
 
+bool StabilizationConfig::UpgradeLegacyDriftSlipGains() noexcept {
+  PidConfig& pid = slip_angle.pid;
+  if (mode != DriveMode::Drift || pid.kp != 0.008f || pid.ki != 0.0f ||
+      pid.kd != 0.002f || pid.max_integral != 5.0f ||
+      pid.max_correction != 0.25f || slew_throttle != 0.8f) {
+    return false;
+  }
+  StabilizationConfig drift;
+  drift.Reset();
+  DriveModeRegistry::Get(DriveMode::Drift).ApplyDefaults(drift);
+  pid = drift.slip_angle.pid;
+  slew_throttle = drift.slew_throttle;
+  return true;
+}
+
 void StabilizationConfig::ApplyModeDefaults() noexcept {
   DriveModeRegistry::Get(mode).ApplyDefaults(*this);
 }

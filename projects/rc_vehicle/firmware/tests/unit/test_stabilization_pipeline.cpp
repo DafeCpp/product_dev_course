@@ -79,11 +79,11 @@ TEST_F(StabilizationPipelineTest, DriftPolicyRunsSlipController) {
       .slip_angle_active = true,
       .oversteer_guard_active = false,
   };
-  input_.slip_angle_deg = 0.0f;
+  input_.slip_angle_deg = 40.0f;  // выше уставки — регулятор снимает газ
 
   const auto output = pipeline_.Process(cfg_, policy, input_);
 
-  EXPECT_GT(output.command.throttle, input_.command.throttle);
+  EXPECT_LT(output.command.throttle, input_.command.throttle);
   EXPECT_FLOAT_EQ(output.command.steering, input_.command.steering);
 }
 
