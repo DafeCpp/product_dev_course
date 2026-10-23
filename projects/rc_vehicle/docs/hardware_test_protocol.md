@@ -92,11 +92,11 @@ UI шлёт команды каждые 20 мс, инструмента для �
 
 ## 3. Покой (стол, без вибраций)
 
-Одна запись покрывает 3.1–3.3: калибровка gyro → «Очистить» → **8 мин** не трогать → CSV.
+Одна запись покрывает 3.1–3.3: калибровка gyro → «Очистить» → **6.5 мин** не трогать → CSV (буфер PSRAM держит ≈ 7 мин, дольше начало записи затрётся).
 
 | № | Проверка | PASS | Лог | Разбор | SIL | Итог |
 |---|---|---|---|---|---|---|
-| 3.1 | Дрейф bias gyro (TP Ф0) | < 0.5 °/с за минуту (порог ориентировочный, уточнить по этой записи) | PSRAM 8 мин | `trial_metrics.py rest.csv --only gyro-bias` | `test_trial_metrics.py::test_gyro_bias_on_sil_rest_log` | [ ] ___ °/с/мин |
+| 3.1 | Дрейф bias gyro (TP Ф0) | < 0.5 °/с за минуту (порог ориентировочный, уточнить по этой записи) | PSRAM 6.5 мин | `trial_metrics.py rest.csv --only gyro-bias` | `test_trial_metrics.py::test_gyro_bias_on_sil_rest_log` | [ ] ___ °/с/мин |
 | 3.2 | Madgwick без дрейфа (RM Ф0) | pitch/roll < 1 °/мин, std < 1° | тот же | `gyro-bias` + `analyze_telemetry.py` | — | [ ] |
 | 3.3 | EKF и ZUPT в покое (IC D1#9, D5#3–4, 7) | \|vx\|, \|vy\| < 0.05 м/с; \|slip\| < 1°; std(gz) < 2 dps; \|a\| в [0.95, 1.05] g | тот же | `analyze_telemetry.py` (его порог ZUPT 0.1 мягче — смотреть 0.05) | `test_plausibility.py::test_coast_without_command_stays_stopped` | [ ] |
 | 3.4 | Baseline шумов (TP Ф0) | записан; PASS нет | тот же | `analyze_telemetry.py` (std по осям); шумовая модель SIL подгоняется только по логам с движением: `validate_logs.py --fit-road-noise --road-logs *_7.0_*.csv` (нужны скорости ≥ 0.5 м/с в нескольких диапазонах) | — | [ ] |
