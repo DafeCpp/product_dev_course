@@ -368,21 +368,22 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
   const float trajectory_rate_rps =
       input.lateral_accel_g * kG / std::max(input.vx_ms, kMinSpeedMs);
   // Без скорости вдоль оси по EKF ay/vx — шум акселерометра (реальный лог
-  // 2026-08-02: vx≈0 при |ay| до 2g).
-  const bool rotation_valid =
-      turning && input.lateral_accel_valid && input.vx_ms >= kMinSpeedMs;
+  // 2026-08-02: vx≈0 при |ay| до 2g); завышенная vx без якоря занижает
+  // скорость траектории.
+  const bool rotation_valid = turning && input.lateral_accel_valid &&
+                              input.vx_ms >= kMinSpeedMs &&
+                              KidsModeProcessor::IsSpeedTrusted(input);
   const float rotation_excess_rps =
       rotation_valid ? std::copysign(1.0f, input.yaw_rate_rps) *
                            (input.yaw_rate_rps - trajectory_rate_rps)
                      : 0.0f;
-  // Один отсчёт засчитывает не больше 10 мс: после затянувшегося тика
-  // одиночный всплеск не должен сразу заполнить выдержку.
+  // Один отсчёт засчитывает выдержкам и возврату газа не больше 10 мс:
+  // после затянувшегося тика одиночный отсчёт не должен заполнить выдержку.
   constexpr float kMaxDwellPerSampleS = 0.01f;
+  const float sample_s = std::min(dt_sec, kMaxDwellPerSampleS);
   rotation_excess_time_s_ =
       rotation_excess_rps > kRotationExcessRps
-          ? std::min(
-                rotation_excess_time_s_ + std::min(dt_sec, kMaxDwellPerSampleS),
-                kRotationExcessHoldS)
+          ? std::min(rotation_excess_time_s_ + sample_s, kRotationExcessHoldS)
           : 0.0f;
 
   const bool slip_oversteer =
@@ -404,7 +405,7 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
   } else if (oversteer_active_) {
     const bool calm = rotation_excess_rps < 0.5f * kRotationExcessRps &&
                       std::abs(slip) < cfg.oversteer.slip_thresh_deg;
-    calm_time_s_ = calm ? calm_time_s_ + dt_sec : 0.0f;
+    calm_time_s_ = calm ? calm_time_s_ + sample_s : 0.0f;
     if (calm_time_s_ >= kReleaseCalmS) oversteer_active_ = false;
   }
 
@@ -421,7 +422,7 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
   } else if (throttle_ceiling_ < 1.0f) {
     // После заноса газ возвращается медленнее slew rate режима.
     throttle_ceiling_ =
-        std::min(throttle_ceiling_ + kCeilingRecoveryPerS * dt_sec, 1.0f);
+        std::min(throttle_ceiling_ + kCeilingRecoveryPerS * sample_s, 1.0f);
     if (may_cut) throttle = std::min(throttle, throttle_ceiling_);
   }
 }

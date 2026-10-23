@@ -68,6 +68,11 @@ class KidsModeProcessor {
    * недоверенная скорость EKF — без пола. Пока колёса буксуют, накат
    * считается по скорости корпуса: скорость EKF идёт за колёсами (LOS-385).
    */
+  /** Скорости EKF можно верить: дисперсия vx мала и guard расходимости не
+   *  сработал. */
+  [[nodiscard]] static bool IsSpeedTrusted(
+      const StabilizationInput& input) noexcept;
+
   [[nodiscard]] static float FloorSkidCut(const StabilizationConfig& cfg,
                                           const StabilizationInput& input,
                                           float commanded,

@@ -240,6 +240,30 @@ TEST_F(RotationExcessTest, LongTickIsOneSample) {
   EXPECT_TRUE(guard_.IsActive());
 }
 
+TEST_F(RotationExcessTest, LongTickDoesNotReleaseOrRestoreThrottle) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  StabilizationInput calm = Corner(1.0f, 1.0f);
+  calm.dt_ms = 500;
+  EXPECT_NEAR(Run(calm, 1), 0.3f, 1e-5f);
+  EXPECT_TRUE(guard_.IsActive());
+  (void)Run(Corner(0.0f, 0.0f), 1);
+  ASSERT_FALSE(guard_.IsActive());
+  StabilizationInput straight = Corner(0.0f, 0.0f);
+  straight.dt_ms = 3000;
+  EXPECT_LT(Run(straight, 1), 0.31f);
+}
+
+TEST_F(RotationExcessTest, IgnoredWithUntrustedSpeed) {
+  StabilizationInput input = Corner(1.6f, 1.0f);
+  input.vx_variance = 100.0f;
+  (void)Run(input, 100);
+  EXPECT_FALSE(guard_.IsActive());
+  input.vx_variance = 0.0f;
+  input.ekf_diverged = true;
+  (void)Run(input, 100);
+  EXPECT_FALSE(guard_.IsActive());
+}
+
 TEST_F(RotationExcessTest, UndersteerIsNotOversteer) {
   // Снос передней оси: кузов вращается медленнее траектории.
   (void)Run(Corner(1.0f, 1.8f), 100);
