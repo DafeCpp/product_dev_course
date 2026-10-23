@@ -774,6 +774,15 @@ bool ReadDeadband(const cJSON* json, float& out) {
   return true;
 }
 
+/** reversed из JSON: нет ключа — out не трогаем; не bool — false. */
+bool ReadReversed(const cJSON* json, bool& out) {
+  const cJSON* item = cJSON_GetObjectItem(json, "reversed");
+  if (!item) return true;
+  if (!cJSON_IsBool(item)) return false;
+  out = cJSON_IsTrue(item);
+  return true;
+}
+
 void AddMotorConfigState(cJSON* reply, const MotorConfig& saved) {
   const MotorConfig& active = PwmControlGetMotorConfig();
   cJSON_AddItemToObject(reply, "active", MotorConfigToJson(active));
@@ -799,7 +808,9 @@ void HandleSetMotorConfig(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
   MotorConfig cfg = LoadSavedMotorConfig();
 
   cJSON* reset_item = cJSON_GetObjectItem(json, "reset");
-  if (cJSON_IsTrue(reset_item)) {
+  if (reset_item && !cJSON_IsBool(reset_item)) {
+    error = "invalid_config";
+  } else if (cJSON_IsTrue(reset_item)) {
     if (motor_config_nvs::Erase() != ESP_OK) error = "nvs_error";
   } else {
     const cJSON* profile_item = cJSON_GetObjectItem(json, "profile");
@@ -820,11 +831,10 @@ void HandleSetMotorConfig(IVehicleControl& vc, cJSON* json, httpd_req_t* req) {
     if (!error && (!ReadPulseUs(json, "min_us", cfg.min_us) ||
                    !ReadPulseUs(json, "neutral_us", cfg.neutral_us) ||
                    !ReadPulseUs(json, "max_us", cfg.max_us) ||
-                   !ReadDeadband(json, cfg.deadband))) {
+                   !ReadDeadband(json, cfg.deadband) ||
+                   !ReadReversed(json, cfg.reversed))) {
       error = "invalid_config";
     }
-    cJSON* rev_item = cJSON_GetObjectItem(json, "reversed");
-    if (cJSON_IsBool(rev_item)) cfg.reversed = cJSON_IsTrue(rev_item);
 
     if (!error && !cfg.IsValid()) error = "invalid_config";
     if (!error && motor_config_nvs::Save(cfg) != ESP_OK) error = "nvs_error";

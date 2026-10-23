@@ -53,6 +53,7 @@ WebSocket-команды:
 {"type": "set_motor_config", "profile": "vesc_pwm", "deadband": 0.03}
 // сбросить на значения по умолчанию (удаляет запись NVS)
 {"type": "set_motor_config", "reset": true}
+// поле неверного типа (например, "reversed": "false" или "deadband": null) — ошибка, ничего не сохраняется
 // ответ: те же поля плюс ok и error (invalid_profile | invalid_config | nvs_error)
 {"type": "set_motor_config_ack", "ok": true, "active": {...}, "saved": {...}, "pending_reboot": true}
 ```
