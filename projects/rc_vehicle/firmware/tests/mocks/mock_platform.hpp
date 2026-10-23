@@ -347,6 +347,10 @@ class FakePlatform : public VehicleControlPlatform {
   /** Счётчики декодеров, которые вернёт GetRcStats() (LOS-216). */
   void SetRcStats(std::optional<RcInputStats> stats) { rc_stats_ = stats; }
 
+  std::optional<EscTelemetry> GetEscTelemetry() override { return esc_; }
+  /** Телеметрия ESC, которую вернёт GetEscTelemetry() (LOS-19). */
+  void SetEscTelemetry(std::optional<EscTelemetry> esc) { esc_ = esc; }
+
   void PublishRcLinkEvent(const RcLinkEvent& evt) override {
     rc_link_events_.push_back(evt);
   }
@@ -483,6 +487,7 @@ class FakePlatform : public VehicleControlPlatform {
   // RC Input
   std::optional<RcCommand> rc_command_;
   std::optional<RcInputStats> rc_stats_;
+  std::optional<EscTelemetry> esc_;
   std::vector<RcLinkEvent> rc_link_events_;
 
   // PWM Output

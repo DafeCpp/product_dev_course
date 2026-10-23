@@ -5,6 +5,7 @@
 #include <optional>
 #include <string_view>
 
+#include "esc_telemetry.hpp"
 #include "imu_calibration.hpp"
 #include "mag_calibration.hpp"
 #include "mag_sensor.hpp"
@@ -272,6 +273,18 @@ class VehicleControlPlatform {
    * блокироваться дольше короткой критической секции.
    */
   [[nodiscard]] virtual std::optional<RcInputStats> GetRcStats() {
+    return std::nullopt;
+  }
+
+  /**
+   * @brief Последняя телеметрия ESC (LOS-19)
+   * @return Снимок с age_ms; nullopt, если у ESC нет телеметрии (профиль
+   * brushed_pwm) или ответов давно не было
+   *
+   * Вызывается из control loop — реализация отдаёт копию, сохранённую
+   * фоновой задачей опроса, под короткой критической секцией.
+   */
+  [[nodiscard]] virtual std::optional<EscTelemetry> GetEscTelemetry() {
     return std::nullopt;
   }
 

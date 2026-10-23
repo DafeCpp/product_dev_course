@@ -694,6 +694,24 @@ RcInputStats MakeRcStats(bool thr_active, bool str_active,
 
 }  // namespace
 
+// LOS-19: телеметрия ESC из платформы попадает в WS-кадр, а без неё блока нет.
+TEST_F(ProcessorTest, EscTelemetryReachesTelemJson) {
+  TelemetryHandler telem_handler(platform_, 0);
+  ctx_->telem_handler = &telem_handler;
+
+  Step();
+  EXPECT_EQ(platform_.GetLastTelem().find("\"esc\""), std::string::npos);
+
+  EscTelemetry esc{};
+  esc.erpm = 12000.0f;
+  esc.input_voltage_v = 11.1f;
+  platform_.SetEscTelemetry(esc);
+  Step();
+  const std::string& json = platform_.GetLastTelem();
+  EXPECT_NE(json.find("\"esc\""), std::string::npos);
+  EXPECT_NE(json.find("\"erpm\":12000"), std::string::npos);
+}
+
 TEST_F(ProcessorTest, RcLink_LossAndRestorePublishedAndLogged) {
   RcInputHandler rc_handler(platform_, 20);
   TelemetryHandler telem_handler(platform_, 0);

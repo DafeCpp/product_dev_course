@@ -549,6 +549,10 @@ void ControlLoopProcessor::UpdateTelemetry(const ControlTickInput& input,
     // обращения к платформе из чужого потока.
     snap.failsafe = ctx_.platform.FailsafeIsActive();
     snap.rc_loss_count = rc_link_monitor_.LossCount();
+    if (const auto esc = ctx_.platform.GetEscTelemetry()) {
+      snap.esc_available = true;
+      snap.esc = *esc;
+    }
     ctx_.telem_handler->SendTelemetry(input.now_ms, snap);
   }
 

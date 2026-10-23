@@ -1351,6 +1351,15 @@ function updateTelem(data) {
         html += row('Throttle', data.act.throttle?.toFixed(2) ?? 'N/A');
         html += row('Steering', data.act.steering?.toFixed(2) ?? 'N/A');
     }
+    if (data.esc) {
+        // LOS-19: телеметрия VESC по UART
+        const e = data.esc;
+        html += row('ESC ERPM', e.erpm?.toFixed(0) ?? 'N/A');
+        html += row('ESC V / A', `${e.v_in?.toFixed(2) ?? '?'} V / ${e.i_motor?.toFixed(1) ?? '?'} A (bat ${e.i_in?.toFixed(1) ?? '?'} A)`);
+        html += row('ESC Duty', e.duty?.toFixed(3) ?? 'N/A');
+        html += row('ESC T FET', (e.t_fet?.toFixed(1) ?? 'N/A') + ' °C');
+        if (e.fault) html += row('ESC Fault', String(e.fault));
+    }
     if (data.ekf) {
         html += row('EKF Slip', (data.ekf.slip_deg?.toFixed(1) ?? 'N/A') + ' °');
         html += row('EKF Speed', (data.ekf.speed_ms?.toFixed(2) ?? 'N/A') + ' m/s');

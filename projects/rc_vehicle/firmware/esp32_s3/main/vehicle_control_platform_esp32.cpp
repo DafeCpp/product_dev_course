@@ -24,6 +24,7 @@
 #include "rc_link_monitor.hpp"  // rc_vehicle::RcLinkEvent, FormatRcLinkEvent
 #include "rc_vehicle_common.hpp"
 #include "stabilization_config_nvs.hpp"
+#include "vesc_uart.hpp"
 
 namespace rc_vehicle {
 
@@ -163,6 +164,10 @@ std::expected<void, PlatformError> VehicleControlPlatformEsp32::InitPwm() {
   // штатный brushed ESC, как до появления профилей.
   MotorConfig motor = MotorConfig::Defaults(MotorProfile::BrushedPwm);
   (void)motor_config_nvs::Load(motor);
+  if (motor.profile == MotorProfile::VescPwm && VescUartInit() != 0) {
+    // Не фатально: газ идёт по PWM, без UART пропадает только телеметрия.
+    Log(LogLevel::Warning, "VESC UART telemetry init failed");
+  }
   return (PwmControlInit(motor) == 0)
              ? std::expected<void, PlatformError>{}
              : std::unexpected(PlatformError::PwmInitFailed);
@@ -429,6 +434,10 @@ std::optional<RcCommand> VehicleControlPlatformEsp32::GetRc() {
 
 std::optional<RcInputStats> VehicleControlPlatformEsp32::GetRcStats() {
   return RcInputGetStats();
+}
+
+std::optional<EscTelemetry> VehicleControlPlatformEsp32::GetEscTelemetry() {
+  return VescUartGetTelemetry();
 }
 
 void VehicleControlPlatformEsp32::PublishRcLinkEvent(const RcLinkEvent& evt) {
