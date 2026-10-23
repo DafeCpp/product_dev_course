@@ -264,6 +264,24 @@ TEST_F(RotationExcessTest, DisabledGuardDropsCeiling) {
   EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1), 1.0f);
 }
 
+TEST_F(RotationExcessTest, DisabledReductionDropsCeiling) {
+  (void)Run(Corner(1.6f, 1.0f), 20);
+  (void)Run(Corner(0.0f, 0.0f), 1);
+  ASSERT_LT(Run(Corner(0.0f, 0.0f), 1), 1.0f);
+  cfg_.oversteer.throttle_reduction = 0.0f;
+  EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1), 1.0f);
+  cfg_.oversteer.throttle_reduction = 0.7f;
+  EXPECT_FLOAT_EQ(Run(Corner(0.0f, 0.0f), 1), 1.0f);
+}
+
+TEST_F(RotationExcessTest, DetectsWithoutReduction) {
+  // Срез выключен, но предупреждение в телеметрии остаётся.
+  cfg_.oversteer.throttle_reduction = 0.0f;
+  EXPECT_FLOAT_EQ(Run(Corner(1.6f, 1.0f), 20), 1.0f);
+  EXPECT_TRUE(guard_.IsActive());
+  EXPECT_FALSE(guard_.IsCuttingThrottle());
+}
+
 TEST_F(RotationExcessTest, ImuOffDropsCeiling) {
   (void)Run(Corner(1.6f, 1.0f), 20);
   StabilizationInput input = Corner(0.0f, 0.0f);

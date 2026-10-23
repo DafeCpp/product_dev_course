@@ -444,9 +444,16 @@ void ControlLoopProcessor::UpdatePwm(const ControlTickInput& input,
     }
     const float base_slew_thr = effective_slew_thr;
     // Срез газа oversteer guard вперёд — сразу, без slew rate (LOS-380).
+    // Counterfactual Kids-газ режется так же: иначе якорь EKF держался бы за
+    // старый высокий газ.
     if (state.bypass_throttle_slew_down && state.command.throttle >= 0.0f &&
         state.command.throttle < persistent_.applied.throttle) {
       persistent_.applied.throttle = state.command.throttle;
+    }
+    if (state.bypass_throttle_slew_down && kids_speed_limiter &&
+        state.motor_model_target_throttle >= 0.0f &&
+        state.motor_model_target_throttle < persistent_.motor_model_throttle) {
+      persistent_.motor_model_throttle = state.motor_model_target_throttle;
     }
     if (input.config.braking_mode == BrakingMode::Brake &&
         std::abs(state.command.throttle) <

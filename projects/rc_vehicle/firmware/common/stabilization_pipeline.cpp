@@ -403,8 +403,12 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
     if (calm_time_s_ >= kReleaseCalmS) oversteer_active_ = false;
   }
 
-  const bool may_cut = cfg.oversteer.throttle_reduction > 0.0f &&
-                       reduce_throttle && throttle > 0.0f;
+  const bool reduction_enabled =
+      cfg.oversteer.throttle_reduction > 0.0f && reduce_throttle;
+  // Срез выключен — старый потолок не должен ожить при его включении;
+  // детекция для телеметрии продолжается.
+  if (!reduction_enabled) throttle_ceiling_ = 1.0f;
+  const bool may_cut = reduction_enabled && throttle > 0.0f;
   cutting_throttle_ = oversteer_active_ && may_cut;
   if (cutting_throttle_) {
     throttle *= (1.0f - cfg.oversteer.throttle_reduction);
