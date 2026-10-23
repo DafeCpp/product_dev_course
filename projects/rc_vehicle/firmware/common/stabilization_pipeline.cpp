@@ -375,9 +375,14 @@ void OversteerGuard::Process(const StabilizationConfig& cfg, float& throttle,
       rotation_valid ? std::copysign(1.0f, input.yaw_rate_rps) *
                            (input.yaw_rate_rps - trajectory_rate_rps)
                      : 0.0f;
+  // Один отсчёт засчитывает не больше 10 мс: после затянувшегося тика
+  // одиночный всплеск не должен сразу заполнить выдержку.
+  constexpr float kMaxDwellPerSampleS = 0.01f;
   rotation_excess_time_s_ =
       rotation_excess_rps > kRotationExcessRps
-          ? std::min(rotation_excess_time_s_ + dt_sec, kRotationExcessHoldS)
+          ? std::min(
+                rotation_excess_time_s_ + std::min(dt_sec, kMaxDwellPerSampleS),
+                kRotationExcessHoldS)
           : 0.0f;
 
   const bool slip_oversteer =

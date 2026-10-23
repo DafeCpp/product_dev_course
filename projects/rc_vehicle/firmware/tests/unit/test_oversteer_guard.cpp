@@ -230,6 +230,16 @@ TEST_F(RotationExcessTest, IgnoresSingleTickSpike) {
   EXPECT_FALSE(guard_.IsActive());
 }
 
+TEST_F(RotationExcessTest, LongTickIsOneSample) {
+  // Тик 50 мс после зависания цикла — всё равно один отсчёт.
+  StabilizationInput input = Corner(1.6f, 1.0f);
+  input.dt_ms = 50;
+  (void)Run(input, 1);
+  EXPECT_FALSE(guard_.IsActive());
+  (void)Run(input, 2);
+  EXPECT_TRUE(guard_.IsActive());
+}
+
 TEST_F(RotationExcessTest, UndersteerIsNotOversteer) {
   // Снос передней оси: кузов вращается медленнее траектории.
   (void)Run(Corner(1.0f, 1.8f), 100);
