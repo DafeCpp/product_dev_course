@@ -81,13 +81,15 @@ void DriftModeStrategy::ApplyDefaults(
   cfg.pitch_comp.max_correction = 0.15f;
 
   cfg.slip_angle.target_deg = 15.0f;
-  cfg.slip_angle.pid.kp = 0.008f;
-  cfg.slip_angle.pid.ki = 0.0f;
-  cfg.slip_angle.pid.kd = 0.002f;
-  cfg.slip_angle.pid.max_integral = 5.0f;
-  cfg.slip_angle.pid.max_correction = 0.25f;
+  cfg.slip_angle.pid.kp = 0.02f;
+  cfg.slip_angle.pid.ki = 0.02f;
+  cfg.slip_angle.pid.kd = 0.004f;
+  cfg.slip_angle.pid.max_integral = 40.0f;
+  cfg.slip_angle.pid.max_correction = 0.8f;
 
-  cfg.slew_throttle = 0.8f;
+  // Регулятор заноса снимает газ до 0.8; при slew 0.8/с срез шёл бы ~1 с,
+  // а задняя ось после срыва разворачивает машину за ~0.3 с (LOS-380).
+  cfg.slew_throttle = 3.0f;
   cfg.slew_steering = 4.0f;
 }
 

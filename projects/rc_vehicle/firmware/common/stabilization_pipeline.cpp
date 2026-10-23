@@ -255,15 +255,31 @@ void SlipAngleController::Process(const StabilizationConfig& cfg,
   if (!input.imu_enabled) return;
   if (input.dt_ms == 0) return;
 
+  // Тормоз и реверс не регулируем: регулятор только снимает газ вперёд.
+  if (throttle <= 0.0f) {
+    pid_.Reset();
+    return;
+  }
+
   const float dt_sec = static_cast<float>(input.dt_ms) * 0.001f;
   const float slip_error =
       cfg.slip_angle.target_deg -
       DriftSlipDeg(input.slip_angle_deg, input.yaw_rate_rps);
   const float pid_out = pid_.Step(slip_error, dt_sec);
+  // Стик задаёт предел газа: ниже уставки газ равен стику, выше регулятор
+  // снимает газ. Поправка к стику в обе стороны держала занос лишь около
+  // одного положения стика: угол заноса круто зависит от газа, и стик
+  // работал как возмущение (LOS-380). Интеграл копит только снятие газа,
+  // иначе после заноса он держал бы газ на пределе.
+  if (pid_.GetIntegral() > 0.0f) pid_.SetIntegral(0.0f);
+  const float cut = std::min(pid_out, 0.0f);
 
-  throttle = std::clamp(throttle + pid_out * input.stabilization_weight *
-                                       input.mode_transition_weight,
-                        -1.0f, 1.0f);
+  // Пола наката, как у anti-spin Kids (LOS-389), здесь нет: с ним регулятор
+  // не может снять газ ниже наката и не удерживает уставку (на газе 1.0 пик
+  // заноса в SIL 61° против 39° без пола).
+  throttle = std::max(throttle + cut * input.stabilization_weight *
+                                     input.mode_transition_weight,
+                      0.0f);
 }
 
 float SlipAngleController::DriftSlipDeg(float slip_deg,

@@ -53,7 +53,7 @@ TEST_F(SlipAngleControllerTest, WorksRegardlessOfMode_ModeFilteringIsDoneByTrait
   // control loop, not inside the controller. Controller is mode-agnostic.
   cfg_.mode = DriveMode::Normal;
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
-  ekf_.SetState(2.0f, 0.5f, 0.5f);
+  ekf_.SetState(2.0f, 1.5f, 0.0f);
   float throttle = 0.5f;
   ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
   EXPECT_NE(throttle, 0.5f)
@@ -61,20 +61,42 @@ TEST_F(SlipAngleControllerTest, WorksRegardlessOfMode_ModeFilteringIsDoneByTrait
 }
 
 TEST_F(SlipAngleControllerTest, ActiveInDriftMode) {
-  // EKF state: vx=2, vy=0 → slip=0°, target=15° → error=15°
-  ekf_.SetState(2.0f, 0.0f, 0.0f);
+  // EKF state: vx=2, vy=1.5 → slip≈36.9°, target=15°
+  ekf_.SetState(2.0f, 1.5f, 0.0f);
   float throttle = 0.5f;
   ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
   EXPECT_NE(throttle, 0.5f) << "Slip PID should be active in Drift mode";
 }
 
-TEST_F(SlipAngleControllerTest, IncreasesThrottle_WhenSlipBelowTarget) {
-  // Slip = 0° (vx=2, vy=0), target = 15° → error = 15° > 0 → positive PID output
-  ekf_.SetState(2.0f, 0.0f, 0.0f);
+// LOS-380: стик — предел газа. Ниже уставки регулятор не добавляет газ и не
+// копит интеграл, иначе после заноса газ держался бы выше стика.
+TEST_F(SlipAngleControllerTest, StickIsCeiling_WhenSlipBelowTarget) {
+  cfg_.slip_angle.pid.ki = 0.05f;
+  ctrl_.Init(cfg_, ekf_, &imu_handler_);
+  ekf_.SetState(2.0f, 0.0f, 0.0f);  // slip 0°, target 15°
   float throttle = 0.5f;
+  for (int i = 0; i < 100; ++i) {
+    throttle = 0.5f;
+    ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
+    EXPECT_FLOAT_EQ(throttle, 0.5f);
+  }
+  EXPECT_LE(ctrl_.GetPid().GetIntegral(), 0.0f);
+}
+
+TEST_F(SlipAngleControllerTest, NeverCutsBelowZero) {
+  cfg_.slip_angle.pid.max_correction = 1.0f;
+  ctrl_.Init(cfg_, ekf_, &imu_handler_);
+  ekf_.SetState(2.0f, 2.0f, 0.0f);  // slip 45°
+  float throttle = 0.1f;
   ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
-  EXPECT_GT(throttle, 0.5f)
-      << "Slip below target → increase throttle to induce more slip";
+  EXPECT_FLOAT_EQ(throttle, 0.0f) << "Регулятор снимает газ, но не тормозит";
+}
+
+TEST_F(SlipAngleControllerTest, BrakeAndReverseUntouched) {
+  ekf_.SetState(2.0f, 1.5f, 0.0f);
+  float throttle = -0.5f;
+  ctrl_.Process(cfg_, throttle, 1.0f, 1.0f, 2);
+  EXPECT_FLOAT_EQ(throttle, -0.5f);
 }
 
 TEST_F(SlipAngleControllerTest, DecreasesThrottle_WhenSlipAboveTarget) {
@@ -127,7 +149,7 @@ TEST_F(SlipAngleControllerTest, ThrottleClamped_ToMinusOnePlusOne) {
 }
 
 TEST_F(SlipAngleControllerTest, CorrectionScaledByModeWeight) {
-  ekf_.SetState(2.0f, 0.0f, 0.0f);
+  ekf_.SetState(2.0f, 1.5f, 0.0f);
 
   float throttle1 = 0.5f;
   ctrl_.Process(cfg_, throttle1, 1.0f, 1.0f, 2);
@@ -138,10 +160,9 @@ TEST_F(SlipAngleControllerTest, CorrectionScaledByModeWeight) {
   ctrl_.Process(cfg_, throttle2, 1.0f, 0.5f, 2);
   float correction_half = throttle2 - 0.5f;
 
-  if (std::abs(correction_full) > 0.001f) {
-    EXPECT_NEAR(correction_half, correction_full * 0.5f, 0.01f)
-        << "Correction should scale with mode_w";
-  }
+  ASSERT_LT(correction_full, -0.001f);
+  EXPECT_NEAR(correction_half, correction_full * 0.5f, 0.01f)
+      << "Correction should scale with mode_w";
 }
 
 TEST_F(SlipAngleControllerTest, SetGains_UpdatesPidCoefficients) {
@@ -164,7 +185,7 @@ TEST_F(SlipAngleControllerTest, Reset_ClearsPidState) {
   EXPECT_FLOAT_EQ(ctrl_.GetPid().GetIntegral(), 0.0f);
 }
 
-TEST_F(SlipAngleControllerTest, ZeroTargetSlip_CorrectsBothDirections) {
+TEST_F(SlipAngleControllerTest, ZeroTargetSlip_CutsOnlyOutwardSlip) {
   cfg_.slip_angle.target_deg = 0.0f;  // Target: no drift at all
   ctrl_.Init(cfg_, ekf_, &imu_handler_);
 
@@ -180,7 +201,7 @@ TEST_F(SlipAngleControllerTest, ZeroTargetSlip_CorrectsBothDirections) {
   ctrl_.Process(cfg_, throttle_inside, 1.0f, 1.0f, 2);
 
   EXPECT_LT(throttle_drift, 0.5f);
-  EXPECT_GT(throttle_inside, 0.5f);
+  EXPECT_FLOAT_EQ(throttle_inside, 0.5f);
 }
 
 // LOS-380: занос в левом повороте даёт slip < 0. Со знаковым slip ошибка
@@ -193,16 +214,16 @@ TEST_F(SlipAngleControllerTest, LeftTurnDriftAboveTarget_DecreasesThrottle) {
 }
 
 TEST_F(SlipAngleControllerTest, LeftAndRightDriftGiveSameCorrection) {
-  ekf_.SetState(2.0f, -0.3f, 1.0f);  // левый поворот, занос ≈ 8.5°
+  ekf_.SetState(2.0f, -1.0f, 1.0f);  // левый поворот, занос ≈ 26.6°
   float left = 0.5f;
   ctrl_.Process(cfg_, left, 1.0f, 1.0f, 2);
 
   ctrl_.Reset();
-  ekf_.SetState(2.0f, 0.3f, -1.0f);  // правый поворот, занос ≈ 8.5°
+  ekf_.SetState(2.0f, 1.0f, -1.0f);  // правый поворот, занос ≈ 26.6°
   float right = 0.5f;
   ctrl_.Process(cfg_, right, 1.0f, 1.0f, 2);
 
-  EXPECT_GT(left, 0.5f);  // ниже уставки 15° — добавить газ
+  EXPECT_LT(left, 0.5f);  // выше уставки 15° — снять газ
   EXPECT_FLOAT_EQ(left, right);
 }
 

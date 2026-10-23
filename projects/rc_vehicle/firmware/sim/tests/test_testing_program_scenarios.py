@@ -471,36 +471,40 @@ DRIFT_TARGET_DEG = 15.0
 DRIFT_THROTTLE = 0.6
 
 
-def _drift_hold(steering: float) -> tuple[float, float]:
-    """LOS-384: Drift на скользком (μ = 0.3), газ DRIFT_THROTTLE и руль
-    в поворот 5 с.
+@functools.cache
+def _drift_hold(steering: float, throttle: float = DRIFT_THROTTLE,
+                target_deg: float = DRIFT_TARGET_DEG
+                ) -> tuple[float, float, float]:
+    """LOS-384: Drift на скользком (μ = 0.3), газ throttle и руль в поворот
+    5 с.
 
-    Возвращает средний |β| модели и средний |slip| EKF за последние 2 с.
+    Возвращает средний |β| модели и средний |slip| EKF за последние 2 с и
+    пик |β| за весь поворот.
     """
     p = get_profile("fitted_2026_08_02")
     p.tire_mu = 0.3
     with ClosedLoopSim(BIN, params=p, dynamic=True, drive_mode="drift",
                        stabilize=True, sensor_noise=False,
-                       slip_target_deg=DRIFT_TARGET_DEG) as sim:
+                       slip_target_deg=target_deg) as sim:
         sim.run(4500, rc_throttle=0.0, rc_steering=0.0)
         sim.run(1000, rc_throttle=0.4, rc_steering=0.0)
         beta, ekf = [], []
         for _ in range(2500):
-            row = sim.step(DT_MS, DRIFT_THROTTLE, steering)
+            row = sim.step(DT_MS, throttle, steering)
             st = sim.model.state
             beta.append(abs(math.degrees(math.atan2(st.vy, max(st.v, 0.1)))))
             ekf.append(abs(row["ekf_slip_deg"]))
-    return _mean_tail(beta, n=1000), _mean_tail(ekf, n=1000)
+    return _mean_tail(beta, n=1000), _mean_tail(ekf, n=1000), max(beta)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "LOS-380: slip-PID в Drift — чистый P (kp 0.008, ki 0). EKF видит занос "
-    "верно (≈30° при β ≈ 29°), но на ошибке 15° коррекция газа лишь −0.12, "
-    "и занос остаётся вдвое больше уставки: статическая ошибка P-регулятора."))
 @pytest.mark.parametrize("steering", [-0.6, 0.6], ids=["right", "left"])
 def test_drift_holds_slip_target(steering):
-    """7.4: в повороте Drift держит |β| около target_deg (±5°)."""
-    beta, _ = _drift_hold(steering)
+    """7.4: в повороте Drift держит |β| около target_deg (±5°).
+
+    LOS-380: стик задаёт предел газа, PI только снимает газ. Прежний
+    P-регулятор с поправкой к стику держал β ≈ 29° при уставке 15°.
+    """
+    beta, _, _ = _drift_hold(steering)
     assert beta == pytest.approx(DRIFT_TARGET_DEG, abs=5.0)
 
 
@@ -509,18 +513,35 @@ def test_drift_left_and_right_turns_match():
     знаковый slip: в левом повороте занос (slip < 0) увеличивал ошибку
     уставки, PID добавлял газ, и машину разворачивало (|β| ≈ 50° против 29°
     в правом)."""
-    right, _ = _drift_hold(-0.6)
-    left, _ = _drift_hold(0.6)
+    right, _, _ = _drift_hold(-0.6)
+    left, _, _ = _drift_hold(0.6)
     assert left == pytest.approx(right, abs=1.0)
 
 
 def test_drift_scenario_slides():
-    """Модель: сценарий удержания заноса и правда заносит, то есть xfail
-    выше падает из-за прошивки, а не слабого сценария. EKF в устойчивом
-    заносе оценивает угол близко к модели (LOS-380)."""
-    beta, ekf = _drift_hold(-0.6)
-    assert beta > DRIFT_TARGET_DEG
-    assert ekf == pytest.approx(beta, abs=5.0)
+    """Модель: с недостижимой уставкой регулятор газ не снимает, и тот же
+    сценарий заносит вдвое сильнее уставки, то есть удержание выше — заслуга
+    прошивки, а не слабого сценария. При удержании EKF оценивает угол близко
+    к модели (LOS-380)."""
+    free, _, _ = _drift_hold(-0.6, target_deg=89.0)
+    assert free > 2 * DRIFT_TARGET_DEG
+    held, ekf, _ = _drift_hold(-0.6)
+    assert ekf == pytest.approx(held, abs=5.0)
+
+
+@pytest.mark.parametrize("throttle", [0.8, 1.0])
+def test_drift_full_throttle_does_not_spin(throttle):
+    """LOS-380: газ выше рабочего не разворачивает машину. Без среза газа
+    пик |β| 48° на 0.8 и разворот (88°) на 1.0; прежний регулятор добавлял
+    газ к стику, и пик доходил до 86–87°.
+
+    Уставку на большом газе регулятор не держит (β ≈ 32°): в заносе EKF
+    завышает vx по мотор-модели и занижает угол заноса.
+    """
+    _, _, free_peak = _drift_hold(-0.6, throttle, target_deg=89.0)
+    _, _, peak = _drift_hold(-0.6, throttle)
+    assert peak < 45.0
+    assert peak < free_peak - 5.0
 
 
 KIDS_PRESET_LIMITS = {"toddler": 0.15, "child": 0.30, "preteen": 0.50}

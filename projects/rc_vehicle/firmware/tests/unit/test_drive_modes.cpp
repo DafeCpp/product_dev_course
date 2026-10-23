@@ -206,8 +206,10 @@ TEST(DriftModeDefaultsTest, HasSlipAnglePid) {
   DriftModeStrategy{}.ApplyDefaults(cfg);
 
   EXPECT_GT(cfg.slip_angle.pid.kp, 0.0f);
+  EXPECT_GT(cfg.slip_angle.pid.ki, 0.0f);  // без I занос выше уставки (LOS-380)
   EXPECT_FLOAT_EQ(cfg.slip_angle.target_deg, 15.0f);
-  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.max_correction, 0.25f);
+  EXPECT_FLOAT_EQ(cfg.slip_angle.pid.max_correction, 0.8f);
+  EXPECT_FLOAT_EQ(cfg.slew_throttle, 3.0f);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
