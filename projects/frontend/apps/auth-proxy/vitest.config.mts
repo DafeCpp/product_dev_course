@@ -14,15 +14,13 @@ export default defineConfig({
       reportsDirectory: './coverage',
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.d.ts', 'src/**/__mocks__/**'],
-      // Ratchet from Coverage Baseline run 29654381568, re-measured with the
-      // v8 provider after the Jest -> Vitest switch (same 53 tests): v8 counts
-      // lines differently from Jest's istanbul, so lines read 66.85 instead of
-      // 69.52 and branches 60.34 instead of 59.55.
+      // Ratchet from the LOS-203 coverage run (v8 provider): lines 97.96,
+      // statements 97.32, functions 98.07, branches 92.01.
       thresholds: process.env.COVERAGE_ENFORCE_RATCHET === 'true' ? {
-        lines: 66.85,
-        statements: 58,
-        functions: 55,
-        branches: 60.34,
+        lines: 97,
+        statements: 96,
+        functions: 97,
+        branches: 91,
       } : undefined,
     },
   },
