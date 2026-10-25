@@ -115,7 +115,7 @@ async def test_get_approve_delete_artifact(service_client, run_id, headers):
 
 
 async def test_request_upload_url(service_client, run_id, headers, monkeypatch):
-    monkeypatch.setattr(artifacts_routes, "get_s3_client", lambda: FakeS3())
+    monkeypatch.setattr(artifacts_routes, "get_s3_client", FakeS3)
     url = f"/api/v1/runs/{run_id}/artifacts/upload-url"
 
     response = await service_client.post(
@@ -157,7 +157,7 @@ async def test_download_url_variants(service_client, run_id, headers, monkeypatc
 
     stored = await create_artifact(service_client, run_id, headers, uri="s3://bucket/dir/file.bin")
     flat = await create_artifact(service_client, run_id, headers, uri="s3://flat.bin")
-    monkeypatch.setattr(artifacts_routes, "get_s3_client", lambda: FakeS3())
+    monkeypatch.setattr(artifacts_routes, "get_s3_client", FakeS3)
     response = await service_client.get(f"/api/v1/artifacts/{stored['id']}/download-url", headers=headers)
     body = await response.json()
     assert body["download_url"].endswith("name=file.bin") and body["expires_in"]
