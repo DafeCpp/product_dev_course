@@ -35,12 +35,13 @@ export default defineConfig({
       reporter: ["text", "html", "lcov", "json-summary", "cobertura"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/main.tsx", "src/setupTests.ts", "**/*.test.{ts,tsx}"],
-      // Initial ratchet from Coverage Baseline run 29654381568.
+      // Ratchet from the LOS-205 coverage run: lines 98.08, statements 97.71,
+      // functions 98.31, branches 95.47.
       thresholds: process.env.COVERAGE_ENFORCE_RATCHET === "true" ? {
-        lines: 81.73,
-        statements: 47,
-        functions: 50,
-        branches: 78.28,
+        lines: 97,
+        statements: 96,
+        functions: 97,
+        branches: 94,
       } : undefined,
     },
   },
