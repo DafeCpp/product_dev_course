@@ -93,7 +93,7 @@ export async function buildServer(config: Config, injectedCache?: PermissionsCac
     return app
 }
 
-async function start() {
+export async function start() {
     const config = parseConfig()
     const app = await buildServer(config)
 
@@ -107,6 +107,7 @@ async function start() {
         app.log.error(err, 'Failed to start auth proxy')
         process.exit(1)
     }
+    return app
 }
 
 if (require.main === module) {
