@@ -131,3 +131,38 @@ describe("sensor generator", () => {
     ).toBeNull();
   });
 });
+
+describe("assemblePayload duty cycle", () => {
+  const sensor = {
+    key: "k",
+    label: "",
+    sensorId: " 11111111-1111-1111-1111-111111111111 ",
+    sensorToken: "t",
+    runId: " run-1 ",
+    captureSessionId: "",
+    streamSinceId: 0,
+    settings: { ...DEFAULT_SETTINGS },
+  };
+
+  it("reports the clamped duty cycle only for pulse waveforms", () => {
+    const pulses = assemblePayload(
+      sensor,
+      3,
+      10,
+      { ...DEFAULT_SETTINGS, waveform: "pulses", dutyCycle: 4 },
+      [],
+    );
+    const sine = assemblePayload(sensor, 3, 10, DEFAULT_SETTINGS, []);
+
+    expect((pulses.meta?.signal as { duty_cycle: number | null }).duty_cycle).toBe(1);
+    expect((sine.meta?.signal as { duty_cycle: number | null }).duty_cycle).toBeNull();
+  });
+
+  it("trims identifiers and nulls empty optional ids", () => {
+    const body = assemblePayload(sensor, 3, 10, DEFAULT_SETTINGS, []);
+
+    expect(body.sensor_id).toBe("11111111-1111-1111-1111-111111111111");
+    expect(body.run_id).toBe("run-1");
+    expect(body.capture_session_id).toBeNull();
+  });
+});
