@@ -1,8 +1,6 @@
 """Integration tests for /api/v1/scripts endpoints."""
 from __future__ import annotations
 
-import pytest
-
 from tests.integration.conftest import (
     SAMPLE_SCRIPT_PAYLOAD,
     make_executor_headers,
@@ -10,7 +8,6 @@ from tests.integration.conftest import (
     make_no_perm_headers,
     make_superadmin_headers,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
