@@ -47,6 +47,21 @@ function outgoingHeaders(request: ProxyRequest) {
     return getOutgoingRequestHeaders(traceId)
 }
 
+/**
+ * Replaces any client-supplied trace headers with the normalized ones. Incoming
+ * headers are lowercase, so without the delete the lowercase and canonical
+ * variants would both reach the upstream and be merged into "a, a".
+ */
+function applyTracing(result: Record<string, string>, request: ProxyRequest): void {
+    const tracing = outgoingHeaders(request)
+    for (const key of Object.keys(result)) {
+        const lower = key.toLowerCase()
+        if (lower === 'x-trace-id' || lower === 'x-request-id') delete result[key]
+    }
+    result['X-Trace-Id'] = tracing['X-Trace-Id']
+    result['X-Request-Id'] = tracing['X-Request-Id']
+}
+
 function accessToken(request: ProxyRequest, config: Config): string | undefined {
     return parseCookies(request.headers.cookie as string | undefined)[config.accessCookieName]
 }
@@ -113,10 +128,8 @@ async function registerTelemetryRoute(
         http2: false,
         replyOptions: {
             rewriteRequestHeaders: (request, headers) => {
-                const tracing = outgoingHeaders(request)
                 const result = flattenHeaders(headers)
-                result['X-Trace-Id'] = tracing['X-Trace-Id']
-                result['X-Request-Id'] = tracing['X-Request-Id']
+                applyTracing(result, request)
 
                 const isRead =
                     request.url.startsWith('/api/v1/telemetry/stream') ||
@@ -145,10 +158,8 @@ async function registerIdentityRoute(
         http2: false,
         replyOptions: {
             rewriteRequestHeaders: (request, headers) => {
-                const tracing = outgoingHeaders(request)
                 const result = flattenHeaders(headers, stripUserHeaders)
-                result['X-Trace-Id'] = tracing['X-Trace-Id']
-                result['X-Request-Id'] = tracing['X-Request-Id']
+                applyTracing(result, request)
                 injectIdentity(result, request, accessToken(request, config))
                 delete result.cookie
                 return result
@@ -170,10 +181,8 @@ async function registerExperimentRoute(
         websocket: route.websocket === true,
         replyOptions: {
             rewriteRequestHeaders: (request, headers) => {
-                const tracing = outgoingHeaders(request)
                 const result = flattenHeaders(headers)
-                result['X-Trace-Id'] = tracing['X-Trace-Id']
-                result['X-Request-Id'] = tracing['X-Request-Id']
+                applyTracing(result, request)
                 injectIdentity(result, request, accessToken(request, config))
 
                 const projectId =

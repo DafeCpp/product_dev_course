@@ -86,8 +86,8 @@ describe('identity propagation', () => {
 
         const headers = res.json().headers
         expect(headers['x-project-ids']).toBe('p1,p2')
-        expect(headers['x-trace-id']).toContain(TRACE)
-        expect(headers['x-request-id']).toMatch(/^[0-9a-f]{32}/)
+        expect(headers['x-trace-id']).toBe(TRACE)
+        expect(headers['x-request-id']).toMatch(/^[0-9a-f]{32}$/)
         expect(headers['x-user-id']).toBe('u1')
     })
 
@@ -97,6 +97,47 @@ describe('identity propagation', () => {
         const res = await proxy.app.inject({ method: 'GET', url: '/api/v1/experiments' })
 
         expect(res.json().headers['x-trace-id']).toMatch(/^[0-9a-f]{32}$/)
+    })
+})
+
+describe('trace headers', () => {
+    const CLIENT_REQUEST_ID = 'fedcba9876543210fedcba9876543210'
+
+    test.each([
+        ['experiment-service', '/api/v1/experiments'],
+        ['config-service', '/api/config-service/v1/configs/example'],
+        ['script-service', '/api/v1/scripts'],
+        ['telemetry-ingest', '/api/v1/telemetry/query'],
+    ])('%s receives each trace header exactly once', async (_name, url) => {
+        proxy = await startProxy({
+            'GET /api/v1/experiments': echo,
+            'GET /api/v1/configs/example': echo,
+            'GET /api/v1/scripts': echo,
+            'GET /api/v1/telemetry/query': echo,
+        })
+
+        const res = await proxy.app.inject({
+            method: 'GET',
+            url,
+            headers: { 'x-trace-id': TRACE, 'x-request-id': CLIENT_REQUEST_ID },
+        })
+
+        const headers = res.json().headers
+        expect(headers['x-trace-id']).toBe(TRACE)
+        expect(headers['x-request-id']).toMatch(/^[0-9a-f]{32}$/)
+        expect(headers['x-request-id']).not.toBe(CLIENT_REQUEST_ID)
+    })
+
+    test('a dashed client trace id is normalized', async () => {
+        proxy = await startProxy({ 'GET /api/v1/experiments': echo })
+
+        const res = await proxy.app.inject({
+            method: 'GET',
+            url: '/api/v1/experiments',
+            headers: { 'x-trace-id': '01234567-89ab-cdef-0123-456789abcdef' },
+        })
+
+        expect(res.json().headers['x-trace-id']).toBe('0123456789abcdef0123456789abcdef')
     })
 })
 
